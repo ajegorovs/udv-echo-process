@@ -38,8 +38,9 @@ def _channel_time_axis(
 
 
 def _output_path(extracted: ExtractedData, output_dir: str, name: str) -> Path:
+    parent = extracted.file_path.parent.name
     stem = extracted.file_path.stem
-    out = Path(output_dir) / stem
+    out = Path(output_dir) / parent / stem
     out.mkdir(parents=True, exist_ok=True)
     return out / name
 
