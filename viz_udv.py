@@ -8,7 +8,7 @@ import numpy as np
 from matplotlib.colors import Normalize
 from matplotlib.ticker import MultipleLocator
 
-from parse_udv import parse_add_file, list_add_files, list_stat_add_files
+from parse_udv import extract, list_add_files
 
 # Interval between successive measurements in milliseconds
 DT_MS = 3.2
@@ -97,23 +97,26 @@ def compute_rpm_from_fft(data, dt_s=DT_S):
 def plot_all_views(data_path: str | Path, output_dir: str | Path | None = None):
     """Generate heatmap, FFT heatmap, and sample gate profiles."""
     path = Path(data_path)
-    udv = parse_add_file(path)
+    d = extract(path)
 
     setpoint_rpm = int(path.stem)
-    gate_depths = np.array(udv.gate_depths_mm)
-    arr = np.array(udv.data, dtype=float)
+    gate_depths = np.array(d.frames[0].gate_depths_mm)
+    data = [f.values for f in d.frames]
+    arr = np.array(data, dtype=float)
     T, G = arr.shape
 
-    rpm_measured, f_peak, _, spec_mean, spec_std = compute_rpm_from_fft(udv.data)
+    rpm_measured, f_peak, _, spec_mean, spec_std = compute_rpm_from_fft(data)
     error_pct = abs(rpm_measured - setpoint_rpm) / setpoint_rpm * 100
 
     fig, axes = plt.subplots(3, 1, figsize=(14, 10), constrained_layout=True)
 
     summary = f"Setpoint: {setpoint_rpm} RPM  |  FFT: {f_peak:.2f} Hz  |  Measured: {rpm_measured:.0f} RPM  |  Error: {error_pct:.1f}%"
 
+    tbd_ms = [f.tbd_ms for f in d.frames]
+
     # --- 1. Time-domain heatmap ---
     im1 = plot_data_heatmap(
-        udv.data, gate_depths, udv.tbd_ms,
+        data, gate_depths, tbd_ms,
         title=summary,
         ax=axes[0],
     )
@@ -121,8 +124,8 @@ def plot_all_views(data_path: str | Path, output_dir: str | Path | None = None):
 
     # --- 2. Frequency-domain heatmap ---
     im2, freqs, magnitude = plot_fft_heatmap(
-        udv.data, gate_depths,
-        title=f"FFT Magnitude — {path.name}",
+        data, gate_depths,
+        title=f"FFT Magnitude - {path.name}",
         ax=axes[1],
     )
     fig.colorbar(im2, ax=axes[1], label="|FFT|")
@@ -136,7 +139,7 @@ def plot_all_views(data_path: str | Path, output_dir: str | Path | None = None):
     axes[1].legend(fontsize=8, loc="upper right")
 
     # --- 3. FFT profile averaged across gates ---
-    _, _, freqs_full, spec_mean, spec_std = compute_rpm_from_fft(udv.data)
+    _, _, freqs_full, spec_mean, spec_std = compute_rpm_from_fft(data)
     axes[2].fill_between(freqs_full, spec_mean - spec_std, spec_mean + spec_std,
                          alpha=0.25, color="C0", label="\u00b11 std")
     axes[2].plot(freqs_full, spec_mean, color="black", lw=1, label="Mean")

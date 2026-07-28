@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from numpy.fft import rfft, rfftfreq
 
-from parse_udv import list_add_files, parse_add_file
+from parse_udv import list_add_files, extract
 from viz_udv import plot_all_views, compute_rpm_from_fft
 
 DT_S = 0.0032
@@ -50,8 +50,8 @@ def plot_summary(results, output_path):
 
 results = []
 for fp in list_add_files():
-    d = parse_add_file(fp)
-    arr = np.array(d.data)  # (T, G)
+    d = extract(fp)
+    arr = np.array([f.values for f in d.frames])  # (T, G)
     T = arr.shape[0]
     freqs = rfftfreq(T, d=DT_S)
     # FFT per gate, average magnitude spectra across gates

@@ -16,183 +16,17 @@ File format variants detected automatically:
 
 from __future__ import annotations
 
-import csv
 import re
-from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import NamedTuple
 
+import numpy as np
 from pydantic import BaseModel
-
-
-class UDVData(NamedTuple):
-    """Parsed UDV measurement data."""
-
-    header: str
-    comment: str
-    gate_depths_mm: list[float]
-    data: list[list[float]]  # shape (n_timesteps, n_gates) - amp values
-    tbd_ms: list[float]  # time between data
-    block: list[int]
-    channel: list[int]
-    file_path: Path
-
-
-@dataclass
-class UDVStats:
-    """Statistical summary from _Stat.ADD files."""
-
-    header: str
-    comment: str
-    gate_depths_mm: list[float]
-    n_values: int
-    mean: list[float]
-    std_dev: list[float]
-    median: list[float] | None = None
-    first_quartile: list[float] | None = None
-    third_quartile: list[float] | None = None
-    min_val: list[float] | None = None
-    max_val: list[float] | None = None
-    file_path: Path = field(default_factory=Path)
 
 
 def parse_comma_decimal(value: str) -> float:
     """Parse a comma-decimal string like '42,97' -> 42.97."""
     return float(value.replace(",", "."))
-
-
-def parse_add_file(filepath: str | Path) -> UDVData:
-    """Parse a raw .ADD data file, returning structured data."""
-    path = Path(filepath)
-    lines = path.read_text(encoding="latin-1").splitlines()
-
-    header = lines[0].strip()
-    comment = lines[1].strip()
-
-    gate_depth_strs = lines[4].strip().split("\t")
-    gate_depths = [parse_comma_decimal(g) for g in gate_depth_strs if g]
-
-    data: list[list[float]] = []
-    tbd_ms: list[float] = []
-    block: list[int] = []
-    channel: list[int] = []
-
-    n_gates = len(gate_depths)
-
-    for line in lines[6:]:
-        line = line.strip()
-        if not line:
-            continue
-        parts = line.split("\t")
-        amp_vals = [parse_comma_decimal(p) for p in parts[:n_gates]]
-        tbd = parse_comma_decimal(parts[n_gates]) if len(parts) > n_gates else 0.0
-        blk = int(parts[n_gates + 1]) if len(parts) > n_gates + 1 else 0
-        ch = int(parts[n_gates + 2]) if len(parts) > n_gates + 2 else 0
-
-        data.append(amp_vals)
-        tbd_ms.append(tbd)
-        block.append(blk)
-        channel.append(ch)
-
-    return UDVData(
-        header=header,
-        comment=comment,
-        gate_depths_mm=gate_depths,
-        data=data,
-        tbd_ms=tbd_ms,
-        block=block,
-        channel=channel,
-        file_path=path,
-    )
-
-
-def parse_stat_add_file(filepath: str | Path) -> UDVStats:
-    """Parse a _Stat.ADD statistical summary file."""
-    path = Path(filepath)
-    lines = path.read_text(encoding="latin-1").splitlines()
-
-    header = lines[0].strip()
-    comment = lines[1].strip()
-
-    gate_depth_strs = lines[4].strip().split("\t")
-    gate_depths = [parse_comma_decimal(g) for g in gate_depth_strs if g]
-    n_gates = len(gate_depths)
-
-    n_values = 0
-    nv_match = re.search(r"(\d+)", lines[6])
-    if nv_match:
-        n_values = int(nv_match.group(1))
-
-    def parse_row(idx: int) -> list[float] | None:
-        if idx >= len(lines):
-            return None
-        parts = lines[idx].strip().split("\t")
-        if not parts or len(parts) < n_gates:
-            return None
-        return [parse_comma_decimal(p) for p in parts[:n_gates]]
-
-    # Row 7: mean (line index 6)
-    # Row 9: std dev (line index 8)
-    # Row 11: min (line index 10)
-    # Row 13: first quartile (line index 12)
-    # Row 15: median (line index 14)
-    # Row 17: third quartile (line index 16)
-    # Row 19: max (line index 18)
-    # The ordering varies by file version; we scan by label.
-
-    label_map: dict[str, str] = {}
-    for i in range(6, len(lines) - 1, 2):
-        label = lines[i + 1].strip().lower() if i + 1 < len(lines) else ""
-        if label == "standart deviation":
-            label_map["std_dev"] = lines[i]
-        elif label in ("mean", "average"):
-            label_map["mean"] = lines[i]
-        elif label in ("median",):
-            label_map["median"] = lines[i]
-        elif label in ("first quartile", "q1", "25%"):
-            label_map["first_quartile"] = lines[i]
-        elif label in ("third quartile", "q3", "75%"):
-            label_map["third_quartile"] = lines[i]
-        elif label in ("minimum", "min"):
-            label_map["min"] = lines[i]
-        elif label in ("maximum", "max"):
-            label_map["max"] = lines[i]
-        elif label in ("count", "n"):
-            pass  # already captured from line 6
-
-    return UDVStats(
-        header=header,
-        comment=comment,
-        gate_depths_mm=gate_depths,
-        n_values=n_values,
-        mean=parse_row(6),
-        std_dev=parse_row(8),
-        file_path=path,
-    )
-
-
-def list_add_files(data_dir: str | Path = "data-echo") -> list[Path]:
-    """List all raw .ADD files (excluding _Stat.ADD) in the data directory."""
-    return sorted(
-        p for p in Path(data_dir).glob("*.ADD") if "_Stat" not in p.stem
-    )
-
-
-def list_stat_add_files(data_dir: str | Path = "data-echo") -> list[Path]:
-    """List all _Stat.ADD files in the data directory."""
-    return sorted(Path(data_dir).glob("*_Stat.ADD"))
-
-
-def load_all_data(
-    data_dir: str | Path = "data-echo",
-) -> dict[str, UDVData]:
-    """Load all raw .ADD files into a dict keyed by setpoint RPM."""
-    result: dict[str, UDVData] = {}
-    for fp in list_add_files(data_dir):
-        key = fp.stem  # e.g. "650"
-        result[key] = parse_add_file(fp)
-    return result
 
 
 # ── Unified parser (Pydantic models + auto-detect) ──────────────────────
@@ -245,6 +79,108 @@ class ExtractedData(BaseModel):
         for f in self.frames:
             result.setdefault(f.block, []).append(f)
         return result
+
+    def describe(self) -> str:
+        """Return a formatted description of the recording setup."""
+        by_ch = self.by_channel()
+        by_blk = self.by_block()
+        is_multi = len(by_ch) > 1 or len(by_blk) > 1
+        fmt = "stat" if any(f.n_profiles is not None for f in self.frames) else "raw"
+
+        lines: list[str] = []
+        sep = "=" * 58
+        lines.append(sep)
+        lines.append(f"  File: {self.file_path.name}")
+        lines.append(f"  Header: {self.header}")
+        lines.append(f"  Comment: {self.comment}")
+        lines.append(sep)
+        lines.append(f"  Recording type:  {'multi-sensor' if is_multi else 'single-sensor'}")
+        lines.append(f"  Measurement:     {self.meas_type.value}")
+        lines.append(f"  File format:     {fmt}")
+        lines.append(f"  Total frames:    {len(self.frames)}")
+        lines.append(f"  Channels:        {sorted(by_ch.keys())}")
+
+        if is_multi:
+            n_prof = _detect_n_profiles(self, by_ch, by_blk)
+            lines.append(f"  Profiles/block:  {n_prof}")
+            lines.append(f"  Total blocks:    {len(by_blk)}")
+
+            # Detect recording order
+            seen: set[int] = set()
+            cycle: list[int] = []
+            for f in self.frames:
+                if f.channel not in seen:
+                    seen.add(f.channel)
+                    cycle.append(f.channel)
+                    if len(seen) == len(by_ch):
+                        break
+            if len(cycle) > 1:
+                seq = " -> ".join(str(ch) for ch in cycle) + " -> ..."
+                lines.append(f"  Recording order:  Ch [{seq}]")
+
+            # Timing overview
+            all_tbds = sorted(set(f.tbd_ms for f in self.frames))
+            if len(all_tbds) > 1:
+                total_s = (max(all_tbds) - min(all_tbds)) / 1000
+                dt_ms = float(np.mean(np.diff(sorted(set(all_tbds)))))
+                lines.append(f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)")
+
+        lines.append("")
+
+        # Detect P for raw format (same across channels)
+        raw_p = _detect_n_profiles(self, by_ch, by_blk) if is_multi else None
+
+        for ch in sorted(by_ch.keys()):
+            ch_frames = by_ch[ch]
+            gd = ch_frames[0].gate_depths_mm
+            tbds = [f.tbd_ms for f in ch_frames]
+            p = ch_frames[0].n_profiles or raw_p
+
+            lines.append(f"  Channel {ch}:")
+            lines.append(f"    Gate depths:     {len(gd)} gates  ({gd[0]:.2f} - {gd[-1]:.2f} mm)")
+            lines.append(f"    Frames:          {len(ch_frames)}")
+            lines.append(f"    Blocks:          {ch_frames[0].block} - {ch_frames[-1].block}")
+            lines.append(f"    TBD range:       {min(tbds):.2f} - {max(tbds):.2f} ms")
+            lines.append(f"    Profiles/block:  {p if p is not None else '-'}")
+
+            # Check if channels share identical gate setup
+            first_gds = {c: by_ch[c][0].gate_depths_mm for c in by_ch}
+            unique_gds = set(tuple(g) for g in first_gds.values())
+            if len(unique_gds) > 1:
+                lines.append(f"    ** Gate setup differs from other channels **")
+            lines.append("")
+
+        return "\n".join(lines)
+
+
+# ── Backward-compat convenience functions ───────────────────────────────
+
+
+def list_add_files(data_dir: str | Path = "data-echo") -> list[Path]:
+    """List all raw .ADD files (excluding _Stat.ADD) in a directory."""
+    return sorted(p for p in Path(data_dir).glob("*.ADD") if "_Stat" not in p.stem)
+
+
+def list_stat_add_files(data_dir: str | Path = "data-echo") -> list[Path]:
+    """List all _Stat.ADD files in a directory."""
+    return sorted(Path(data_dir).glob("*_Stat.ADD"))
+
+
+def parse_add_file(filepath: str | Path) -> ExtractedData:
+    """Parse a .ADD data file (backward-compat name)."""
+    return extract(filepath)
+
+
+def parse_stat_add_file(filepath: str | Path) -> ExtractedData:
+    """Parse a _Stat.ADD file (backward-compat name)."""
+    return extract(filepath)
+
+
+def load_all_data(
+    data_dir: str | Path = "data-echo",
+) -> dict[str, ExtractedData]:
+    """Load all raw .ADD files into a dict keyed by setpoint RPM."""
+    return {fp.stem: extract(fp) for fp in list_add_files(data_dir)}
 
 
 # ── Internal helpers ────────────────────────────────────────────────────
@@ -414,17 +350,17 @@ def _parse_stat_row(lines: list[str], idx: int, n_gates: int) -> list[float] | N
         return None
 
 
+def _detect_n_profiles(d: ExtractedData, by_ch, by_blk) -> int:
+    for f in d.frames:
+        if f.n_profiles is not None:
+            return f.n_profiles
+    ch = sorted(by_ch.keys())[0]
+    blk = by_ch[ch][0].block
+    return sum(1 for f in d.frames if f.channel == ch and f.block == blk)
+
+
 if __name__ == "__main__":
     import sys
 
     target = sys.argv[1] if len(sys.argv) > 1 else "data-echo/650.ADD"
-    data = parse_add_file(target)
-    print(f"File: {data.file_path.name}")
-    print(f"Header: {data.header}")
-    print(f"Gate depths ({len(data.gate_depths_mm)}): {data.gate_depths_mm}")
-    print(f"Data shape: {len(data.data)} timesteps x {len(data.data[0])} gates")
-    print(f"TBD range: {min(data.tbd_ms):.2f} - {max(data.tbd_ms):.2f} ms")
-    print(f"Block: {set(data.block)}, Channel: {set(data.channel)}")
-    print(f"\nFirst 3 data rows (first 5 gates):")
-    for i, row in enumerate(data.data[:3]):
-        print(f"  [{i}] {row[:5]}...")
+    print(extract(target).describe())
