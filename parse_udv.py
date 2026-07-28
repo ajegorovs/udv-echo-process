@@ -44,11 +44,15 @@ class ChannelFrame(BaseModel):
 
     In multi-sensor rolling data, each (block, channel) pair produces
     one frame. In single-sensor data, each data row is one frame.
+
+    ``tbd_ms``: "Time Between Data" — cumulative from recording start
+    for raw format; per-block acquisition interval (constant) for stat.
     """
 
     channel: int
     block: int
     tbd_ms: float
+    meas_type: MeasType
     gate_depths_mm: list[float]
     values: list[float]
 
@@ -65,8 +69,13 @@ class ExtractedData(BaseModel):
     file_path: Path
     header: str = ""
     comment: str = ""
-    meas_type: MeasType = MeasType.ECHO
     frames: list[ChannelFrame] = []
+
+    @property
+    def meas_type(self) -> MeasType | None:
+        """Measurement type if all frames agree, None if mixed."""
+        types = {f.meas_type for f in self.frames}
+        return types.pop() if len(types) == 1 else None
 
     def by_channel(self) -> dict[int, list[ChannelFrame]]:
         result: dict[int, list[ChannelFrame]] = {}
@@ -95,7 +104,6 @@ class ExtractedData(BaseModel):
         lines.append(f"  Comment: {self.comment}")
         lines.append(sep)
         lines.append(f"  Recording type:  {'multi-sensor' if is_multi else 'single-sensor'}")
-        lines.append(f"  Measurement:     {self.meas_type.value}")
         lines.append(f"  File format:     {fmt}")
         lines.append(f"  Total frames:    {len(self.frames)}")
         lines.append(f"  Channels:        {sorted(by_ch.keys())}")
@@ -119,12 +127,19 @@ class ExtractedData(BaseModel):
                 lines.append(f"  Recording order:  Ch [{seq}]")
 
             # Timing overview
-            all_tbds = sorted(set(f.tbd_ms for f in self.frames))
-            if len(all_tbds) > 1:
-                total_s = (max(all_tbds) - min(all_tbds)) / 1000
-                dt_ms = float(np.mean(np.diff(sorted(set(all_tbds)))))
+            all_tbds = [f.tbd_ms for f in self.frames]
+            tbd_range_ms = max(all_tbds) - min(all_tbds)
+            if tbd_range_ms > 1.0:
+                total_s = tbd_range_ms / 1000
+                tbds_unique = sorted(set(all_tbds))
+                dt_ms = float(np.mean(np.diff(tbds_unique))) if len(tbds_unique) > 1 else 0.0
                 lines.append(f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)")
+            else:
+                mean_tbd = float(np.mean(all_tbds))
+                lines.append(f"  Per-block DT:    {mean_tbd:.2f} ms  (constant TBD)")
 
+        lines.append("")
+        lines.append("  TBD = Time Between Data (cumulative in raw, per-block constant in stat)")
         lines.append("")
 
         # Detect P for raw format (same across channels)
@@ -136,7 +151,8 @@ class ExtractedData(BaseModel):
             tbds = [f.tbd_ms for f in ch_frames]
             p = ch_frames[0].n_profiles or raw_p
 
-            lines.append(f"  Channel {ch}:")
+            mt = ch_frames[0].meas_type.value
+            lines.append(f"  Channel {ch}  ({mt}):")
             lines.append(f"    Gate depths:     {len(gd)} gates  ({gd[0]:.2f} - {gd[-1]:.2f} mm)")
             lines.append(f"    Frames:          {len(ch_frames)}")
             lines.append(f"    Blocks:          {ch_frames[0].block} - {ch_frames[-1].block}")
@@ -236,17 +252,17 @@ def _parse_single_sensor(
     idx = gd_indices[0] if gd_indices else 0
     gate_depths = _parse_gate_depths(lines[idx + 1])
     n_gates = len(gate_depths)
-    result.meas_type = _detect_meas_type(lines[idx + 2])
+    meas_type = _detect_meas_type(lines[idx + 2])
 
     data_start = idx + 3
 
     # Check if this is a stat file
     if data_start < len(lines) and lines[data_start].strip().startswith("Statistical"):
-        _parse_stat_section(lines, data_start, n_gates, gate_depths, result)
+        _parse_stat_section(lines, data_start, n_gates, gate_depths, meas_type, result)
         return
 
     for line in lines[data_start:]:
-        _add_frame(line, n_gates, gate_depths, result)
+        _add_frame(line, n_gates, gate_depths, meas_type, result)
 
 
 def _parse_multi_sensor(
@@ -256,7 +272,7 @@ def _parse_multi_sensor(
     for sec_idx, gd_idx in enumerate(gd_indices):
         gate_depths = _parse_gate_depths(lines[gd_idx + 1])
         n_gates = len(gate_depths)
-        result.meas_type = _detect_meas_type(lines[gd_idx + 2])
+        meas_type = _detect_meas_type(lines[gd_idx + 2])
 
         # Determine section extent
         end_idx = gd_indices[sec_idx + 1] if sec_idx + 1 < len(gd_indices) else len(lines)
@@ -264,14 +280,15 @@ def _parse_multi_sensor(
 
         # Check if statistical format
         if section_lines and section_lines[0].strip().startswith("Statistical"):
-            _parse_stat_section(section_lines, 0, n_gates, gate_depths, result)
+            _parse_stat_section(section_lines, 0, n_gates, gate_depths, meas_type, result)
         else:
             for line in section_lines:
-                _add_frame(line, n_gates, gate_depths, result)
+                _add_frame(line, n_gates, gate_depths, meas_type, result)
 
 
 def _add_frame(
-    line: str, n_gates: int, gate_depths: list[float], result: ExtractedData,
+    line: str, n_gates: int, gate_depths: list[float],
+    meas_type: MeasType, result: ExtractedData,
 ) -> None:
     """Parse one data row and add a ChannelFrame."""
     parts = line.strip().split("\t")
@@ -289,6 +306,7 @@ def _add_frame(
         channel=channel,
         block=block,
         tbd_ms=tbd,
+        meas_type=meas_type,
         gate_depths_mm=list(gate_depths),
         values=vals,
     ))
@@ -296,7 +314,7 @@ def _add_frame(
 
 def _parse_stat_section(
     lines: list[str], start: int, n_gates: int,
-    gate_depths: list[float], result: ExtractedData,
+    gate_depths: list[float], meas_type: MeasType, result: ExtractedData,
 ) -> None:
     """Parse a statistical summary block (mean / stddev / min / max)."""
     # Line 0 (relative): "Statistical values based on :N values"
@@ -329,6 +347,7 @@ def _parse_stat_section(
         channel=channel,
         block=block,
         tbd_ms=tbd,
+        meas_type=meas_type,
         gate_depths_mm=list(gate_depths),
         values=mean_row,
         n_profiles=n_prof,
