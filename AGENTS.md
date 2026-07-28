@@ -3,8 +3,8 @@
 ## Commands
 
 ```bash
-uv run parse_udv.py <file.ADD>              # parse & print (old parser)
-uv run viz_udv.py <data-echo/*.ADD>         # single-file 3-panel viz
+uv run parse_udv.py <file.ADD>              # parse & describe
+uv run viz_layer.py <file.ADD>              # time-synced per-channel heatmaps
 uv run run_all.py                            # batch process all files
 ```
 
@@ -21,45 +21,34 @@ Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). No test runner conf
 ## Architecture
 
 ```
-parse_udv.py
-├── parse_comma_decimal()           — low-level: convert "42,97" → 42.97
-├── parse_add_file()                — old single-sensor parser (backward compat)
-├── parse_stat_add_file()           — old stat-file parser
-├── list_add_files(), load_all_data()
+parse_udv.py                        — unified parser (Pydantic models + auto-detect)
 │
 ├── MeasType (enum)                 — ECHO | VELOCITY
-├── ChannelFrame (Pydantic)         — one measurement at one time point for one channel
-├── ExtractedData (Pydantic)        — unified result with .by_channel() / .by_block()
+├── ChannelFrame (Pydantic)         — one measurement: channel, block, tbd_ms,
+│                                     meas_type, gate_depths_mm, values,
+│                                     n_profiles, std_dev, min_val, max_val
+├── ExtractedData (Pydantic)        — file_path, header, comment, frames[]
+│                                    .by_channel() / .by_block() / .describe()
 │
-└── extract(filepath)               — unified entry point: auto-detects format
-      ├── single-sensor continuous  — one "Gate Depth" section, continuous rows
-      └── multi-sensor block-channel — repeating "Gate Depth" sections
-            ├── raw format          — P data rows per (block, channel)
-            └── stat format         — mean/stddev/min/max per (block, channel)
+├── extract(filepath)               — auto-detect: single-sensor vs multi-sensor,
+│                                     echo vs velocity, raw vs stat
+│
+└── list_add_files(), load_all_data() — backward-compat helpers
+│
+viz_layer.py                        — visualization layer
+│
+├── plot_recording(d)               — per-channel heatmaps, synced time axis
+│   ├── raw files: TBD/1000 → seconds
+│   ├── stat files: block index → time
+│   └── y-axis: gate depth, inverted (shallow at top)
+│
+└── _channel_time_axis()            — returns (time_values, axis_label)
+
+viz_udv.py                          — backward-compat wrapper (aliases plot_recording)
+run_all.py                          — batch RPM extraction + viz_layer per file
 ```
 
 Detection logic:
 - **Column header**: `Amp` → echo, `mm/s` → velocity
 - **Gate Depth count**: 1 → single-sensor, >1 → multi-sensor
 - **Post-header line**: starts with "Statistical" → stat format, otherwise raw
-
-## Data Structure
-
-```python
-d = extract("path/to/file.ADD")
-d.by_channel()  # {channel: [ChannelFrame, ...]}
-d.by_block()    # {block: [ChannelFrame, ...]}
-
-# Per frame:
-f.channel, f.block, f.tbd_ms
-f.gate_depths_mm  # list[float]
-f.values           # list[float] — one per gate
-# Stat-only:
-f.n_profiles, f.std_dev, f.min_val, f.max_val
-```
-
-## Planned Modules
-
-- `process_rolling.py` — rolling echo/velocity processing
-- `sensor_fusion.py` — multi-sensor RPM fusion
-- `velocity.py` — velocity profile analysis

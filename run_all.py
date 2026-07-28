@@ -7,7 +7,7 @@ import numpy as np
 from numpy.fft import rfft, rfftfreq
 
 from parse_udv import list_add_files, extract
-from viz_udv import plot_all_views, compute_rpm_from_fft
+from viz_layer import plot_recording
 
 DT_S = 0.0032
 OUTPUT = Path("viz_output")
@@ -75,6 +75,7 @@ print(f"Mean error: {np.mean([r[3] for r in results]):.1f}%")
 plot_summary(results, OUTPUT / "summary.png")
 
 for fp in list_add_files():
-    plot_all_views(fp, output_dir=OUTPUT)
+    d = extract(fp)
+    plot_recording(d, output_dir=OUTPUT)
 
 print("\nDone — all visualizations in viz_output/")
