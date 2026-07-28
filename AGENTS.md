@@ -43,13 +43,28 @@ viz_layer.py                        — visualization layer
 │   ├── stat files: block index → time
 │   └── y-axis: gate depth, inverted (shallow at top)
 │
-└── _channel_time_axis()            — returns (time_values, axis_label)
+├── plot_channel_stats(d)           — gate depth vs mean±std across time
+├── plot_all(d)                     — heatmap + profiles in one call
+├── _channel_time_axis()            — returns (time_values, axis_label)
+├── _subplot_layout()               — figure grid layout helper
+├── _output_path()                  — viz_output/<data_dir>/<stem>/<name>
+└── _discover_data_files()          — find valid .ADD files in data-* dirs
 
-viz_udv.py                          — backward-compat wrapper (aliases plot_recording)
+viz_udv.py                          — backward-compat wrapper (aliases plot_all)
 run_all.py                          — batch RPM extraction + viz_layer per file
+inspect_udv.py                      — wrapper around extract().describe()
 ```
 
 Detection logic:
 - **Column header**: `Amp` → echo, `mm/s` → velocity
 - **Gate Depth count**: 1 → single-sensor, >1 → multi-sensor
 - **Post-header line**: starts with "Statistical" → stat format, otherwise raw
+
+Output structure:
+```
+viz_output/
+  summary.png                         — cross-file RPM summary (run_all.py)
+  <data_dir>/<stem>/
+    heatmap.png                       — per-channel heatmaps
+    profiles.png                      — mean ± std gate profiles
+```
