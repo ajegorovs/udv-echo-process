@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import Normalize
 
-from parse_udv import ChannelFrame, ExtractedData, extract, list_add_files, list_stat_add_files
+from parse_udv import ChannelFrame, ExtractedData, extract
 
 
 def _channel_time_axis(
@@ -194,12 +194,24 @@ def plot_all(extracted: ExtractedData, output_dir: str = "viz_output", dpi: int 
     plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi)
 
 
+def _discover_data_files() -> list[Path]:
+    """Find valid .ADD files in data-* directories (recursive)."""
+    files: list[Path] = []
+    for d in sorted(Path(".").glob("data-*")):
+        if d.is_dir():
+            for p in sorted(d.rglob("*.ADD")):
+                try:
+                    first = p.read_text(encoding="latin-1", errors="ignore").splitlines()[0]
+                    if "ASCUDOPV" in first:
+                        files.append(p)
+                except Exception:
+                    pass
+    return files
+
+
 if __name__ == "__main__":
     output_dir = "viz_output"
-    targets = sys.argv[1:] if len(sys.argv) > 1 else [
-        *[str(p) for p in list_add_files()],
-        *[str(p) for p in list_stat_add_files()],
-    ]
+    targets = sys.argv[1:] if len(sys.argv) > 1 else _discover_data_files()
 
     for t in targets:
         print(f"\n--- {t} ---")
