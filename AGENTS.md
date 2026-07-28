@@ -6,6 +6,7 @@
 uv run parse_udv.py <file.ADD>              # parse & describe
 uv run viz_layer.py <file.ADD>              # time-synced per-channel heatmaps
 uv run run_all.py                            # batch process all files
+uv run python -c "from viz_layer import plot_all; from parse_udv import extract; plot_all(extract('file.ADD'))"
 ```
 
 Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). No test runner configured yet.

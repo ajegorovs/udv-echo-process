@@ -7,7 +7,7 @@ import numpy as np
 from numpy.fft import rfft, rfftfreq
 
 from parse_udv import list_add_files, extract
-from viz_layer import plot_recording
+from viz_layer import plot_all
 
 DT_S = 0.0032
 OUTPUT = Path("viz_output")
@@ -76,6 +76,6 @@ plot_summary(results, OUTPUT / "summary.png")
 
 for fp in list_add_files():
     d = extract(fp)
-    plot_recording(d, output_dir=OUTPUT)
+    plot_all(d, output_dir=OUTPUT)
 
 print("\nDone — all visualizations in viz_output/")
