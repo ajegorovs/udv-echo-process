@@ -1,7 +1,7 @@
 [project]
 name = "udv-echo-process"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-sensor UDV echo and velocity processing for rotating machinery analysis"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [

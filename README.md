@@ -1,36 +1,29 @@
 # UDV Echo Process
 
-Rotational speed measurement from Ultrasonic Doppler Velocimetry (UDV) data using FFT-based frequency analysis.
+Multi-sensor Ultrasonic Doppler Velocimetry (UDV) processing for rotating machinery analysis. Currently supports single-sensor echo-based RPM measurement, with planned support for multi-sensor rolling echo and velocity processing.
 
-## Data
+---
 
-`.ADD` files in `data-echo/` contain UDV measurements at various RPM setpoints (200–650 RPM). Each file is a tab-separated table with comma as decimal separator:
+## Single-Sensor Echo RPM Analysis
 
-| Row | Content |
-|-----|---------|
-| 1 | Instrument header |
-| 2 | Comment |
-| 4 | `Gate Depth [mm]` |
-| 5 | 26 gate depths (tab-separated, comma-decimal) |
-| 6 | 26×`Amp` + `TBD [ms]` + `No block` + `Channel` |
-| 7+ | Data rows (26 amplitude values + 3 aux columns) |
-
-## Physical Principle
-
-A rotating shaft with two shaft ends produces two UDV echoes per revolution. The time-domain signal at each gate depth shows two peaks per shaft rotation. The FFT of this signal therefore has its dominant peak at **2× the shaft frequency**.
+Rotational speed measurement from UDV echo data using FFT-based frequency analysis. A rotating shaft with two ends produces two UDV echoes per revolution, so the dominant FFT peak is at **2× the shaft frequency**:
 
 **RPM = (FFT peak frequency / 2) × 60**
 
-## Method
+### Data
 
-1. **Parse** the .ADD file — extract 26 gate amplitudes across all timesteps
-2. **FFT per gate** — compute the magnitude spectrum for each of the 26 gates along the time axis (sampling interval 3.2 ms → 312.5 Hz)
-3. **Average spectra** — average the magnitude spectra across all gates. The echo from each shaft end arrives at different gates at different times, but this time shift only affects FFT phase, not magnitude. Averaging across gates reinforces the common frequency while suppressing noise.
+`.ADD` files in `data-echo/` contain UDV measurements at various RPM setpoints (200–650 RPM). Each file is a tab-separated table with comma as decimal separator:
+
+### Method
+
+1. **Parse** the `.ADD` file — extract 26 gate amplitudes across all timesteps
+2. **FFT per gate** — compute the magnitude spectrum for each gate along the time axis (sampling interval 3.2 ms → 312.5 Hz)
+3. **Average spectra** — average magnitude spectra across all gates (time shift per gate = phase shift only, magnitude is unchanged)
 4. **Peak detection** — find the dominant frequency in the averaged spectrum
-5. **Divide by 2** — each shaft rotation produces two echoes (two shaft ends), so the dominant FFT peak is at 2× the shaft frequency
-6. **Convert to RPM**: multiply by 60
+5. **Divide by 2** — each shaft rotation produces two echoes, so FFT peak is at 2× shaft frequency
+6. **Convert to RPM** — multiply by 60
 
-## Results
+### Results
 
 | Setpoint | Measured | Error |
 |----------|----------|-------|
@@ -54,26 +47,68 @@ A rotating shaft with two shaft ends produces two UDV echoes per revolution. The
 | 630 RPM | 626 RPM | 0.6% |
 | 650 RPM | 646 RPM | 0.6% |
 
-**Mean error across all 19 setpoints: 0.6%**, compared to the original Mathematica peak-detection approach which yielded ~43% error at 650 RPM.
+**Mean error: 0.6%** (vs ~43% for the original Mathematica peak-detection approach).
 
-## Usage
+### Usage
 
 ```bash
-uv run run_all.py              # generate all visualizations
-uv run viz_udv.py data-echo/650.ADD  # single file viz
-uv run parse_udv.py data-echo/650.ADD  # print parsed data
+uv run run_all.py                              # batch process all files
+uv run viz_udv.py data-echo/650.ADD            # single file viz
+uv run parse_udv.py data-echo/650.ADD          # print parsed data
 ```
 
-Outputs are saved to `viz_output/`:
+Outputs go to `viz_output/`:
+- `summary.png` — scatter + error bar chart
+- `{RPM}_viz.png` — 3-panel view (time heatmap, FFT heatmap, mean FFT profile)
 
-- `summary.png` — measured vs setpoint RPM scatter + error bar chart
-- `{RPM}_viz.png` — per-file 3-panel view (time heatmap, FFT heatmap, mean FFT profile)
+---
 
-## Files
+## Multi-Sensor Rolling Processing (In Development)
 
-| File | Purpose |
-|------|---------|
-| `parse_udv.py` | Data import and parsing |
+Extension to process data from a **4-sensor 2×2 array** with sequentially (rolling) recorded channels.
+
+### Hardware Configuration
+
+- 4 UDV sensors arranged in a 2×2 grid, 20 mm center-to-center
+- Sensors connected to instrument channels 6, 7, 8, 9
+- Sensor bottom 3 mm from vessel bottom, sensor diameter 8 mm
+- Pointed at mixer pillar
+
+### Recording Scheme
+
+The instrument records channels **sequentially** (round-robin, not simultaneously):
+- Each channel records **P = 10 profiles** per acquisition burst
+- Profiles are reduced to one gate signal + per-gate statistics (mean, std dev, min, max)
+- The cycle repeats over **B blocks** → produces a rolling time series across all sensor channels
+
+### Data Format (Multi-Sensor `.ADD`)
+
+Files in `data-echo-4-sensors-2x2/` have a different structure from single-sensor files:
+- **35 gates** per channel (vs 26 for single-sensor)
+- Repeated per-(Block, Channel) sections, each containing:
+  - Gate depth definition
+  - Statistical summary: mean, std deviation, min, max (over P=10 profiles)
+- Raw time-series may be in companion `.BDD` files (TBD)
+
+### Planned Processing Pipeline
+
+1. **Parse multi-sensor `.ADD`/`.BDD`** — extract per-channel, per-block statistical profiles
+2. **Reconstruct rolling time series** — interleave channel data in recording order
+3. **Per-channel FFT** — compute echo-based RPM for each sensor independently
+4. **Multi-sensor fusion** — combine estimates across sensors for improved accuracy/reliability
+5. **Velocity processing** — extend from echo-based RPM to full velocity profile analysis per sensor
+
+---
+
+## Project Structure
+
+| File / Dir | Purpose |
+|------------|---------|
+| `parse_udv.py` | Data import and parsing (single-sensor `.ADD`) |
 | `viz_udv.py` | Visualization (heatmaps, FFT, RPM annotation) |
-| `run_all.py` | Batch processing and summary |
-| `pyproject.toml` | Project config (Python ≥3.14, numpy, matplotlib) |
+| `run_all.py` | Batch processing and summary generation |
+| `data-echo/` | Single-sensor measurement files (200–650 RPM) |
+| `data-echo-4-sensors-2x2/` | Multi-sensor 2×2 array recordings |
+| `viz_output/` | Generated visualizations |
+| `UDV_Data_Analysis_Echo.nb` | Original Mathematica notebook |
+| `pyproject.toml` | Project config (Python ≥3.14, uv) |

@@ -1,0 +1,2 @@
+4 sensors x2 x-dir, x2 y-dir. 20 mm centers apart pointed at mixer pill.sensor bottom 3 mm from vessel bottom. sensor d=8 mm
+order dont remember. should be obvious from signal if its not shit.
