@@ -126,20 +126,18 @@ class ExtractedData(BaseModel):
                 seq = " -> ".join(str(ch) for ch in cycle) + " -> ..."
                 lines.append(f"  Recording order:  Ch [{seq}]")
 
-            # Timing overview
-            all_tbds = [f.tbd_ms for f in self.frames]
-            tbd_range_ms = max(all_tbds) - min(all_tbds)
-            if tbd_range_ms > 1.0:
-                total_s = tbd_range_ms / 1000
-                tbds_unique = sorted(set(all_tbds))
-                dt_ms = float(np.mean(np.diff(tbds_unique))) if len(tbds_unique) > 1 else 0.0
-                lines.append(f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)")
-            else:
-                mean_tbd = float(np.mean(all_tbds))
-                lines.append(f"  Per-block DT:    {mean_tbd:.2f} ms  (constant TBD)")
+            # Timing overview (raw only — TBD is cumulative from recording start)
+            if fmt == "raw":
+                all_tbds = [f.tbd_ms for f in self.frames]
+                tbd_range_ms = max(all_tbds) - min(all_tbds)
+                if tbd_range_ms > 1.0:
+                    total_s = tbd_range_ms / 1000
+                    tbds_unique = sorted(set(all_tbds))
+                    dt_ms = float(np.mean(np.diff(tbds_unique))) if len(tbds_unique) > 1 else 0.0
+                    lines.append(f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)")
 
         lines.append("")
-        lines.append("  TBD = Time Between Data (cumulative in raw, per-block constant in stat)")
+        lines.append("  TBD = Time Between Data")
         lines.append("")
 
         # Detect P for raw format (same across channels)
