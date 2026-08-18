@@ -51,13 +51,26 @@ src/udv_echo_process/
 │   └── _discover_data_files()       — find valid .ADD files in data/* dirs
 │
 ├── analysis/                        — one module per ported Wolfram feature
-│   └── rpm.py                       — RPM analysis
-│       ├── RpmResult (dataclass)    — setpoint, measured rpm, freq, error, n
-│       ├── rpm_from_echo(d, dt_s)   — FFT peak /2 estimate → (rpm, f_peak, n)
-│       └── setpoint_rpm_from_stem() — parse setpoint RPM from filename stem
+│   ├── rpm.py                       — RPM analysis
+│   │   ├── RpmResult (dataclass)    — setpoint, measured rpm, freq, error, n
+│   │   ├── rpm_from_echo(d, dt_s)   — FFT peak /2 estimate → (rpm, f_peak, n)
+│   │   └── setpoint_rpm_from_stem() — parse setpoint RPM from filename stem
+│   ├── temporal_projection.py       — chunked Min/Max/Mean/StdDev over frames
+│   │   └── temporal_projections()   — Welford M2, streaming (get_chunk, n)
+│   ├── image_projection.py          — run projections over an image sequence
+│   │   ├── frame_paths() / select_frames() / project_images() / save_projections()
+│   ├── mixer.py                     — optical mixer particle pipeline
+│   │   ├── normalize()/tone_map()   — ImageAdjust / ColorToneMapping
+│   │   ├── top_hat_enhanced()/particle_mask() — particle isolation
+│   │   ├── largest_component_box()/scale_box()/crop_to_box()
+│   │   └── deflicker()              — histogram-match to reference frame
+│   └── feature_track.py             — Lucas-Kanade coarse motion
+│       ├── track_grid_flow()        — grid seed points, drop untracked
+│       └── plot_flow()              — quiver of displacement vectors
 │
 ├── run_all.py                       — batch RPM extraction + viz per file
 └── cli.py                           — udv-inspect / udv-viz / udv-run-all
+                                      / udv-project / udv-mixvel
 
 tests/                               — pytest suite (parser + analysis)
 references/wolfram/                  — original Wolfram notebooks + porting map

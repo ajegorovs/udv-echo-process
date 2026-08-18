@@ -11,6 +11,8 @@ from udv_echo_process.analysis import (
     RpmResult,
     rpm_from_echo,
     setpoint_rpm_from_stem,
+    TemporalProjectionResult,
+    temporal_projections,
 )
 from udv_echo_process.parser import (
     ChannelFrame,
@@ -35,6 +37,7 @@ __all__ = [
     "ExtractedData",
     "MeasType",
     "RpmResult",
+    "TemporalProjectionResult",
     "extract",
     "list_add_files",
     "list_stat_add_files",
@@ -47,4 +50,5 @@ __all__ = [
     "plot_recording",
     "rpm_from_echo",
     "setpoint_rpm_from_stem",
+    "temporal_projections",
 ]

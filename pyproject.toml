@@ -7,7 +7,10 @@ requires-python = ">=3.14"
 dependencies = [
     "matplotlib>=3.11.0",
     "numpy>=2.5.0",
+    "opencv-python>=4.10.0",
+    "Pillow>=10.0.0",
     "pydantic>=2.10.0",
+    "scikit-image>=0.25.0",
 ]
 
 [project.optional-dependencies]
@@ -17,6 +20,8 @@ dev = ["pytest>=8.0"]
 udv-inspect = "udv_echo_process.cli:inspect_main"
 udv-viz = "udv_echo_process.cli:viz_main"
 udv-run-all = "udv_echo_process.cli:run_all_main"
+udv-project = "udv_echo_process.cli:project_main"
+udv-mixvel = "udv_echo_process.cli:mixvel_main"
 
 [build-system]
 requires = ["hatchling"]

@@ -11,6 +11,8 @@ content. Functionality ported to Python lives in `src/udv_echo_process/analysis/
 |----------|---------------|--------|
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | `analysis/rpm.py` (FFT peak /2 RPM) | Ported |
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | Total-variation filtering (`TotalVariationFilter`), peak detection (`PeakDetect`), image/histogram transforms, quantile regression (`QuantileRegression.m`) | Not yet ported |
+| `TemporalProjections_v1.1.0.wl` | `analysis/temporal_projection.py` (chunk-wise Min/Max/Mean/StdDev) | Ported |
+| `Mixer_velocimetry.nb` | `analysis/mixer.py` (ROI crop, particle segmentation/enhancement, histogram-match de-flicker), `analysis/feature_track.py` (Lucas-Kanade coarse motion + flow plot), `analysis/image_projection.py` (temporal projection over the sequence) | Ported |
 
 ## Workflow for porting a new notebook
 
