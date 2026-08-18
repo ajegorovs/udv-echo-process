@@ -9,3 +9,22 @@ dependencies = [
     "numpy>=2.5.0",
     "pydantic>=2.10.0",
 ]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+udv-inspect = "udv_echo_process.cli:inspect_main"
+udv-viz = "udv_echo_process.cli:viz_main"
+udv-run-all = "udv_echo_process.cli:run_all_main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/udv_echo_process"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

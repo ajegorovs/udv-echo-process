@@ -3,13 +3,15 @@
 ## Commands
 
 ```bash
-uv run parse_udv.py <file.ADD>              # parse & describe
-uv run viz_layer.py <file.ADD>              # time-synced per-channel heatmaps
-uv run run_all.py                            # batch process all files
-uv run python -c "from viz_layer import plot_all; from parse_udv import extract; plot_all(extract('file.ADD'))"
+uv run udv-inspect <file.ADD>               # inspect recording setup
+uv run udv-viz [<file.ADD> ...]             # time-synced per-channel heatmaps
+uv run udv-run-all                          # batch process echo data
+uv run --extra dev pytest                    # run the test suite
+uv run udv-inspect data/echo/650.ADD         # default when no file given
+uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"
 ```
 
-Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). No test runner configured yet.
+Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). Tests: pytest (dev extra, `uv run --extra dev pytest`).
 
 ## Conventions
 
@@ -18,41 +20,48 @@ Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). No test runner conf
 - **Format**: no formatter configured; match existing style (4-space indent, ~88 char lines).
 - **Data**: `.ADD` files use TSV with comma as decimal separator (`parse_comma_decimal()`).
 - **Models**: use Pydantic `BaseModel` for all data structures. Enum for fixed sets (`MeasType`).
+- **Ported features**: one module per ported Wolfram feature under `udv_echo_process/analysis/`; map in `references/wolfram/README.md`.
 
 ## Architecture
 
 ```
-parse_udv.py                        — unified parser (Pydantic models + auto-detect)
+src/udv_echo_process/
+├── parser.py                        — unified parser (Pydantic models + auto-detect)
+│   ├── MeasType (enum)              — ECHO | VELOCITY
+│   ├── ChannelFrame (Pydantic)      — one measurement: channel, block, tbd_ms,
+│   │                                  meas_type, gate_depths_mm, values,
+│   │                                  n_profiles, std_dev, min_val, max_val
+│   ├── ExtractedData (Pydantic)     — file_path, header, comment, frames[]
+│   │                                  .by_channel() / .by_block() / .describe()
+│   ├── extract(filepath)            — auto-detect: single-sensor vs multi-sensor,
+│   │                                  echo vs velocity, raw vs stat
+│   └── list_add_files(), load_all_data() — backward-compat helpers
 │
-├── MeasType (enum)                 — ECHO | VELOCITY
-├── ChannelFrame (Pydantic)         — one measurement: channel, block, tbd_ms,
-│                                     meas_type, gate_depths_mm, values,
-│                                     n_profiles, std_dev, min_val, max_val
-├── ExtractedData (Pydantic)        — file_path, header, comment, frames[]
-│                                    .by_channel() / .by_block() / .describe()
+├── viz.py                           — visualization layer
+│   ├── plot_recording(d)            — per-channel heatmaps, synced time axis
+│   │   ├── raw files: TBD/1000 → seconds
+│   │   ├── stat files: block index → time
+│   │   └── y-axis: gate depth, inverted (shallow at top)
+│   ├── plot_channel_stats(d)        — gate depth vs mean±std across time
+│   ├── plot_all(d)                  — heatmap + profiles in one call
+│   ├── _channel_time_axis()         — returns (time_values, axis_label)
+│   ├── _subplot_layout()            — figure grid layout helper
+│   ├── _figure_for_channels()       — shared subplot-grid setup
+│   ├── _output_path()               — outputs/<experiment>/<stem>/<name>
+│   └── _discover_data_files()       — find valid .ADD files in data/* dirs
 │
-├── extract(filepath)               — auto-detect: single-sensor vs multi-sensor,
-│                                     echo vs velocity, raw vs stat
+├── analysis/                        — one module per ported Wolfram feature
+│   └── rpm.py                       — RPM analysis
+│       ├── RpmResult (dataclass)    — setpoint, measured rpm, freq, error, n
+│       ├── rpm_from_echo(d, dt_s)   — FFT peak /2 estimate → (rpm, f_peak, n)
+│       └── setpoint_rpm_from_stem() — parse setpoint RPM from filename stem
 │
-└── list_add_files(), load_all_data() — backward-compat helpers
-│
-viz_layer.py                        — visualization layer
-│
-├── plot_recording(d)               — per-channel heatmaps, synced time axis
-│   ├── raw files: TBD/1000 → seconds
-│   ├── stat files: block index → time
-│   └── y-axis: gate depth, inverted (shallow at top)
-│
-├── plot_channel_stats(d)           — gate depth vs mean±std across time
-├── plot_all(d)                     — heatmap + profiles in one call
-├── _channel_time_axis()            — returns (time_values, axis_label)
-├── _subplot_layout()               — figure grid layout helper
-├── _output_path()                  — viz_output/<data_dir>/<stem>/<name>
-└── _discover_data_files()          — find valid .ADD files in data-* dirs
+├── run_all.py                       — batch RPM extraction + viz per file
+└── cli.py                           — udv-inspect / udv-viz / udv-run-all
 
-viz_udv.py                          — backward-compat wrapper (aliases plot_all)
-run_all.py                          — batch RPM extraction + viz_layer per file
-inspect_udv.py                      — wrapper around extract().describe()
+tests/                               — pytest suite (parser + analysis)
+references/wolfram/                  — original Wolfram notebooks + porting map
+data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
 ```
 
 Detection logic:
@@ -62,9 +71,9 @@ Detection logic:
 
 Output structure:
 ```
-viz_output/
-  summary.png                         — cross-file RPM summary (run_all.py)
-  <data_dir>/<stem>/
+outputs/
+  summary.png                         — cross-file RPM summary (udv-run-all)
+  <experiment>/<stem>/
     heatmap.png                       — per-channel heatmaps
     profiles.png                      — mean ± std gate profiles
 ```

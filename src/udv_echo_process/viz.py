@@ -1,22 +1,24 @@
 """Visualization layer: time-synchronized per-channel heatmaps.
 
 Usage:
-    from viz_layer import plot_recording
-    from parse_udv import extract
-    d = extract("file.ADD")
-    plot_recording(d)
+    from udv_echo_process import extract, plot_all
+    d = extract("data/echo/650.ADD")
+    plot_all(d)
 """
 
 from __future__ import annotations
 
-import sys
+import logging
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.colors import Normalize
 
-from parse_udv import ChannelFrame, ExtractedData, extract
+from udv_echo_process.parser import ChannelFrame, ExtractedData
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_OUTPUT_DIR = "outputs"
 
 
 def _channel_time_axis(
@@ -45,6 +47,38 @@ def _output_path(extracted: ExtractedData, output_dir: str, name: str) -> Path:
     return out / name
 
 
+def _figure_for_channels(
+    extracted: ExtractedData,
+) -> tuple[dict[int, list[ChannelFrame]], list[int], int, int, int, object, object]:
+    """Build a subplot grid sized to the number of channels and return setup."""
+    by_ch = extracted.by_channel()
+    channels = sorted(by_ch.keys())
+    n_ch = len(channels)
+    n_rows, n_cols, figsize = _subplot_layout(n_ch)
+    fig, axes = plt.subplots(
+        n_rows, n_cols,
+        figsize=figsize,
+        constrained_layout=True,
+        squeeze=False,
+    )
+    return by_ch, channels, n_ch, n_rows, n_cols, fig, axes
+
+
+def _hide_unused_axes(axes, n_ch: int) -> None:
+    for idx in range(n_ch, len(axes.flat)):
+        axes.flat[idx].set_visible(False)
+
+
+def _save_figure(
+    fig, extracted: ExtractedData, output_dir: str, name: str, dpi: int,
+) -> Path:
+    out_path = _output_path(extracted, output_dir, name)
+    fig.savefig(out_path, dpi=dpi)
+    plt.close(fig)
+    logger.info("Saved: %s", out_path)
+    return out_path
+
+
 def _subplot_layout(
     n_ch: int,
 ) -> tuple[int, int, tuple[float, float]]:
@@ -61,7 +95,7 @@ def _subplot_layout(
 
 def plot_recording(
     extracted: ExtractedData,
-    output_dir: str = "viz_output",
+    output_dir: str = DEFAULT_OUTPUT_DIR,
     dpi: int = 150,
 ) -> Path:
     """Plot all channels as heatmaps on a synchronized time axis.
@@ -72,37 +106,19 @@ def plot_recording(
 
     Saves to ``<output_dir>/<file_stem>/heatmap.png``.
     """
-    by_ch = extracted.by_channel()
-    channels = sorted(by_ch.keys())
-    n_ch = len(channels)
+    by_ch, channels, n_ch, _n_rows, _n_cols, fig, axes = _figure_for_channels(extracted)
 
-    # Global time range across all channels
-    global_times = []
-    time_label = "Time [s]"
-    for ch in channels:
-        t, lbl = _channel_time_axis(by_ch[ch])
-        global_times.extend(t)
-        time_label = lbl
-
-    t_min = max(0.0, min(global_times))
-    t_max = max(global_times)
-
-    n_rows, n_cols, figsize = _subplot_layout(n_ch)
-
-    fig, axes = plt.subplots(
-        n_rows, n_cols,
-        figsize=figsize,
-        constrained_layout=True,
-        squeeze=False,
-    )
+    channel_times = {ch: _channel_time_axis(by_ch[ch]) for ch in channels}
+    time_label = next((label for _, label in channel_times.values()), "Time [s]")
+    global_times = np.concatenate([t for t, _ in channel_times.values()])
+    t_min = max(0.0, float(global_times.min()))
+    t_max = float(global_times.max())
 
     for idx, ch in enumerate(channels):
-        row, col = divmod(idx, n_cols)
-        ax = axes[row, col]
-
+        ax = axes.flat[idx]
         frames = by_ch[ch]
         gate_depths = np.array(frames[0].gate_depths_mm)
-        times_s, _ = _channel_time_axis(frames)
+        times_s, _ = channel_times[ch]
         values = np.array([f.values for f in frames], dtype=float)
         meas_label = frames[0].meas_type.value
 
@@ -114,27 +130,21 @@ def plot_recording(
         vmin = 0 if cmap == "viridis" else -np.percentile(np.abs(values), 98)
         vmax = np.percentile(values, 98)
 
-        ax.pcolormesh(X, Y, C, shading="auto", cmap=cmap,
-                      vmin=vmin, vmax=vmax)
-
+        ax.pcolormesh(X, Y, C, shading="auto", cmap=cmap, vmin=vmin, vmax=vmax)
+        ax.set_xlim(t_min, t_max)
         ax.set_title(f"Channel {ch}  ({meas_label})")
         ax.set_xlabel(time_label)
         ax.set_ylabel("Gate Depth [mm]")
         ax.invert_yaxis()
 
-    for idx in range(len(channels), n_rows * n_cols):
-        axes.flat[idx].set_visible(False)
+    _hide_unused_axes(axes, n_ch)
 
-    out_path = _output_path(extracted, output_dir, "heatmap.png")
-    fig.savefig(out_path, dpi=dpi)
-    plt.close(fig)
-    print(f"Saved: {out_path}")
-    return out_path
+    return _save_figure(fig, extracted, output_dir, "heatmap.png", dpi)
 
 
 def plot_channel_stats(
     extracted: ExtractedData,
-    output_dir: str = "viz_output",
+    output_dir: str = DEFAULT_OUTPUT_DIR,
     dpi: int = 150,
 ) -> Path:
     """Plot per-channel gate profile statistics: mean ± std across time.
@@ -144,22 +154,10 @@ def plot_channel_stats(
 
     Saves to ``<output_dir>/<file_stem>/profiles.png``.
     """
-    by_ch = extracted.by_channel()
-    channels = sorted(by_ch.keys())
-    n_ch = len(channels)
-    n_rows, n_cols, figsize = _subplot_layout(n_ch)
-
-    fig, axes = plt.subplots(
-        n_rows, n_cols,
-        figsize=figsize,
-        constrained_layout=True,
-        squeeze=False,
-    )
+    by_ch, channels, n_ch, _n_rows, _n_cols, fig, axes = _figure_for_channels(extracted)
 
     for idx, ch in enumerate(channels):
-        row, col = divmod(idx, n_cols)
-        ax = axes[row, col]
-
+        ax = axes.flat[idx]
         frames = by_ch[ch]
         gate_depths = np.array(frames[0].gate_depths_mm)
         values = np.array([f.values for f in frames], dtype=float)
@@ -178,42 +176,34 @@ def plot_channel_stats(
         ax.legend(fontsize=9)
         ax.grid(True, alpha=0.3)
 
-    for idx in range(len(channels), n_rows * n_cols):
-        axes.flat[idx].set_visible(False)
+    _hide_unused_axes(axes, n_ch)
 
-    out_path = _output_path(extracted, output_dir, "profiles.png")
-    fig.savefig(out_path, dpi=dpi)
-    plt.close(fig)
-    print(f"Saved: {out_path}")
-    return out_path
+    return _save_figure(fig, extracted, output_dir, "profiles.png", dpi)
 
 
-def plot_all(extracted: ExtractedData, output_dir: str = "viz_output", dpi: int = 150) -> None:
+def plot_all(
+    extracted: ExtractedData,
+    output_dir: str = DEFAULT_OUTPUT_DIR,
+    dpi: int = 150,
+) -> tuple[Path, Path]:
     """Convenience: generate heatmap + profiles for one file."""
-    plot_recording(extracted, output_dir=output_dir, dpi=dpi)
-    plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi)
+    heatmap = plot_recording(extracted, output_dir=output_dir, dpi=dpi)
+    profiles = plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi)
+    return heatmap, profiles
 
 
 def _discover_data_files() -> list[Path]:
-    """Find valid .ADD files in data-* directories (recursive)."""
+    """Find valid .ADD files under data/<experiment>/ (recursive)."""
+    data_root = Path("data")
+    if not data_root.is_dir():
+        return []
     files: list[Path] = []
-    for d in sorted(Path(".").glob("data-*")):
-        if d.is_dir():
-            for p in sorted(d.rglob("*.ADD")):
-                try:
-                    first = p.read_text(encoding="latin-1", errors="ignore").splitlines()[0]
-                    if "ASCUDOPV" in first:
-                        files.append(p)
-                except Exception:
-                    pass
+    for d in sorted(p for p in data_root.iterdir() if p.is_dir()):
+        for p in sorted(d.rglob("*.ADD")):
+            try:
+                first = p.read_text(encoding="latin-1", errors="ignore").splitlines()[0]
+                if "ASCUDOPV" in first:
+                    files.append(p)
+            except Exception:
+                pass
     return files
-
-
-if __name__ == "__main__":
-    output_dir = "viz_output"
-    targets = sys.argv[1:] if len(sys.argv) > 1 else _discover_data_files()
-
-    for t in targets:
-        print(f"\n--- {t} ---")
-        d = extract(t)
-        plot_all(d, output_dir=output_dir)
