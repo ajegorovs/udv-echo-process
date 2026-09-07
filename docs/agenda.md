@@ -14,6 +14,36 @@ updates; don't rewrite history.
 
 ---
 
+## Session status — 2026-09-07 end (handoff snapshot)
+
+**Hardening plan P0 + P1 + P2 (marimo Phase 1) are DONE and committed** on a
+clean tree (`master` @ `d1901f3`): `f63684c` P0 · `315d3ee` P1 code ·
+`4cb5d15` P0/P1 docs · `8e07ec2` P2 setup · `d1901f3` P2 docs. `34 passed`
+with `UV_CACHE_DIR=/tmp/uv-cache MPLBACKEND=Agg`.
+
+**Done this session** (details in each section + `hardening-plan.md`):
+content guard + misnamed-file renames, empty-data `describe()`, single-channel
+rpm + derived `dt_s`, optical-module removal + dep prune, `RpmResult`→Pydantic,
+viz `return_fig`, public `discover_data_files`, `__all__` surface audit,
+marimo deps pinned, skills committed, O15–O17 re-verified (log Entry
+2026-09-07-e).
+
+**Next work for a fresh agent:**
+1. **Marimo plan Phase 2** — write `notebooks/echo_explorer.py` (dropdown over
+   `discover_data_files()`, `plot_recording(..., return_fig=True)` +
+   `mo.mpl.interactive`); verify DoD items (see §2 Phase 2).
+2. **P3 ruff** — config + format sweep once notebooks exist (hardening §P3).
+3. Domain backlog below (§1) — `.BDD`, filtering ports, multi-channel RPM, etc.
+
+**Environment caveats for agents on this machine** (see AGENTS.md too):
+read-only `~/.local/state/marimo/servers/` → zero-arg marimo discovery finds
+nothing; pass `server_url` explicitly per MCP call (auto-bind doesn't persist).
+`uv`/`uvx`/deno need `UV_CACHE_DIR=/tmp/uv-cache` (+ `UV_TOOL_DIR`/`DENO_DIR`
+under /tmp) — the home caches are read-only in this sandbox. Skills
+(`marimo-pair`/`retro-marimo-pair`) are already committed — don't re-add.
+
+---
+
 ## 1. UDV domain backlog (the core of this repo)
 
 The signal-processing tooling is the product. This is where new work should
@@ -29,11 +59,13 @@ concentrate.
   Map onto `ChannelFrame`/`ExtractedData`; `printSettings` ≈ `udv-inspect` for
   BDD. Cross-check DOPpy-decoded gate depths / PRF against our `.ADD` values on
   the same recordings.
-- **Content sniffing in `extract()`** — two tracked "data" files are actually
-  images (`data/echo-4-sensors-2x2/300RPM.BDD` = PNG, `300RPM_Stat.ADD` = JPEG);
-  `extract()` currently has no magic/extension guard (see hardening-plan §parser).
-- **Robust `describe()`** — handle the empty/`len(frames) == 0` case instead of
-  degrading; surface per-channel measurement type when mixed.
+- **Content sniffing in `extract()`** — ✅ done 2026-09-07 (hardening §P0):
+  `extract()` verifies the `ASCUDOPV` magic header and raises a clear
+  `ValueError` on non-UDV content; the two misnamed tracked images were
+  renamed in place to `300RPM.png` / `300RPM.jpg`.
+- **Robust `describe()`** — ✅ done 2026-09-07 (hardening §P0): empty/
+  `len(frames) == 0` returns a clear "No frames parsed" description instead of
+  raising.
 
 ### Filtering & pre-processing (from `references/wolfram/UDV_Data_Analysis_Echo`)
 
@@ -47,9 +79,9 @@ Not yet ported — candidates, each one module under `analysis/`:
 
 ### Analysis algorithms (experimental-setup-specific)
 
-- **Multi-channel RPM** — current `rpm_from_echo` mixes all channels into one
-  spectrum; add per-channel estimation + cross-channel agreement (see
-  hardening-plan §correctness).
+- **Multi-channel RPM** — ⚠️ *still open, reframed by P0:* `rpm_from_echo` now
+  **asserts single-channel input** (raises on multi-sensor); a genuine
+  per-channel estimation + cross-channel agreement pass is the remaining work.
 - **Velocity RPM / spectral peak** on `data/4-sensor-velocity/` (the RPM method
   is currently echo-only).
 - **Rotating-machinery signal model** — aliasing-unwrapped velocity, per-gate
@@ -58,9 +90,9 @@ Not yet ported — candidates, each one module under `analysis/`:
 ### Visualization
 
 - **Figure-returning mode** for `plot_recording` / `plot_channel_stats`
-  (`return_fig=True`) so interactive marimo cells don't write a PNG per tick;
-  render via `mo.mpl.interactive(fig)` (marimo 0.24.0 exposes only
-  `mo.mpl.interactive`).
+  (`return_fig=True`) — ✅ done 2026-09-07 (hardening §P1): all plot functions
+  take `return_fig=True` and hand back the open figure; notebooks render via
+  `mo.mpl.interactive(fig)`.
 - Velocity-field / time-depth contour plots beyond the current heatmap.
 
 ---
@@ -120,19 +152,15 @@ Not yet ported — candidates, each one module under `analysis/`:
 
 ## 3. Scope & structure decisions
 
-- **Remove the stale optical/camera duplicate.** ✅ Confirmed 2026-09-07: the
-  image processing *was already moved* — `python-image-processing-notebooks`
-  holds the canonical, further-developed copy of
-  `analysis/{mixer,feature_track,temporal_projection,image_projection}` (its
-  modules say "Ported from udv-echo-process/analysis/…" and have advanced past
-  the originals). This repo's copies are the stale originals and should be
-  **deleted**, not expanded or ported forward. Full checklist + two small
-  helpers to double-check first → `docs/hardening-plan.md` §P1 scope. (The
-  early "mixer particle processing" marimo work you remember was done in the
-  sibling's `notebooks/mixer_pipeline.py` / `mixer_preview.py`.)
-- **Result-model convention:** `RpmResult` / `TemporalProjectionResult` are
-  dataclasses while the stated convention is Pydantic. Decide whether to
-  migrate (hardening-plan §structure) — do not add new dataclasses meanwhile.
+- **Remove the stale optical/camera duplicate.** ✅ **Done 2026-09-07**
+  (hardening §P1, commit `315d3ee`): `analysis/{mixer,feature_track,
+  temporal_projection,image_projection}` + their tests, the `udv-project` /
+  `udv-mixvel` CLIs, and the now-unused deps (opencv/Pillow/scikit-image)
+  were deleted. The canonical copy stays in `python-image-processing-notebooks`
+  — do not port back or re-add optical tooling here.
+- **Result-model convention:** ✅ **Done 2026-09-07** (hardening §P1):
+  `TemporalProjectionResult` left with the deleted optical modules; `RpmResult`
+  migrated to Pydantic `BaseModel`. No dataclasses remain in the package.
 
 ---
 
