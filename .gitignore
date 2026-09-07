@@ -1,3 +1,16 @@
+# Generated outputs & caches
 outputs/
 __pycache__/
 .pytest_cache/
+
+# Python / uv
+.venv/
+*.egg-info/
+build/
+dist/
+.uv/
+
+# marimo runtime state (regenerated; never commit)
+__marimo__/
+*.marimo.session_state
+marimo.toml

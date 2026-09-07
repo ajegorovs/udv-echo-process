@@ -1,47 +1,120 @@
-# Agents
+# AGENTS.md
 
-## Commands
+Guidance for human and AI contributors working in this repository.
 
-```bash
-uv run udv-inspect <file.ADD>               # inspect recording setup
-uv run udv-viz [<file.ADD> ...]             # time-synced per-channel heatmaps
-uv run udv-run-all                          # batch process echo data
-uv run --extra dev pytest                    # run the test suite
-uv run udv-inspect data/echo/650.ADD         # default when no file given
-uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"
-```
+## Project purpose
 
-Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). Tests: pytest (dev extra, `uv run --extra dev pytest`).
+This repo is the **Ultrasonic Doppler Velocimetry (UDV) signal-processing
+toolkit**: parse, pre-process, filter, visualize, and analyse recordings from
+DOP-series ultrasound Doppler instruments (`.ADD` ASCII exports today; `.BDD`
+binary on the roadmap). The scope is the *signal-processing tooling* around
+UDV data:
+
+- **pre-processing** — parsing, cleaning, re-sampling, de-noising, aliasing
+  removal/unwrapping;
+- **filtering** — e.g. total-variation filtering and peak detection (not yet
+  ported from the Wolfram references);
+- **visualization** — time-synchronized heatmaps, gate profiles, summaries;
+- **advanced / experimental-setup-specific algorithms** — e.g. rotor RPM from
+  echo amplitude, whatever a specific rig (rotating machinery, mixer, …) calls
+  for.
+
+The design principle (same as the image-processing sibling):
+
+> **Reusable building blocks live in plain Python modules; marimo notebooks are
+> thin interactive wrappers around them.**
+
+Backend functions in `src/udv_echo_process/` come in three shapes, all
+importable and executable from a marimo notebook:
+
+- **atomic edits** — one transformation (e.g. `parse_comma_decimal`,
+  `setpoint_rpm_from_stem`, a future `tv_filter`);
+- **sequences** — a composed multi-step operation over one input (e.g.
+  `extract` → `ExtractedData.describe()`, `rpm_from_echo`);
+- **mini-pipelines** — an end-to-end flow over a dataset (e.g. `plot_all`,
+  `run_all.main`).
+
+**Agent co-working in marimo notebooks is a first-class workflow**, not an
+extra (see the Marimo section below).
+
+**Wolfram porting is a means, not the goal.** The notebooks under
+`references/wolfram/` exist only to bootstrap specialized signal-processing
+tooling. New work is driven by UDV-processing needs; do not treat "what's left
+in the Wolfram folder" as the roadmap.
+
+## Sibling / companion repos (all under `~/Repos/`, never nested)
+
+| Repo | Relationship |
+|------|--------------|
+| `marimo-inspect` | The **marimo co-work MCP toolkit we consume** (reference for the agent-inspection loop). Keep this repo a **sibling**, never nested (uv workspace hijack). |
+| `python-image-processing-notebooks` | Image/camera processing — a **different modality**. Work there is deferred; do not expand its scope or edit it in this repo's tasks. |
+| `DOPpy` | Third-party `.BDD` binary reader (reference if we add `.BDD` support — see `docs/doppy-analysis.md`). |
+| `knowledge-base` | Shared notes; not a code dependency. |
+
+## Tooling
+
+- Package/venv manager: **uv**. Do not create or use `venv`/`pip`/`poetry`
+  workflows.
+- Python: **≥3.14** (pinned via `.python-version`).
+- Runtime deps: numpy, matplotlib, opencv-python, Pillow, pydantic,
+  scikit-image. Dev extra: pytest. (`marimo[recommended]` + `marimo-inspect`
+  are the *planned* additions — see `docs/marimo-integration-plan.md` Phase 1.)
+
+## Common commands
+
+| Task | Command |
+| --- | --- |
+| Install / sync | `uv sync --extra dev` |
+| Run tests | `uv run --extra dev pytest` |
+| Inspect a recording | `uv run udv-inspect <file.ADD>` |
+| Visualize | `uv run udv-viz [<file.ADD> …]` |
+| Batch echo RPM | `uv run udv-run-all` |
+| Image projections | `uv run udv-project <images>` ⚠️ pending removal (optical) |
+| Mixer particle pipeline | `uv run udv-mixvel <images>` ⚠️ pending removal (optical) |
+| One-off parse+plot | `uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"` |
+
+Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
+`UV_CACHE_DIR=/tmp/uv-cache` and `MPLCONFIGDIR=/tmp/mpl`.
 
 ## Conventions
 
-- **Naming**: snake_case for modules, functions, variables. PascalCase for classes/ Pydantic models.
-- **Typing**: use `from __future__ import annotations`, type hints on all public functions.
-- **Format**: no formatter configured; match existing style (4-space indent, ~88 char lines).
-- **Data**: `.ADD` files use TSV with comma as decimal separator (`parse_comma_decimal()`).
-- **Models**: use Pydantic `BaseModel` for all data structures. Enum for fixed sets (`MeasType`).
-- **Ported features**: one module per ported Wolfram feature under `udv_echo_process/analysis/`; map in `references/wolfram/README.md`.
+- **Naming**: snake_case for modules/functions/variables; PascalCase for
+  classes and Pydantic models.
+- **Typing**: `from __future__ import annotations` at the top; type hints on
+  all public functions.
+- **Format**: no formatter configured yet (see `docs/hardening-plan.md` §ruff);
+  match existing style — 4-space indent, ~88-char lines.
+- **Data**: `.ADD` files are TSV with comma as decimal separator
+  (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
+  echo/velocity, raw/stat. `.BDD` is the binary twin (not yet parsed here).
+- **Models**: Pydantic `BaseModel` for data structures; `Enum` for fixed sets
+  (`MeasType`). ⚠️ `RpmResult` currently deviates (it's a dataclass) — see
+  `docs/hardening-plan.md` §structure; do not add more dataclasses. (The
+  optical `TemporalProjectionResult` dataclass is leaving with the stale
+  optical modules.)
+- **Ported features**: one module per ported Wolfram feature under
+  `udv_echo_process/analysis/`; record it in `references/wolfram/README.md`.
 
 ## Marimo (live notebooks + agent inspection)
 
-- Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`.
-  Add `marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` first
-  (`docs/marimo-integration-plan.md` §Phase 1). Pin `marimo-inspect` via a git
-  tag, not floating HEAD.
+- Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`
+  (requires Phase 1 deps first — `marimo[recommended]>=0.24.0,<0.25` +
+  `marimo-inspect`, pinned via git tag `v0.2.0` which **now exists**).
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
-  `/sse` handshake (`docs/agent-onboarding-demo-mcp.md` §Prerequisites in the
-  provider repo). Headless `--no-token` also skips the discovery registry
-  (log O15) — pass `server_url` explicitly.
+  `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
+  `docs/agent-onboarding-demo-mcp.md` §Prerequisites). Headless `--no-token`
+  also skips the discovery registry (log O15) — pass `server_url` explicitly.
 - **Agent loop:** `list_active_notebooks` → `get_cell_map` → `run_cell` →
   `get_variables` → `get_cell_outputs` → `get_errors` → `marimo check`.
-  With provider v0.2.0+, `list_active_notebooks(server_url=…)` binds both
-  `session_id` and `server_url`; before that, pass both explicitly.
+  Provider v0.2.0 binds both `session_id` and `server_url` after
+  `list_active_notebooks(server_url=…)`.
 - **Viz gotcha:** `plot_recording`/`plot_all` save-and-close (return a `Path`,
   render nothing in a cell). Use `mo.image(path)`; marimo 0.24.0 exposes only
-  `mo.mpl.interactive` (no `mo.pyplot`/`mo.plt`).
-- Keep the repo **sibling** to `marimo-inspect`, never nested (uv workspace
-  hijack). Track `marimo.example.toml`, gitignore the real `marimo.toml`.
+  `mo.mpl.interactive` (no `mo.pyplot`/`mo.plt`). A figure-returning mode is a
+  tracked gap (`docs/hardening-plan.md` §viz).
+- Keep this repo **sibling** to `marimo-inspect`, never nested. Track a
+  placeholder `marimo.example.toml`; gitignore the real `marimo.toml`.
 
 ## Architecture
 
@@ -54,49 +127,41 @@ src/udv_echo_process/
 │   │                                  n_profiles, std_dev, min_val, max_val
 │   ├── ExtractedData (Pydantic)     — file_path, header, comment, frames[]
 │   │                                  .by_channel() / .by_block() / .describe()
-│   ├── extract(filepath)            — auto-detect: single-sensor vs multi-sensor,
+│   ├── extract(filepath)            — auto-detect: single vs multi-sensor,
 │   │                                  echo vs velocity, raw vs stat
-│   └── list_add_files(), load_all_data() — backward-compat helpers
+│   └── list_add_files(), load_all_data() — convenience helpers
 │
 ├── viz.py                           — visualization layer
 │   ├── plot_recording(d)            — per-channel heatmaps, synced time axis
-│   │   ├── raw files: TBD/1000 → seconds
-│   │   ├── stat files: block index → time
-│   │   └── y-axis: gate depth, inverted (shallow at top)
 │   ├── plot_channel_stats(d)        — gate depth vs mean±std across time
 │   ├── plot_all(d)                  — heatmap + profiles in one call
-│   ├── _channel_time_axis()         — returns (time_values, axis_label)
-│   ├── _subplot_layout()            — figure grid layout helper
-│   ├── _figure_for_channels()       — shared subplot-grid setup
-│   ├── _output_path()               — outputs/<experiment>/<stem>/<name>
-│   └── _discover_data_files()       — find valid .ADD files in data/* dirs
+│   └── _discover_data_files()       — valid .ADD files under data/* (private;
+│                                      promote → see hardening plan)
 │
-├── analysis/                        — one module per ported Wolfram feature
-│   ├── rpm.py                       — RPM analysis
-│   │   ├── RpmResult (dataclass)    — setpoint, measured rpm, freq, error, n
-│   │   ├── rpm_from_echo(d, dt_s)   — FFT peak /2 estimate → (rpm, f_peak, n)
-│   │   └── setpoint_rpm_from_stem() — parse setpoint RPM from filename stem
-│   ├── temporal_projection.py       — chunked Min/Max/Mean/StdDev over frames
-│   │   └── temporal_projections()   — Welford M2, streaming (get_chunk, n)
-│   ├── image_projection.py          — run projections over an image sequence
-│   │   ├── frame_paths() / select_frames() / project_images() / save_projections()
-│   ├── mixer.py                     — optical mixer particle pipeline
-│   │   ├── normalize()/tone_map()   — ImageAdjust / ColorToneMapping
-│   │   ├── top_hat_enhanced()/particle_mask() — particle isolation
-│   │   ├── largest_component_box()/scale_box()/crop_to_box()
-│   │   └── deflicker()              — histogram-match to reference frame
-│   └── feature_track.py             — Lucas-Kanade coarse motion
-│       ├── track_grid_flow()        — grid seed points, drop untracked
-│       └── plot_flow()              — quiver of displacement vectors
+├── analysis/                        — one module per ported feature / domain tool
+│   ├── rpm.py                       — RPM from single-sensor echo (FFT peak /2)
+│   ├── temporal_projection.py       — ⚠️ STALE: superseded in sibling repo
+│   ├── image_projection.py          — ⚠️ STALE: superseded in sibling repo
+│   ├── mixer.py                     — ⚠️ STALE: superseded in sibling repo
+│   └── feature_track.py             — ⚠️ STALE: superseded in sibling repo
 │
 ├── run_all.py                       — batch RPM extraction + viz per file
 └── cli.py                           — udv-inspect / udv-viz / udv-run-all
-                                      / udv-project / udv-mixvel
+                                      / udv-project / udv-mixvel (⚠️ last two
+                                      are optical, pending removal)
 
 tests/                               — pytest suite (parser + analysis)
 references/wolfram/                  — original Wolfram notebooks + porting map
 data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
+docs/                                — agenda, hardening plan, integration plan/log
 ```
+
+⚠️ `analysis/image_projection.py`, `mixer.py`, `feature_track.py`,
+`temporal_projection.py` and the `udv-project`/`udv-mixvel` CLIs are
+**optical/camera** tooling (a different modality from UDV) and are a **stale
+duplicate**: the canonical, further-developed copy already lives in
+`python-image-processing-notebooks`. They are pending **removal** — see
+Scope boundaries and `docs/hardening-plan.md` §P1. Do not expand them here.
 
 Detection logic:
 - **Column header**: `Amp` → echo, `mm/s` → velocity
@@ -111,3 +176,58 @@ outputs/
     heatmap.png                       — per-channel heatmaps
     profiles.png                      — mean ± std gate profiles
 ```
+
+## Adding a backend module
+
+To add a new building block (atomic edit, sequence, or mini-pipeline):
+
+1. Create `src/udv_echo_process/<concern>.py` (or `analysis/<feature>.py` for a
+   ported feature) with pure, typed, docstringed functions. **No `marimo` or
+   `mo.` imports in library code.**
+2. Export public names from `udv_echo_process/__init__.py` (and the
+   `analysis/__init__.py` when applicable).
+3. Add tests under `tests/` that lock in the behaviour on the committed
+   `data/` fixtures.
+4. Wire a CLI entry in `cli.py` + `pyproject.toml` only when it's a genuinely
+   reusable batch/pipeline step, not for one-off experiments.
+5. If it ports a Wolfram feature, add a row to `references/wolfram/README.md`.
+
+Keep modules **flat** while one module = one concern. Do **not** introduce
+sub-packages pre-emptively; split (`analysis/{filter,measure,io}/`, …) only when
+a module mixes unrelated concerns, crosses ~400–500 lines, or a *second,
+different pipeline* starts reusing the same primitives.
+
+## Scope boundaries
+
+**In scope (this repo):** UDV `.ADD`/`.BDD` parsing and the signal-processing
+tooling around it — pre-processing/filtering, visualization, analysis
+algorithms, and experimental-setup-specific algorithms.
+
+**Out of scope (defer or defer-to-sibling):**
+- Optical/camera image processing → `python-image-processing-notebooks`. The
+  stale duplicates (`mixer.py`, `feature_track.py`, `image_projection.py`,
+  `temporal_projection.py`) are **pending removal** — the canonical copy is
+  already in the sibling repo. Do not expand or "port forward" them here.
+- marimo inspection tooling itself → `marimo-inspect` (we consume it).
+- Wolfram notebook *porting* as an end in itself → only port when a UDV need
+  justifies it.
+
+## Docs & agendas
+
+- `docs/agenda.md` — **OPEN** idea/backlog tracker (domain backlog, marimo
+  integration, open questions). Append status updates; don't rewrite history.
+- `docs/hardening-plan.md` — the prioritized fix/"harden" list (what needs
+  fixing now to tie loose ends). Read before structural changes.
+- `docs/marimo-integration-plan.md` + `docs/marimo-integration-log.md` — the
+  consumer-side marimo + `marimo-inspect` integration plan and its
+  evidence log (append-only).
+- `docs/doppy-analysis.md` — the `.BDD` reader review (reference for future
+  `.BDD` support).
+- `references/wolfram/README.md` — Wolfram notebooks + porting map.
+
+## Privacy — do not overexpose
+
+This repo is public (`ajegorovs/udv-echo-process`). Never commit absolute
+local paths naming the user/machine (`~/Repos/…` is fine), credentials, or
+tailnet/RFC1918 IPs. Before committing docs/config, scan:
+`git grep -nE '/home/[a-z]+|api[_-]?key|password|secret|BEGIN .*PRIVATE|tailscale|vllm' -- . ':!uv.lock'`
