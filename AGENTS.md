@@ -56,8 +56,8 @@ in the Wolfram folder" as the roadmap.
 - Package/venv manager: **uv**. Do not create or use `venv`/`pip`/`poetry`
   workflows.
 - Python: **≥3.14** (pinned via `.python-version`).
-- Runtime deps: numpy, matplotlib, opencv-python, Pillow, pydantic,
-  scikit-image. Dev extra: pytest. (`marimo[recommended]` + `marimo-inspect`
+- Runtime deps: numpy, matplotlib, pydantic. Dev extra: pytest.
+  (`marimo[recommended]` + `marimo-inspect`
   are the *planned* additions — see `docs/marimo-integration-plan.md` Phase 1.)
 
 ## Common commands
@@ -69,8 +69,6 @@ in the Wolfram folder" as the roadmap.
 | Inspect a recording | `uv run udv-inspect <file.ADD>` |
 | Visualize | `uv run udv-viz [<file.ADD> …]` |
 | Batch echo RPM | `uv run udv-run-all` |
-| Image projections | `uv run udv-project <images>` ⚠️ pending removal (optical) |
-| Mixer particle pipeline | `uv run udv-mixvel <images>` ⚠️ pending removal (optical) |
 | One-off parse+plot | `uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"` |
 
 Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
@@ -88,10 +86,9 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
   echo/velocity, raw/stat. `.BDD` is the binary twin (not yet parsed here).
 - **Models**: Pydantic `BaseModel` for data structures; `Enum` for fixed sets
-  (`MeasType`). ⚠️ `RpmResult` currently deviates (it's a dataclass) — see
-  `docs/hardening-plan.md` §structure; do not add more dataclasses. (The
-  optical `TemporalProjectionResult` dataclass is leaving with the stale
-  optical modules.)
+  (`MeasType`). Do not add dataclasses. (The optical
+  `TemporalProjectionResult` dataclass left with the removed stale
+  optical modules; `RpmResult` is now a `BaseModel` too — hardening §structure.)
 - **Ported features**: one module per ported Wolfram feature under
   `udv_echo_process/analysis/`; record it in `references/wolfram/README.md`.
 
@@ -109,10 +106,10 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   `get_variables` → `get_cell_outputs` → `get_errors` → `marimo check`.
   Provider v0.2.0 binds both `session_id` and `server_url` after
   `list_active_notebooks(server_url=…)`.
-- **Viz gotcha:** `plot_recording`/`plot_all` save-and-close (return a `Path`,
-  render nothing in a cell). Use `mo.image(path)`; marimo 0.24.0 exposes only
-  `mo.mpl.interactive` (no `mo.pyplot`/`mo.plt`). A figure-returning mode is a
-  tracked gap (`docs/hardening-plan.md` §viz).
+- **Viz:** every plot function saves to a `Path` by default; pass
+  `return_fig=True` to get the open `matplotlib` figure(s) back instead
+  (needed for in-notebook display). In marimo 0.24.0 use
+  `mo.mpl.interactive(fig)`; `mo.pyplot`/`mo.plt` are not exposed.
 - Keep this repo **sibling** to `marimo-inspect`, never nested. Track a
   placeholder `marimo.example.toml`; gitignore the real `marimo.toml`.
 
@@ -127,41 +124,35 @@ src/udv_echo_process/
 │   │                                  n_profiles, std_dev, min_val, max_val
 │   ├── ExtractedData (Pydantic)     — file_path, header, comment, frames[]
 │   │                                  .by_channel() / .by_block() / .describe()
-│   ├── extract(filepath)            — auto-detect: single vs multi-sensor,
-│   │                                  echo vs velocity, raw vs stat
+│   ├── extract(filepath)            — ASCUDOPV-guarded; auto-detect: single vs
+│   │                                  multi-sensor, echo vs velocity, raw vs stat
 │   └── list_add_files(), load_all_data() — convenience helpers
 │
 ├── viz.py                           — visualization layer
-│   ├── plot_recording(d)            — per-channel heatmaps, synced time axis
-│   ├── plot_channel_stats(d)        — gate depth vs mean±std across time
-│   ├── plot_all(d)                  — heatmap + profiles in one call
-│   └── _discover_data_files()       — valid .ADD files under data/* (private;
-│                                      promote → see hardening plan)
+│   ├── plot_recording(d[, return_fig])  — per-channel heatmaps, synced time axis
+│   ├── plot_channel_stats(d[, return_fig]) — gate depth vs mean±std across time
+│   ├── plot_all(d[, return_fig])    — heatmap + profiles in one call
+│   └── discover_data_files()        — valid .ADD files under data/* (recursive,
+│                                      ASCUDOPV magic check; public)
 │
 ├── analysis/                        — one module per ported feature / domain tool
-│   ├── rpm.py                       — RPM from single-sensor echo (FFT peak /2)
-│   ├── temporal_projection.py       — ⚠️ STALE: superseded in sibling repo
-│   ├── image_projection.py          — ⚠️ STALE: superseded in sibling repo
-│   ├── mixer.py                     — ⚠️ STALE: superseded in sibling repo
-│   └── feature_track.py             — ⚠️ STALE: superseded in sibling repo
+│   └── rpm.py                       — RPM from single-sensor echo (FFT peak /2);
+│                                      RpmResult (Pydantic), mean_sample_interval_s
 │
 ├── run_all.py                       — batch RPM extraction + viz per file
 └── cli.py                           — udv-inspect / udv-viz / udv-run-all
-                                      / udv-project / udv-mixvel (⚠️ last two
-                                      are optical, pending removal)
 
-tests/                               — pytest suite (parser + analysis)
+tests/                               — pytest suite (parser + analysis + surface)
 references/wolfram/                  — original Wolfram notebooks + porting map
 data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
 docs/                                — agenda, hardening plan, integration plan/log
 ```
 
-⚠️ `analysis/image_projection.py`, `mixer.py`, `feature_track.py`,
-`temporal_projection.py` and the `udv-project`/`udv-mixvel` CLIs are
-**optical/camera** tooling (a different modality from UDV) and are a **stale
-duplicate**: the canonical, further-developed copy already lives in
-`python-image-processing-notebooks`. They are pending **removal** — see
-Scope boundaries and `docs/hardening-plan.md` §P1. Do not expand them here.
+The optical/camera modules (`analysis/{mixer,feature_track,image_projection,
+temporal_projection}.py`) and the `udv-project`/`udv-mixvel` CLIs were
+**removed** — the canonical, further-developed copy lives in the sibling
+`python-image-processing-notebooks` repo. Do not port them back or re-add
+optical tooling here.
 
 Detection logic:
 - **Column header**: `Amp` → echo, `mm/s` → velocity
@@ -206,8 +197,9 @@ algorithms, and experimental-setup-specific algorithms.
 **Out of scope (defer or defer-to-sibling):**
 - Optical/camera image processing → `python-image-processing-notebooks`. The
   stale duplicates (`mixer.py`, `feature_track.py`, `image_projection.py`,
-  `temporal_projection.py`) are **pending removal** — the canonical copy is
-  already in the sibling repo. Do not expand or "port forward" them here.
+  `temporal_projection.py`) and the `udv-project`/`udv-mixvel` CLIs were
+  **removed** (hardening §P1) — the canonical copy is in the sibling repo.
+  Do not port them back or re-add optical tooling here.
 - marimo inspection tooling itself → `marimo-inspect` (we consume it).
 - Wolfram notebook *porting* as an end in itself → only port when a UDV need
   justifies it.
