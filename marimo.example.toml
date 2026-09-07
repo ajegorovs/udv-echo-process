@@ -1,0 +1,37 @@
+# marimo.example.toml — placeholder for marimo's local configuration.
+#
+# Copy to `marimo.toml` to enable local AI features. `marimo.toml` is
+# gitignored (this repo is public — never commit a real endpoint or key).
+# Every value below is commented out; nothing here is live configuration.
+
+[ai.models]
+# chat_model = "openai/gpt-4o-mini"
+# edit_model = "openai/gpt-4o"
+# autocomplete_model = "ollama/codellama"
+
+[ai]
+# enabled = true
+# rules = """- Always use type hints"""
+# max_tokens = 1000
+
+# ─── Example: OpenAI ───────────────────────────────────────────────
+# [ai.open_ai]
+# api_key = "sk-..."
+
+# ─── Example: Anthropic ────────────────────────────────────────────
+# [ai.anthropic]
+# api_key = "sk-ant-..."
+
+# ─── Example: Ollama (local) ──────────────────────────────────────
+# [ai.ollama]
+# base_url = "http://127.0.0.1:11434/v1"
+
+# ─── Example: Azure OpenAI ────────────────────────────────────────
+# [ai.azure]
+# api_key = "sk-proj-..."
+# base_url = "https://<resource>.openai.azure.com/openai/deployments/<deployment>?api-version=2024-02-01"
+
+# ─── Example: Custom OpenAI-compatible (DeepSeek, Groq, etc.) ─────
+# [ai.custom_providers.my_provider]
+# api_key = "..."
+# base_url = "https://api.example.com/v1"
