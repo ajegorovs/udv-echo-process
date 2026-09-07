@@ -22,6 +22,27 @@ Python ≥3.14, managed by [uv](https://docs.astral.sh/uv/). Tests: pytest (dev 
 - **Models**: use Pydantic `BaseModel` for all data structures. Enum for fixed sets (`MeasType`).
 - **Ported features**: one module per ported Wolfram feature under `udv_echo_process/analysis/`; map in `references/wolfram/README.md`.
 
+## Marimo (live notebooks + agent inspection)
+
+- Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`.
+  Add `marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` first
+  (`docs/marimo-integration-plan.md` §Phase 1). Pin `marimo-inspect` via a git
+  tag, not floating HEAD.
+- **Session-materialization gotcha:** a bare `--headless` launch discovers
+  nothing until a client connects — open the printed URL in a browser or do the
+  `/sse` handshake (`docs/agent-onboarding-demo-mcp.md` §Prerequisites in the
+  provider repo). Headless `--no-token` also skips the discovery registry
+  (log O15) — pass `server_url` explicitly.
+- **Agent loop:** `list_active_notebooks` → `get_cell_map` → `run_cell` →
+  `get_variables` → `get_cell_outputs` → `get_errors` → `marimo check`.
+  With provider v0.2.0+, `list_active_notebooks(server_url=…)` binds both
+  `session_id` and `server_url`; before that, pass both explicitly.
+- **Viz gotcha:** `plot_recording`/`plot_all` save-and-close (return a `Path`,
+  render nothing in a cell). Use `mo.image(path)`; marimo 0.24.0 exposes only
+  `mo.mpl.interactive` (no `mo.pyplot`/`mo.plt`).
+- Keep the repo **sibling** to `marimo-inspect`, never nested (uv workspace
+  hijack). Track `marimo.example.toml`, gitignore the real `marimo.toml`.
+
 ## Architecture
 
 ```
