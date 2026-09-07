@@ -21,19 +21,18 @@ clean tree (`master` @ `d1901f3`): `f63684c` P0 · `315d3ee` P1 code ·
 `4cb5d15` P0/P1 docs · `8e07ec2` P2 setup · `d1901f3` P2 docs. `34 passed`
 with `UV_CACHE_DIR=/tmp/uv-cache MPLBACKEND=Agg`.
 
-**Done this session** (details in each section + `hardening-plan.md`):
-content guard + misnamed-file renames, empty-data `describe()`, single-channel
-rpm + derived `dt_s`, optical-module removal + dep prune, `RpmResult`→Pydantic,
-viz `return_fig`, public `discover_data_files`, `__all__` surface audit,
-marimo deps pinned, skills committed, O15–O17 re-verified (log Entry
-2026-09-07-e).
+**Marimo Phase 2 (first real notebook) landed 2026-09-07:** `notebooks/
+echo_explorer.py` — dropdown over `discover_data_files()`, channel
+multiselect, heatmap + gate-profile figures via `mo.mpl.interactive`; verified
+end-to-end through a live session (all 9 cells idle, 0 errors, reactive
+dropdown change re-ran the chain; `marimo check notebooks` exit 0). Details in
+`hardening-plan.md` §P2 Phase 2 and `marimo-integration-log.md` Entry
+2026-09-07-f.
 
 **Next work for a fresh agent:**
-1. **Marimo plan Phase 2** — write `notebooks/echo_explorer.py` (dropdown over
-   `discover_data_files()`, `plot_recording(..., return_fig=True)` +
-   `mo.mpl.interactive`); verify DoD items (see §2 Phase 2).
-2. **P3 ruff** — config + format sweep once notebooks exist (hardening §P3).
-3. Domain backlog below (§1) — `.BDD`, filtering ports, multi-channel RPM, etc.
+1. **P3 ruff** — config + format sweep now that `notebooks/` exists
+   (hardening §P3); exclude `notebooks/` like the sibling.
+2. Domain backlog below (§1) — `.BDD`, filtering ports, multi-channel RPM, etc.
 
 **Environment caveats for agents on this machine** (see AGENTS.md too):
 read-only `~/.local/state/marimo/servers/` → zero-arg marimo discovery finds
@@ -139,6 +138,13 @@ Not yet ported — candidates, each one module under `analysis/`:
   (`plot_recording(..., return_fig=True)`, ✅ landed in P1) so interactive
   cells render inline (`mo.mpl.interactive(fig)`). Remaining work: write the
   notebook + the DoD-1 launch check against a writable-home session.
+  ✅ **Done 2026-09-07:** `notebooks/echo_explorer.py` committed. File dropdown
+  over all 43 discoverable recordings, channel multiselect (defaults to all),
+  `ExtractedData.describe()` summary, heatmap + gate-profile figures. Verified
+  end-to-end via a live `/sse`-materialized session: agent loop reads widget
+  values and both rendered interactive figures; a `cm.set_ui_value` dropdown
+  change re-ran the reactive chain error-free; `uv run marimo check notebooks`
+  exits 0 (DoD 1–3). AGENTS.md updated (DoD 4).
 
 ### Agent co-work (intended heavy use)
 

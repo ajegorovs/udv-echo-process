@@ -334,3 +334,59 @@ below). Findings, updated for the installed build:
   `marimo check` exit 0.
 
 *(append-only: corrections are new entries pointing back; earlier entries unchanged)*
+
+---
+
+## Entry 2026-09-07-f — Phase 2 landed: first real notebook, DoD 1–4 met
+
+`notebooks/echo_explorer.py` (9 cells) is the first real notebook: file
+dropdown over every discoverable recording (`discover_data_files()`),
+per-file `ExtractedData.describe()` summary, channel multiselect (defaults to
+all channels), heatmap + gate-profile figures rendered via
+`mo.mpl.interactive(plot_*(..., return_fig=True))`. All computation stays in
+`src/`; cells are thin widget wrappers. DoD checklist:
+
+- **DoD 1 ✅** Session materialized via the `/sse` handshake (S14/O19 pattern;
+  still required in this read-only-home sandbox — O15 unchanged) and found by
+  `list_active_notebooks(server_url=http://127.0.0.1:2719)`.
+- **DoD 2 ✅** Full agent loop: `get_cell_map` (9 cells, stale→idle) →
+  `run_cell` ×9 → `get_variables` (dropdown `200RPM.ADD`, multiselect
+  `[6,7,8,9]`, full `ExtractedData` 1600 frames) → `get_cell_outputs` (both
+  cells show rendered `<marimo-mpl-interactive>` elements) → `get_errors` 0
+  errors. Then a **reactive** check beyond the plan: `cm.set_ui_value(fp,
+  [value])` on the dropdown re-ran the whole chain (data → channels → filtered →
+  both figures), ending on `650.ADD` / 4630 frames / channel `[4]` with 0
+  errors. This is the first time a *notebook in this repo* was driven through
+  its reactive dataflow from the agent side.
+- **DoD 3 ✅** `uv run marimo check notebooks` exits 0 (had to fix the 3
+  `branch-expression` errors first — display expressions must sit at cell
+  top level, not nested under `if`; also ran `marimo check --fix` for the
+  markdown-dedent formatting rule, which rewrote two display cells to a bare
+  `return` — re-checked and restored the `heatmap_fig`/`profiles_fig` displays
+  by hand afterwards).
+- **DoD 4 ✅** AGENTS.md Marimo section gained a Live-notebooks pointer
+  (`notebooks/echo_explorer.py` + `marimo check` validation).
+
+New agent-side coding notes for future notebook edits (all verified against
+marimo 0.24.0 in this repo's `.venv`):
+
+- **O25** ✅ `mo.ui.dropdown` values are set through `cm` as a **single-element
+  list**: `ctx.set_ui_value(fp, ["data/echo/650.ADD"])`. A bare string raises
+  `AssertionError: Dropdowns only support a single value` (the element's
+  `_convert_value` expects `len(value) == 1`). Setting the value inside
+  `cm.get_context()` re-runs the owning cell + descendants on clean exit —
+  explicit `ctx.run_cell` is not needed (and is sync, not awaitable).
+- **O26** ✅ Do **not** `plt.close()` figures handed to `mo.mpl.interactive(fig)`.
+  marimo closes figures after every cell run (`close_figures()` →
+  `plt.close("all")`) and its `_FigureManagerRegistry`/`_MplCleanupHandle`
+  lifecycle re-binds the cached WebAgg canvas and restores geometry on rerun;
+  the widget stays live across reruns as long as the figure object is
+  referenced. Manual closing fights that lifecycle. (Source:
+  `.venv/.../marimo/_plugins/ui/_impl/from_mpl_interactive.py` +
+  `_plugins/stateless/mpl/_mpl.py`.)
+- **O27** ✅ `marimo check --fix` auto-canonicalizes `mo.md` markdown cells
+  (MF007 dedent) but can drop trailing display expressions when it rewrites a
+  cell — after `--fix`, re-read the diff and restore any display/return lines
+  it removed.
+
+*(append-only: corrections are new entries pointing back; earlier entries unchanged)*

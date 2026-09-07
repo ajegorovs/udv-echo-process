@@ -171,6 +171,24 @@ persist across DSH harness tool calls (pass `server_url` per call).
   `mo.mpl.interactive`).
 - All computation stays in `udv_echo_process`; cells are thin.
 
+**Phase 2 result (ran 2026-09-07, commit
+c43aede, Phase-2 files): PASS — DoD 1–4 met.** `notebooks/echo_explorer.py` (9 cells,
+dropdown over all `discover_data_files()`, channel multiselect, `describe()`
+summary, heatmap + gate-profile figures via `mo.mpl.interactive`). `uv run
+marimo check notebooks` exits 0 (DoD 3). Live session materialized via the
+`/sse` handshake (S14/O19 pattern) and verified: `list_active_notebooks`
+found it (DoD 1), all 9 cells ran idle with **0 errors**, `get_variables` read
+back the dropdown (`200RPM.ADD`), multiselect (`[6,7,8,9]`), and the full
+`ExtractedData` (1600 frames), `get_cell_outputs` showed both rendered
+`marimo-mpl-interactive` elements, and a `cm.set_ui_value` dropdown change to
+`650.ADD` re-ran the reactive chain (data 4630 frames / channel `[4]` / both
+figures rebuilt) error-free (DoD 2). AGENTS.md Marimo section gained a
+Live-notebooks pointer (DoD 4). Two coding notes for future notebook edits:
+`mo.ui.dropdown` values are set via `cm.set_ui_value(fp, [value])` (a single-element
+list — the element's `_convert_value` expects one); and figures handed to
+`mo.mpl.interactive(fig)` must **not** be `plt.close()`d — marimo closes figures
+after every cell run and its WebAgg manager lifecycle handles disposal.
+
 ### Phase 3 — harness wiring
 
 - **Default: no new registration.** The stdio `marimo-inspect` server already
@@ -184,6 +202,9 @@ persist across DSH harness tool calls (pass `server_url` per call).
   *(Updated 2026-09-07-d: provider v0.2.0 fixed O16 — `server_url` is now bound
   alongside `session_id`, so the explicit-`server_url`-everywhere pattern is
   relaxed once we install the new build; re-verify in Phase 1.)*
+  → **Phase 2 (2026-09-07): not yet actioned; default (no new registration)
+  stands.** udv's notebook was reached through the harness-registered stdio
+  server with an explicit `server_url` per call.
 
 ### Definition of done
 

@@ -98,6 +98,11 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 - Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`
   (deps landed 2026-09-07 — `marimo[recommended]>=0.24.0,<0.25` +
   `marimo-inspect` pinned via git tag `v0.2.0`).
+- **Live notebooks:** `notebooks/echo_explorer.py` (marimo plan Phase 2,
+  2026-09-07) — dropdown over `discover_data_files()`, channel pills, heatmap +
+  gate-profile figures via `mo.mpl.interactive`. All computation stays in
+  `src/`; cells are thin widget wrappers. Validate changes with
+  `uv run marimo check notebooks`.
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo

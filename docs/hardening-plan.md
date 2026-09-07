@@ -150,9 +150,21 @@ Status legend: `[ ]` open · `[x]` done. Evidence: ✅ observed · 📄 document
 - [x] **Agent skills** — marimo-pair + retro-marimo-pair added (`.agents/` +
   `skills-lock.json`), matching the sibling repo.
 
-Remaining (Phase 2 of the marimo plan, separate): `notebooks/echo_explorer.py`
-first real notebook — the `return_fig` + `discover_data_files()` building
-blocks from P1 are already in place.
+### Phase 2 — first real notebook
+- [x] **`notebooks/echo_explorer.py`.** ✅ **Done 2026-09-07 (commit
+  c43aede, Phase-2 files):** dropdown over `discover_data_files()`, per-file
+  `ExtractedData.describe()`, channel multiselect, heatmap +
+  gate-profile figures via `mo.mpl.interactive` + `return_fig=True`. `uv run
+  marimo check notebooks` exits 0 (DoD 3). Live session materialized via the
+  `/sse` handshake and verified end-to-end (DoD 1 & 2): `list_active_notebooks`
+  found it, all 9 cells ran idle with 0 errors, `get_variables` read back the
+  dropdown/multiselect/`ExtractedData`, `get_cell_outputs` showed both rendered
+  interactive figures, and a `cm.set_ui_value` dropdown change re-ran the
+  reactive chain (data → filtered → both figures rebuilt). AGENTS.md Marimo
+  section gained a Live-notebooks pointer (DoD 4).
+
+Remaining (Phase 3, harness wiring): default = no new registration — the
+stdio `marimo-inspect` server already sees locally-discovered sessions.
 
 ---
 
@@ -179,12 +191,14 @@ blocks from P1 are already in place.
 MPLBACKEND=Agg`). ✅ Working tree clean after this pass's commits: `f63684c`
 (P0), `315d3ee` (P1 code), the P0/P1 doc commit, and `8e07ec2` (P2 Phase 1).
 ✅ `marimo-inspect` `v0.2.0` tag exists. ✅ `marimo.example.toml` placeholder
-now tracked; `notebooks/` does not exist yet (marimo plan Phase 2). ✅
-`.venv/`, `__marimo__/`, `*.marimo.session_state`, `marimo.toml`, `.marimo/`,
-`.claude/` explicitly gitignored. ⚠️ Runtime deps now include marimo +
-marimo-inspect (numpy/matplotlib/pydantic/marimo[recommended]).
+now tracked; `notebooks/echo_explorer.py` exists (marimo plan Phase 2, done
+2026-09-07). ✅ `.venv/`, `__marimo__/`, `*.marimo.session_state`,
+`marimo.toml`, `.marimo/`, `.claude/` explicitly gitignored. ⚠️ Runtime deps
+now include marimo + marimo-inspect (numpy/matplotlib/pydantic/
+marimo[recommended]).
 
-### Remaining open (marimo plan Phase 2 + P3)
-- Marimo Phase 2 — `notebooks/echo_explorer.py` first real notebook (P1's
-  `return_fig` + `discover_data_files()` building blocks are in place).
-- P3 — ruff config + format sweep; DOPpy cross-check when `.BDD` work starts.
+### Remaining open (P3 polish)
+- P3 — ruff config + format sweep (now that `notebooks/` exists, exclude it
+  from ruff like the sibling); DOPpy cross-check when `.BDD` work starts.
+- Marimo plan Phase 3 (harness wiring) — default no action; revisit only if
+  udv wants its own pinned server binary.
