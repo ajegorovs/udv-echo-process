@@ -134,6 +134,133 @@ to save RAM (v2.10 optimization).
 - Cross-check opportunity: DOPpy's decoded gate depths / PRF vs our
   `.ADD`-parsed values on the same recordings would validate both paths.
 
+## .ADD vs .BDD — format comparison
+
+Observed 2026-01 by live inspection of `data/echo/200.*` (echo-only) and
+`data/4-sensor-velocity/200RPM.BDD` (multi-channel velocity) via DOPpy.
+
+### What `.ADD` carries (our parser)
+
+| Field | Source in file | Examples from `200.ADD` |
+|-------|---------------|------------------------|
+| Version header | Line 1 | `ASCUDOPV4.03.4` |
+| Comment | Line 2 | `Memo_Comments` |
+| Gate depths | `Gate Depth [mm]` row | 26× values: `42.97 43.43 … 54.39` mm |
+| Measurement type | Column header | `Amp` → ECHO; `mm/s` → VELOCITY |
+| Amplitude / velocity values | Data rows, cols 1–N | 4,180 rows × 26 gates |
+| TBD [ms] | Last data col | Cumulative ms from recording start (0.0 → 13,297.6) |
+| Block No | Second-to-last data col | `1` (single-block in this file) |
+| Channel | Last data col | `4` |
+
+A `_Stat.ADD` variant compresses all frames into 4 summary rows
+(mean, stddev, min, max) with an `N` profile count.
+
+**Total information content**: 6 columns × N data points + tiny header.
+No instrument configuration, no velocity (unless that's all the file is),
+no metadata beyond version and comment.
+
+### What `.BDD` carries (DOPpy-decoded)
+
+DOPpy decodes ~1,700 named parameters from the binary layout.
+The actual number *present in the file* depends on instrument and measurement type:
+
+| Category | What it is | 200.BDD (echo-only) | 200RPM.BDD (velocity, 4-sensor) |
+|----------|-----------|---------------------|--------------------------------|
+| **Operation params** | Hand-transcribed from DOP user manual (not stored in file) | ✅ populated via `_operationParam` table | ✅ populated |
+| **Measured data** | Echo ± velocity profiles, time, depth, gate config | echo (4,180 × 26) | velo (4 channels × 400 × 55) |
+| **Embedded params** | Actual binary fields at fixed offsets | ~10 fields present | ~15 fields present |
+| **Version / comment** | Line 1–2 of binary | Same text as .ADD | Same text as .ADD |
+
+#### Operation parameters (DOPpy computes, `.ADD` has zero equivalents)
+
+| Parameter | 200.BDD (echo-only) | 200RPM.BDD (velocity) |
+|-----------|---------------------|----------------------|
+| US Frequency | 10,000 kHz | 4,000 kHz |
+| Burst length | 8 | 12 |
+| Emitting power | medium | low |
+| TGC | uniform (40 dB) | uniform (40 dB) |
+| PRF | 125 µs | 600 µs |
+| First gate depth | 43.00 mm | 20.00 mm |
+| Number of gates | 26 | 55 |
+| Resolution | 0.455 mm | 1.091 mm |
+| Sampling volume | 1.096 mm | 2.190 mm |
+| Doppler angle | 0° | 0° |
+| Sensitivity | medium | medium |
+| Sound speed | 2,740 m/s | 1,460 m/s |
+| Max velocity | nan (echo-only) | 152.1 mm/s |
+| Max depth | 54.4 mm | 79.1 mm |
+| veloScale / veloOffset | — | ±0.1521 m/s (Nyquist) |
+
+### Rolling multi-sensor recordings (`data/4-sensor-velocity/`)
+
+The `.ADD` "rolling" format repeats `Gate Depth [mm]` + data rows for each
+sensor in a round-robin cycle. For `200RPM.ADD`:
+
+| Aspect | `.ADD` (raw) | `.ADD` (stat) | `.BDD` (DOPpy) |
+|--------|-------------|---------------|----------------|
+| Sections | 400 `Gate Depth` markers | 1 section, 4 stat rows | N/A (binary blocks) |
+| Channels | [6, 7, 8, 9] | [6, 7, 8, 9] | [6, 7, 8, 9] |
+| Frames | 1,600 total (400/ch) | 400 total (100/ch) | 400 timesteps/ch |
+| Blocks | 100 (4 ch/block) | 100 (4 ch/block) | 400 measurement blocks |
+| Gates/ch | 55 | 55 | 55 |
+| Depth range | 20.0 → 79.1 mm | 20.0 → 79.1 mm | 20.0 → 79.1 mm |
+| Duration | 44.5 s | 44.5 s (TBD ~25.4 ms/block) | 44.5 s |
+| Stagger | ch6: 0–44.2s, ch7: 112–44.3s | TBD ~constant per block | ch6: 0–44.2s, ch7: 112–44.3s |
+
+**DOPpy handles rolling natively.** Its `_operationParam` table includes
+`multi_*` fields at offset `2560+` for each of 10 sensor positions:
+`multi_channelUsed`, `multi_profN`, `multi_prf`, `multi_gateN`,
+`multi_resolution`, `multi_emitFreq`, `multi_gate1`, `multi_tgcStart/End/Mode`, etc.
+The DOP3000 measurement blocks contain per-channel operation-parameter blocks
+(10 × 256 bytes) plus nested profile blocks with velocity/echo/depth sub-types,
+which DOPpy walks in `DOP3000._read()` and assigns to the correct channel's
+preallocated arrays.
+
+**Both formats agree on the signal data** (4 channels, 55 gates, 400 timesteps,
+44.5 s duration, ~112 ms inter-channel stagger). The `.BDD` is **147 KB** vs
+**876 KB** for the `.ADD` raw — a 6× compression ratio for this dataset.
+
+The stat `.ADD` variant aggregates all 4 raw frames per block into one summary
+row (mean/stddev/min/max), so `200RPM_Stat.ADD` has 400 frames (100 blocks ×
+4 channels) with n_profiles=4, vs 1,600 raw frames.
+
+#### Additional binary-only content
+
+- **Trigger state, delay, external trigger settings** — not exported to `.ADD`
+- **Wall filter coefficients** — not in `.ADD`
+- **TGC curve per gate** — shape, not just a uniform offset
+- **Hardware IDs** (firmware, module serials) — raw bytes
+- **Module scale** (ADC full-scale: 1→2048, 2→1024, 4→512, 8→256)
+- **Velocity profiles interleaved with echo** (DOP3000 only) — `.ADD` is one or the other
+- **Timestamps** stored as int32 µs with 2³² µs overflow correction (our TBD is pre-converted to ms)
+
+### Size comparison
+
+| File | Format | Size | Ratio |
+|------|--------|------|-------|
+| `200.ADD` | ASCII raw (single-sensor echo) | 593 KB | 3.0× |
+| `200.BDD` | Binary | 215 KB | 1.0× |
+| `200_Stat.ADD` | ASCII summary (14 lines) | 1.2 KB | — |
+| `650.ADD` | ASCII raw (single-sensor echo) | 665 KB | 2.8× |
+| `650.BDD` | Binary | 235 KB | 1.0× |
+| `200RPM.ADD` | ASCII raw (4-sensor rolling, 1,600 frames) | 876 KB | 6.0× |
+| `200RPM.BDD` | Binary (4 channels × 400 × 55) | 147 KB | 1.0× |
+| `200RPM_Stat.ADD` | ASCII stat (400 frames, 100 blocks) | 799 KB | — |
+
+The binary format is **2.8–3.0× smaller** even with full metadata.
+
+### Key implications for `.BDD` support in `udv-echo-process`
+
+1. **`ChannelFrame` can stay the same** — the measured signal (gates × time × values) is identical in representation. DOPpy's velocity/echo arrays map directly to the existing `values` + `meas_type`.
+
+2. **New top-level metadata needed** — DOPpy decodes ~1,700 params; a useful subset maps onto a new `RecordingConfig` Pydantic model (frequency, burst, PRF, gate config, sound speed, Doppler angle, sensitivity, TGC, sampling volume, trigger state).
+
+3. **DOPpy is reference only** — it has NumPy ≥2.0 breakage (`np.NaN`), a half-broken `replaceParam`, and no packaging. If we add `.BDD` parsing, cherry-pick the `_operationParam` table, `'m'` bit-flag decoding, overflow-corrected timestamps, and the `_calcDepth` / `_calcVelo` / `_calcEcho` formulas — rewrite cleanly as Pydantic models + `struct`.
+
+4. **Cross-validation opportunity** — the `.ADD` and `.BDD` twins for 11 experiments give us free test fixtures to verify that our `.ADD`-derived gate depths, timing, and measurement types match DOPpy's decoded values.
+
+5. **Rolling multi-sensor format already supported** — DOPpy handles the 4-sensor velocity recordings natively (channels 6–9, 400 timesteps each, ~112 ms stagger). Our parser's `ChannelFrame` with `channel` + `block` + `tbd_ms` already represents this correctly. When we add `.BDD` parsing, the DOPpy output (4 separate `getVelocity(ch)` calls) maps one-to-one to the 4-channel `ExtractedData` structure we already have.
+
 ## Verification log
 
 Environment: this repo's uv venv, Python **3.14.7**, numpy **2.5.0**,
@@ -159,10 +286,10 @@ applied at runtime was the documented `np.NaN = np.nan` shim (finding 1).
 | 11 | Grep for UDVF support | `_refine_udvf2d/3d` are `raise Exception` stubs (finding 4) |
 
 **Not tested** (no fixtures on disk): DOP2000 files (`BINWDOPV` magic),
-gz/bz2 archives, `.ADD`-vs-`.BDD` twin cross-check of decoded values,
+gz/bz2 archives,
 `replay()` animation loop, multi-sequence DOP2000 mode.
 
-### Repro script (appendix)
+## Repro script (appendix)
 
 ```python
 # Run from repo root after `uv sync --extra dev`.
