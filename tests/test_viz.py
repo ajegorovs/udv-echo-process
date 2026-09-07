@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import matplotlib
 from pathlib import Path
+
+import matplotlib
 
 from udv_echo_process import extract, plot_all, plot_channel_stats, plot_recording
 from udv_echo_process.viz import discover_data_files
@@ -28,6 +29,7 @@ def test_plot_recording_return_fig_returns_figure(tmp_path: Path) -> None:
     fig = plot_recording(d, output_dir=tmp_path, return_fig=True)
     assert isinstance(fig, matplotlib.figure.Figure)
     import matplotlib.pyplot as plt
+
     plt.close(fig)
     # Nothing was saved when return_fig is used.
     assert not (tmp_path / "650" / "heatmap.png").exists()
@@ -38,6 +40,7 @@ def test_plot_channel_stats_return_fig() -> None:
     fig = plot_channel_stats(d, return_fig=True)
     assert isinstance(fig, matplotlib.figure.Figure)
     import matplotlib.pyplot as plt
+
     plt.close(fig)
 
 
@@ -47,6 +50,7 @@ def test_plot_all_return_fig_returns_pair() -> None:
     assert isinstance(figs, tuple) and len(figs) == 2
     assert all(isinstance(f, matplotlib.figure.Figure) for f in figs)
     import matplotlib.pyplot as plt
+
     for f in figs:
         plt.close(f)
 

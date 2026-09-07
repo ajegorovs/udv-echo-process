@@ -70,6 +70,9 @@ in the Wolfram folder" as the roadmap.
 | Inspect a recording | `uv run udv-inspect <file.ADD>` |
 | Visualize | `uv run udv-viz [<file.ADD> …]` |
 | Batch echo RPM | `uv run udv-run-all` |
+| Lint (src/tests) | `uv run --extra dev ruff check src tests` |
+| Format (src/tests) | `uv run --extra dev ruff format src tests` |
+| Validate notebooks | `uv run marimo check notebooks` |
 | One-off parse+plot | `uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"` |
 
 Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
@@ -81,8 +84,10 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   classes and Pydantic models.
 - **Typing**: `from __future__ import annotations` at the top; type hints on
   all public functions.
-- **Format**: no formatter configured yet (see `docs/hardening-plan.md` §ruff);
-  match existing style — 4-space indent, ~88-char lines.
+- **Format**: ruff (dev extra, `[tool.ruff]` config in pyproject) — notebooks/
+  excluded (marimo check validates them). Run `uv run --extra dev ruff check
+  src tests` and `uv run --extra dev ruff format src tests`. Match existing
+  style: 4-space indent, ~88-char lines.
 - **Data**: `.ADD` files are TSV with comma as decimal separator
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
   echo/velocity, raw/stat. `.BDD` is the binary twin (not yet parsed here).

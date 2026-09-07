@@ -61,7 +61,8 @@ def _figure_for_channels(
     n_ch = len(channels)
     n_rows, n_cols, figsize = _subplot_layout(n_ch)
     fig, axes = plt.subplots(
-        n_rows, n_cols,
+        n_rows,
+        n_cols,
         figsize=figsize,
         constrained_layout=True,
         squeeze=False,
@@ -75,7 +76,11 @@ def _hide_unused_axes(axes, n_ch: int) -> None:
 
 
 def _finish_figure(
-    fig, extracted: ExtractedData, output_dir: str, name: str, dpi: int,
+    fig,
+    extracted: ExtractedData,
+    output_dir: str,
+    name: str,
+    dpi: int,
     return_fig: bool,
 ) -> Path | object:
     """Save+close the figure (returning its Path) or hand it back open."""
@@ -180,8 +185,14 @@ def plot_channel_stats(
         std = values.std(axis=0)
 
         ax.plot(gate_depths, mean, color="C0", lw=1.5, label="Mean")
-        ax.fill_between(gate_depths, mean - std, mean + std,
-                        alpha=0.25, color="C0", label="\u00b11 std")
+        ax.fill_between(
+            gate_depths,
+            mean - std,
+            mean + std,
+            alpha=0.25,
+            color="C0",
+            label="\u00b11 std",
+        )
 
         ax.set_title(f"Channel {ch}  ({meas_label})")
         ax.set_xlabel("Gate Depth [mm]")
@@ -205,8 +216,12 @@ def plot_all(
     Returns a ``(Path, Path)`` pair by default, or a ``(fig_heatmap,
     fig_profiles)`` pair with ``return_fig=True``.
     """
-    heatmap = plot_recording(extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig)
-    profiles = plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig)
+    heatmap = plot_recording(
+        extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig
+    )
+    profiles = plot_channel_stats(
+        extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig
+    )
     return heatmap, profiles
 
 
@@ -227,6 +242,8 @@ def discover_data_files(data_root: str | Path = "data") -> list[Path]:
                 first = p.read_text(encoding="latin-1", errors="ignore").splitlines()[0]
                 if "ASCUDOPV" in first:
                     files.append(p)
-            except Exception:
+            except OSError, UnicodeDecodeError:
+                # Skip unreadable files (e.g. the misnamed images tracked in
+                # data/) — discovery is best-effort by design.
                 pass
     return files

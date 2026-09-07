@@ -23,7 +23,9 @@ def plot_summary(results: list[RpmResult], output_path: Path) -> None:
     errors = np.array([r.rel_error_pct for r in results])
 
     fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(10, 8),
+        2,
+        1,
+        figsize=(10, 8),
         gridspec_kw={"height_ratios": [3, 1]},
         constrained_layout=True,
     )
@@ -53,7 +55,8 @@ def plot_summary(results: list[RpmResult], output_path: Path) -> None:
 
 
 def collect_results(
-    datasets: dict[str, ExtractedData], dt_s: float | None = None,
+    datasets: dict[str, ExtractedData],
+    dt_s: float | None = None,
 ) -> list[RpmResult]:
     """Estimate RPM for each parsed dataset keyed by file stem.
 
@@ -66,13 +69,15 @@ def collect_results(
         rpm, f_peak, n = rpm_from_echo(d, dt_s)
         setpoint = setpoint_rpm_from_stem(stem)
         err = abs(rpm - setpoint) / setpoint * 100
-        results.append(RpmResult(
-            setpoint_rpm=setpoint,
-            measured_rpm=rpm,
-            peak_freq_hz=f_peak,
-            rel_error_pct=err,
-            n_samples=n,
-        ))
+        results.append(
+            RpmResult(
+                setpoint_rpm=setpoint,
+                measured_rpm=rpm,
+                peak_freq_hz=f_peak,
+                rel_error_pct=err,
+                n_samples=n,
+            )
+        )
     results.sort(key=lambda r: r.setpoint_rpm)
     return results
 
@@ -93,8 +98,10 @@ def main(
     print(f"{'Setpt':>5s}  {'Meas':>6s}  {'Freq':>7s}  {'Err%':>5s}  {'Samps':>6s}")
     print("-" * 33)
     for r in results:
-        print(f"{r.setpoint_rpm:5d}  {r.measured_rpm:6.0f}  "
-              f"{r.peak_freq_hz:7.2f}  {r.rel_error_pct:4.1f}%  {r.n_samples:6d}")
+        print(
+            f"{r.setpoint_rpm:5d}  {r.measured_rpm:6.0f}  "
+            f"{r.peak_freq_hz:7.2f}  {r.rel_error_pct:4.1f}%  {r.n_samples:6d}"
+        )
     print("-" * 33)
     print(f"Mean error: {np.mean([r.rel_error_pct for r in results]):.1f}%")
 
@@ -104,4 +111,3 @@ def main(
         plot_all(d, output_dir=output)
 
     print("\nDone \u2014 all visualizations in outputs/")
-

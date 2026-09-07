@@ -29,10 +29,16 @@ dropdown change re-ran the chain; `marimo check notebooks` exit 0). Details in
 `hardening-plan.md` §P2 Phase 2 and `marimo-integration-log.md` Entry
 2026-09-07-f.
 
+**P3 (ruff) landed 2026-09-07:** ruff in the dev extra +
+`[tool.ruff]` config (exclude `notebooks/`, `.agents/`; `extend-select = ["I"]`),
+format sweep + check-clean on `src/` + `tests/`; suite stays 34 passed. The
+**hardening plan (P0–P3) and marimo plan Phases 1–2 are now complete**; `.BDD`
++ the DOPpy cross-check move to the development stage (agenda §1).
+
 **Next work for a fresh agent:**
-1. **P3 ruff** — config + format sweep now that `notebooks/` exists
-   (hardening §P3); exclude `notebooks/` like the sibling.
-2. Domain backlog below (§1) — `.BDD`, filtering ports, multi-channel RPM, etc.
+1. Domain backlog below (§1) — `.BDD` (development stage), filtering ports,
+   multi-channel RPM, etc.
+2. Marimo plan Phase 3 (harness wiring) — default no action.
 
 **Environment caveats for agents on this machine** (see AGENTS.md too):
 read-only `~/.local/state/marimo/servers/` → zero-arg marimo discovery finds
@@ -193,8 +199,9 @@ Not yet ported — candidates, each one module under `analysis/`:
 - **Sibling leak:** `python-image-processing-notebooks` tracks `marimo.toml`
   with a real vLLM base_url — needs its own fix upstream (log F2); out of scope
   for this repo.
-- **formatter/linter** — no ruff configured here yet; sibling excludes
-  `notebooks/` from ruff. Decide when we add notebooks (hardening-plan §ruff).
+- **formatter/linter** — ✅ done 2026-09-07: ruff configured (hardening
+  §P3) — `ruff check src tests` / `ruff format src tests`, notebooks
+  excluded (validated by `marimo check` instead).
 - **`references/wolfram/`** — ✅ done 2026-09-07: `Mixer_velocimetry.nb` and
   `TemporalProjections_v1.1.0.wl` were moved to
   `python-image-processing-notebooks/references/wolfram/` (with a new

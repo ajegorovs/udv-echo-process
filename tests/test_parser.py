@@ -7,6 +7,7 @@ so all fixtures are expected to be present.
 
 from __future__ import annotations
 
+import itertools
 from pathlib import Path
 
 import numpy as np
@@ -71,7 +72,7 @@ def test_single_sensor_raw_echo() -> None:
 def test_single_sensor_raw_tbd_increases() -> None:
     d = extract(SINGLE_RAW)
     tbds = [f.tbd_ms for f in d.frames]
-    assert all(b > a for a, b in zip(tbds, tbds[1:]))
+    assert all(b > a for a, b in itertools.pairwise(tbds))
 
 
 # ── single-sensor statistical echo ──────────────────────────────────────
@@ -100,7 +101,7 @@ def test_multi_sensor_stat_echo() -> None:
     assert d.meas_type is MeasType.ECHO
     assert len(d.by_block()) == 100
 
-    for ch, frames in d.by_channel().items():
+    for frames in d.by_channel().values():
         assert len(frames) == 100
         assert all(f.block == i + 1 for i, f in enumerate(frames))
         assert frames[0].n_profiles == 10

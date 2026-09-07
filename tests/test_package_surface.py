@@ -10,12 +10,8 @@ from __future__ import annotations
 import importlib
 from pathlib import Path
 
-import pytest
-
 import udv_echo_process
-import udv_echo_process.analysis as analysis
-import udv_echo_process.parser as parser
-import udv_echo_process.viz as viz
+from udv_echo_process import analysis, parser, viz
 
 ROOT = Path(__file__).resolve().parent.parent
 SINGLE_RAW = ROOT / "data/echo/650.ADD"
@@ -35,9 +31,13 @@ def test_top_level_mirrors_analysis_and_parser_surfaces() -> None:
     should be reachable from the package root (top-level mirrors the
     subpackages)."""
     for name in analysis.__all__:
-        assert name in udv_echo_process.__all__, f"analysis export not at top level: {name}"
+        assert name in udv_echo_process.__all__, (
+            f"analysis export not at top level: {name}"
+        )
     for name in parser.__all__:
-        assert name in udv_echo_process.__all__, f"parser export not at top level: {name}"
+        assert name in udv_echo_process.__all__, (
+            f"parser export not at top level: {name}"
+        )
 
 
 def test_parser_all_declared_and_existing() -> None:
@@ -52,7 +52,12 @@ def test_analysis_all_declared_and_existing() -> None:
 
 def test_viz_surface() -> None:
     """viz's plot functions plus the promoted discovery helper are public."""
-    for name in ("plot_recording", "plot_channel_stats", "plot_all", "discover_data_files"):
+    for name in (
+        "plot_recording",
+        "plot_channel_stats",
+        "plot_all",
+        "discover_data_files",
+    ):
         assert _importable(viz, name), f"missing viz export: {name}"
     # The old private name is gone.
     assert not hasattr(viz, "_discover_data_files")

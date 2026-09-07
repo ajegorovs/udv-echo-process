@@ -29,7 +29,8 @@ def inspect_main(argv: list[str] | None = None) -> None:
         description="Inspect a UDV .ADD recording setup",
     )
     parser.add_argument(
-        "files", nargs="*",
+        "files",
+        nargs="*",
         help=f".ADD files to inspect (default: {DEFAULT_TARGET})",
     )
     args = parser.parse_args(argv)
@@ -45,7 +46,9 @@ def viz_main(argv: list[str] | None = None) -> None:
         prog="udv-viz",
         description="Render per-channel heatmaps + gate profiles",
     )
-    parser.add_argument("files", nargs="*", help=".ADD files to plot (default: all in data/)")
+    parser.add_argument(
+        "files", nargs="*", help=".ADD files to plot (default: all in data/)"
+    )
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--dpi", type=int, default=150)
     args = parser.parse_args(argv)
@@ -63,7 +66,9 @@ def run_all_main(argv: list[str] | None = None) -> None:
         prog="udv-run-all",
         description="Batch UDV RPM analysis + visualizations",
     )
-    parser.add_argument("--data-dir", default="data/echo", help="directory of raw .ADD files")
+    parser.add_argument(
+        "--data-dir", default="data/echo", help="directory of raw .ADD files"
+    )
     parser.add_argument("--output-dir", default="outputs", help="output directory")
     args = parser.parse_args(argv)
 

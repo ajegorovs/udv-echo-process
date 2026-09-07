@@ -170,18 +170,25 @@ stdio `marimo-inspect` server already sees locally-discovered sessions.
 
 ## P3 — Polish
 
-- **[ ] Formatter/linter.** No ruff configured here. Add `ruff` (dev extra) +
-  a `[tool.ruff]` config once `notebooks/` exists; exclude `notebooks/` from
-  ruff like the sibling, and run `ruff check`/`ruff format` on `src/` + `tests/`.
-  (AGENTS.md "no formatter configured" line then updates.)
+- **[x] Formatter/linter.** ✅ **Done 2026-09-07:** ruff added to the dev
+  extra (`ruff>=0.16.6`, the same version marimo already pins) + a
+  `[tool.ruff]` config mirroring the sibling: `exclude = ["notebooks/",
+  ".agents/"]` (notebooks validated by `marimo check` instead) and
+  `extend-select = ["I"]` for import sorting. Format sweep (`ruff format
+  src tests`) applied; `ruff check src tests` clean after fixing 10 findings
+  (import sorting, unused `pytest` import, `min()`/`values()`/`pairwise()`
+  idiom fixes, and narrowing `discover_data_files()`'s blind
+  `except Exception` to `OSError`/`UnicodeDecodeError`). Full suite stays 34
+  passed. Commands: `uv run --extra dev ruff check src tests` /
+  `uv run --extra dev ruff format src tests`.
 - [x] **README scope statement.** README describes "multi-sensor UDV …
   rotating machinery". ✅ **Done 2026-09-07 (verified):** after the P1 optical
   removal the README intro, usage and architecture tree are already UDV-only —
   no camera/optical tooling is implied anywhere, so no caveat note is needed.
   (AGENTS.md §Scope boundaries is current.)
-- **[ ] `DOPpy` cross-check experiment** (P3→ when `.BDD` work starts): decode
-  the `.ADD`/`.BDD` twins and compare gate depths / PRF to validate both paths
-  (see `doppy-analysis.md` §Relevance).
+- **[ ] `DOPpy` cross-check experiment** (deferred to the `.BDD` development
+  stage — see agenda §1): decode the `.ADD`/`.BDD` twins and compare gate
+  depths / PRF to validate both paths (see `doppy-analysis.md` §Relevance).
 
 ---
 
@@ -192,13 +199,13 @@ MPLBACKEND=Agg`). ✅ Working tree clean after this pass's commits: `f63684c`
 (P0), `315d3ee` (P1 code), the P0/P1 doc commit, and `8e07ec2` (P2 Phase 1).
 ✅ `marimo-inspect` `v0.2.0` tag exists. ✅ `marimo.example.toml` placeholder
 now tracked; `notebooks/echo_explorer.py` exists (marimo plan Phase 2, done
-2026-09-07). ✅ `.venv/`, `__marimo__/`, `*.marimo.session_state`,
-`marimo.toml`, `.marimo/`, `.claude/` explicitly gitignored. ⚠️ Runtime deps
-now include marimo + marimo-inspect (numpy/matplotlib/pydantic/
-marimo[recommended]).
+2026-09-07). ✅ ruff configured (P3 done 2026-09-07). ✅ `.venv/`,
+`__marimo__/`, `*.marimo.session_state`, `marimo.toml`, `.marimo/`, `.claude/`
+explicitly gitignored. ⚠️ Runtime deps now include marimo + marimo-inspect
+(numpy/matplotlib/pydantic/marimo[recommended]).
 
-### Remaining open (P3 polish)
-- P3 — ruff config + format sweep (now that `notebooks/` exists, exclude it
-  from ruff like the sibling); DOPpy cross-check when `.BDD` work starts.
+### Remaining open (development stage)
+- `.BDD` support + the DOPpy cross-check (agenda §1) — deferred to the
+  development stage per the session decision.
 - Marimo plan Phase 3 (harness wiring) — default no action; revisit only if
   udv wants its own pinned server binary.

@@ -128,7 +128,9 @@ class ExtractedData(BaseModel):
         is_multi = len(by_ch) > 1 or len(by_blk) > 1
         fmt = "stat" if any(f.n_profiles is not None for f in self.frames) else "raw"
         n_prof = _detect_n_profiles(self, by_ch) if is_multi else None
-        gate_setup_differs = len({tuple(c[0].gate_depths_mm) for c in by_ch.values()}) > 1
+        gate_setup_differs = (
+            len({tuple(c[0].gate_depths_mm) for c in by_ch.values()}) > 1
+        )
 
         lines: list[str] = []
         sep = "=" * 58
@@ -137,7 +139,9 @@ class ExtractedData(BaseModel):
         lines.append(f"  Header: {self.header}")
         lines.append(f"  Comment: {self.comment}")
         lines.append(sep)
-        lines.append(f"  Recording type:  {'multi-sensor' if is_multi else 'single-sensor'}")
+        lines.append(
+            f"  Recording type:  {'multi-sensor' if is_multi else 'single-sensor'}"
+        )
         lines.append(f"  File format:     {fmt}")
         lines.append(f"  Total frames:    {len(self.frames)}")
         lines.append(f"  Channels:        {sorted(by_ch.keys())}")
@@ -166,8 +170,14 @@ class ExtractedData(BaseModel):
                 if tbd_range_ms > 1.0:
                     total_s = tbd_range_ms / 1000
                     tbds_unique = sorted(set(all_tbds))
-                    dt_ms = float(np.mean(np.diff(tbds_unique))) if len(tbds_unique) > 1 else 0.0
-                    lines.append(f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)")
+                    dt_ms = (
+                        float(np.mean(np.diff(tbds_unique)))
+                        if len(tbds_unique) > 1
+                        else 0.0
+                    )
+                    lines.append(
+                        f"  Duration:        {total_s:.1f} s  (mean dT: {dt_ms:.2f} ms)"
+                    )
 
         lines.append("")
         lines.append("  TBD = Time Between Data")
@@ -181,9 +191,13 @@ class ExtractedData(BaseModel):
 
             mt = ch_frames[0].meas_type.value
             lines.append(f"  Channel {ch}  ({mt}):")
-            lines.append(f"    Gate depths:     {len(gd)} gates  ({gd[0]:.2f} - {gd[-1]:.2f} mm)")
+            lines.append(
+                f"    Gate depths:     {len(gd)} gates  ({gd[0]:.2f} - {gd[-1]:.2f} mm)"
+            )
             lines.append(f"    Frames:          {len(ch_frames)}")
-            lines.append(f"    Blocks:          {ch_frames[0].block} - {ch_frames[-1].block}")
+            lines.append(
+                f"    Blocks:          {ch_frames[0].block} - {ch_frames[-1].block}"
+            )
             lines.append(f"    TBD range:       {min(tbds):.2f} - {max(tbds):.2f} ms")
             lines.append(f"    Profiles/block:  {p if p is not None else '-'}")
 
@@ -279,7 +293,9 @@ def extract(
 
 
 def _parse_section(
-    lines: list[str], gd_idx: int, result: ExtractedData,
+    lines: list[str],
+    gd_idx: int,
+    result: ExtractedData,
 ) -> None:
     """Parse one gate-depth section (single- or multi-sensor alike).
 
@@ -300,7 +316,11 @@ def _parse_section(
 
     data_start = gd_idx + 3
     end = next(
-        (i for i in range(data_start, len(lines)) if lines[i].strip() == GATE_DEPTH_HEADER),
+        (
+            i
+            for i in range(data_start, len(lines))
+            if lines[i].strip() == GATE_DEPTH_HEADER
+        ),
         len(lines),
     )
     data_lines = lines[data_start:end]
@@ -313,8 +333,11 @@ def _parse_section(
 
 
 def _add_frame(
-    line: str, n_gates: int, gate_depths: list[float],
-    meas_type: MeasType, result: ExtractedData,
+    line: str,
+    n_gates: int,
+    gate_depths: list[float],
+    meas_type: MeasType,
+    result: ExtractedData,
 ) -> None:
     """Parse one data row and add a ChannelFrame."""
     parts = line.strip().split("\t")
@@ -328,19 +351,24 @@ def _add_frame(
     except ValueError:
         return
 
-    result.frames.append(ChannelFrame(
-        channel=channel,
-        block=block,
-        tbd_ms=tbd,
-        meas_type=meas_type,
-        gate_depths_mm=list(gate_depths),
-        values=vals,
-    ))
+    result.frames.append(
+        ChannelFrame(
+            channel=channel,
+            block=block,
+            tbd_ms=tbd,
+            meas_type=meas_type,
+            gate_depths_mm=list(gate_depths),
+            values=vals,
+        )
+    )
 
 
 def _parse_stat_section(
-    lines: list[str], n_gates: int,
-    gate_depths: list[float], meas_type: MeasType, result: ExtractedData,
+    lines: list[str],
+    n_gates: int,
+    gate_depths: list[float],
+    meas_type: MeasType,
+    result: ExtractedData,
 ) -> None:
     """Parse a statistical summary block (mean / stddev / min / max).
 
@@ -374,18 +402,20 @@ def _parse_stat_section(
     channel = int(parts[n_gates + 2]) if len(parts) > n_gates + 2 else 0
     tbd = parse_comma_decimal(parts[n_gates]) if len(parts) > n_gates else 0.0
 
-    result.frames.append(ChannelFrame(
-        channel=channel,
-        block=block,
-        tbd_ms=tbd,
-        meas_type=meas_type,
-        gate_depths_mm=list(gate_depths),
-        values=mean_row,
-        n_profiles=n_prof,
-        std_dev=labels.get("std_dev"),
-        min_val=labels.get("min"),
-        max_val=labels.get("max"),
-    ))
+    result.frames.append(
+        ChannelFrame(
+            channel=channel,
+            block=block,
+            tbd_ms=tbd,
+            meas_type=meas_type,
+            gate_depths_mm=list(gate_depths),
+            values=mean_row,
+            n_profiles=n_prof,
+            std_dev=labels.get("std_dev"),
+            min_val=labels.get("min"),
+            max_val=labels.get("max"),
+        )
+    )
 
 
 def _parse_stat_row(lines: list[str], idx: int, n_gates: int) -> list[float] | None:
@@ -404,7 +434,7 @@ def _detect_n_profiles(d: ExtractedData, by_ch: dict[int, list[ChannelFrame]]) -
     for f in d.frames:
         if f.n_profiles is not None:
             return f.n_profiles
-    ch = sorted(by_ch.keys())[0]
+    ch = min(by_ch.keys())
     blk = by_ch[ch][0].block
     return sum(1 for f in d.frames if f.channel == ch and f.block == blk)
 

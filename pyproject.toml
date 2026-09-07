@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff>=0.16.6"]
 
 [project.scripts]
 udv-inspect = "udv_echo_process.cli:inspect_main"
@@ -30,6 +30,14 @@ packages = ["src/udv_echo_process"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+# Notebooks use marimo's own idioms; `.agents/skills/` are third-party, hash-pinned
+# files. Lint/format the library and let `marimo check` validate notebook files.
+exclude = ["notebooks/", ".agents/"]
+
+[tool.ruff.lint]
+extend-select = ["I"]
 
 [tool.uv.sources]
 marimo-inspect = { git = "https://github.com/ajegorovs/marimo-mcp-cowork", tag = "v0.2.0" }
