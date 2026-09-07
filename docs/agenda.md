@@ -69,6 +69,12 @@ Not yet ported — candidates, each one module under `analysis/`:
 
 ### Phase 1 — pin the provider & repo setup
 
+- ✅ **Done 2026-09-07 (commit `8e07ec2`).** Deps added
+  (`marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` @ git tag
+  `v0.2.0`), `uv.lock` committed (+1950 lines), `marimo.example.toml`
+  tracked, `.gitignore` covers `.marimo/` + `.claude/`, and the marimo-pair /
+  retro-marimo-pair skills are committed (`.agents/` + `skills-lock.json`).
+  Original checklist preserved below for reference:
 - **Add deps to `pyproject.toml`** — `marimo[recommended]>=0.24.0,<0.25` +
   `marimo-inspect`, with `[tool.uv.sources] marimo-inspect = { git =
   "https://github.com/ajegorovs/marimo-mcp-cowork", tag = "v0.2.0" }`.
@@ -77,23 +83,30 @@ Not yet ported — candidates, each one module under `analysis/`:
   re-resolution diff; numpy 2.5.0→2.5.3, matplotlib 3.11.0→3.11.1, …).
 - **Re-verify O16 (auto-bind)** after installing v0.2.0: `list_active_notebooks`
   should bind both `session_id` and `server_url`; relax the explicit-`server_url`
-  call pattern once confirmed.
+  call pattern once confirmed. ✅ Re-verified 2026-09-07 (log Entry
+  2026-09-07-e): **does NOT persist across DSH harness tool calls** — keep
+  explicit `server_url` per call here.
 - **Re-test O17 (list-arg marshalling)** — scalar string tolerated now; a
   stringified multi-value array still needs the DSH harness fix. Filtered
-  `get_variables(variable_names=[…])` unproven here.
+  `get_variables(variable_names=[…])` unproven here. ✅ Re-tested 2026-09-07
+  (log Entry 2026-09-07-e): **real list args now work** — filtered reads OK.
 - **Re-test O15 (headless discovery)** — headless `--no-token` servers skipped
   the registry in Phase 0; re-confirm what `list_active_notebooks` sees with
-  zero args in browser-connected mode (DoD item 1).
+  zero args in browser-connected mode (DoD item 1). ✅ Re-tested 2026-09-07
+  (log Entry 2026-09-07-e): root cause = **read-only
+  `~/.local/state/marimo/servers/` in this sandbox** — marimo 0.24.0 does
+  register `--no-token` servers on a writable home.
 - **Add the `marimo-pair` agent skills** (`uvx deno -A npm:skills add
   marimo-team/marimo-pair`) and commit `.agents/` + `skills-lock.json`.
+  ✅ Done 2026-09-07.
 
-### Phase 2 — first real notebook (not started)
+### Phase 2 — first real notebook (building blocks ready, notebook not started)
 
-- `notebooks/echo_explorer.py`: dropdown over `data/*` via a *public*
-  `discover_data_files()` (currently private `_discover_data_files()` in
-  `viz.py` — promote it).
-- **Viz gap:** figure-returning mode (see §1 Visualization) so interactive
-  cells render inline.
+- `notebooks/echo_explorer.py`: dropdown over `data/*` via `discover_data_files()`
+  (✅ promoted to public in P1) + figure-returning mode
+  (`plot_recording(..., return_fig=True)`, ✅ landed in P1) so interactive
+  cells render inline (`mo.mpl.interactive(fig)`). Remaining work: write the
+  notebook + the DoD-1 launch check against a writable-home session.
 
 ### Agent co-work (intended heavy use)
 
@@ -125,12 +138,12 @@ Not yet ported — candidates, each one module under `analysis/`:
 
 ## 4. Repo hygiene
 
-- **`.gitignore`** — add `.venv/`, `__marimo__/`, `*.marimo.session_state`,
-  `marimo.toml` (Phase 1); `outputs/` already ignored. Track a placeholder
-  `marimo.example.toml` (no real endpoint/key). (See hardening-plan §repo.)
-- **Data hygiene** — `data/echo-4-sensors-2x2/300RPM.BDD` is a PNG and
-  `300RPM_Stat.ADD` is a JPEG (both tracked). Decide rename/remove/annotate
-  (hardening-plan §data).
+- **`.gitignore`** — ✅ done 2026-09-07: `.venv/`, `__marimo__/`,
+  `*.marimo.session_state`, `marimo.toml`, `.marimo/`, `.claude/` ignored;
+  `outputs/` already ignored. Placeholder `marimo.example.toml` tracked (no
+  real endpoint/key). (See hardening-plan §repo.)
+- **Data hygiene** — ✅ done 2026-09-07: misnamed files renamed in place
+  (`300RPM.png`, `300RPM.jpg`) — see hardening-plan §P0.
 - **Privacy scan** before any new docs/config commit: this repo is public —
   no absolute `/home/<user>` paths, no tailnet/RFC1918 IPs, no credentials.
   Redactions already applied 2026-09-07-d.

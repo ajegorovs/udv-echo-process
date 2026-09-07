@@ -1,7 +1,9 @@
 # Plan: integrate marimo + marimo-inspect into udv-echo-process
 
-> **Status:** Plan under execution — **Phase 0 ran 2026-09-07 and PASSED**.
-> Phases 1–3 not started. Every observation is recorded with evidence labels in
+> **Status:** Plan under execution — **Phase 0 ran 2026-09-07 and PASSED**;
+> **Phase 1 (deps + repo setup) ran 2026-09-07 and PASSED** (commit `8e07ec2`;
+> O15–O17 re-verified — see log Entry 2026-09-07-e). Phase 2–3 not started.
+> Every observation is recorded with evidence labels in
 > [`marimo-integration-log.md`](marimo-integration-log.md) (findings **F1–F10**,
 > setup **S11–S14**, agent-loop **O15–O24**); the log is the traceable record —
 > this plan's Phase 0 section is the summary. Three Phase-0 results feed forward
@@ -140,6 +142,16 @@ marimo-inspect = { git = "https://github.com/ajegorovs/marimo-mcp-cowork", tag =
   and `skills-lock.json` so the marimo-pair / retro-marimo-pair skills match.
   `uv add --extra dev pytest` stays the test command; no ruff configured here
   yet (sibling excludes `notebooks/` from ruff — N/A until we add one).
+
+**Phase 1 result (ran 2026-09-07, commit `8e07ec2`): PASS.** Dependencies
+pinned (`marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` @ git tag
+`v0.2.0`), `uv.lock` committed (+1950 lines), `marimo.example.toml` tracked,
+`.gitignore` extended, marimo-pair / retro-marimo-pair skills committed.
+O15–O17 re-verified against the installed v0.2.0 build with a live session —
+details in the log Entry 2026-09-07-e. Headline: O17 list-arg reads **fixed**;
+O15 root cause = read-only `~/.local/state/marimo/servers/` here (marimo
+registers `--no-token` servers on a writable home); O16 auto-bind does **not**
+persist across DSH harness tool calls (pass `server_url` per call).
 
 ### Phase 2 — the first real notebook
 

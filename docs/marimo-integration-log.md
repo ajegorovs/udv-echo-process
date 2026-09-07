@@ -284,3 +284,53 @@ corrections are new entries that point back.)*
 
 *(append-only: corrections are new entries pointing back; earlier entries unchanged)*
 
+
+---
+
+## Entry 2026-09-07-e — Phase 1 landed; O15–O17 re-verified against installed v0.2.0
+
+Repo setup (commit `8e07ec2`): `marimo[recommended]>=0.24.0,<0.25` +
+`marimo-inspect` (git tag `v0.2.0`, commit `f5928de`) in `pyproject.toml`;
+`uv.lock` re-resolved (+1950 lines); `marimo.example.toml` tracked;
+`.gitignore` adds `.marimo/` + `.claude/`; marimo-pair / retro-marimo-pair
+skills added (`.agents/` + `skills-lock.json`). Fresh `.venv` holds
+`marimo 0.24.0` + `marimo-inspect 0.2.0`; the `marimo-inspect` MCP CLI is
+installed. Full suite stays **34 passed**.
+
+Re-verification ran against a live `--no-token --headless` marimo 0.24.0
+session (`p2_scratch.py`, session materialized via the `/sse` handshake —
+S14/O19 pattern still required; registry stays empty otherwise, see O15
+below). Findings, updated for the installed build:
+
+- **O15 → root cause identified (sandbox, not marimo).** The `--no-token`
+  server *does* attempt registration — marimo 0.24.0 `lifespans.server_registry`
+  only skips when `enable_auth` is true. Here the registry write fails because
+  `~/.local/state/marimo/servers/` is on a **read-only filesystem** in this
+  sandbox (verified: `touch` there → `Read-only file system`); the failure is
+  swallowed (lifespans catches + warns). Confirmed twice: registry dir empty
+  with the session live, and fresh-build `discover_servers()` → `[]` while the
+  same session answers on an explicit URL. **On a writable home this should
+  self-register** — re-check on a normal machine before trusting zero-arg
+  discovery. Direct-URL addressing remains the reliable pattern here.
+- **O16 → auto-bind does NOT persist across calls through the DSH harness.**
+  `list_active_notebooks(server_url=…)` discovers and (per provider code)
+  auto-binds session+URL into FastMCP ctx state, but a subsequent zero-arg
+  `get_cell_map` still failed with `server_url is required`. Each harness tool
+  call appears to run with fresh ctx state, so the "omit both afterwards"
+  relaxation does not hold *on this consumer*. Explicit `server_url` per call
+  works end-to-end. (`set_active_session(session_id, server_url=…)` was also
+  rejected with `unexpected_keyword_argument` by the harness-registered server
+  — its registered build predates the v0.2.0 `server_url` param.) Re-test
+  against a *fresh* stdio/http server run from this repo's `.venv/bin/
+  marimo-inspect` before relying on bind-persistence.
+- **O17 → FIXED for real list args.** `get_variables(variable_names=["d",
+  "picker"])` returned exactly the two requested variables (no full-kernel
+  dump) and `get_cell_outputs(cell_ids=["vblA"])` worked — the DSH bridge now
+  passes JSON arrays through as lists. Scalar-string fallback also fine.
+  Filtered reads are usable end-to-end.
+- Full DoD-2 loop re-confirmed on the installed build: `get_cell_map` (3 cells
+  stale) → `run_cell` ×3 → `get_variables` (dropdown + `ExtractedData`) →
+  `get_cell_outputs` (describe output rendered) → `get_errors` 0 errors →
+  `marimo check` exit 0.
+
+*(append-only: corrections are new entries pointing back; earlier entries unchanged)*

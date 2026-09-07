@@ -56,9 +56,10 @@ in the Wolfram folder" as the roadmap.
 - Package/venv manager: **uv**. Do not create or use `venv`/`pip`/`poetry`
   workflows.
 - Python: **≥3.14** (pinned via `.python-version`).
-- Runtime deps: numpy, matplotlib, pydantic. Dev extra: pytest.
-  (`marimo[recommended]` + `marimo-inspect`
-  are the *planned* additions — see `docs/marimo-integration-plan.md` Phase 1.)
+- Runtime deps: numpy, matplotlib, pydantic, marimo[recommended] (pinned
+  `>=0.24.0,<0.25`), marimo-inspect (git tag `v0.2.0` via `[tool.uv.sources]`).
+  Dev extra: pytest. (Marimo plan Phase 1 landed 2026-09-07 — see
+  `docs/marimo-integration-plan.md`.)
 
 ## Common commands
 
@@ -95,17 +96,20 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 ## Marimo (live notebooks + agent inspection)
 
 - Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`
-  (requires Phase 1 deps first — `marimo[recommended]>=0.24.0,<0.25` +
-  `marimo-inspect`, pinned via git tag `v0.2.0` which **now exists**).
+  (deps landed 2026-09-07 — `marimo[recommended]>=0.24.0,<0.25` +
+  `marimo-inspect` pinned via git tag `v0.2.0`).
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
-  `docs/agent-onboarding-demo-mcp.md` §Prerequisites). Headless `--no-token`
-  also skips the discovery registry (log O15) — pass `server_url` explicitly.
+  `docs/agent-onboarding-demo-mcp.md` §Prerequisites). Zero-arg discovery also
+  needs a **writable `~/.local/state/marimo/servers/`** (read-only home =
+  empty registry, log O15) — when in doubt, pass `server_url` explicitly.
 - **Agent loop:** `list_active_notebooks` → `get_cell_map` → `run_cell` →
   `get_variables` → `get_cell_outputs` → `get_errors` → `marimo check`.
-  Provider v0.2.0 binds both `session_id` and `server_url` after
-  `list_active_notebooks(server_url=…)`.
+  Through the DSH harness, **auto-bind does not persist across tool calls**
+  (log O16) — pass `server_url` (and `session_id` when targeting) explicitly
+  on every call. Filtered list-arg reads (`variable_names=[…]`,
+  `cell_ids=[…]`) work on v0.2.0 (log O17).
 - **Viz:** every plot function saves to a `Path` by default; pass
   `return_fig=True` to get the open `matplotlib` figure(s) back instead
   (needed for in-notebook display). In marimo 0.24.0 use

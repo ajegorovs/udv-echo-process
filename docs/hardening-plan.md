@@ -130,16 +130,29 @@ Status legend: `[ ]` open · `[x]` done. Evidence: ✅ observed · 📄 document
 
 ## P2 — Marimo integration (plan exists: `docs/marimo-integration-plan.md`)
 
-- **[ ] Phase 1 — pin the provider.** Add `marimo[recommended]>=0.24.0,<0.25`
-  + `marimo-inspect` (git tag `v0.2.0` — ✅ tag now exists) to `pyproject.toml`;
-  commit `uv.lock` (expect ~250-entry re-resolution diff). Pre-sync to avoid
-  the ~13 min cold start (log O18).
-- **[ ] `.gitignore` — marimo runtime files.** ✅ Done 2026-09-07 (this pass):
-  added `.venv/`, `__marimo__/`, `*.marimo.session_state`, `marimo.toml`.
-  Track a placeholder `marimo.example.toml` (no real endpoint/key) when Phase 1
-  lands.
-- **[ ] Re-verify O16 (auto-bind) / O17 (list-args) / O15 (headless discovery)**
-  against the installed v0.2.0 build — see `agenda.md` §2 Phase 1.
+- [x] **Phase 1 — pin the provider.** ✅ **Done 2026-09-07:** added
+  `marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` (git tag `v0.2.0` —
+  ✅ tag exists) to `pyproject.toml`; committed the re-resolved `uv.lock`
+  (+1950 lines; `.venv` holds marimo 0.24.0 + marimo-inspect 0.2.0 from
+  commit `f5928de`). Pre-synced to avoid the ~13 min cold start (log O18).
+- [x] **`.gitignore` — marimo runtime files.** ✅ Done 2026-09-07:
+  `.venv/`, `__marimo__/`, `*.marimo.session_state`, `marimo.toml` ignored;
+  this pass added `.marimo/` + `.claude/` (local symlink dirs). Placeholder
+  `marimo.example.toml` (no real endpoint/key) is now tracked.
+- [x] **Re-verify O16 (auto-bind) / O17 (list-args) / O15 (headless discovery)**
+  against the installed v0.2.0 build. ✅ **Done 2026-09-07 — see
+  `marimo-integration-log.md` Entry 2026-09-07-e:** O17 fixed for real list
+  args (filtered `get_variables`/`get_cell_outputs` work); O15 root cause =
+  read-only `~/.local/state/marimo/servers/` in this sandbox (marimo 0.24.0
+  registers `--no-token` servers when the home dir is writable); O16 auto-bind
+  does not persist across harness tool calls (explicit `server_url` per call
+  is the reliable pattern here).
+- [x] **Agent skills** — marimo-pair + retro-marimo-pair added (`.agents/` +
+  `skills-lock.json`), matching the sibling repo.
+
+Remaining (Phase 2 of the marimo plan, separate): `notebooks/echo_explorer.py`
+first real notebook — the `return_fig` + `discover_data_files()` building
+blocks from P1 are already in place.
 
 ---
 
@@ -164,15 +177,14 @@ Status legend: `[ ]` open · `[x]` done. Evidence: ✅ observed · 📄 document
 
 ✅ `uv run --extra dev pytest` → **34 passed** (with `UV_CACHE_DIR=/tmp/uv-cache
 MPLBACKEND=Agg`). ✅ Working tree clean after this pass's commits: `f63684c`
-(P0), `315d3ee` (P1 code), and the P0/P1 doc update commit. ✅
-`marimo-inspect` `v0.2.0` tag exists. ⚠️ `marimo.example.toml` and
-`notebooks/` do not exist yet (expected — Phase 2). ✅ `.venv/`,
-`__marimo__/`, `*.marimo.session_state`, `marimo.toml` explicitly gitignored.
-⚠️ Runtime deps slimmed to numpy/matplotlib/pydantic (opencv/Pillow/
-scikit-image removed with the optical modules).
+(P0), `315d3ee` (P1 code), the P0/P1 doc commit, and `8e07ec2` (P2 Phase 1).
+✅ `marimo-inspect` `v0.2.0` tag exists. ✅ `marimo.example.toml` placeholder
+now tracked; `notebooks/` does not exist yet (marimo plan Phase 2). ✅
+`.venv/`, `__marimo__/`, `*.marimo.session_state`, `marimo.toml`, `.marimo/`,
+`.claude/` explicitly gitignored. ⚠️ Runtime deps now include marimo +
+marimo-inspect (numpy/matplotlib/pydantic/marimo[recommended]).
 
-### Remaining open (P2, P3)
-- P2 — pin `marimo[recommended]` + `marimo-inspect` (v0.2.0) and commit the
-  re-resolved `uv.lock`; track `marimo.example.toml`; re-verify O15–O17 against
-  the installed v0.2.0 build.
+### Remaining open (marimo plan Phase 2 + P3)
+- Marimo Phase 2 — `notebooks/echo_explorer.py` first real notebook (P1's
+  `return_fig` + `discover_data_files()` building blocks are in place).
 - P3 — ruff config + format sweep; DOPpy cross-check when `.BDD` work starts.
