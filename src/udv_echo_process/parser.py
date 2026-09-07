@@ -27,6 +27,19 @@ GATE_DEPTH_HEADER = "Gate Depth [mm]"
 STAT_PREFIX = "Statistical"
 MAGIC_PREFIX = "ASCUDOPV"
 
+__all__ = [
+    "ChannelFrame",
+    "ExtractedData",
+    "MeasType",
+    "extract",
+    "list_add_files",
+    "list_stat_add_files",
+    "load_all_data",
+    "parse_add_file",
+    "parse_comma_decimal",
+    "parse_stat_add_file",
+]
+
 _STAT_LABELS: dict[str, tuple[str, ...]] = {
     "std_dev": ("standart deviation", "standard deviation"),
     "min": ("minimum", "min"),

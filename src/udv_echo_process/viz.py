@@ -4,6 +4,11 @@ Usage:
     from udv_echo_process import extract, plot_all
     d = extract("data/echo/650.ADD")
     plot_all(d)
+
+Every plot function saves to ``<output_dir>/<file_stem>/<name>.png`` by
+default. Pass ``return_fig=True`` to get the ``matplotlib`` figure(s) back
+instead of saving (needed for in-notebook display, e.g. via
+``mo.mpl.interactive``); the figure is then left open for the caller.
 """
 
 from __future__ import annotations
@@ -69,9 +74,13 @@ def _hide_unused_axes(axes, n_ch: int) -> None:
         axes.flat[idx].set_visible(False)
 
 
-def _save_figure(
+def _finish_figure(
     fig, extracted: ExtractedData, output_dir: str, name: str, dpi: int,
-) -> Path:
+    return_fig: bool,
+) -> Path | object:
+    """Save+close the figure (returning its Path) or hand it back open."""
+    if return_fig:
+        return fig
     out_path = _output_path(extracted, output_dir, name)
     fig.savefig(out_path, dpi=dpi)
     plt.close(fig)
@@ -97,14 +106,16 @@ def plot_recording(
     extracted: ExtractedData,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     dpi: int = 150,
-) -> Path:
+    return_fig: bool = False,
+) -> Path | object:
     """Plot all channels as heatmaps on a synchronized time axis.
 
     Each subplot is a heatmap: x = time, y = gate depth, color = value.
     The time axis spans [min(time), max(time)] across all channels,
     so that measurements from different channels are directly comparable.
 
-    Saves to ``<output_dir>/<file_stem>/heatmap.png``.
+    By default saves to ``<output_dir>/<file_stem>/heatmap.png`` and returns
+    the ``Path``; with ``return_fig=True`` returns the open figure instead.
     """
     by_ch, channels, n_ch, _n_rows, _n_cols, fig, axes = _figure_for_channels(extracted)
 
@@ -139,20 +150,22 @@ def plot_recording(
 
     _hide_unused_axes(axes, n_ch)
 
-    return _save_figure(fig, extracted, output_dir, "heatmap.png", dpi)
+    return _finish_figure(fig, extracted, output_dir, "heatmap.png", dpi, return_fig)
 
 
 def plot_channel_stats(
     extracted: ExtractedData,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     dpi: int = 150,
-) -> Path:
+    return_fig: bool = False,
+) -> Path | object:
     """Plot per-channel gate profile statistics: mean ± std across time.
 
     Each subplot shows one channel with mean signal (line) and
     ±1 standard deviation (shaded band) per gate depth.
 
-    Saves to ``<output_dir>/<file_stem>/profiles.png``.
+    By default saves to ``<output_dir>/<file_stem>/profiles.png`` and returns
+    the ``Path``; with ``return_fig=True`` returns the open figure instead.
     """
     by_ch, channels, n_ch, _n_rows, _n_cols, fig, axes = _figure_for_channels(extracted)
 
@@ -178,27 +191,37 @@ def plot_channel_stats(
 
     _hide_unused_axes(axes, n_ch)
 
-    return _save_figure(fig, extracted, output_dir, "profiles.png", dpi)
+    return _finish_figure(fig, extracted, output_dir, "profiles.png", dpi, return_fig)
 
 
 def plot_all(
     extracted: ExtractedData,
     output_dir: str = DEFAULT_OUTPUT_DIR,
     dpi: int = 150,
-) -> tuple[Path, Path]:
-    """Convenience: generate heatmap + profiles for one file."""
-    heatmap = plot_recording(extracted, output_dir=output_dir, dpi=dpi)
-    profiles = plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi)
+    return_fig: bool = False,
+) -> tuple[Path, Path] | tuple[object, object]:
+    """Convenience: generate heatmap + profiles for one file.
+
+    Returns a ``(Path, Path)`` pair by default, or a ``(fig_heatmap,
+    fig_profiles)`` pair with ``return_fig=True``.
+    """
+    heatmap = plot_recording(extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig)
+    profiles = plot_channel_stats(extracted, output_dir=output_dir, dpi=dpi, return_fig=return_fig)
     return heatmap, profiles
 
 
-def _discover_data_files() -> list[Path]:
-    """Find valid .ADD files under data/<experiment>/ (recursive)."""
-    data_root = Path("data")
-    if not data_root.is_dir():
+def discover_data_files(data_root: str | Path = "data") -> list[Path]:
+    """Find valid .ADD files under ``data/<experiment>/`` (recursive).
+
+    A file counts as valid when its first line carries the ``ASCUDOPV``
+    magic header (mirrors the parser's content guard), so misnamed images
+    are skipped. ``data_root`` defaults to the repo's ``data/`` directory.
+    """
+    root = Path(data_root)
+    if not root.is_dir():
         return []
     files: list[Path] = []
-    for d in sorted(p for p in data_root.iterdir() if p.is_dir()):
+    for d in sorted(p for p in root.iterdir() if p.is_dir()):
         for p in sorted(d.rglob("*.ADD")):
             try:
                 first = p.read_text(encoding="latin-1", errors="ignore").splitlines()[0]

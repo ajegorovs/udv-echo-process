@@ -12,17 +12,16 @@ Ported from ``references/wolfram/UDV_Data_Analysis_Echo.txt``
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
 from pathlib import Path
 
 import numpy as np
 from numpy.fft import rfft, rfftfreq
+from pydantic import BaseModel
 
 from udv_echo_process.parser import ExtractedData
 
 
-@dataclass(frozen=True)
-class RpmResult:
+class RpmResult(BaseModel):
     """Result of an RPM estimation for one recording."""
 
     setpoint_rpm: int
