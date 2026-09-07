@@ -15,8 +15,6 @@ from udv_echo_process.analysis import (
 from udv_echo_process.parser import ExtractedData, extract, list_add_files
 from udv_echo_process.viz import plot_all
 
-DT_S = 0.0032
-
 
 def plot_summary(results: list[RpmResult], output_path: Path) -> None:
     """Combined scatter plot: measured vs setpoint RPM with error panel."""
@@ -55,9 +53,14 @@ def plot_summary(results: list[RpmResult], output_path: Path) -> None:
 
 
 def collect_results(
-    datasets: dict[str, ExtractedData], dt_s: float,
+    datasets: dict[str, ExtractedData], dt_s: float | None = None,
 ) -> list[RpmResult]:
-    """Estimate RPM for each parsed dataset keyed by file stem."""
+    """Estimate RPM for each parsed dataset keyed by file stem.
+
+    ``dt_s`` is the sampling interval in seconds; when omitted it is derived
+    per dataset from the parsed TBD column (see
+    :func:`udv_echo_process.analysis.rpm.mean_sample_interval_s`).
+    """
     results: list[RpmResult] = []
     for stem, d in datasets.items():
         rpm, f_peak, n = rpm_from_echo(d, dt_s)
@@ -85,7 +88,7 @@ def main(
     files = list_add_files(data_dir)
     datasets = {fp.stem: extract(fp) for fp in files}
 
-    results = collect_results(datasets, DT_S)
+    results = collect_results(datasets)
 
     print(f"{'Setpt':>5s}  {'Meas':>6s}  {'Freq':>7s}  {'Err%':>5s}  {'Samps':>6s}")
     print("-" * 33)

@@ -170,3 +170,49 @@ def test_list_stat_add_files() -> None:
     names = [p.name for p in list_stat_add_files(ROOT / "data/echo")]
     assert "650_Stat.ADD" in names
     assert all(n.endswith("_Stat.ADD") for n in names)
+
+
+# ── content sniffing guard ──────────────────────────────────────────────
+
+
+def test_extract_rejects_non_udv_content(tmp_path: Path) -> None:
+    """A magic-less file (e.g. a misnamed image) must raise a clear error."""
+    png = tmp_path / "fake.BDD"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
+    with pytest.raises(ValueError, match="ASCUDOPV"):
+        extract(png)
+
+    jpg = tmp_path / "fake.ADD"
+    jpg.write_bytes(b"\xff\xd8\xff\xe0" + b"\x00" * 64)
+    with pytest.raises(ValueError, match="ASCUDOPV"):
+        extract(jpg)
+
+    empty = tmp_path / "empty.ADD"
+    empty.write_bytes(b"")
+    with pytest.raises(ValueError, match="ASCUDOPV"):
+        extract(empty)
+
+
+def test_extract_rejects_misnamed_tracked_images() -> None:
+    """The two known-bad tracked files now carry true extensions; if they ever
+    come back under a .ADD/.BDD name with image content, extract() must refuse."""
+    for name in ("300RPM.BDD", "300RPM_Stat.ADD"):
+        p = ROOT / "data/echo-4-sensors-2x2" / name
+        if p.exists():
+            with pytest.raises(ValueError, match="ASCUDOPV"):
+                extract(p)
+
+
+# ── empty-data degradation ──────────────────────────────────────────────
+
+
+def test_describe_on_header_only_file(tmp_path: Path) -> None:
+    """A magic-bearing file with no data rows must describe gracefully."""
+    f = tmp_path / "header_only.ADD"
+    f.write_text("ASCUDOPV4.03.4\nMemo_Comments\n", encoding="latin-1")
+    d = extract(f)
+    assert d.frames == []
+    assert d.meas_type is None
+    text = d.describe()
+    assert "No frames parsed" in text
+    assert d.file_path.name in text

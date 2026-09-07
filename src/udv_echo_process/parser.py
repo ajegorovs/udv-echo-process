@@ -25,6 +25,7 @@ from pydantic import BaseModel
 
 GATE_DEPTH_HEADER = "Gate Depth [mm]"
 STAT_PREFIX = "Statistical"
+MAGIC_PREFIX = "ASCUDOPV"
 
 _STAT_LABELS: dict[str, tuple[str, ...]] = {
     "std_dev": ("standart deviation", "standard deviation"),
@@ -100,6 +101,15 @@ class ExtractedData(BaseModel):
 
     def describe(self) -> str:
         """Return a formatted description of the recording setup."""
+        if not self.frames:
+            return (
+                f"{'=' * 58}\n"
+                f"  File: {self.file_path.name}\n"
+                f"  Header: {self.header}\n"
+                f"  No frames parsed — the file contains no recognisable "
+                f"UDV data rows.\n"
+                f"{'=' * 58}"
+            )
         by_ch = self.by_channel()
         by_blk = self.by_block()
         is_multi = len(by_ch) > 1 or len(by_blk) > 1
@@ -223,10 +233,20 @@ def _parse_num(line: str) -> int | None:
 def extract(
     filepath: str | Path,
 ) -> ExtractedData:
-    """Parse any UDV file, auto-detecting format."""
+    """Parse any UDV file, auto-detecting format.
+
+    Raises ``ValueError`` when the file does not carry the ``ASCUDOPV``
+    magic header line (e.g. a misnamed image, or a binary/empty file),
+    and ``FileNotFoundError`` when it does not exist.
+    """
     path = Path(filepath)
-    lines = path.read_text(encoding="latin-1").splitlines()
+    lines = path.read_text(encoding="latin-1", errors="replace").splitlines()
     stripped = [l for l in lines if l.strip()]
+
+    if not stripped or not stripped[0].lstrip().startswith(MAGIC_PREFIX):
+        raise ValueError(
+            f"not a UDV recording (missing '{MAGIC_PREFIX}' header): {path}"
+        )
 
     result = ExtractedData(file_path=path)
 
@@ -248,10 +268,22 @@ def extract(
 def _parse_section(
     lines: list[str], gd_idx: int, result: ExtractedData,
 ) -> None:
-    """Parse one gate-depth section (single- or multi-sensor alike)."""
-    gate_depths = _parse_gate_depths(lines[gd_idx + 1])
+    """Parse one gate-depth section (single- or multi-sensor alike).
+
+    Truncated or non-numeric sections are skipped silently (they add no
+    frames), so a magic-bearing file with no real data rows still yields a
+    usable empty :class:`ExtractedData` instead of raising.
+    """
+    if gd_idx + 2 >= len(lines):
+        return
+    try:
+        gate_depths = _parse_gate_depths(lines[gd_idx + 1])
+        meas_type = _detect_meas_type(lines[gd_idx + 2])
+    except ValueError:
+        return
     n_gates = len(gate_depths)
-    meas_type = _detect_meas_type(lines[gd_idx + 2])
+    if n_gates == 0:
+        return
 
     data_start = gd_idx + 3
     end = next(
