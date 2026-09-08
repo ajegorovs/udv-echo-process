@@ -100,6 +100,44 @@ Not yet ported — candidates, each one module under `analysis/`:
   `mo.mpl.interactive(fig)`.
 - Velocity-field / time-depth contour plots beyond the current heatmap.
 
+### Modular pipeline architecture (rolling-measurement synchronization) — NEW primary direction
+
+The repo should grow from *flat per-file tooling* into a **modular
+signal-processing pipeline**: data source → standardize → process → visualize,
+each stage a swappable module. Driving use case = the planned **rolling /
+sequential multi-sensor pipeline**:
+
+1. **Import + standardize** — ingest a rolling measurement (`.ADD` today,
+   `.BDD`/other sources later) into a canonical, time-indexed, per-sensor,
+   per-gate layout (pandas `DataFrame` behind a thin Pydantic model).
+2. **Time-synchronize** — the instrument samples sensors sequentially
+   (round-robin), so channel *k* lags channel 0 by *k·DT*; shift each channel
+   back by its offset (`DT`, `2·DT`, … derived from the data, never
+   hard-coded) and interpolate every sensor onto one common time grid so all
+   sensors read "the same instant".
+3. **Visualize** — (a) per-sensor time×gate heatmaps, and (b) **measurement
+   lines**: instantaneous cross-sections drawn on the real sensor geometry
+   (echo peaks = wall / mixer-pill surfaces along each line).
+4. **Spatial interpolation** — *future / out of scope now*: interpolate the
+   synchronized, geometry-positioned sensor lines into a 2D field.
+
+Deconstructed into a **layered package** (see
+[`pipeline-architecture.md`](pipeline-architecture.md)): `io/` (data-source
+layer — `base.py` + `dop/{add,bdd}.py`), `models/` (`raw.py`, `dataset.py`,
+`geometry.py`), `process/` (`sync.py`, `pipeline.py`, future `spatial.py`),
+`viz/` (`heatmap.py`, `profile.py`, `lines.py`), plus the existing `analysis/`.
+
+**Granularity decisions (settled 2026-09-08):** split into **sub-packages now**
+(io / models / process / analysis / viz); within a layer, still one module =
+one domain concern, a function = one atomic transform, a pipeline = explicit
+ordered composition of named steps. **Canonical storage = one 2D series per
+sensor, each with its own timestamps** (`SensorSeries`: `time_s` + `(T,G)`
+`values`) — *not* one merged N-D array; merged pandas long/wide frames are
+derived views. **pandas** is the dataset backend; **geometry** comes from
+explicit `data/<experiment>/layout.toml`; the **`.BDD` binary format** will be
+read via the sibling **DOPpy** parser. Still open: stat-vs-raw handling under
+sync; DOPpy integration mode (cherry-pick vs dep).
+
 ---
 
 ## 2. Marimo + agent co-working (next up)
@@ -173,6 +211,28 @@ Not yet ported — candidates, each one module under `analysis/`:
 - **Result-model convention:** ✅ **Done 2026-09-07** (hardening §P1):
   `TemporalProjectionResult` left with the deleted optical modules; `RpmResult`
   migrated to Pydantic `BaseModel`. No dataclasses remain in the package.
+- **Ground-up rebuild + CLI policy (draft, 2026-09-08):** the modular-pipeline
+  work (§1, [`pipeline-architecture.md`](pipeline-architecture.md)) will be a
+  **ground-up rebuild** — the current flat modules are *inspiration* (the
+  migration map §12 says *where old things live*), not something whose import
+  paths or public names we preserve. **CLI draft rules** (proposal §13): no CLI
+  by default; add a console script only when a *full, stable pipeline* exists
+  **and** the run is *repeatable/batch*; one CLI per pipeline/driver (never per
+  step); `cli.py` stays pure argparse glue with zero signal-processing logic.
+  No new CLIs until the rolling-sync `Pipeline` runs end-to-end.
+- **Pipeline-element conventions (agreed 2026-09-08):** persisted as the
+  authoritative reference in
+  [`docs/pipeline-conventions.md`](pipeline-conventions.md) — consult it before
+  adding any module. **Pydantic models, not dataclasses.** Models are the
+  *nouns* (domain containers, `*Spec` stage params, results, source
+  descriptors); **transforms are typed functions** (the verbs); **pipelines are
+  ordered compositions**. **Closure rule:** processing steps are
+  `Recording -> Recording` (chained and re-appliable — interpolation→
+  re-interpolation is just applying the step twice); terminal `Recording -> U`
+  stages live in `analysis/` and end a pipeline. **Validation tiers:** full at
+  the `io/` boundary, structural (shape/dtype) at stage entry via
+  `model_validator`, none in inner loops. Templates + testing rules live in the
+  conventions doc; fold into AGENTS.md once `models/`+`process/` land.
 
 ---
 
@@ -207,3 +267,26 @@ Not yet ported — candidates, each one module under `analysis/`:
   `python-image-processing-notebooks/references/wolfram/` (with a new
   porting-map README) and removed from this repo. Only the UDV-specific
   `UDV_Data_Analysis_Echo.nb/.txt` remain here.
+
+---
+
+## Session status — 2026-09-08: pipeline architecture planning
+
+Planning-only session (no code changes). Captured the **rolling-measurement
+synchronization pipeline** as the next primary direction (new §1 domain-backlog
+item above) and wrote the modular-layout proposal to
+[`pipeline-architecture.md`](pipeline-architecture.md). Decisions settled this
+session: **sub-packages now** (io / models / process / analysis / viz) · a
+**data-source (IO) layer** keyed on (vendor/device, format) — current source is
+the Signal Processing SA **DOP 3010** (`io/dop/{add,bdd}.py`), `.BDD` read via
+**DOPpy** · **pandas** backend · explicit `layout.toml` geometry · **per-sensor
+2D series with own timestamps** as the canonical store (no single merged array).
+Also settled: **ground-up rebuild** (current modules = inspiration; proposal §12
+is a "where old things live" map, no import-compat) · a **draft CLI policy**
+(§13: no CLI by default; one CLI per stable, repeatable pipeline, never per
+step) · **pipeline-element structure rules** (canonical in
+`docs/pipeline-conventions.md`: Pydantic-not-dataclass,
+`Recording -> Recording` closure for transforms, `*Spec` param models,
+T1/T2/T3 validation tiers). Still open: stat-vs-raw under sync, DOPpy
+integration mode (cherry-pick vs dep), and the small §12.10 placement choices.
+Working tree was clean at `72d45a8` (P3 ruff) before these doc edits.

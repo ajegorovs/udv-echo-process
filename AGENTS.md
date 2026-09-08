@@ -95,6 +95,12 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   (`MeasType`). Do not add dataclasses. (The optical
   `TemporalProjectionResult` dataclass left with the removed stale
   optical modules; `RpmResult` is now a `BaseModel` too — hardening §structure.)
+- **Pipeline & module structure (rebuild)**: the authoritative rules for the
+  ground-up modular rebuild — Pydantic-not-dataclass, `Recording -> Recording`
+  transform closure, `*Spec` param models, validation tiers, and templates —
+  live in [`docs/pipeline-conventions.md`](docs/pipeline-conventions.md).
+  Consult it when adding modules during the rebuild; this file's flat-era
+  conventions are placeholders until then.
 - **Ported features**: one module per ported Wolfram feature under
   `udv_echo_process/analysis/`; record it in `references/wolfram/README.md`.
 
