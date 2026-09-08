@@ -1,18 +1,39 @@
-# Pipeline architecture proposal — udv-echo-process
+# Pipeline architecture — udv-echo-process
 
-Status: **proposal** (2026-09-08, planning-only — no code changes). This revision
-incorporates the 2026-09-08 planning decisions: **finer granularity (split into
-sub-packages now)**, a **data-source (IO) layer** that represents *where the data
-comes from*, **pandas** for the canonical dataset, and **explicit per-experiment
-geometry config**. The `.BDD` binary format will be read via the sibling
-**DOPpy** parser.
+Status: **proposal → partially landed.** Original proposal 2026-09-08
+(planning-only). **Revision 2 (2026-09-08):** Stage 1–2 of the ground-up
+rebuild landed after the original text below was written (commit `f2482f2`),
+and discussion round 1 re-derived the direction (capture only — no code in this
+doc revision, no final conventions committed).
+
+> ## Revision 2 delta — read these sections as follows
+>
+> **Landed (Stage 1–2, commit `f2482f2`):** the `models/` + `io/` layers and
+> the **DOP3000/3010 `.BDD` reader** (`io/dop/bdd.py`; all 22 `data/` fixtures
+> load; 58 tests, ruff clean). Canonical types **converged** to
+> **`ChannelSeries`** (atomic channel unit with its own real `time_s`) inside a
+> **`MultiplexedMeasurement`** box — *not* the `SensorSeries`/`Recording` model
+> sketched in the original §§4/7/8 below. Consequences recorded in place:
+> - **No `models/raw.py` / `models/dataset.py` split** and **no pandas
+>   dependency**: canonical storage is numpy arrays inside Pydantic models
+>   (`models.base.Model`); the earlier "pandas backend" decision is superseded
+>   (pandas was only ever an optional *derived* view, and is not built).
+> - **§3 (IO), §4 (canonical model), §6 (target layout), §7 (deconstruction),
+>   §8 (walkthrough), §10 (open decisions), §11 (staged rollout)** are revised
+>   in place below; everything not marked keeps its original proposal value but
+>   may name pre-convergence types.
+> - **§12 (migration map)** stays as the "where old code lives" reference; its
+>   destination cells predate convergence — the legacy modules stay put for now
+>   (see §15.1).
+> - **§15** records discussion round 1: decisions, deferrals, and the sync
+>   experiment that must happen before `process/` design is final.
 
 ---
 
 ## 1. Driving use case — the rolling-sync pipeline
 
-1. **Import + standardize** — ingest a **sequential/rolling** measurement into a
-   canonical, time-indexed, per-sensor, per-gate layout (pandas-backed).
+1. **Import + standardize** — ingest a **sequential/rolling** measurement into
+   a canonical, time-indexed, per-sensor, per-gate layout.
 2. **Time-synchronize** — the instrument samples sensors round-robin, so sensor
    *k* lags sensor 0 by *k·DT*; shift each sensor back by its offset and
    interpolate every sensor onto one common time grid so all sensors read "the
@@ -32,7 +53,8 @@ of this pipeline task.
 ### What the data looks like (verified from committed fixtures)
 
 `data/4-sensor-velocity/200RPM_v2.ADD` (raw, channels 6–9, `P=4` profiles/block,
-~25.4 ms/profile):
+~25.4 ms/profile). The `.BDD` twins of the same recordings show the identical
+staggering as **real timestamps** — ch *k*'s first sample at ≈ `k·DT`:
 
 | Channel | Block-1 first `TBD [ms]` | Offset vs ch 6 |
 |--------:|-------------------------:|---------------:|
@@ -41,9 +63,11 @@ of this pipeline task.
 | 8 | 222.1 | ≈ `2·DT` |
 | 9 | 333.6 | ≈ `3·DT` |
 
-The per-channel offset `DT` must be **derived from the data** (first `TBD` of
-each channel in the first block), never hard-coded — consistent with the earlier
-removal of the `DT_S` magic constant (hardening §P0).
+The per-channel offset `DT` must be **derived from the data** (first timestamp
+of each channel), never hard-coded — consistent with the earlier removal of the
+`DT_S` magic constant (hardening §P0). In the landed model every channel *has*
+its own real `time_s`, so sync derives lags from actual timestamps, not from an
+assumed `k·DT`.
 
 ---
 
@@ -59,11 +83,11 @@ io/  →  models/  ←  process/ analysis/ viz/
 
 - **`io/`** — *where the data comes from*. A **source** is a first-class
   concept; each source has its own parser, all ending in the same canonical
-  model. (New this revision — see §3.)
+  model.
 - **`models/`** — shared Pydantic models. Single home for types → no import
   cycles, `io` and `process`/`viz` both depend on it.
-- **`process/`** — pure, typed transforms (`A → B`): time-sync, resampling,
-  pipeline composition, future spatial interpolation.
+- **`process/`** — pure, typed transforms: time-sync, resampling, pipeline
+  composition, future spatial interpolation.
 - **`analysis/`** — domain algorithms (RPM today; wall/pill tracking later).
 - **`viz/`** — thin matplotlib wrappers, split by *what* is visualized.
 
@@ -76,156 +100,199 @@ of named steps carrying no logic of its own.
 
 ---
 
-## 3. Data-source (IO) layer
+## 3. Data-source (IO) layer — landed
 
 The requirement: *"there might be different data sources and we have to
 implement different data parsers."* So **source = (vendor/device, format)**, and
-the IO layer owns source *discovery* and *per-source parsing*.
+the IO layer owns source *discovery* and *per-source parsing*. Landed shape
+(commit `f2482f2`):
 
 ```python
 # io/base.py
-class SourceFormat(str, Enum): ADD = ".ADD" ; BDD = ".BDD" ; ...
-
-class SourceSpec(BaseModel):          # identifies where data comes from
-    vendor: str                       # e.g. "Signal Processing SA"
-    device: str                       # e.g. "DOP 3010"
-    format: SourceFormat
-
 class Reader(Protocol):
-    def read(self, path: Path) -> ExtractedData: ...   # raw canonical frames
+    def read(self, path: Path) -> MultiplexedMeasurement: ...
 
-def load(path: Path) -> Recording: ...      # sniff source → dispatch → standardize
+_REGISTRY: dict[SourceSpec, Reader]                  # keyed by frozen SourceSpec
 def register_reader(spec: SourceSpec, reader: Reader) -> None: ...
+def sniff(head: bytes) -> SourceSpec | None: ...     # content-based (magic)
+def read_path(path: Path) -> MultiplexedMeasurement: ...  # sniff → dispatch
+def load(path: Path | str) -> MultiplexedMeasurement: ... # convenience alias
 ```
 
-- **Sniffing is content-based, not extension-based** (the repo already does this
-  for `.ADD` via the `ASCUDOPV` magic line): `load()` sniffs the magic, picks
-  the registered reader, and returns the standardized `Recording`.
+- **Sniffing is content-based, not extension-based**: `load()`/`read_path()`
+  read the magic bytes and dispatch to the registered reader. A misnamed file
+  (this repo has a genuine `.BDD` misnamed `.jpg`) is caught by its bytes.
 - **Adding a new device = `register_reader(...)`, not editing a dispatch
   `if/elif`.** Downstream (`process`/`analysis`/`viz`) is untouched.
+- **`SourceSpec` is `frozen`** (hashable) so it can key `_REGISTRY`; `SourceFormat`
+  and `MeasType` live in `models/io.py` (`SourceFormat`: `.ADD` / `.BDD`).
+- A reader registers itself by **module** (module-level `sniff` + `read`),
+  via `io/dop/__init__.py::install()` — idempotent, run at package import.
 
-**Current source — Signal Processing SA, DOP 3010 (DOP-series).** Assumption to
-validate: *all DOP-series devices emit the same data layout*, so `.ADD` and
-`.BDD` are two formats of one source family and map onto the same
-`ExtractedData`/`Recording`.
+**Current source — Signal Processing SA, DOP 3010 (DOP-series).**
 
 ```
 io/dop/
-├── __init__.py   # registers the DOP-family readers under one SourceSpec
-├── add.py        # .ADD ASCII reader  → ExtractedData   [≈ today's parser.py logic]
-└── bdd.py        # .BDD binary reader → ExtractedData   [DOPpy-backed — future]
+├── __init__.py   # DOP3000_SPEC + install(): registers the .BDD reader
+└── bdd.py        # .BDD binary reader → MultiplexedMeasurement   [LANDED]
 ```
 
-- `add.py`: today's `parser.py` logic moves here; the models it returns move to
-  `models/raw.py`.
-- `bdd.py`: uses the sibling **DOPpy** parser. Per AGENTS.md, **cherry-pick**
-  the reader rather than vendoring it (NumPy-2 breakage, no packaging; see
-  `docs/doppy-analysis.md`). `.BDD` also carries metadata `.ADD` drops (PRF,
-  burst length, TGC, sound speed, Doppler angle, filter settings, trigger state)
-  and interleaved velocity+echo profiles.
-- A genuinely *different* vendor/device later → `io/<other>/` with its own
-  parser, still emitting the same canonical model.
+- **`bdd.py` (landed):** DOP3000/3010 `.BDD` reader — per-channel
+  operation-parameter blocks at `548 + (k-1)·1024`, measurement blocks from
+  `31268` with nested profile sub-blocks, overflow-corrected µs→s time,
+  velocity→mm/s, echo→module-scale amplitude, per-channel depth grid → one
+  `ChannelSeries` + `ChannelConfig` per channel. `BINUDOPV` magic; `BINWDOPV`
+  (DOP2000) and 2-D/3-D modes are recognised but unsupported. The decode is a
+  **cherry-picked DOPpy rewrite** (clean-room, no runtime dep — NumPy-2
+  breakage, no packaging; see `docs/doppy-analysis.md`).
+- **`add.py` (NOT migrated — by decision, §15.1):** the legacy `.ADD` logic
+  stays in flat `parser.py` until the new stack reaches capacity; old code is
+  inspiration only.
 
-`discover_data_files()` (currently in `viz.py`) moves here: discovery is about
-finding valid *source* files, not plotting.
+**Discovery.** Content-based `discover_data_files()` **landed in `io/__init__.py`**
+(sniffs every file under each `data/<experiment>/` subdir). Note the current
+transitional duplication: the top-level `__init__.py` still re-exports
+`viz.discover_data_files` (the `.ADD`-listing version the notebook/legacy
+surface uses) — resolved when `.ADD` support lands in `io/` (§15.1). Discovery
+is about finding valid *source* files, not plotting.
 
 ---
 
-## 4. Canonical dataset (models layer, pandas-backed)
+## 4. Canonical model (models layer) — landed
 
-Decision: **pandas** backs the standardized layout; the repo is currently
-pandas-free, so this adds a dependency. The canonical **store** is **one 2D
-series per sensor, each carrying its own timestamps** — *not* one merged N-D
-array. This keeps interpolation and retrieval per-sensor (each sensor is
-interpolated against its own `time_s`, and read back as
-`recording.sensors[ch]`); any cross-sensor merge is a *derived view*, never the
-store of record.
+*Original proposal (below this section) chose a pandas-backed
+`SensorSeries`/`Recording` with a `models/raw.py` + `models/dataset.py` split.
+The 2026-09-08 model convergence (Option B — full new model) replaced it:
+canonical storage is **numpy arrays inside Pydantic models**, one per channel,
+with no `raw`/`dataset` split. This section describes the landed model.*
 
-- **Keep** `models/raw.py` = the *raw* layer (`MeasType`, `ChannelFrame`,
-  `ExtractedData`) — the contract every reader emits.
-- **Add** `models/dataset.py` = the *standardized* layer:
+```
+models/
+├── __init__.py        # re-exports; imports nothing from io/process/analysis/viz
+├── base.py            # Model (numpy-capable BaseModel), shape_2d()
+├── io.py              # MeasType, SourceFormat, SourceSpec (frozen)
+├── channel_config.py  # ChannelConfig — static per-channel instrument config
+├── channel_series.py  # ChannelSeries — the atomic channel unit (T2 checks)
+└── measurement.py     # MultiplexedMeasurement — ordered box over channels
+```
 
 ```python
-class SensorSeries(BaseModel):      # one sensor's own 2D series
+# models/base.py
+class Model(BaseModel):
+    model_config = ConfigDict(arbitrary_types_allowed=True)  # numpy fields OK
+def shape_2d(time_s, values, n_gates) -> bool: ...   # shared T2 shape check
+
+# models/io.py
+class MeasType(str, Enum):  ECHO = "echo"; VELOCITY = "velocity"
+class SourceFormat(str, Enum): ADD = ".ADD"; BDD = ".BDD"
+class SourceSpec(Model):            # frozen → hashable, keys the reader registry
+    vendor: str = "Signal Processing SA"   # defaults = the DOP family
+    device: str = "DOP 3010"
+    format: SourceFormat
+
+# models/channel_config.py
+class ChannelConfig(Model):         # static per-channel op config: all-optional,
+    ...                             #   dense defaults (acoustic, gate geometry,
+                                    #   medium/physics, TGC/filter/trigger, ADC)
+
+# models/channel_series.py
+class ChannelSeries(Model):         # the atomic pipeline unit
     channel: int
-    gate_depths_mm: list[float]     # per-gate measurement-line positions
-    time_s: np.ndarray              # (T,) this sensor's OWN timestamps (s)
-    values: np.ndarray              # (T, G)  T profiles × G gates
-
-class Recording(BaseModel):         # the whole standardized measurement
-    file_path: Path
     meas_type: MeasType
-    source: SourceSpec
-    layout: Layout                  # from models/geometry.py
-    sensors: list[SensorSeries]     # primary store: per-sensor 2D series
+    gate_depths_mm: list[float]     # per-gate measurement-line positions (mm)
+    time_s: np.ndarray              # (T,) THIS channel's own real timestamps (s)
+    values: np.ndarray              # (T, G) T profiles × G gates
+    config: ChannelConfig           # nested static config
+    # @model_validator (T2): values.shape == (len(time_s), len(gate_depths_mm))
+    #   and time_s monotonic non-decreasing; .describe() one-liner
 
-    @classmethod
-    def from_extracted(cls, d, source, layout) -> Recording: ...
-    def common_time_s(self) -> np.ndarray | None: ...  # derived, post-sync
-    def to_pandas(self) -> pd.DataFrame: ...   # derived tidy long form (optional)
-    def to_wide(self) -> pd.DataFrame: ...     # derived wide (channel, gate) view
+# models/measurement.py
+class MultiplexedMeasurement(Model):  # the "box" over one recording
+    file_path: Path
+    source: SourceSpec
+    header: str = ""; comment: str = ""
+    channels: list[ChannelSeries]   # ordered (round-robin) — list, not dict
+    # .meas_type (None if channels disagree) · .is_multiplexed ·
+    # .by_channel() -> dict[int, ChannelSeries] · .describe()
 ```
 
-- **Storage vs views.** Each `SensorSeries` is self-contained (own `time_s` +
-  `(T, G)` `values`). Before sync, `time_s` is the sensor's native timestamps;
-  after sync, it is the sensor's shifted/interpolated timestamps on the common
-  grid. `common_time_s()`, `to_pandas()`, `to_wide()` are *derived*
-  conveniences that merge across sensors — handy for one plot or a wide table,
-  but never the store.
+Key properties of the landed model:
+
+- **`ChannelSeries` is the atomic, self-contained unit** — it carries its own
+  gate depths, its own **real** `time_s` (no assumed `k·DT`; DT can fluctuate
+  per measurement — sync later derives offsets from actual timestamps) and its
+  own static `ChannelConfig`.
+- **`MultiplexedMeasurement` is a *view of a rolling/multiplexed file***: an
+  ordered `list[ChannelSeries]` preserving multiplex order; a single-channel
+  recording is just the box with one element. No sync/geometry fields live here
+  — sync produces derived, re-timed `ChannelSeries` at call time; geometry is
+  deferred (§5).
+- **Storage vs views.** Each `ChannelSeries` is the store. Merged/cross-sensor
+  layouts (tidy long, wide) were *derived* conveniences in the original
+  proposal and are **not built** — add them only when a concrete consumer (a
+  plot, a table export) needs one.
+- **`MeasType` duplication is transitional:** `models.MeasType` is canonical
+  for the new stack; flat `parser.py` keeps its own copy for the legacy `.ADD`
+  surface. Unify when `.ADD` moves under `io/` (§15.1).
 
 ---
 
-## 5. Geometry (explicit per-experiment config)
+## 5. Geometry (explicit per-experiment config) — deferred
 
-Decision: **explicit config**, not free-text parsing of `comments.txt` (which
-says things like "order dont remember"). Proposed: `data/<experiment>/layout.toml`
-describing each channel's pose (position, measurement-axis direction, gate
-spacing, probe diameter), so `models/geometry.py` (`SensorPose`, `Layout`) loads
-it deterministically. `comments.txt` remains a human-readable note, not an input.
+Original decision: **explicit config**, not free-text parsing of `comments.txt`
+(which says things like "order dont remember"). Proposed:
+`data/<experiment>/layout.toml` describing each channel's pose (position,
+measurement-axis direction, gate spacing, probe diameter), so
+`models/geometry.py` (`SensorPose`, `Layout`) loads it deterministically.
+`comments.txt` remains a human-readable note, not an input.
+
+**Convergence note (2026-09-08): geometry is deferred.** It is an add-on used
+only far downstream (`viz/lines.py`, spatial interpolation, wall/pill
+tracking); no `layout.toml` work yet.
 
 ---
 
 ## 6. Target layout
 
+Landed tree (commit `f2482f2`) with planned additions marked:
+
 ```
 src/udv_echo_process/
-├── __init__.py            # public re-exports (keep the parity discipline)
+├── __init__.py            # public re-exports (legacy + new surface coexisting)
+├── cli.py / run_all.py    # legacy entry points / batch drivers — untouched
 │
-├── io/                    # ── data-source layer ──────────────────────────
-│   ├── __init__.py        #   load()/sniff() dispatch, discover_data_files()
-│   ├── base.py            #   SourceFormat, SourceSpec, Reader, register_reader
-│   └── dop/               #   Signal Processing SA — DOP-series (DOP 3010 today)
-│       ├── __init__.py    #     registers DOP readers (one source family)
-│       ├── add.py         #     .ADD ASCII  → ExtractedData   [≈ parser.py]
-│       └── bdd.py         #     .BDD binary → ExtractedData   [DOPpy; future]
+├── models/                # ── LANDED (Stage 1–2) ──────────────────────────
+│   ├── __init__.py        #   re-exports; one-way dependency rule
+│   ├── base.py            #   Model (numpy-capable), shape_2d()
+│   ├── io.py              #   MeasType / SourceFormat / SourceSpec (frozen)
+│   ├── channel_config.py  #   ChannelConfig — static per-channel config
+│   ├── channel_series.py  #   ChannelSeries — atomic channel unit (T2 checks)
+│   └── measurement.py     #   MultiplexedMeasurement — ordered box
 │
-├── models/                # ── shared Pydantic models ─────────────────────
-│   ├── __init__.py
-│   ├── raw.py             #   MeasType, ChannelFrame, ExtractedData  [from parser.py]
-│   ├── dataset.py         #   SensorSeries, Recording (+ to_pandas/to_wide)
-│   └── geometry.py        #   SensorPose, Layout
+├── io/                    # ── LANDED (Stage 1–2) ──────────────────────────
+│   ├── __init__.py        #   load/sniff/read_path + discover_data_files()
+│   ├── base.py            #   Reader registry, register_reader, sniff
+│   └── dop/               #   Signal Processing SA — DOP-series
+│       ├── __init__.py    #   DOP3000_SPEC + install() (registers reader)
+│       └── bdd.py         #   DOP3000/3010 .BDD reader   [LANDED]
+│       └── add.py         #   [deferred — .ADD stays in legacy parser.py, §15.1]
 │
-├── process/               # ── pure, typed transforms ─────────────────────
-│   ├── __init__.py
-│   ├── sync.py            #   estimate_channel_offsets / shift / resample_common_grid
-│   ├── pipeline.py        #   Pipeline = ordered named steps; run()
-│   └── spatial.py         #   [future] spatial interpolation across sensors
+├── process/               # ── skeleton ────────────────────────────────────
+│   ├── __init__.py        #   placeholder (docstring still says Recording)
+│   ├── sync.py            #   [NEXT — ChannelSeries primitives, §11/§15]
+│   └── pipeline.py        #   [later — box-level step composition]
 │
-├── analysis/              # ── domain algorithms ──────────────────────────
-│   ├── __init__.py
-│   └── rpm.py             #   existing (unchanged contract)
-│
-├── viz/                   # ── thin matplotlib wrappers ───────────────────
-│   ├── __init__.py
-│   ├── heatmap.py         #   per-sensor time×gate heatmaps  [≈ plot_recording]
-│   ├── profile.py         #   gate profiles mean±std         [≈ plot_channel_stats]
-│   └── lines.py           #   measurement-line cross-sections [geometry-aware]
-│
-├── run_all.py             # batch drivers
-└── cli.py                 # entry points
+├── analysis/              # legacy rpm.py (untouched); future ports here
+├── viz.py                 # legacy flat viz (untouched); viz/ split deferred
+└── parser.py              # legacy .ADD parser (untouched until capacity)
 
-data/<experiment>/layout.toml     # explicit sensor geometry per experiment
+data/<experiment>/layout.toml     # [deferred — geometry, §5]
 ```
+
+Original proposal additionally split `viz/` into `heatmap.py` / `profile.py` /
+`lines.py` and gave `analysis/` a sub-package of its own — those moves are
+**deferred** (viz is last priority; old modules stay until the stack replaces
+them).
 
 ---
 
@@ -233,15 +300,14 @@ data/<experiment>/layout.toml     # explicit sensor geometry per experiment
 
 | Module | Contract | Reused by |
 |--------|----------|-----------|
-| `io/base.py` + `io/dop/*` | source → `ExtractedData` → `Recording` | `.ADD` today; `.BDD` via DOPpy; future vendors |
-| `models/raw.py` | raw frame types | every reader |
-| `models/dataset.py` | standardized `Recording` + pandas | rolling-sync, single/multi-channel RPM, velocity-RPM, wall/pill tracking, future `.BDD` |
-| `models/geometry.py` | `Layout` + world positions | sync order/offsets, `viz/lines.py`, spatial interpolation, wall/pill tracking |
-| `process/sync.py` | `Recording` → time-aligned `Recording` | any rolling array (velocity **and** echo); feeds spatial |
-| `process/pipeline.py` | ordered steps → result | every mini-pipeline; replaces ad-hoc drivers |
-| `viz/heatmap.py`, `viz/profile.py` | `Recording` → figs | existing single/multi-sensor views |
-| `viz/lines.py` | `Recording` + `Layout` → figs | rolling-sync step 3(b); wall/pill visualization |
-| `analysis/spatial.py` | aligned `Recording` + `Layout` → 2D field | future step 4 |
+| `io/base.py` + `io/dop/bdd.py` | source → `MultiplexedMeasurement` | `.BDD` today; `.ADD` (deferred); future vendors/devices via `register_reader` |
+| `models/channel_series.py` | atomic `ChannelSeries` (T2-validated) | every layer; the unit every transform will operate on |
+| `models/measurement.py` | `MultiplexedMeasurement` box | rolling-sync, single/multi-channel RPM, future wall/pill tracking |
+| `models/channel_config.py` / `io.py` | static config + source descriptors | readers, `describe()`, dispatch |
+| `process/sync.py` *(future)* | channel primitives → box step | any rolling array (velocity **and** echo); feeds spatial |
+| `process/pipeline.py` *(future)* | ordered box steps → result | every mini-pipeline; replaces ad-hoc drivers |
+| `viz/*` *(future)* | `MultiplexedMeasurement` → figs | single/multi-sensor views; measurement lines (geometry, deferred) |
+| `analysis/spatial.py` *(future)* | aligned measurement + `Layout` → 2D field | future step 4 |
 
 No new module is rolling-sync-specific — the "does the deconstruction map to
 other tasks" test passes.
@@ -250,16 +316,24 @@ other tasks" test passes.
 
 ## 8. End-to-end walkthrough (rolling-sync)
 
-```
-io.load(file)                         # sniff source → io/dop/add.read() → ExtractedData
-  → Recording.from_extracted(...)     # models/dataset.py  (standardized)
-  → Pipeline([                        # process/pipeline.py
-        estimate_channel_offsets,     # process/sync.py  (DT, 2·DT, … from first block)
-        shift_channels,               # process/sync.py  (sensor k → t − k·DT)
-        resample_common_grid,         # process/sync.py  (per-sensor interpolation)
-    ])
-  → viz.heatmap.plot_recording(...)   # per-sensor time×gate
-  → viz.lines.plot_measurement_lines(...)  # spatial cross-section @ time t
+```python
+# Today (landed):
+from udv_echo_process.io import load
+m = load("data/4-sensor-velocity/200RPM.BDD")   # .BDD → MultiplexedMeasurement
+m.describe()                                    # 4 channels, real staggered time_s
+m.by_channel()                                  # per-channel ChannelSeries
+
+# Target (once sync lands — ChannelSeries primitives first, see §11/§15):
+shifted = [shift_channel(c, lag_s[c.channel]) for c in m.channels]   # per-channel
+grid    = build_common_grid(shifted, GridSpec(...))                  # strategy TBD (§15.2)
+aligned = MultiplexedMeasurement(... channels=[resample_to_grid(c, grid) for c in shifted])
+
+# Later, box-level uplift — Pipeline over MultiplexedMeasurement steps:
+Pipeline([
+    estimate_lags,        # data-derived, cross-channel
+    shift_channels,       # box step composing the channel primitive
+    resample_common_grid, # grid as a Spec → swappable strategy
+])
 ```
 
 ---
@@ -267,49 +341,80 @@ io.load(file)                         # sniff source → io/dop/add.read() → E
 ## 9. Granularity guardrails
 
 - **Sub-packages** group *layers* (io / models / process / analysis / viz) —
-  this is now the deliberate structure, not a future split.
+   this is now the deliberate structure (landed), not a future split.
 - **Within a layer**, a module = one domain concern; merge a transform into its
-  module when it shares the module's contract and is used together with its
-  siblings (e.g. the three sync functions stay one module).
+   module when it shares the module's contract and is used together with its
+   siblings (e.g. the sync functions stay one module).
 - **Split** a module only when it mixes unrelated concerns, crosses ~400–500
-  lines, or a second pipeline reuses only a subset of its primitives.
+   lines, or a second pipeline reuses only a subset of its primitives.
 - A module is justified only when it adds domain semantics on top of an import
-  (e.g. `models/dataset.py` pins the canonical contract + metadata — it is not a
-  pandas wrapper). Never wrap a bare `numpy`/`scipy`/`matplotlib` call.
+   (e.g. `models/channel_series.py` pins the canonical contract + invariants —
+   it is not a numpy wrapper). Never wrap a bare `numpy`/`scipy`/`matplotlib`
+   call.
 
 > Note: this supersedes AGENTS.md's "keep modules flat / no pre-emptive
 > sub-packages" guidance for *this* pipeline work — AGENTS.md should be updated
-> to match when implementation starts.
+> to match once the rebuild settles (see §15.3).
 
 ---
 
 ## 10. Open decisions
 
-**Resolved (2026-09-08):** sub-packages now · pandas backend · explicit geometry
-config · dedicated IO/source layer with DOP 3010 + DOPpy `.BDD` · **per-sensor
-2D series with own timestamps** as the canonical store (no single merged array).
+**Resolved / closed (through 2026-09-08, incl. discussion round 1):**
+- Sub-packages now — ✅ landed (`models/`, `io/`, `process/` skeleton).
+- Dedicated IO/source layer with DOP 3010 — ✅ landed; **`.BDD` reader cherry-
+  picked from DOPpy** (clean rewrite, no runtime dep) — ✅ landed (`bdd.py`).
+- Canonical store: **one per-channel 2D series with its own real timestamps** —
+  ✅ landed as numpy-backed `ChannelSeries` in Pydantic models; the earlier
+  **pandas-backed `Recording`/`SensorSeries` + `raw`/`dataset` split is
+  superseded** (no pandas dep).
+- Geometry (`layout.toml`, `models/geometry.py`) — **deferred** (§5).
+- `.ADD` migration & the legacy surface (`parser.py`, rpm, viz, notebook,
+  MeasType/discover duplication) — **deferred: old code untouched until the new
+  stack reaches capacity** (§15.1).
 
 **Still open:**
-1. **stat vs raw under sync** — raw has cumulative `TBD` (real times); stat
-   stores a per-block constant. Sync is only meaningful for raw; decide whether
-   `sync` raises on stat or aligns by block index.
-2. **DOP-family layout assumption** — confirm `.ADD` and DOPpy-decoded `.BDD`
-   share the same `ExtractedData` mapping (the DOPpy cross-check, agenda §1).
-3. **DOPpy integration mode** — cherry-pick vs runtime dependency (AGENTS.md
-   leans cherry-pick; NumPy-2 breakage, no packaging).
+1. **Sync grid & alignment strategy** — how the common grid is built and how
+   per-channel lags are applied (constant shift vs adaptive; uniform-overlap vs
+   reference vs union grid; endpoint policy). **Deliberately not decided here**:
+   it needs an experiment (marimo preview notebook over the real 4-sensor
+   `.BDD` signal) — see §15.2, discuss separately.
+2. **stat-vs-raw under sync** — deferred (§15.1); `.BDD` has no stat/raw split
+   (every profile carries real time), so this only matters for a future `.ADD`
+   migration.
+3. Later-stage candidates, kept on the table but uncommitted to: `.BDD`-vs-
+   `.ADD` cross-validation, DOPpy-independent gate-depth derivation, pandas
+   derived views only when a consumer needs them.
 
 ---
 
 ## 11. Staged rollout
 
-1. Restructure: `io/` + `models/` (+ pandas dep, `layout.toml` for the two
-   committed multi-sensor experiments, tests migrated from `parser.py`/`viz.py`).
-2. `process/sync.py` (offset + shift + resample) + tests on
-   `data/4-sensor-velocity/200RPM_v2.ADD` (raw rolling) and
-   `data/echo-4-sensors-2x2/300RPM.ADD` (stat — per §10.2).
-3. `process/pipeline.py` + `viz/lines.py`; wire `__init__.py` + a thin marimo
-   notebook wrapper.
-4. *(future)* `io/dop/bdd.py` (DOPpy) + `analysis/spatial.py`.
+**Stage 1–2 — models + IO + `.BDD` reader: ✅ LANDED** (commit `f2482f2`).
+`models/` (base/io/channel_config/channel_series/measurement), `io/` (registry,
+content sniffing, discovery), `io/dop/bdd.py`, `process/` skeleton; tests
+`test_models.py` + `test_io_bdd.py`; 58 tests pass, ruff clean.
+
+**Stage 3 — `process/sync.py`, ChannelSeries-first (NEXT).** Build the
+per-channel sync transforms **bottom-up on `ChannelSeries`** (decision §15.1):
+the primitive set, with grid/alignment **passed in as a `Spec`** so strategies
+are swappable (this is what makes the §15.2 experiment possible):
+- per-channel lag application / time handling and resample-to-grid primitives;
+- a thin **marimo preview notebook** (library-first) to compare alignment
+  strategies against the original 4-sensor signal before locking the design;
+- tests on the committed fixtures: `data/4-sensor-velocity/*.BDD` (real
+  staggered starts) and single-channel `data/echo/*.BDD` (trivially aligned).
+
+**Stage 4 — box-level uplift.** `MultiplexedMeasurement -> MultiplexedMeasurement`
+steps (`estimate_lags`/`shift_channels`/`resample_common_grid`) + the ordered
+`Pipeline` composition in `process/pipeline.py`; re-express the conventions
+closure rule and templates on the new types (§15.3) and fold into AGENTS.md.
+
+**Stage 5 — capacity-driven legacy migration (deferred until the stack can
+replace the old consumers):** `.ADD` reader in `io/dop/add.py` (real time from
+cumulative `TBD`; stat handling decided then), MeasType unify on
+`models.MeasType`, top-level `discover_data_files` flips to the `io` version,
+analysis ports (RPM on `ChannelSeries`). Viz stays **last priority**.
 
 ---
 
@@ -321,74 +426,64 @@ Review of every current module (done 2026-09-08, symbol-level).
 > preservation plan: the rebuild is ground-up, with the current implementation
 > as *inspiration*. Nothing below implies keeping import paths, module objects,
 > or public names — the map just tells you where to look for the logic to adapt.
+>
+> **Revision-2 note (2026-09-08):** the *destination* cells below were written
+> for the pre-convergence proposal (they name `models/raw.py`, `dataset.py`,
+> `viz/heatmap.py`, …). Under the current decisions the legacy modules **stay
+> put until the new stack reaches capacity** (§15.1), and the landed model homes
+> are exactly as in §4/§6. Use the table to *find* logic; take homes from §4/§6.
 
 ### 12.1 `parser.py` (446 lines)
 
 | Symbol | Destination | Notes |
 |--------|-------------|-------|
-| `MeasType` | `models/raw.py` | unchanged |
-| `ChannelFrame` | `models/raw.py` | unchanged |
-| `ExtractedData` (+ `by_channel`/`by_block`/`describe`/`meas_type`) | `models/raw.py` | unchanged contract |
-| `parse_comma_decimal` | `io/dop/add.py` | DOP ASCII comma-decimal helper |
-| `extract()` | `io/dop/add.py` | becomes the DOP `.ADD` reader; `io.load()` dispatches to it |
-| `GATE_DEPTH_HEADER` / `STAT_PREFIX` / `MAGIC_PREFIX` | `io/dop/add.py` | magic also feeds `io` sniffing |
-| `_detect_meas_type`, `_parse_gate_depths`, `_parse_num`, `_parse_section`, `_add_frame`, `_parse_stat_section`, `_parse_stat_row`, `_detect_n_profiles` | `io/dop/add.py` | internal, unchanged |
-| `list_add_files`, `list_stat_add_files`, `load_all_data` | `io/dop/__init__.py` (or `add.py`) | `.ADD`-specific listing/loading |
-| `parse_add_file`, `parse_stat_add_file` | drop, or keep as thin aliases in `io/dop/add.py` | back-compat shims — see §12.6 |
+| `MeasType` | (stays here for now) | duplicate of `models.MeasType` — unify at .ADD migration |
+| `ChannelFrame`, `ExtractedData` (+ helpers) | legacy `.ADD` containers | consumed by legacy rpm/viz/notebook only |
+| `extract()` | (stays here) | becomes `io/dop/add.py::read` **when .ADD migrates** |
+| `parse_comma_decimal`, header/stat/magic constants, `_parse_*` internals | (stays here) | move with the `.ADD` reader |
+| `list_add_files`, `list_stat_add_files`, `load_all_data` | (stays here) | `.ADD`-specific listing/loading |
 
 ### 12.2 `viz.py` (249 lines)
 
 | Symbol | Destination | Notes |
 |--------|-------------|-------|
-| `plot_recording` | `viz/heatmap.py` | per-sensor time×gate heatmaps |
-| `plot_channel_stats` | `viz/profile.py` | gate profiles mean±std |
-| `plot_all` | `viz/__init__.py` | convenience: both in one call |
-| `DEFAULT_OUTPUT_DIR` | `viz/_common.py` | |
-| `_channel_time_axis`, `_output_path`, `_figure_for_channels`, `_hide_unused_axes`, `_finish_figure`, `_subplot_layout` | `viz/_common.py` (private) | shared by heatmap + profile |
-| `discover_data_files` | `io/__init__.py` (or `io/base.py`) | discovery is source-finding, not plotting |
+| `plot_recording`, `plot_channel_stats`, `plot_all` | future `viz/{heatmap,profile}.py` | viz deferred (last priority) |
+| `discover_data_files` | **landed in `io/__init__.py`** (content-based) | top-level still re-exports this `.ADD` version — transitional |
+| private helpers, `DEFAULT_OUTPUT_DIR` | future `viz/_common.py` | move with the split |
 
 ### 12.3 `analysis/rpm.py` (85 lines)
 
-Unchanged in place (`RpmResult`, `mean_sample_interval_s`, `rpm_from_echo`,
-`setpoint_rpm_from_stem`). Optional later: `RpmResult` → `models/`; not required
-now. `mean_sample_interval_s` currently derives from `ExtractedData` — can later
-read `SensorSeries.time_s`, but that is a refactor, not part of the move.
+Unchanged in place for now. Optional later: port onto `ChannelSeries` /
+`MultiplexedMeasurement` (rpm is currently echo-only on `ExtractedData`);
+`RpmResult` may later move to `models/`. Both deferred — old code is
+inspiration only.
 
 ### 12.4 `run_all.py` (113 lines)
 
-| Symbol | Destination | Notes |
-|--------|-------------|-------|
-| `plot_summary` | `viz/summary.py` (optional) | it's a viz concern (scatter + error bars) |
-| `collect_results` | keep in `run_all.py` | batch glue over `rpm_from_echo` |
-| `main` | keep in `run_all.py` | CLI driver |
+Batch glue over `rpm_from_echo`; keep as-is until analysis ports. `plot_summary`
+is a viz concern — moves with the viz split.
 
 ### 12.5 `cli.py`, `__init__.py`, `analysis/__init__.py`
 
-- `cli.py` — **import updates only** (`extract` from `io`, `plot_all` /
-  `discover_data_files` from new homes, `DEFAULT_OUTPUT_DIR` from `viz`).
-- `__init__.py` — re-export from the new sub-packages but **keep the same public
-  names** so `from udv_echo_process import extract, ExtractedData, plot_all,
-  rpm_from_echo, …` and the notebook stay working.
+- `cli.py` / `run_all.py` — untouched until the stack replaces their
+  consumers.
+- `__init__.py` — currently re-exports **both** the legacy surface (parser/viz
+  names, incl. parser's `MeasType` and viz's `discover_data_files`) and the new
+  surface (`load`, `MultiplexedMeasurement`, `ChannelSeries`, …). Whittle the
+  legacy half down as the rebuild replaces it.
 - `analysis/__init__.py` — unchanged.
 
 ### 12.6 Ground-up note (no import-compat promised)
 
-The old `parser.py`/`viz.py` *submodule paths* (`udv_echo_process.parser`,
-`udv_echo_process.viz`) are **not** preserved — the rebuild re-homes them and
-consumers (`cli.py`, `run_all.py`, tests, the notebook) are re-pointed as they
-are rewritten. Public names can change too; the only surface that matters is
-whatever new top-level `__all__` we choose for the rebuilt package.
+Legacy *submodule paths* are not preserved; consumers are re-pointed as they
+are rewritten. The only surface that matters is the rebuilt package's `__all__`.
 
 ### 12.7 Test migration
 
-- `test_parser.py` — behavior unchanged (imports top-level names). Optionally
-  split to mirror the packages (`tests/io/`, `tests/models/`, …); not required.
-- `test_viz.py` — update `from udv_echo_process.viz import discover_data_files`
-  → `from udv_echo_process.io import discover_data_files`.
-- `test_package_surface.py` — **rewrite** for the new surface: top-level ↔
-  `io`/`models`/`process`/`analysis`/`viz` parity instead of `parser`/`viz`
-  module objects.
-- `test_analysis.py` — unchanged (`analysis.rpm` and `run_all` paths survive).
+`test_models.py`/`test_io_bdd.py` land for the new layers (12+12 tests). Legacy
+tests (`test_parser.py`, `test_viz.py`, `test_analysis.py`, `test_package_surface.py`)
+stay green on the legacy surface until it is retired; `test_package_surface.py`
+will need a rewrite for the rebuilt `__all__` when that happens.
 
 ### 12.8 Dependency direction (the key correctness constraint)
 
@@ -398,27 +493,26 @@ io ──► models ◄── process, analysis, viz
 
 `models/` imports nothing from `io`/`process`/`analysis`/`viz`; everything else
 imports `models`. This one-way rule is what keeps the layers swappable and
-cycle-free — enforce it in review (a cheap surface test can assert it).
+cycle-free — enforce it in review (a cheap surface test can assert it). The
+landed `models/__init__.py` states exactly this rule.
 
 ### 12.9 New config artifacts
 
-- `data/4-sensor-velocity/layout.toml` — 4 sensors, 10 mm centers (from
-  `comments (1).txt`).
-- `data/echo-4-sensors-2x2/layout.toml` — 4 sensors (2×2), 20 mm centers,
-  pointing at mixer pill, sensor bottom 3 mm from vessel bottom, d=8 mm.
+Deferred with geometry (§5) — no `data/<experiment>/layout.toml` yet.
 
 ### 12.10 Open placement decisions (ground-up)
 
-1. `discover_data_files` home: `io/__init__.py` vs `io/base.py`.
-2. `plot_summary` → `viz/summary.py`, or fold into a batch driver.
-3. `RpmResult` → `models/`, or leave in `analysis/rpm.py`.
-4. `mean_sample_interval_s` → derive from `SensorSeries.time_s` (defer).
-5. Split `tests/` into per-layer dirs, or keep flat.
+1. `discover_data_files` home — ✅ resolved by code: `io/__init__.py`
+   (content-based). The top-level re-export still points at `viz`'s `.ADD`
+   version — a transitional duplication (§15.1).
+2. `plot_summary` → `viz/summary.py`, or fold into a batch driver — deferred
+   with viz.
+3. `RpmResult` → `models/`, or leave in `analysis/rpm.py` — deferred with the
+   analysis port.
+4. `mean_sample_interval_s` → derive from `ChannelSeries.time_s` — deferred.
+5. Split `tests/` into per-layer dirs, or keep flat — undecided; currently flat.
 6. Where batch drivers (`run_*.py`) live relative to `process/pipeline.py` —
    see the CLI policy (§13).
-
-*(Back-compat aliases and `parser.py`/`viz.py` shims are deliberately not listed:
-under the ground-up stance there is nothing to preserve.)*
 
 ---
 
@@ -453,25 +547,80 @@ the first. Draft rules (supersedes/extends the flat-era `cli.py`):
    (`uv run python -c "…"`) / a `run_*.py` driver; promote to a CLI only once
    the pipeline is stable and genuinely reused.
 
-**Trigger to revisit:** when the rolling-sync `Pipeline` runs end-to-end and is
+**Trigger to revisit:** when the rolling-sync pipeline runs end-to-end and is
 needed as a repeatable batch step across experiments — then add **one** pipeline
-CLI (e.g. `udv-run-pipeline`), still per rule 3.
+CLI, still per rule 3.
 
 ---
 
 ## 14. Structure rules — modules, functions, classes, models
 
 The full rules/templates are persisted as the authoritative reference in
-[`docs/pipeline-conventions.md`](pipeline-conventions.md) (agreed 2026-09-08) —
-consult it before adding any module. In one line:
+[`docs/pipeline-conventions.md`](pipeline-conventions.md) (agreed 2026-09-08;
+Revision-2 banner: the *structural* rules are confirmed by the landed code,
+the type-level templates await re-expression on the new types — §15.3). In one
+line:
 
 - **Pydantic models, not dataclasses** — models are the *nouns* (domain
   containers, `*Spec` stage params, results, source descriptors); **transforms
   are typed functions** (the verbs); **pipelines are ordered compositions**.
-- **Closure rule** — processing steps are `Recording -> Recording`, so they
-  chain and re-apply (interpolation → re-interpolation = apply the step twice);
-  terminal `Recording -> U` stages live in `analysis/`.
+- **Closure rule (direction agreed, type re-expression pending)** — processing
+  steps are closed over the canonical type so they chain and re-apply; per
+  discussion round 1, the rebuild starts **`ChannelSeries -> ChannelSeries`**
+  and uplifts to `MultiplexedMeasurement -> MultiplexedMeasurement` later.
 - **Validation tiers** — full at the `io/` boundary, structural (shape/dtype)
-  at stage entry via `model_validator`, none in inner loops.
+  at model construction via `model_validator` (landed on `ChannelSeries`), none
+  in inner loops.
 - **Templates** — atomic transform, `Spec`-configured step, and `Pipeline`
-  composition.
+  composition (pending re-expression, §15.3).
+
+---
+
+## 15. Discussion round 1 — 2026-09-08 (captured; no code, no final conventions)
+
+### 15.1 Decisions & directions
+
+- **Build bottom-up from `ChannelSeries`.** Implement and prove the per-channel
+  transforms first; **uplift** to the `MultiplexedMeasurement` box level only
+  afterwards (box steps + `Pipeline`). Rationale: the atomic unit is where the
+  signal math lives; box-level orchestration is a thin, later composition.
+- **`.ADD` / legacy surface: untouched until the new stack reaches capacity.**
+  `parser.py`, legacy `rpm.py`/`viz.py`/`run_all.py`/`cli.py`, the notebook, and
+  the transitional duplications (`MeasType` in `parser` vs `models`; two
+  `discover_data_files`) all stay as they are. **Old code is inspiration only.**
+  Consequences: no `io/dop/add.py` yet, no top-level `discover_data_files`
+  flip, no MeasType unify — all deferred to a capacity-driven migration.
+- **stat-vs-raw under sync: deferred.** `.BDD` has no stat/raw split (every
+  profile carries real time), so sync only needs to define its behaviour once a
+  stat-shaped source actually exists (legacy `.ADD` migration).
+- **Geometry: deferred** (§5). **DOPpy integration mode: closed** — cherry-
+  picked clean rewrite in `io/dop/bdd.py`, no runtime dependency.
+- **Grid/alignment strategy: NOT decided here** — see §15.2.
+
+### 15.2 Open: the sync grid & alignment experiment (discuss separately)
+
+How the common grid is built and how lags are applied is **an experimental
+question, not a paper decision**: candidates differ in whether per-channel lag
+is a constant shift (round-robin idealisation), whether the grid is a uniform
+overlap / channel-0 reference / union, and in endpoint policy. Plan agreed in
+discussion:
+
+1. **A marimo preview notebook** (thin wrapper; library code stays in `src/`)
+   showing the *original* 4-sensor signal **and** candidate alignment
+   implementations side by side, so the different strategies can be judged
+   against the real data (velocity-field continuity, echo-wall coherence).
+2. Consequently, the **sync primitives take grid/alignment as parameters**
+   (a `*Spec`-style model), so the notebook can swap strategies without code
+   churn.
+3. Re-discuss **separately** once there is a live preview; lock the design from
+   what the data shows.
+
+### 15.3 Conventions & AGENTS.md status
+
+`docs/pipeline-conventions.md` keeps its agreed structural rules; its
+type-level closure rule and templates still name the pre-convergence
+`Recording` type and are **pending re-expression** on `ChannelSeries` /
+`MultiplexedMeasurement` (see that doc's Revision-2 banner + §10). AGENTS.md's
+flat-era conventions remain placeholders; fold the settled conventions in once
+`process/` lands (Stage 4). Minor cleanup then: `process/__init__.py` docstring
+still says `Recording -> Recording`.

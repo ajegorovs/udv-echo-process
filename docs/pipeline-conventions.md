@@ -7,6 +7,33 @@ rules refine (and where they conflict, supersede) the flat-era AGENTS.md
 conventions, which are placeholders until this repo has evolved enough to draw
 practical conclusions.
 
+> ## Revision 2 — 2026-09-08 (Stage 1–2 landed + discussion round 1)
+>
+> Stage 1–2 of the rebuild **landed after this text was agreed** (commit
+> `f2482f2`): `models/` + `io/` + the DOP3000/3010 `.BDD` reader, 58 tests.
+> The **converged type names differ from the examples below**: the canonical
+> unit is **`ChannelSeries`** (own real `time_s`, `(T,G)` values, nested
+> `ChannelConfig`) composed into a **`MultiplexedMeasurement`** box. There is
+> **no `Recording`/`SensorSeries` model** and no `models/raw.py`+`dataset.py`
+> split — the model layer is `base.py` (`Model` base + `shape_2d`), `io.py`
+> (`MeasType`/`SourceFormat`/`SourceSpec`, the latter frozen), `channel_config.py`,
+> `channel_series.py`, `measurement.py`.
+>
+> What this revision changes here:
+> - **§§1–3, §5, §7–8 (structural rules) are confirmed by the landed code**:
+>   Pydantic-not-dataclass (`models.base.Model` carries
+>   `arbitrary_types_allowed` for numpy fields); frozen `SourceSpec` keys the
+>   reader registry; the T2 shape/time invariants of §5 are implemented as a
+>   `model_validator` on `ChannelSeries`; no dataclasses anywhere.
+> - **The type-level closure rule (§4) and templates (§6) still name the
+>   pre-convergence `Recording` type and are NOT yet re-expressed or
+>   ratified** on the new types — treat them as illustrations of *shape*
+>   (pure transform, `Spec` params, ordered composition), not of type names.
+>   Re-expression is pending the sync-design discussion
+>   (`pipeline-architecture.md` §15.2) — see §10 below.
+> - **Discussion round 1 outcomes** (ChannelSeries-first build, legacy surface
+>   untouched, deferrals) are captured in §10.
+
 ---
 
 ## 1. Dataclasses vs Pydantic: **Pydantic, not dataclasses**
@@ -183,3 +210,42 @@ This doc is the authoritative statement of module/function/class structure for
 the rebuild. AGENTS.md remains the (placeholder) flat-era conventions; once the
 `models/` + `process/` layers land, fold this doc's rules into AGENTS.md and
 retire this file or keep it as the detailed appendix.
+
+## 10. Revision 2 — landed-code notes & discussion round 1 (2026-09-08)
+
+Companion to `docs/pipeline-architecture.md` §15 (which carries the full
+discussion record). Capture only — the banner above is authoritative about
+what is confirmed vs pending.
+
+**Confirmed by landed code (Stage 1–2, commit `f2482f2`):** the structural
+rules of this doc. Concrete anchors: `models/base.py::Model` = the numpy-
+capable `BaseModel` base every domain model subclasses; `shape_2d()` is the
+shared T2 helper; `models/io.py::SourceSpec` is `frozen=True` precisely so it
+keys the `io.base` reader registry (the §3 "source descriptor" role); the §5
+"cheap, structural validation at construction" tier is implemented as a
+`model_validator(mode="after")` on `ChannelSeries` (shape + monotonic-time);
+`MultiplexedMeasurement.channels` is an ordered `list` (round-robin order is
+data), with `.by_channel()` as the derived dict view.
+
+**Pending re-expression (do not copy §§2/4/6 examples as final):** the closure
+rule and templates still say `Recording -> Recording` / `SensorSeries` /
+`ResampleSpec`. Once the sync-design discussion
+(`pipeline-architecture.md` §15.2) concludes, re-express on
+`ChannelSeries`/`MultiplexedMeasurement`, update §2's example table, then fold
+into AGENTS.md (per §9).
+
+**Round-1 discussion outcomes (2026-09-08):**
+- Build sync **bottom-up from `ChannelSeries`** (per-channel transforms first,
+  tests + marimo preview), **uplift** to `MultiplexedMeasurement`-level steps
+  and `Pipeline` afterwards.
+- **`.ADD`/legacy surface untouched until the new stack reaches capacity** —
+  `parser.py`, legacy rpm/viz/run_all/cli and the transitional duplications
+  (`parser.MeasType` vs `models.MeasType`; viz's vs `io`'s
+  `discover_data_files`) all stay; old code is inspiration only.
+- **stat-vs-raw under sync: deferred** (`.BDD` has no stat/raw split).
+- **Sync grid/alignment strategy: an experiment, not a paper decision** — marimo
+  preview notebook comparing candidate implementations on the real signal;
+  sync primitives therefore take grid/alignment **as a `Spec`** so strategies
+  swap without code churn. Discuss separately.
+- **Geometry (`layout.toml`): deferred.** **DOPpy mode: closed** (cherry-picked
+  clean rewrite in `io/dop/bdd.py`, no runtime dep).

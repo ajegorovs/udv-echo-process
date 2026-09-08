@@ -349,3 +349,98 @@ in a fresh discussion before implementing. Open threads:
   (+ tests on the two velocity/echo fixtures), `process/pipeline.py`, `viz/`
   (last), `.ADD`-to-`.BDD` cross-validation, DOPpy-independent gate-depth calc.
 
+---
+
+## Session status — 2026-09-08 (cont.): pipeline docs Rev 2 — discussion round 1 (capture only)
+
+Docs-only session, no code. Refreshed the two pipeline docs to the landed
+Stage 1–2 (commit `f2482f2`) and captured discussion round 1 (deliberately **no
+final conventions committed**, no code):
+
+- **`docs/pipeline-architecture.md` → Revision 2.** Records the converged
+  model (**`ChannelSeries`** atomic unit + **`MultiplexedMeasurement`** box;
+  numpy-in-Pydantic, **no pandas dep**, no `raw.py`/`dataset.py` split — the
+  earlier "pandas backend" decision superseded), the landed `io/` layer + `.BDD`
+  reader, revised target layout (§6), deconstruction map (§7), walkthrough (§8),
+  open decisions (§10) and staged rollout (§11: Stages 1–2 ✅ landed → 3 sync
+  ChannelSeries-first → 4 box uplift → 5 capacity-driven legacy migration; viz
+  last). §12 migration map kept with a revision note (destinations predate
+  convergence; legacy modules stay put).
+- **`docs/pipeline-conventions.md` → Revision-2 banner + §10.** Structural
+  rules (§§1–3,5,7–8) confirmed by landed code (`models.base.Model`,
+  frozen `SourceSpec` registry key, `ChannelSeries` T2 `model_validator`);
+  type-level closure rule + §6 templates **pending re-expression** on the new
+  types (not authoritative until the sync-design discussion concludes).
+- **Agenda §5 kept open;** geometry/`.BDD` threads unchanged.
+
+**Round-1 decisions (capture — re-derive before implementing):**
+1. Build sync **bottom-up from `ChannelSeries`**; uplift to
+   `MultiplexedMeasurement` steps + `Pipeline` afterwards.
+2. **`.ADD`/legacy untouched until the new stack reaches capacity** — old code
+   is inspiration only (no `io/dop/add.py`, no MeasType unify, no
+   `discover_data_files` flip yet; the parser-vs-models `MeasType` and the two
+   `discover_data_files` are recorded as transitional duplications).
+3. **stat-vs-raw under sync: deferred** (`.BDD` has no stat/raw split).
+4. **Sync grid/alignment strategy: NOT decided — needs an experiment.** Plan: a
+   thin marimo preview notebook (library-first) comparing candidate alignment
+   implementations + the original 4-sensor signal; sync primitives take
+   grid/alignment **as a `Spec`** so the notebook can swap strategies. Discuss
+   separately once there is a live preview.
+
+**Next candidates for a fresh agent (re-read both pipeline docs first — they
+now carry Rev-2 state):** implement the ChannelSeries-level sync primitives
+with grid-as-`Spec` (+ tests on the staggered `data/4-sensor-velocity/*.BDD`
+and single-channel `data/echo/*.BDD`) and scaffold the marimo preview notebook
+for the grid experiment; then box-level uplift + `process/pipeline.py`.
+
+---
+
+## Session status — 2026-09-08 (cont.): signal-preview notebook + TraceScrubber widget
+
+Interactive co-work session on the **new `.BDD` stack**; no `src/` code changes
+yet (prototype/exploration only, as planned in §1). Committed together with the
+pipeline-docs Rev 2 work above.
+
+**Landed in this repo:**
+- `plotly>=5.24` added as a runtime dep (plotly 7.0.0) for interactive figures.
+- `notebooks/channel_preview.py` — single-channel signal preview on the new
+  `io/`+`models/` stack: `.BDD` dropdown (`io.discover_data_files`, content-
+  sniffed) → channel → textual stats + raw time×gate heatmap (downsampled to
+  ≤800 rows) → **time-step scrub** of the gate profile. All 10 cells idle, 0
+  errors, `marimo check` clean (live-verified end-to-end; reactive chain tested
+  via slider/state pushes).
+- **Y-axis decisions (settled through live iteration):** per-gate time
+  statistics are *not* shown — the echo is a travelling wave (peak sweeping
+  across gates), so time-averaging mixes phases and is meaningless. The scrub
+  axis shows **raw values pinned to an explicit (min, max)** — never a [0,1]
+  transform: echo `(0, 2000)` (a-priori module range); velocity `(channel-wide
+  data min, max)` (arbitrary per rig; fixed so frames don't rescale while
+  scrubbing). Range is displayed in the widget title.
+- Signal observations for later: default `data/4-sensor-velocity/200RPM.BDD`
+  ch6 velocity has median dt 25.4 ms but max gap 372.7 ms; velocity min/max
+  −54.6/245.9 mm/s **exceeds the ±152 mm/s `velo_max` Nyquist** (aliasing /
+  decode nuance to investigate during sync work). Echo fixtures run 0→2000
+  module scale, gates 43→54.4 mm.
+
+**Widget (sibling `marimo-inspect`, per user preference — editable-installed):**
+`TraceScrubber` anywidget (custom, `ImagePreview` pattern): one self-contained
+component = canvas line chart of the profile at step `i` + slider + ◀ ▶ +
+`±1%`/`±10%` jump buttons; all scrubbing redraws in JS (no kernel per step);
+optional fixed y-range; synced `index` trait for `mo.state` bridging.
+Files: `src/marimo_inspection/widgets/{trace_scrubber.py, js/trace_scrubber.js}`
++ exports in both `__init__.py`s (committed in the sibling repo).
+- **Environment caveat (important for fresh agents):** editable install of
+  `marimo-inspect` is **session-fragile** — `uv run`'s implicit sync reverts it
+  to the pinned git tag `v0.2.0` (which has **no** widgets). Start the marimo
+  server / run python with `uv run --no-sync` after
+  `uv pip install -e ~/Repos/marimo-inspect`, or the `TraceScrubber` import
+  breaks. Consider promoting the widget to a tagged release later so consumers
+  install it normally.
+
+**Next candidates (unchanged priorities, now with a working preview vehicle):**
+re-run the §15.2 sync grid/alignment **experiment** — the notebook preview
+(scrub over real profiles) is the signal-understanding tool for judging
+alignment strategies; then ChannelSeries sync primitives (grid-as-`Spec`) +
+`.BDD`-first tests; box-level uplift; legacy migration at capacity.
+
+
