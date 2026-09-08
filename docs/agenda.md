@@ -290,3 +290,62 @@ step) · **pipeline-element structure rules** (canonical in
 T1/T2/T3 validation tiers). Still open: stat-vs-raw under sync, DOPpy
 integration mode (cherry-pick vs dep), and the small §12.10 placement choices.
 Working tree was clean at `72d45a8` (P3 ruff) before these doc edits.
+
+---
+
+## Session status — 2026-09-08: model convergence + `.BDD` reader (Stage 1–2 landed)
+
+Priority shift (user direction): **visualization is last priority**; **`.ADD` is
+treated as superseded by `.BDD`** — the binary format (full instrument metadata,
+interleaved profiles, ~3–6× smaller) is the primary data source going forward.
+
+**Model design converged** (discussion; Option B — full new model, not
+`ExtractedData`-reuse):
+- `MultiplexedMeasurement` = the **box** over an ordered `list[ChannelSeries]`
+  — a *view of a rolling/multiplexed file*; single-channel recordings are just
+  the box with one element. (Named over `MultiChannel` to avoid implying
+  simultaneous acquisition, which newer DOP devices may do.)
+- `ChannelSeries` = the atomic single-channel unit: **own real `time_s`**
+  (no assumed `k·DT` — DT can fluctuate per measurement; sync later derives
+  offsets from actual timestamps), `(T,G)` values, nested `ChannelConfig`.
+- `ChannelConfig` = per-channel static op-param metadata (optional, dense
+  defaults). **`SourceSpec` kept** (dispatch key). **Geometry deferred** (addon
+  used only far downstream; no `layout.toml` work yet).
+- Ground-up stance confirmed again; current flat modules are *inspiration* only.
+
+**Landed (58 tests pass, ruff clean):**
+- `src/udv_echo_process/models/` — `base.py` (numpy-capable `Model` + `shape_2d`),
+  `io.py` (`MeasType`/`SourceFormat`/`SourceSpec`, `frozen` so it keys the
+  reader registry), `channel_config.py`, `channel_series.py` (T2 shape/time
+  invariant), `measurement.py`.
+- `src/udv_echo_process/io/` — `base.py` (`Reader`, `register_reader`, `sniff`,
+  `read_path`, `load`) + `io/__init__.py` content-based `discover_data_files()`.
+- `src/udv_echo_process/io/dop/bdd.py` — **DOP3000/3010 `.BDD` reader**
+  (cherry-picked DOPpy decode rewritten clean: per-channel op blocks at
+  548+k·1024, measurement chain from 31268, nested profiles, overflow-corrected
+  µs→s time, velocity→mm/s, echo→module-scale, file depth grid → one
+  `ChannelSeries`+`ChannelConfig` per channel). **All 22 `data/` fixtures load**
+  (20× echo ch4, 2× 4-ch velocity, + a genuine `.BDD` misnamed `.jpg` —
+  content sniffing catches it). Values cross-verified vs `doppy-analysis.md`
+  (4180×26 echo, 400×55 ×4 ch, velo_max 152.05 mm/s, res 1.091/0.455 mm,
+  gate1 20/43 mm).
+- `tests/test_models.py` + `tests/test_io_bdd.py`; `process/` skeleton only.
+
+**Next-session direction (candidates — REWRITE from ground up first):** do
+not treat the steps below as decided; re-derive them from the two pipeline docs
+in a fresh discussion before implementing. Open threads:
+- `docs/pipeline-architecture.md` staged rollout §11 (restructure → `sync` →
+  `pipeline`+`lines` → `.BDD`/`spatial`) predates the `.BDD`-first reprioritization
+  and needs re-planning around the new model (no `Raw`/`dataset.py` split as
+  proposed; models now `ChannelSeries`+`MultiplexedMeasurement`).
+- Conventions (`docs/pipeline-conventions.md`) assumed `Recording` — now
+  `MultiplexedMeasurement`/`ChannelSeries`; sync/pipeline sections need
+  re-expression on the new type (closure rule: `ChannelSeries`-level or
+  `MultiplexedMeasurement`-level transforms?).
+- Where `.ADD` support goes (keep legacy `parser.py` as-is vs migrate to
+  `io/dop/add.py`); whether top-level `discover_data_files` flips to the
+  content-based `io` version; `MeasType` unify (parser vs models).
+- Later-stage candidates kept on the table but uncommitted to: `process/sync.py`
+  (+ tests on the two velocity/echo fixtures), `process/pipeline.py`, `viz/`
+  (last), `.ADD`-to-`.BDD` cross-validation, DOPpy-independent gate-depth calc.
+

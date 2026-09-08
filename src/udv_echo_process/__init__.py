@@ -13,6 +13,16 @@ from udv_echo_process.analysis import (
     rpm_from_echo,
     setpoint_rpm_from_stem,
 )
+
+# `load` reads any supported measurement (today: .BDD) into a MultiplexedMeasurement.
+from udv_echo_process.io import load
+from udv_echo_process.models import (
+    ChannelConfig,
+    ChannelSeries,
+    MultiplexedMeasurement,
+    SourceFormat,
+    SourceSpec,
+)
 from udv_echo_process.parser import (
     ChannelFrame,
     ExtractedData,
@@ -33,14 +43,20 @@ from udv_echo_process.viz import (
 )
 
 __all__ = [
+    "ChannelConfig",
     "ChannelFrame",
+    "ChannelSeries",
     "ExtractedData",
     "MeasType",
+    "MultiplexedMeasurement",
     "RpmResult",
+    "SourceFormat",
+    "SourceSpec",
     "discover_data_files",
     "extract",
     "list_add_files",
     "list_stat_add_files",
+    "load",
     "load_all_data",
     "mean_sample_interval_s",
     "parse_add_file",
