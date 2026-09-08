@@ -9,6 +9,7 @@ dependencies = [
     "marimo[recommended]>=0.24.0,<0.25",
     "matplotlib>=3.11.0",
     "numpy>=2.5.0",
+    "plotly>=5.24",
     "pydantic>=2.10.0",
 ]
 
