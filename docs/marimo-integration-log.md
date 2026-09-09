@@ -427,3 +427,21 @@ T7 review pointer). Commits: `16cdf4e`, `b4073f8`, `6bc96c4`, `5be0b0f`,
 - **O32** ⚠️ `cm.screenshot` fails with `ScreenshotError: Playwright is not
   installed` (no graceful capability detection); verifying GUI rendering
   therefore falls back to output-payload checks + user confirmation.
+- **O33** ⚠️ `POST /api/kernel/restart_session` (marimo 0.24) only **closes**
+  the session — no replacement kernel spawns until a browser reconnects; an
+  external (agent-side) restart leaves the server at **0 sessions**. Required
+  headers: `Marimo-Session-Id` + `Marimo-Server-Token` (CSRF skew token, served
+  to clients as `serverToken` in the index page; only `/api/kernel/execute` is
+  exempt). Reliable recovery = relaunch the marimo server so the browser
+  auto-opens a fresh session (our usual flow), not the restart endpoint.
+  Reproduced 2026-09-09: external restart → `sessions: 0`; relaunch → 1
+  session, notebook re-run clean.
+- **O34** ⚠️ Don't `import <pkg>.<submodule> as alias` in a notebook when the
+  package **re-exports a function with the same name** as that submodule (here:
+  `udv_echo_process.process` re-exports `filter`, shadowing the
+  `process/filter.py` module) — the alias binds the attribute (the function),
+  and `importlib.reload` then dies with `module filter not in sys.modules`.
+  On a stale-import kernel, restart it instead of reloading; if you must
+  reload, fetch modules via `importlib.import_module("a.b.c")` (sys.modules
+  key, shadow-proof). Reproduced 2026-09-09 with the filter-platform bootstrap
+  cell.

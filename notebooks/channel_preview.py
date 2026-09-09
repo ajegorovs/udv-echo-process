@@ -250,7 +250,6 @@ def interp_controls(cs, mo, np):
             interp_margin_ms,
         ]
     )
-
     return (
         InterpMethod,
         InterpParams,
@@ -359,7 +358,6 @@ def interp_run(
         except ValueError as _err:
             interp_note = mo.md(f"⚠️ `resample` failed: {_err}")
     interp_note
-
     return interp_grid_desc, resampled
 
 
@@ -383,7 +381,6 @@ def interp_gate(cs, mo):
     else:
         gate_idx = mo.ui.dropdown(options={"gate 0": 0}, value="gate 0", label="Gate (trace view)")
     gate_idx
-
     return (gate_idx,)
 
 
@@ -434,7 +431,300 @@ def interp_trace(
         )
         interp_trace = mo.ui.plotly(_fig)
     interp_trace
+    return
 
+
+@app.cell(hide_code=True)
+def filter_intro(mo):
+    mo.md("""
+    ### Filter preview — `process/filter.py` `filter()` / `filter_sequence()`
+
+    One filter pass over the selected data (source below): the raw measured
+    `cs` for the index-window methods (MEDIAN / MEAN / SAVGOL — they smooth the
+    measurements, not an interpolation), or the uniform `resampled` grid from the
+    interpolation section when you also want TV (TV is index-based and requires
+    uniform cadence — the layer rejects it on the gappy raw series by design).
+    `filter` never touches the grid or gates; only values change, per gate.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def filter_controls(mo, resampled):
+    from udv_echo_process.process import (
+        FilterMethod,
+        FilterParams,
+        FilterSpec,
+        filter as filter_series,
+        filter_sequence,
+    )
+
+    # --- one-filter controls --------------------------------------------------
+    _meas_label = "measured — cs (raw cadence)"
+    _filter_opts = {_meas_label: "cs"}
+    if resampled is not None:
+        _filter_opts["resampled — uniform dt grid"] = "resampled"
+    filter_source = mo.ui.dropdown(
+        options=_filter_opts,
+        value=_meas_label,
+        label="Apply filter to",
+    )
+    filter_method = mo.ui.dropdown(
+        options=[m.value for m in FilterMethod],
+        value=FilterMethod.MEDIAN.value,
+        label="Filter method",
+    )
+    # odd-only slider: MEDIAN/MEAN accept any window, SAVGOL requires odd — an
+    # odd slider keeps every combo valid while exploring.
+    filter_window = mo.ui.slider(
+        start=3,
+        stop=51,
+        step=2,
+        value=5,
+        label="window [samples]",
+    )
+    filter_polyorder = mo.ui.number(
+        start=0,
+        stop=8,
+        step=1,
+        value=2,
+        label="polyorder (SAVGOL only, < window)",
+    )
+    filter_weight = mo.ui.slider(
+        start=0.05,
+        stop=20.0,
+        step=0.05,
+        value=1.0,
+        label="weight λ (TV only — larger = smoother)",
+    )
+    filter_iterations = mo.ui.number(
+        start=10,
+        stop=5000,
+        step=10,
+        value=200,
+        label="iterations (TV only)",
+    )
+    mo.vstack(
+        [
+            filter_source,
+            filter_method,
+            filter_window,
+            filter_polyorder,
+            filter_weight,
+            filter_iterations,
+        ]
+    )
+    return (
+        FilterMethod,
+        FilterParams,
+        FilterSpec,
+        filter_iterations,
+        filter_method,
+        filter_polyorder,
+        filter_series,
+        filter_source,
+        filter_weight,
+        filter_window,
+    )
+
+
+@app.cell(hide_code=True)
+def filter_run(
+    FilterMethod,
+    FilterParams,
+    FilterSpec,
+    cs,
+    filter_iterations,
+    filter_method,
+    filter_polyorder,
+    filter_series,
+    filter_source,
+    filter_weight,
+    filter_window,
+    mo,
+    np,
+    resampled,
+):
+    # --- apply the chosen filter, summarize ------------------------------------
+    filter_input = None
+    filtered = None
+    filter_spec_desc = "—"
+    filter_src_desc = "—"
+    filter_note = None
+    if cs is not None:
+        _src = filter_source.value
+        _spec = FilterSpec(
+            method=FilterMethod(filter_method.value),
+            params=FilterParams(
+                window=int(filter_window.value),
+                polyorder=int(filter_polyorder.value),
+                weight=float(filter_weight.value),
+                iterations=int(filter_iterations.value),
+            ),
+        )
+        try:
+            if _src == "resampled" and resampled is None:
+                raise ValueError(
+                    "resampled is not available — run the interpolation section first"
+                )
+            _series = cs if _src == "cs" else resampled
+            filter_input = _series
+            filter_src_desc = (
+                "measured cs (raw cadence)" if _src == "cs" else "resampled (uniform dt grid)"
+            )
+            filtered = filter_series(_series, _spec)
+            _p = _spec.params
+            _knobs = []
+            if _spec.method in (
+                FilterMethod.MEDIAN,
+                FilterMethod.MEAN,
+                FilterMethod.SAVGOL,
+            ):
+                _knobs.append(f"window {_p.window}")
+            if _spec.method is FilterMethod.SAVGOL:
+                _knobs.append(f"polyorder {_p.polyorder}")
+            if _spec.method is FilterMethod.TV:
+                _knobs.append(f"weight {_p.weight:g}")
+                _knobs.append(f"iterations {_p.iterations}")
+            filter_spec_desc = f"{_spec.method.value} · " + ", ".join(_knobs)
+            _d = filtered.values - _series.values
+            _ok = np.isfinite(_d)
+            _d_fin = _d[_ok]
+            _lines = [
+                f"**{_spec.method.value}** over **{filter_src_desc}** → "
+                f"`filtered` = {filtered.time_count} × {filtered.gate_count} "
+                f"(grid unchanged: {filter_input.time_s[0]:.4f} → "
+                f"{filter_input.time_s[-1]:.4f} s)",
+                f"- Δ (after − before), finite pairs {int(_ok.sum())}/{_ok.size}: "
+                f"mean |Δ| {np.mean(np.abs(_d_fin)):.4g} · "
+                f"max |Δ| {np.max(np.abs(_d_fin)):.4g}",
+            ]
+            filter_note = mo.md("\n".join(_lines))
+        except ValueError as _err:
+            filtered = None
+            filter_input = None
+            filter_note = mo.md(f"⚠️ `filter` rejected: {_err}")
+    filter_note
+    return filter_input, filter_spec_desc, filter_src_desc, filtered
+
+
+@app.cell(hide_code=True)
+def filter_heatmaps(
+    filter_input,
+    filter_spec_desc,
+    filter_src_desc,
+    filtered,
+    mo,
+    np,
+):
+    # --- heatmaps: before vs after (shared color scale) -----------------------
+    from plotly.subplots import make_subplots
+
+    filter_heat = None
+    if filtered is not None and filter_input is not None:
+        _in, _out = filter_input, filtered
+        _stride = max(1, _in.time_s.size // 700)
+        _t = _in.time_s[::_stride]
+        _z_in = _in.values[::_stride].T
+        _z_out = _out.values[::_stride].T
+        _both = np.concatenate([_z_in.ravel(), _z_out.ravel()])
+        if _in.meas_type.value == "velocity":
+            _m = float(np.nanmax(np.abs(_both))) or 1.0
+            _kw = dict(zmin=-_m, zmax=_m, colorscale="RdBu_r")
+        else:
+            _kw = dict(
+                zmin=float(np.nanmin(_both)),
+                zmax=float(np.nanmax(_both)),
+                colorscale="Viridis",
+            )
+        _fig = make_subplots(
+            rows=1,
+            cols=2,
+            subplot_titles=(
+                f"before — {filter_src_desc}",
+                f"after — {filter_spec_desc}",
+            ),
+            shared_yaxes=True,
+            horizontal_spacing=0.08,
+        )
+        _fig.add_heatmap(
+            x=_t,
+            y=_in.gate_depths_mm,
+            z=_z_in,
+            colorbar={"title": _in.meas_type.value},
+            showscale=True,
+            **_kw,
+            row=1,
+            col=1,
+        )
+        _fig.add_heatmap(
+            x=_t,
+            y=_out.gate_depths_mm,
+            z=_z_out,
+            showscale=False,
+            **_kw,
+            row=1,
+            col=2,
+        )
+        _fig.update_layout(
+            height=480,
+            margin=dict(t=60, b=40, l=10, r=10),
+            hovermode="closest",
+        )
+        _fig.update_xaxes(title_text="time [s]", row=1, col=1)
+        _fig.update_xaxes(title_text="time [s]", row=1, col=2)
+        _fig.update_yaxes(title_text="gate depth [mm]", row=1, col=1)
+        filter_heat = mo.ui.plotly(_fig)
+    filter_heat
+    return
+
+
+@app.cell(hide_code=True)
+def filter_gate_trace(
+    filter_input,
+    filter_source,
+    filter_spec_desc,
+    filter_src_desc,
+    filtered,
+    gate_idx,
+    go,
+    mo,
+):
+    # --- per-gate trace: before vs after on the selected gate ------------------
+    # gate is chosen with the interp section's Gate dropdown (gate_idx above)
+    filter_gate_trace = None
+    if filtered is not None and filter_input is not None:
+        _g = int(gate_idx.value)
+        _depth = filter_input.gate_depths_mm[_g]
+        _before = go.Scatter(
+            x=filter_input.time_s,
+            y=filter_input.values[:, _g],
+            mode="markers" if filter_source.value == "cs" else "lines",
+            name="before — " + filter_src_desc,
+            marker=dict(size=3.5, opacity=0.6, color="black"),
+            line=dict(width=1, color="gray"),
+        )
+        _after = go.Scatter(
+            x=filtered.time_s,
+            y=filtered.values[:, _g],
+            mode="lines",
+            name="after — " + filter_spec_desc,
+            line=dict(width=1.8, color="#2ca02c"),
+        )
+        _fig = go.Figure([_before, _after])
+        _fig.update_layout(
+            title=(
+                f"gate {_g} — {_depth:.2f} mm · before vs after "
+                f"({filter_spec_desc})"
+            ),
+            xaxis_title="time [s]",
+            yaxis_title=filter_input.meas_type.value,
+            height=380,
+            legend=dict(orientation="h", y=1.12),
+            hovermode="x unified",
+        )
+        filter_gate_trace = mo.ui.plotly(_fig)
+    filter_gate_trace
     return
 
 
