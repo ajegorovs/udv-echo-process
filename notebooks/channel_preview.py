@@ -110,34 +110,38 @@ def _(cs, go, mo, np):
     if cs is not None:
         _t = cs.time_s
         _v = cs.values
-        # Overview "all at once": downsample rows so the figure stays light.
+        # Overview heatmap of the measured values: x = time, y = gate depth,
+        # z = value. Keep the figure light by striding the long (time) axis;
+        # every gate stays a row (z is transposed to (G, T)).
         _stride = max(1, _t.size // 800)
-        _z = _v[::_stride]
-        _diverging = cs.meas_type.value == "velocity"
-        _kw = {}
-        if _diverging:
+        _ts = _t[::_stride]
+        _z = _v[::_stride].T
+        if cs.meas_type.value == "velocity":
             _m = float(np.nanmax(np.abs(_z))) or 1.0
             _kw = dict(zmin=-_m, zmax=_m, colorscale="RdBu_r")
         else:
             _kw = dict(colorscale="Viridis")
         _fig = go.Figure(
             go.Heatmap(
-                x=cs.gate_depths_mm,
-                y=_t[::_stride],
+                x=_ts,
+                y=cs.gate_depths_mm,
                 z=_z,
                 colorbar={"title": cs.meas_type.value},
                 **_kw,
             )
         )
         _fig.update_layout(
-            title=f"ch{cs.channel} — {cs.meas_type.value} over time "
-            f"(every {_stride}th profile shown)",
-            xaxis_title="Gate depth [mm]",
-            yaxis_title="time [s]",
+            title=(
+                f"ch{cs.channel} — {cs.meas_type.value} over time "
+                f"(every {_stride}th profile shown)"
+            ),
+            xaxis_title="time [s]",
+            yaxis_title="Gate depth [mm]",
             height=520,
         )
         heat = mo.ui.plotly(_fig)
     heat
+
     return
 
 
@@ -184,10 +188,10 @@ def interp_intro(mo):
       use on the uniform echo fixture).
     - **Target grid** — uniform `dt` (bridges the gaps) or the original knot
       times (round-trip: resampled values reproduce the measured ones).
-    - Views: heatmap comparison (original vs resampled; x = time, y = gate
-      depth, z = value) and a per-gate trace overlay (measured markers vs
-      resampled curve — pick the gate with the dropdown in that cell).
-      Zoom/pan in the figures.
+    - View: a per-gate trace overlay (measured markers vs resampled curve —
+      pick the gate with the dropdown next to it). The raw time×gate heatmap
+      of the measured values lives in the Overview above. Zoom/pan in the
+      figures.
     """)
 
     return
@@ -372,6 +376,30 @@ def interp_run(
 
 
 @app.cell(hide_code=True)
+def interp_gate(cs, mo):
+    # --- gate selector for the per-gate trace ---------------------------------
+    # Its own cell on purpose: a cell cannot read the .value of a UI element it
+    # created in the same run — the interp_trace cell below consumes gate_idx.
+    # marimo dict options are {displayed label: returned value}; the initial
+    # value is given as one of the displayed labels (option names).
+    if cs is not None:
+        _mid = cs.gate_count // 2
+        gate_idx = mo.ui.dropdown(
+            options={
+                f"gate {_g} — {cs.gate_depths_mm[_g]:.2f} mm": _g
+                for _g in range(cs.gate_count)
+            },
+            value=f"gate {_mid} — {cs.gate_depths_mm[_mid]:.2f} mm",
+            label="Gate (trace view)",
+        )
+    else:
+        gate_idx = mo.ui.dropdown(options={"gate 0": 0}, value="gate 0", label="Gate (trace view)")
+    gate_idx
+
+    return (gate_idx,)
+
+
+@app.cell(hide_code=True)
 def interp_trace(
     InterpMethod,
     cs,
@@ -420,110 +448,6 @@ def interp_trace(
     interp_trace
 
     return
-
-
-@app.cell(hide_code=True)
-def interp_heatmap(
-    InterpMethod,
-    cs,
-    go,
-    interp_grid_desc,
-    interp_method,
-    mo,
-    np,
-    resampled,
-):
-    from plotly.subplots import make_subplots
-
-    # --- heatmap: original vs resampled (x = time, y = gate depth, z = value) --
-    interp_heat = None
-    if resampled is not None:
-        _t0, _v0 = cs.time_s, cs.values              # (T0, G)
-        _t1, _v1 = resampled.time_s, resampled.values  # (T1, G)
-        # keep the figure light: stride the long (time) axis, keep every gate
-        _s0 = max(1, _t0.size // 800)
-        _s1 = max(1, _t1.size // 800)
-        _all = np.concatenate([_v0, _v1])
-        if cs.meas_type.value == "velocity":
-            _m = float(np.nanmax(np.abs(_all))) or 1.0
-            _zmin, _zmax, _cmap = -_m, _m, "RdBu_r"
-        else:
-            _zmin, _zmax, _cmap = (
-                float(np.nanmin(_all)),
-                float(np.nanmax(_all)),
-                "Viridis",
-            )
-        _fig = make_subplots(
-            rows=2,
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.06,
-            subplot_titles=("measured", "resampled"),
-        )
-        # each panel: one row per gate, time along x (z transposed to (G, T))
-        _fig.add_trace(
-            go.Heatmap(
-                x=_t0[::_s0],
-                y=cs.gate_depths_mm,
-                z=_v0[::_s0].T,
-                zmin=_zmin,
-                zmax=_zmax,
-                colorscale=_cmap,
-                showscale=False,
-            ),
-            row=1,
-            col=1,
-        )
-        _fig.add_trace(
-            go.Heatmap(
-                x=_t1[::_s1],
-                y=resampled.gate_depths_mm,
-                z=_v1[::_s1].T,
-                zmin=_zmin,
-                zmax=_zmax,
-                colorscale=_cmap,
-                colorbar=dict(title=cs.meas_type.value),
-            ),
-            row=2,
-            col=1,
-        )
-        _fig.update_layout(
-            title=(
-                f"ch{cs.channel} — {cs.meas_type.value}: measured vs "
-                f"{InterpMethod(interp_method.value).value} · {interp_grid_desc}"
-            ),
-            xaxis_title="time [s]",
-            yaxis_title="Gate depth [mm]",
-            height=760,
-        )
-        interp_heat = mo.ui.plotly(_fig)
-    interp_heat
-
-    return
-
-
-@app.cell
-def interp_gate(cs, mo):
-    # --- gate selector for the per-gate trace ---------------------------------
-    # Its own cell on purpose: a cell cannot read the .value of a UI element it
-    # created in the same run — the interp_trace cell below consumes gate_idx.
-    # marimo dict options are {displayed label: returned value}; the initial
-    # value is given as one of the displayed labels (option names).
-    if cs is not None:
-        _mid = cs.gate_count // 2
-        gate_idx = mo.ui.dropdown(
-            options={
-                f"gate {_g} — {cs.gate_depths_mm[_g]:.2f} mm": _g
-                for _g in range(cs.gate_count)
-            },
-            value=f"gate {_mid} — {cs.gate_depths_mm[_mid]:.2f} mm",
-            label="Gate (trace view)",
-        )
-    else:
-        gate_idx = mo.ui.dropdown(options={"gate 0": 0}, value="gate 0", label="Gate (trace view)")
-    gate_idx
-
-    return (gate_idx,)
 
 
 if __name__ == "__main__":
