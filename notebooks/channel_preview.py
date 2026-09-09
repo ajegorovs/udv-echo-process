@@ -73,22 +73,24 @@ def _(file_picker, load, mo):
 
 
 @app.cell(hide_code=True)
-def _(channel_picker, measurement, mo, np):
+def _(channel_picker, go, measurement, mo, np):
     cs = measurement.by_channel()[channel_picker.value] if measurement is not None else None
     _stat_md = mo.md("_Select a recording + channel._")
+    heat = None
     if cs is not None:
         _t = cs.time_s
         _v = cs.values
         _fin = np.isfinite(_v)
         _dt_s = np.diff(_t)
         _g0, _g1 = cs.gate_depths_mm[0], cs.gate_depths_mm[-1]
+        # NB: no time-meaned gate profile here — the echo peak sweeps across
+        # gates, so time-averaging mixes phases; use the scrubber below instead.
         _lines = [
             f"`ch{cs.channel}` · **{cs.meas_type.value}** · "
             f"{cs.time_count} profiles × {cs.gate_count} gates",
-            f"- gate depths: {_g0:.2f} → {_g1:.2f} mm "
-            f"({cs.gate_count} gates)",
-            f"- time: {_t[0]:.4f} → {_t[-1]:.4f} s "
-            f"({_dt_s.size} intervals, median dt {np.median(_dt_s) * 1e3:.3f} ms)"
+            f"- gate depths: {_g0:.2f} → {_g1:.2f} mm ({cs.gate_count} gates)",
+            f"- time: {_t[0]:.4f} → {_t[-1]:.4f} s ({_dt_s.size} intervals, "
+            f"median dt {np.median(_dt_s) * 1e3:.3f} ms)"
             if _dt_s.size
             else "- time: single profile",
             f"- values: finite {int(_fin.sum())}/{_fin.size} · "
@@ -96,25 +98,11 @@ def _(channel_picker, measurement, mo, np):
             f"max {np.nanmax(_v):.3g}",
             f"- config: {cs.config.describe()}",
         ]
-        # NB: no time-meaned gate profile here — for a travelling wave
-        # (echo peak sweeping across gates) time-averaging mixes phases and is
-        # meaningless; use the scrubber below instead.
         _stat_md = mo.md("\n".join(_lines))
-    _stat_md
-    return (cs,)
-
-
-@app.cell(hide_code=True)
-def _(cs, go, mo, np):
-    heat = None
-    if cs is not None:
-        _t = cs.time_s
-        _v = cs.values
-        # Overview heatmap of the measured values: x = time, y = gate depth,
-        # z = value. Keep the figure light by striding the long (time) axis;
-        # every gate stays a row (z is transposed to (G, T)).
+        # heatmap of the measured values: x = time, y = gate depth, z = value.
+        # Keep the figure light by striding the long (time) axis; every gate
+        # stays a row (z is transposed to (G, T)).
         _stride = max(1, _t.size // 800)
-        _ts = _t[::_stride]
         _z = _v[::_stride].T
         if cs.meas_type.value == "velocity":
             _m = float(np.nanmax(np.abs(_z))) or 1.0
@@ -123,7 +111,7 @@ def _(cs, go, mo, np):
             _kw = dict(colorscale="Viridis")
         _fig = go.Figure(
             go.Heatmap(
-                x=_ts,
+                x=_t[::_stride],
                 y=cs.gate_depths_mm,
                 z=_z,
                 colorbar={"title": cs.meas_type.value},
@@ -140,9 +128,10 @@ def _(cs, go, mo, np):
             height=520,
         )
         heat = mo.ui.plotly(_fig)
-    heat
+    # final expression: channel info above the measured heatmap
+    mo.vstack([x for x in (_stat_md, heat) if x is not None])
 
-    return
+    return (cs,)
 
 
 @app.cell(hide_code=True)
