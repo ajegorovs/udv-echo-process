@@ -1,9 +1,11 @@
 # Per-gate time-wise filtering — design & review handoff
 
-Status: **implemented 2026-09-09, pending a reviewer round.** Companion to
-`interpolation-design.md` (the resampling layer this filter is meant to
-follow). This doc is the handoff: what was built, why it is shaped as it is,
-and the specific questions to reassess.
+Status: **reviewed 2026-09-09 — direction settled, re-planned; implementation
+pending (handoff to another agent).** The review round, settled decisions,
+and target design live in **§7** — read that first. §1–6 are the original
+handoff (what was built, why, and the questions that prompted the review);
+**§7 supersedes the open questions of §5.** Companion to
+`interpolation-design.md` (the resampling layer this filter composes with).
 
 ## 1. Where this sits
 
@@ -122,5 +124,260 @@ uv sync --extra dev                 # brings scikit-image (note: clobbers the
                                     #   editable for the notebooks)
 uv run --no-sync --extra dev pytest tests/test_process_filter.py   # 13 pass
 uv run --no-sync --extra dev pytest -q                             # 116 pass
+uv run --no-sync --extra dev ruff check src tests
+```
+
+---
+
+## 7. Review round + re-plan — 2026-09-09
+
+Status: **reviewed; direction settled with the user; implementation pending
+(handoff).** This section supersedes §5's open questions — read it before
+writing any code.
+
+### 7.1 Findings (verified 2026-09-09, not assumed)
+
+| Claim (§) | Result |
+|---|---|
+| `weight` is data-scale dependent (§5.2) | **Confirmed.** Same `weight=1.0` → relative change `‖Δ‖/‖x‖` = **0.45%** on echo (`650.BDD`, std 298, range 0–2048) vs **3.8%** on velocity ch6 (`200RPM.BDD`, std 23, range −55…246). The velocity signal is ~13× smaller, so a fixed default is ~8× more aggressive there. |
+| TV not idempotent (§5.3) | **Confirmed** — 2nd-pass max-Δ = 0.066, 3rd = 0.030 (bounded decay, no fixed point). |
+| scikit-image heavy (§5.1) | **Confirmed** — pulls `imageio`, `networkx`, `tifffile`, `lazy_loader`. (Now moot — see §7.2.2.) |
+| Wolfram "TV" ≠ what was ported (§5.2 Q2) | **Confirmed** in `references/wolfram/UDV_Data_Analysis_Echo.txt` (L106, 182–188, 221–222): Wolfram's `TotalVariationFilter` is a **2-D image** filter on `Image@Transpose@velocityDataGatesMm` (coupling *all* gates), parameterized by `constraintRelax` (0.25–0.5) + `Method -> "Laplacian" | "Poisson"` (a *noise model*), on `Rescale`d data. `skimage.restoration.denoise_tv_chambolle` implements only the ROF (Gaussian/L2) model — it cannot express Wolfram's Poisson/Laplacian modes. The per-gate-1-D choice is a **deliberate, physically-motivated divergence**, not a closer approximation; the `references/wolfram/README.md` port row already says "not a line-port", which is the honest wording to keep. |
+| Aliasing in velocity | **Confirmed present** (ch6 max 245.9 > `velo_max` 152.05), but **out of scope by decision §7.2.1** — recording parameters are configured to minimise it. |
+
+### 7.2 Settled decisions (user, 2026-09-09)
+
+1. **Purpose = pre-interpolation smoothing + outlier removal, not aliasing.**
+   The flow is so turbulent the current sampling rate cannot resolve it;
+   interpolating without smoothing/relaxation yields non-physical data. The
+   working order is **average / remove outliers *first*, then interpolate.**
+   Consequence: the filter layer runs **before** `resample` on the *raw
+   measured (gappy) series* — inverting §1's "`denoise` follows `resample`"
+   assumption. Both stages are closed `ChannelSeries -> ChannelSeries`
+   transforms, so order stays caller-chosen; nothing is baked into either.
+2. **Keep scikit-image.** There is no thin-repo mandate — the §5.1 "dependency
+   footprint" framing is withdrawn. scikit-image stays for TV and future work
+   (its earlier removal in hardening §P1 was only because the optical clients
+   that used it left; it is now a used dependency again).
+3. **Native sequence support, simple.** A single filter suffices to start, but
+   the architecture must express a *sequence of filters* without a framework.
+   This is just the closure rule applied n times (§7.3) — not a new `Pipeline`.
+
+### 7.3 Target design — the filter *sequence* platform
+
+Reshape `src/udv_echo_process/process/filter.py` (today: single `TV` method +
+`denoise`) into a sequence-capable layer, mirroring the settled `sync.py`
+shape (`InterpMethod` / `InterpParams` / `InterpSpec` / `resample`):
+
+- **`FilterMethod`** gains `MEDIAN` (outlier-robust — the "remove outliers"
+  tool) and `MEAN` (boxcar — the "average the signal" tool) on scipy
+  (`ndimage.median_filter1d` / `uniform_filter1d`), plus `SAVGOL`
+  (`signal.savgol_filter`). `TV` stays on skimage.
+- **`FilterSpec`** = `method` + bundled `params: FilterParams` (defaults valid
+  for every method — the `InterpParams` pattern, §8 of
+  `interpolation-design.md`).
+- **`filter(series, spec)`** — the generic verb, a rename of `denoise` (which
+  already dispatched on `spec.method`, so the name was already lying).
+  Closed `ChannelSeries -> ChannelSeries`; touches `values` only, carries
+  `time_s`/`channel`/`meas_type`/`gate_depths_mm` + a deep copy of `config`.
+- **`filter_sequence(series, specs)`** — the sequence entry point; a plain
+  fold: `filter_sequence(s, [a, b]) == filter(filter(s, a), b)`.
+
+**Cadence rule (resolves §5.4).** Index-window methods (MEDIAN/MEAN/SAVGOL)
+operate over *consecutive measured profiles*, so they are well-defined on the
+raw gappy series — that is the point (smooth the measurements, not the
+interpolated fiction). TV (ROF) is defined over sample *indices* and assumes
+uniform spacing, so it is a **post-`resample`** filter (or rejected on
+non-uniform input). The rule is per-method, not per-layer.
+
+### 7.4 Implementation snippet (target module)
+
+```python
+"""Per-gate time filtering — a sequence-capable smoothing/outlier layer.
+
+Filters each gate's time series along axis 0 (time). Driving need (settled
+2026-09-09): pre-process turbulent velocity fields — smooth / remove outliers
+on the *measured* samples first, then interpolate across gaps. Not aliasing
+correction (recording params are configured to minimise that).
+
+Sequence is native: ``filter`` is a closed ``ChannelSeries -> ChannelSeries``
+transform and ``filter_sequence`` is a plain fold. Per-gate, independent 1-D
+along time (never coupling gates); only ``values`` is transformed.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+
+import numpy as np
+from pydantic import Field
+from scipy.ndimage import median_filter1d, uniform_filter1d
+from scipy.signal import savgol_filter
+from skimage.restoration import denoise_tv_chambolle
+
+from udv_echo_process.models.base import Model
+from udv_echo_process.models.channel_series import ChannelSeries
+
+
+class FilterMethod(str, Enum):
+    """Fixed set of filter methods (never a bare ``str``)."""
+
+    MEDIAN = "median"  # outlier-robust — the "remove outliers" tool
+    MEAN = "mean"      # boxcar average — the "average the signal" tool
+    SAVGOL = "savgol"  # Savitzky–Golay (smooth, preserves higher moments)
+    TV = "tv"          # ROF total-variation (edge-preserving; uniform cadence only)
+
+
+class FilterParams(Model):
+    """Bundled per-method knobs, defaulted for every method (cf. InterpParams)."""
+
+    window: int = Field(default=5, ge=1)          # MEDIAN/MEAN/SAVGOL, samples
+    polyorder: int = Field(default=2, ge=0)        # SAVGOL (< window)
+    weight: float = Field(default=1.0, gt=0)       # TV lambda (larger = smoother)
+    iterations: int = Field(default=200, ge=1)     # TV solver cap
+
+
+class FilterSpec(Model):
+    """Parameters for one filtering pass over a ChannelSeries along time."""
+
+    method: FilterMethod = FilterMethod.MEDIAN
+    params: FilterParams = Field(default_factory=FilterParams)
+
+
+def filter(series: ChannelSeries, spec: FilterSpec) -> ChannelSeries:
+    """Apply one filter to each gate of ``series`` along time (axis 0).
+
+    Pure transform: returns a *new* ``ChannelSeries`` on the same grid/gates
+    with ``values`` filtered per gate; input never mutated; metadata + a deep
+    copy of ``config`` carry through.
+    """
+    _require_filterable(series, spec)
+    values = _apply(series.values, spec)
+    return ChannelSeries(
+        channel=series.channel,
+        meas_type=series.meas_type,
+        gate_depths_mm=list(series.gate_depths_mm),
+        time_s=series.time_s,
+        values=values,
+        config=series.config.model_copy(deep=True),
+    )
+
+
+def filter_sequence(
+    series: ChannelSeries, specs: list[FilterSpec]
+) -> ChannelSeries:
+    """Apply ``specs`` in order — the sequence-of-filters entry point.
+
+    A plain fold over ``filter``; composes freely with ``resample`` in either
+    order (e.g. smooth the raw series, then interpolate across gaps).
+    """
+    for spec in specs:
+        series = filter(series, spec)
+    return series
+
+
+def _apply(values: np.ndarray, spec: FilterSpec) -> np.ndarray:
+    p = spec.params
+    if spec.method is FilterMethod.MEDIAN:
+        return median_filter1d(values, size=p.window, axis=0, mode="nearest")
+    if spec.method is FilterMethod.MEAN:
+        return uniform_filter1d(values, size=p.window, axis=0, mode="nearest")
+    if spec.method is FilterMethod.SAVGOL:
+        return np.column_stack(
+            [
+                savgol_filter(values[:, g], p.window, p.polyorder)
+                for g in range(values.shape[1])
+            ]
+        )
+    # TV — per-gate 1-D (never a 2-D image coupling gates)
+    out = np.empty_like(values, dtype=np.float64)
+    for g in range(values.shape[1]):
+        out[:, g] = denoise_tv_chambolle(
+            values[:, g], weight=p.weight, max_num_iter=p.iterations
+        )
+    return out
+
+
+def _require_filterable(series: ChannelSeries, spec: FilterSpec) -> None:
+    if series.time_count < 2:
+        raise ValueError(
+            f"filter: channel {series.channel} has {series.time_count} sample(s); "
+            "need at least two time samples"
+        )
+    if series.gate_count == 0:
+        raise ValueError(f"filter: channel {series.channel} has no gates")
+    if not np.isfinite(series.values).all():
+        n_bad = int(np.count_nonzero(~np.isfinite(series.values)))
+        raise ValueError(
+            f"filter: channel {series.channel} values hold {n_bad} non-finite "
+            "entr(y/ies); clean the source before filtering"
+        )
+    p = spec.params
+    if spec.method is FilterMethod.SAVGOL and p.window <= p.polyorder:
+        raise ValueError(
+            f"filter: SAVGOL window ({p.window}) must exceed polyorder "
+            f"({p.polyorder})"
+        )
+    if spec.method is FilterMethod.TV and not _is_uniform(series.time_s):
+        raise ValueError(
+            "filter: TV is defined over sample indices and needs uniform "
+            "cadence; run resample() first (or use MEDIAN/MEAN/SAVGOL)"
+        )
+
+
+def _is_uniform(t: np.ndarray, rtol: float = 1e-3) -> bool:
+    dt = np.diff(t)
+    return dt.size == 0 or bool(np.allclose(dt, np.median(dt), rtol=rtol))
+```
+
+Notes for the implementer:
+
+- `median_filter1d` / `uniform_filter1d` keep the shape (`axis=0`); boundary
+  `mode` is an implementation choice — `"nearest"` avoids edge artefacts on
+  short bursts; `"reflect"` is scipy's default.
+- `savgol_filter` has no `axis` kwarg, hence the explicit gate loop (the code
+  above mirrors the existing TV gate loop). Its `window_length` must be odd —
+  lock that in a test (and, if convenient, an apply-time check).
+- `_is_uniform`'s `rtol` is a tuning knob: the echo fixture is exactly
+  3.2 ms uniform; the velocity fixture's intra-visit cadence is 25.4 ms but the
+  *whole* series is gappy (inter-visit gaps ~372 ms), so TV on it correctly
+  raises unless `resample` runs first.
+- The rename `denoise` → `filter` is public-API breaking; the package is
+  pre-1.0 with no import-compat promise (pipeline-architecture §12.6), so
+  rename cleanly and update the exports (`process/__init__.py`, top-level
+  `__init__.py`) + `tests/test_process_filter.py` + `test_package_surface.py`.
+
+### 7.5 Implementation checklist
+
+1. Rewrite `process/filter.py` to §7.4 (or equivalent — keep it no more
+   complicated than this).
+2. Update exports: `process/__init__.py` and top-level `__init__.py`
+   (`FilterMethod`, `FilterParams`, `FilterSpec`, `filter`,
+   `filter_sequence`; drop `denoise`).
+3. Tests — extend `tests/test_process_filter.py`:
+   - spec validation: `window >= 1`, `polyorder >= 0`, SAVGOL `window >
+     polyorder`, TV `weight > 0`;
+   - MEDIAN removes an outlier spike while preserving a step; MEAN reduces
+     Gaussian noise; SAVGOL smooths without the median's stair-step;
+   - sequence order matters and equals the fold (`filter_sequence(s, [a, b])`
+     == `filter(filter(s, a), b)`);
+   - cadence rule: TV raises on the gappy velocity fixture, passes on the
+     uniform echo fixture (and after `resample`);
+   - purity (input unmutated, `config` deep-copied, metadata carried, same
+     grid) — reuse the existing purity test verbatim;
+   - composition: `filter_sequence(raw, [MEDIAN])` → `resample` works on
+     `data/4-sensor-velocity/200RPM.BDD`.
+4. Keep `scikit-image>=0.26.0` in `pyproject.toml` (already there — do not
+   remove it).
+5. `uv run --no-sync --extra dev ruff check src tests` + `ruff format` +
+   `pytest -q` green.
+6. Log the landing to `docs/agenda.md` (session-status entry) and note the
+   `denoise → filter` rename there.
+
+### 7.6 Verify / reproduce
+
+```
+uv run --no-sync --extra dev pytest tests/test_process_filter.py   # 13 pass (pre-landing baseline)
+uv run --no-sync --extra dev pytest -q
 uv run --no-sync --extra dev ruff check src tests
 ```
