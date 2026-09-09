@@ -625,5 +625,43 @@ error channel; decide `execute`/`set_ui_value` MCP tools vs documented `cm`
 guidance) — and fold the durable rules into this repo's `AGENTS.md` Marimo
 section where missing.
 
+---
+
+## Session status — 2026-09-09 (cont.): per-gate filter review → sequence-platform plan (handoff)
+
+Review-only session, no `src/` changes. Reviewed the filter handoff
+([`docs/filter-design.md`](filter-design.md)) and re-planned the layer as a
+**sequence-capable** smoothing/outlier platform. Findings + decisions + target
+module snippet persisted as that doc's new **§7** and committed (`c7e106b`);
+**implementation is the handoff** to a follow-up agent (same machine — no
+push).
+
+**Verified findings (§7.1):** `weight` is data-scale dependent (same
+`weight=1.0` → 0.45% change on echo std 298 vs 3.8% on velocity std 23); TV
+is not idempotent (2nd-pass max-Δ 0.066, decaying); scikit-image pulls
+imageio/networkx/tifffile/lazy_loader; Wolfram's `TotalVariationFilter` is a
+**2-D image** filter with a `Method -> Laplacian|Poisson` noise model that
+skimage's ROF cannot express — the per-gate-1-D choice is a deliberate
+divergence, not an approximation. Aliasing is present in the velocity fixture
+but **out of scope**.
+
+**Settled decisions (§7.2, user):**
+1. Purpose = **pre-interpolation smoothing + outlier removal** (not aliasing —
+   recording params minimise that). Order: average/remove-outliers **before**
+   `resample`, on the raw gappy series.
+2. **Keep scikit-image** (no thin-repo mandate; the §5.1 framing is withdrawn).
+3. **Native sequence support, simple** — a fold, not a `Pipeline`.
+
+**Target shape (§7.3–7.4):** `FilterMethod` (MEDIAN/MEAN/SAVGOL on scipy +
+TV on skimage) · bundled `FilterParams` · `FilterSpec` · `filter()` (rename of
+`denoise`) · `filter_sequence()` (fold) — mirroring `sync.py`. Cadence rule:
+index-window filters are fine on the gappy series; TV requires uniform cadence
+(post-`resample`, or rejected). Implementation checklist in §7.5.
+
+**Next session (fresh agent):** implement `process/filter.py` to
+`docs/filter-design.md` §7.4, update exports (`process/__init__.py` + top
+level, drop `denoise`), extend `tests/test_process_filter.py` (per §7.5), keep
+scikit-image, and log the landing here.
+
 
 
