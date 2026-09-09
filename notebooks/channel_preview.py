@@ -5,7 +5,7 @@ app = marimo.App(width="full")
 
 
 @app.cell
-def _():
+def imports():
     import marimo as mo
 
     import numpy as np
@@ -18,7 +18,7 @@ def _():
 
 
 @app.cell(hide_code=True)
-def _(mo):
+def intro(mo):
     mo.md("""
     # Single-channel signal preview
 
@@ -40,7 +40,7 @@ def _(mo):
 
 
 @app.cell(hide_code=True)
-def _(discover_data_files, mo):
+def file_picker(discover_data_files, mo):
     _files = [str(p) for p in discover_data_files()]
     file_picker = mo.ui.dropdown(
         options=_files,
@@ -52,7 +52,7 @@ def _(discover_data_files, mo):
 
 
 @app.cell(hide_code=True)
-def _(file_picker, load, mo):
+def channel_picker(file_picker, load, mo):
     measurement = load(file_picker.value) if file_picker.value else None
     _ids = list(measurement.by_channel()) if measurement is not None else []
     channel_picker = mo.ui.dropdown(
@@ -68,12 +68,13 @@ def _(file_picker, load, mo):
         if measurement is not None
         else mo.md("_No recording selected._")
     )
-    _head
+    # render the channel selector together with the header so it is reachable
+    mo.vstack([_head, channel_picker])
     return channel_picker, measurement
 
 
 @app.cell(hide_code=True)
-def _(channel_picker, go, measurement, mo, np):
+def overview(channel_picker, go, measurement, mo, np):
     cs = measurement.by_channel()[channel_picker.value] if measurement is not None else None
     _stat_md = mo.md("_Select a recording + channel._")
     heat = None
@@ -130,12 +131,11 @@ def _(channel_picker, go, measurement, mo, np):
         heat = mo.ui.plotly(_fig)
     # final expression: channel info above the measured heatmap
     mo.vstack([x for x in (_stat_md, heat) if x is not None])
-
     return (cs,)
 
 
 @app.cell(hide_code=True)
-def _(TraceScrubber, cs, np):
+def scrubber(TraceScrubber, cs, np):
     scrub = None
     if cs is not None:
         if cs.meas_type.value == "echo":
@@ -182,7 +182,6 @@ def interp_intro(mo):
       of the measured values lives in the Overview above. Zoom/pan in the
       figures.
     """)
-
     return
 
 
