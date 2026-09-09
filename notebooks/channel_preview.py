@@ -251,6 +251,19 @@ def interp_controls(cs, mo, np):
         step=1,
         label="Gate (trace view)",
     )
+    # final expression: render the control stack as this cell's output
+    mo.vstack(
+        [
+            interp_method,
+            interp_dt_ms,
+            interp_grid,
+            spline_order,
+            interp_extrap,
+            interp_extrap_side,
+            interp_margin_ms,
+            gate_idx,
+        ]
+    )
 
     return (
         InterpMethod,
