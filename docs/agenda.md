@@ -443,4 +443,91 @@ re-run the §15.2 sync grid/alignment **experiment** — the notebook preview
 alignment strategies; then ChannelSeries sync primitives (grid-as-`Spec`) +
 `.BDD`-first tests; box-level uplift; legacy migration at capacity.
 
+---
+
+## Session status — 2026-09-09: interpolation & resampling grounding (capture only)
+
+Docs/discussion-only session, no code. Persisted the grounding for the
+`process/sync.py` interpolation stage in a new
+[`docs/interpolation-design.md`](interpolation-design.md) (companion to the
+two pipeline docs + `docs/dop3000/measurements-and-recordings.md`). Verified
+fixture facts: `data/4-sensor-velocity/200RPM.BDD` = 100 rounds × 4 channels
+× **4 profiles/visit**, intra-visit cadence 25.4 ms, revisit ~448 ms,
+per-round stagger ch7/8/9 ≈ +112/+224/+336 ms **stable across all 100 rounds**
+(σ ≤ 1.6 ms, no drift); single-channel `data/echo/650.BDD` = uniform 3.2 ms.
+Settled direction: the sync task = per-sensor series across all blocks (what
+`ChannelSeries` already is) → **interpolate via a swappable interpolation
+layer/module** producing a pre-calculated model (parameters + argument
+bounds), sampled downstream at arbitrary times; re-interpolation only for
+notebook quality assessment and sensor re-alignment (bounds = time-overlap
+extremes). Common-grid questions fall away under this framing. Open for the
+next discussion: the interpolation layer design itself (scipy dependency
+decision, model shape, per-gate handling, tests). Corrections recorded in the
+note: "never bridge inter-visit gaps" withdrawn as the default (bridging is
+the reconstruction intent); hole-marking kept as an option for
+frequency-domain consumers; alignment stage must avoid the ~448 ms
+one-round ambiguity of whole-series lag cross-correlation.
+
+---
+
+## Session status — 2026-09-09 (cont.): interpolation-layer friction review → **CHECKPOINT, restart fresh**
+
+Second 2026-09-09 session, capture only, no code. User reviewed the grounded
+design (`docs/interpolation-design.md`) and asked three structural questions;
+answers + empirical probes persisted as **§6 (checkpoint)** of that note.
+Highlights:
+- Scope confirmed: interpolation on `ChannelSeries` only;
+  `MultiplexedMeasurement` later.
+- numpy validation via `@model_validator` is fine (already the landed
+  pattern) — the friction is elsewhere: ndarray fields **break model `==`**
+  (raises `ValueError`; tests must use `np.allclose`) and **are shared on
+  shallow `model_copy()`** (deep-copy discipline needed on transforms).
+- Storing a **live scipy interpolant in a Pydantic model: rejected**
+  (untyped/heterogeneous across methods, mutable, non-serializable,
+  behaviour-in-data). Direction: **recipe model** (method enum + params +
+  argument bounds), scipy materialized lazily at the sampling call site.
+  Full-OOP conversion rejected (loses validation/coercion/serialization the
+  repo deliberately bought); a small scoped behaviour class inside
+  `process/` remains allowed (conventions §6.2).
+- User takes a review round; **work restarts in a fresh session.**
+
+**Next session (fresh context):** open `docs/interpolation-design.md` — read
+§1–5 then §6 (checkpoint, incl. §6.5 restart reading order) — and reopen the
+interpolation-layer brainstorm (**issue b**), starting from §6.4 open
+question 1 (recipe-as-field on `ChannelSeries` vs pure-data series + separate
+recipe + `sample(recipe, times) -> ChannelSeries`; author lean: pure data).
+Keep it discussion/capture until decisions land; no code, no new deps (scipy
+decision = open question 5). Tree at checkpoint: `docs/agenda.md` modified +
+`docs/interpolation-design.md` new; everything else clean.
+
+---
+
+## Session status — 2026-09-09 (cont.): interpolation brainstorm concluded → implementation-ready
+
+Review round over `docs/interpolation-design.md` (goal / limitation / current
+ideas) plus the implementation brainstorm. **Decisions landed** (persisted as
+that doc's new §7; no code written this session):
+- **API = closed transform** `resample(series, spec, *, times | dt_s) ->
+  ChannelSeries` (conventions closure rule); two-phase fit/sample deferred until
+  a real consumer needs pre-fit.
+- **Recipe = `InterpSpec`** in `process/` (not `models/`); recipe-as-field
+  dropped; no knots copied; method as a constrained `Enum`.
+- **scipy adopted as a runtime dep** (future filtering / spectral / unwrapping
+  work will need it); wiring into `pyproject.toml` / `uv.lock` is left to the
+  implementation session.
+- **Method regimes:** `LINEAR` default (no-overshoot across the ~372 ms /
+  14.6-step inter-visit gap), `MONOTONE` / `CUBIC` / `BSPLINE` where smoothness
+  is safe; interpolation is per-gate 1-D (vectorized along axis 0).
+- **`InterpSpec` fields:** method + explicit `extrapolation`
+  (`error | nan | nearest`) + `nan_policy` + per-method params; output carries
+  `channel`/`config`, input unmutated; hole-marking seam deferred.
+- **Tests:** knot round-trip, overshoot guard, uniform-echo idempotency,
+  extrapolation / NaN behaviour, non-mutation — via `np.allclose`.
+
+**Next session = implementation (Stage 3):** wire scipy into the deps, then land
+`process/sync.py` (`InterpSpec` + `resample()`) + tests on
+`data/4-sensor-velocity/*.BDD` (staggered) and `data/echo/*.BDD` (uniform), per
+`docs/interpolation-design.md` §7.
+
+
 

@@ -133,6 +133,12 @@ def estimate_channel_offsets(recording: Recording) -> dict[int, float]:
 
 ### 6.2 Configured step (params model + function)
 
+> **Interpolation note (2026-09-09):** the interpolation stage is now designed —
+> see `docs/interpolation-design.md` §7. There, `method` is a constrained `Enum`
+> (`InterpMethod`), not a bare `str`, and the spec carries explicit
+> `extrapolation` / `nan_policy` fields. The example below is illustrative of
+> *shape* only (its types still name pre-convergence `Recording`).
+
 ```python
 from pydantic import BaseModel
 from udv_echo_process.models.dataset import Recording
