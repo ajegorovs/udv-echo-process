@@ -560,5 +560,42 @@ Next step: wire scipy (`pyproject.toml` + `uv.lock`), land `process/sync.py`
 per §7/§8, then the test set on `data/echo/650.BDD` + `data/4-sensor-velocity/
 200RPM.BDD` and synthetic tiny arrays.
 
+---
+
+## Session status — 2026-09-09 (cont.): Stage 3 interpolation **implemented**
+
+The Stage 3 interpolation layer landed. **scipy 1.18.1** is a runtime dep
+(wired into `pyproject.toml` + `uv.lock`, cp314 wheel verified on Python
+3.14.7). `src/udv_echo_process/process/sync.py` now holds:
+
+- `InterpMethod` (str-`Enum`: LINEAR default → MONOTONE → CUBIC/BSPLINE),
+  `InterpParams` (nested per-method params, `spline_order` default 3,
+  BSPLINE-owned), `InterpSpec` (method + `extrapolation`
+  `error|nan|nearest` + `nan_policy` `error|propagate` + params), and the
+  closed transform `resample(series, spec, *, times | dt_s) -> ChannelSeries`
+  — all per `docs/interpolation-design.md` §7/§8, including: exactly-one
+  grid arg; strictly-increasing finite times/knots (uniform dup rule);
+  inclusive `dt_s` span with shortened final interval; apply-time spline
+  capacity checks; per-sample extrapolation rows; NaN pre-scan with
+  propagate=LINEAR-only; never a silent endpoint clamp; input unmutated,
+  `channel`/`config`/gates carried through.
+- Exports from `process/__init__.py` **and** the package top level.
+
+Tests: `tests/test_process_sync.py` — 45 tests on synthetic tiny arrays +
+`data/echo/650.BDD` (uniform: knot round-trip all 4 methods, idempotent
+re-resample) + `data/4-sensor-velocity/200RPM.BDD` (gappy/staggered: knot
+round-trip, LINEAR no-overshoot across the ~370 ms gaps, monotone stays in
+envelope, cubic overshoot on a step documented as regime honesty),
+extrapolation ×3 policies, NaN policy, grid semantics, purity. Full suite:
+**103 passed** (58 prior + 45), ruff check + format clean.
+
+**Where this leaves the sync task:** per-sensor interpolation is done; the
+next sync stages are the ones §3/§7 deliberately deferred — grid/alignment
+strategy on `MultiplexedMeasurement` (match per-round reference times, avoid
+the ~448 ms one-round cross-correlation ambiguity), the hole-marking seam
+once a frequency-domain consumer appears, and re-expressing the
+pre-convergence templates of `pipeline-conventions.md` §§2/4/6 on
+`ChannelSeries`/`MultiplexedMeasurement` types.
+
 
 

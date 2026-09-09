@@ -1,10 +1,12 @@
 # Channel-signal interpolation & resampling — grounding + design state
 
-Status: **decisions landed, 2026-09-09 · implementation in progress (same
-date).** §7 records the settled interpolation design; **§8 records the
-implementation-level clarifications** agreed at the start of the
-implementation session (before code). Docs checkpoint committed as
-`2ce6671`; implementation lands in `process/sync.py` (Stage 3).
+Status: **decisions landed and implemented, 2026-09-09.** §7 records the
+settled interpolation design; **§8 records the implementation-level
+clarifications** agreed at the start of the implementation session. The Stage 3
+implementation landed the same day in `process/sync.py` (`InterpMethod`,
+`InterpParams`, `InterpSpec`, `resample`) with its §7/§8 test set — 45 tests,
+full suite + ruff green. Docs checkpoints: `2ce6671` (design), `d5db721`
+(clarifications).
 
 This note persists the grounding obtained so far for the interpolation /
 resampling stage of the pipeline rebuild (architecture

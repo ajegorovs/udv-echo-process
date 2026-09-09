@@ -35,6 +35,7 @@ from udv_echo_process.parser import (
     parse_comma_decimal,
     parse_stat_add_file,
 )
+from udv_echo_process.process import InterpMethod, InterpParams, InterpSpec, resample
 from udv_echo_process.viz import (
     discover_data_files,
     plot_all,
@@ -47,6 +48,9 @@ __all__ = [
     "ChannelFrame",
     "ChannelSeries",
     "ExtractedData",
+    "InterpMethod",
+    "InterpParams",
+    "InterpSpec",
     "MeasType",
     "MultiplexedMeasurement",
     "RpmResult",
@@ -65,6 +69,7 @@ __all__ = [
     "plot_all",
     "plot_channel_stats",
     "plot_recording",
+    "resample",
     "rpm_from_echo",
     "setpoint_rpm_from_stem",
 ]
