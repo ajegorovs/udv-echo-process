@@ -390,3 +390,40 @@ marimo 0.24.0 in this repo's `.venv`):
   it removed.
 
 *(append-only: corrections are new entries pointing back; earlier entries unchanged)*
+
+---
+
+### 2026-09-09 (later session) — notebook restructure + MCP experience report (O28–O32)
+
+`notebooks/channel_preview.py` reshaped live (kernel :2718, session `s_jb93sf`)
+into the agreed 4-group flow — import pickers → channel info + measured
+heatmap → time-step scrubber → interpolation preview (controls → run → gate →
+trace) — and filed a marimo-inspect MCP **consumer experience report** in the
+sibling repo: `~/Repos/marimo-inspect/docs/
+session-report-deepseek-harness-2026-09-09.md` (tool-by-tool verdicts,
+frictions F1–F9, backlog P1–P5; sibling `agenda-udv-consumer-findings.md` got a
+T7 review pointer). Commits: `16cdf4e`, `b4073f8`, `6bc96c4`, `5be0b0f`,
+`16e9010`. New agent-side coding notes:
+
+- **O28** ✅ UI-element handler exceptions (e.g. a bad programmatic
+  `set_ui_value`) do **not** appear in the MCP `get_errors` surface — they land
+  in the cell's **console** stream and leave a sticky GUI banner
+  ("An exception was raised by a UIElement's on_change handler:") that clears
+  only when the owning cell is rerun. Check `get_cell_outputs` console events
+  when a user reports an error `get_errors` denies.
+- **O29** ✅ A marimo cell **displays only what its final expression evaluates
+  to**. Widget-only cells (assignments, no trailing expression) yield an empty
+  kernel output — an agent's "implemented controls" render nothing until the
+  cell ends with e.g. `mo.vstack([...widgets...])`. Backend-run cells may also
+  not register UI-element outputs until a frontend run/refresh.
+- **O30** ✅ marimo forbids reading `.value` of a UI element in the cell that
+  **created** it (`RuntimeError`; fix named in the message). A widget that
+  other cells consume (e.g. a gate dropdown feeding a trace) must live in its
+  own upstream cell.
+- **O31** ✅ `get_cell_map.has_output` read `false` for every cell although the
+  kernel held real outputs; `get_cell_outputs` returns one payload per cell —
+  auto-rendered UI elements are invisible to the agent. Treat `has_output` as
+  unreliable; use `get_cell_outputs`/`get_cell_data` for truth.
+- **O32** ⚠️ `cm.screenshot` fails with `ScreenshotError: Playwright is not
+  installed` (no graceful capability detection); verifying GUI rendering
+  therefore falls back to output-payload checks + user confirmation.

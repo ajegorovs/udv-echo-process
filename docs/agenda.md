@@ -597,5 +597,33 @@ once a frequency-domain consumer appears, and re-expressing the
 pre-convergence templates of `pipeline-conventions.md` §§2/4/6 on
 `ChannelSeries`/`MultiplexedMeasurement` types.
 
+---
+
+## Session status — 2026-09-09 (cont.): channel_preview restructure → MCP experience report filed
+
+Live notebook `notebooks/channel_preview.py` reshaped into the agreed 4-group
+flow and committed: `16cdf4e` (extrapolation-testing controls) → `b4073f8`
+(controls render via a final-expression `mo.vstack`) → `6bc96c4` (heatmap
+x=time/y=gate; own gate dropdown for the trace) → `5be0b0f` (measured-only
+heatmap moved into the Overview slot) → `16e9010` (merge channel info +
+heatmap into one cell). Structure now: import pickers → channel info +
+measured heatmap → time-step scrubber → interpolation preview (controls → run
+note → gate dropdown → per-gate trace). Kernel still live on :2718
+(session `s_jb93sf`), 0 errors, `marimo check` green, tree clean.
+
+**New — marimo-inspect MCP experience report (open for review).** Per user
+request, filed a consumer "what using it felt like" report in the sibling repo:
+`~/Repos/marimo-inspect/docs/session-report-deepseek-harness-2026-09-09.md`
+(tool-by-tool verdicts, frictions F1–F9, improvement backlog P1–P5, guide
+gap). Provider-side review pointer added there as
+`agenda-udv-consumer-findings.md` **T7**; evidence logged here as
+`docs/marimo-integration-log.md` **O28–O32**.
+
+**Next session:** review the report (marimo agent rules: final-expression
+display, creator-can't-read-own-`.value`, list-form `set_ui_value`, UI-handler
+error channel; decide `execute`/`set_ui_value` MCP tools vs documented `cm`
+guidance) — and fold the durable rules into this repo's `AGENTS.md` Marimo
+section where missing.
+
 
 
