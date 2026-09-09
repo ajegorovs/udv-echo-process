@@ -17,7 +17,7 @@ def _():
     return TraceScrubber, discover_data_files, go, load, mo, np
 
 
-@app.cell
+@app.cell(hide_code=True)
 def _(mo):
     mo.md("""
     # Single-channel signal preview
