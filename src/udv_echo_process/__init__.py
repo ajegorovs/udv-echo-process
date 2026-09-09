@@ -37,11 +37,13 @@ from udv_echo_process.parser import (
 )
 from udv_echo_process.process import (
     FilterMethod,
+    FilterParams,
     FilterSpec,
     InterpMethod,
     InterpParams,
     InterpSpec,
-    denoise,
+    filter,
+    filter_sequence,
     resample,
 )
 from udv_echo_process.viz import (
@@ -57,6 +59,7 @@ __all__ = [
     "ChannelSeries",
     "ExtractedData",
     "FilterMethod",
+    "FilterParams",
     "FilterSpec",
     "InterpMethod",
     "InterpParams",
@@ -66,9 +69,10 @@ __all__ = [
     "RpmResult",
     "SourceFormat",
     "SourceSpec",
-    "denoise",
     "discover_data_files",
     "extract",
+    "filter",
+    "filter_sequence",
     "list_add_files",
     "list_stat_add_files",
     "load",
