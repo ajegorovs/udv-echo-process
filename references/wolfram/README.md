@@ -15,7 +15,8 @@ lives in `src/udv_echo_process/analysis/` — one module per feature.
 | Notebook | Python module | Status |
 |----------|---------------|--------|
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | `analysis/rpm.py` (FFT peak /2 RPM) | Ported |
-| `UDV_Data_Analysis_Echo.txt` / `.nb` | Total-variation filtering (`TotalVariationFilter`), peak detection (`PeakDetect`), image/histogram transforms, quantile regression (`QuantileRegression.m`) | Not yet ported |
+| `UDV_Data_Analysis_Echo.txt` / `.nb` | Total-variation filtering (`TotalVariationFilter`) → `process/filter.py` (`FilterSpec` + `denoise`, implemented via scikit-image `denoise_tv_chambolle`, not a line-port) | TV: Ported 2026-09-09 |
+| `UDV_Data_Analysis_Echo.txt` / `.nb` | Peak detection (`PeakDetect`), image/histogram transforms, quantile regression (`QuantileRegression.m`) | Not yet ported |
 
 ## Workflow for porting a new notebook
 

@@ -35,7 +35,15 @@ from udv_echo_process.parser import (
     parse_comma_decimal,
     parse_stat_add_file,
 )
-from udv_echo_process.process import InterpMethod, InterpParams, InterpSpec, resample
+from udv_echo_process.process import (
+    FilterMethod,
+    FilterSpec,
+    InterpMethod,
+    InterpParams,
+    InterpSpec,
+    denoise,
+    resample,
+)
 from udv_echo_process.viz import (
     discover_data_files,
     plot_all,
@@ -48,6 +56,8 @@ __all__ = [
     "ChannelFrame",
     "ChannelSeries",
     "ExtractedData",
+    "FilterMethod",
+    "FilterSpec",
     "InterpMethod",
     "InterpParams",
     "InterpSpec",
@@ -56,6 +66,7 @@ __all__ = [
     "RpmResult",
     "SourceFormat",
     "SourceSpec",
+    "denoise",
     "discover_data_files",
     "extract",
     "list_add_files",
