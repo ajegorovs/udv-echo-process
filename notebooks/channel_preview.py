@@ -221,6 +221,28 @@ def interp_controls(cs, mo, np):
         value=3,
         label="B-spline order (BSPLINE only)",
     )
+    # --- extrapolation testing -------------------------------------------------
+    # extrapolation only ever triggers when the target grid leaves the measured
+    # span [time_s[0], time_s[-1]]; the margin slider pushes the grid past one or
+    # both ends so the policy dropdown below is actually exercised.
+    interp_extrap = mo.ui.dropdown(
+        options=["error", "nan", "nearest"],
+        value="error",
+        label="Extrapolation policy (out-of-span rows)",
+    )
+    interp_extrap_side = mo.ui.dropdown(
+        options=["both ends", "start only", "end only"],
+        value="both ends",
+        label="Extrapolate beyond",
+    )
+    _span_ms = float(cs.time_s[-1] - cs.time_s[0]) * 1e3 if cs is not None else 1000.0
+    interp_margin_ms = mo.ui.slider(
+        start=0.0,
+        stop=float(max(100.0, min(_span_ms / 4.0, 5000.0))),
+        value=0.0,
+        step=5.0,
+        label="Margin past the measured span [ms] (0 = off)",
+    )
     _gate_count = cs.gate_count if cs is not None else 1
     gate_idx = mo.ui.slider(
         start=0,
@@ -236,7 +258,10 @@ def interp_controls(cs, mo, np):
         InterpSpec,
         gate_idx,
         interp_dt_ms,
+        interp_extrap,
+        interp_extrap_side,
         interp_grid,
+        interp_margin_ms,
         interp_method,
         resample,
         spline_order,
@@ -250,9 +275,13 @@ def interp_run(
     InterpSpec,
     cs,
     interp_dt_ms,
+    interp_extrap,
+    interp_extrap_side,
     interp_grid,
+    interp_margin_ms,
     interp_method,
     mo,
+    np,
     resample,
     spline_order,
 ):
@@ -262,25 +291,73 @@ def interp_run(
     interp_grid_desc = "—"
     if cs is not None:
         _method = InterpMethod(interp_method.value)
+        _extrap = interp_extrap.value  # "error" | "nan" | "nearest"
         _spec = InterpSpec(
             method=_method,
+            extrapolation=_extrap,
             params=InterpParams(spline_order=int(spline_order.value)),
         )
-        if interp_grid.value == "dt grid":
-            _target = dict(dt_s=float(interp_dt_ms.value) / 1000.0)
-            interp_grid_desc = f"dt = {interp_dt_ms.value:.3f} ms"
-        else:
-            _target = dict(times=cs.time_s)
-            interp_grid_desc = "knot times (round-trip)"
+        _lo, _hi = float(cs.time_s[0]), float(cs.time_s[-1])
+        _margin_ms = float(interp_margin_ms.value)
+        _side = interp_extrap_side.value
+        _at_start = _margin_ms > 0.0 and _side in ("start only", "both ends")
+        _at_end = _margin_ms > 0.0 and _side in ("end only", "both ends")
+        _n_out = 0
         try:
+            if interp_grid.value == "dt grid":
+                _dt = float(interp_dt_ms.value) / 1000.0
+                if _at_start or _at_end:
+                    _lo2 = _lo - _margin_ms / 1000.0 if _at_start else _lo
+                    _hi2 = _hi + _margin_ms / 1000.0 if _at_end else _hi
+                    _times = np.arange(_lo2, _hi2, _dt)
+                    if _times.size == 0 or _times[-1] < _hi2 - 1e-12 * max(1.0, abs(_hi2)):
+                        _times = np.concatenate([_times, [_hi2]])
+                    _target = dict(times=_times)
+                    _n_out = int(np.count_nonzero((_times < _lo) | (_times > _hi)))
+                    _side_desc = _side
+                else:
+                    _target = dict(dt_s=_dt)
+                    _side_desc = ""
+                _grid_base = f"dt = {interp_dt_ms.value:.3f} ms"
+            else:
+                if _at_start or _at_end:
+                    _pre = np.array([_lo - _margin_ms / 1000.0]) if _at_start else np.array([])
+                    _post = np.array([_hi + _margin_ms / 1000.0]) if _at_end else np.array([])
+                    _target = dict(times=np.concatenate([_pre, cs.time_s, _post]))
+                    _n_out = int(_pre.size + _post.size)
+                    _side_desc = _side
+                else:
+                    _target = dict(times=cs.time_s)
+                    _side_desc = ""
+                _grid_base = "knot times (round-trip)"
+            interp_grid_desc = _grid_base + (
+                f" + {_margin_ms:.0f} ms ({_side_desc})" if (_at_start or _at_end) else ""
+            )
             resampled = resample(cs, _spec, **_target)
             _span = resampled.time_s[-1] - resampled.time_s[0]
-            interp_note = mo.md(
+            _policy_desc = {
+                "error": "would raise — never a silent clamp",
+                "nan": "out-of-span rows filled with NaN",
+                "nearest": "out-of-span rows edge-clamped",
+            }[_extrap]
+            _lines = [
                 f"**{_method.value}** on `{interp_grid_desc}` → "
                 f"`resampled` = {resampled.time_count} samples over "
                 f"[{resampled.time_s[0]:.4f}, {resampled.time_s[-1]:.4f}] s "
-                f"(span {_span:.3f} s)"
-            )
+                f"(span {_span:.3f} s)",
+            ]
+            if _n_out:
+                _lines.append(
+                    f"- extrapolation **{_extrap}**: {_n_out} of "
+                    f"{resampled.time_count} rows lie outside the measured span "
+                    f"[{_lo:.4f}, {_hi:.4f}] s → {_policy_desc}"
+                )
+            else:
+                _lines.append(
+                    "- extrapolation: grid stays inside the measured span "
+                    "(margin 0 or untriggered) — policy not exercised"
+                )
+            interp_note = mo.md("\n".join(_lines))
         except ValueError as _err:
             interp_note = mo.md(f"⚠️ `resample` failed: {_err}")
     interp_note
