@@ -109,6 +109,26 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 - Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`
   (deps landed 2026-09-07 — `marimo[recommended]>=0.24.0,<0.25` +
   `marimo-inspect` pinned via git tag `v0.2.0`).
+- **`marimo-inspect` editable install (required for widget notebooks).**
+  The pinned tag `v0.2.0` does **not** ship `TraceScrubber`/widgets — those
+  were added to the sibling repo *after* the tag — yet
+  `notebooks/channel_preview.py` imports `TraceScrubber` from
+  `marimo_inspection`. Working on such a notebook therefore needs
+  `marimo-inspect` installed **editable from the sibling repo**:
+  `uv pip install -e ~/Repos/marimo-inspect`.
+  - **Gotcha — `uv sync` / `uv run` silently clobber it:** both re-materialise
+    the venv from `uv.lock` (git tag `v0.2.0`), replacing the editable install
+    and breaking the widget imports (reproduced 2026-09-09: notebook failed to
+    start with `cannot import name 'TraceScrubber'` right after a scipy
+    `uv sync`). After any sync, reinstall editable.
+  - **Launch from the venv binary, not `uv run`**, so the launch itself does
+    not resync the venv: `MPLCONFIGDIR=/tmp/mpl .venv/bin/marimo edit
+    --no-token notebooks/channel_preview.py`. (`marimo check`/lints are
+    import-free and safe under `uv run`; only launching the kernel needs the
+    editable install present.)
+  - **Durable fix (open):** tag the sibling repo at/after the `TraceScrubber`
+    commit and repin `[tool.uv.sources]` here to that tag — then the editable
+    override becomes unnecessary.
 - **Live notebooks:** `notebooks/echo_explorer.py` (marimo plan Phase 2,
   2026-09-07) — dropdown over `discover_data_files()`, channel pills, heatmap +
   gate-profile figures via `mo.mpl.interactive`. All computation stays in
