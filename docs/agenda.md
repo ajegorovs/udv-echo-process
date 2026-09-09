@@ -529,5 +529,36 @@ that doc's new §7; no code written this session):
 `data/4-sensor-velocity/*.BDD` (staggered) and `data/echo/*.BDD` (uniform), per
 `docs/interpolation-design.md` §7.
 
+---
+
+## Session status — 2026-09-09 (cont.): Stage 3 implementation session — scope confirmed
+
+Implementation session opens. Docs checkpoint committed (`2ce6671`); the
+settled design (§7) plus the implementation-level clarifications agreed in
+discussion are now captured as `docs/interpolation-design.md` **§8** (this
+session, before code). Scope confirmations, all within §7's "implementation
+may refine" latitude:
+
+- **Exactly one grid arg** (`times` xor `dt_s`); `times` strictly increasing +
+  finite (never silently sorted).
+- **Duplicate source knots: uniform strict rule** — DOP never emits repeated
+  timestamps (all fixtures strictly increasing), so `resample` requires
+  strictly-increasing `time_s` for *every* method; duplicate-tolerant handling
+  for non-DOP devices = future note, not built.
+- **`dt_s` grid = inclusive `[time_s[0], time_s[-1]]`** (short final interval),
+  `dt_s <= 0` or `> span` errors.
+- **Per-method params bundled** as nested `InterpSpec.params: InterpParams`
+  (`spline_order: int = 3`, BSPLINE-owned); data-count constraints validated at
+  apply time; discriminated per-method spec union deferred until a 2nd
+  parameterized method exists.
+- **Extrapolation per-sample rows** (error / nan / nearest), never silent
+  clamp; **NaN policy**: non-finite times always error, `error` default,
+  `propagate` LINEAR-only with clear spline error.
+- **Exports:** `process/__init__.py` + package top level.
+
+Next step: wire scipy (`pyproject.toml` + `uv.lock`), land `process/sync.py`
+per §7/§8, then the test set on `data/echo/650.BDD` + `data/4-sensor-velocity/
+200RPM.BDD` and synthetic tiny arrays.
+
 
 

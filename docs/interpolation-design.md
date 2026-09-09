@@ -1,7 +1,10 @@
 # Channel-signal interpolation & resampling — grounding + design state
 
-Status: **decisions landed, 2026-09-09 · capture only (no code).** §7 records
-the settled interpolation design; implementation starts in a fresh session.
+Status: **decisions landed, 2026-09-09 · implementation in progress (same
+date).** §7 records the settled interpolation design; **§8 records the
+implementation-level clarifications** agreed at the start of the
+implementation session (before code). Docs checkpoint committed as
+`2ce6671`; implementation lands in `process/sync.py` (Stage 3).
 
 This note persists the grounding obtained so far for the interpolation /
 resampling stage of the pipeline rebuild (architecture
@@ -238,7 +241,8 @@ This section is the restart anchor — read §1–5 first, then here.
 
 ### 6.5 Restart reading order (fresh context)
 
-`docs/interpolation-design.md` (§1–7; §7 = decisions landed) → `docs/agenda.md` session statuses
+`docs/interpolation-design.md` (§1–8; §7 = decisions landed, §8 = implementation
+clarifications) → `docs/agenda.md` session statuses
 (2026-09-09 entries) → `docs/pipeline-architecture.md` (§11 Stage 3, §15) →
 `docs/pipeline-conventions.md` (§2, §4, §6, §10) →
 `docs/dop3000/measurements-and-recordings.md` → landed code
@@ -337,4 +341,54 @@ from the sample call, or a later optional `mask: np.ndarray | None` field on
 overshoot guard on the 4-sensor gaps; uniform-echo idempotency; extrapolation
 and NaN-policy behaviour; non-mutation of input. All comparisons via
 `np.allclose`, never `==` on models (§6.2).
+
+---
+
+## 8. Implementation clarifications — 2026-09-09 (implementation session)
+
+Settled in discussion with the user at the start of the implementation session,
+before any code. These refine §7 within its "implementation may refine"
+latitude; they do **not** change the landed API shape.
+
+- **Grid argument (exactly one of `times` / `dt_s`).** Passing both, or
+  neither, raises `ValueError`. `times` must be **strictly increasing and
+  finite** — never silently sorted; empty `times` errors.
+- **Duplicate source knots: not a DOP concern (uniform strict rule).**
+  DOP-series instruments write one timestamp per stored profile and never emit
+  repeats (re-verified: all five fixture channels are strictly increasing), and
+  the reader cannot manufacture duplicates. `resample()` therefore requires
+  **strictly increasing `time_s` for every method** (clear `ValueError` naming
+  the first duplicate otherwise). Duplicate-tolerant handling (aggregate /
+  keep-last) is a *deliberate policy for non-DOP devices* — future work, noted
+  here and in the docstring, not built now.
+- **`dt_s` grid geometry: inclusive span.** Target grid =
+  `[time_s[0], time_s[-1]]` at step `dt_s`; if the span is not an exact
+  multiple, the final interval is shorter so the last sample is always the
+  series' last time (idempotent across re-resamples). `dt_s <= 0` and
+  `dt_s` larger than the whole span error.
+- **Per-method params are bundled (not a flat grab-bag).** `InterpSpec`
+  carries a typed nested model `params: InterpParams` (Pydantic), today holding
+  `spline_order: int = 3`, owned by `BSPLINE` (other methods ignore it;
+  documented). Params are defaulted and typed; adding a parameter later never
+  changes the `resample(series, spec)` call site. Some params are
+  **data-count dependent** (spline order k needs ≥ k+1 knots) — such
+  constraints are validated at **apply time**, because spec construction
+  cannot know the series length; noted in the docstring. A discriminated
+  per-method spec union is deferred until a *second* parameterized method
+  exists.
+- **Extrapolation: per-sample row semantics.** `error` raises `ValueError` if
+  *any* requested time is out of range; `nan` NaNs only the out-of-range rows
+  (in-range rows interpolate normally); `nearest` fills out-of-range rows with
+  that gate's edge value (scipy `fill_value="nearest"` naming). Never a silent
+  endpoint clamp under the default `error`.
+- **NaN policy.** Non-finite `time_s` / `times` always error.
+  `nan_policy="error"` (default) rejects NaN source values up front with a
+  clear message; `"propagate"` carries NaN through LINEAR (the segment between
+  finite knots goes NaN, per `np.interp`) and raises a clear
+  "spline methods cannot fit through NaN knots" error instead of leaking
+  scipy's internal failure.
+- **Exports.** `InterpMethod`, `InterpSpec`, `InterpParams`, `resample`
+  exported from `process/__init__.py` and re-exported at package top level
+  (`udv_echo_process.resample`, …), per AGENTS.md's export convention and the
+  precedent set by `models/`/`io`/`analysis`.
 
