@@ -1,10 +1,11 @@
 # Per-gate time-wise filtering — design & review handoff
 
-Status: **reviewed 2026-09-09 — direction settled, re-planned; implementation
-pending (handoff to another agent).** The review round, settled decisions,
-and target design live in **§7** — read that first. §1–6 are the original
-handoff (what was built, why, and the questions that prompted the review);
-**§7 supersedes the open questions of §5.** Companion to
+Status: **implemented 2026-09-09 — sequence platform landed (`process/filter.py`:
+`FilterMethod` MEDIAN/MEAN/SAVGOL/TV · `FilterParams` · `FilterSpec` ·
+`filter` · `filter_sequence`; the `denoise` rename).** The review round,
+settled decisions, and target design live in **§7** — read that first. §1–6
+are the original handoff (what was built, why, and the questions that
+prompted the review); **§7 supersedes the open questions of §5.** Companion to
 `interpolation-design.md` (the resampling layer this filter composes with).
 
 ## 1. Where this sits
@@ -131,9 +132,9 @@ uv run --no-sync --extra dev ruff check src tests
 
 ## 7. Review round + re-plan — 2026-09-09
 
-Status: **reviewed; direction settled with the user; implementation pending
-(handoff).** This section supersedes §5's open questions — read it before
-writing any code.
+Status: **implemented 2026-09-09 (sequence platform landed — see the
+agenda session-status entry).** This section supersedes §5's open questions —
+read it before writing any code.
 
 ### 7.1 Findings (verified 2026-09-09, not assumed)
 
@@ -346,6 +347,23 @@ Notes for the implementer:
   pre-1.0 with no import-compat promise (pipeline-architecture §12.6), so
   rename cleanly and update the exports (`process/__init__.py`, top-level
   `__init__.py`) + `tests/test_process_filter.py` + `test_package_surface.py`.
+
+**Implementation deviations (landed 2026-09-09 — corrections to the above):**
+
+- `scipy.ndimage` has **no `median_filter1d`** (that name does not exist;
+  `uniform_filter1d` does). MEDIAN is implemented as
+  `median_filter(values, size=window, axes=0, mode="nearest")` — verified
+  element-equal to per-gate independent 1-D medians, i.e. no cross-gate
+  coupling.
+- The claim "the echo fixture is exactly 3.2 ms uniform" is **false**:
+  `data/echo/650.BDD` interleaves 833 × 3.1 ms intervals (18%, quasi-periodic)
+  with its 3.2 ms cadence (~3% timebase jitter). `_is_uniform` therefore
+  defaults to `rtol=0.05` and checks **interior** intervals only (the final
+  interval is excluded because `resample`'s inclusive `dt_s` grid ends in a
+  shortened interval). The gappy velocity fixture still fails it by ~2 orders
+  of magnitude.
+- SAVGOL's odd-`window` requirement is enforced at apply time (clean error),
+  not only locked in a test.
 
 ### 7.5 Implementation checklist
 

@@ -663,5 +663,49 @@ index-window filters are fine on the gappy series; TV requires uniform cadence
 level, drop `denoise`), extend `tests/test_process_filter.py` (per §7.5), keep
 scikit-image, and log the landing here.
 
+---
+
+## Session status — 2026-09-09 (cont.): filter sequence platform **implemented** (handoff picked up)
+
+The §7 handoff was implemented (same machine, follow-up agent): the
+TV-only `denoise` layer became the sequence-capable filter platform per
+`docs/filter-design.md` §7.3–7.5. `src/udv_echo_process/process/filter.py` now
+holds `FilterMethod` (MEDIAN / MEAN / SAVGOL on scipy, TV on skimage) ·
+`FilterParams` (window / polyorder / weight / iterations, bundled per the
+`InterpParams` pattern) · `FilterSpec` (method + params, default MEDIAN) ·
+`filter()` (closed `ChannelSeries -> ChannelSeries`, the `denoise` rename) ·
+`filter_sequence()` (plain fold). Cadence rule per method: index-window
+methods run on the raw gappy series; TV requires (near-)uniform cadence and
+is rejected otherwise. Exports updated in `process/__init__.py` + the top
+level (added `FilterParams` / `filter` / `filter_sequence`; dropped
+`denoise`); `references/wolfram/README.md` port row renamed to match. No
+notebook imports the filter layer yet.
+
+**Tests: 27 in `tests/test_process_filter.py`** (was 13) — old TV behaviour
+retained against the new spec shape (noise cut / edge kept, weight monotonic,
+gate independence, purity verbatim, re-appliability); new: per-method
+behaviour (MEDIAN spike removal, MEAN noise averaging, SAVGOL smooth-vs-
+stair-step), spec validation (`window >= 1`, `polyorder >= 0`, `weight > 0`,
+`iterations >= 1`, SAVGOL `window > polyorder` **and odd** at apply time),
+fold identity + order-matters for `filter_sequence`, cadence rule on both
+fixtures (TV rejected raw-gappy, accepted uniform echo + post-`resample`),
+and the settled pipeline order `filter_sequence(raw, [MEDIAN]) → resample` on
+`200RPM.BDD`. Full suite **130 passed**, ruff check + format clean.
+
+**Deviations found at implementation (logged in filter-design.md §7.4):**
+1. `scipy.ndimage` has **no `median_filter1d`** — MEDIAN uses
+   `median_filter(..., axes=0)` (verified element-equal to per-gate 1-D).
+2. The "echo fixture is exactly 3.2 ms uniform" claim was **wrong**: 833 of
+   4629 intervals are 3.1 ms (periodic ~3% timebase jitter). `_is_uniform`
+   now tolerates `rtol=0.05` over **interior** intervals (final interval
+   excluded — `resample`'s inclusive `dt_s` grid ends shortened); the gappy
+   velocity fixture still fails it by ~2 orders of magnitude.
+
+**Where the sync task stands:** Stage 3 interpolation (`process/sync.py`)
+and this filter layer are both landed; remaining sync work is unchanged —
+`MultiplexedMeasurement`-level grid/alignment strategy, hole-marking seam
+for a frequency-domain consumer, and re-expressing the pre-convergence
+`pipeline-conventions.md` templates on the landed types.
+
 
 
