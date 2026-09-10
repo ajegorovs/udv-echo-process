@@ -91,6 +91,9 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 - **Data**: `.ADD` files are TSV with comma as decimal separator
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
   echo/velocity, raw/stat. `.BDD` is the binary twin (not yet parsed here).
+- **Manual grounding**: when recording semantics, device behavior, or
+  configuration parameters are unclear, consult the text-only
+  [`DOP3000/3010 manual reference`](docs/dop3000/manual-reference/).
 - **Models**: Pydantic `BaseModel` for data structures; `Enum` for fixed sets
   (`MeasType`). Do not add dataclasses. (The optical
   `TemporalProjectionResult` dataclass left with the removed stale

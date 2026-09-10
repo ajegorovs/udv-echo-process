@@ -1,66 +1,50 @@
-# DOP3000/3010 Users Manual — extracted reference text (UNPROOFREAD)
+# DOP3000-3010 manual - text-only OCR corpus
 
-Reference copy of the machine-extracted text of the *DOP3000/3010 Users Manual*
-(software v6.6, manual v6.6.1, Signal Processing S.A.), persisted here so the
-DOP device docs have *some* quotable source material.
+This directory is a text-only, page-traceable reconstruction of the 130-page
+*DOP3000-3010 User's Manual* (software 6.6, revision 1).
 
-> **⚠️ Status: raw machine extraction — NOT proofread.**
-> This text came straight out of two PDF-extraction pipelines and was never
-> given a systematic fix pass. Prose is generally reliable; **formulas
-> (ch 14/16), spec tables (ch 10/21/22) and page furniture are damaged**.
-> Treat it as a searchable reference + quotation source, cross-check anything
-> numeric against the manual PDF or `.BDD` metadata before relying on it.
-> Full quality audit (incl. why the Neo4j stage did not fix the text):
-> [`EXTRACTION-QUALITY-AUDIT.md`](EXTRACTION-QUALITY-AUDIT.md).
+## What is included
 
-## Layout
+- One Markdown file per chapter, plus front matter and the original index.
+- Every source page is marked with `<!-- source-pdf-page: N -->`.
+- Reconstructed figure captions and in-context explanations retain the
+  information carried by figures without including image files.
+- Display equations on 21 equation-bearing pages are visually checked and rewritten in LaTeX.
+- Complex tables and file-layout descriptions are retained as fixed-width text when forcing them into pipe tables would lose column relationships.
 
-```
-manual-reference/
-├── README.md                       ← this file
-├── mineru-chapters-split/          ← canonical base: MinerU 2.5-Pro extraction,
-│   │                                 split into 24 standalone chapter files
-│   │                                 (ch 01–22 + 10b + INDEX_MINERU_SPLIT.md)
-│   └── 01-…22-*.md
-└── chapters-extra/                 ← 2 files from the older PyMuPDF-style
-    │                                 extraction, kept because they contain text
-    │                                 the MinerU copy lost:
-    ├── 10-storing-and-reading-measures.md   (ASCII file-format examples,
-    │                                          "TBD [ms] No block Channel" figures)
-    └── 20-ultrasonic-data.md                 (merged ch 20–22 spec rows, cleaner
-                                               table rendering than mineru HTML)
-```
+## Extraction notes
 
-## Provenance & why two corpora
+The PDF already contains an untagged text layer, so the body transcription uses
+that higher-fidelity source rather than re-recognizing every glyph with a
+generic OCR engine. Private-use mathematical glyphs were normalized to Unicode,
+and equations were checked against rendered pages. Original wording, spelling,
+units, and technical notation are retained where possible.
 
-| Corpus | Origin | When | Notes |
-|--------|--------|------|-------|
-| `mineru-chapters-split/` | MinerU 2.5-Pro (llama.cpp) | 2026-07-16 | Better formulas (LaTeX), structure, tables. **Base of record.** Lost some ASCII examples (ch 10) and truncates long spec-table lines (ch 22). |
-| `chapters-extra/` | PyMuPDF-style extraction | 2026-07-16 | Flatter text; every chapter file ends with the next chapter's running header (boundary bleed). Kept only for the 2 files that add content MinerU dropped. |
+The reconstructed captions and **In context** paragraphs are editorial additions. They are clearly labeled and should not be treated as verbatim manual text.
 
-Both extractions were produced the same day and never edited afterwards;
-identical garbles in both indicate damage that lives in the source PDF's text
-layer, not a one-off OCR slip.
+## Contents
 
-## What is usable, chapter by chapter
-
-| Chapters | Use for | Watch out for |
-|----------|---------|---------------|
-| 1, 2, 14–16, 18 (physics, theory) | measurement principle, PRF limits, Doppler equation, sample volume | ch 14 spectral equations and ch 16 estimator equations are mangled in **both** corpora → reconstruct, do not quote verbatim |
-| 4, 5, 6, 8, 9 (operation, profiles, filters, parameters) | burst, gates, emissions/profile, time-between-profiles, aliasing | good prose; occasional OCR word splits ("t / he", Greek-letter "where") |
-| 10, 10b (storage, file formats) | `.ADD`/`.BDD`/`_stat` layout, block/sequence semantics | mineru copy lost the ASCII examples → see `chapters-extra/10…` |
-| 11, 12, 13, 22 (multiplexer, 2D/3D, DOP3010) | channels, per-channel params, block=sequence | manual body often writes "DOP3000" for DOP3010 features; number conflicts kept (switch time 0.5 vs 0.1 ms) |
-| 17, 19, 20, 21 (transducers, refs, ultrasonic data, specs) | material sound speeds; DOP3000 specs | 21's mineru tables are one-line HTML cells → prefer `chapters-extra/20…` for the merged spec rows |
-
-Known manual-internal oddities preserved in the text (not extraction errors):
-"Corse" (Coarse), "bi -directionnal", "235 x 98 x 347 cm" (units), "109 cycles"
-(lost superscript — 10⁹), duplicated "its own its own".
-
-## Licensing note
-
-The manual is a copyrighted vendor document (Signal Processing S.A.). This
-folder exists as a private working reference; confirm you are entitled to keep
-and (if ever) publish it before committing to the public repo. If in doubt,
-keep `manual-reference/` out of git (`git rm --cached -r docs/dop3000/manual-reference`)
-and rely on the distilled explainer in
-[`../measurements-and-recordings.md`](../measurements-and-recordings.md).
+- [Front matter](00-front-matter.md) - source PDF pages 1-6
+- [1. Doppler ultrasound velocimetry](01-doppler-ultrasound-velocimetry.md) - source PDF pages 7-12
+- [2. Architecture of the velocimeter](02-architecture-of-the-velocimeter.md) - source PDF pages 13-16
+- [3. Installing the software](03-installing-the-software.md) - source PDF pages 17-20
+- [4. Using the velocimeter](04-using-the-velocimeter.md) - source PDF pages 21-30
+- [5. Computation and display of data profiles](05-computation-and-display-of-data-profiles.md) - source PDF pages 31-40
+- [6. Applying real time filters](06-applying-real-time-filters.md) - source PDF pages 41-42
+- [7. Measuring the sound speed](07-measuring-the-sound-speed.md) - source PDF pages 43-44
+- [8. The parameters](08-the-parameters.md) - source PDF pages 45-56
+- [9. Auto correction of the aliasing](09-auto-correction-of-aliasing.md) - source PDF pages 57-60
+- [10. Storing and reading measures](10-storing-and-reading-measures.md) - source PDF pages 61-80
+- [11. Using the multiplexer](11-using-the-multiplexer.md) - source PDF pages 81-84
+- [12. 2D / 3D Ultrasonic Doppler Velocimetry](12-2d-3d-ultrasonic-doppler-velocimetry.md) - source PDF pages 85-92
+- [13. UDV Simulation software](13-udv-simulation-software.md) - source PDF pages 93-98
+- [14. Measurement sample volume](14-measurement-sample-volume.md) - source PDF pages 99-102
+- [15. Spectral content of the Doppler echo](15-spectral-content-of-the-doppler-echo.md) - source PDF pages 103-104
+- [16. Theoretical basis of the Doppler frequency estimation](16-theoretical-basis-of-doppler-frequency-estimation.md) - source PDF pages 105-106
+- [17. Ultrasonic transducers](17-ultrasonic-transducers.md) - source PDF pages 107-108
+- [18. Ultrasonic field](18-ultrasonic-field.md) - source PDF pages 109-114
+- [19. References](19-references.md) - source PDF pages 115-116
+- [20. Ultrasonic data](20-ultrasonic-data.md) - source PDF pages 117-118
+- [21. DOP3000 technical specifications](21-dop3000-technical-specifications.md) - source PDF pages 119-122
+- [22. DOP3010 technical specifications](22-dop3010-technical-specifications.md) - source PDF pages 123-126
+- [Index](23-index.md) - source PDF pages 127-130
