@@ -16,10 +16,19 @@
 > Source of the tooling being integrated: sibling repo `~/Repos/marimo-inspect`
 > (package `marimo-inspect`, public git remote `ajegorovs/marimo-mcp-cowork`). This doc lives in the *consumer*
 > repo and is the consumer-side half of the integration; provider-side facts
-> (transports, harness registration, draft gap list) live in
-> `marimo-inspect/docs/harness-integration/README.md` (**that doc is itself a
-> draft** — treat its ❓-labelled claims as unverified here too).
+> (transports, harness registration, and labelled known gaps) live in
+> `marimo-inspect/docs/harness-integration/README.md`; do not turn its
+> ❓-labelled claims into setup instructions.
 
+> **Current onboarding policy (2026-09-10):** This historical plan records the
+> original Phase-0/1 integration work. Current consumer onboarding is the
+> optional `marimo` extra with pinned `marimo-inspect v0.3.0`, a normal
+> non-editable installation in this project's `.venv`, and harness execution of
+> `.venv/bin/marimo-inspect --transport stdio`. MCP resources govern runtime
+> co-work after connection; they cannot bootstrap installation. The old
+> local-editable and repo-skill instructions below are historical, not current
+> setup guidance; see `README.md` §Optional live marimo co-work and `AGENTS.md`.
+>
 ## Where udv stands today
 
 - **No marimo anywhere in this repo**: no `notebooks/`, no `import marimo`, no

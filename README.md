@@ -31,6 +31,31 @@ Output goes to `outputs/<experiment>/<stem>/`:
 - `heatmap.png` — per-channel time×gate heatmaps
 - `profiles.png` — mean ± std signal across time per gate
 
+## Optional live marimo co-work
+
+The command-line UDV tools do not require marimo or MCP. To use the live
+notebooks with the `marimo-inspect` MCP, opt in to the project's `marimo` extra:
+
+```bash
+uv sync --extra marimo --extra dev
+```
+
+This installs the pinned `marimo-inspect` release into this project's `.venv`.
+Configure the chosen MCP harness to run that installed console script—not
+`uv run` and not a sibling checkout:
+
+```text
+<project-root>/.venv/bin/marimo-inspect --transport stdio
+```
+
+Start a notebook with `--no-token`, open it in a browser to materialize a
+session, then use `list_active_notebooks`. Before editing a live notebook, read
+the server's packaged MCP resources; they are the workflow and safety authority.
+The provider's [installation and harness guide](https://github.com/ajegorovs/marimo-mcp-cowork#install-and-connect-an-mcp-client)
+covers bootstrap and harness-specific setup. A local editable provider override
+is only for testing unreleased provider changes; ordinary users and consumer
+contributors do not need it.
+
 ## Architecture
 
 ```

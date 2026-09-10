@@ -46,7 +46,7 @@ in the Wolfram folder" as the roadmap.
 
 | Repo | Relationship |
 |------|--------------|
-| `marimo-inspect` | The **marimo co-work MCP toolkit we consume** (reference for the agent-inspection loop). Keep this repo a **sibling**, never nested (uv workspace hijack). |
+| `marimo-inspect` | Optional **marimo co-work MCP toolkit**. Normal users install its pinned release through the `marimo` extra; keep a sibling checkout only when developing unreleased provider changes. |
 | `python-image-processing-notebooks` | Image/camera processing — a **different modality**. Work there is deferred; do not expand its scope or edit it in this repo's tasks. |
 | `DOPpy` | Third-party `.BDD` binary reader (reference if we add `.BDD` support — see `docs/doppy-analysis.md`). |
 | `knowledge-base` | Shared notes; not a code dependency. |
@@ -56,9 +56,10 @@ in the Wolfram folder" as the roadmap.
 - Package/venv manager: **uv**. Do not create or use `venv`/`pip`/`poetry`
   workflows.
 - Python: **≥3.14** (pinned via `.python-version`).
-- Runtime deps: numpy, matplotlib, pydantic, marimo[recommended] (pinned
-  `>=0.24.0,<0.25`), marimo-inspect (git tag `v0.2.0` via `[tool.uv.sources]`).
-  Dev extra: pytest. (Marimo plan Phase 1 landed 2026-09-07 — see
+- Runtime deps: numpy, matplotlib, plotly, pydantic. The optional `marimo`
+  extra installs `marimo[recommended]>=0.24.0,<0.25` plus
+  `marimo-inspect` from git tag `v0.3.0`; enable it only for live notebook/MCP
+  work. Dev extra: pytest. (Marimo plan Phase 1 landed 2026-09-07 — see
   `docs/marimo-integration-plan.md`.)
 
 ## Common commands
@@ -66,6 +67,7 @@ in the Wolfram folder" as the roadmap.
 | Task | Command |
 | --- | --- |
 | Install / sync | `uv sync --extra dev` |
+| Install notebook + MCP support | `uv sync --extra marimo --extra dev` |
 | Run tests | `uv run --extra dev pytest` |
 | Inspect a recording | `uv run udv-inspect <file.ADD>` |
 | Visualize | `uv run udv-viz [<file.ADD> …]` |
@@ -109,52 +111,45 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 
 ## Marimo (live notebooks + agent inspection)
 
-- Launch a notebook: `uv run marimo edit --no-token notebooks/<nb>.py`
-  (deps landed 2026-09-07 — `marimo[recommended]>=0.24.0,<0.25` +
-  `marimo-inspect` pinned via git tag `v0.2.0`).
-- **`marimo-inspect` editable install (required for widget notebooks).**
-  The pinned tag `v0.2.0` does **not** ship `TraceScrubber`/widgets — those
-  were added to the sibling repo *after* the tag — yet
-  `notebooks/channel_preview.py` imports `TraceScrubber` from
-  `marimo_inspection`. Working on such a notebook therefore needs
-  `marimo-inspect` installed **editable from the sibling repo**:
-  `uv pip install -e ~/Repos/marimo-inspect`.
-  - **Gotcha — `uv sync` / `uv run` silently clobber it:** both re-materialise
-    the venv from `uv.lock` (git tag `v0.2.0`), replacing the editable install
-    and breaking the widget imports (reproduced 2026-09-09: notebook failed to
-    start with `cannot import name 'TraceScrubber'` right after a scipy
-    `uv sync`). After any sync, reinstall editable.
-  - **Launch from the venv binary, not `uv run`**, so the launch itself does
-    not resync the venv: `MPLCONFIGDIR=/tmp/mpl .venv/bin/marimo edit
-    --no-token notebooks/channel_preview.py`. (`marimo check`/lints are
-    import-free and safe under `uv run`; only launching the kernel needs the
-    editable install present.)
-  - **Durable fix (open):** tag the sibling repo at/after the `TraceScrubber`
-    commit and repin `[tool.uv.sources]` here to that tag — then the editable
-    override becomes unnecessary.
+- **Bootstrap is outside MCP.** The MCP resources are available only after the
+  optional feature is installed and the harness connects. The normal consumer
+  path is `uv sync --extra marimo --extra dev`, then configure the harness to
+  execute `.venv/bin/marimo-inspect --transport stdio`. Read
+  `README.md` §Optional live marimo co-work first; use the provider's README
+  for harness-specific setup. Do not use `uv run` as the long-lived MCP command.
+- **No editable install for normal work.** This project pins provider tag
+  `v0.3.0`, which includes `TraceScrubber`; `notebooks/channel_preview.py`
+  therefore works from the normal `marimo` extra. A local editable provider
+  override is only for testing unreleased `marimo-inspect` changes, is
+  temporary, and must never be committed here.
+- Launch a notebook: `.venv/bin/marimo edit --no-token notebooks/<nb>.py`
+  after syncing the `marimo` extra. `uv run marimo` is acceptable for a
+  one-off static check but not as the MCP server command.
 - **Live notebooks:** `notebooks/echo_explorer.py` (marimo plan Phase 2,
   2026-09-07) — dropdown over `discover_data_files()`, channel pills, heatmap +
   gate-profile figures via `mo.mpl.interactive`. All computation stays in
   `src/`; cells are thin widget wrappers. Validate changes with
-  `uv run marimo check notebooks`.
+  `uv run --extra marimo marimo check notebooks`.
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
   `docs/agent-onboarding-demo-mcp.md` §Prerequisites). Zero-arg discovery also
   needs a **writable `~/.local/state/marimo/servers/`** (read-only home =
   empty registry, log O15) — when in doubt, pass `server_url` explicitly.
-- **Agent loop:** `list_active_notebooks` → `get_cell_map` → `run_cell` →
-  `get_variables` → `get_cell_outputs` → `get_errors` → `marimo check`.
-  Through the DSH harness, **auto-bind does not persist across tool calls**
-  (log O16) — pass `server_url` (and `session_id` when targeting) explicitly
-  on every call. Filtered list-arg reads (`variable_names=[…]`,
-  `cell_ids=[…]`) work on v0.2.0 (log O17).
+- **MCP workflow authority:** after the server is connected, list and read its
+  packaged resources before live mutation. The normal loop is
+  `list_active_notebooks` → `get_cell_map` → read required cells → mutate/run
+  → `get_variables` / `get_cell_outputs` / `get_errors` →
+  `marimo check`. `set_ui_value` values are widget-specific; verify every
+  update by reading state back. Pass `server_url` (and `session_id` when
+  targeting) explicitly when harness session binding does not persist.
 - **Viz:** every plot function saves to a `Path` by default; pass
   `return_fig=True` to get the open `matplotlib` figure(s) back instead
   (needed for in-notebook display). In marimo 0.24.0 use
   `mo.mpl.interactive(fig)`; `mo.pyplot`/`mo.plt` are not exposed.
-- Keep this repo **sibling** to `marimo-inspect`, never nested. Track a
-  placeholder `marimo.example.toml`; gitignore the real `marimo.toml`.
+- Keep this repo **sibling** to `marimo-inspect` only when developing the
+  provider. Normal users do not need a sibling checkout. Track a placeholder
+  `marimo.example.toml`; gitignore the real `marimo.toml`.
 
 ## Architecture
 
