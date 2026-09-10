@@ -707,5 +707,65 @@ and this filter layer are both landed; remaining sync work is unchanged —
 for a frequency-domain consumer, and re-expressing the pre-convergence
 `pipeline-conventions.md` templates on the landed types.
 
+## Session status — 2026-09-10: retire repo-wide marimo skills in favor of MCP authority
 
+Decision under consideration: remove the manually installed
+`marimo-pair`/`retro-marimo-pair` skills from this repository rather than make
+them part of the fresh-user experience. The custom `marimo-inspect` MCP and
+its packaged resources should be the single operational authority, avoiding
+drift between official marimo skills and this provider's custom tool surface.
 
+**Consumer onboarding agenda — prerequisite:**
+
+Before this repository adopts installation guidance or retires the skills, the
+provider must establish a supported distribution route and graduate its
+harness-integration guide from draft to authoritative, tested documentation.
+Today the package-index route is unverified; use the provider's documented git
+or local-editable routes only until that changes.
+
+**Consumer onboarding agenda — development mode:**
+
+1. Keep `marimo-inspect` as a sibling checkout, not nested inside this repo:
+   ```text
+   ~/Repos/marimo-inspect
+   ~/Repos/udv-echo-process
+   ```
+2. Clone the provider separately, then add it to this project as an editable
+   dependency with uv (`uv add --editable /path/to/marimo-inspect`).
+3. Install/run the provider's editable environment and point the agent harness
+   at the sibling checkout's `.venv/bin/marimo-inspect` using stdio, rather than
+   `uv run` or a source path inside the consumer repository.
+4. Once the provider guidance is authoritative, add the corresponding
+   per-harness MCP entry. For Hermes, the verified shape is an
+   `mcp_servers.marimo-inspect` entry with
+   `command: <sibling>/.venv/bin/marimo-inspect`, args
+   `["--transport", "stdio"]`, and an explicit timeout. Use a distinct
+   harness server name/key when multiple provider instances are present.
+5. Read the provider's MCP resources after connection; use them as the
+   workflow/safety/fallback authority. Do not install repo-local marimo skills.
+
+**Consumer onboarding agenda — end-user mode:**
+
+1. Decide whether the current regular notebook/MCP dependencies should move to
+   a dedicated optional extra. No `marimo` extra exists today; do not document
+   `uv sync --extra marimo` until the extra exists and is tested.
+2. After the provider has a supported distribution route, define the normal
+   install command around that route. It must install a compatible marimo pin
+   and `marimo-inspect` without requiring a sibling clone or editable install.
+3. Point the user's MCP harness at the installed console script
+   (`<environment>/.venv/bin/marimo-inspect`, or the platform-equivalent
+   executable) with `--transport stdio`; do not point it at repository source.
+4. Document the harness configuration using the provider's authoritative
+   integration guide, while keeping this repo's instructions limited to
+   installation, selecting the installed executable, enabling the MCP, and
+   reading its packaged resources. State clearly that resources/tools are
+   unavailable until the MCP is installed and enabled.
+5. Keep the MCP's supported marimo version range aligned with the provider;
+   consumers must not widen the marimo pin without the provider's live-suite
+   validation.
+
+**Scope:** agenda/documentation only for now. Do not remove the skills, alter
+`pyproject.toml`, change harness configuration, or implement provider fixes in
+this item. Before retirement, verify that the README/AGENTS onboarding text
+covers the supported installation route and the documented fallback boundaries
+(screenshots, server/kernel lifecycle, and arbitrary CodeMode probes).
