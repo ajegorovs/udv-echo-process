@@ -18,3 +18,6 @@ marimo.toml
 
 # local agent-tool symlink dirs (machine-specific; skills live in .agents/)
 .claude/
+
+# agent working artifacts (dispatch/orchestration plans; never repo documentation)
+.hermes/
