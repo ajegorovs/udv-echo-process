@@ -158,9 +158,9 @@ Each item below would violate a rule this repo already settled:
   recorded blockers, not synthesized evidence.
 - **Phase 1 — complete:** calculated canonical BDD depths, high-confidence
   `ChannelConfig` corrections, and content-aware `.ADD`/`.BDD` `udv-inspect`.
-- **Phase 2 — active:** terminal result models for state intervals and robust
-  profiles in `models/`, producers in `analysis/`, and a small JSON/CSV/NPZ
-  export boundary.
+- **Phase 2 — active:** typed terminal operating-state results and their
+  `ChannelBundle` producer are complete and baseline-verified. Robust-profile
+  results/producer and the small JSON/CSV/NPZ export boundary remain.
 - **Phase 3 — the 2-D TV-L1 decision** (§9, D1), including redefined segment /
   edge / support rules if accepted.
 - **Phase 4 — documentation and provenance:** move the porting-map row

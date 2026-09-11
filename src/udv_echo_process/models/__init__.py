@@ -31,6 +31,12 @@ from udv_echo_process.models.signal import (
     source_artifact,
     source_artifact_id,
 )
+from udv_echo_process.models.states import (
+    OperatingStateDetection,
+    OperatingStateInterval,
+    StateDetectionMode,
+    StateDetectionSettings,
+)
 from udv_echo_process.models.support import QualityFlag, SampleSupport, SupportKind
 
 __all__ = [
@@ -42,6 +48,8 @@ __all__ = [
     "ChannelConfig",
     "ChannelKey",
     "MeasType",
+    "OperatingStateDetection",
+    "OperatingStateInterval",
     "ProfileStatistics",
     "QualityFlag",
     "Recording",
@@ -52,6 +60,8 @@ __all__ = [
     "SourceAsset",
     "SourceFormat",
     "SourceSpec",
+    "StateDetectionMode",
+    "StateDetectionSettings",
     "SupportKind",
     "ValueModel",
     "array_digest",
