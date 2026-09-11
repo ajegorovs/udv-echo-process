@@ -257,14 +257,11 @@ This section is the restart anchor — read §1–5 first, then here.
 
 ### 6.5 Restart reading order (fresh context)
 
-`docs/interpolation-design.md` (§1–8; §7 = decisions landed, §8 = implementation
-clarifications) → `docs/agenda.md` session statuses
-(2026-09-09 entries) → `docs/pipeline-architecture.md` (§11 Stage 3, §15) →
-`docs/pipeline-conventions.md` (§2, §4, §6, §10) →
-`docs/dop3000/measurements-and-recordings.md` → landed code
-`src/udv_echo_process/models/{base,channel_series,channel_config,
-measurement,io}.py`. Working tree state at checkpoint: docs only
-(`docs/agenda.md` modified, `docs/interpolation-design.md` new).
+This was the historical restart reading order for the pre-convergence Stage-3
+handoff. It is superseded: read `docs/signal-model-rework-plan.md`, the Revision-3
+banner in `docs/pipeline-conventions.md`, and the landed `models/` / `process/`
+modules. For the condensed session context, use `docs/agenda-history.md`; the
+live `docs/agenda.md` contains only current work.
 
 ---
 

@@ -1,17 +1,19 @@
 # Signal model rework — authoritative execution plan
 
-> **Status: OPEN · authoritative for this rework.** This document is the
-> execution authority for the signal-model rework and supersedes conflicting
-> architecture text in older design documents for this work. In particular,
-> pre-convergence `Recording`, `SensorSeries`, mutable `ChannelSeries`, bundled
-> all-method parameter, and pandas-backed examples are not implementation
-> instructions. Do **not** edit those older documents until Phase 9.
+> **Status: IMPLEMENTED (Phases 1–9) · ACCEPTANCE PENDING.** This document is
+> the authoritative contract for the signal-model rework and supersedes
+> conflicting architecture text in older design documents for this work. The
+> implementation landed in Phase 9, but the post-landing acceptance review on
+> 2026-09-11 found two provenance-identity blockers and one synchronization-text
+> clarification; see the appended agenda status entry and Section 15. In
+> particular, pre-convergence `Recording`, `SensorSeries`, mutable
+> `ChannelSeries`, bundled all-method parameter, and pandas-backed examples are
+> historical, not implementation instructions.
 >
-> **Executor rule:** follow the phases and stop/go gates in order. Do not fill
-> semantic gaps with a convenient default. If reality contradicts a contract
-> below, stop, add a focused failing test and request a decision before changing
-> the contract. Do not commit or push unless the user explicitly asks. Optional
-> checkpoints mentioned here are user-authorized only when the user says so.
+> **Maintenance rule:** do not fill a semantic gap with a convenient default. If
+> reality contradicts a contract below, add a focused failing test and request a
+> decision before changing the contract. Do not commit or push unless the user
+> explicitly asks.
 
 ## 1. Goal
 
@@ -32,8 +34,9 @@ an execution-safe scientific signal model that:
   integrity-checked NPY files.
 
 Tech stack: Python >=3.14, Pydantic v2, NumPy, existing SciPy/scikit-image,
-pytest and ruff, all run through `uv`. Use Pydantic models; do not introduce
-`dataclasses`.
+pytest and ruff, all run through `uv`. Use Pydantic models for domain data
+structures; do not introduce domain dataclasses. The private frozen `ArraySpec`
+annotation metadata in `models/base.py` is not a domain model.
 
 ## 2. Why the rework is required
 
@@ -588,8 +591,12 @@ Synchronization consumes a `Recording`, but performs all sampling through the
 same artifact resampling primitive and emits a new `Recording` plus operation
 records in the bundle.
 
-- Match channels by explicit `(round_id, visit_id)`, never by row position,
-  channel-count arithmetic, first-time offsets, or whole-series correlation.
+- Match channels by explicit `round_id`; require a present, non-duplicate
+  `(round_id, visit_id)` identity for every participating row and reject an
+  ambiguous round with more than one visit from a stream. A round groups the
+  cross-stream visits to align; `visit_id` records acquisition order within that
+  round. Never match by row position, channel-count arithmetic, first-time
+  offsets, or whole-series correlation.
 - A synchronization target row is keyed by a matched round and the selected
   reference visit/time policy. Missing channel visits remain missing.
 - Keep `SignalData.time_s` as the aligned/reference grid. Keep each stream's
@@ -1156,13 +1163,15 @@ used, or if a partially written destination can be mistaken for complete.
 3. Make public exports unambiguous and remove dead bundled specs only after all
    call sites move.
 4. Update old architecture documents to point to this landed model and mark
-   superseded examples historical. Do not rewrite agenda history; append a
-   dated completion/deviation entry.
+   superseded examples historical. Keep `docs/agenda.md` action-oriented; fold
+   resolved session detail into `docs/agenda-history.md` and its authority
+   document.
 5. Run the full Definition of Done commands in Section 15.
 
 **Acceptance:** no stale executable example directs users to the old scientific
 model; legacy code is either removed or isolated behind an explicit tested
-adapter; agenda history remains append-only.
+adapter; the live agenda is concise and its historical index preserves the
+supersession map.
 
 **STOP/GO:** no “done” status until the full repository search and verification
 commands are clean.
@@ -1258,32 +1267,38 @@ fragments, not complete Pydantic formatting.
 
 ## 15. Definition of Done
 
-The rework is done only when all items are true:
+The rework is accepted only when all items are true. The 2026-09-11 post-landing
+review verified the checked items below. The unchecked identity/provenance and
+documentation items are active acceptance blockers; their required fixes and
+investigations are tracked in the appended `docs/agenda.md` status entry.
 
-- [ ] `ValueModel`/`ArrayModel` policies and owned read-only arrays are tested.
+- [x] `ValueModel`/`ArrayModel` policies and owned read-only arrays are tested.
 - [ ] Stable channel/source/acquisition/artifact identities are deterministic
-      and independent of path/object address.
-- [ ] `SignalData`, support, quality and optional acquisition index enforce all
+      and independent of path/object address, including public root-artifact
+      construction.
+- [x] `SignalData`, support, quality and optional acquisition index enforce all
       field, shape, dtype, time, finiteness and relation invariants.
-- [ ] Filter and interpolation specs are discriminated unions with no irrelevant
+- [x] Filter and interpolation specs are discriminated unions with no irrelevant
       accepted fields.
-- [ ] Every transform is bundle-closed, uses `derive()`, cannot drop its graph,
+- [x] Every transform is bundle-closed, uses `derive()`, cannot drop its graph,
       does not mutate/share parent arrays and emits exactly one operation record
       per logical operation.
-- [ ] Table-driven tests cover every support propagation row, long gaps,
+- [x] Table-driven tests cover every support propagation row, long gaps,
       segmentation, true uniformity and re-interpolation ancestry.
-- [ ] `Recording` carries explicit mechanism/topology; BDD fixture claims are
+- [x] `Recording` carries explicit mechanism/topology; BDD fixture claims are
       decoded evidence, not channel-count inference.
-- [ ] Synchronization matches rounds/visits and preserves actual acquisition
-      times separately from aligned time.
-- [ ] Provenance is a validated normalized DAG and a 100-operation chain does
-      not copy history into artifacts.
-- [ ] NPY store v1 round-trips a real BDD-derived bundle and fails closed on
+- [x] Synchronization uses explicit round membership plus non-duplicate visit
+      identity and preserves actual acquisition times separately from aligned
+      time.
+- [ ] Provenance is a validated normalized DAG whose public construction path
+      recomputes operation identity, and a 100-operation chain does not copy
+      history into artifacts.
+- [x] NPY store v1 round-trips a real BDD-derived bundle and fails closed on
       incomplete/corrupt/unsafe stores.
 - [ ] Legacy surfaces are removed or isolated by an explicit tested adapter;
       documentation and exports are internally consistent.
-- [ ] No out-of-scope dependency/feature or private absolute path was added.
-- [ ] No commit or push occurred unless separately authorized.
+- [x] No out-of-scope dependency/feature or private absolute path was added.
+- [x] No commit or push occurred unless separately authorized.
 
 Run exactly from the repository root:
 

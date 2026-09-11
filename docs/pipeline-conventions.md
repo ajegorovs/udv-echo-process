@@ -7,10 +7,12 @@ rules refine (and where they conflict, supersede) the flat-era AGENTS.md
 conventions, which are placeholders until this repo has evolved enough to draw
 practical conclusions.
 
-> ## Revision 3 — 2026-09-11: the signal-model rework LANDED (Phase 9)
+> ## Revision 3 — 2026-09-11: implementation landed; acceptance pending
 >
 > The ground-up rework in [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
-> **completed**; it supersedes Revision 2's converged names. **`ChannelSeries` /
+> landed through Phase 9, but its post-landing acceptance review identified active
+> provenance-identity fixes. The canonical types below are therefore the landed
+> implementation, **not yet an accepted completion**. **`ChannelSeries` /
 > `MultiplexedMeasurement` — and the mutable `models.base.Model` / `shape_2d`
 > helper — were REMOVED, not adapted.** The canonical types are now:
 >
@@ -288,9 +290,10 @@ into AGENTS.md (per §9).
   swap without code churn. Discuss separately.
 - **Geometry (`layout.toml`): deferred.** **DOPpy mode: closed** (cherry-picked
   clean rewrite in `io/dop/bdd.py`, no runtime dep).
-- **Phase 9 landed (2026-09-11):** the rework completed — the legacy
+- **Phase 9 implementation landed (2026-09-11):** the legacy
   `ChannelSeries`/`MultiplexedMeasurement`/`Model`/`shape_2d` surface was
   removed, `nan_policy` and the bundled `InterpParams`/`FilterParams` are gone,
   and `docs/interpolation-design.md` / `docs/filter-design.md` / this doc carry
-  superseded banners pointing at the landed model. See
-  `docs/signal-model-rework-plan.md` and `docs/agenda.md`.
+  superseded banners pointing at the landed model. Post-landing acceptance
+  remains pending the provenance-identity fixes tracked in
+  `docs/signal-model-rework-plan.md` §15 and `docs/agenda.md`.

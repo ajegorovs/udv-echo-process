@@ -313,8 +313,12 @@ algorithms, and experimental-setup-specific algorithms.
 
 ## Docs & agendas
 
-- `docs/agenda.md` — **OPEN** idea/backlog tracker (domain backlog, marimo
-  integration, open questions). Append status updates; don't rewrite history.
+- `docs/agenda.md` — current action-oriented backlog, active decisions and
+  acceptance blockers. Fold superseded/resolved detail into its authority
+  document and `docs/agenda-history.md`; do not turn the live agenda into a
+  session transcript.
+- `docs/agenda-history.md` — compact historical index and superseded-concept
+  map; Git retains the verbatim pre-consolidation session record.
 - `docs/hardening-plan.md` — the prioritized fix/"harden" list (what needs
   fixing now to tie loose ends). Read before structural changes.
 - `docs/marimo-integration-plan.md` + `docs/marimo-integration-log.md` — the
