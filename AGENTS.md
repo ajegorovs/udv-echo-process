@@ -326,6 +326,9 @@ algorithms, and experimental-setup-specific algorithms.
   evidence log (append-only).
 - `docs/doppy-analysis.md` — the `.BDD` reader review (the reference for the
   decoding that `io/dop/bdd.py` now implements).
+- `docs/architecture.md` — current user-facing system map: the two pipelines,
+  dependency boundaries, public entry points and verification workflow. Read it
+  before changing a cross-layer concern.
 - `docs/signal-model-rework-plan.md` — the **landed** signal-model rework
   contract (9 phases, one commit per phase). Read it before changing the
   semantics of `models/`, `process/`, `provenance/` or `storage/`.

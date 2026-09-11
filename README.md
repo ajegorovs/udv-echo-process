@@ -58,22 +58,24 @@ contributors do not need it.
 
 ## Architecture
 
-```
-src/udv_echo_process/
-├── parser.py        Unified parser (Pydantic). extract() → ExtractedData
-│                    .by_channel(), .by_block(), .describe()
-├── viz.py           plot_recording() — synchronized heatmaps
-│                    plot_channel_stats() — gate profiles
-│                    plot_all() — both in one call
-├── analysis/        One module per ported Wolfram feature
-│   └── rpm.py       rpm_from_echo() — FFT peak /2 RPM estimation
-│                    RpmResult, setpoint_rpm_from_stem()
-├── run_all.py       Batch RPM from echo data + viz per file
-└── cli.py           Console entry points (udv-inspect / udv-viz / udv-run-all)
+The package deliberately keeps two pipelines separate:
 
-tests/               Pytest suite locking in parser / analysis behavior
-references/wolfram/  Original Wolfram notebooks + porting map
+```text
+.ADD: parser.extract() → ExtractedData → viz / RPM / CLI
+.BDD: io.load() → ArtifactBundle → process transforms → provenance / storage
 ```
+
+- The `.ADD` path is the established ASCII parser, visualization, and
+  single-channel echo-RPM workflow.
+- The `.BDD` path uses immutable domain models, owned read-only arrays,
+  bundle-closed transforms, normalized provenance, and NPY + manifest storage.
+- The artifact-model implementation landed through Phase 9 but has two active
+  provenance-identity acceptance fixes; see the rework plan §15 before treating
+  it as complete.
+
+For the package map, boundaries, public entry points, and testing workflow, see
+[`docs/architecture.md`](docs/architecture.md). The precise artifact contracts
+live in [`docs/signal-model-rework-plan.md`](docs/signal-model-rework-plan.md).
 
 ## Project Structure
 
