@@ -11,9 +11,8 @@ Fixed sets as ``Enum`` (per `docs/pipeline-conventions.md`):
 from __future__ import annotations
 
 from enum import Enum
-from typing import ClassVar
 
-from udv_echo_process.models.base import Model
+from udv_echo_process.models.base import ValueModel
 
 
 class MeasType(str, Enum):
@@ -34,18 +33,17 @@ class SourceFormat(str, Enum):
     BDD = ".BDD"
 
 
-class SourceSpec(Model):
+class SourceSpec(ValueModel):
     """Identity of where a measurement came from (value object).
 
     Complements, does not pretend, the raw file magic: the magic line encodes
     vendor + format (e.g. ``BINUDOPV4.03.4``), while this model stores the
     human-facing, dispatch-ready attributes.
 
-    ``frozen=True`` makes instances hashable so ``SourceSpec`` can key the
-    reader registry in ``io.base``.
+    ``frozen=True`` (from :class:`ValueModel`) makes instances hashable so
+    ``SourceSpec`` can key the reader registry in ``io.base``; undeclared
+    fields are rejected.
     """
-
-    model_config: ClassVar[dict[str, bool]] = {"frozen": True}
 
     vendor: str = "Signal Processing SA"
     device: str = "DOP 3010"

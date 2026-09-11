@@ -8,16 +8,19 @@ minimally-populated ``ChannelConfig`` is ``ChannelConfig()``.
 
 from __future__ import annotations
 
-from udv_echo_process.models.base import Model
+from udv_echo_process.models.base import ValueModel
 
 
-class ChannelConfig(Model):
+class ChannelConfig(ValueModel):
     """Static per-channel instrument settings for one measurement channel.
 
     All fields default to ``None`` except where a default is physically
     meaningful, so ``ChannelConfig()`` is always a valid instance. Populated
     by the ``.BDD`` reader from the per-channel op-parameter block; the
     charset is deliberately broad to be lenient across instruments.
+
+    Frozen and strict (via :class:`ValueModel`): a reader must pass only
+    declared fields, and every field stays JSON-serializable.
     """
 
     # Acoustic / emission
@@ -45,6 +48,7 @@ class ChannelConfig(Model):
     tgc_end_db: float | None = None
     wall_filter: str | None = None
     trigger_state: str | None = None
+    trigger_delay_ms: float | None = None  # .BDD op word 47
     module_scale: int | None = None  # ADC full-scale 1|2|4|8 → 2048|1024|512|256
 
     def describe(self) -> str:
