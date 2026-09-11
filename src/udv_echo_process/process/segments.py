@@ -65,17 +65,20 @@ def _uniformity_error(
     start: int,
     stop: int,
     uniform_rtol: float,
+    prefix: str = "filter",
 ) -> ValueError:
     """Build the method/channel/segment-specific non-uniform-cadence error.
 
-    Names the method, the segment row range, the median ``dt``, the worst
-    ``dt`` and its row pair, and the configured tolerance (plan §11).
+    Names the operation (``prefix.method``), the segment row range, the median
+    ``dt``, the worst ``dt`` and its row pair, and the configured tolerance
+    (plan §11). ``prefix`` defaults to ``"filter"`` so the existing callers and
+    their tests are unchanged; phase 5's interpolators pass ``"interp"``.
     """
     median_dt = float(np.median(dt))
     deviation = np.abs(dt - median_dt)
     worst = int(np.argmax(deviation))
     return ValueError(
-        f"filter.{method}: channel {channel} segment rows [{start}, {stop}) is "
+        f"{prefix}.{method}: channel {channel} segment rows [{start}, {stop}) is "
         f"not truly uniform: median dt={median_dt!r} s, worst dt="
         f"{float(dt[worst])!r} s (row {start + worst}->{start + worst + 1}), "
         f"uniform_rtol={uniform_rtol!r}"
@@ -90,6 +93,7 @@ def _require_truly_uniform(
     method: str,
     channel: int,
     uniform_rtol: float,
+    prefix: str = "filter",
 ) -> None:
     """Require every adjacent ``dt`` in ``[start, stop)`` to match the median.
 
@@ -97,7 +101,8 @@ def _require_truly_uniform(
     rtol=uniform_rtol, atol=0)`` over *all* adjacent intervals, including a
     shortened final one (the superseded special case is gone). A segment of
     fewer than three rows has fewer than two intervals and is trivially
-    uniform.
+    uniform. ``prefix`` names the calling operation in the error and defaults
+    to ``"filter"`` (unchanged behaviour); phase 5 passes ``"interp"``.
 
     Raises:
         ValueError: when the segment is not truly uniform. Never skipped.
@@ -113,4 +118,5 @@ def _require_truly_uniform(
             start=start,
             stop=stop,
             uniform_rtol=uniform_rtol,
+            prefix=prefix,
         )

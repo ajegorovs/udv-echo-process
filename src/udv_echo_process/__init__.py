@@ -36,12 +36,14 @@ from udv_echo_process.parser import (
     parse_stat_add_file,
 )
 from udv_echo_process.process import (
+    BsplineInterpSpec,
+    CubicInterpSpec,
     FilterSpec,
-    InterpMethod,
-    InterpParams,
     InterpSpec,
+    LinearInterpSpec,
     MeanFilterSpec,
     MedianFilterSpec,
+    MonotoneInterpSpec,
     SavgolFilterSpec,
     TvFilterSpec,
     filter,
@@ -56,17 +58,19 @@ from udv_echo_process.viz import (
 )
 
 __all__ = [
+    "BsplineInterpSpec",
     "ChannelConfig",
     "ChannelFrame",
     "ChannelSeries",
+    "CubicInterpSpec",
     "ExtractedData",
     "FilterSpec",
-    "InterpMethod",
-    "InterpParams",
     "InterpSpec",
+    "LinearInterpSpec",
     "MeanFilterSpec",
     "MeasType",
     "MedianFilterSpec",
+    "MonotoneInterpSpec",
     "MultiplexedMeasurement",
     "RpmResult",
     "SavgolFilterSpec",
