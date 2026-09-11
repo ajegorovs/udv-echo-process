@@ -1,5 +1,19 @@
 # Channel-signal interpolation & resampling — grounding + design state
 
+> **Superseded — 2026-09-11 (signal-model rework, Phase 9).** The interpolation
+> layer was re-expressed on the bundle-closed model. The landed API is
+> `process/sync.py::resample(bundle: ChannelBundle, spec: InterpSpec, *, times |
+> dt_s) -> ChannelBundle`, with the discriminated `InterpSpec` union in
+> `process/specs.py` (`LinearInterpSpec` / `MonotoneInterpSpec` /
+> `CubicInterpSpec` / `BsplineInterpSpec`). **`InterpMethod`, the bundled
+> `InterpParams` and the `nan_policy` field were RETIRED (plan §14)** — validity
+> is now carried by `SignalData.support`, and `extrapolation` is
+> `"error" | "missing" | "nearest"` (`"missing"` replaces the old `"nan"`
+> spelling). The `dt_s` grid is now **exactly uniform** (ruling D6): the §8
+> "inclusive span / shortened final interval" rule is retired. Everything below
+> (§1–§8) is a **historical design record**; the rework plan §7.3 and the landed
+> modules are authoritative.
+
 Status: **decisions landed and implemented, 2026-09-09.** §7 records the
 settled interpolation design; **§8 records the implementation-level
 clarifications** agreed at the start of the implementation session. The Stage 3

@@ -12,7 +12,8 @@ Coverage:
 - strict SAVGOL/TV uniformity (the final interval IS checked);
 - metadata/acquisition preservation, the operation record and memory ownership;
 - synthetic signals first, then the real ``.BDD`` fixtures through a test
-  adapter (the reader still returns ``MultiplexedMeasurement`` until phase 6);
+  adapter (the reader returns an ``ArtifactBundle`` and ``select_channel``
+  bridges to one channel's ``ChannelBundle``);
 - the still-valid numerical assertions transferred from the legacy
   ``tests/test_process_filter.py``.
 

@@ -92,20 +92,41 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   style: 4-space indent, ~88-char lines.
 - **Data**: `.ADD` files are TSV with comma as decimal separator
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
-  echo/velocity, raw/stat. `.BDD` is the binary twin (not yet parsed here).
+  echo/velocity, raw/stat. `.BDD` is the binary twin and **is** parsed:
+  `io/dop/bdd.py` returns an `ArtifactBundle` with content-SHA-256 source
+  identity, a decoded `AcquisitionMode`, and all-observed support. Discovery in
+  `viz.py` is `.ADD`-only and magic-checked, while the reader sniffs *bytes*, not
+  extensions — so `data/echo-4-sensors-2x2/20260723_143754.jpg` (a genuine
+  4-channel echo BDD with the wrong extension) loads correctly and is not
+  special-cased.
 - **Manual grounding**: when recording semantics, device behavior, or
   configuration parameters are unclear, consult the text-only
   [`DOP3000/3010 manual reference`](docs/dop3000/manual-reference/).
 - **Models**: Pydantic `BaseModel` for data structures; `Enum` for fixed sets
-  (`MeasType`). Do not add dataclasses. (The optical
-  `TemporalProjectionResult` dataclass left with the removed stale
-  optical modules; `RpmResult` is now a `BaseModel` too — hardening §structure.)
-- **Pipeline & module structure (rebuild)**: the authoritative rules for the
-  ground-up modular rebuild — Pydantic-not-dataclass, `Recording -> Recording`
-  transform closure, `*Spec` param models, validation tiers, and templates —
-  live in [`docs/pipeline-conventions.md`](docs/pipeline-conventions.md).
-  Consult it when adding modules during the rebuild; this file's flat-era
-  conventions are placeholders until then.
+  (`MeasType`). Do not add dataclasses. The domain model is the frozen
+  `ValueModel`/`ArrayModel` pair in `models/base.py` (`extra="forbid"`,
+  `validate_default=True`); every ndarray field is an owned, C-contiguous,
+  read-only copy taken by the shared `array_field`/`owned_array` helper. Do not
+  add a mutable model base and do not hand-roll array ownership.
+  `model_copy(update=...)` is never used to build transformed scientific data.
+- **Pipeline & module structure**: the ground-up modular rebuild described by
+  [`docs/signal-model-rework-plan.md`](docs/signal-model-rework-plan.md) has
+  **landed** (9 phases, one commit each). The working rules are: transforms are
+  bundle-closed (`ChannelBundle -> ChannelBundle` per channel,
+  `ArtifactBundle -> ArtifactBundle` at recording level), a transform body
+  computes owned arrays and then calls `process/derive.py::derive()` — or
+  `derive_many()` for a multi-output recording operation — and never constructs a
+  derived artifact by hand; `provenance.select_channel`/`replace_channel` are the
+  only bridge between the two states; `models/` imports nothing from
+  `process/`/`provenance/`/`storage/`/`io/`; and specs are discriminated Pydantic
+  unions (`process/specs.py`) so an irrelevant parameter is an error.
+  [`docs/pipeline-conventions.md`](docs/pipeline-conventions.md) carries the
+  Revision-3 banner for the same contract.
+- **Two reviewed limits** (do not "fix" these without new decoded evidence):
+  the `.BDD` header version string and the 512-byte comment are decoded and then
+  dropped, because §6.6/§6.7 pin `ChannelArtifact` and `Recording` at five fields
+  each; and the binary format proves no round/visit identity, so `synchronize()`
+  has no real fixture and is exercised on synthetic topology only.
 - **Ported features**: one module per ported Wolfram feature under
   `udv_echo_process/analysis/`; record it in `references/wolfram/README.md`.
 
@@ -125,11 +146,18 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 - Launch a notebook: `.venv/bin/marimo edit --no-token notebooks/<nb>.py`
   after syncing the `marimo` extra. `uv run marimo` is acceptable for a
   one-off static check but not as the MCP server command.
-- **Live notebooks:** `notebooks/echo_explorer.py` (marimo plan Phase 2,
-  2026-09-07) — dropdown over `discover_data_files()`, channel pills, heatmap +
-  gate-profile figures via `mo.mpl.interactive`. All computation stays in
-  `src/`; cells are thin widget wrappers. Validate changes with
-  `uv run --extra marimo marimo check notebooks`.
+- **Live notebooks** (both migrated onto the landed model in the rework's
+  Phase 9). A lint pass does not execute cells, so prove a notebook change by
+  running it:
+  `uv run --no-sync --extra marimo marimo check notebooks` **and**
+  `uv run --no-sync --extra marimo marimo export html notebooks/<nb>.py -o /tmp/nb.html`.
+  `notebooks/echo_explorer.py` (marimo plan Phase 2, 2026-09-07) — dropdown over
+  `discover_data_files()`, channel pills, heatmap + gate-profile figures via
+  `mo.mpl.interactive`; it rides the `.ADD` path (parser + `viz`).
+  `notebooks/channel_preview.py` — the artifact/bundle API (`load()` →
+  `ArtifactBundle`, `select_channel` → `ChannelBundle`, discriminated specs,
+  bundle-closed `filter`/`resample`). All computation stays in `src/`; cells are
+  thin widget wrappers.
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
@@ -155,7 +183,38 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 
 ```
 src/udv_echo_process/
-├── parser.py                        — unified parser (Pydantic models + auto-detect)
+├── models/                          — the domain model (frozen, owned arrays)
+│   ├── base.py                      — ValueModel, ArrayModel, array_field, owned_array
+│   ├── identity.py                  — ChannelKey, SignalQuantity, SignalDescriptor,
+│   │                                  SourceAsset, AcquisitionRef, recording_id_for
+│   ├── support.py                   — SupportKind, QualityFlag, SampleSupport
+│   ├── acquisition.py               — AcquisitionIndex, AcquisitionMode
+│   ├── signal.py                    — SignalData, ChannelArtifact, source_artifact,
+│   │                                  array_digest, the artifact-id equations
+│   ├── recording.py                 — Recording, ProfileStatistics
+│   ├── channel_config.py            — serializable frozen channel metadata
+│   └── io.py                        — SourceSpec/SourceFormat (source enums)
+│
+├── process/                         — the transforms (bundle-closed)
+│   ├── specs.py                     — discriminated FilterSpec/InterpSpec + SyncSpec
+│   ├── filter.py                    — filter / filter_sequence over ChannelBundle
+│   ├── sync.py                      — resample (channel) + synchronize (recording)
+│   ├── derive.py                    — derive / derive_many + operation registry
+│   └── segments.py                  — private shared segment/uniformity helpers
+│
+├── provenance/                      — ArtifactGraph, ChannelBundle, ArtifactBundle,
+│   │                                  OperationRecord, ImplementationRef, and the
+│   │                                  pure graph helpers (insert_operation,
+│   │                                  source_bundle, select_channel, replace_channel)
+│   └── models.py
+│
+├── storage/                         — NPY + manifest store, schema v1
+│   ├── models.py                    — ArrayRef, BundleManifestV1, StoredRecordingV1
+│   └── npy.py                       — store_bundle / load_bundle, StoreError
+│
+├── io/                              — readers; io/dop/bdd.py returns an ArtifactBundle
+│
+├── parser.py                        — `.ADD` parser (unchanged by the rework)
 │   ├── MeasType (enum)              — ECHO | VELOCITY
 │   ├── ChannelFrame (Pydantic)      — one measurement: channel, block, tbd_ms,
 │   │                                  meas_type, gate_depths_mm, values,
@@ -166,11 +225,11 @@ src/udv_echo_process/
 │   │                                  multi-sensor, echo vs velocity, raw vs stat
 │   └── list_add_files(), load_all_data() — convenience helpers
 │
-├── viz.py                           — visualization layer
+├── viz.py                           — visualization layer (`.ADD` path)
 │   ├── plot_recording(d[, return_fig])  — per-channel heatmaps, synced time axis
 │   ├── plot_channel_stats(d[, return_fig]) — gate depth vs mean±std across time
 │   ├── plot_all(d[, return_fig])    — heatmap + profiles in one call
-│   └── discover_data_files()        — valid .ADD files under data/* (recursive,
+│   └── discover_data_files()        — `.ADD` files under data/* (recursive,
 │                                      ASCUDOPV magic check; public)
 │
 ├── analysis/                        — one module per ported feature / domain tool
@@ -180,11 +239,19 @@ src/udv_echo_process/
 ├── run_all.py                       — batch RPM extraction + viz per file
 └── cli.py                           — udv-inspect / udv-viz / udv-run-all
 
-tests/                               — pytest suite (parser + analysis + surface)
+tests/                               — pytest suite (models, transforms, provenance,
+                                       storage, parser, analysis, surface)
 references/wolfram/                  — original Wolfram notebooks + porting map
 data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
-docs/                                — agenda, hardening plan, integration plan/log
+docs/                                — agenda, the landed rework plan, hardening plan,
+                                       integration plan/log
 ```
+
+Two pipelines coexist by design: the `.ADD` path (`parser.py` → `viz.py`/`run_all.py`/
+`cli.py`/`analysis/rpm.py`) is untouched, and the `.BDD` path produces the artifact
+model above. `ChannelSeries`/`MultiplexedMeasurement` (and the legacy mutable `Model`
+base) were **removed** in Phase 9 — do not reintroduce them or an adapter that
+masquerades as the new domain model.
 
 The optical/camera modules (`analysis/{mixer,feature_track,image_projection,
 temporal_projection}.py`) and the `udv-project`/`udv-mixvel` CLIs were
@@ -221,10 +288,12 @@ To add a new building block (atomic edit, sequence, or mini-pipeline):
    reusable batch/pipeline step, not for one-off experiments.
 5. If it ports a Wolfram feature, add a row to `references/wolfram/README.md`.
 
-Keep modules **flat** while one module = one concern. Do **not** introduce
-sub-packages pre-emptively; split (`analysis/{filter,measure,io}/`, …) only when
-a module mixes unrelated concerns, crosses ~400–500 lines, or a *second,
-different pipeline* starts reusing the same primitives.
+Keep modules **flat within their sub-package** while one module = one concern.
+The artifact model is organised as `models/`, `process/`, `provenance/` and
+`storage/` because a second pipeline (`.BDD` artifacts) reuses the same
+primitives — the exception this rule always allowed. Do not add another nesting
+level until a module again mixes unrelated concerns or crosses ~400–500 lines
+(`models/signal.py`, at ~540, is the current one to watch).
 
 ## Scope boundaries
 
@@ -251,8 +320,11 @@ algorithms, and experimental-setup-specific algorithms.
 - `docs/marimo-integration-plan.md` + `docs/marimo-integration-log.md` — the
   consumer-side marimo + `marimo-inspect` integration plan and its
   evidence log (append-only).
-- `docs/doppy-analysis.md` — the `.BDD` reader review (reference for future
-  `.BDD` support).
+- `docs/doppy-analysis.md` — the `.BDD` reader review (the reference for the
+  decoding that `io/dop/bdd.py` now implements).
+- `docs/signal-model-rework-plan.md` — the **landed** signal-model rework
+  contract (9 phases, one commit per phase). Read it before changing the
+  semantics of `models/`, `process/`, `provenance/` or `storage/`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
 
 ## Privacy — do not overexpose

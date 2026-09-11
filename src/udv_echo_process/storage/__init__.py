@@ -2,8 +2,8 @@
 
 ``store_bundle(bundle, destination)`` writes a validated ``ArtifactBundle`` to a
 new directory; ``load_bundle(destination)`` reconstructs it, failing closed on
-any incomplete/corrupt/unsafe store. Storage stays out of the package top-level
-surface this phase (Phase 9 owns the final public surface), so these names are
+any incomplete/corrupt/unsafe store. The storage schema-internal names stay out
+of the package top-level surface (the plan §12 export policy), so they are
 reached through ``udv_echo_process.storage``.
 """
 

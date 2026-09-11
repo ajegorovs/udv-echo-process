@@ -9,9 +9,9 @@ Frozen value bases (plan §6.1):
   :func:`owned_array` helper, so a stored buffer is an owned, C-contiguous,
   read-only copy that never shares memory with the caller's input.
 
-:class:`Model` is the legacy mutable numpy base kept for ``ChannelSeries`` /
-``MultiplexedMeasurement`` until Phase 9; do not build new frozen-domain models
-on it.
+Phase 9 removed the legacy mutable ``Model`` base and its ``shape_2d`` helper
+together with ``ChannelSeries``/``MultiplexedMeasurement``; only the two frozen
+bases above and their shared array helpers remain.
 """
 
 from __future__ import annotations
@@ -37,34 +37,6 @@ class ValueModel(BaseModel):
         extra="forbid",
         validate_default=True,
     )
-
-
-class Model(BaseModel):
-    """Legacy base for numpy-backed domain models (mutable, until Phase 9).
-
-    Pydantic v2 refuses to generate a schema for ``np.ndarray`` unless
-    ``arbitrary_types_allowed`` is set, so every legacy model that stores raw
-    arrays (``ChannelSeries``) inherits this. Models with only plain
-    Python field types may subclass ``Model`` too for uniformity.
-    """
-
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-
-def shape_2d(time_s: np.ndarray, values: np.ndarray, n_gates: int) -> bool:
-    """Structural (T2) check shared by the series model.
-
-    ``values`` must be 2-D with shape ``(len(time_s), n_gates)``.
-
-    Args:
-        time_s: per-channel time vector.
-        values: profile data matrix.
-        n_gates: number of depth gates.
-
-    Returns:
-        True when the shapes are mutually consistent.
-    """
-    return values.ndim == 2 and values.shape == (len(time_s), n_gates)
 
 
 #: dtypes rejected by :func:`owned_array`: object, string (str/bytes),

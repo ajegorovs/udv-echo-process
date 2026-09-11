@@ -63,6 +63,28 @@ def test_viz_surface() -> None:
     assert not hasattr(viz, "_discover_data_files")
 
 
+def test_retired_legacy_surfaces_are_gone() -> None:
+    """Phase 9 removed the pre-rework models and bundled specs — no alias lingers.
+
+    The legacy ``ChannelSeries``/``MultiplexedMeasurement`` stack, the mutable
+    ``Model`` base / ``shape_2d`` helper and the bundled ``FilterParams`` /
+    ``InterpParams`` bags were removed (not adapted) in the ground-up rework;
+    nothing may re-export them from the package root or the models layer.
+    """
+    from udv_echo_process import models as models_module
+
+    for name in (
+        "ChannelSeries",
+        "MultiplexedMeasurement",
+        "Model",
+        "shape_2d",
+    ):
+        assert not hasattr(udv_echo_process, name), f"stale top-level export: {name}"
+        assert not hasattr(models_module, name), f"stale models export: {name}"
+    for name in ("FilterMethod", "FilterParams", "InterpMethod", "InterpParams"):
+        assert not hasattr(udv_echo_process, name), f"stale bundled spec: {name}"
+
+
 def test_modules_import_under_udv_echo_process_namespace() -> None:
     """Every module in the package imports cleanly on its own."""
     pkg_dir = Path(importlib.import_module("udv_echo_process").__file__).parent

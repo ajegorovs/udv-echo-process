@@ -1,5 +1,18 @@
 # Per-gate time-wise filtering — design & review handoff
 
+> **Superseded — 2026-09-11 (signal-model rework, Phase 9).** The landed filter
+> layer is `process/filter.py::filter(bundle: ChannelBundle, spec: FilterSpec)`
+> plus `filter_sequence`, with the discriminated `FilterSpec` union in
+> `process/specs.py` (`MedianFilterSpec` / `MeanFilterSpec` / `SavgolFilterSpec`
+> / `TvFilterSpec`). **`FilterMethod`, the bundled `FilterParams`, the `denoise`
+> name and the `ChannelSeries -> ChannelSeries` signature were RETIRED (plan
+> §14)** — `max_gap_s` (segmenting) and `uniform_rtol` (uniform-cadence
+> tolerance) are now explicit spec fields, and the legacy "ignore the final
+> interval" uniformity rule is gone (every interval is checked). Everything below
+> (§1–§7, including the §7.4 implementation snippet) is a **historical design
+> record**; the rework plan §7.2 and the landed `process/filter.py` are
+> authoritative.
+
 Status: **implemented 2026-09-09 — sequence platform landed (`process/filter.py`:
 `FilterMethod` MEDIAN/MEAN/SAVGOL/TV · `FilterParams` · `FilterSpec` ·
 `filter` · `filter_sequence`; the `denoise` rename).** The review round,

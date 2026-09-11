@@ -28,6 +28,35 @@ doc revision, no final conventions committed).
 > - **§15** records discussion round 1: decisions, deferrals, and the sync
 >   experiment that must happen before `process/` design is final.
 
+> ## Revision 3 — 2026-09-11: the signal-model rework LANDED (Phase 9)
+>
+> The ground-up rebuild below **completed** in
+> [`signal-model-rework-plan.md`](signal-model-rework-plan.md). The
+> `ChannelSeries`/`MultiplexedMeasurement` model described in §§3–8 was
+> **removed**: the reader now returns a `provenance.ArtifactBundle` (a
+> `models.Recording` of `ChannelArtifact`s plus the provenance graph), per-channel
+> work happens on a `ChannelBundle` and recording-level work on an
+> `ArtifactBundle`. Read every `ChannelSeries` / `MultiplexedMeasurement`
+> reference below — the `-> MultiplexedMeasurement` reader signature in §3, the
+> `pipeline.py` / `GridSpec` sketches in §§6–8 and §11, the migration-map
+> destinations in §12 and the structure notes in §14 — as **historical**.
+> The authoritative landed tree, module contracts and export rules are the
+> rework plan **§5** (package tree), **§6–§9** (models, transforms, provenance,
+> storage) and **§12** (phased/rollback + export policy). `process/` now holds
+> `specs.py` (discriminated `FilterSpec`/`InterpSpec` unions + `SyncSpec`),
+> `filter.py`, `sync.py`, `derive.py` and `segments.py`; `provenance/` and
+> `storage/` are new sub-packages. The §12.7 test note is superseded too:
+> `tests/test_models.py` was re-expressed on the landed model and
+> `test_process_filter.py` / `test_process_sync.py` are bundle-native.
+>
+> **Known, reviewed loss** (documented in `io/dop/bdd.py`): the `.BDD` fixed
+> header's ASCII version string and 512-byte comment are decoded and then
+> dropped — the five-field §6.6/§6.7 models cannot carry them (the legacy
+> `MultiplexedMeasurement` had `header`/`comment` fields for exactly this).
+> **Known limit:** the binary format proves no round/visit identity, so
+> `synchronize()` is exercised on **synthetic recordings only** — no committed
+> `.BDD` fixture can be synchronized.
+
 ---
 
 ## 1. Driving use case — the rolling-sync pipeline

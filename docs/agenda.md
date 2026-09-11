@@ -958,3 +958,64 @@ when the binary evidence cannot prove a mechanism; it must not infer mode or
 rounds. Zarr, `.ADD` migration, visualization/CLI/notebook work and additional
 processing features are explicitly deferred. Implementation is test-driven,
 uses `uv`, and must not be committed or pushed unless explicitly requested.
+
+---
+
+## Session status — 2026-09-11 (cont.): signal-model rework — Phase 9 landed (compatibility retirement + docs)
+
+**COMPLETE — all nine phases of [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
+are landed.** This entry appends to (never rewrites) the plan/status entries
+above and records the final Phase 9 cleanup, its verification and its deviations.
+
+**Retirement = removal, not an adapter.** The legacy `ChannelSeries` /
+`MultiplexedMeasurement` models and the mutable `models.base.Model` / `shape_2d`
+helper were **removed** (the two module files deleted, the exports dropped). The
+observed consumers were all internal and every one had a landed equivalent: the
+`.BDD` reader returns an `ArtifactBundle`, per-channel work goes through
+`select_channel` → `ChannelBundle`, and `process/filter.py` / `sync.py` are
+already bundle-closed — so no legitimate consumer lacked a new-model equivalent
+and **no compatibility adapter was added**. `FilterMethod`/`FilterParams` and
+`InterpMethod`/`InterpParams` (retired in earlier waves) stay absent from both
+the top-level and `process` surfaces.
+
+**Exports.** The top-level and `udv_echo_process.models` `__all__` no longer name
+`ChannelSeries`, `MultiplexedMeasurement`, `Model` or `shape_2d`; no concept is
+reachable under two names. `tests/test_package_surface.py` now pins the
+retirement (`test_retired_legacy_surfaces_are_gone`) and `tests/test_models.py`
+was re-expressed on the landed model (models-layer surface, the one-way
+`models/` import rule, the payload/artifact shape-time contract, the descriptors
+and the recording composition).
+
+**Notebook.** `notebooks/channel_preview.py` (the only notebook) was migrated to
+the landed API — `load()` → `ArtifactBundle`, `select_channel(...)` →
+`ChannelBundle`, and bundle-closed `resample`/`filter` with the discriminated
+specs. `marimo check notebooks` exits 0 and a headless `marimo export html` run
+completes cleanly.
+
+**Docs.** `pipeline-conventions.md`, `pipeline-architecture.md`,
+`interpolation-design.md` and `filter-design.md` carry a dated
+superseded/Revision-3 banner pointing at the landed model. Two deliberate,
+reviewed limits are now documented (in `io/dop/bdd.py` and the architecture doc):
+the `.BDD` fixed header's ASCII version string + 512-byte comment are decoded and
+**dropped** (the five-field `ChannelArtifact`/`Recording` cannot carry them), and
+the binary format proves no round/visit identity, so `synchronize()` is exercised
+on **synthetic recordings only**.
+
+**Verification (from the repository root).** `pytest` **774 passed, 0 failed**;
+`ruff check src tests` clean; `ruff format --check src tests` clean;
+`marimo check notebooks` exit 0; the privacy `git grep` scan shows only reviewed
+non-secret documentation matches (the scan command itself, marimo token-handling
+notes with `/home/user/…` placeholders, and commented `api_key` example
+placeholders); `git diff --check` clean. The working tree is uncommitted (the
+orchestrator commits); **no git state-changing command was run.**
+
+**Deviations / unfinished in this session.**
+1. **`AGENTS.md` was NOT updated.** The edit was refused by the harness — AGENTS.md
+   is a protected agent-instruction file and its approval prompt timed out (no
+   user response in this autonomous run); the retry was explicitly disallowed.
+   Its architecture/models/rebuild sections therefore still describe the
+   flat-era + pre-rework state. The four design docs above carry the landed-model
+   banners instead. **Owner action:** approve and apply the AGENTS.md update.
+2. `models/signal.py` is ~540 lines, above AGENTS.md's ~400–500 guideline —
+   reported for the owner to decide; deliberately **not** split in this
+   retirement-only wave.

@@ -7,6 +7,37 @@ rules refine (and where they conflict, supersede) the flat-era AGENTS.md
 conventions, which are placeholders until this repo has evolved enough to draw
 practical conclusions.
 
+> ## Revision 3 — 2026-09-11: the signal-model rework LANDED (Phase 9)
+>
+> The ground-up rework in [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
+> **completed**; it supersedes Revision 2's converged names. **`ChannelSeries` /
+> `MultiplexedMeasurement` — and the mutable `models.base.Model` / `shape_2d`
+> helper — were REMOVED, not adapted.** The canonical types are now:
+>
+> - `models/` — frozen `ValueModel`/`ArrayModel` (owned, read-only ndarray
+>   fields); `SignalData` + `ChannelArtifact`; `Recording` / `ProfileStatistics`;
+>   `ChannelKey` / `SignalDescriptor` / `SourceAsset` / `AcquisitionRef`;
+>   `SampleSupport` / `QualityFlag` / `SupportKind`; `AcquisitionIndex` /
+>   `AcquisitionMode`; `ChannelConfig`; the source enums (`models/io.py`).
+> - `process/` — the discriminated `FilterSpec` / `InterpSpec` unions plus
+>   `SyncSpec` (`specs.py`); bundle-closed `filter` / `filter_sequence`;
+>   `resample` / `synchronize`; the central `derive` / `derive_many`.
+> - `provenance/` — `ArtifactGraph`, `ChannelBundle`, `ArtifactBundle`,
+>   `OperationRecord`, `ImplementationRef` and the pure graph helpers.
+> - `storage/` — the storage-schema-1 NPY + JSON-manifest store.
+> - `io/` — the `.BDD` reader now returns an `ArtifactBundle`.
+>
+> **Read the closure rule and templates below on these types:** a per-channel
+> step is closed **`ChannelBundle -> ChannelBundle`** (`filter`, `resample`); a
+> recording-level step is closed **`ArtifactBundle -> ArtifactBundle`**
+> (`synchronize`); `select_channel(bundle, ChannelKey(...))` is the supported
+> bridge from a recording to one channel. Wherever the examples below name
+> `Recording`, `SensorSeries`, `ResampleSpec`, `ChannelSeries`,
+> `MultiplexedMeasurement`, `InterpMethod`/`InterpParams` or
+> `FilterMethod`/`FilterParams`, they are **historical illustrations of shape** —
+> the landed signatures in the rework plan §5–§8 and in the modules themselves
+> are authoritative.
+
 > ## Revision 2 — 2026-09-08 (Stage 1–2 landed + discussion round 1)
 >
 > Stage 1–2 of the rebuild **landed after this text was agreed** (commit
@@ -133,11 +164,13 @@ def estimate_channel_offsets(recording: Recording) -> dict[int, float]:
 
 ### 6.2 Configured step (params model + function)
 
-> **Interpolation note (2026-09-09):** the interpolation stage is now designed —
-> see `docs/interpolation-design.md` §7. There, `method` is a constrained `Enum`
-> (`InterpMethod`), not a bare `str`, and the spec carries explicit
-> `extrapolation` / `nan_policy` fields. The example below is illustrative of
-> *shape* only (its types still name pre-convergence `Recording`).
+> **Interpolation note (Superseded 2026-09-11 — see the Revision 3 banner):**
+> the landed interpolation layer is `process/specs.py` (`InterpSpec`, a
+> discriminated union) plus `process/sync.py::resample(bundle: ChannelBundle,
+> spec, *, times | dt_s)`. The Revision-2 `InterpMethod` enum / bundled
+> `InterpParams` / `nan_policy` design was **retired** (plan §14) — support, not
+> a NaN policy, controls validity. The example below is illustrative of *shape*
+> only.
 
 ```python
 from pydantic import BaseModel
@@ -255,3 +288,9 @@ into AGENTS.md (per §9).
   swap without code churn. Discuss separately.
 - **Geometry (`layout.toml`): deferred.** **DOPpy mode: closed** (cherry-picked
   clean rewrite in `io/dop/bdd.py`, no runtime dep).
+- **Phase 9 landed (2026-09-11):** the rework completed — the legacy
+  `ChannelSeries`/`MultiplexedMeasurement`/`Model`/`shape_2d` surface was
+  removed, `nan_policy` and the bundled `InterpParams`/`FilterParams` are gone,
+  and `docs/interpolation-design.md` / `docs/filter-design.md` / this doc carry
+  superseded banners pointing at the landed model. See
+  `docs/signal-model-rework-plan.md` and `docs/agenda.md`.

@@ -8,9 +8,8 @@ import graph cycle-free (the key correctness constraint of the rebuild).
 from __future__ import annotations
 
 from udv_echo_process.models.acquisition import AcquisitionIndex, AcquisitionMode
-from udv_echo_process.models.base import ArrayModel, Model, ValueModel, shape_2d
+from udv_echo_process.models.base import ArrayModel, ValueModel
 from udv_echo_process.models.channel_config import ChannelConfig
-from udv_echo_process.models.channel_series import ChannelSeries
 from udv_echo_process.models.identity import (
     AcquisitionRef,
     ChannelKey,
@@ -19,7 +18,6 @@ from udv_echo_process.models.identity import (
     SourceAsset,
 )
 from udv_echo_process.models.io import MeasType, SourceFormat, SourceSpec
-from udv_echo_process.models.measurement import MultiplexedMeasurement
 from udv_echo_process.models.recording import ProfileStatistics, Recording
 from udv_echo_process.models.signal import (
     ChannelArtifact,
@@ -43,10 +41,7 @@ __all__ = [
     "ChannelArtifact",
     "ChannelConfig",
     "ChannelKey",
-    "ChannelSeries",
     "MeasType",
-    "Model",
-    "MultiplexedMeasurement",
     "ProfileStatistics",
     "QualityFlag",
     "Recording",
@@ -64,7 +59,6 @@ __all__ = [
     "derived_artifact_id",
     "missing_signal",
     "observed_signal",
-    "shape_2d",
     "signals_equal",
     "source_artifact",
     "source_artifact_id",

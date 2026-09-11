@@ -21,6 +21,14 @@ is decoded to **mm/s** (the ``.ADD`` ``mm/s`` convention); echo to
 module-scale-reflected amplitude. Gate depths come from the per-channel
 ``depth`` profile when present.
 
+Known, reviewed loss (Phase 9). The fixed header's ASCII version string (16
+bytes) and 512-byte comment *are* decoded and then dropped: §6.6 pins
+``ChannelArtifact`` at five fields and §6.7 pins ``Recording`` at five, so
+neither can carry them (the legacy ``MultiplexedMeasurement`` had
+``header``/``comment`` fields for exactly this). Recovering them would require a
+model change that this rework deliberately did not make, so the reader drops
+them **by design** rather than silently discarding an unmodelled field.
+
 Acquisition topology (plan §6.7, §14). The reader sets ``AcquisitionMode`` from
 *decoded* evidence only and never fabricates a round/visit index:
 
@@ -365,9 +373,9 @@ def read(path: Path) -> ArtifactBundle:
         raise ValueError(f"not a DOP3000 .BDD file: {path.name}")
 
     buf = _Buffer(raw)
-    # The fixed header (ASCII version + comment) is still decoded, but §6.7's
-    # models have no field to carry it, so it is deliberately not stored here
-    # (documented Phase 6 gap; adding it would need a model change).
+    # Known, reviewed loss (Phase 9, see the module docstring): the fixed header
+    # (ASCII version + 512-byte comment) is decoded and then dropped because the
+    # five-field §6.6/§6.7 models have no field to carry it.
     _version = _decode_str(buf.slice(0, 16))
     _comment = _decode_str(buf.slice(16, 16 + 512))
 
