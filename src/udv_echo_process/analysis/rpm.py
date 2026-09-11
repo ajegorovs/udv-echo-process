@@ -18,7 +18,7 @@ import numpy as np
 from numpy.fft import rfft, rfftfreq
 from pydantic import BaseModel
 
-from udv_echo_process.parser import ExtractedData
+from udv_echo_process.parser import ExtractedData, MeasType
 
 
 class RpmResult(BaseModel):
@@ -31,13 +31,43 @@ class RpmResult(BaseModel):
     n_samples: int
 
 
+def _require_single_echo_channel(extracted: ExtractedData) -> None:
+    """Raise unless the recording is exactly one channel of pure echo data.
+
+    Both the FFT peak estimator and the TBD-derived sample interval are
+    defined for a single echo channel only. A mux export can carry velocity
+    and echo frames on one channel; silently combining the two would corrupt
+    the cadence (duplicated TBD rows make the interval look halved) and the
+    spectrum, so a mixed measurement type is rejected rather than partially
+    ignored.
+    """
+    channels = extracted.by_channel()
+    if len(channels) != 1:
+        raise ValueError(
+            "expected single-channel echo data; got channels "
+            f"{sorted(channels)} — call per channel instead"
+        )
+    types = {f.meas_type for f in extracted.frames}
+    if types != {MeasType.ECHO}:
+        got = "+".join(sorted(t.value for t in types)) if types else "none"
+        raise ValueError(
+            "expected echo data only; got "
+            f"{got} — select a pure echo channel before calling"
+        )
+
+
 def mean_sample_interval_s(extracted: ExtractedData) -> float:
     """Mean sampling interval in seconds, derived from the TBD column.
 
     Raw UDV echo rows carry a cumulative ``tbd_ms``; the mean of the
     per-sample differences (÷1000) is the effective sample interval used
     by the FFT frequency axis.
+
+    Defined for a single echo channel only: raises ``ValueError`` when the
+    data spans more than one channel or mixes echo with velocity frames (a
+    one-channel mux export), instead of silently averaging the wrong cadence.
     """
+    _require_single_echo_channel(extracted)
     tbds = np.array([f.tbd_ms for f in extracted.frames], dtype=float)
     if len(tbds) < 2:
         raise ValueError("need at least 2 frames to derive a sample interval")
@@ -54,17 +84,13 @@ def rpm_from_echo(
 
     ``dt_s`` is the sampling interval in seconds; when omitted it is derived
     from the parsed data via :func:`mean_sample_interval_s`. The FFT method
-    is defined for **single-sensor** echo recordings only: multi-channel
-    data must be routed per channel (e.g. via :meth:`ExtractedData.by_channel`)
-    before calling. Raises ``ValueError`` when the recording spans more than
-    one channel.
+    is defined for **single-sensor echo** recordings only: it requires exactly
+    one channel and every frame to be an echo measurement. Multi-channel data
+    must be routed per channel (e.g. via :meth:`ExtractedData.by_channel`);
+    a one-channel mux export that mixes velocity and echo frames raises
+    ``ValueError`` rather than silently selecting one quantity.
     """
-    channels = extracted.by_channel()
-    if len(channels) != 1:
-        raise ValueError(
-            "rpm_from_echo expects single-channel echo data; "
-            f"got channels {sorted(channels)} — call per channel instead"
-        )
+    _require_single_echo_channel(extracted)
     if dt_s is None:
         dt_s = mean_sample_interval_s(extracted)
     arr = np.array([f.values for f in extracted.frames])  # (T, G)

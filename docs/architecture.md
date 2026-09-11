@@ -128,7 +128,7 @@ new artifact-pipeline code.
 ### Command line
 
 ```bash
-uv run udv-inspect <file.ADD>
+uv run udv-inspect <file.ADD-or-BDD>
 uv run udv-viz [<file.ADD> ...]
 uv run udv-run-all
 ```

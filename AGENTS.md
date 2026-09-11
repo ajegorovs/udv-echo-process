@@ -69,7 +69,7 @@ in the Wolfram folder" as the roadmap.
 | Install / sync | `uv sync --extra dev` |
 | Install notebook + MCP support | `uv sync --extra marimo --extra dev` |
 | Run tests | `uv run --extra dev pytest` |
-| Inspect a recording | `uv run udv-inspect <file.ADD>` |
+| Inspect a recording | `uv run udv-inspect <file.ADD-or-BDD>` |
 | Visualize | `uv run udv-viz [<file.ADD> …]` |
 | Batch echo RPM | `uv run udv-run-all` |
 | Lint (src/tests) | `uv run --extra dev ruff check src tests` |

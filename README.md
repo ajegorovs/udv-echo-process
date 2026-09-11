@@ -21,7 +21,7 @@ Multi-sensor Ultrasonic Doppler Velocimetry (UDV) processing for rotating machin
 
 ```bash
 uv run --extra dev pytest                   # run the test suite
-uv run udv-inspect <file.ADD>               # inspect recording setup
+uv run udv-inspect <file.ADD-or-BDD>        # inspect by recording content
 uv run udv-viz <file.ADD>                   # heatmaps for one file
 uv run udv-viz                              # heatmaps for all data/* experiments
 uv run udv-run-all                          # batch echo RPM analysis + viz

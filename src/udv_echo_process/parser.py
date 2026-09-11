@@ -12,6 +12,13 @@ File format variants detected automatically:
     - Raw format: P data rows per section
     - Statistical summary: mean/stddev/min/max over P profiles per section
   Unit: "Amp" (echo) or "mm/s" (velocity).
+
+  A multiplexer export may interleave both unit types in one section: 45
+  ``mm/s`` columns followed by 45 ``Amp`` columns (93 tab-separated columns
+  including TBD / No block / Channel), with the 45 unique gate depths listed
+  once per column group. The **units row** defines the column groups — never
+  the depth-row length — and each group becomes its own ``ChannelFrame`` on
+  the single shared 45-gate depth axis.
 """
 
 from __future__ import annotations
@@ -189,7 +196,7 @@ class ExtractedData(BaseModel):
             tbds = [f.tbd_ms for f in ch_frames]
             p = ch_frames[0].n_profiles or n_prof
 
-            mt = ch_frames[0].meas_type.value
+            mt = "+".join(sorted({f.meas_type.value for f in ch_frames}))
             lines.append(f"  Channel {ch}  ({mt}):")
             lines.append(
                 f"    Gate depths:     {len(gd)} gates  ({gd[0]:.2f} - {gd[-1]:.2f} mm)"
@@ -241,15 +248,87 @@ def load_all_data(
 # ── Internal helpers ────────────────────────────────────────────────────
 
 
-def _detect_meas_type(header_row: str) -> MeasType:
-    if "mm/s" in header_row:
+def _classify_unit(label: str) -> MeasType | None:
+    """Map one units-row label to a measurement type, or None if unknown."""
+    low = label.strip().lower()
+    if "mm/s" in low:
         return MeasType.VELOCITY
-    return MeasType.ECHO
+    if low.startswith("amp"):
+        return MeasType.ECHO
+    return None
 
 
 def _parse_gate_depths(line: str) -> list[float]:
     parts = line.strip().split("\t")
     return [parse_comma_decimal(p) for p in parts if p]
+
+
+# One column group: (measurement type, start, stop) into a row's value columns.
+_ColumnGroup = tuple[MeasType, int, int]
+
+
+def _resolve_column_groups(
+    depths: list[float], units_row: str
+) -> tuple[list[float], list[_ColumnGroup]]:
+    """Derive per-column measurement groups from a section's units row.
+
+    One units-row label corresponds to one data column, so the ``mm/s`` /
+    ``Amp`` runs in that row define the column groups — *not* the depth row,
+    whose length is the total column count and may repeat the gate axis once
+    per group (a 93-column mux export lists its 45 depths twice).
+
+    Returns ``(gate_depths, groups)`` where ``gate_depths`` is the single
+    depth axis shared by every group and each group is a
+    ``(meas_type, start, stop)`` slice into the row's value columns.
+
+    Raises ``ValueError`` for layouts that cannot be interpreted: a units row
+    shorter than the depth row, unknown unit labels, groups of unequal width,
+    or groups that do not repeat one identical depth axis.
+    """
+    if not depths:
+        raise ValueError("empty gate-depth row")
+    labels = [p.strip() for p in units_row.strip().split("\t")]
+    if len(labels) < len(depths):
+        raise ValueError(
+            f"units row has {len(labels)} labels for {len(depths)} gate "
+            f"depths; expected one unit label per gate"
+        )
+
+    value_types: list[MeasType] = []
+    unknown: list[str] = []
+    for label in labels[: len(depths)]:
+        meas_type = _classify_unit(label)
+        if meas_type is None:
+            unknown.append(label)
+        else:
+            value_types.append(meas_type)
+    if unknown:
+        raise ValueError(
+            f"unrecognised units row label(s) {sorted(set(unknown))}; "
+            f"expected mm/s or Amp"
+        )
+
+    groups: list[_ColumnGroup] = []
+    start = 0
+    for i in range(1, len(value_types) + 1):
+        if i == len(value_types) or value_types[i] != value_types[start]:
+            groups.append((value_types[start], start, i))
+            start = i
+
+    n_groups = len(groups)
+    span, remainder = divmod(len(depths), n_groups)
+    if remainder or any(stop - lo != span for _, lo, stop in groups):
+        raise ValueError(
+            f"gate-depth row with {len(depths)} entries does not divide "
+            f"evenly into {n_groups} unit group(s)"
+        )
+    gate_depths = depths[:span]
+    for _, lo, stop in groups[1:]:
+        if depths[lo:stop] != gate_depths:
+            raise ValueError(
+                "column unit groups do not repeat a single gate-depth axis"
+            )
+    return gate_depths, groups
 
 
 def _parse_num(line: str) -> int | None:
@@ -299,20 +378,22 @@ def _parse_section(
 ) -> None:
     """Parse one gate-depth section (single- or multi-sensor alike).
 
-    Truncated or non-numeric sections are skipped silently (they add no
-    frames), so a magic-bearing file with no real data rows still yields a
-    usable empty :class:`ExtractedData` instead of raising.
+    The section's column groups come from its units row (see
+    :func:`_resolve_column_groups`); an uninterpretable units row raises
+    ``ValueError``. Truncated or non-numeric depth rows are skipped silently
+    (they add no frames), so a magic-bearing file with no real data rows
+    still yields a usable empty :class:`ExtractedData` instead of raising.
     """
     if gd_idx + 2 >= len(lines):
         return
     try:
-        gate_depths = _parse_gate_depths(lines[gd_idx + 1])
-        meas_type = _detect_meas_type(lines[gd_idx + 2])
+        depths = _parse_gate_depths(lines[gd_idx + 1])
     except ValueError:
         return
-    n_gates = len(gate_depths)
-    if n_gates == 0:
+    if not depths:
         return
+    gate_depths, groups = _resolve_column_groups(depths, lines[gd_idx + 2])
+    n_cols = sum(stop - start for _, start, stop in groups)
 
     data_start = gd_idx + 3
     end = next(
@@ -326,66 +407,80 @@ def _parse_section(
     data_lines = lines[data_start:end]
 
     if data_lines and data_lines[0].strip().startswith(STAT_PREFIX):
-        _parse_stat_section(data_lines, n_gates, gate_depths, meas_type, result)
+        _parse_stat_section(data_lines, gate_depths, groups, result)
     else:
         for line in data_lines:
-            _add_frame(line, n_gates, gate_depths, meas_type, result)
+            _add_frames(line, gate_depths, groups, n_cols, result)
 
 
-def _add_frame(
+def _add_frames(
     line: str,
-    n_gates: int,
     gate_depths: list[float],
-    meas_type: MeasType,
+    groups: list[_ColumnGroup],
+    n_cols: int,
     result: ExtractedData,
 ) -> None:
-    """Parse one data row and add a ChannelFrame."""
+    """Parse one data row into one frame per column group.
+
+    All groups of a row share the row's TBD / block / channel columns and the
+    single gate-depth axis; a malformed row adds nothing.
+    """
     parts = line.strip().split("\t")
-    if len(parts) < n_gates + 1:
+    if len(parts) < n_cols + 1:
         return
     try:
-        vals = [parse_comma_decimal(p) for p in parts[:n_gates]]
-        tbd = parse_comma_decimal(parts[n_gates])
-        block = int(parts[n_gates + 1]) if len(parts) > n_gates + 1 else 0
-        channel = int(parts[n_gates + 2]) if len(parts) > n_gates + 2 else 0
+        tbd = parse_comma_decimal(parts[n_cols])
+        block = int(parts[n_cols + 1]) if len(parts) > n_cols + 1 else 0
+        channel = int(parts[n_cols + 2]) if len(parts) > n_cols + 2 else 0
+        values_by_group = [
+            [parse_comma_decimal(p) for p in parts[start:stop]]
+            for _, start, stop in groups
+        ]
     except ValueError:
         return
 
-    result.frames.append(
-        ChannelFrame(
-            channel=channel,
-            block=block,
-            tbd_ms=tbd,
-            meas_type=meas_type,
-            gate_depths_mm=list(gate_depths),
-            values=vals,
+    for (meas_type, _start, _stop), vals in zip(groups, values_by_group):
+        result.frames.append(
+            ChannelFrame(
+                channel=channel,
+                block=block,
+                tbd_ms=tbd,
+                meas_type=meas_type,
+                gate_depths_mm=list(gate_depths),
+                values=vals,
+            )
         )
-    )
+
+
+def _slice_group(row: list[float] | None, start: int, stop: int) -> list[float] | None:
+    """Slice one per-group view out of a full-width stat row."""
+    return None if row is None else row[start:stop]
 
 
 def _parse_stat_section(
     lines: list[str],
-    n_gates: int,
     gate_depths: list[float],
-    meas_type: MeasType,
+    groups: list[_ColumnGroup],
     result: ExtractedData,
 ) -> None:
     """Parse a statistical summary block (mean / stddev / min / max).
 
     ``lines`` holds the section's data rows: index 0 is the
     "Statistical values based on :N values" line, index 1 the mean row,
-    followed by alternating label/value pairs.
+    followed by alternating label/value pairs. Every row spans all column
+    groups; each group is sliced out into its own frame on the shared axis.
     """
     if not lines:
         return
     n_prof = _parse_num(lines[0])
+    n_cols = sum(stop - start for _, start, stop in groups)
 
-    mean_row = _parse_stat_row(lines, 1, n_gates)
+    mean_row = _parse_stat_row(lines, 1, n_cols)
 
     labels: dict[str, list[float] | None] = {}
     for i in range(2, len(lines) - 1, 2):
         label = lines[i].strip().lower()
-        val_row = _parse_stat_row(lines, i + 1, n_gates)
+        val_row = _parse_stat_row(lines, i + 1, n_cols)
         if label in _STAT_LABELS["std_dev"]:
             labels["std_dev"] = val_row
         elif label in _STAT_LABELS["min"]:
@@ -398,34 +493,35 @@ def _parse_stat_section(
 
     # Trailing columns of the mean row: TBD, block, channel.
     parts = lines[1].strip().split("\t")
-    block = int(parts[n_gates + 1]) if len(parts) > n_gates + 1 else 0
-    channel = int(parts[n_gates + 2]) if len(parts) > n_gates + 2 else 0
-    tbd = parse_comma_decimal(parts[n_gates]) if len(parts) > n_gates else 0.0
+    block = int(parts[n_cols + 1]) if len(parts) > n_cols + 1 else 0
+    channel = int(parts[n_cols + 2]) if len(parts) > n_cols + 2 else 0
+    tbd = parse_comma_decimal(parts[n_cols]) if len(parts) > n_cols else 0.0
 
-    result.frames.append(
-        ChannelFrame(
-            channel=channel,
-            block=block,
-            tbd_ms=tbd,
-            meas_type=meas_type,
-            gate_depths_mm=list(gate_depths),
-            values=mean_row,
-            n_profiles=n_prof,
-            std_dev=labels.get("std_dev"),
-            min_val=labels.get("min"),
-            max_val=labels.get("max"),
+    for meas_type, start, stop in groups:
+        result.frames.append(
+            ChannelFrame(
+                channel=channel,
+                block=block,
+                tbd_ms=tbd,
+                meas_type=meas_type,
+                gate_depths_mm=list(gate_depths),
+                values=mean_row[start:stop],
+                n_profiles=n_prof,
+                std_dev=_slice_group(labels.get("std_dev"), start, stop),
+                min_val=_slice_group(labels.get("min"), start, stop),
+                max_val=_slice_group(labels.get("max"), start, stop),
+            )
         )
-    )
 
 
-def _parse_stat_row(lines: list[str], idx: int, n_gates: int) -> list[float] | None:
+def _parse_stat_row(lines: list[str], idx: int, n_cols: int) -> list[float] | None:
     if idx >= len(lines):
         return None
     parts = lines[idx].strip().split("\t")
-    if len(parts) < n_gates:
+    if len(parts) < n_cols:
         return None
     try:
-        return [parse_comma_decimal(p) for p in parts[:n_gates]]
+        return [parse_comma_decimal(p) for p in parts[:n_cols]]
     except ValueError:
         return None
 
@@ -435,8 +531,12 @@ def _detect_n_profiles(d: ExtractedData, by_ch: dict[int, list[ChannelFrame]]) -
         if f.n_profiles is not None:
             return f.n_profiles
     ch = min(by_ch.keys())
-    blk = by_ch[ch][0].block
-    return sum(1 for f in d.frames if f.channel == ch and f.block == blk)
+    first = by_ch[ch][0]
+    return sum(
+        1
+        for f in d.frames
+        if f.channel == ch and f.block == first.block and f.meas_type is first.meas_type
+    )
 
 
 if __name__ == "__main__":

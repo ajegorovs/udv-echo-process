@@ -1,7 +1,11 @@
 # udv-analysis → udv-echo-process absorption mapping
 
-Status: **report + plan, pending review** (`docs/agenda.md` → *Pending decisions*).
-Nothing described here is implemented yet.
+Status: **approved; implementation in progress** (`docs/agenda.md`).
+
+Phase 0's private retirement/baseline pack and Phase 1's reader/inspection work
+are complete. Phase 2 terminal analysis results and export remain active; Phases
+3–4 follow. The source checkout has not been retired because §8 still has
+unresolved external-lineage/dependency evidence.
 
 Authority: this document is the source-analysis record for retiring the external
 `udv-analysis` package and absorbing what it uniquely provides. It does **not**
@@ -96,7 +100,7 @@ algorithms as *our* kinds of thing, not copy its stage shapes.
 
 | Source (there) | Destination (here) | Verdict / shape |
 |---|---|---|
-| `processing/profiles.py` (239 L) — clamped B-spline quantile LP, TV-smoothed envelopes in mm/s, in-envelope median + **unscaled MAD**, retained counts | **`analysis/`** + a Pydantic result model beside `RpmResult` / `ProfileStatistics` | **Terminal `T -> U`, not a mid-chain transform.** It drops samples and changes counts; in our model that is `quality |= EXCLUDED` / support invalid, never a silent subset median |
+| `processing/profiles.py` (239 L) — clamped B-spline quantile LP, TV-smoothed envelopes in mm/s, in-envelope median + **unscaled MAD**, retained counts | **`analysis/`** + a Pydantic result model beside `RpmResult` / `ProfileStatistics` | **Terminal `T -> U`, not a mid-chain transform.** It drops samples and changes counts; keep rejection in terminal retained/input counts and typed statuses, not `SampleSupport` and not a new quality flag |
 | `processing/states.py` (237 L) — local-σ texture → depth median → \|Gaussian d/dt\| → Kittler–Illingworth threshold × factor → persistent peaks → half-open intervals; transitions belong to neither neighbour | **`analysis/states.py`** + an interval result model | Terminal product. `SignalData` has no interval concept; making it a mid-chain transform (new payload field + provenance semantics) is the heavier alternative |
 | `processing/tv.py::custom_tv_l1` (~60 L of 163) — 2-D primal-dual, **L1** fidelity | new branch in **`process/specs.py`** *if* a gate-coupling filter is accepted | Decision, not a port: our `TvFilterSpec` is 1-D, per-gate, segment/`EDGE_AFFECTED`-aware; a 2-D kernel changes segment, edge and support rules |
 | `io/bdd.py::bdd_depth_source="Calc"` gate reconstruction | patch to `io/dop/bdd.py` | Pure win: 0.05 → **0.0033 mm** depth agreement with our `.ADD` reference |
@@ -132,31 +136,31 @@ Each item below would violate a rule this repo already settled:
 
 ## 6. Gaps this exposes here
 
-1. **No CLI for `.BDD`.** `udv-inspect` / `udv-viz` are `.ADD`-only; the artifact
-   path is reachable from the library and `notebooks/channel_preview.py`, but
-   not from the command line.
-2. **No terminal analysis producer.** `ProfileStatistics` is defined and tested
-   with no producer; `analysis/rpm.py` covers echo `.ADD` only.
-3. **No interval/state metadata** anywhere in the model.
-4. **No JSON export path** for terminal results (store-1 persists signal
-   bundles).
-5. **Fixture blindness.** The mux parser defect was invisible to 774 tests
-   because no committed fixture uses the dual velocity+amplitude layout; any
-   absorbed algorithm needs a fixture that reproduces the *real* geometry, not a
-   simplified one. `udv-analysis`'s own reader was built against a synthetic
-   fixture no real file matches — that is the failure mode to avoid, not copy.
+1. **Terminal analysis is not yet absorbed.** State detection and robust profiles
+   remain in the retiring package; `analysis/rpm.py` covers echo `.ADD` only.
+2. **No interval/state metadata** exists in the domain model by design; Phase 2
+   therefore needs typed terminal result models rather than new `SignalData`
+   fields.
+3. **No JSON/CSV/NPZ export path** exists for terminal results (store-1 persists
+   signal bundles only).
+4. **Fixture blindness remains a general risk.** The mux parser defect was
+   invisible before a synthetic test reproduced the real 93-column geometry;
+   every absorbed algorithm needs equivalent realistic geometry and archived
+   numerical baselines rather than a simplified fixture.
 
 ## 7. Sequencing
 
-- **Phase 0 — retirement baseline pack (before anything is deleted).** The
-  source ships no baselines; its equivalence evidence exists only as ad-hoc
-  output. Run it once over the real recordings, store the outputs as a private
-  fixture pack outside this repo, and pin medians/MADs/intervals as golden
-  values. After retirement this step becomes impossible.
-- **Phase 1 — no model change:** `Calc` depth precision; `ChannelConfig`
-  coverage; a `.BDD` inspect CLI over `io.load()`.
-- **Phase 2 — terminal results:** result models for state intervals and robust
-  profiles in `models/`, producers in `analysis/`, JSON/CSV/NPZ export.
+- **Phase 0 — complete.** The private, checksum-inventoried retirement pack is
+  stored outside both repositories under the Hermes artifact area. It preserves
+  a reconstructible git bundle/tree, source distributions, licenses, exact
+  scripts/configs and five reproducible numerical baselines. The source had no
+  accepted non-example config and no multi-state velocity fixture; those are
+  recorded blockers, not synthesized evidence.
+- **Phase 1 — complete:** calculated canonical BDD depths, high-confidence
+  `ChannelConfig` corrections, and content-aware `.ADD`/`.BDD` `udv-inspect`.
+- **Phase 2 — active:** terminal result models for state intervals and robust
+  profiles in `models/`, producers in `analysis/`, and a small JSON/CSV/NPZ
+  export boundary.
 - **Phase 3 — the 2-D TV-L1 decision** (§9, D1), including redefined segment /
   edge / support rules if accepted.
 - **Phase 4 — documentation and provenance:** move the porting-map row
@@ -175,15 +179,15 @@ Each item below would violate a rule this repo already settled:
 3. Confirm nothing else depends on the retiring package (no CI, notebook or
    downstream consumer outside this repo).
 
-## 9. Open decisions
+## 9. Resolved architectural decisions
 
-| # | Decision | Options | Note |
-|---|---|---|---|
-| D1 | 2-D TV-L1 (depth × time, L1 fidelity) | new `FilterSpec` branch / keep 1-D only | A gate-coupling filter changes per-gate segment and `EDGE_AFFECTED` semantics |
-| D2 | Where profiles and states live | terminal `analysis/` results (recommended) / mid-chain transforms | Mid-chain needs an interval concept in the model and a sample-rejection encoding |
-| D3 | Whether a config/CLI surface is wanted | operation-registry-generated CLI / notebook-only / TOML (rejected, §5) | Any CLI must be derived from specs, not a parallel schema |
-| D4 | Where terminal-result JSON/CSV is written | extend `storage/` / small `export` module | Keep it out of the provenance graph either way |
-| D5 | Sample rejection representation | `quality |= EXCLUDED` + support invalid / count in the terminal result | A transform must never silently drop observations |
+| # | Decision | Resolution |
+|---|---|---|
+| D1 | 2-D TV-L1 (depth × time, L1 fidelity) | Keep the solver private to the terminal robust-profile analysis chain; do not add a public `FilterSpec` branch or redefine bundle-transform support semantics without a separate use case and contract review. |
+| D2 | Where profiles and states live | Typed terminal `analysis/` results. Do not add interval fields to `SignalData`. |
+| D3 | Whether a config/CLI surface is wanted | No second TOML/config plane and no speculative analysis CLI. Extend the existing inspection CLI by content only; expose analysis through typed library calls/notebooks until a reusable batch need exists. |
+| D4 | Where terminal-result JSON/CSV/NPZ is written | A small standalone export module, outside bundle storage and the provenance graph. |
+| D5 | Sample rejection representation | Retained/input counts plus typed terminal statuses. Do not add `QualityFlag.EXCLUDED`; the source artifact remains unchanged. |
 
 ## Further reading
 

@@ -217,3 +217,172 @@ def test_describe_on_header_only_file(tmp_path: Path) -> None:
     text = d.describe()
     assert "No frames parsed" in text
     assert d.file_path.name in text
+
+
+# ── 93-column mux: dual velocity + amplitude column groups ──────────────
+#
+# The DOP3000 multiplexer export carries 45 ``mm/s`` columns followed by
+# 45 ``Amp`` columns (plus TBD / No block / Channel = 93 tab-separated
+# columns) and repeats its 45 unique gate depths twice on the depth row.
+# The column groups must be derived from the *units row*, never from the
+# depth-row length, and each group must become its own frame on the single
+# 45-gate depth axis.
+
+MUX_N_GATES = 45
+
+
+def _comma(value: float) -> str:
+    """Format a number the way ASCUDOPV does (comma decimal separator)."""
+    return f"{value:g}".replace(".", ",")
+
+
+def _mux_depths() -> list[float]:
+    return [20.0 + i for i in range(MUX_N_GATES)]
+
+
+def _write_mux_add(
+    path: Path,
+    *,
+    blocks: tuple[int, ...] = (1, 2),
+    channel: int = 6,
+    n_profiles: int = 2,
+    stat: bool = False,
+    second_unit: str = "Amp",
+    n_amp: int = MUX_N_GATES,
+    amp_depths: list[float] | None = None,
+) -> Path:
+    """Write a synthetic 93-column mux file with repeated acquisition blocks."""
+    vel_depths = _mux_depths()
+    if amp_depths is None:
+        amp_depths = list(vel_depths[:n_amp])
+    assert len(amp_depths) == n_amp
+    units = (
+        ["mm/s"] * MUX_N_GATES
+        + [second_unit] * n_amp
+        + ["TBD [ms]", "No block", "Channel"]
+    )
+    depths = vel_depths + amp_depths
+
+    def row(values: list[float]) -> str:
+        return "\t".join(_comma(v) if isinstance(v, float) else str(v) for v in values)
+
+    lines = ["ASCUDOPV4.03.4", "Memo_Comments", ""]
+    for block in blocks:
+        lines.append("Gate Depth [mm]")
+        lines.append("\t".join(_comma(d) for d in depths) + "\t")
+        lines.append("\t".join(units))
+        if stat:
+            lines.append(f"Statistical values based on :{n_profiles} values")
+        numeric_rows: list[list[float]] = []
+        for p in range(n_profiles):
+            velocity = [-(i + 1) - 0.5 * p for i in range(MUX_N_GATES)]
+            amplitude = [100.0 + i + 10.0 * p for i in range(n_amp)]
+            numeric_rows.append(velocity + amplitude + [p * 3.2, block, channel])
+        if stat:
+            mean = numeric_rows[0]
+            lines.append(row(mean))
+            lines.append("standard deviation")
+            lines.append(row([v + 1.0 for v in mean]))
+            lines.append("minimum")
+            lines.append(row([v - 1.0 for v in mean]))
+            lines.append("maximum")
+            lines.append(row([v + 2.0 for v in mean]))
+        else:
+            lines.extend(row(values) for values in numeric_rows)
+
+    path.write_text("\n".join(lines) + "\n", encoding="latin-1")
+    return path
+
+
+def test_mux_dual_group_splits_velocity_and_amplitude(tmp_path: Path) -> None:
+    """A 93-column mux file must yield distinct velocity and amplitude frames."""
+    d = extract(_write_mux_add(tmp_path / "mux93.ADD"))
+
+    # 2 repeated sections x 2 raw profiles x 2 column groups.
+    assert len(d.frames) == 8
+    velocity = [f for f in d.frames if f.meas_type is MeasType.VELOCITY]
+    echo = [f for f in d.frames if f.meas_type is MeasType.ECHO]
+    assert len(velocity) == 4
+    assert len(echo) == 4
+    assert d.meas_type is None  # a mux recording is not a single measurement type
+
+    # Every frame sits on the same single 45-gate depth axis.
+    assert all(len(f.gate_depths_mm) == 45 for f in d.frames)
+    assert all(f.gate_depths_mm == velocity[0].gate_depths_mm for f in d.frames)
+    assert velocity[0].gate_depths_mm[0] == 20.0
+    assert velocity[0].gate_depths_mm[-1] == 64.0
+    assert len(velocity[0].values) == 45
+
+    # The velocity frame carries only velocity values; the amplitude frame
+    # only amplitude values. Conflation would have produced a 90-value frame.
+    assert velocity[0].values == [-(i + 1) for i in range(45)]
+    assert echo[0].values == [100.0 + i for i in range(45)]
+    assert all(v < 0 for v in velocity[0].values)
+    assert all(v >= 100.0 for v in echo[0].values)
+
+
+def test_mux_dual_group_repeated_sections_parse(tmp_path: Path) -> None:
+    """Repeated Gate Depth sections in a mux export all parse into frames."""
+    d = extract(_write_mux_add(tmp_path / "mux93.ADD", blocks=(1, 2, 3)))
+
+    assert sorted(d.by_block()) == [1, 2, 3]
+    assert sorted(d.by_channel()) == [6]
+    assert len(d.by_channel()[6]) == 12
+
+    for block, frames in d.by_block().items():
+        assert len(frames) == 4
+        assert {f.meas_type for f in frames} == {MeasType.VELOCITY, MeasType.ECHO}
+        assert all(f.block == block for f in frames)
+        assert all(f.channel == 6 for f in frames)
+        velocity = [f for f in frames if f.meas_type is MeasType.VELOCITY]
+        assert [f.tbd_ms for f in velocity] == [0.0, 3.2]
+
+
+def test_mux_dual_group_stat_section_splits(tmp_path: Path) -> None:
+    """Statistical mux sections split mean/std/min/max per column group."""
+    d = extract(
+        _write_mux_add(
+            tmp_path / "mux93_stat.ADD", blocks=(1,), n_profiles=4, stat=True
+        )
+    )
+
+    assert len(d.frames) == 2
+    velocity, echo = d.frames
+    assert velocity.meas_type is MeasType.VELOCITY
+    assert echo.meas_type is MeasType.ECHO
+    assert velocity.n_profiles == 4
+    assert velocity.gate_depths_mm == echo.gate_depths_mm
+    assert len(velocity.gate_depths_mm) == 45
+    assert len(velocity.values) == 45
+    std_dev, min_val, max_val = velocity.std_dev, velocity.min_val, velocity.max_val
+    assert std_dev is not None and min_val is not None and max_val is not None
+    assert len(std_dev) == 45
+    assert len(min_val) == 45
+    assert len(max_val) == 45
+    assert velocity.values == [-(i + 1) for i in range(45)]
+    assert echo.values == [100.0 + i for i in range(45)]
+    assert std_dev[0] == velocity.values[0] + 1.0
+    assert min_val[0] == velocity.values[0] - 1.0
+    assert max_val[0] == velocity.values[0] + 2.0
+
+
+def test_mux_unknown_units_rejected_loudly(tmp_path: Path) -> None:
+    """An unrecognised per-column unit must raise, not silently become echo."""
+    p = _write_mux_add(tmp_path / "mux93_bad_unit.ADD", second_unit="Pa")
+    with pytest.raises(ValueError, match="unit"):
+        extract(p)
+
+
+def test_mux_mismatched_depth_axis_rejected_loudly(tmp_path: Path) -> None:
+    """Column groups that do not share one depth axis must raise."""
+    shifted = [200.0 + i for i in range(MUX_N_GATES)]
+    p = _write_mux_add(tmp_path / "mux93_bad_depth.ADD", amp_depths=shifted)
+    with pytest.raises(ValueError, match="depth"):
+        extract(p)
+
+
+def test_mux_uneven_groups_rejected_loudly(tmp_path: Path) -> None:
+    """Groups are derived from the units row, so uneven groups must raise."""
+    p = _write_mux_add(tmp_path / "mux93_uneven.ADD", n_amp=MUX_N_GATES - 1)
+    with pytest.raises(ValueError, match="group"):
+        extract(p)

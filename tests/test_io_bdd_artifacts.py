@@ -9,19 +9,25 @@ Decoded format facts (measured on the committed fixtures, cross-checked against
 the DOP3000-3010 manual reference):
 
 * ``data/echo/*.BDD`` — single-sensor echo, one channel ``device_channel=4``.
-  ``200.BDD``: ``T=4180``, ``G=26``, gate 0 at ``43.0 mm`` (pitch ``0.456 mm``),
-  ``module_scale=2048``, ``sound_speed_ms=2740``, ``trigger_delay_ms=0``, every
-  value finite and in ``[0, 2048]``, per-interval ``dt`` in ``{3.1, 3.2} ms``.
-  The op-parameter multiplexer-enable bit (word 52, bit 1; manual
+  ``200.BDD``: ``T=4180``, ``G=26``, canonical (calculated) gate 0 at
+  ``42.972 mm`` with pitch ``0.4567 mm`` — the matching ``200.ADD`` depth row
+  reads ``42.97 … 54.39`` (rounded to 0.01 mm) and the stored pseudo-profile
+  reads ``43.0 … 54.4`` (rounded to 0.1 mm) — ``module_scale=2048``,
+  ``sound_speed_ms=2740``, ``trigger_delay_ms=0``, every value finite and in
+  ``[0, 2048]``, per-interval ``dt`` in ``{3.1, 3.2} ms``.
+  The op-parameter multiplexer-enable bit (word 52, bit index 0 = value ``1``;
+  the manual numbers row 52's bits 1-based, so this is its "bit 1"; manual
   ``10-storing-and-reading-measures.md`` §"DOP3000 parameters table", row 52) is
   **clear**, so non-multiplexed operation; the file proves no cross-channel
   acquisition topology.
 * ``data/4-sensor-velocity/*.BDD`` — 4-channel velocity, channels
-  ``6,7,8,9``. Each ``T=400``, ``G=55``, gate 0 at ``20.0 mm`` (pitch
-  ``1.0944 mm``), ``sound_speed_ms=1460``, all finite. The multiplexer-enable
-  bit is **set** (word 52 = ``0x261e03``), word 51 ("Nb profiles in block in
-  multiplexer mode", row 51) = ``4``, word 53 ("Nb blocks in multiplexer mode",
-  row 53) = ``100``.
+  ``6,7,8,9``. Each ``T=400``, ``G=55``, canonical gate 0 at ``20.002 mm``
+  (pitch ``1.095 mm``; ``.ADD`` row ``20.00 … 79.13``, stored profile
+  ``20.0 … 79.1``), ``sound_speed_ms=1460``, all finite. The multiplexer-enable
+  bit (index 0) is **set** (word 52 = ``0x261e03``, which sets both index 0 and
+  index 1 — the manual's "bit 2: UDV MD mode"), word 51 ("Nb profiles in block
+  in multiplexer mode", row 51) = ``4``, word 53 ("Nb blocks in multiplexer
+  mode", row 53) = ``100``.
 * The per-profile footer (manual ``10-storing-and-reading-measures.md`` §10.7,
   points E–K) carries the timestamp (E, 4 bytes at ``meas_end-12``) and the
   block number (F, 2 bytes at ``meas_end-8``) and the multiplexer channel (J,
@@ -112,6 +118,34 @@ def _footer_rows(path: Path) -> list[tuple[int, int, int]]:
     return rows
 
 
+def _synthetic_single_channel_bdd(mux_flags: int, gates: int = 2) -> bytes:
+    """Build a minimal single-channel echo ``.BDD`` carrying only what the reader
+    needs: the magic, op-param word 52 for channel 1, and one measurement block
+    holding an echo profile, a depth pseudo-profile and a footer.
+
+    Deliberately independent of the reader under test — the op-param block is
+    otherwise zero (so the gate-depth calculation is undecodable and the file's
+    depth pseudo-profile is the canonical axis), which isolates the mux word.
+    """
+    raw = bytearray(_MEAS_BASE_OFFSET)
+    raw[0:8] = b"BINUDOPV"
+    struct.pack_into("<i", raw, 548 + 4 * 52, mux_flags)  # channel 1 op word 52
+
+    echo = bytes(range(1, gates + 1))  # uint8 echo counts
+    depth = struct.pack(f"<{gates}h", *(430 + 10 * i for i in range(gates)))
+
+    def profile(ptype: int, payload: bytes) -> bytes:
+        return struct.pack("<H", len(payload)) + bytes([ptype]) + payload
+
+    body = profile(1, echo) + profile(25, depth) + b"\x00\x00"
+    footer = bytearray(16)
+    struct.pack_into("<I", footer, 4, 0)  # timestamp at meas_end-12
+    footer[13] = 1  # channel byte at meas_end-3
+    block = body + bytes(footer)
+    raw += struct.pack("<H", 2 + len(block)) + block
+    return bytes(raw)
+
+
 # ── content identity ───────────────────────────────────────────────────
 
 
@@ -192,10 +226,11 @@ class TestSingleChannelEcho:
 
         Measured (independent footer walk): all 4181 blocks of ``200.BDD`` carry
         the constant footer block word ``1`` (manual point F, ``meas_end-8``)
-        and channel ``4``, and the op-param multiplexer-enable bit (word 52, bit
-        1) is clear. Neither a constant block word nor the one-channel count
-        proves an acquisition mode or a visit order, so the reader emits
-        ``UNKNOWN`` and leaves round/visit as ``None``.
+        and channel ``4``, and the op-param multiplexer-enable bit (word 52,
+        bit index 0, the manual's 1-based "bit 1") is clear. Neither a constant
+        block word nor the one-channel count proves an acquisition mode or a
+        visit order, so the reader emits ``UNKNOWN`` and leaves round/visit as
+        ``None``.
         """
         rows = _footer_rows(ECHO_200)
         assert len(rows) == 4181
@@ -271,9 +306,10 @@ class TestFourChannelVelocity:
     def test_mode_is_sequential_from_the_decoded_multiplexer_bit(self):
         """Mode comes from the documented multiplexer parameter, not stream count.
 
-        Word 52 bit 1 ("if set multiplexer enables", manual §10.7 parameters
-        table row 52) is set for every channel (``0x261e03``), and §11 documents
-        that multiplexed acquisition selects each channel's profiles one after
+        The multiplexer-enable bit is word 52 bit index 0 (the manual's 1-based
+        "bit 1", "if set multiplexer enables", §10.7 parameters table row 52)
+        and is set for every channel (``0x261e03``), and §11 documents that
+        multiplexed acquisition selects each channel's profiles one after
         another, so the channels were acquired sequentially.
         """
         bundle = read(FOUR_SENSOR)
@@ -322,6 +358,232 @@ class TestFourChannelVelocity:
             assert index is not None
             assert index.sample_id.tolist() == list(range(400))
             assert np.array_equal(index.acquisition_time_s, stream.data.time_s)
+
+
+# ── the multiplexer-enable bit is index 0, not the UDV MD flag ─────────
+
+
+@pytest.mark.parametrize(
+    ("mux_flags", "expected"),
+    [
+        (0x0, AcquisitionMode.UNKNOWN),  # no flag: nothing proves a mode
+        (0x1, AcquisitionMode.SEQUENTIAL),  # manual "bit 1" = bit index 0
+        (0x2, AcquisitionMode.UNKNOWN),  # manual "bit 2" = UDV MD mode, NOT mux
+        (0x3, AcquisitionMode.SEQUENTIAL),  # both set (the committed mux shape)
+    ],
+)
+def test_mux_enable_is_bit_index_zero_not_the_udv_md_flag(
+    tmp_path: Path, mux_flags: int, expected: AcquisitionMode
+) -> None:
+    """Flag ``0x1`` (manual "bit 1") means multiplexed; ``0x2`` is UDV MD mode.
+
+    Row 52 of the manual's parameter table numbers bits 1-based, so its "bit 1:
+    if set multiplexer enables" is bit index 0 and its "bit 2: if set UDV MD
+    mode" is bit index 1. DOPpy agrees (``'4m0'`` = ``multi``, ``'4m1'`` =
+    ``udvmd``). A file with only ``0x2`` set is therefore *not* multiplexed and
+    must stay ``UNKNOWN``; only a synthetic fixture can separate the two flags,
+    because every committed multiplexer file sets both (word 52 = ``0x261e03``).
+    Exercised through the public ``read`` and ``load`` entry points.
+    """
+    path = tmp_path / f"mux_{mux_flags:x}.BDD"
+    path.write_bytes(_synthetic_single_channel_bdd(mux_flags))
+    assert read(path).recording.acquisition_mode is expected
+    assert load(path).recording.acquisition_mode is expected
+
+
+# ── calculated canonical depths vs the matching .ADD grid ─────────────
+
+
+def _add_depth_row(path: Path, channel: int) -> np.ndarray:
+    """Read one ``Gate Depth [mm]`` row from a matching ``.ADD`` export.
+
+    Sections are keyed by the channel number in the last column of their data
+    rows, so the four-sensor rolling export's repeated sections map to the
+    requested channel. Deliberately independent of the reader under test.
+    """
+    lines = path.read_text(encoding="latin-1").splitlines()
+    for i, line in enumerate(lines):
+        if line.strip() != "Gate Depth [mm]":
+            continue
+        if i + 3 >= len(lines):
+            continue
+        cols = lines[i + 3].split("\t")
+        if cols and cols[-1].strip() == str(channel):
+            row = [float(x.replace(",", ".")) for x in lines[i + 1].split("\t") if x]
+            return np.array(row)
+    raise AssertionError(f"no .ADD depth row for channel {channel} in {path}")
+
+
+def _file_depth_profile(path: Path, channel: int) -> np.ndarray:
+    """Decode the stored ``depth`` pseudo-profile (int16 / 10) for one channel.
+
+    An independent walk of the block chain, used to re-derive the validation
+    residual the reader checks internally.
+    """
+    raw = path.read_bytes()
+    start = _MEAS_BASE_OFFSET
+    eof = len(raw)
+    while start + 4 <= eof:
+        length = struct.unpack_from("<H", raw, start)[0]
+        end = start + length
+        if length == 0 or end > eof:
+            break
+        if raw[end - 3] == channel:
+            prof = start + 2
+            while True:
+                plen = struct.unpack_from("<H", raw, prof)[0]
+                if plen == 0:
+                    break
+                if raw[prof + 2] == 25:  # Data_Type_Depth_mm_10
+                    return (
+                        np.frombuffer(
+                            raw[prof + 3 : prof + 3 + plen], dtype=np.int16
+                        ).astype(float)
+                        / 10.0
+                    )
+                prof += plen + 3
+        start = end
+    raise AssertionError(f"no stored depth profile for channel {channel} in {path}")
+
+
+CALC_ADD_CASES = [
+    (ECHO_200, 4),
+    (ECHO_650, 4),
+    (FOUR_SENSOR, 6),
+    (FOUR_SENSOR, 7),
+    (FOUR_SENSOR, 8),
+    (FOUR_SENSOR, 9),
+    (FOUR_SENSOR_V2, 6),
+]
+
+
+@pytest.mark.parametrize(("path", "channel"), CALC_ADD_CASES)
+def test_calculated_depths_match_the_matching_add_depth_row(path, channel):
+    """PLAN §Phase 1: calculated depths reproduce the ``.ADD`` grid ``<= 0.005``.
+
+    The ``.ADD`` depth row is the calculated vector rounded to 0.01 mm, so the
+    residual is one rounding step — far below the old 0.1 mm ``approx`` bound.
+    """
+    data = _channel(read(path), channel).artifact.data
+    add = _add_depth_row(path.with_suffix(".ADD"), channel)
+    assert data.gate_depths_mm.shape == add.shape
+    residual = float(np.max(np.abs(data.gate_depths_mm - add)))
+    assert residual <= 0.005, residual
+
+
+def test_canonical_depths_are_calculated_not_the_file_vector():
+    """The canonical axis is the calculation (42.9723...), not the file's 43.0."""
+    data = read(ECHO_200).recording.streams[0].data
+    # sound * (gate1/(2*rate) - hw/2e6) = 2740 * (199/12000 - 1800/2e6)
+    assert data.gate_depths_mm[0] == pytest.approx(42.9723333, abs=1e-6)
+    # the stored pseudo-profile would have said a flat 43.0
+    assert abs(data.gate_depths_mm[0] - 43.0) > 0.02
+
+
+@pytest.mark.parametrize(("path", "channel"), [(ECHO_200, 4), (FOUR_SENSOR, 6)])
+def test_stored_depth_profile_validates_the_calculation(path, channel):
+    """The file pseudo-profile agrees with the canonical vector to <= 0.05 mm.
+
+    That residual is the file's 0.1 mm quantisation (a half step), which is why
+    the reader keeps it as a validation input rather than the canonical axis.
+    """
+    calc = _channel(read(path), channel).artifact.data.gate_depths_mm
+    file_depth = _file_depth_profile(path, channel)
+    assert file_depth.shape == calc.shape
+    assert float(np.max(np.abs(calc - file_depth))) <= 0.05
+
+
+def test_canonical_depth_rule_calc_fallback_and_disagreement():
+    """The documented rule's three branches, exercised directly.
+
+    The tolerance is fixture-backed (<= 0.0497 mm on every committed file); the
+    synthetic inputs below only make the fallback/dissent branches reachable
+    without mutating a real recording.
+    """
+    from udv_echo_process.io.dop.bdd import _canonical_depth_mm
+
+    op: dict[str, object] = {
+        "gate_n": 3,
+        "gate1": 199,
+        "resolution": 1,
+        "hardware_delay_ns": 1800,
+        "sound_speed_ms": 2740,
+        "aquisition_rate": (0, 6, 12, 40),
+    }
+    calc = _canonical_depth_mm(None, op, "x.BDD", 4)
+    assert calc.shape == (3,)
+    assert calc[0] == pytest.approx(42.9723333, abs=1e-6)
+
+    # out-of-range packed index -> calculation not decodable -> file fallback
+    undecodable: dict[str, object] = dict(op, aquisition_rate=(9, 6, 12, 40))
+    file_depth = np.array([1.0, 2.0, 3.0])
+    assert np.array_equal(
+        _canonical_depth_mm(file_depth, undecodable, "x.BDD", 4), file_depth
+    )
+    # neither source available -> error
+    with pytest.raises(ValueError, match="no decoded depth pseudo-profile"):
+        _canonical_depth_mm(None, undecodable, "x.BDD", 4)
+    # both present but disagreeing -> error, never a silent pick
+    with pytest.raises(ValueError, match="differ from the stored depth"):
+        _canonical_depth_mm(np.zeros(3), op, "x.BDD", 4)
+
+
+def test_resolution_is_reconciled_with_the_calculated_gate_step():
+    """One interpretation of word 10 + word 29, matching the ``.ADD`` pitch."""
+    echo = read(ECHO_200).recording.streams[0]
+    # word 19=2740 m/s, word 10=1, word 29=(0, 6, 12, 40) -> rate byte 6 * 1e3
+    assert echo.config.resolution_mm == pytest.approx(2740 * 2 / (2 * 6000))
+    assert echo.config.resolution_mm == pytest.approx(0.4566667, abs=1e-6)
+    vel = _channel(read(FOUR_SENSOR), 6).artifact
+    assert vel.config.resolution_mm == pytest.approx(1460 * 9 / (2 * 6000))
+    assert vel.config.resolution_mm == pytest.approx(1.095, abs=1e-6)
+
+
+def test_prf_word_is_a_microsecond_period_converted_to_hz():
+    """Word 5 is documented as a period in µs; the field name demands Hz."""
+    echo = read(ECHO_200).recording.streams[0]
+    assert echo.config.pulse_repetition_freq_hz == pytest.approx(1e6 / 125)
+    vel = _channel(read(FOUR_SENSOR), 6).artifact
+    assert vel.config.pulse_repetition_freq_hz == pytest.approx(1e6 / 600)
+
+
+def test_max_depth_is_the_last_canonical_gate():
+    echo = read(ECHO_200).recording.streams[0]
+    assert echo.config.gate1_mm == pytest.approx(float(echo.data.gate_depths_mm[0]))
+    assert echo.config.max_depth_mm == pytest.approx(
+        float(echo.data.gate_depths_mm[-1])
+    )
+    assert echo.config.max_depth_mm == pytest.approx(54.389, abs=1e-3)
+
+
+def test_ungrounded_metadata_fields_stay_deferred():
+    """``sampling_volume_mm``/``trigger_state`` have no byte-grounded formula.
+
+    DOPpy's sampling-volume formula is flagged reverse-engineered with a
+    unit-inconsistent ``max()`` (metres vs mm); the footer trigger byte's coding
+    is undocumented. Neither is populated until that changes, so both stay None.
+    """
+    for stream in read(FOUR_SENSOR).recording.streams:
+        assert stream.config.sampling_volume_mm is None
+        assert stream.config.trigger_state is None
+
+
+def test_canonical_depth_ids_round_trip_through_storage(tmp_path):
+    """PLAN §Phase 1 step 5: stored bundles stay readable and self-consistent."""
+    from udv_echo_process.storage import load_bundle, store_bundle
+
+    bundle = read(ECHO_200)
+    destination = tmp_path / "store"
+    store_bundle(bundle, destination)
+    loaded = load_bundle(destination)
+    assert loaded.recording.recording_id == bundle.recording.recording_id
+    assert [s.artifact_id for s in loaded.recording.streams] == [
+        s.artifact_id for s in bundle.recording.streams
+    ]
+    assert np.allclose(
+        loaded.recording.streams[0].data.gate_depths_mm,
+        bundle.recording.streams[0].data.gate_depths_mm,
+    )
 
 
 # ── every fixture round-trips to a closed bundle ───────────────────────

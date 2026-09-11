@@ -18,8 +18,20 @@ cross-checked against the sibling DOPpy reader on this repo's fixtures):
 Data emission: one ``ChannelArtifact`` per channel, with its own
 overflow-corrected timestamps (seconds) and its own ``ChannelConfig``. Velocity
 is decoded to **mm/s** (the ``.ADD`` ``mm/s`` convention); echo to
-module-scale-reflected amplitude. Gate depths come from the per-channel
-``depth`` profile when present.
+module-scale-reflected amplitude.
+
+Gate depths are **calculated** from the per-channel operation parameters —
+word 9 (``gate1``), word 10 (``resolution``), word 19 (``sound speed``), word 29
+(``acquisition rate``, decoded from its packed 4-byte form) and word 46
+(``hardware delay``) — using the reviewed DOPpy ``_calcDepth`` equation. On the
+committed fixtures that vector reproduces the matching ``.ADD`` depth row to
+``<= 0.005 mm`` (the ``.ADD`` row is the same vector rounded to 0.01 mm). The
+file-stored ``depth`` pseudo-profile is retained **only** as a validation /
+fallback input: it is quantised to 0.1 mm and differs from the calculated
+vector by at most 0.05 mm on every committed fixture. The calculated vector is
+canonical whenever it is decodable, the file vector is used only when the
+calculation is not decodable, and a disagreement larger than
+``_FILE_DEPTH_TOLERANCE_MM`` raises rather than silently choosing one.
 
 Known, reviewed loss (Phase 9). The fixed header's ASCII version string (16
 bytes) and 512-byte comment *are* decoded and then dropped: §6.6 pins
@@ -32,7 +44,8 @@ them **by design** rather than silently discarding an unmodelled field.
 Acquisition topology (plan §6.7, §14). The reader sets ``AcquisitionMode`` from
 *decoded* evidence only and never fabricates a round/visit index:
 
-- The op-parameter multiplexer-enable bit (word 52, bit 1; manual
+- The op-parameter multiplexer-enable bit (word 52, bit index 0 / value ``1``
+  — the manual's 1-based "bit 1"; manual
   ``10-storing-and-reading-measures.md`` §"DOP3000 parameters table" row 52)
   is the decoded signal. When it is set for the used channels, multiplexed
   acquisition selected each channel's profiles one after another (manual §11
@@ -101,6 +114,14 @@ _MEAS_BASE_OFFSET = 31268
 _TIME_OVERFLOW = 2**32 - 1  # ms/10 wraps, ≈ 4.97 days
 _SEC_PER_TICK = 1e-4  # stored in ms/10
 
+#: Maximum |calculated - file-stored| gate depth allowed before the reader
+#: refuses to choose a vector. The file pseudo-profile is quantised to 0.1 mm,
+#: so a correct calculation agrees to <= 0.05 mm; every committed fixture is
+#: within 0.0497 mm, so 0.06 mm leaves one rounding step of head-room while
+#: still catching a wrong acquisition-rate / sound-speed decode (orders of
+#: magnitude larger).
+_FILE_DEPTH_TOLERANCE_MM = 0.06
+
 # Per-channel op-param: name → (word index, struct fmt).
 _OP_PARAM = {
     "emit_freq_khz": (0, "i"),
@@ -121,13 +142,29 @@ _OP_PARAM = {
     "tgc_end": (25, "i"),
     "hardware_delay_ns": (46, "i"),
     "trigger_delay_ms": (47, "i"),
-    # Word 52: bit 1 "if set multiplexer enables"; bits 4–13 selected channels;
-    # bits 15–31 first channel (manual §10.7 parameters table).
+    # Word 52, whose bit labels in the manual §10.7 parameters table are
+    # **1-based**: its "bit 1: if set multiplexer enables" is bit index 0 /
+    # value 1, its "bit 2: if set UDV MD mode" is index 1 / value 2, its
+    # "bits 4–13" (selected channels) are indices 3–12, and its "bits 15–31"
+    # (first multiplexer channel) are indices 14+.
     "mux_flags": (52, "i"),
 }
 
+#: Op word 29 "acquisition rate": a packed 4-byte form, byte 0 is a byte *index*
+#: and the byte at ``index + 1`` holds the rate in MHz (manual §10.7 parameters
+#: table row 29: "0: acquisition rate 6 MHz, 1: 12 or 40 MHz"). Read as signed
+#: bytes to mirror the source decoder; the source spelling of the name survives
+#: only in decoder-internal code.
+_ACQUISITION_RATE_WORD = 29
+
 #: ``mux_flags`` bit that the manual documents as the multiplexer enable.
-_MUX_ENABLE_BIT = 1 << 1
+#: The manual numbers word 52's bits **1-based**, so its "bit 1" is the LSB —
+#: bit index 0, value ``1``. Bit index 1 (value ``2``) is the manual's "bit 2:
+#: if set UDV MD mode", a different flag. DOPpy agrees: its ``'4m0'`` flag is
+#: the multiplexer (``multi``) while ``'4m1'`` is ``udvmd``. Reading ``1 << 1``
+#: here would test the UDV MD flag instead; every committed multiplexer fixture
+#: sets both bits (word 52 = ``0x261e03``), which is why the error was masked.
+_MUX_ENABLE_BIT = 1 << 0
 
 #: Bytes hashed per chunk when content-addressing a source file (plan §13).
 _HASH_CHUNK_BYTES = 1 << 20
@@ -189,9 +226,14 @@ def _decode_str(data: bytes) -> str:
 def _read_op(buf: _Buffer, channel: int) -> dict[str, object]:
     """Read one channel's op-param block (256 words) into a dict."""
     base = _OPER_BASE_OFFSET + (channel - 1) * _OPER_BLOCK_BYTES
-    return {
+    op: dict[str, object] = {
         name: buf.at(base + 4 * word, fmt) for name, (word, fmt) in _OP_PARAM.items()
     }
+    # Word 29 is a packed 4-byte form, not a scalar, so it is read whole.
+    op["aquisition_rate"] = struct.unpack(
+        "<4b", buf.slice(base + 4 * _ACQUISITION_RATE_WORD, 4)
+    )
+    return op
 
 
 def _correct_time(t_raw: np.ndarray) -> np.ndarray:
@@ -240,15 +282,19 @@ def _build_config(op: dict[str, object], depth_mm: np.ndarray | None) -> Channel
         (op["tgc_end"] - 127.5) / 127.5 * 40 if op.get("tgc_end") is not None else None
     )
     gate1_mm = float(depth_mm[0]) if depth_mm is not None and len(depth_mm) else None
+    max_depth_mm = (
+        float(np.max(depth_mm)) if depth_mm is not None and len(depth_mm) else None
+    )
     return ChannelConfig(
         source_freq_khz=_num(op["emit_freq_khz"]),
-        pulse_repetition_freq_hz=_num(op["prf_us"]),
+        pulse_repetition_freq_hz=_prf_hz(op),
         burst_length=_int(op["burst_length"]),
         emit_power=_EMIT_POWER.get(op["emit_power"], None),
         sensitivity=_SENSITIVITY.get(op["sensitivity"], None),
         gate1_mm=gate1_mm,
         n_gates=_int(op["gate_n"]),
         resolution_mm=_resolution_mm(op),
+        max_depth_mm=max_depth_mm,
         sound_speed_ms=_num(op["sound_speed_ms"]),
         doppler_angle_deg=_num(op["doppler_angle_deg"]),
         velo_max_ms=_velo_max_ms(op),
@@ -268,12 +314,86 @@ def _int(v: object) -> int | None:
     return int(v) if v is not None else None
 
 
-def _resolution_mm(op: dict[str, object]) -> float | None:
-    """Gate pitch in mm: ``(n+1)*0.166e-6 s * sound / 2 * 1e3``."""
-    if op.get("resolution") is None or not op.get("sound_speed_ms"):
+def _acquisition_rate_khz(op: dict[str, object]) -> float | None:
+    """Decode op word 29's packed acquisition rate (DOPpy's ``aquisitionRate``).
+
+    Word 29 is four bytes: byte 0 is a byte *index* into the remaining bytes and
+    the byte at ``index + 1`` holds the rate in MHz (manual §10.7 row 29). DOPpy
+    then scales by ``1e3``, which is the value the depth equation is expressed
+    in; we reproduce that decode exactly. ``None`` when the packed index is out
+    of range or the word is absent.
+    """
+    raw = op.get("aquisition_rate")
+    if not isinstance(raw, tuple) or len(raw) < 2:
         return None
-    res_time = (op["resolution"] + 1) * 0.166e-6
-    return res_time * op["sound_speed_ms"] / 2.0 * 1e3
+    index = int(raw[0])
+    if index < 0 or index + 1 >= len(raw):
+        return None
+    return float(raw[index + 1]) * 1e3
+
+
+def _gate_step_mm(op: dict[str, object]) -> float | None:
+    """Gate-to-gate pitch (mm): ``sound * (resolution + 1) / (2 * rate)``.
+
+    This is the step of :func:`_calc_gate_depths_mm`; it is the quantity the
+    matching ``.ADD`` depth row confirms (0.4567 mm echo / 1.095 mm velocity on
+    the committed fixtures).
+    """
+    sound = _num(op.get("sound_speed_ms"))
+    res = _int(op.get("resolution"))
+    rate = _acquisition_rate_khz(op)
+    if not sound or res is None or rate is None or rate <= 0:
+        return None
+    return sound * (res + 1) / (2.0 * rate)
+
+
+def _resolution_mm(op: dict[str, object]) -> float | None:
+    """Gate resolution in mm — one reviewed interpretation of word 10 + 29.
+
+    Both this field and :func:`_calc_gate_depths_mm` now express the gate step
+    through the decoded acquisition-rate word, so the config reports the same
+    pitch the canonical depth axis uses. The legacy
+    ``(n+1)*0.166e-6 * sound / 2 * 1e3`` form is a rounded statement of the same
+    rate and is deliberately no longer used (it disagreed by ~0.4 %).
+    """
+    return _gate_step_mm(op)
+
+
+def _prf_hz(op: dict[str, object]) -> float | None:
+    """Pulse-repetition frequency in Hz.
+
+    Op word 5 is documented as a *period* in µs ("PRF in μs", manual §10.7 row
+    5) while the field is named ``pulse_repetition_freq_hz``, so it is inverted.
+    """
+    prf_us = _num(op.get("prf_us"))
+    if not prf_us:
+        return None
+    return 1e6 / prf_us
+
+
+def _calc_gate_depths_mm(op: dict[str, object]) -> np.ndarray | None:
+    """Calculated gate depths (mm) from op words 9, 10, 19, 29 and 46.
+
+    The reviewed DOPpy ``_calcDepth`` equation ``sound * (term1 - term2)`` with
+    ``term1 = (gate1 + (resolution + 1) * (n - 1)) / (2 * rate)`` for gate
+    numbers ``n = 1..gateN`` and ``term2 = hardwareDelay / 2e6``. ``None`` when
+    any input is missing or degenerate so the caller can fall back to the
+    file-stored pseudo-profile.
+    """
+    gate_n = _int(op.get("gate_n"))
+    gate1 = _int(op.get("gate1"))
+    res = _int(op.get("resolution"))
+    hw_delay = _int(op.get("hardware_delay_ns"))
+    sound = _num(op.get("sound_speed_ms"))
+    rate = _acquisition_rate_khz(op)
+    if not gate_n or gate_n <= 0 or not sound or rate is None or rate <= 0:
+        return None
+    if gate1 is None or res is None or hw_delay is None:
+        return None
+    gate_number = np.arange(1, gate_n + 1, dtype=np.float64)
+    term1 = (gate1 + (res + 1) * (gate_number - 1)) / (2.0 * rate)
+    term2 = hw_delay / 2e6
+    return sound * (term1 - term2)
 
 
 def _velo_max_ms(op: dict[str, object]) -> float | None:
@@ -325,6 +445,8 @@ def _multiplexer_enabled(mux_flags: tuple[int, ...]) -> bool:
     ``mux_flags`` are the decoded op-parameter word 52 values of the channels
     that actually produced data. A mixed or absent configuration proves no
     multiplexed operation, so it is treated as disabled rather than guessed.
+    The bit tested is bit index 0 (the manual's 1-based "bit 1"), not index 1,
+    which is the UDV MD-mode flag.
     """
     if not mux_flags:
         return False
@@ -346,6 +468,45 @@ def _decode_acquisition_mode(multiplexed: bool) -> AcquisitionMode:
     return AcquisitionMode.UNKNOWN
 
 
+def _canonical_depth_mm(
+    file_depth: np.ndarray | None,
+    op: dict[str, object],
+    file_name: str,
+    channel: int,
+) -> np.ndarray:
+    """Choose the canonical gate-depth axis and validate it (plan Phase 1).
+
+    Reviewed rule:
+
+    * the **calculated** vector (words 9/10/19/29/46) is canonical whenever it
+      is decodable;
+    * the file-stored pseudo-profile is used **only** as a fallback when the
+      calculation is not decodable, and as a validation reference otherwise;
+    * when both are present with the same length and disagree by more than
+      :data:`_FILE_DEPTH_TOLERANCE_MM`, that is an error — the reader raises
+      rather than silently choosing one, because a large gap means the
+      acquisition-rate / sound-speed decode is wrong for this file.
+    """
+    calc = _calc_gate_depths_mm(op)
+    if calc is not None:
+        if file_depth is not None and file_depth.shape == calc.shape:
+            mismatch = float(np.max(np.abs(calc - file_depth)))
+            if mismatch > _FILE_DEPTH_TOLERANCE_MM:
+                raise ValueError(
+                    f"channel {channel} of {file_name}: calculated gate depths "
+                    f"differ from the stored depth pseudo-profile by "
+                    f"{mismatch:.4g} mm (> {_FILE_DEPTH_TOLERANCE_MM} mm)"
+                )
+        return calc
+    if file_depth is not None:
+        return file_depth
+    raise ValueError(
+        f"channel {channel} of {file_name} has no decoded depth pseudo-profile "
+        "and no decodable acquisition-rate parameters; the binary format "
+        "guarantees one per channel"
+    )
+
+
 def read(path: Path) -> ArtifactBundle:
     """Parse a DOP3000/3010 ``.BDD`` file into a validated ``ArtifactBundle``.
 
@@ -365,8 +526,10 @@ def read(path: Path) -> ArtifactBundle:
 
     Raises:
         ValueError: the bytes are not a DOP3000 ``.BDD`` file, a used channel
-            has no depth pseudo-profile, the gate axes disagree, or no channel
-            data was decoded.
+            has neither a calculable nor a stored depth axis, the calculated
+            and stored depth axes disagree beyond the validation tolerance, the
+            gate axes disagree with the decoded values, or no channel data was
+            decoded.
     """
     raw = path.read_bytes()
     if not sniff_bdd(raw):
@@ -443,11 +606,7 @@ def read(path: Path) -> ArtifactBundle:
         a = acc[ch]
         if not (a.velo or a.echo):
             continue
-        if a.depth is None:
-            raise ValueError(
-                f"channel {ch} of {path.name} has no decoded depth pseudo-"
-                "profile; the binary format guarantees one per channel"
-            )
+        depth = _canonical_depth_mm(a.depth, op[ch], path.name, ch)
         time_s = _correct_time(np.array(a.time))
         if a.velo:
             values = np.vstack(a.velo)
@@ -455,14 +614,14 @@ def read(path: Path) -> ArtifactBundle:
         else:
             values = np.vstack(a.echo)
             meas_type = MeasType.ECHO
-        if values.shape[1] != a.depth.shape[0]:
+        if values.shape[1] != depth.shape[0]:
             raise ValueError(
                 f"channel {ch} of {path.name} decoded {values.shape[1]} gates "
-                f"but {a.depth.shape[0]} gate depths"
+                f"but {depth.shape[0]} gate depths"
             )
         data = observed_signal(
             time_s,
-            a.depth,
+            depth,
             values,
             acquisition=AcquisitionIndex(
                 sample_id=np.arange(time_s.shape[0], dtype=np.int64),
@@ -478,7 +637,7 @@ def read(path: Path) -> ArtifactBundle:
             source_artifact(
                 ref,
                 _DESCRIPTOR_BY_MEAS_TYPE[meas_type],
-                _build_config(op[ch], a.depth),
+                _build_config(op[ch], depth),
                 data,
             )
         )

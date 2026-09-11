@@ -26,6 +26,8 @@ recoverable from Git history.
 | 2026-09-11 | Signal-model rework Phases 1–9 landed: artifact bundles, support/provenance, BDD reader migration, NPY/manifest storage, legacy retirement, and notebook migration. | `docs/signal-model-rework-plan.md`, `docs/pipeline-conventions.md`, source/tests |
 | 2026-09-11 | Post-landing review found two provenance-identity acceptance blockers; synchronization terminology was clarified. | `docs/agenda.md` current status, `docs/signal-model-rework-plan.md` §15 |
 | 2026-09-11 | Source-root and operation identities gained canonical replay at public construction; the full post-fix gate and independent review passed, so the signal-model rework was accepted. | `docs/signal-model-rework-plan.md` §15, `docs/pipeline-conventions.md` Revision 3, provenance tests |
+| 2026-09-11 | `udv-analysis` absorption Phases 0–1 preserved a private reproducible retirement baseline, adopted calculated BDD depths and grounded metadata, and made `udv-inspect` content-aware. | `docs/udv-analysis-absorption-plan.md`, BDD/CLI tests |
+| 2026-09-11 | The 93-column `.ADD` mux defect was fixed using units-driven velocity/echo groups; visualization now separates `(channel, quantity)` and echo RPM rejects mixed inputs. | parser, viz, RPM tests |
 
 ## Superseded concepts and where to find the replacement
 
