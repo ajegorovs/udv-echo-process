@@ -1100,8 +1100,8 @@ recommended = [
 
 [[package]]
 name = "marimo-inspect"
-version = "0.3.0"
-source = { git = "https://github.com/ajegorovs/marimo-mcp-cowork?tag=v0.3.0#57c08980458a477148143a31a4dc6ee8a0aa0ffd" }
+version = "0.3.3"
+source = { git = "https://github.com/ajegorovs/marimo-mcp-cowork?tag=v0.3.3#d0d673649527dcef07199f51fb76822b0a7d0bf3" }
 dependencies = [
     { name = "anywidget" },
     { name = "fastmcp" },
@@ -2486,7 +2486,7 @@ marimo = [
 [package.metadata]
 requires-dist = [
     { name = "marimo", extras = ["recommended"], marker = "extra == 'marimo'", specifier = ">=0.24.0,<0.25" },
-    { name = "marimo-inspect", marker = "extra == 'marimo'", git = "https://github.com/ajegorovs/marimo-mcp-cowork?tag=v0.3.0" },
+    { name = "marimo-inspect", marker = "extra == 'marimo'", git = "https://github.com/ajegorovs/marimo-mcp-cowork?tag=v0.3.3" },
     { name = "matplotlib", specifier = ">=3.11.0" },
     { name = "numpy", specifier = ">=2.5.0" },
     { name = "plotly", specifier = ">=5.24" },

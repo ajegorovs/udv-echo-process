@@ -45,4 +45,4 @@ exclude = ["notebooks/", ".agents/"]
 extend-select = ["I"]
 
 [tool.uv.sources]
-marimo-inspect = { git = "https://github.com/ajegorovs/marimo-mcp-cowork", tag = "v0.3.0" }
+marimo-inspect = { git = "https://github.com/ajegorovs/marimo-mcp-cowork", tag = "v0.3.3" }
