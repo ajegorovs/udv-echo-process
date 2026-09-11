@@ -20,13 +20,25 @@ from udv_echo_process.models.identity import (
 )
 from udv_echo_process.models.io import MeasType, SourceFormat, SourceSpec
 from udv_echo_process.models.measurement import MultiplexedMeasurement
-from udv_echo_process.models.signal import SignalData, missing_signal, observed_signal
+from udv_echo_process.models.signal import (
+    ChannelArtifact,
+    SignalData,
+    array_digest,
+    artifacts_equal,
+    derived_artifact_id,
+    missing_signal,
+    observed_signal,
+    signals_equal,
+    source_artifact,
+    source_artifact_id,
+)
 from udv_echo_process.models.support import QualityFlag, SampleSupport, SupportKind
 
 __all__ = [
     "AcquisitionIndex",
     "AcquisitionRef",
     "ArrayModel",
+    "ChannelArtifact",
     "ChannelConfig",
     "ChannelKey",
     "ChannelSeries",
@@ -43,7 +55,13 @@ __all__ = [
     "SourceSpec",
     "SupportKind",
     "ValueModel",
+    "array_digest",
+    "artifacts_equal",
+    "derived_artifact_id",
     "missing_signal",
     "observed_signal",
     "shape_2d",
+    "signals_equal",
+    "source_artifact",
+    "source_artifact_id",
 ]

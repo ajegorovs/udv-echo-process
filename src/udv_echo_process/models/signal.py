@@ -1,21 +1,38 @@
-"""Scientific payload: ``SignalData`` and its construction factories.
+"""Scientific payload and artifacts: ``SignalData`` and ``ChannelArtifact``.
 
-Plan §6.5. ``SignalData`` is the immutable per-channel signal: monotonically
-increasing time and gate axes, a ``(T, G)`` value matrix, :class:`SampleSupport`
-for every cell, and an optional row-level :class:`AcquisitionIndex`. Every
-array is owned, C-contiguous and read-only (via ``ArrayModel``).
+Plan §6.5–§6.6. ``SignalData`` is the immutable per-channel signal:
+monotonically increasing time and gate axes, a ``(T, G)`` value matrix,
+:class:`SampleSupport` for every cell, and an optional row-level
+:class:`AcquisitionIndex`. Every array is owned, C-contiguous and read-only
+(via ``ArrayModel``).
 
-The explicit factories :func:`observed_signal` and :func:`missing_signal`
-construct through the models, so all validation runs — they never bypass it.
+``ChannelArtifact`` wraps one channel's payload with its acquisition identity,
+descriptor and config plus a content-addressed ``artifact_id``. The explicit
+factories :func:`observed_signal` and :func:`missing_signal` construct through
+the models, so all validation runs — they never bypass it.
+
+Contract note (resolved ambiguity): §6.6 fixes ``ChannelArtifact`` at exactly
+five fields, so a *derived* artifact cannot self-check its id inside the model —
+there is no sixth field to recompute from. Ids are therefore recomputed and
+compared in the two constructors this phase actually uses: :func:`source_artifact`
+for source payloads and ``process.derive.derive`` for transformed ones. The
+bundle-wide id-versus-graph consistency check belongs to Phase 7's full bundle
+validation.
 """
 
 from __future__ import annotations
 
-import numpy as np
-from pydantic import model_validator
+import hashlib
+import re
 
+import numpy as np
+from pydantic import ValidationInfo, field_validator, model_validator
+
+from udv_echo_process.models._canonical import canonical_json_bytes, stable_id
 from udv_echo_process.models.acquisition import AcquisitionIndex
 from udv_echo_process.models.base import ArrayModel, array_field
+from udv_echo_process.models.channel_config import ChannelConfig
+from udv_echo_process.models.identity import AcquisitionRef, SignalDescriptor
 from udv_echo_process.models.support import SampleSupport, SupportKind
 
 
@@ -232,4 +249,294 @@ def missing_signal(
         values=np.full(shape, np.nan, dtype=np.float64),
         support=support,
         acquisition=acquisition,
+    )
+
+
+# ── content-addressed artifact identity (plan §6.6) ─────────────────────
+
+#: Opaque artifact-id form: ``sha256:`` plus 64 lower-case hex characters.
+_ARTIFACT_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
+
+#: Rows hashed per chunk by :func:`array_digest`. Chunking bounds the peak extra
+#: allocation by the block, never the whole production array (plan §13).
+_ARRAY_CHUNK_ROWS = 2048
+
+#: Acquisition-index arrays, in the order they are hashed when present.
+_ACQUISITION_ARRAY_NAMES = (
+    "sample_id",
+    "acquisition_time_s",
+    "round_id",
+    "visit_id",
+    "profile_in_visit",
+)
+
+
+def array_digest(array: np.ndarray) -> str:
+    """Return the content digest of one array as an opaque ``sha256:<hex>`` id.
+
+    The digest covers the array's dtype, its shape and every element, read in
+    bounded row chunks so a full ``.tobytes()`` copy of a production array is
+    never materialized (plan §13). Including dtype and shape means two arrays
+    with identical bytes but a different dtype/shape cannot collide.
+
+    Args:
+        array: any array-like; 0-d arrays are fed whole.
+
+    Returns:
+        A lower-case ``sha256:<64 hex>`` id.
+    """
+    arr = np.asarray(array)
+    hasher = hashlib.sha256()
+    hasher.update(
+        canonical_json_bytes({"dtype": arr.dtype.str, "shape": list(arr.shape)})
+    )
+    if arr.ndim == 0:
+        hasher.update(np.ascontiguousarray(arr).tobytes())
+    else:
+        for start in range(0, arr.shape[0], _ARRAY_CHUNK_ROWS):
+            block = np.ascontiguousarray(arr[start : start + _ARRAY_CHUNK_ROWS])
+            hasher.update(block.tobytes())
+    return f"sha256:{hasher.hexdigest()}"
+
+
+def _signal_array_digests(data: SignalData) -> dict[str, str]:
+    """Return ``label -> digest`` for every scientific/support/index array."""
+    digests = {
+        "values": array_digest(data.values),
+        "time_s": array_digest(data.time_s),
+        "gate_depths_mm": array_digest(data.gate_depths_mm),
+        "support.kind": array_digest(data.support.kind),
+        "support.valid": array_digest(data.support.valid),
+        "support.quality": array_digest(data.support.quality),
+    }
+    acquisition = data.acquisition
+    if acquisition is not None:
+        for name in _ACQUISITION_ARRAY_NAMES:
+            arr = getattr(acquisition, name)
+            if arr is not None:
+                digests[f"acquisition.{name}"] = array_digest(arr)
+    return digests
+
+
+def source_artifact_id(
+    acquisition: AcquisitionRef,
+    descriptor: SignalDescriptor,
+    config: ChannelConfig,
+    data: SignalData,
+) -> str:
+    """Return the deterministic content id of a SOURCE :class:`ChannelArtifact`.
+
+    Hashes the acquisition identity, the canonical JSON of descriptor and
+    config, and the digest of every scientific/support/index array. Wall clock,
+    source path and object address never participate (plan §6.6).
+
+    Args:
+        acquisition: acquisition identity the artifact was read from.
+        descriptor: what the signal measures.
+        config: per-channel instrument configuration.
+        data: the validated payload.
+
+    Returns:
+        A lower-case ``sha256:<64 hex>`` id.
+    """
+    return stable_id(
+        {
+            "role": "source_artifact",
+            "acquisition": acquisition.model_dump(mode="json"),
+            "descriptor": descriptor.model_dump(mode="json"),
+            "config": config.model_dump(mode="json"),
+            "arrays": _signal_array_digests(data),
+        }
+    )
+
+
+def derived_artifact_id(
+    operation_id: str,
+    acquisition: AcquisitionRef,
+    descriptor: SignalDescriptor,
+    config: ChannelConfig,
+    data: SignalData,
+) -> str:
+    """Return the content id of an artifact produced by ``operation_id``.
+
+    Extends the source equation with the producing operation id and hashes the
+    output acquisition/descriptor/config canonical JSON plus the output
+    payload/support/index array digests (plan §6.6, §8.2). Same operation and
+    same output content always produce the same id.
+
+    Args:
+        operation_id: the operation that produced ``data``.
+        acquisition: preserved acquisition identity.
+        descriptor: output descriptor (parent's, or an explicit replacement).
+        config: output config (parent's, or an explicit replacement).
+        data: the validated output payload.
+
+    Returns:
+        A lower-case ``sha256:<64 hex>`` id.
+    """
+    return stable_id(
+        {
+            "role": "derived_artifact",
+            "operation_id": operation_id,
+            "acquisition": acquisition.model_dump(mode="json"),
+            "descriptor": descriptor.model_dump(mode="json"),
+            "config": config.model_dump(mode="json"),
+            "arrays": _signal_array_digests(data),
+        }
+    )
+
+
+class ChannelArtifact(ArrayModel):
+    """One channel's closed payload plus its provenance identity (plan §6.6).
+
+    Exactly five fields. ``artifact_id`` is validated for the opaque
+    ``sha256:<64 lower-case hex>`` form only: a source id is recomputed and
+    compared by :func:`source_artifact`, a derived id by
+    ``process.derive.derive``. A model cannot self-check a derived id because
+    §6.6 fixes the field set at five; the bundle-wide id-versus-graph check is
+    Phase 7's full bundle validation.
+    """
+
+    artifact_id: str
+    acquisition: AcquisitionRef
+    descriptor: SignalDescriptor
+    config: ChannelConfig
+    data: SignalData
+
+    @field_validator("artifact_id")
+    @classmethod
+    def _check_artifact_id(cls, value: str, info: ValidationInfo) -> str:
+        text = value.strip()
+        if not _ARTIFACT_ID_RE.fullmatch(text):
+            raise ValueError(
+                f"{info.field_name} must be an opaque lower-case "
+                f"'sha256:<64 hex>' id, got {value!r}"
+            )
+        return text
+
+
+def source_artifact(
+    acquisition: AcquisitionRef,
+    descriptor: SignalDescriptor,
+    config: ChannelConfig,
+    data: SignalData,
+) -> ChannelArtifact:
+    """Build a SOURCE :class:`ChannelArtifact`, recomputing and comparing its id.
+
+    The id is never trusted from a caller: it is computed from the supplied
+    identity/metadata/arrays, the artifact is constructed, the id is recomputed
+    from the built model and a mismatch raises :class:`RuntimeError` (a hash or
+    field drift, not bad user input).
+
+    Args:
+        acquisition: acquisition identity the artifact was read from.
+        descriptor: what the signal measures.
+        config: per-channel instrument configuration.
+        data: the validated payload.
+
+    Returns:
+        A validated :class:`ChannelArtifact` whose id matches its content.
+
+    Raises:
+        RuntimeError: if the recomputed id differs from the constructed one.
+    """
+    artifact_id = source_artifact_id(acquisition, descriptor, config, data)
+    artifact = ChannelArtifact(
+        artifact_id=artifact_id,
+        acquisition=acquisition,
+        descriptor=descriptor,
+        config=config,
+        data=data,
+    )
+    recomputed = source_artifact_id(
+        artifact.acquisition, artifact.descriptor, artifact.config, artifact.data
+    )
+    if recomputed != artifact.artifact_id:
+        raise RuntimeError(
+            "source artifact id is not reproducible: computed "
+            f"{artifact_id!r}, recomputed {recomputed!r}"
+        )
+    return artifact
+
+
+def _acquisition_equal(
+    left: AcquisitionIndex | None,
+    right: AcquisitionIndex | None,
+    *,
+    rtol: float,
+    atol: float,
+) -> bool:
+    if left is None or right is None:
+        return left is None and right is None
+    if not np.array_equal(left.sample_id, right.sample_id):
+        return False
+    if not np.allclose(
+        left.acquisition_time_s,
+        right.acquisition_time_s,
+        rtol=rtol,
+        atol=atol,
+        equal_nan=True,
+    ):
+        return False
+    for name in ("round_id", "visit_id", "profile_in_visit"):
+        left_arr = getattr(left, name)
+        right_arr = getattr(right, name)
+        if (left_arr is None) != (right_arr is None):
+            return False
+        if left_arr is not None and not np.array_equal(left_arr, right_arr):
+            return False
+    return True
+
+
+def signals_equal(
+    left: SignalData,
+    right: SignalData,
+    *,
+    rtol: float = 1e-9,
+    atol: float = 1e-12,
+) -> bool:
+    """Explicit scientific equality of two :class:`SignalData` payloads.
+
+    Float planes compare with :func:`numpy.allclose` (NaN treated as equal, so
+    identical missingness compares equal); support and index planes compare
+    with :func:`numpy.array_equal`. Never rely on model ``==`` for
+    ndarray-bearing models (plan §6.6).
+
+    Args:
+        left: first payload.
+        right: second payload.
+        rtol: relative tolerance for float planes.
+        atol: absolute tolerance for float planes.
+
+    Returns:
+        True when the payloads carry the same scientific content.
+    """
+    if left.values.shape != right.values.shape:
+        return False
+    if not np.allclose(left.values, right.values, rtol=rtol, atol=atol, equal_nan=True):
+        return False
+    if not np.allclose(left.time_s, right.time_s, rtol=rtol, atol=atol):
+        return False
+    if not np.allclose(left.gate_depths_mm, right.gate_depths_mm, rtol=rtol, atol=atol):
+        return False
+    if not (
+        np.array_equal(left.support.kind, right.support.kind)
+        and np.array_equal(left.support.valid, right.support.valid)
+        and np.array_equal(left.support.quality, right.support.quality)
+    ):
+        return False
+    return _acquisition_equal(left.acquisition, right.acquisition, rtol=rtol, atol=atol)
+
+
+def artifacts_equal(left: ChannelArtifact, right: ChannelArtifact) -> bool:
+    """Explicit equality of two artifacts: id, identity, metadata and payload.
+
+    Uses :func:`signals_equal` for the ndarray-bearing payload; never model ``==``.
+    """
+    return (
+        left.artifact_id == right.artifact_id
+        and left.acquisition == right.acquisition
+        and left.descriptor == right.descriptor
+        and left.config == right.config
+        and signals_equal(left.data, right.data)
     )
