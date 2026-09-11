@@ -9,7 +9,9 @@ Coverage:
 - the intentional strengthening: the TV stability rule is enforced at settings
   construction instead of mid-solve;
 - ``RobustVelocityProfiles`` invariants: the artifact-id and descriptor ties,
-  the ``1..N`` retained-state numbering, the ``(S, G)`` shapes, the per-gate
+  the ``1..N`` retained-state numbering, the retained-boundary binding
+  (``retained_intervals`` must match the state axis and the input counts, and
+  carry the detection's kept intervals), the ``(S, G)`` shapes, the per-gate
   status semantics and the NaN/count contract, plus the decision locks (no
   envelope arrays, no diagnostics dict);
 - the producer input contract (bundle *and* detection of the same artifact,
@@ -154,6 +156,61 @@ def _status_cells(result: RobustVelocityProfiles) -> list[str]:
     return [status.value for row in result.gate_status for status in row]
 
 
+def _kept_interval(
+    *,
+    number: int = 1,
+    state_number: int = 1,
+    start: int = 0,
+    count: int = 100,
+    total: int = 100,
+) -> OperatingStateInterval:
+    """A valid kept half-open interval over a synthetic 0.1 s index grid."""
+    return OperatingStateInterval(
+        interval_number=number,
+        state_number=state_number,
+        kept=True,
+        start_index=start,
+        stop_index_exclusive=start + count,
+        profile_count=count,
+        relative_duration=count / total,
+        start_time_s=0.1 * start,
+        end_time_s=0.1 * (start + count - 1),
+        duration_s=0.1 * count,
+    )
+
+
+def _result_intervals(
+    state_numbers: tuple[int, ...], input_sample_count: object
+) -> tuple[OperatingStateInterval, ...]:
+    """Stub kept intervals consistent with a result's state axis.
+
+    Boundaries are derived from the ``(state number, profile count)`` pairs so
+    an invariant test can override either and still reach the check under test;
+    when the counts do not match the state axis it falls back to a placeholder
+    count, letting the model's own shape check report the mismatch.
+    """
+    counts = [int(count) for count in np.asarray(input_sample_count).ravel()]
+    if len(counts) != len(state_numbers):
+        counts = [100] * len(state_numbers)
+    total = sum(counts)
+    intervals: list[OperatingStateInterval] = []
+    start = 0
+    for index, (number, count) in enumerate(
+        zip(state_numbers, counts, strict=True), start=1
+    ):
+        intervals.append(
+            _kept_interval(
+                number=index,
+                state_number=int(number),
+                start=start,
+                count=count,
+                total=total,
+            )
+        )
+        start += count
+    return tuple(intervals)
+
+
 def _handmade_detection(
     bundle: ChannelBundle,
     *,
@@ -203,17 +260,20 @@ def _handmade_detection(
 
 def _result(**over: object) -> RobustVelocityProfiles:
     """A hand-built (1 state x 2 gate) valid result for invariant tests."""
+    state_numbers = tuple(over.get("state_numbers", (1,)))  # type: ignore[arg-type]
+    input_sample_count = over.get("input_sample_count", np.array([100], dtype=np.int64))
     base: dict[str, object] = {
         "settings": RobustProfileSettings(),
         "artifact_id": _ASSET_ID,
         "detection_artifact_id": _ASSET_ID,
         "descriptor": _VELOCITY,
         "gate_count": 2,
-        "state_numbers": (1,),
+        "state_numbers": state_numbers,
+        "retained_intervals": _result_intervals(state_numbers, input_sample_count),
         "median_velocity_mm_s": np.array([[10.0, 20.0]]),
         "median_absolute_deviation_mm_s": np.array([[1.0, 2.0]]),
         "retained_sample_count": np.array([[90, 80]], dtype=np.int64),
-        "input_sample_count": np.array([100], dtype=np.int64),
+        "input_sample_count": input_sample_count,
         "gate_status": (
             (RobustGateStatus.QUANTILE_ENVELOPE, RobustGateStatus.QUANTILE_ENVELOPE),
         ),
@@ -452,6 +512,36 @@ class TestResultModel:
         )
         assert result.gate_count == 2
         assert result.input_sample_count.tolist() == [100, 100]
+
+    def test_retained_intervals_bind_the_state_axis_and_counts(self) -> None:
+        """Decision lock: the result carries the detection's *boundaries*.
+
+        ``artifact_id`` + ``state_numbers`` + ``input_sample_count`` cannot bind
+        a result to one detection, so the intervals are part of the result.
+        """
+        with pytest.raises(ValidationError) as excinfo:
+            _result(retained_intervals=())
+        assert "retained_intervals" in str(excinfo.value)
+        with pytest.raises(ValidationError) as excinfo:
+            _result(retained_intervals=(_kept_interval(count=99, total=100),))
+        assert "retained_intervals" in str(excinfo.value)
+        dropped = OperatingStateInterval(
+            interval_number=1,
+            state_number=None,
+            kept=False,
+            start_index=0,
+            stop_index_exclusive=1,
+            profile_count=1,
+            relative_duration=0.01,
+            start_time_s=0.0,
+            end_time_s=0.0,
+            duration_s=0.1,
+        )
+        with pytest.raises(ValidationError) as excinfo:
+            _result(retained_intervals=(dropped,))
+        assert "must be a kept detection interval" in str(excinfo.value)
+        good = _result(retained_intervals=(_kept_interval(),))
+        assert good.retained_intervals[0].profile_count == 100
 
     @pytest.mark.parametrize(
         "over",
@@ -747,6 +837,16 @@ class TestInputContract:
         assert result.artifact_id == bundle.artifact.artifact_id
         assert result.detection_artifact_id == detection.artifact_id
         assert result.descriptor == bundle.artifact.descriptor
+
+    def test_result_carries_the_detections_kept_intervals(self) -> None:
+        """The retained boundaries travel with the result (export needs them)."""
+        bundle, detection = _detect(np.full((30, 4), 7.0))
+        result = extract_robust_profiles(bundle, detection)
+        kept = tuple(interval for interval in detection.intervals if interval.kept)
+        assert result.retained_intervals == kept
+        assert tuple(i.profile_count for i in result.retained_intervals) == tuple(
+            result.input_sample_count.tolist()
+        )
 
     def test_detection_of_another_artifact_is_refused(self) -> None:
         bundle = _bundle(np.full((30, 4), 7.0))

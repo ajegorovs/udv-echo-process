@@ -36,6 +36,7 @@ src/udv_echo_process/
 ├── parser.py     independent .ADD parser returning ExtractedData
 ├── viz.py        independent .ADD visualization layer
 ├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles
+├── export.py     terminal-result JSON/CSV/NPZ serialization (not bundle storage)
 ├── run_all.py    batch `.ADD` echo-RPM + visualization flow
 └── cli.py        udv-inspect, udv-viz, and udv-run-all entry points
 ```
@@ -70,6 +71,10 @@ ArtifactBundle
   ├── select_channel(bundle, ChannelKey(...))
   ▼
 ChannelBundle
+  │
+  ├── detect_operating_states(...) → OperatingStateDetection
+  │      └── extract_robust_profiles(...) → RobustVelocityProfiles
+  │             └── export_terminal_results(...) → JSON + CSV + NPZ
   │
   ├── filter(bundle, FilterSpec)
   └── resample(bundle, InterpSpec, *, times | dt_s)

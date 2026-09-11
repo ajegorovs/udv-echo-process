@@ -51,11 +51,12 @@ have only one visit in a matched round. A round groups cross-stream visits;
 The absorption architecture is approved and implementation Phases 0–3 are
 complete: the private reproducible retirement baseline, calculated BDD depth and
 inspection work, typed operating-state detection, robust median/unscaled-MAD
-profiles, and the private 2-D TV-L1 preprocessing used only by that terminal
-analysis chain. See [`udv-analysis-absorption-plan.md`](udv-analysis-absorption-plan.md).
+profiles, the private 2-D TV-L1 preprocessing used only by that terminal
+analysis chain, and the small terminal-result JSON/CSV/NPZ export boundary
+(`udv_echo_process/export.py`). See
+[`udv-analysis-absorption-plan.md`](udv-analysis-absorption-plan.md).
 
-Remaining implementation work is the small terminal-result JSON/CSV/NPZ export
-boundary. Retirement itself remains blocked on honest evidence rather than code:
+Retirement itself remains blocked on honest evidence rather than code:
 
 - **Predecessor provenance** (§8.2): neither source nor Git history identifies
   which earlier Mathematica/Python workflow produced the accepted results. The

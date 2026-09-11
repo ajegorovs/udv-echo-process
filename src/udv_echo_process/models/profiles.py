@@ -59,6 +59,7 @@ from pydantic import Field, ValidationInfo, field_validator, model_validator
 
 from udv_echo_process.models.base import ArrayModel, ValueModel, array_field
 from udv_echo_process.models.identity import SignalDescriptor, SignalQuantity
+from udv_echo_process.models.states import OperatingStateInterval
 
 #: Opaque artifact-id form: ``sha256:`` plus 64 lower-case hex characters.
 _SHA256_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
@@ -272,6 +273,15 @@ class RobustVelocityProfiles(ArrayModel):
         the gate-axis length ``G`` the arrays must agree with;
     ``state_numbers``
         the retained state numbers, running ``1..S`` in interval order;
+    ``retained_intervals``
+        the detection's retained :class:`OperatingStateInterval` rows, in order,
+        carrying the full half-open ``[start_index, stop_index_exclusive)``
+        boundaries the rows were sliced from — not just their counts.
+        ``artifact_id`` + ``state_numbers`` + ``input_sample_count`` alone cannot
+        bind a result to *one* detection: two detections of the same artifact
+        can keep the same state numbers and the same profile counts while the
+        boundaries differ, so the export boundary compares these intervals to
+        the detection's kept intervals **exactly**;
     ``median_velocity_mm_s``
         per state x gate median of the in-envelope samples, ``NaN`` for an
         empty envelope;
@@ -295,6 +305,7 @@ class RobustVelocityProfiles(ArrayModel):
     descriptor: SignalDescriptor
     gate_count: int
     state_numbers: tuple[int, ...]
+    retained_intervals: tuple[OperatingStateInterval, ...]
     median_velocity_mm_s: array_field(np.float64, rank=2)
     median_absolute_deviation_mm_s: array_field(np.float64, rank=2)
     retained_sample_count: array_field(np.int64, rank=2)
@@ -350,6 +361,32 @@ class RobustVelocityProfiles(ArrayModel):
                 "every retained state must have at least one input profile, got "
                 f"{self.input_sample_count.tolist()}"
             )
+        if len(self.retained_intervals) != state_count:
+            raise ValueError(
+                "retained_intervals must carry the detection's kept intervals "
+                f"(one per retained state, {state_count}), got "
+                f"{len(self.retained_intervals)}"
+            )
+        for index, interval in enumerate(self.retained_intervals):
+            if not interval.kept:
+                raise ValueError(
+                    f"retained_intervals[{index}] must be a kept detection "
+                    "interval, got kept=False (state_number="
+                    f"{interval.state_number!r})"
+                )
+            if interval.state_number != self.state_numbers[index]:
+                raise ValueError(
+                    f"retained_intervals[{index}] carries state_number "
+                    f"{interval.state_number!r} but state_numbers[{index}] is "
+                    f"{self.state_numbers[index]!r}"
+                )
+            if interval.profile_count != int(self.input_sample_count[index]):
+                raise ValueError(
+                    f"retained_intervals[{index}] covers "
+                    f"{interval.profile_count} profiles but "
+                    f"input_sample_count[{index}] is "
+                    f"{int(self.input_sample_count[index])}"
+                )
         expected_shape = (state_count, self.gate_count)
         for name in (
             "median_velocity_mm_s",

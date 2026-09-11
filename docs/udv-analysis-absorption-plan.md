@@ -3,8 +3,8 @@
 Status: **approved; implementation in progress** (`docs/agenda.md`).
 
 Phase 0's private retirement/baseline pack and Phase 1's reader/inspection work
-are complete. Phase 2 terminal analysis results and export remain active; Phases
-3–4 follow. The source checkout has not been retired because §8 still has
+are complete. Phase 2 terminal analysis results and their export are complete;
+Phases 3–4 follow. The source checkout has not been retired because §8 still has
 unresolved external-lineage/dependency evidence.
 
 Authority: this document is the source-analysis record for retiring the external
@@ -106,7 +106,7 @@ algorithms as *our* kinds of thing, not copy its stage shapes.
 | `io/bdd.py::bdd_depth_source="Calc"` gate reconstruction | patch to `io/dop/bdd.py` | Pure win: 0.05 → **0.0033 mm** depth agreement with our `.ADD` reference |
 | `io/bdd.py` metadata coverage (~25 named settings, every scalar channel param, BDD comment) | extend `models/channel_config.py` | Missing today: `velo_scale`, `emitNprofile`, `profile_skip`, `medianProfileN`, `movAvgProfileN`, `bandwidth`, profile-filter code, external trigger, and the comment |
 | `ARCHITECTURE.md` "Core invariants" (exclusive depth rule; transitions in neither state; unscaled MAD is not uncertainty; quantile fit is per depth, not per gate; solver failure is an error) | `docs/` prose + model validators where enforceable | These are *why* the algorithms are correct — higher value than the code |
-| Output contracts (long-form profile CSV schema, NPZ keys, finite-JSON rule, relative paths, versioned schema + legacy reader) | a terminal-result JSON/CSV export following store-1 conventions | Export shape only — not a second manifest or provenance plane |
+| Output contracts (long-form profile CSV schema, NPZ keys, finite-JSON rule, relative paths, versioned schema + legacy reader) | a terminal-result JSON/CSV/NPZ export in `udv_echo_process/export.py` | Export shape only — not a second manifest or provenance plane; no legacy/cache reader |
 | Test ideas (TV determinism, constant-field exactness, envelope-failure path, cache-fingerprint invalidation, strict JSON parse) | `tests/` | Plus the anti-lesson in §6.4 |
 
 ## 5. Do **not** absorb
@@ -141,8 +141,10 @@ Each item below would violate a rule this repo already settled:
 2. **No interval/state metadata** exists in the domain model by design; Phase 2
    therefore needs typed terminal result models rather than new `SignalData`
    fields.
-3. **No JSON/CSV/NPZ export path** exists for terminal results (store-1 persists
-   signal bundles only).
+3. **No JSON/CSV/NPZ export path** existed for terminal results (store-1
+   persists signal bundles only); Phase 2 closed it with the small standalone
+   `udv_echo_process/export.py` boundary (D4), which writes only a result set
+   and no second storage/provenance plane.
 4. **Fixture blindness remains a general risk.** The mux parser defect was
    invisible before a synthetic test reproduced the real 93-column geometry;
    every absorbed algorithm needs equivalent realistic geometry and archived
@@ -158,9 +160,9 @@ Each item below would violate a rule this repo already settled:
   recorded blockers, not synthesized evidence.
 - **Phase 1 — complete:** calculated canonical BDD depths, high-confidence
   `ChannelConfig` corrections, and content-aware `.ADD`/`.BDD` `udv-inspect`.
-- **Phase 2 — active:** typed terminal operating-state and robust-profile
-  results/producers are complete and baseline-verified. The small JSON/CSV/NPZ
-  export boundary remains.
+- **Phase 2 — complete:** typed terminal operating-state and robust-profile
+  results/producers are baseline-verified, and the small JSON/CSV/NPZ
+  terminal-result export boundary landed in `udv_echo_process/export.py` (D4).
 - **Phase 3 — complete:** the 2-D TV-L1 solver is private to robust-profile
   analysis, with no public `FilterSpec`, support-semantics change, or provenance
   operation. Promotion would require a separate gate-coupling use case and

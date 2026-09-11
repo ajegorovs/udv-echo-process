@@ -422,6 +422,7 @@ def extract_robust_profiles(
         descriptor=descriptor,
         gate_count=gate_count,
         state_numbers=tuple(interval.state_number for interval in kept),
+        retained_intervals=tuple(kept),
         median_velocity_mm_s=medians,
         median_absolute_deviation_mm_s=deviations,
         retained_sample_count=retained_counts,

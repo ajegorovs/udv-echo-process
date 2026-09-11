@@ -26,6 +26,11 @@ from udv_echo_process.analysis import (
 
 # `load` reads any supported measurement (today: .BDD) into an ArtifactBundle:
 # a Recording plus the provenance graph that resolves all its channel artifacts.
+from udv_echo_process.export import (
+    TerminalResultExport,
+    TerminalResultExportError,
+    export_terminal_results,
+)
 from udv_echo_process.io import load
 from udv_echo_process.models import (
     AcquisitionMode,
@@ -110,11 +115,14 @@ __all__ = [
     "StateDetectionMode",
     "StateDetectionSettings",
     "SyncSpec",
+    "TerminalResultExport",
+    "TerminalResultExportError",
     "TvFilterSpec",
     "TvL1Settings",
     "derive_many",
     "detect_operating_states",
     "discover_data_files",
+    "export_terminal_results",
     "extract",
     "extract_robust_profiles",
     "filter",
