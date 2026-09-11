@@ -22,30 +22,19 @@ transcript.
 
 ---
 
-## Current status — signal-model rework acceptance pending
+## Current status — signal-model rework accepted
 
-The Phases 1–9 implementation landed, but is **not yet accepted**. The full
-review baseline passed: 774 tests, Ruff check/format check, static notebook
-validation, and executed HTML exports for both notebooks. The `.ADD` and BDD
-paths, storage, bundle transforms, public-surface retirement, and notebooks were
-exercised.
+The Phases 1–9 implementation and post-landing hardening are **accepted**.
+Source-root registration now replays source artifact identity, and
+`OperationRecord` construction replays operation identity from its canonical
+recipe. The final gate passed with 785 tests, Ruff check/format check, static
+notebook validation, executed HTML exports for both notebooks, 67 focused
+BDD/store tests, `git diff --check`, two independent counterfeit-ID probes, and
+a fresh independent review.
 
-### Acceptance blockers — do before new pipeline features
-
-1. **Source root identity enforcement.** `source_bundle(ChannelArtifact(...))`
-   currently trusts an opaque ID. Choose the narrowest validated boundary that
-   recomputes `source_artifact_id(...)`, preserves the frozen five-field
-   `ChannelArtifact` contract, and does not add a legacy adapter or a second
-   derivation constructor. Add a direct counterfeit-ID rejection test.
-2. **Operation identity enforcement.** Public `ArtifactGraph` construction
-   currently accepts an `OperationRecord` whose `operation_id` does not replay
-   from its canonical recipe fields. Decide whether the invariant belongs on
-   `OperationRecord` or graph validation, enforce it, and add a direct
-   counterfeit-operation-ID rejection test.
-3. **Post-fix acceptance gate.** Run the full test suite, Ruff check/format
-   check, both notebook HTML exports, BDD/store round-trip and tamper replay,
-   `git diff --check`, and a fresh independent review. Only then mark the
-   rework accepted in the plan and conventions.
+The accepted boundaries remain those in the rework plan: five-field frozen
+artifacts, one derivation constructor, normalized provenance, and no legacy
+adapter.
 
 ### Settled synchronization contract
 

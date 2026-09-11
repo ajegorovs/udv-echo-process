@@ -65,6 +65,7 @@ from udv_echo_process.provenance import (
     ImplementationRef,
     OperationRecord,
     implementation_ref,
+    operation_id_for,
     register_root_artifact,
     replace_channel,
     select_channel,
@@ -590,19 +591,25 @@ def test_artifact_bundle_rejects_a_derived_stream_id_that_does_not_recompute():
     """STOP/GO: a derived stream must be consistent with its operation."""
     root = _artifact(6)
     forged = _artifact_with_id(_id(42), 7)
+    implementation = ImplementationRef(
+        package="udv-echo-process", version="0.0.0", callable="test"
+    )
+    operation_id = operation_id_for(
+        "test.op", 1, '{"a":1}', implementation, (root.artifact_id,)
+    )
     operation = OperationRecord(
-        operation_id=_id(7),
+        operation_id=operation_id,
         kind="test.op",
         schema_version=1,
         params_json='{"a":1}',
-        implementation=ImplementationRef(
-            package="udv-echo-process", version="0.0.0", callable="test"
-        ),
+        implementation=implementation,
         parents=(root.artifact_id,),
     )
     graph = ArtifactGraph(
         operations=(operation,),
-        derivations=(ArtifactDerivationLink(artifact_id=_id(42), operation_id=_id(7)),),
+        derivations=(
+            ArtifactDerivationLink(artifact_id=_id(42), operation_id=operation_id),
+        ),
         root_artifacts=(root.artifact_id,),
     )
     with pytest.raises(ValidationError, match="consistent"):

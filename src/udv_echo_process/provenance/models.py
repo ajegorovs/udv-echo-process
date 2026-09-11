@@ -31,7 +31,11 @@ from udv_echo_process.models._canonical import canonical_json_bytes, stable_id
 from udv_echo_process.models.base import ArrayModel, ValueModel
 from udv_echo_process.models.identity import ChannelKey
 from udv_echo_process.models.recording import Recording
-from udv_echo_process.models.signal import ChannelArtifact, derived_artifact_id
+from udv_echo_process.models.signal import (
+    ChannelArtifact,
+    derived_artifact_id,
+    source_artifact_id,
+)
 
 #: Opaque id form: ``sha256:`` plus 64 lower-case hex characters.
 _SHA256_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
@@ -220,6 +224,36 @@ class OperationRecord(ValueModel):
         return tuple(
             _strip_non_empty(item, field_name=info.field_name) for item in value
         )
+
+    @model_validator(mode="after")
+    def _check_operation_id_replays(self) -> OperationRecord:
+        """Require ``operation_id`` to replay from the canonical recipe fields.
+
+        The record carries exactly the recipe inputs the operation id is
+        derived from — kind, schema version, resolved ``params_json``,
+        implementation and ordered parents (plan §8.1) — so this is the
+        narrowest boundary that can recompute it (plan §8.2: "Operation IDs
+        hash canonical JSON of kind, operation schema version, resolved params,
+        implementation and ordered parents"). A counterfeited id is rejected
+        here and therefore cannot reach an ``ArtifactGraph`` (or a reloaded
+        manifest) through public construction.
+        """
+        expected = operation_id_for(
+            self.kind,
+            self.schema_version,
+            self.params_json,
+            self.implementation,
+            self.parents,
+        )
+        if expected != self.operation_id:
+            raise ValueError(
+                "operation_id does not replay from its canonical recipe fields: "
+                f"got {self.operation_id!r}, recomputes to {expected!r} from kind "
+                f"{self.kind!r}, schema_version {self.schema_version}, "
+                "params_json, implementation and ordered parents; derive the id "
+                "with operation_id_for(...) or process.derive.derive(...)"
+            )
+        return self
 
 
 class ArtifactDerivationLink(ValueModel):
@@ -522,12 +556,37 @@ def insert_operation_many(
 def source_bundle(artifact: ChannelArtifact) -> ChannelBundle:
     """Wrap a SOURCE artifact in a closed one-node bundle (root registration).
 
+    The source id is never trusted from the artifact. It is recomputed with the
+    shared :func:`~udv_echo_process.models.signal.source_artifact_id` equation
+    from the artifact's OWN acquisition, descriptor, config and data, so a
+    hand-set counterfeit ``artifact_id`` cannot masquerade as a source root
+    (plan §6.6, §8.2). This is the narrowest validated boundary: it preserves
+    the frozen five-field ``ChannelArtifact`` contract (no sixth field), adds no
+    legacy adapter and installs no second derivation constructor — a genuine
+    source id is still produced only by
+    :func:`~udv_echo_process.models.signal.source_artifact`.
+
     Args:
         artifact: a source artifact whose id was content-derived.
 
     Returns:
         A :class:`ChannelBundle` whose graph registers the artifact as a root.
+
+    Raises:
+        ValueError: when ``artifact.artifact_id`` does not replay as a SOURCE
+            artifact id from the artifact's own content.
     """
+    expected = source_artifact_id(
+        artifact.acquisition, artifact.descriptor, artifact.config, artifact.data
+    )
+    if expected != artifact.artifact_id:
+        raise ValueError(
+            f"source_bundle: artifact id {artifact.artifact_id!r} is not a "
+            f"reproducible SOURCE artifact id: it recomputes to {expected!r} "
+            "from the artifact's own acquisition, descriptor, config and data; "
+            "build a source artifact with models.signal.source_artifact(...) "
+            "instead of hand-setting artifact_id"
+        )
     return ChannelBundle(
         artifact=artifact,
         graph=register_root_artifact(ArtifactGraph(), artifact.artifact_id),

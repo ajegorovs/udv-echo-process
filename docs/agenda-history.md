@@ -25,6 +25,7 @@ recoverable from Git history.
 | 2026-09-10–11 | marimo-inspect consumer-onboarding, provider verification, and version-pin discussions. | `docs/marimo-integration-plan.md`, `docs/marimo-integration-log.md`, `README.md`, `AGENTS.md` |
 | 2026-09-11 | Signal-model rework Phases 1–9 landed: artifact bundles, support/provenance, BDD reader migration, NPY/manifest storage, legacy retirement, and notebook migration. | `docs/signal-model-rework-plan.md`, `docs/pipeline-conventions.md`, source/tests |
 | 2026-09-11 | Post-landing review found two provenance-identity acceptance blockers; synchronization terminology was clarified. | `docs/agenda.md` current status, `docs/signal-model-rework-plan.md` §15 |
+| 2026-09-11 | Source-root and operation identities gained canonical replay at public construction; the full post-fix gate and independent review passed, so the signal-model rework was accepted. | `docs/signal-model-rework-plan.md` §15, `docs/pipeline-conventions.md` Revision 3, provenance tests |
 
 ## Superseded concepts and where to find the replacement
 

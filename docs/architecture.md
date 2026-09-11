@@ -6,10 +6,9 @@ overview; the enforceable signal-model contract is
 [`signal-model-rework-plan.md`](signal-model-rework-plan.md), and module rules
 are in [`pipeline-conventions.md`](pipeline-conventions.md).
 
-> **Current status:** the signal-model implementation landed through Phase 9,
-> but acceptance is pending two provenance-identity fixes. Do not mark the
-> artifact pipeline complete until the unchecked items in the rework plan §15
-> pass.
+> **Current status:** the signal-model implementation and post-landing
+> provenance-identity hardening are accepted. The artifact pipeline's enforced
+> contracts are summarized below and specified in the rework plan §15.
 
 ## Two pipelines, by design
 

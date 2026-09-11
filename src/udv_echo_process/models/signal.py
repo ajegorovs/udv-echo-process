@@ -390,11 +390,12 @@ class ChannelArtifact(ArrayModel):
     """One channel's closed payload plus its provenance identity (plan §6.6).
 
     Exactly five fields. ``artifact_id`` is validated for the opaque
-    ``sha256:<64 lower-case hex>`` form only: a source id is recomputed and
-    compared by :func:`source_artifact`, a derived id by
-    ``process.derive.derive``. A model cannot self-check a derived id because
-    §6.6 fixes the field set at five; the bundle-wide id-versus-graph check is
-    Phase 7's full bundle validation.
+    ``sha256:<64 lower-case hex>`` form here. Source ids are recomputed by
+    :func:`source_artifact` and rechecked when :func:`source_bundle` registers a
+    public root; derived ids are computed by ``process.derive.derive`` and
+    checked by bundle/storage replay. A model cannot self-check a derived id
+    because §6.6 fixes the field set at five; the bundle-wide id-versus-graph
+    check is Phase 7's full bundle validation.
     """
 
     artifact_id: str

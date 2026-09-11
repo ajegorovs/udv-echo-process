@@ -1,14 +1,15 @@
 # Signal model rework — authoritative execution plan
 
-> **Status: IMPLEMENTED (Phases 1–9) · ACCEPTANCE PENDING.** This document is
-> the authoritative contract for the signal-model rework and supersedes
-> conflicting architecture text in older design documents for this work. The
-> implementation landed in Phase 9, but the post-landing acceptance review on
-> 2026-09-11 found two provenance-identity blockers and one synchronization-text
-> clarification; see the appended agenda status entry and Section 15. In
-> particular, pre-convergence `Recording`, `SensorSeries`, mutable
-> `ChannelSeries`, bundled all-method parameter, and pandas-backed examples are
-> historical, not implementation instructions.
+> **Status: IMPLEMENTED AND ACCEPTED (Phases 1–9 + post-landing hardening).**
+> This document is the authoritative contract for the signal-model rework and
+> supersedes conflicting architecture text in older design documents for this
+> work. The implementation landed in Phase 9; the 2026-09-11 post-landing review
+> found two provenance-identity blockers, both of which were fixed and passed the
+> final acceptance gate recorded in Section 15. The synchronization-text
+> clarification remains part of the settled contract. In particular,
+> pre-convergence `Recording`, `SensorSeries`, mutable `ChannelSeries`, bundled
+> all-method parameter, and pandas-backed examples are historical, not
+> implementation instructions.
 >
 > **Maintenance rule:** do not fill a semantic gap with a convenient default. If
 > reality contradicts a contract below, add a focused failing test and request a
@@ -1267,13 +1268,15 @@ fragments, not complete Pydantic formatting.
 
 ## 15. Definition of Done
 
-The rework is accepted only when all items are true. The 2026-09-11 post-landing
-review verified the checked items below. The unchecked identity/provenance and
-documentation items are active acceptance blockers; their required fixes and
-investigations are tracked in the appended `docs/agenda.md` status entry.
+The rework is accepted. The 2026-09-11 post-landing review verified the original
+implementation, then direct source-root and operation-identity replay checks
+closed the two remaining blockers. Final acceptance evidence: 785 tests, Ruff
+check/format check, both notebook HTML exports, 67 focused BDD/store tests,
+`git diff --check`, two independent counterfeit-ID probes, and an independent
+review.
 
 - [x] `ValueModel`/`ArrayModel` policies and owned read-only arrays are tested.
-- [ ] Stable channel/source/acquisition/artifact identities are deterministic
+- [x] Stable channel/source/acquisition/artifact identities are deterministic
       and independent of path/object address, including public root-artifact
       construction.
 - [x] `SignalData`, support, quality and optional acquisition index enforce all
@@ -1290,12 +1293,12 @@ investigations are tracked in the appended `docs/agenda.md` status entry.
 - [x] Synchronization uses explicit round membership plus non-duplicate visit
       identity and preserves actual acquisition times separately from aligned
       time.
-- [ ] Provenance is a validated normalized DAG whose public construction path
+- [x] Provenance is a validated normalized DAG whose public construction path
       recomputes operation identity, and a 100-operation chain does not copy
       history into artifacts.
 - [x] NPY store v1 round-trips a real BDD-derived bundle and fails closed on
       incomplete/corrupt/unsafe stores.
-- [ ] Legacy surfaces are removed or isolated by an explicit tested adapter;
+- [x] Legacy surfaces are removed or isolated by an explicit tested adapter;
       documentation and exports are internally consistent.
 - [x] No out-of-scope dependency/feature or private absolute path was added.
 - [x] No commit or push occurred unless separately authorized.

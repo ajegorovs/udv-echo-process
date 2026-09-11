@@ -4,6 +4,11 @@ Plan §6.6, §8.1, §8.2, §13. Locks in deterministic content-addressed source
 artifact ids, explicit scientific equality, the model invariants for
 ``ImplementationRef`` / ``OperationRecord`` / ``ArtifactDerivationLink`` /
 ``ArtifactGraph`` / ``ChannelBundle`` and pure graph insertion.
+
+The post-landing identity acceptance blockers are locked in here too:
+``source_bundle`` replays the SOURCE artifact id from the artifact's own content
+and ``OperationRecord`` replays the operation id from its canonical recipe
+fields, so a counterfeit id cannot reach a graph through public construction.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ import sys
 import textwrap
 from importlib import metadata
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -96,8 +102,14 @@ def _artifact(**overrides: object) -> ChannelArtifact:
 
 
 def _operation(**overrides: object) -> OperationRecord:
-    kwargs: dict[str, object] = {
-        "operation_id": _id(7),
+    """Build an ``OperationRecord`` whose id replays from its recipe fields.
+
+    The id is computed with the canonical :func:`operation_id_for` equation from
+    the (possibly overridden) recipe unless a caller supplies ``operation_id``
+    explicitly — only counterfeit-id tests do. So every record built here passes
+    the model's replay invariant.
+    """
+    kwargs: dict[str, Any] = {
         "kind": "test.op",
         "schema_version": 1,
         "params_json": '{"a":1}',
@@ -106,6 +118,19 @@ def _operation(**overrides: object) -> OperationRecord:
         "warnings": (),
     }
     kwargs.update(overrides)
+    if "operation_id" not in overrides:
+        try:
+            kwargs["operation_id"] = operation_id_for(
+                kwargs["kind"],
+                kwargs["schema_version"],
+                kwargs["params_json"],
+                kwargs["implementation"],
+                kwargs["parents"],
+            )
+        except ValueError:
+            # A deliberately malformed recipe (e.g. non-JSON params) must reach
+            # the field validators, which raise first; the id value is moot.
+            kwargs["operation_id"] = _id(7)
     return OperationRecord(**kwargs)  # type: ignore[arg-type]
 
 
@@ -446,6 +471,73 @@ def test_operation_record_rejects_bad_operation_id():
         _operation(operation_id="nope")
 
 
+def test_operation_record_accepts_a_replayed_operation_id():
+    """A correct record's id equals the canonical equation over its recipe."""
+    record = _operation()
+    assert record.operation_id == operation_id_for(
+        record.kind,
+        record.schema_version,
+        record.params_json,
+        record.implementation,
+        record.parents,
+    )
+
+
+def test_operation_record_rejects_a_counterfeit_operation_id():
+    """Public construction rejects an id that does not replay (acceptance #2)."""
+    recipe: dict[str, Any] = {
+        "kind": "test.op",
+        "schema_version": 1,
+        "params_json": '{"a":1}',
+        "implementation": _IMPL,
+        "parents": (_id(1),),
+    }
+    real = operation_id_for(**recipe)
+    counterfeit = _id(7) if real != _id(7) else _id(8)
+    with pytest.raises(ValidationError, match="does not replay"):
+        OperationRecord(operation_id=counterfeit, **recipe)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("kind", "test.other"),
+        ("schema_version", 2),
+        ("params_json", '{"a":2}'),
+        (
+            "implementation",
+            ImplementationRef(package="p", version="1", callable="c"),
+        ),
+        ("parents", (_id(2),)),
+    ],
+)
+def test_operation_record_rejects_an_id_from_a_different_recipe(field, value):
+    """Changing any canonical recipe input invalidates the previously valid id."""
+    record = _operation()
+    kwargs: dict[str, Any] = {
+        "kind": record.kind,
+        "schema_version": record.schema_version,
+        "params_json": record.params_json,
+        "implementation": record.implementation,
+        "parents": record.parents,
+    }
+    kwargs[field] = value
+    with pytest.raises(ValidationError, match="does not replay"):
+        OperationRecord(operation_id=record.operation_id, **kwargs)
+
+
+def test_graph_validation_rejects_a_counterfeit_operation_id_on_reload():
+    """A graph parsed from stored JSON replays each operation id (plan §9.3)."""
+    record = _operation()
+    payload: dict[str, Any] = {
+        "operations": [{**record.model_dump(mode="json"), "operation_id": _id(7)}],
+        "derivations": [],
+        "root_artifacts": [],
+    }
+    with pytest.raises(ValidationError, match="does not replay"):
+        ArtifactGraph.model_validate(payload)
+
+
 # ── ArtifactDerivationLink ─────────────────────────────────────────────
 
 
@@ -472,10 +564,14 @@ def test_empty_graph_is_valid():
 
 def test_graph_accepts_a_root_and_a_resolvable_chain():
     root = _id(1)
-    operation = _operation(operation_id=_id(7), parents=(root,))
+    operation = _operation(parents=(root,))
     graph = ArtifactGraph(
         operations=(operation,),
-        derivations=(ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),),
+        derivations=(
+            ArtifactDerivationLink(
+                artifact_id=_id(2), operation_id=operation.operation_id
+            ),
+        ),
         root_artifacts=(root,),
     )
     assert graph.root_artifacts == (root,)
@@ -483,14 +579,16 @@ def test_graph_accepts_a_root_and_a_resolvable_chain():
 
 def test_graph_accepts_a_parent_resolved_through_derivations():
     root = _id(1)
-    first = _operation(operation_id=_id(7), parents=(root,))
-    second = _operation(operation_id=_id(8), parents=(_id(2),))
+    first = _operation(parents=(root,))
+    second = _operation(parents=(_id(2),))
     graph = ArtifactGraph(
         operations=(first, second),
         derivations=(
-            ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
-            ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(7)),
-            ArtifactDerivationLink(artifact_id=_id(4), operation_id=_id(8)),
+            ArtifactDerivationLink(artifact_id=_id(2), operation_id=first.operation_id),
+            ArtifactDerivationLink(artifact_id=_id(3), operation_id=first.operation_id),
+            ArtifactDerivationLink(
+                artifact_id=_id(4), operation_id=second.operation_id
+            ),
         ),
         root_artifacts=(root,),
     )
@@ -500,28 +598,19 @@ def test_graph_accepts_a_parent_resolved_through_derivations():
 
 def test_graph_rejects_duplicate_operation_ids():
     with pytest.raises(ValidationError) as ei:
-        _graph(
-            operations=(
-                _operation(operation_id=_id(7)),
-                _operation(operation_id=_id(7)),
-            )
-        )
+        _graph(operations=(_operation(), _operation()))
     assert "unique operation_id" in str(ei.value)
 
 
 def test_graph_rejects_duplicate_derived_artifact_ids():
+    first = _operation()
+    second = _operation(params_json='{"a":2}')
     links = (
-        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
-        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(8)),
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=first.operation_id),
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=second.operation_id),
     )
     with pytest.raises(ValidationError) as ei:
-        _graph(
-            operations=(
-                _operation(operation_id=_id(7)),
-                _operation(operation_id=_id(8)),
-            ),
-            derivations=links,
-        )
+        _graph(operations=(first, second), derivations=links)
     assert "unique artifact_id" in str(ei.value)
 
 
@@ -543,16 +632,19 @@ def test_graph_rejects_a_link_to_an_unknown_operation():
 
 def test_graph_rejects_a_dangling_parent():
     with pytest.raises(ValidationError) as ei:
-        _graph(operations=(_operation(operation_id=_id(7), parents=(_id(9),)),))
+        _graph(operations=(_operation(parents=(_id(9),)),))
     assert "unresolved parent" in str(ei.value)
 
 
 def test_graph_rejects_root_and_derived_overlap():
+    operation = _operation(parents=(_id(1),))
     with pytest.raises(ValidationError) as ei:
         _graph(
-            operations=(_operation(operation_id=_id(7), parents=(_id(1),)),),
+            operations=(operation,),
             derivations=(
-                ArtifactDerivationLink(artifact_id=_id(1), operation_id=_id(7)),
+                ArtifactDerivationLink(
+                    artifact_id=_id(1), operation_id=operation.operation_id
+                ),
             ),
             root_artifacts=(_id(1),),
         )
@@ -582,12 +674,12 @@ def test_register_root_artifact_rejects_a_duplicate():
 def test_insert_operation_is_pure_and_adds_one_edge():
     root = _id(1)
     graph = register_root_artifact(_graph(), root)
-    operation = _operation(operation_id=_id(7), parents=(root,))
+    operation = _operation(parents=(root,))
     updated = insert_operation(graph, operation, artifact_id=_id(2))
     assert graph.operations == () and graph.derivations == ()
     assert updated.operations == (operation,)
     assert updated.derivations == (
-        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=operation.operation_id),
     )
     assert updated.root_artifacts == (root,)
 
@@ -595,16 +687,13 @@ def test_insert_operation_is_pure_and_adds_one_edge():
 def test_failing_insert_leaves_the_input_graph_unchanged():
     root = _id(1)
     graph = register_root_artifact(_graph(), root)
-    first = insert_operation(
-        graph, _operation(operation_id=_id(7), parents=(root,)), artifact_id=_id(2)
-    )
+    record = _operation(parents=(root,))
+    first = insert_operation(graph, record, artifact_id=_id(2))
     with pytest.raises(ValidationError):
-        insert_operation(
-            first, _operation(operation_id=_id(7), parents=(root,)), artifact_id=_id(3)
-        )
-    assert first.operations == (_operation(operation_id=_id(7), parents=(root,)),)
+        insert_operation(first, _operation(parents=(root,)), artifact_id=_id(3))
+    assert first.operations == (_operation(parents=(root,)),)
     assert first.derivations == (
-        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=record.operation_id),
     )
 
 
@@ -624,6 +713,61 @@ def test_source_bundle_registers_the_artifact_as_a_root():
     assert bundle.graph.root_artifacts == (bundle.artifact.artifact_id,)
     assert bundle.graph.operations == ()
     assert bundle.graph.derivations == ()
+
+
+def test_source_bundle_rejects_a_counterfeit_artifact_id():
+    """The source id is replayed from the artifact's content (acceptance #1)."""
+    genuine = _artifact()
+    counterfeit = ChannelArtifact(
+        artifact_id=_id(99),
+        acquisition=genuine.acquisition,
+        descriptor=genuine.descriptor,
+        config=genuine.config,
+        data=genuine.data,
+    )
+    assert counterfeit.artifact_id != source_artifact_id(
+        counterfeit.acquisition,
+        counterfeit.descriptor,
+        counterfeit.config,
+        counterfeit.data,
+    )
+    with pytest.raises(ValueError, match="not a reproducible SOURCE artifact id"):
+        source_bundle(counterfeit)
+
+
+def test_source_bundle_rejects_an_id_from_different_content():
+    """The replay uses the artifact's OWN fields, not just the id's shape."""
+    genuine = _artifact()
+    swapped = ChannelArtifact(
+        artifact_id=genuine.artifact_id,
+        acquisition=genuine.acquisition,
+        descriptor=_VELOCITY,
+        config=genuine.config,
+        data=genuine.data,
+    )
+    with pytest.raises(ValueError, match="not a reproducible SOURCE artifact id"):
+        source_bundle(swapped)
+
+
+def test_source_bundle_rejects_a_derived_artifact_id():
+    """A derived id is validly formatted but is not a SOURCE root id."""
+    genuine = _artifact()
+    derived_id = derived_artifact_id(
+        _id(7),
+        genuine.acquisition,
+        genuine.descriptor,
+        genuine.config,
+        genuine.data,
+    )
+    derived = ChannelArtifact(
+        artifact_id=derived_id,
+        acquisition=genuine.acquisition,
+        descriptor=genuine.descriptor,
+        config=genuine.config,
+        data=genuine.data,
+    )
+    with pytest.raises(ValueError, match="not a reproducible SOURCE artifact id"):
+        source_bundle(derived)
 
 
 def test_channel_bundle_requires_a_resolvable_artifact():
@@ -733,14 +877,18 @@ def _artifact_metadata_text(artifact: ChannelArtifact) -> str:
 
 def test_graph_rejects_a_cycle():
     """A derived artifact must never be an ancestor of its own operation."""
-    first = _operation(operation_id=_id(7), parents=(_id(2),))
-    second = _operation(operation_id=_id(8), parents=(_id(1),))
+    first = _operation(parents=(_id(2),))
+    second = _operation(parents=(_id(1),))
     with pytest.raises(ValidationError) as ei:
         _graph(
             operations=(first, second),
             derivations=(
-                ArtifactDerivationLink(artifact_id=_id(1), operation_id=_id(7)),
-                ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(8)),
+                ArtifactDerivationLink(
+                    artifact_id=_id(1), operation_id=first.operation_id
+                ),
+                ArtifactDerivationLink(
+                    artifact_id=_id(2), operation_id=second.operation_id
+                ),
             ),
         )
     assert "cycle" in str(ei.value)
@@ -748,14 +896,18 @@ def test_graph_rejects_a_cycle():
 
 def test_graph_rejects_operations_that_are_not_topologically_ordered():
     """A parent operation must precede its child even without a cycle."""
-    parent = _operation(operation_id=_id(7), parents=(_id(1),))
-    child = _operation(operation_id=_id(8), parents=(_id(2),))
+    parent = _operation(parents=(_id(1),))
+    child = _operation(parents=(_id(2),))
     with pytest.raises(ValidationError, match="topologically ordered"):
         _graph(
             operations=(child, parent),
             derivations=(
-                ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
-                ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(8)),
+                ArtifactDerivationLink(
+                    artifact_id=_id(2), operation_id=parent.operation_id
+                ),
+                ArtifactDerivationLink(
+                    artifact_id=_id(3), operation_id=child.operation_id
+                ),
             ),
             root_artifacts=(_id(1),),
         )
@@ -766,19 +918,19 @@ def _two_step_graph() -> ArtifactGraph:
     root = _id(1)
     graph = insert_operation(
         register_root_artifact(ArtifactGraph(), root),
-        _operation(operation_id=_id(7), parents=(root,)),
+        _operation(parents=(root,)),
         artifact_id=_id(2),
     )
     return insert_operation(
         graph,
-        _operation(operation_id=_id(8), parents=(_id(2),)),
+        _operation(parents=(_id(2),)),
         artifact_id=_id(3),
     )
 
 
 def test_graph_topology_is_deterministic_and_parents_precede_children():
     graph = _two_step_graph()
-    assert [op.operation_id for op in graph.operations] == [_id(7), _id(8)]
+    assert [op.parents for op in graph.operations] == [(_id(1),), (_id(2),)]
     producers = {link.artifact_id: link.operation_id for link in graph.derivations}
     index = {op.operation_id: i for i, op in enumerate(graph.operations)}
     for operation in graph.operations:
@@ -806,28 +958,31 @@ def test_every_operation_is_reachable_from_a_root_artifact():
 
 
 def test_graph_rejects_duplicate_links():
-    link = ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7))
+    operation = _operation()
+    link = ArtifactDerivationLink(
+        artifact_id=_id(2), operation_id=operation.operation_id
+    )
     with pytest.raises(ValidationError, match="unique artifact_id"):
-        _graph(operations=(_operation(operation_id=_id(7)),), derivations=(link, link))
+        _graph(operations=(operation,), derivations=(link, link))
 
 
 def test_insert_operation_many_adds_one_node_and_every_link():
     root = _id(1)
     graph = register_root_artifact(ArtifactGraph(), root)
-    operation = _operation(operation_id=_id(7), parents=(root,))
+    operation = _operation(parents=(root,))
     updated = insert_operation_many(graph, operation, artifact_ids=(_id(2), _id(3)))
     assert graph.operations == () and graph.derivations == ()
     assert updated.operations == (operation,)
     assert updated.derivations == (
-        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
-        ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(7)),
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=operation.operation_id),
+        ArtifactDerivationLink(artifact_id=_id(3), operation_id=operation.operation_id),
     )
     with pytest.raises(ValueError, match="at least one"):
         insert_operation_many(graph, operation, artifact_ids=())
     with pytest.raises(ValidationError):
         insert_operation_many(
             updated,
-            _operation(operation_id=_id(8), parents=(root,)),
+            _operation(parents=(root,)),
             artifact_ids=(_id(2),),
         )
 

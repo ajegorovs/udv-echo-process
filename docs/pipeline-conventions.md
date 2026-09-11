@@ -7,12 +7,11 @@ rules refine (and where they conflict, supersede) the flat-era AGENTS.md
 conventions, which are placeholders until this repo has evolved enough to draw
 practical conclusions.
 
-> ## Revision 3 — 2026-09-11: implementation landed; acceptance pending
+> ## Revision 3 — 2026-09-11: implementation and acceptance complete
 >
 > The ground-up rework in [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
-> landed through Phase 9, but its post-landing acceptance review identified active
-> provenance-identity fixes. The canonical types below are therefore the landed
-> implementation, **not yet an accepted completion**. **`ChannelSeries` /
+> landed through Phase 9 and passed its post-landing acceptance gate after
+> source-root and operation identity replay were enforced. **`ChannelSeries` /
 > `MultiplexedMeasurement` — and the mutable `models.base.Model` / `shape_2d`
 > helper — were REMOVED, not adapted.** The canonical types are now:
 >
