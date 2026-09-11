@@ -332,6 +332,11 @@ algorithms, and experimental-setup-specific algorithms.
 - `docs/signal-model-rework-plan.md` — the **landed** signal-model rework
   contract (9 phases, one commit per phase). Read it before changing the
   semantics of `models/`, `process/`, `provenance/` or `storage/`.
+- `docs/udv-analysis-absorption-plan.md` — the source-analysis record for
+  absorbing the retiring external `udv-analysis` package (measurements, module
+  mapping, do-not-absorb list, sequencing, open decisions). Read it before
+  adding state detection or profile-extraction code, and before deleting the
+  source checkout.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
 
 ## Privacy — do not overexpose

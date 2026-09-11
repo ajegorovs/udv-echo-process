@@ -57,10 +57,45 @@ have only one visit in a matched round. A round groups cross-stream visits;
 
 ---
 
+## Pending decisions — `udv-analysis` retirement
+
+`docs/udv-analysis-absorption-plan.md` records what the retiring external
+`udv-analysis` package uniquely provides (state detection, quantile-envelope
+rejection, robust median/MAD profiles), what must be absorbed here, what must
+not, and the measurements behind both. **Review the document** and settle its §9
+decisions (D1–D5) before Phase 1 begins.
+
+Two items cannot wait for the review to finish:
+
+- **Phase 0 — retirement baseline pack.** The source ships no baselines; its
+  equivalence evidence is ad-hoc output only. Capture a private fixture pack
+  from it before the checkout is deleted.
+- **Predecessor provenance** (§8.2): confirm which earlier Mathematica/Python
+  workflow produced its accepted results, and record it here.
+
+---
+
 ## UDV product backlog
 
 ### Pre-processing and filtering
 
+- **Mux velocity/amplitude conflation in the `.ADD` parser (correctness bug,
+  silent).** A DOP3000 multiplexer export whose `Gate Depth [mm]` row carries
+  **90** values (45 velocity + 45 amplitude positions in 93 tab-separated
+  columns) is read with `n_gates = len(gate_depths)` = 90, so each frame stores
+  the 45 velocity values *followed by* the 45 echo-amplitude values, labelled
+  `MeasType.VELOCITY`, and `gate_depths_mm` is the 45 depths repeated twice.
+  Verified on a 3-sensor 300 RPM recording (not committed): channel 6 frame 0
+  reads `values[43:50] == [15.655, 8.429, 376.0, 792.0, 600.0, 464.0, 488.0]`
+  where the tail is echo amplitude; the correct split is 45 velocity / 45
+  amplitude on a single 45-gate depth axis. No committed fixture uses this
+  layout, which is why the suite passes. Fix needs (a) an explicit
+  per-column-group split driven by the units row, not the depth-row length, and
+  (b) a synthetic fixture built to the 93-column geometry — the existing
+  `data/4-sensor-velocity/*.ADD` and `data/echo-4-sensors-2x2/*.ADD` files are
+  single-group (55 and 35 gates) and do not exercise it. Impact is not cosmetic:
+  `plot_recording` renders amplitude as the lower half of the velocity depth
+  axis, and any future consumer of mux velocity inherits the corrupted array.
 - Total-variation filtering port, when a UDV use case requires it.
 - Peak detection port for echo analysis.
 - Velocity aliasing removal / unwrapping, with fixture-backed validation before
