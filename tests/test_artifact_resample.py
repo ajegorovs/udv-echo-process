@@ -36,7 +36,6 @@ inline next to the test that locks them in.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
@@ -73,7 +72,7 @@ from udv_echo_process.process import (
     filter,
     resample,
 )
-from udv_echo_process.provenance import ChannelBundle, source_bundle
+from udv_echo_process.provenance import ChannelBundle, select_channel, source_bundle
 
 MISSING = int(SupportKind.MISSING)
 OBSERVED = int(SupportKind.OBSERVED)
@@ -1346,23 +1345,19 @@ print(
 def _fixture_bundle(
     path: Path, channel: int, descriptor: SignalDescriptor
 ) -> ChannelBundle:
-    """TEST ADAPTER: ``MultiplexedMeasurement`` -> source ``ChannelBundle``.
+    """TEST ADAPTER: recording ``ArtifactBundle`` -> source ``ChannelBundle``.
 
-    The ``.BDD`` reader still returns ``MultiplexedMeasurement`` until phase 6,
-    so the test builds the source artifact itself. Every fixture value is finite
-    and every time strictly increasing (verified), so an all-``OBSERVED``
-    ``observed_signal`` is correct. No round/visit ids are invented.
+    Phase 6 migrated the ``.BDD`` reader to return an ``ArtifactBundle`` whose
+    graph already holds every decoded channel artifact as a root, so the fixture
+    is the plan §7.1 ``select_channel`` bridge — nothing is rebuilt. Every
+    fixture value is finite and every time strictly increasing (so the reader's
+    all-``OBSERVED`` support is correct) and no round/visit id is invented (the
+    reader emits none; the format cannot prove them).
     """
-    measurement = load(path)
-    series = measurement.by_channel()[channel]
-    asset_id = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-    acquisition = AcquisitionRef(
-        recording_id=recording_id_for(asset_id),
-        source_asset_id=asset_id,
-        channel=ChannelKey(device_channel=channel),
-    )
-    data = observed_signal(series.time_s, series.gate_depths_mm, series.values)
-    return source_bundle(source_artifact(acquisition, descriptor, series.config, data))
+    bundle = load(path)
+    selected = select_channel(bundle, ChannelKey(device_channel=channel))
+    assert selected.artifact.descriptor == descriptor
+    return selected
 
 
 @pytest.fixture(scope="module")

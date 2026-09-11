@@ -11,13 +11,13 @@ from pathlib import Path
 from typing import Protocol
 
 from udv_echo_process.models.io import SourceFormat, SourceSpec
-from udv_echo_process.models.measurement import MultiplexedMeasurement
+from udv_echo_process.provenance.models import ArtifactBundle
 
 
 class Reader(Protocol):
-    """A per-source parser: turns a path into a MultiplexedMeasurement."""
+    """A per-source parser: turns a path into an ``ArtifactBundle``."""
 
-    def read(self, path: Path) -> MultiplexedMeasurement: ...
+    def read(self, path: Path) -> ArtifactBundle: ...
 
 
 # Registered readers keyed by source spec.
@@ -60,7 +60,7 @@ def reader_sniff(reader: Reader, head: bytes, format_: SourceFormat) -> bool:
     return False
 
 
-def read_path(path: Path) -> MultiplexedMeasurement:
+def read_path(path: Path) -> ArtifactBundle:
     """Sniff ``path`` and dispatch to the matching reader.
 
     Raises ValueError if the bytes match no known source.
@@ -68,10 +68,10 @@ def read_path(path: Path) -> MultiplexedMeasurement:
     head = path.read_bytes()[:128]
     spec = sniff(head)
     if spec is None:
-        raise ValueError(f"no reader for {path} (unrecognised bytes)")
+        raise ValueError(f"no reader for {path.name} (unrecognised bytes)")
     return _REGISTRY[spec].read(path)
 
 
-def load(path: Path | str) -> MultiplexedMeasurement:
-    """Load a measurement file into a standardized MultiplexedMeasurement."""
+def load(path: Path | str) -> ArtifactBundle:
+    """Load a measurement file into a validated ``ArtifactBundle``."""
     return read_path(Path(path))

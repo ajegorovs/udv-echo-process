@@ -10,6 +10,7 @@ constructor for transformed artifacts.
 from __future__ import annotations
 
 from udv_echo_process.provenance.models import (
+    ArtifactBundle,
     ArtifactDerivationLink,
     ArtifactGraph,
     ChannelBundle,
@@ -21,10 +22,13 @@ from udv_echo_process.provenance.models import (
     installed_version,
     operation_id_for,
     register_root_artifact,
+    replace_channel,
+    select_channel,
     source_bundle,
 )
 
 __all__ = [
+    "ArtifactBundle",
     "ArtifactDerivationLink",
     "ArtifactGraph",
     "ChannelBundle",
@@ -36,5 +40,7 @@ __all__ = [
     "installed_version",
     "operation_id_for",
     "register_root_artifact",
+    "replace_channel",
+    "select_channel",
     "source_bundle",
 ]

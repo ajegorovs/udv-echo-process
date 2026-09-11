@@ -36,7 +36,6 @@ Comparisons are via ``np.allclose`` — never ``==`` on models carrying arrays.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -62,7 +61,7 @@ from udv_echo_process.process import (
     MonotoneInterpSpec,
     resample,
 )
-from udv_echo_process.provenance import ChannelBundle, source_bundle
+from udv_echo_process.provenance import ChannelBundle, select_channel, source_bundle
 
 DATA = Path("data")
 ECHO = DATA / "echo" / "650.BDD"
@@ -105,18 +104,19 @@ def make_bundle(
 def fixture_bundle(
     path: Path, channel: int, descriptor: SignalDescriptor, *, n_channels: int
 ) -> ChannelBundle:
-    """TEST ADAPTER: legacy ``MultiplexedMeasurement`` -> source bundle."""
-    measurement = load(path)
-    assert len(measurement.channels) == n_channels
-    series = measurement.by_channel()[channel]
-    asset_id = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-    ref = AcquisitionRef(
-        recording_id=recording_id_for(asset_id),
-        source_asset_id=asset_id,
-        channel=ChannelKey(device_channel=channel),
-    )
-    data = observed_signal(series.time_s, series.gate_depths_mm, series.values)
-    return source_bundle(source_artifact(ref, descriptor, series.config, data))
+    """TEST ADAPTER: recording ``ArtifactBundle`` -> source ``ChannelBundle``.
+
+    Phase 6 migrated the ``.BDD`` reader to return an ``ArtifactBundle`` whose
+    graph already holds every decoded channel artifact as a root, so this is
+    now just the plan §7.1 ``select_channel`` bridge — no artifact is rebuilt.
+    The reader's descriptor is fixed per measurement type and must match the
+    requested one.
+    """
+    bundle = load(path)
+    assert len(bundle.recording.streams) == n_channels
+    selected = select_channel(bundle, ChannelKey(device_channel=channel))
+    assert selected.artifact.descriptor == descriptor
+    return selected
 
 
 @pytest.fixture(scope="module")

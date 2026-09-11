@@ -1,4 +1,4 @@
-"""DOP3000/3010 `.BDD` binary reader → `models.MultiplexedMeasurement`.
+"""DOP3000/3010 `.BDD` binary reader → `provenance.ArtifactBundle`.
 
 Layout (hand-transcribed from the DOP3000-3010 User's Manual v6.0 rev 1 and
 cross-checked against the sibling DOPpy reader on this repo's fixtures):
@@ -15,27 +15,72 @@ cross-checked against the sibling DOPpy reader on this repo's fixtures):
   footer: ``timeStamp`` (ms/10, ``uint32``, overflow-corrected),
   ``triggerState``, ``block``, and ``channel`` at ``meas_end - 3``.
 
-Data emission: one ``ChannelSeries`` per channel, with its own
+Data emission: one ``ChannelArtifact`` per channel, with its own
 overflow-corrected timestamps (seconds) and its own ``ChannelConfig``. Velocity
 is decoded to **mm/s** (the ``.ADD`` ``mm/s`` convention); echo to
 module-scale-reflected amplitude. Gate depths come from the per-channel
 ``depth`` profile when present.
+
+Acquisition topology (plan §6.7, §14). The reader sets ``AcquisitionMode`` from
+*decoded* evidence only and never fabricates a round/visit index:
+
+- The op-parameter multiplexer-enable bit (word 52, bit 1; manual
+  ``10-storing-and-reading-measures.md`` §"DOP3000 parameters table" row 52)
+  is the decoded signal. When it is set for the used channels, multiplexed
+  acquisition selected each channel's profiles one after another (manual §11
+  "Using the multiplexer"), so the mode is ``SEQUENTIAL``; otherwise the
+  non-multiplexed file proves no cross-channel mode, so it is ``UNKNOWN``.
+  ``ROLLING`` is never emitted: roll-over is a runtime multiplexer option
+  (manual §11.2), not a stored field, so the file cannot prove it.
+- ``round_id`` / ``visit_id`` / ``profile_in_visit`` are **not** emitted and
+  ``acquisition_order`` stays ``None``. The per-profile footer (manual §10.7
+  points E–K) documents the 2-byte block number at ``meas_end - 8``, but the
+  manual documents it only as a *block/sequence* number, never as a round or
+  visit identity, and the plan forbids deriving round/visit from block order or
+  from that word. Measured for the record: on ``data/4-sensor-velocity/
+  200RPM.BDD`` the block word spans ``1..100`` (matching op word 53, "Nb blocks
+  in multiplexer mode") with four contiguous profiles per channel per block
+  (matching op word 51, "Nb profiles in block in multiplexer mode"), while on
+  ``data/echo/200.BDD`` it is the constant ``1`` across 4181 blocks. **Missing
+  format fact** (for a later phase): no field encodes round or visit identity,
+  so those three index arrays stay ``None`` under the explicit-only rule.
+
+The content SHA-256 is computed in bounded chunks and no absolute path is
+stored anywhere in the returned models (``SourceAsset.file_name`` is a
+basename).
 """
 
 from __future__ import annotations
 
+import hashlib
 import struct
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 
 from udv_echo_process.models import (
+    AcquisitionIndex,
+    AcquisitionMode,
+    AcquisitionRef,
+    ChannelArtifact,
     ChannelConfig,
-    ChannelSeries,
+    ChannelKey,
     MeasType,
-    MultiplexedMeasurement,
+    SignalDescriptor,
+    SignalQuantity,
+    SourceAsset,
+    observed_signal,
+    source_artifact,
 )
+from udv_echo_process.models.identity import recording_id_for
 from udv_echo_process.models.io import SourceFormat, SourceSpec
+from udv_echo_process.models.recording import Recording
+from udv_echo_process.provenance.models import (
+    ArtifactBundle,
+    ArtifactGraph,
+    register_root_artifact,
+)
 
 # ── constants ──────────────────────────────────────────────────────────
 
@@ -68,6 +113,25 @@ _OP_PARAM = {
     "tgc_end": (25, "i"),
     "hardware_delay_ns": (46, "i"),
     "trigger_delay_ms": (47, "i"),
+    # Word 52: bit 1 "if set multiplexer enables"; bits 4–13 selected channels;
+    # bits 15–31 first channel (manual §10.7 parameters table).
+    "mux_flags": (52, "i"),
+}
+
+#: ``mux_flags`` bit that the manual documents as the multiplexer enable.
+_MUX_ENABLE_BIT = 1 << 1
+
+#: Bytes hashed per chunk when content-addressing a source file (plan §13).
+_HASH_CHUNK_BYTES = 1 << 20
+
+#: Descriptor (quantity + fixed unit) for each decoded measurement type.
+_DESCRIPTOR_BY_MEAS_TYPE = {
+    MeasType.ECHO: SignalDescriptor(
+        quantity=SignalQuantity.ECHO_AMPLITUDE, unit="module"
+    ),
+    MeasType.VELOCITY: SignalDescriptor(
+        quantity=SignalQuantity.AXIAL_VELOCITY, unit="mm/s"
+    ),
 }
 
 _PROFILE_NAME = {0: "velo", 1: "echo", 2: "energy", 25: "depth"}
@@ -231,17 +295,94 @@ class _Acc:
         self.depth: np.ndarray | None = None
 
 
-def read(path: Path) -> MultiplexedMeasurement:
-    """Parse a DOP3000/3010 ``.BDD`` file into a ``MultiplexedMeasurement``."""
+def _content_sha256(raw: bytes) -> str:
+    """Return the lower-case hex SHA-256 of ``raw``, hashed in bounded chunks.
+
+    The buffer is read through a :class:`memoryview` in ``_HASH_CHUNK_BYTES``
+    slices so no extra full-size copy is made (plan §13). There is no
+    incremental file-hashing helper elsewhere in the package to reuse:
+    ``models._canonical.sha256_hex`` takes a whole buffer, so this wrapper
+    provides the chunked variant the reader needs.
+    """
+    digest = hashlib.sha256()
+    view = memoryview(raw)
+    for start in range(0, len(view), _HASH_CHUNK_BYTES):
+        digest.update(view[start : start + _HASH_CHUNK_BYTES])
+    return digest.hexdigest()
+
+
+def _multiplexer_enabled(mux_flags: tuple[int, ...]) -> bool:
+    """Return True only when every used channel's mux-enable bit is set.
+
+    ``mux_flags`` are the decoded op-parameter word 52 values of the channels
+    that actually produced data. A mixed or absent configuration proves no
+    multiplexed operation, so it is treated as disabled rather than guessed.
+    """
+    if not mux_flags:
+        return False
+    return all(flag & _MUX_ENABLE_BIT for flag in mux_flags)
+
+
+def _decode_acquisition_mode(multiplexed: bool) -> AcquisitionMode:
+    """Map the decoded multiplexer-enable parameter to an ``AcquisitionMode``.
+
+    Only the decoded multiplexer bit decides the mode; no channel/stream count
+    participates (plan §6.7, §14). Multiplexed acquisition switches channels one
+    after another (manual §11), which is ``SEQUENTIAL``. A non-multiplexed file
+    and a roll-over file both stay ``UNKNOWN``: the former proves no
+    cross-channel mode and the latter's roll-over is a runtime option the format
+    does not store.
+    """
+    if multiplexed:
+        return AcquisitionMode.SEQUENTIAL
+    return AcquisitionMode.UNKNOWN
+
+
+def read(path: Path) -> ArtifactBundle:
+    """Parse a DOP3000/3010 ``.BDD`` file into a validated ``ArtifactBundle``.
+
+    The graph registers every decoded channel artifact as a root artifact, so
+    callers can process the bundle immediately without repairing provenance.
+    Source identity is the file's content SHA-256 (no absolute path is stored);
+    ``recording_id`` and every ``artifact_id`` are content-derived and
+    deterministic. ``AcquisitionMode`` is decoded from the documented
+    multiplexer parameter, and ``acquisition_order``/round/visit stay absent
+    when the format proves no such field (see the module docstring).
+
+    Args:
+        path: the ``.BDD`` file to read.
+
+    Returns:
+        A validated :class:`~udv_echo_process.provenance.ArtifactBundle`.
+
+    Raises:
+        ValueError: the bytes are not a DOP3000 ``.BDD`` file, a used channel
+            has no depth pseudo-profile, the gate axes disagree, or no channel
+            data was decoded.
+    """
     raw = path.read_bytes()
     if not sniff_bdd(raw):
-        raise ValueError(f"not a DOP3000 .BDD file: {path}")
+        raise ValueError(f"not a DOP3000 .BDD file: {path.name}")
 
     buf = _Buffer(raw)
-    version = _decode_str(buf.slice(0, 16))
-    comment = _decode_str(buf.slice(16, 16 + 512))
+    # The fixed header (ASCII version + comment) is still decoded, but §6.7's
+    # models have no field to carry it, so it is deliberately not stored here
+    # (documented Phase 6 gap; adding it would need a model change).
+    _version = _decode_str(buf.slice(0, 16))
+    _comment = _decode_str(buf.slice(16, 16 + 512))
 
     op: dict[int, dict[str, object]] = {ch: _read_op(buf, ch) for ch in range(1, 11)}
+
+    content_sha256 = _content_sha256(raw)
+    asset_id = f"sha256:{content_sha256}"
+    source_asset = SourceAsset(
+        asset_id=asset_id,
+        content_sha256=content_sha256,
+        byte_size=len(raw),
+        file_name=path.name,
+        source=_DOP_SPEC,
+    )
+    recording_id = recording_id_for(asset_id)
 
     # ── walk the measurement block chain ──────────────────────────────
     acc: dict[int, _Acc] = {}
@@ -287,35 +428,65 @@ def read(path: Path) -> MultiplexedMeasurement:
             a.time.append(ts_raw)
         meas_start = meas_end
 
-    # ── build ChannelSeries per used channel ──────────────────────────
-    series = []
+    # ── build one source artifact per used channel ────────────────────
+    streams: list[ChannelArtifact] = []
+    used_channels: list[int] = []
     for ch in sorted(acc):
         a = acc[ch]
         if not (a.velo or a.echo):
             continue
-        t = _correct_time(np.array(a.time))
+        if a.depth is None:
+            raise ValueError(
+                f"channel {ch} of {path.name} has no decoded depth pseudo-"
+                "profile; the binary format guarantees one per channel"
+            )
+        time_s = _correct_time(np.array(a.time))
         if a.velo:
             values = np.vstack(a.velo)
             meas_type = MeasType.VELOCITY
         else:
             values = np.vstack(a.echo)
             meas_type = MeasType.ECHO
-        q = a.depth if a.depth is not None else []
-        series.append(
-            ChannelSeries(
-                channel=ch,
-                meas_type=meas_type,
-                gate_depths_mm=list(q),
-                time_s=t,
-                values=values,
-                config=_build_config(op[ch], q),
+        if values.shape[1] != a.depth.shape[0]:
+            raise ValueError(
+                f"channel {ch} of {path.name} decoded {values.shape[1]} gates "
+                f"but {a.depth.shape[0]} gate depths"
+            )
+        data = observed_signal(
+            time_s,
+            a.depth,
+            values,
+            acquisition=AcquisitionIndex(
+                sample_id=np.arange(time_s.shape[0], dtype=np.int64),
+                acquisition_time_s=time_s,
+            ),
+        )
+        ref = AcquisitionRef(
+            recording_id=recording_id,
+            source_asset_id=asset_id,
+            channel=ChannelKey(device_channel=ch),
+        )
+        streams.append(
+            source_artifact(
+                ref,
+                _DESCRIPTOR_BY_MEAS_TYPE[meas_type],
+                _build_config(op[ch], a.depth),
+                data,
             )
         )
+        used_channels.append(ch)
 
-    return MultiplexedMeasurement(
-        file_path=Path(path),
-        source=_DOP_SPEC,
-        header=version,
-        comment=comment,
-        channels=series,
+    if not streams:
+        raise ValueError(f"{path.name} contains no decoded channel data")
+
+    mux_flags = tuple(cast(int, op[ch]["mux_flags"]) for ch in used_channels)
+    recording = Recording(
+        recording_id=recording_id,
+        source_asset=source_asset,
+        acquisition_mode=_decode_acquisition_mode(_multiplexer_enabled(mux_flags)),
+        streams=tuple(streams),
     )
+    graph = ArtifactGraph()
+    for stream in recording.streams:
+        graph = register_root_artifact(graph, stream.artifact_id)
+    return ArtifactBundle(recording=recording, graph=graph)

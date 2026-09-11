@@ -139,12 +139,16 @@ def test_channel_config_preserves_reader_trigger_delay():
 
     ``io.dop.bdd._build_config`` has always passed ``trigger_delay_ms`` from op
     word 47; the value was silently dropped while the model had no such field.
-    The migrated frozen model must keep the fixture value.
+    The migrated reader returns an ``ArtifactBundle`` whose stream config must
+    keep the fixture value (mirrored in ``tests/test_io_bdd_artifacts.py``).
     """
     from udv_echo_process.io.dop.bdd import read
+    from udv_echo_process.models import ChannelKey
+    from udv_echo_process.provenance import select_channel
 
-    m = read(Path("data/echo/200.BDD"))
-    assert m.channels[0].config.trigger_delay_ms == pytest.approx(0.0)
+    bundle = read(Path("data/echo/200.BDD"))
+    channel = select_channel(bundle, ChannelKey(device_channel=4))
+    assert channel.artifact.config.trigger_delay_ms == pytest.approx(0.0)
 
 
 # ── array ownership ────────────────────────────────────────────────────

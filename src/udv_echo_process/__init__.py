@@ -14,12 +14,16 @@ from udv_echo_process.analysis import (
     setpoint_rpm_from_stem,
 )
 
-# `load` reads any supported measurement (today: .BDD) into a MultiplexedMeasurement.
+# `load` reads any supported measurement (today: .BDD) into an ArtifactBundle:
+# a Recording plus the provenance graph that resolves all its channel artifacts.
 from udv_echo_process.io import load
 from udv_echo_process.models import (
+    AcquisitionMode,
     ChannelConfig,
     ChannelSeries,
     MultiplexedMeasurement,
+    ProfileStatistics,
+    Recording,
     SourceFormat,
     SourceSpec,
 )
@@ -50,6 +54,7 @@ from udv_echo_process.process import (
     filter_sequence,
     resample,
 )
+from udv_echo_process.provenance import ArtifactBundle
 from udv_echo_process.viz import (
     discover_data_files,
     plot_all,
@@ -58,6 +63,8 @@ from udv_echo_process.viz import (
 )
 
 __all__ = [
+    "AcquisitionMode",
+    "ArtifactBundle",
     "BsplineInterpSpec",
     "ChannelConfig",
     "ChannelFrame",
@@ -72,6 +79,8 @@ __all__ = [
     "MedianFilterSpec",
     "MonotoneInterpSpec",
     "MultiplexedMeasurement",
+    "ProfileStatistics",
+    "Recording",
     "RpmResult",
     "SavgolFilterSpec",
     "SourceFormat",

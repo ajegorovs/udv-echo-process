@@ -23,7 +23,6 @@ recorded deviation.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -42,7 +41,6 @@ from udv_echo_process.models import (
     SignalDescriptor,
     SignalQuantity,
     SupportKind,
-    observed_signal,
     source_artifact,
 )
 from udv_echo_process.models.identity import recording_id_for
@@ -55,7 +53,7 @@ from udv_echo_process.process import (
     filter,
     filter_sequence,
 )
-from udv_echo_process.provenance import ChannelBundle, source_bundle
+from udv_echo_process.provenance import ChannelBundle, select_channel, source_bundle
 
 FILTERED = int(QualityFlag.FILTERED)
 EDGE = int(QualityFlag.EDGE_AFFECTED)
@@ -958,24 +956,18 @@ class TestTransferredNumerics:
 def _fixture_bundle(
     path: Path, channel: int, descriptor: SignalDescriptor
 ) -> ChannelBundle:
-    """TEST ADAPTER: ``MultiplexedMeasurement`` -> source ``ChannelBundle``.
+    """TEST ADAPTER: recording ``ArtifactBundle`` -> source ``ChannelBundle``.
 
-    The ``.BDD`` reader still returns ``MultiplexedMeasurement`` until phase 6,
-    so the test builds the phase-1..3 source artifact itself. Every fixture
-    value is finite and every time strictly increasing (verified), so an
-    all-``OBSERVED`` ``observed_signal`` is correct. No round/visit ids are
-    invented -- the format cannot prove them.
+    Phase 6 migrated the ``.BDD`` reader to return an ``ArtifactBundle`` whose
+    graph already holds every decoded channel artifact as a root, so the fixture
+    is the plan §7.1 ``select_channel`` bridge — nothing is rebuilt and no
+    round/visit id is invented (the reader emits none; the format cannot prove
+    them).
     """
-    measurement = load(path)
-    series = measurement.by_channel()[channel]
-    asset_id = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-    acquisition = AcquisitionRef(
-        recording_id=recording_id_for(asset_id),
-        source_asset_id=asset_id,
-        channel=ChannelKey(device_channel=channel),
-    )
-    data = observed_signal(series.time_s, series.gate_depths_mm, series.values)
-    return source_bundle(source_artifact(acquisition, descriptor, series.config, data))
+    bundle = load(path)
+    selected = select_channel(bundle, ChannelKey(device_channel=channel))
+    assert selected.artifact.descriptor == descriptor
+    return selected
 
 
 @pytest.fixture(scope="module")

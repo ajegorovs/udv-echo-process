@@ -1,10 +1,11 @@
 """Data-source (IO) layer — where measurements come from.
 
 The IO layer owns source *discovery* and *per-source parsing*; each reader ends
-in the same canonical model (`models.MultiplexedMeasurement`). Discovery and
-dispatch **sniff content** (magic bytes), not extensions — a misnamed file is
-rejected by its bytes, and a `.BDD` that is really a PNG (a documented trap in
-this repo's fixtures) is caught here.
+in the same canonical model (`provenance.ArtifactBundle` — a `Recording` plus
+the provenance graph that resolves every one of its channel artifacts).
+Discovery and dispatch **sniff content** (magic bytes), not extensions — a
+misnamed file is rejected by its bytes, and a `.BDD` that is really a PNG (a
+documented trap in this repo's fixtures) is caught here.
 """
 
 from __future__ import annotations
@@ -13,10 +14,10 @@ from pathlib import Path
 
 from udv_echo_process.io.base import Reader, load, read_path, register_reader, sniff
 from udv_echo_process.io.dop import bdd as _dop_bdd  # noqa: F401 (registers reader)
-from udv_echo_process.models.measurement import MultiplexedMeasurement
+from udv_echo_process.provenance.models import ArtifactBundle
 
 __all__ = [
-    "MultiplexedMeasurement",
+    "ArtifactBundle",
     "Reader",
     "discover_data_files",
     "load",

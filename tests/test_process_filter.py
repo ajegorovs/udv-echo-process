@@ -30,7 +30,6 @@ models carrying arrays.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -55,7 +54,7 @@ from udv_echo_process.process import (
     filter,
     filter_sequence,
 )
-from udv_echo_process.provenance import ChannelBundle, source_bundle
+from udv_echo_process.provenance import ChannelBundle, select_channel, source_bundle
 
 DATA = Path("data")
 ECHO = DATA / "echo" / "650.BDD"
@@ -130,19 +129,19 @@ def fixture_bundle(
     *,
     n_channels: int | None = None,
 ) -> ChannelBundle:
-    """TEST ADAPTER: legacy ``MultiplexedMeasurement`` -> source bundle."""
-    measurement = load(path)
+    """TEST ADAPTER: recording ``ArtifactBundle`` -> source ``ChannelBundle``.
+
+    Phase 6 migrated the ``.BDD`` reader to return an ``ArtifactBundle`` whose
+    graph already holds every decoded channel artifact as a root, so this is the
+    plan §7.1 ``select_channel`` bridge — no artifact is rebuilt and no
+    round/visit id is invented (the reader emits none).
+    """
+    bundle = load(path)
     if n_channels is not None:
-        assert len(measurement.channels) == n_channels
-    series = measurement.by_channel()[channel]
-    asset_id = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-    acquisition = AcquisitionRef(
-        recording_id=recording_id_for(asset_id),
-        source_asset_id=asset_id,
-        channel=ChannelKey(device_channel=channel),
-    )
-    data = observed_signal(series.time_s, series.gate_depths_mm, series.values)
-    return source_bundle(source_artifact(acquisition, descriptor, series.config, data))
+        assert len(bundle.recording.streams) == n_channels
+    selected = select_channel(bundle, ChannelKey(device_channel=channel))
+    assert selected.artifact.descriptor == descriptor
+    return selected
 
 
 @pytest.fixture(scope="module")

@@ -1,21 +1,33 @@
-"""Row-level acquisition index (plan §6.4).
+"""Row-level acquisition index and acquisition mode (plan §6.4, §6.7).
 
 Maps each ``(T,)`` payload row to its exact source acquisition, or marks it
 wholly synthetic. ``sample_id == -1`` iff the actual acquisition time is NaN;
 present optional ids are ``>= 0`` or exactly ``-1`` (unmatched/unknown).
 
-``AcquisitionMode`` belongs to this module but is added in Phase 6 — it is not
-defined here yet.
+``AcquisitionMode`` describes how a *recording*'s channels were acquired. It is
+never inferred: only decoding may set it, and a file the format cannot prove
+yields :attr:`AcquisitionMode.UNKNOWN` (plan §6.7, §14).
 """
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Annotated
 
 import numpy as np
 from pydantic import ValidationInfo, field_validator, model_validator
 
 from udv_echo_process.models.base import ArrayModel, ArraySpec, array_field
+
+
+class AcquisitionMode(str, Enum):
+    """How a recording's channels were acquired, or ``UNKNOWN`` if unprovable."""
+
+    SIMULTANEOUS = "simultaneous"
+    SEQUENTIAL = "sequential"
+    ROLLING = "rolling"
+    UNKNOWN = "unknown"
+
 
 #: Optional per-row int64 index of length ``(T,)``.
 _OptionalInt64 = Annotated[np.ndarray | None, ArraySpec(np.dtype(np.int64), rank=1)]

@@ -4,7 +4,10 @@ Plan §8.1–§8.2. A per-channel transform records exactly one ``OperationRecor
 node and one ``ArtifactDerivationLink`` edge in an ``ArtifactGraph``; the
 artifact itself carries ids, never a copied history list. ``ChannelBundle``
 pairs the current artifact with that closed graph, so a transform cannot return
-data while silently dropping provenance.
+data while silently dropping provenance. ``ArtifactBundle`` is the
+recording-level equivalent: a ``Recording`` (from
+:mod:`udv_echo_process.models.recording`) plus the graph that must resolve every
+one of its streams.
 
 Everything here is immutable and pure: insertion helpers return a *new* graph
 and never touch their input, so a failed operation cannot partially update
@@ -24,6 +27,8 @@ from pydantic import ValidationInfo, field_validator, model_validator
 
 from udv_echo_process.models._canonical import canonical_json_bytes, stable_id
 from udv_echo_process.models.base import ArrayModel, ValueModel
+from udv_echo_process.models.identity import ChannelKey
+from udv_echo_process.models.recording import Recording
 from udv_echo_process.models.signal import ChannelArtifact
 
 #: Opaque id form: ``sha256:`` plus 64 lower-case hex characters.
@@ -319,6 +324,34 @@ class ChannelBundle(ArrayModel):
         return self
 
 
+class ArtifactBundle(ArrayModel):
+    """Recording-level processing state: a ``Recording`` plus its closed DAG.
+
+    Enforces that every artifact carried by :attr:`recording` resolves in
+    :attr:`graph`, either as a root artifact or through a derivation (plan
+    §8.2). The graph itself keeps the Phase-3 invariants; cycle detection,
+    bundle-wide id revalidation and ``derive_many()`` are Phase 7.
+    """
+
+    recording: Recording
+    graph: ArtifactGraph
+
+    @model_validator(mode="after")
+    def _check_streams_resolve(self) -> ArtifactBundle:
+        resolvable = set(self.graph.root_artifacts) | {
+            link.artifact_id for link in self.graph.derivations
+        }
+        for index, stream in enumerate(self.recording.streams):
+            if stream.artifact_id not in resolvable:
+                raise ValueError(
+                    f"recording stream {index} (channel "
+                    f"{stream.acquisition.channel.device_channel}) artifact "
+                    f"{stream.artifact_id!r} does not resolve in the graph (it "
+                    "is neither a root artifact nor a derived artifact)"
+                )
+        return self
+
+
 def register_root_artifact(graph: ArtifactGraph, artifact_id: str) -> ArtifactGraph:
     """Return a NEW graph with ``artifact_id`` registered as a root artifact.
 
@@ -391,6 +424,94 @@ def source_bundle(artifact: ChannelArtifact) -> ChannelBundle:
         artifact=artifact,
         graph=register_root_artifact(ArtifactGraph(), artifact.artifact_id),
     )
+
+
+def select_channel(bundle: ArtifactBundle, key: ChannelKey) -> ChannelBundle:
+    """Return the per-channel processing state for ``key`` (plan §7.1).
+
+    Pure: the deeply immutable graph is reused by reference (no provenance is
+    copied) and the input bundle is never touched. This is the supported bridge
+    from recording-level to per-channel processing.
+
+    Args:
+        bundle: the recording-level bundle to select from.
+        key: the channel to project into a ``ChannelBundle``.
+
+    Returns:
+        The ``ChannelBundle`` pairing that stream's artifact with the bundle's
+        own graph (the same object, not a copy).
+
+    Raises:
+        ValueError: when the recording carries no such channel.
+    """
+    for stream in bundle.recording.streams:
+        if stream.acquisition.channel == key:
+            return ChannelBundle(artifact=stream, graph=bundle.graph)
+    channels = [s.acquisition.channel.device_channel for s in bundle.recording.streams]
+    raise ValueError(
+        f"channel {key.device_channel} is not part of recording "
+        f"{bundle.recording.recording_id!r}; it carries channels {channels}"
+    )
+
+
+def replace_channel(bundle: ArtifactBundle, channel: ChannelBundle) -> ArtifactBundle:
+    """Return a NEW recording bundle with exactly one stream replaced (§7.1).
+
+    Requires the same ``recording_id`` and channel identity as the stream it
+    replaces, swaps that single stream's artifact (keeping its position), and
+    adopts ``channel.graph`` as the returned validated graph. Pure: the input
+    bundle and graph are never mutated.
+
+    Args:
+        bundle: the recording-level bundle to update.
+        channel: the per-channel bundle whose artifact replaces one stream and
+            whose graph becomes the recording's provenance graph.
+
+    Returns:
+        A new validated :class:`ArtifactBundle`.
+
+    Raises:
+        ValueError: when the recording does not carry the artifact's channel.
+        pydantic.ValidationError: when the recording identity, source asset or
+            channel identity is inconsistent, or the new graph no longer
+            resolves every stream.
+    """
+    artifact = channel.artifact
+    ref = artifact.acquisition
+    actual = bundle.recording
+    if ref.recording_id != actual.recording_id:
+        raise ValueError(
+            f"replace_channel: channel {ref.channel.device_channel} belongs to "
+            f"recording {ref.recording_id!r}, not {actual.recording_id!r}"
+        )
+    if ref.source_asset_id != actual.source_asset.asset_id:
+        raise ValueError(
+            f"replace_channel: channel {ref.channel.device_channel} has "
+            f"source_asset_id {ref.source_asset_id!r}, not "
+            f"{actual.source_asset.asset_id!r}"
+        )
+    positions = [
+        index
+        for index, stream in enumerate(actual.streams)
+        if stream.acquisition.channel == ref.channel
+    ]
+    if len(positions) != 1:
+        channels = [s.acquisition.channel.device_channel for s in actual.streams]
+        raise ValueError(
+            f"replace_channel: channel {ref.channel.device_channel} is not "
+            f"exactly one stream of recording {actual.recording_id!r}; the "
+            f"recording carries channels {channels}"
+        )
+    streams = list(actual.streams)
+    streams[positions[0]] = artifact
+    recording = Recording(
+        recording_id=actual.recording_id,
+        source_asset=actual.source_asset,
+        acquisition_mode=actual.acquisition_mode,
+        streams=tuple(streams),
+        acquisition_order=actual.acquisition_order,
+    )
+    return ArtifactBundle(recording=recording, graph=channel.graph)
 
 
 def operation_id_for(
