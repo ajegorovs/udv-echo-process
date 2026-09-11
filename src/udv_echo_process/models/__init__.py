@@ -18,6 +18,12 @@ from udv_echo_process.models.identity import (
     SourceAsset,
 )
 from udv_echo_process.models.io import MeasType, SourceFormat, SourceSpec
+from udv_echo_process.models.profiles import (
+    RobustGateStatus,
+    RobustProfileSettings,
+    RobustVelocityProfiles,
+    TvL1Settings,
+)
 from udv_echo_process.models.recording import ProfileStatistics, Recording
 from udv_echo_process.models.signal import (
     ChannelArtifact,
@@ -53,6 +59,9 @@ __all__ = [
     "ProfileStatistics",
     "QualityFlag",
     "Recording",
+    "RobustGateStatus",
+    "RobustProfileSettings",
+    "RobustVelocityProfiles",
     "SampleSupport",
     "SignalData",
     "SignalDescriptor",
@@ -63,6 +72,7 @@ __all__ = [
     "StateDetectionMode",
     "StateDetectionSettings",
     "SupportKind",
+    "TvL1Settings",
     "ValueModel",
     "array_digest",
     "artifacts_equal",

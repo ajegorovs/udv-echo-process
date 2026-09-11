@@ -158,14 +158,16 @@ Each item below would violate a rule this repo already settled:
   recorded blockers, not synthesized evidence.
 - **Phase 1 — complete:** calculated canonical BDD depths, high-confidence
   `ChannelConfig` corrections, and content-aware `.ADD`/`.BDD` `udv-inspect`.
-- **Phase 2 — active:** typed terminal operating-state results and their
-  `ChannelBundle` producer are complete and baseline-verified. Robust-profile
-  results/producer and the small JSON/CSV/NPZ export boundary remain.
-- **Phase 3 — the 2-D TV-L1 decision** (§9, D1), including redefined segment /
-  edge / support rules if accepted.
-- **Phase 4 — documentation and provenance:** move the porting-map row
-  (`QuantileRegression`, `PeakDetect`) from *Not yet ported* to `analysis/`, and
-  record the Mathematica lineage the way `references/wolfram/README.md` does.
+- **Phase 2 — active:** typed terminal operating-state and robust-profile
+  results/producers are complete and baseline-verified. The small JSON/CSV/NPZ
+  export boundary remains.
+- **Phase 3 — complete:** the 2-D TV-L1 solver is private to robust-profile
+  analysis, with no public `FilterSpec`, support-semantics change, or provenance
+  operation. Promotion would require a separate gate-coupling use case and
+  contract review.
+- **Phase 4 — active/blocked:** update the porting map to distinguish the
+  absorbed quantile-envelope implementation from still-unported `PeakDetect`.
+  Exact predecessor Mathematica lineage remains unconfirmed (§8).
 
 ## 8. Retirement prerequisites
 

@@ -35,7 +35,7 @@ src/udv_echo_process/
 ├── io/           reader registry and DOP BDD reader
 ├── parser.py     independent .ADD parser returning ExtractedData
 ├── viz.py        independent .ADD visualization layer
-├── analysis/     terminal domain algorithms, currently echo RPM
+├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles
 ├── run_all.py    batch `.ADD` echo-RPM + visualization flow
 └── cli.py        udv-inspect, udv-viz, and udv-run-all entry points
 ```

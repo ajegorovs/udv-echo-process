@@ -46,21 +46,25 @@ have only one visit in a matched round. A round groups cross-stream visits;
 
 ---
 
-## Pending decisions — `udv-analysis` retirement
+## Active work — `udv-analysis` retirement
 
-`docs/udv-analysis-absorption-plan.md` records what the retiring external
-`udv-analysis` package uniquely provides (state detection, quantile-envelope
-rejection, robust median/MAD profiles), what must be absorbed here, what must
-not, and the measurements behind both. **Review the document** and settle its §9
-decisions (D1–D5) before Phase 1 begins.
+The absorption architecture is approved and implementation Phases 0–3 are
+complete: the private reproducible retirement baseline, calculated BDD depth and
+inspection work, typed operating-state detection, robust median/unscaled-MAD
+profiles, and the private 2-D TV-L1 preprocessing used only by that terminal
+analysis chain. See [`udv-analysis-absorption-plan.md`](udv-analysis-absorption-plan.md).
 
-Two items cannot wait for the review to finish:
+Remaining implementation work is the small terminal-result JSON/CSV/NPZ export
+boundary. Retirement itself remains blocked on honest evidence rather than code:
 
-- **Phase 0 — retirement baseline pack.** The source ships no baselines; its
-  equivalence evidence is ad-hoc output only. Capture a private fixture pack
-  from it before the checkout is deleted.
-- **Predecessor provenance** (§8.2): confirm which earlier Mathematica/Python
-  workflow produced its accepted results, and record it here.
+- **Predecessor provenance** (§8.2): neither source nor Git history identifies
+  which earlier Mathematica/Python workflow produced the accepted results. The
+  local `QuantileRegression.m`/echo notebook is only an unconfirmed candidate.
+- **External dependency check** (§8.3): confirm no CI, notebook, or downstream
+  consumer outside these two repositories still depends on `udv-analysis`.
+- There is no real multi-state velocity fixture; multi-transition equivalence is
+  therefore proven against the retiring implementation on synthetic topology,
+  while all archived real runs are steady single-state cases.
 
 ---
 
