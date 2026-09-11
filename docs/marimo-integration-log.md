@@ -445,3 +445,100 @@ T7 review pointer). Commits: `16cdf4e`, `b4073f8`, `6bc96c4`, `5be0b0f`,
   reload, fetch modules via `importlib.import_module("a.b.c")` (sys.modules
   key, shadow-proof). Reproduced 2026-09-09 with the filter-platform bootstrap
   cell.
+
+### 2026-09-11 (later session) — provider T-V1 round driven from the consumer (O35–O38)
+
+Ran the provider's open post-hunt check round
+(`~/Repos/marimo-inspect/docs/agenda-verification-round.md` §T-V1) against the
+fix set released as **v0.3.3**, from this repo as the real consumer. Live
+target: marimo **0.24.0** edit server on `:2718` on a `/tmp` copy of
+`notebooks/channel_preview.py` (md5 identical to the committed file), kernel
+session materialized via the `/sse?session_id=…&file=…` handshake (isolated
+`XDG_STATE_HOME`); surface driven twice — through this harness's MCP tools and
+through `fastmcp`/`mcp`-SDK clients (stdio + an `--transport http` instance on
+`:8090`). Harness MCP server binary is the sibling checkout's
+`.venv/bin/marimo-inspect` (editable, so provider HEAD). Round-1 of the run was
+discarded: a crashed first pass left mutated cells in the notebook copy and two
+assertions were badly phrased (they matched the *intended* guidance); the
+payloads below are from the clean, correct run.
+
+- **O35** ✅ **All five changed behaviours verified end to end** — the surface
+  does what the packaged resources now say:
+  - binding over stdio: argument-less `get_cell_map` after
+    `list_active_notebooks` was served (21 cells), both through this harness's
+    client and through fastmcp's session-per-request `Client` (the H11 case,
+    i.e. the process-global fallback);
+  - binding over HTTP with two clients present: the second argument-less call
+    was refused `binding_ambiguous` and never handed the other client's
+    notebook, while an explicit `session_id`+`server_url` call was served — and
+    an `mcp`-SDK client (one MCP session) was served from its own session state
+    even with many client sessions on the process. Fails closed, as documented;
+  - `edit_cell` on a cell this process had only previewed returned
+    `needs_read` with *"Cell ZHCJ was never read by this agent. Call
+    get_cell_data for it (a get_cell_map preview does not record the read
+    baseline)…"*, and succeeded after `get_cell_data`;
+  - a bogus id came back in `missing_cell_ids` for both `get_cell_data` and
+    `get_cell_outputs` (never an empty happy path); `get_dependency_graph` with
+    `depth=1` refused `unsupported_argument` + *"Nothing was read."*, and its
+    `cells[].cell_name` agreed with `get_cell_map` (empty string for unnamed
+    created cells);
+  - `set_ui_value`: a scalar string sent to a list-shaped dropdown was refused
+    `value_shape_mismatch` with `did_you_mean: ["beta"]` and
+    `accepted_shape: list[str]`; the corrected one-element list applied with
+    `verified: true`; a valid change whose `on_change` handler raises gave
+    `on_change_failed` + `applied: true`; repeating the held value gave
+    `on_change_failed` + `applied: false` + `no_change: true` (the T13 residual
+    combination, never `value_not_applied`) with `next_steps` saying
+    re-sending *cannot* help;
+  - `get_errors`: a cell printing `Error: 3 rows skipped` was not flagged; the
+    handler traceback was, with the marker named per cell (`"traceback"`) and
+    the full stderr — including marimo's *"An exception was raised by a
+    UIElement's on_change handler:"* line — under that cell's `console_stderr`;
+  - `get_variables` with no names returned only notebook names
+    (`TraceScrubber`, `discover_data_files`, `file_picker`, `go`, `input`,
+    `load`, `mo`, `np`, `spec_from_loader`, `tv1_widget`) — no `json`, `cm`,
+    `get_variables`, `_is_ui`, `_serialize`.
+- **O36** ✅ **Doc-vs-surface sweep clean.** All three packaged resources plus
+  the provider `README.md` agree with every observed payload. Every one of the
+  five `get_cell_map` mentions across them frames the map as *orientation only*
+  and states the preview does **not** record the `edit_cell` baseline, with
+  `get_cell_data` as the recovery read — no resource still offers
+  `get_cell_map` as a read/recovery step.
+- **O37** ⚠️ **Doc-precision item — filed upstream as the provider's `T-V2`.**
+  *Correction to this entry's first wording:* the top level of `get_errors`
+  carries **no** `console_exception_evidence` / `console_stderr` keys at all —
+  they are absent, not null-valued — and the evidence (`"traceback"`) plus the
+  stderr events live only on `cells[]`, which `next_steps` already points at.
+  The payload is correct. What misleads is the wording: the tool description
+  names `console_stderr` as a reported channel without scoping it to `cells[]`,
+  and the provider's own `T-V1` §6 check line (`console_exception_evidence` says
+  which marker matched) does not either — this run asserted a top-level field
+  and had to be re-run to discover the difference. **Filed** in
+  `~/Repos/marimo-inspect/docs/agenda-verification-round.md` §T-V2 with the
+  evidence block and repro, severity *cosmetic* (the provider's
+  `docs/bug-hunt-protocol.md` schema); the provider's `T-V1` boxes stay
+  unticked, since that round requires a fresh zero-context agent.
+- **O38** ⚠️ **Pin/install drift is the real consumer-side gap.** While the
+  harness MCP server runs the sibling editable checkout at v0.3.3, this repo's
+  `pyproject.toml` pins `marimo-inspect` at tag **`v0.3.0`** — so a normal
+  `uv sync --extra marimo` installs the pre-fix package, and `.venv` today
+  carries a v0.3.0 *metadata* + sibling-source hybrid from an earlier editable
+  install. Bumping the pin to `v0.3.3` (and re-syncing) is what makes the
+  verified surface reproducible for anyone else. **Landed the same session:**
+  `pyproject.toml` `[tool.uv.sources]` now reads `tag = "v0.3.3"`, and
+  `uv lock` + `uv sync --extra marimo --extra dev` moved `.venv` from the
+  sibling editable install to
+  `git+…@d0d673649527dcef07199f51fb76822b0a7d0bf3` — `marimo-inspect 0.3.3`
+  imported out of `.venv/…/site-packages`, `TraceScrubber` resolves from the
+  installed package, **130 passed**, `marimo check notebooks` exit 0, and the
+  `uv.lock` diff is that one entry (no other package touched).
+
+Harness recipe (recreate if the round is re-run): boot
+`XDG_STATE_HOME=<tmp> .venv/bin/marimo edit <copy>.py --no-token --headless
+--port 2718 --host 127.0.0.1`, materialize a session with
+`GET /sse?session_id=<uuid>&file=<abs path>` and wait for `kernel-ready`, then
+drive `~/Repos/marimo-inspect/.venv/bin/marimo-inspect --transport stdio` with
+a `fastmcp` `Client`; use a **fresh** notebook copy per attempt — a crashed run
+leaves created cells behind, and repeated names make `create_cell` fail with
+`Multiply-defined names`. Scripts were throwaway under `/tmp`; payload evidence
+in `/tmp/tv1/tv1_evidence.json`.

@@ -769,3 +769,149 @@ or local-editable routes only until that changes.
 this item. Before retirement, verify that the README/AGENTS onboarding text
 covers the supported installation route and the documented fallback boundaries
 (screenshots, server/kernel lifecycle, and arbitrary CodeMode probes).
+
+---
+
+## Session status — 2026-09-11: marimo-inspect upstream fixes — agenda reconciliation
+
+Docs-only session, no code. The sibling provider landed its post-hunt fix set
+(hunt #1 closed with all 11 findings resolved, the udv consumer agenda closed
+`T3`/`T14`) and released **v0.3.1 → v0.3.3**. This entry re-reads the agenda
+above against that state; the older items are left in place (append-only) — the
+corrections are here.
+
+**Closed by the provider (📄 provider git log/docs; consumer-unverified):**
+
+- **§2 O17 (list-arg marshalling) — closed.** Real list args work; the provider
+  closed its `T3` as non-reproducing (the defensive types were already in
+  `v0.2.0`).
+- **§2 O16 (auto-bind persistence) — fixed upstream; no longer a consumer
+  action.** The "does not persist across harness tool calls → keep explicit
+  `server_url` per call" line above describes the pre-fix provider. Binding is
+  now MCP-session state with a process-global fallback, and
+  `session_id`/`server_url` are **omittable over stdio for every client**; over
+  HTTP/SSE they are omittable only while a single client session is on the
+  process, otherwise the call is refused `binding_ambiguous` and is never handed
+  another client's notebook. **Caveat (❓):** the provider's own consumer-level
+  check round (`docs/agenda-verification-round.md`, `T-V1`) is still open, so
+  treat this as fixed-but-unverified **from this repo** — and restart the
+  harness's MCP process before any check, since payloads, docstrings and
+  resources are served by the process started at launch.
+
+**Unchanged — do not close:**
+
+- **§2 O15 (zero-arg headless discovery)** — environment, not provider: the
+  read-only `~/.local/state/marimo/servers/` here yields an empty registry. Keep
+  passing `server_url` explicitly in this environment.
+- **§5 live notebook cell-run smoke tests** — the token-gated
+  `/api/kernel/instantiate` gap is closed only inside the provider's own live
+  suite (redesign resolved 2026-09-06; 19 live tests green); a `--no-token`
+  consumer session still cannot be instantiated. Do not promise these here yet.
+
+**Consumer-side work still owed (not closed by the upstream fixes):**
+
+- **`AGENTS.md` Marimo section** — the 2026-09-09 follow-up is half done: the
+  provider half is closed (`agenda-udv-consumer-findings.md` = closed), but the
+  five behaviours that changed shape on 2026-09-11 are not yet folded in:
+  `get_cell_map` no longer arms `edit_cell` (a first edit owes a
+  `get_cell_data`); `get_dependency_graph` refuses `cell_id`/`depth` instead of
+  ignoring them; read tools report `missing_cell_ids` instead of an empty happy
+  path; `get_errors` flags a cell only on real exception evidence.
+- **§2026-09-10 onboarding block** — its own stated prerequisite is now largely
+  met (tagged releases + an authoritative provider harness-integration guide and
+  the git-tag install route). Two corrections to that block: (a) the line
+  "No `marimo` extra exists today; do not document `uv sync --extra marimo`" is
+  now false — the `marimo` extra exists and is documented in
+  `AGENTS.md`/`README.md`; (b) the package-index route is **still** unsupported,
+  so keep documenting git-tag/local routes only. Retiring the
+  `marimo-pair`/`retro-marimo-pair` skills remains open.
+- **Pin bump (concrete follow-up; not previously an agenda item)** — the
+  `marimo` extra pins `marimo-inspect` at tag **`v0.3.0`**
+  (`pyproject.toml` `[tool.uv.sources]`) while the provider is at **`v0.3.3`**,
+  so none of the hunt #1 fixes (binding scope, read baseline, payload
+  truthfulness, `get_errors` evidence) nor the `T13` widget residual is in this
+  install. Bumping the tag is a code change (`pyproject.toml` + `uv.lock` +
+  notebook re-check), deliberately not part of this doc session.
+
+Working tree clean at `114c358` before this entry.
+
+---
+
+## Session status — 2026-09-11 (cont.): T-V1 consumer run + pin drift confirmed
+
+Execution session for the two follow-ups listed above. Live verification +
+docs only; no `src/` changes.
+
+**T-V1 round run from the consumer — all checks PASS (evidence:
+`marimo-integration-log.md` O35–O38).** Against provider **v0.3.3** on a live
+marimo 0.24.0 session (a copy of `notebooks/channel_preview.py`), driven through
+this harness's MCP tools **and** through `fastmcp`/`mcp`-SDK clients (stdio + an
+`--transport http` instance): binding over stdio (including the
+session-per-request client shape, i.e. the process-global fallback) and the
+HTTP `binding_ambiguous` refusal that fails closed; `needs_read` after a
+preview-only read and success after `get_cell_data`; `missing_cell_ids` for both
+read tools; `get_dependency_graph` argument refusals + `cell_name` agreement;
+the `set_ui_value` shape / apply-and-verify / T13-repeat cases; the `get_errors`
+console split; `get_variables` scaffolding exclusion. The doc-vs-surface sweep
+found **no contradiction** — no resource still offers `get_cell_map` as a
+read/recovery step. One nit filed in the log (O37): `get_errors`' top-level
+`console_exception_evidence` / `console_stderr` stay `null` while the values sit
+on `cells[]`.
+
+Two corrections to the entry above: **§2 O16 is now verified from the consumer**
+(not just "fixed upstream"), with the HTTP nuance that a session-per-request
+client is refused *there* by design and must pass both arguments explicitly; and
+the provider's own T-V1 boxes remain **unticked** deliberately — that round
+requires a fresh zero-context agent, which this run was not.
+
+**Pin drift is the remaining consumer action (O38).** The `marimo` extra pins
+`marimo-inspect` at tag **`v0.3.0`** (`pyproject.toml` `[tool.uv.sources]`) while
+the verified provider is **`v0.3.3`**, and `.venv` today is a
+v0.3.0-metadata + sibling-source editable hybrid — so a plain
+`uv sync --extra marimo` would install the pre-fix package. The bump
+(`v0.3.3` tag + relock + re-sync + notebook re-check) is a code change and is
+delegated, not part of this doc session. **Landed the same session:** the tag
+now reads `v0.3.3`; `uv lock` + `uv sync --extra marimo --extra dev` installed
+`marimo-inspect 0.3.3` from the tag (`d0d6736`) out of `.venv/…/site-packages`
+— replacing the sibling editable hybrid — with `TraceScrubber` resolving,
+**130 passed**, `marimo check notebooks` exit 0, and no other lock entry
+changed. All four modified files remain **uncommitted** (`docs/agenda.md`,
+`docs/marimo-integration-log.md`, `pyproject.toml`, `uv.lock`).
+
+---
+
+## Session status — 2026-09-11 (cont.): wrap-up — outstanding items only
+
+Session closed. What is *done* is recorded above; this is the live open list, so
+a fresh agent can pick any of it up without re-deriving the context.
+
+1. **Provider `T-V2` — filed, open (doc precision).** `get_errors` carries its
+   evidence marker + stderr events per cell while the surfaces (`errors.py` tool
+   description, the provider's own `T-V1` §6 check line) don't say so. Filed in
+   `~/Repos/marimo-inspect/docs/agenda-verification-round.md` §T-V2 with an
+   evidence block and repro (severity *cosmetic*). No provider release carries
+   the fix yet; when one does, the consumer-side re-check is just the O37
+   assertion again — no code changes here.
+2. **Provider `T-V1` — open (zero-context check round).** The consumer run
+   (O35–O36) passed every check but deliberately did not tick the provider's
+   boxes, since the method requires a fresh, zero-context agent. Until that run
+   happens, "verified from the consumer" rests on this repo's evidence log.
+3. **Pin re-bump trigger.** `pyproject.toml` now pins `v0.3.3`. When the provider
+   cuts a release carrying the `T-V2` fix (or `T-V1` closes with findings), bump
+   the tag again and repeat the O38 verification (`uv lock` + `uv sync --extra
+   marimo --extra dev`; installed version + import path out of
+   `.venv/…/site-packages`; `TraceScrubber`; `pytest`; `marimo check`).
+4. **Undecided: commit the consumer-side check harness?** The T-V1 run needed a
+   throwaway harness (headless server boot + `/sse` session materialization +
+   `fastmcp` drive, recipe in the log entry above) and it lived in `/tmp`. If
+   provider releases are to be re-checked from here regularly, it should live in
+   the repo instead of being rewritten each time; deliberately not built yet
+   (no tooling before a repeated need).
+5. **Dev-mode note.** `.venv` now installs the tagged release, so testing
+   *unreleased* provider changes again needs the temporary editable override
+   (`uv add --editable ~/Repos/marimo-inspect`), whose session fragility
+   (`uv run`'s implicit sync reverting it) is recorded in the 2026-09-08
+   notebook entry.
+6. **Working tree is uncommitted by design** — 4 files, two logical commits:
+   `docs/agenda.md` + `docs/marimo-integration-log.md` (this session's record),
+   and `pyproject.toml` + `uv.lock` (the pin bump). Nothing pushed.
