@@ -912,6 +912,10 @@ a fresh agent can pick any of it up without re-deriving the context.
    (`uv add --editable ~/Repos/marimo-inspect`), whose session fragility
    (`uv run`'s implicit sync reverting it) is recorded in the 2026-09-08
    notebook entry.
-6. **Working tree is uncommitted by design** — 4 files, two logical commits:
-   `docs/agenda.md` + `docs/marimo-integration-log.md` (this session's record),
-   and `pyproject.toml` + `uv.lock` (the pin bump). Nothing pushed.
+6. **Working tree: committed and pushed.** `f5d1188` = `docs/agenda.md` +
+   `docs/marimo-integration-log.md` (this session's record), `9f2409f` =
+   `pyproject.toml` + `uv.lock` (the pin bump). Push published
+   `bcb23a7..9f2409f` on `origin/master` — 39 commits, i.e. the 37 commits this
+   branch had accumulated locally went up with them (this repo's
+   `master` had been ahead of `origin/master` for a while; the previous
+   convention of keeping handoffs local no longer applies as of this push).
