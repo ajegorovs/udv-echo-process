@@ -919,3 +919,42 @@ a fresh agent can pick any of it up without re-deriving the context.
    branch had accumulated locally went up with them (this repo's
    `master` had been ahead of `origin/master` for a while; the previous
    convention of keeping handoffs local no longer applies as of this push).
+
+---
+
+## Session status — 2026-09-11: signal-model rework opened (primary architecture work)
+
+**OPEN — primary architecture work before additional processing features.** The
+current `ChannelSeries`/`MultiplexedMeasurement` stack leaves ndarray ownership
+and mutation undefined, validates scientific invariants weakly, cannot
+separate source observations from derived samples, has no support/quality or
+round/visit semantics, infers multiplexing from channel count, bundles
+irrelevant method parameters, lacks normalized provenance, and cannot persist
+ndarrays safely through JSON.
+
+The authoritative, execution-grade handoff is
+[`signal-model-rework-plan.md`](signal-model-rework-plan.md). It supersedes
+conflicting pre-convergence architecture examples for this rework; older docs
+remain unchanged until the plan's final cleanup phase.
+
+**Required order (no big bang):**
+
+1. baseline and fixture inventory;
+2. value/array ownership bases plus stable identity;
+3. support, acquisition index and strict `SignalData`;
+4. `ChannelArtifact`/`ChannelBundle`, central `derive()` and the minimal
+   provenance graph needed for closed transforms;
+5. discriminated filter specs and bundle-closed filter migration;
+6. support-aware, bundle-closed interpolation/resampling migration;
+7. mechanism-neutral `Recording`/`ArtifactBundle`, acquisition topology and BDD
+   reader uplift;
+8. complete provenance DAG validation and matched-round synchronization;
+9. NPY + versioned JSON-manifest store with integrity/atomic completion; and
+10. compatibility retirement plus documentation/legacy cleanup.
+
+**Blockers/open decisions:** none are blocking plan start. The executor must
+measure BDD topology in the baseline phase and use `AcquisitionMode.UNKNOWN`
+when the binary evidence cannot prove a mechanism; it must not infer mode or
+rounds. Zarr, `.ADD` migration, visualization/CLI/notebook work and additional
+processing features are explicitly deferred. Implementation is test-driven,
+uses `uv`, and must not be committed or pushed unless explicitly requested.
