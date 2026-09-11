@@ -1,11 +1,12 @@
 # udv-analysis → udv-echo-process absorption mapping
 
-Status: **approved; implementation in progress** (`docs/agenda.md`).
+Status: **implementation complete; retirement evidence bounded** (`docs/agenda.md`).
 
-Phase 0's private retirement/baseline pack and Phase 1's reader/inspection work
-are complete. Phase 2 terminal analysis results and their export are complete;
-Phases 3–4 follow. The source checkout has not been retired because §8 still has
-unresolved external-lineage/dependency evidence.
+Phases 0–4 are complete: the private baseline, reader/inspection work, terminal
+state/profile analysis, private 2-D TV-L1 decision, export boundary and honest
+lineage record have landed. The source checkout has not been retired: no active
+consumer exists within `~/Repos`, but the immediate predecessor is unrecoverable
+and use outside the locally auditable scope cannot be ruled out.
 
 Authority: this document is the source-analysis record for retiring the external
 `udv-analysis` package and absorbing what it uniquely provides. It does **not**
@@ -18,10 +19,9 @@ for the receiving model, transforms and boundaries.
 `udv-analysis` is a separate, configuration-driven package for one job: robust
 velocity-versus-depth profiles with operating-state detection and
 quantile-envelope sample rejection. It is the only implementation we have of that
-chain — the `references/wolfram/README.md` porting map still lists its core
-(`QuantileRegression`, `PeakDetect`, image/histogram transforms) as **Not yet
-ported**. The package is being retired, so its scientific content has to land
-here or be lost.
+chain — the functionality has now been absorbed and its constrained lineage is
+recorded in `references/wolfram/README.md`. The package is being retired, so its
+scientific content had to land here rather than be lost.
 
 Its `.BDD` path is also the reference we validated against, which is why the
 numbers in §2 matter more than its code volume.
@@ -167,21 +167,28 @@ Each item below would violate a rule this repo already settled:
   analysis, with no public `FilterSpec`, support-semantics change, or provenance
   operation. Promotion would require a separate gate-coupling use case and
   contract review.
-- **Phase 4 — active/blocked:** update the porting map to distinguish the
-  absorbed quantile-envelope implementation from still-unported `PeakDetect`.
-  Exact predecessor Mathematica lineage remains unconfirmed (§8).
+- **Phase 4 — complete, with an explicit lineage limit:** the porting map now
+  separates the absorbed quantile-envelope implementation from still-unported
+  `PeakDetect`. The immediate Python predecessor and its `QuantileRegression`
+  dependency are unrecoverable; the echo Mathematica notebook is a confirmed
+  same-campaign relative, not proven to be the direct predecessor (§8).
 
 ## 8. Retirement prerequisites
 
-1. Baseline pack (§7 Phase 0).
-2. **Predecessor provenance.** The source describes itself as a "validated port
-   of an earlier Mathematica workflow" and cites earlier Python
-   `QuantileRegression` failures, but neither repo names which notebook or
-   script produced its accepted results. Confirm and record it before the
-   checkout is gone; without it the absorbed algorithms have no scientific
-   ancestry.
-3. Confirm nothing else depends on the retiring package (no CI, notebook or
-   downstream consumer outside this repo).
+1. **Baseline pack — complete** (§7 Phase 0).
+2. **Predecessor provenance — bounded but unrecoverable.** Forensics found that
+   the source has one commit and no unreachable history, accepted config, or
+   prior scripts. It cites an unnamed **Python** `QuantileRegression` package and
+   earlier “State 5” output; neither exists locally and the upstream repository
+   is no longer public. `UDV_Data_Analysis_Echo.nb` is demonstrably from the same
+   measurement campaign and contains related TV/peak/median-MAD concepts, but no
+   quantile LP or state segmentation, so it is not claimed as the direct
+   predecessor. Its `QuantileRegression.m` import points to an absent
+   Windows-local file, not a repository file.
+3. **Dependency audit — clear within `~/Repos`.** No sibling source, dependency
+   declaration, CI job, or notebook imports or invokes `udv-analysis`; only the
+   retiring checkout's own source/tests/venv do. Consumers on external machines
+   remain outside the auditable scope.
 
 ## 9. Resolved architectural decisions
 

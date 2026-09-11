@@ -56,16 +56,25 @@ analysis chain, and the small terminal-result JSON/CSV/NPZ export boundary
 (`udv_echo_process/export.py`). See
 [`udv-analysis-absorption-plan.md`](udv-analysis-absorption-plan.md).
 
-Retirement itself remains blocked on honest evidence rather than code:
+Implementation is complete. Retirement evidence is now bounded rather than
+open-ended:
 
-- **Predecessor provenance** (§8.2): neither source nor Git history identifies
-  which earlier Mathematica/Python workflow produced the accepted results. The
-  local `QuantileRegression.m`/echo notebook is only an unconfirmed candidate.
-- **External dependency check** (§8.3): confirm no CI, notebook, or downstream
-  consumer outside these two repositories still depends on `udv-analysis`.
+- **Predecessor provenance** (§8.2) is unrecoverable. The source cites an unnamed
+  Python `QuantileRegression` dependency and earlier “State 5” output that do not
+  exist locally; its single-commit history and removed public upstream offer no
+  earlier artifact. The echo Mathematica notebook is a confirmed same-campaign
+  relative, but contains no quantile LP or state segmentation and is not claimed
+  as the direct predecessor. Its `QuantileRegression.m` import points to an
+  absent Windows-local file.
+- **Dependency audit** (§8.3) is clear within `~/Repos`: no sibling dependency
+  declaration, source import, CI job, or notebook consumes `udv-analysis`.
+  External machines remain outside the auditable scope.
 - There is no real multi-state velocity fixture; multi-transition equivalence is
   therefore proven against the retiring implementation on synthetic topology,
   while all archived real runs are steady single-state cases.
+
+The source checkout and private retirement pack remain in place; deleting them
+requires a separate explicit decision.
 
 ---
 

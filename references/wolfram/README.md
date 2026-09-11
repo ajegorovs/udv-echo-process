@@ -17,7 +17,7 @@ lives in `src/udv_echo_process/analysis/` — one module per feature.
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | `analysis/rpm.py` (FFT peak /2 RPM) | Ported |
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | Total-variation filtering (`TotalVariationFilter`) → `process/filter.py` (`FilterSpec` + `filter`/`filter_sequence` — MEDIAN/MEAN/SAVGOL on scipy + TV via scikit-image `denoise_tv_chambolle`, not a line-port) | TV: Ported 2026-09-09 |
 | `UDV_Data_Analysis_Echo.txt` / `.nb` | Peak detection (`PeakDetect`) and image/histogram transforms | Not yet ported |
-| `QuantileRegression.m` (candidate lineage, not confirmed by the retiring source) | `analysis/profiles.py` robust quantile-envelope profiles + private `analysis/_tv_l1.py` preprocessing | Absorbed from `udv-analysis`; exact Mathematica predecessor unconfirmed |
+| Absent Windows-local `QuantileRegression.m` import in `UDV_Data_Analysis_Echo` (same-campaign relative; not the direct predecessor) | `analysis/profiles.py` robust quantile-envelope profiles + private `analysis/_tv_l1.py` preprocessing | Absorbed from `udv-analysis`; immediate Python predecessor and dependency unrecoverable |
 
 ## Workflow for porting a new notebook
 
