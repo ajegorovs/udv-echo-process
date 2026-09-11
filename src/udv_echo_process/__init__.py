@@ -49,10 +49,13 @@ from udv_echo_process.process import (
     MedianFilterSpec,
     MonotoneInterpSpec,
     SavgolFilterSpec,
+    SyncSpec,
     TvFilterSpec,
+    derive_many,
     filter,
     filter_sequence,
     resample,
+    synchronize,
 )
 from udv_echo_process.provenance import ArtifactBundle
 from udv_echo_process.viz import (
@@ -85,7 +88,9 @@ __all__ = [
     "SavgolFilterSpec",
     "SourceFormat",
     "SourceSpec",
+    "SyncSpec",
     "TvFilterSpec",
+    "derive_many",
     "discover_data_files",
     "extract",
     "filter",
@@ -104,4 +109,5 @@ __all__ = [
     "resample",
     "rpm_from_echo",
     "setpoint_rpm_from_stem",
+    "synchronize",
 ]

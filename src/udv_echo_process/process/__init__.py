@@ -19,6 +19,7 @@ from udv_echo_process.process.derive import (
     OPERATION_SCHEMA_VERSION,
     OPERATION_SPEC_REGISTRY,
     derive,
+    derive_many,
     register_operation,
     resolve_operation_spec,
     revalidate_params,
@@ -35,13 +36,15 @@ from udv_echo_process.process.specs import (
     MedianFilterSpec,
     MonotoneInterpSpec,
     SavgolFilterSpec,
+    SyncSpec,
     TvFilterSpec,
 )
-from udv_echo_process.process.sync import resample
+from udv_echo_process.process.sync import SYNC_KIND, resample, synchronize
 
 __all__ = [
     "OPERATION_SCHEMA_VERSION",
     "OPERATION_SPEC_REGISTRY",
+    "SYNC_KIND",
     "BsplineInterpSpec",
     "CubicInterpSpec",
     "FilterSpec",
@@ -51,8 +54,10 @@ __all__ = [
     "MedianFilterSpec",
     "MonotoneInterpSpec",
     "SavgolFilterSpec",
+    "SyncSpec",
     "TvFilterSpec",
     "derive",
+    "derive_many",
     "filter",
     "filter_sequence",
     "register_operation",
@@ -60,4 +65,5 @@ __all__ = [
     "resolve_operation_spec",
     "revalidate_params",
     "schema_version_for",
+    "synchronize",
 ]

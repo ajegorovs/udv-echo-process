@@ -40,6 +40,7 @@ __all__ = [
     "MedianFilterSpec",
     "MonotoneInterpSpec",
     "SavgolFilterSpec",
+    "SyncSpec",
     "TvFilterSpec",
 ]
 
@@ -218,3 +219,24 @@ InterpSpec = Annotated[
     LinearInterpSpec | MonotoneInterpSpec | CubicInterpSpec | BsplineInterpSpec,
     Field(discriminator="method"),
 ]
+
+
+# ── synchronization spec (plan §7.1, §7.4, owner ruling D7) ──────────────
+
+
+class SyncSpec(ValueModel):
+    """Matched-round synchronization parameters (plan §7.4, ruling D7).
+
+    Exactly three fields. ``interp`` is the interpolation recipe every
+    resampled cell goes through (so the §7.3 bracket/gap/support rules and the
+    extrapolation policy are chosen explicitly, never implied). ``reference``
+    picks the target row time of a matched round from that round's matched
+    visit times — ``earliest`` (min), ``latest`` (max) or ``mean``. ``unmatched``
+    is the explicit policy for a channel that has no visit in an otherwise
+    matched round: ``missing`` publishes ``MISSING`` with ``ALIGNMENT_UNCERTAIN``
+    and never a value, ``error`` refuses the recording.
+    """
+
+    interp: InterpSpec
+    reference: Literal["earliest", "latest", "mean"] = "earliest"
+    unmatched: Literal["missing", "error"] = "missing"

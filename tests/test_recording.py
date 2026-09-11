@@ -14,12 +14,14 @@ tests prove it at the model boundary.
 from __future__ import annotations
 
 import ast
+import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 from pydantic import ValidationError
 
+from udv_echo_process.io import load
 from udv_echo_process.models import (
     AcquisitionIndex,
     AcquisitionMode,
@@ -28,14 +30,32 @@ from udv_echo_process.models import (
     ChannelConfig,
     ChannelKey,
     ProfileStatistics,
+    QualityFlag,
     Recording,
+    SampleSupport,
+    SignalData,
     SignalDescriptor,
     SignalQuantity,
     SourceAsset,
     SourceFormat,
     SourceSpec,
+    SupportKind,
+    ValueModel,
+    derived_artifact_id,
     observed_signal,
     source_artifact,
+)
+from udv_echo_process.process import (
+    LinearInterpSpec,
+    MedianFilterSpec,
+    SyncSpec,
+    derive,
+    derive_many,
+    filter,
+    register_operation,
+    revalidate_params,
+    schema_version_for,
+    synchronize,
 )
 from udv_echo_process.provenance import (
     ArtifactBundle,
@@ -44,6 +64,7 @@ from udv_echo_process.provenance import (
     ChannelBundle,
     ImplementationRef,
     OperationRecord,
+    implementation_ref,
     register_root_artifact,
     replace_channel,
     select_channel,
@@ -548,8 +569,27 @@ def test_artifact_bundle_registers_all_streams_as_roots():
 
 def test_artifact_bundle_accepts_a_stream_resolved_by_a_derivation():
     """A carried artifact may resolve through a derivation, not only a root."""
+    bundle = _bundle((_artifact(6),), mode=AcquisitionMode.SEQUENTIAL)
+    source = bundle.recording.streams[0]
+    derived = derive(
+        select_channel(bundle, ChannelKey(device_channel=6)),
+        kind="rec.identity",
+        spec=_IdentitySpec(),
+        implementation=implementation_ref("udv_echo_process.process.derive.derive"),
+        data=_payloads(bundle)[0],
+    )
+    bundle = replace_channel(bundle, derived)
+    stream = bundle.recording.streams[0]
+    assert stream.artifact_id != source.artifact_id
+    assert stream.artifact_id not in bundle.graph.root_artifacts
+    assert stream.artifact_id in {link.artifact_id for link in bundle.graph.derivations}
+    assert len(bundle.graph.operations) == 1
+
+
+def test_artifact_bundle_rejects_a_derived_stream_id_that_does_not_recompute():
+    """STOP/GO: a derived stream must be consistent with its operation."""
     root = _artifact(6)
-    derived = _artifact_with_id(_id(42), 7)
+    forged = _artifact_with_id(_id(42), 7)
     operation = OperationRecord(
         operation_id=_id(7),
         kind="test.op",
@@ -565,11 +605,11 @@ def test_artifact_bundle_accepts_a_stream_resolved_by_a_derivation():
         derivations=(ArtifactDerivationLink(artifact_id=_id(42), operation_id=_id(7)),),
         root_artifacts=(root.artifact_id,),
     )
-    bundle = ArtifactBundle(
-        recording=_recording((root, derived), mode=AcquisitionMode.SEQUENTIAL),
-        graph=graph,
-    )
-    assert bundle.graph.derivations[0].artifact_id == derived.artifact_id
+    with pytest.raises(ValidationError, match="consistent"):
+        ArtifactBundle(
+            recording=_recording((root, forged), mode=AcquisitionMode.SEQUENTIAL),
+            graph=graph,
+        )
 
 
 # ── select_channel / replace_channel ───────────────────────────────────
@@ -668,3 +708,724 @@ def test_replace_channel_requires_the_same_recording_and_channel_identity():
                 graph=register_root_artifact(ArtifactGraph(), wrong_asset.artifact_id),
             ),
         )
+
+
+# ══ Phase 7 — derive_many() and recording-level synchronization (§7.4, §8.3) ══
+
+
+class _IdentitySpec(ValueModel):
+    """Recording-level identity operation params for the phase-7 tests."""
+
+    scale: float = 1.0
+
+
+class _RawSpec(ValueModel):
+    """Unconstrained params, used to prove derive_many's JSON-safety guard."""
+
+    value: object = None
+
+
+register_operation("rec.identity", _IdentitySpec)
+register_operation("rec.raw", _RawSpec)
+
+_IMPL_P7 = implementation_ref("udv_echo_process.process.derive.derive_many")
+_SYNC_KIND = "sync.align"
+
+_GATES = (5.0, 10.0)
+_GATE_FACTOR = (1.0, 10.0)
+
+#: Rows that carry no round/visit identity; they only bound the valid domain.
+_GUARD = (-1, -1)
+
+
+def _visit_stream(
+    channel: int,
+    rows: list[tuple[float, int, int]],
+    *,
+    base: float = 0.0,
+    invalid_rows: tuple[int, ...] = (),
+    synthetic_rows: tuple[int, ...] = (),
+) -> ChannelArtifact:
+    """A synthetic source stream whose rows carry explicit ``(round, visit)`` ids.
+
+    ``rows`` is ``(time_s, round_id, visit_id)`` per row; the sentinel ``-1``
+    marks a row with no round/visit identity. Each gate is a known linear ramp
+    of ``time_s`` (``base + factor * t``), so aligned values are predictable.
+    ``synthetic_rows`` are already-interpolated knots: they keep the synthetic
+    sentinel index that ``SignalData`` requires of a row with no observation.
+    """
+    times = np.array([row[0] for row in rows], dtype=np.float64)
+    rounds = np.array([row[1] for row in rows], dtype=np.int64)
+    visits = np.array([row[2] for row in rows], dtype=np.int64)
+    sample_ids = np.arange(times.size, dtype=np.int64)
+    values = base + times[:, None] * np.array(_GATE_FACTOR)[None, :]
+    quality = np.zeros(values.shape, dtype=np.uint32)
+    for row in invalid_rows:
+        values[row, :] = np.nan
+        quality[row, :] = int(QualityFlag.OUTLIER)
+    for row in synthetic_rows:
+        sample_ids[row] = -1
+        rounds[row] = -1
+        visits[row] = -1
+    index = AcquisitionIndex(
+        sample_id=sample_ids,
+        acquisition_time_s=np.where(sample_ids < 0, np.nan, times),
+        round_id=rounds,
+        visit_id=visits,
+    )
+    reference = AcquisitionRef(
+        recording_id=_RECORDING_ID,
+        source_asset_id=_ASSET_ID,
+        channel=ChannelKey(device_channel=channel),
+    )
+    return source_artifact(
+        reference,
+        _ECHO,
+        ChannelConfig(),
+        _visit_data(times, values, quality, index, synthetic_rows),
+    )
+
+
+def _visit_data(
+    times: np.ndarray,
+    values: np.ndarray,
+    quality: np.ndarray,
+    index: AcquisitionIndex,
+    synthetic_rows: tuple[int, ...],
+) -> SignalData:
+    """Wrap the ramp values as observations, or with synthetic knot kinds."""
+    gates = np.array(_GATES, dtype=np.float64)
+    if not synthetic_rows:
+        return observed_signal(times, gates, values, quality=quality, acquisition=index)
+    kinds = np.full(values.shape, int(SupportKind.OBSERVED), dtype=np.uint8)
+    for row in synthetic_rows:
+        kinds[row, :] = int(SupportKind.INTERPOLATED)
+    return SignalData(
+        time_s=times,
+        gate_depths_mm=gates,
+        values=values,
+        support=SampleSupport(kind=kinds, valid=np.isfinite(values), quality=quality),
+        acquisition=index,
+    )
+
+
+def _sync_bundle(
+    streams: tuple[ChannelArtifact, ...],
+    *,
+    mode: AcquisitionMode = AcquisitionMode.SEQUENTIAL,
+) -> ArtifactBundle:
+    return _bundle(streams, mode=mode)
+
+
+def _pair_bundle() -> ArtifactBundle:
+    """Two channels of rounds 1-3: A visits at 0/1/2 s, B at 0.1/1.1/2.1 s."""
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 1, 0), (1.0, 2, 0), (2.0, 3, 0), (3.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(
+        2,
+        [(-1.0, *_GUARD), (0.1, 1, 1), (1.1, 2, 1), (2.1, 3, 1), (3.1, *_GUARD)],
+        base=100.0,
+    )
+    return _sync_bundle((channel_a, channel_b))
+
+
+def _missing_visit_bundle() -> ArtifactBundle:
+    """Three channels; C carries no visit in round 2 and one in round 9."""
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 1, 0), (1.0, 2, 0), (2.0, 3, 0), (3.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(
+        2,
+        [(-1.0, *_GUARD), (0.1, 1, 1), (1.1, 2, 1), (2.1, 3, 1), (3.1, *_GUARD)],
+        base=100.0,
+    )
+    channel_c = _visit_stream(
+        3,
+        [(-1.0, *_GUARD), (0.2, 1, 2), (1.5, 9, 0), (2.2, 3, 2), (4.0, *_GUARD)],
+        base=200.0,
+    )
+    return _sync_bundle((channel_a, channel_b, channel_c))
+
+
+def _sync_spec(
+    *,
+    reference: str = "earliest",
+    unmatched: str = "missing",
+    extrapolation: str = "missing",
+) -> SyncSpec:
+    return SyncSpec(
+        interp=LinearInterpSpec(
+            extrapolation=extrapolation,  # type: ignore[arg-type]
+            max_bracket_span_s=100.0,
+            long_gap="missing",
+        ),
+        reference=reference,  # type: ignore[arg-type]
+        unmatched=unmatched,  # type: ignore[arg-type]
+    )
+
+
+def _ramp(times: object, base: float) -> np.ndarray:
+    """The expected aligned ramp: ``base + t * factor`` per gate."""
+    t = np.asarray(times, dtype=np.float64)
+    return base + t[:, None] * np.array(_GATE_FACTOR)[None, :]
+
+
+def _ids(streams: tuple[ChannelArtifact, ...]) -> tuple[str, ...]:
+    return tuple(stream.artifact_id for stream in streams)
+
+
+# ── SyncSpec ───────────────────────────────────────────────────────────
+
+
+def test_sync_spec_has_exactly_the_ruled_fields():
+    assert set(SyncSpec.model_fields) == {"interp", "reference", "unmatched"}
+    spec = _sync_spec()
+    assert spec.reference == "earliest"
+    assert spec.unmatched == "missing"
+    assert spec.interp.method == "linear"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("reference", "midpoint"),
+        ("unmatched", "skip"),
+        ("interp", "linear"),
+        ("method", "mean"),
+    ],
+)
+def test_sync_spec_rejects_unknown_policies_and_fields(field, value):
+    kwargs: dict[str, object] = {
+        "interp": _sync_spec().interp,
+        "reference": "earliest",
+        "unmatched": "missing",
+    }
+    kwargs[field] = value
+    with pytest.raises(ValidationError):
+        SyncSpec(**kwargs)  # type: ignore[arg-type]
+
+
+def test_sync_spec_round_trips_through_the_operation_registry():
+    spec = _sync_spec(reference="mean", unmatched="error")
+    params_json = json.dumps(
+        spec.model_dump(mode="json"),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
+    assert schema_version_for(_SYNC_KIND) == 1
+    assert revalidate_params(_SYNC_KIND, 1, params_json) == spec
+
+
+# ── derive_many() ──────────────────────────────────────────────────────
+
+
+def _payloads(bundle: ArtifactBundle, *, scale: float = 1.0) -> tuple[SignalData, ...]:
+    return tuple(
+        observed_signal(
+            stream.data.time_s,
+            stream.data.gate_depths_mm,
+            stream.data.values * scale,
+        )
+        for stream in bundle.recording.streams
+    )
+
+
+def test_derive_many_maps_every_output_to_one_operation():
+    bundle = _sync_bundle((_artifact(1), _artifact(2)))
+    out = derive_many(
+        bundle,
+        kind="rec.identity",
+        spec=_IdentitySpec(),
+        implementation=_IMPL_P7,
+        data=_payloads(bundle),
+    )
+    assert len(out.graph.operations) == 1
+    operation = out.graph.operations[0]
+    assert operation.parents == _ids(bundle.recording.streams)
+    assert len(out.graph.derivations) == 2
+    produced = {
+        link.artifact_id
+        for link in out.graph.derivations
+        if link.operation_id == operation.operation_id
+    }
+    assert produced == set(_ids(out.recording.streams))
+    # each output id hashes the SHARED operation id plus its own payload
+    for stream in out.recording.streams:
+        expected = derived_artifact_id(
+            operation.operation_id,
+            stream.acquisition,
+            stream.descriptor,
+            stream.config,
+            stream.data,
+        )
+        assert stream.artifact_id == expected
+    assert out.recording.recording_id == bundle.recording.recording_id
+    assert out.graph.root_artifacts == bundle.graph.root_artifacts
+
+
+def test_derive_many_preserves_per_stream_identity_and_is_deterministic():
+    bundle = _sync_bundle((_artifact(1), _artifact(2)))
+    first = derive_many(
+        bundle,
+        kind="rec.identity",
+        spec=_IdentitySpec(),
+        implementation=_IMPL_P7,
+        data=_payloads(bundle),
+    )
+    second = derive_many(
+        bundle,
+        kind="rec.identity",
+        spec=_IdentitySpec(),
+        implementation=_IMPL_P7,
+        data=_payloads(bundle),
+    )
+    assert _ids(first.recording.streams) == _ids(second.recording.streams)
+    for before, after in zip(
+        first.recording.streams, second.recording.streams, strict=True
+    ):
+        assert before.acquisition == after.acquisition
+        assert before.descriptor == after.descriptor
+        assert before.config == after.config
+
+
+def test_derive_many_requires_one_output_per_stream():
+    bundle = _sync_bundle((_artifact(1), _artifact(2)))
+    with pytest.raises(ValueError, match="one output payload per stream"):
+        derive_many(
+            bundle,
+            kind="rec.identity",
+            spec=_IdentitySpec(),
+            implementation=_IMPL_P7,
+            data=(_payloads(bundle)[0],),
+        )
+
+
+def test_derive_many_rejects_a_non_signal_payload():
+    bundle = _sync_bundle((_artifact(1),))
+    with pytest.raises(ValidationError):
+        derive_many(
+            bundle,
+            kind="rec.identity",
+            spec=_IdentitySpec(),
+            implementation=_IMPL_P7,
+            data=({"values": 1},),  # type: ignore[arg-type]
+        )
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [float("nan"), float("inf"), np.arange(3), Path("params.npy"), (lambda: None)],
+    ids=["nan", "inf", "ndarray", "path", "callable"],
+)
+def test_derive_many_rejects_non_json_params(raw):
+    bundle = _sync_bundle((_artifact(1),))
+    with pytest.raises(ValueError, match="derive_many: recording"):
+        derive_many(
+            bundle,
+            kind="rec.raw",
+            spec=_RawSpec(value=raw),
+            implementation=_IMPL_P7,
+            data=_payloads(bundle),
+        )
+
+
+def test_derive_many_rejects_an_unregistered_kind_or_wrong_spec():
+    bundle = _sync_bundle((_artifact(1),))
+    with pytest.raises(ValueError, match="no operation registered"):
+        derive_many(
+            bundle,
+            kind="rec.missing",
+            spec=_IdentitySpec(),
+            implementation=_IMPL_P7,
+            data=_payloads(bundle),
+        )
+    with pytest.raises(ValueError, match="expects spec"):
+        derive_many(
+            bundle,
+            kind="rec.raw",
+            spec=_IdentitySpec(),
+            implementation=_IMPL_P7,
+            data=_payloads(bundle),
+        )
+
+
+# ── synchronization: one operation, reference policies, support ────────
+
+
+def test_synchronize_emits_exactly_one_recording_level_operation():
+    bundle = _pair_bundle()
+    before = bundle.graph
+    out = synchronize(bundle, _sync_spec())
+    assert isinstance(out, ArtifactBundle)
+    assert out is not bundle
+    assert len(out.graph.operations) == len(before.operations) + 1
+    assert len(out.graph.derivations) == len(before.derivations) + 2
+    operation = out.graph.operations[-1]
+    assert operation.kind == _SYNC_KIND
+    assert operation.parents == _ids(bundle.recording.streams)
+    produced = {
+        link.artifact_id
+        for link in out.graph.derivations
+        if link.operation_id == operation.operation_id
+    }
+    assert produced == set(_ids(out.recording.streams))
+    for stream in out.recording.streams:
+        assert stream.artifact_id == derived_artifact_id(
+            operation.operation_id,
+            stream.acquisition,
+            stream.descriptor,
+            stream.config,
+            stream.data,
+        )
+    assert out.recording.recording_id == bundle.recording.recording_id
+    assert out.recording.source_asset == bundle.recording.source_asset
+    assert out.recording.acquisition_mode is bundle.recording.acquisition_mode
+    assert len(out.recording.streams) == len(bundle.recording.streams)
+
+
+def test_synchronize_earliest_keeps_the_reference_stream_observed_and_indexed():
+    out = synchronize(_pair_bundle(), _sync_spec(reference="earliest"))
+    channel_a, channel_b = out.recording.streams
+    grid = np.array([0.0, 1.0, 2.0])
+    assert np.allclose(channel_a.data.time_s, grid)
+    assert np.allclose(channel_b.data.time_s, grid)
+    # A's own visits define the reference grid: exact knots stay OBSERVED ...
+    assert np.array_equal(
+        channel_a.data.support.kind,
+        np.full((3, 2), int(SupportKind.OBSERVED), dtype=np.uint8),
+    )
+    assert np.allclose(channel_a.data.values, _ramp(grid, 0.0))
+    # ... and keep their real row index (sample id, round/visit, actual time)
+    index = channel_a.data.acquisition
+    assert index is not None
+    assert index.sample_id.tolist() == [1, 2, 3]
+    assert index.round_id.tolist() == [1, 2, 3]
+    assert index.visit_id.tolist() == [0, 0, 0]
+    assert np.allclose(index.acquisition_time_s, grid)
+    assert np.array_equal(channel_a.data.support.quality, np.zeros((3, 2), np.uint32))
+    # B is sampled at times it never acquired: interpolated and time-aligned
+    assert np.array_equal(
+        channel_b.data.support.kind,
+        np.full((3, 2), int(SupportKind.INTERPOLATED), dtype=np.uint8),
+    )
+    assert np.allclose(channel_b.data.values, _ramp(grid, 100.0))
+    assert np.array_equal(
+        channel_b.data.support.quality,
+        np.full((3, 2), int(QualityFlag.TIME_ALIGNED), dtype=np.uint32),
+    )
+
+
+@pytest.mark.parametrize(
+    ("policy", "grid", "exact_channel"),
+    [
+        ("latest", [0.1, 1.1, 2.1], 1),
+        ("mean", [0.05, 1.05, 2.05], None),
+    ],
+)
+def test_synchronize_reference_policy_selects_the_target_row_times(
+    policy, grid, exact_channel
+):
+    out = synchronize(_pair_bundle(), _sync_spec(reference=policy))
+    channel_a, channel_b = out.recording.streams
+    assert np.allclose(channel_a.data.time_s, grid)
+    assert np.allclose(channel_b.data.time_s, grid)
+    assert np.allclose(channel_a.data.values, _ramp(grid, 0.0))
+    assert np.allclose(channel_b.data.values, _ramp(grid, 100.0))
+    observed = np.full((3, 2), int(SupportKind.OBSERVED), dtype=np.uint8)
+    interpolated = np.full((3, 2), int(SupportKind.INTERPOLATED), dtype=np.uint8)
+    expected_a, expected_b = (
+        (interpolated, observed) if exact_channel == 1 else (interpolated, interpolated)
+    )
+    assert np.array_equal(channel_a.data.support.kind, expected_a)
+    assert np.array_equal(channel_b.data.support.kind, expected_b)
+
+
+def test_synchronize_keeps_actual_times_and_never_writes_the_reference_grid():
+    bundle = _pair_bundle()
+    out = synchronize(bundle, _sync_spec(reference="earliest"))
+    channel_a, channel_b = out.recording.streams
+    grid = np.array([0.0, 1.0, 2.0])
+    # A's aligned rows are its own acquisitions: the actual time is preserved
+    index = channel_a.data.acquisition
+    assert index is not None
+    assert np.allclose(index.acquisition_time_s, grid)
+    # B acquired at 0.1/1.1/2.1 s, so no aligned row may claim an acquisition
+    # at the reference times: the actual-time channel stays unattributed
+    index = channel_b.data.acquisition
+    assert index is not None
+    assert np.isnan(index.acquisition_time_s).all()
+    assert (index.sample_id == -1).all()
+    assert (index.round_id == -1).all()
+    assert (index.visit_id == -1).all()
+    assert not np.array_equal(index.acquisition_time_s, grid)
+    source_b = bundle.recording.streams[1]
+    source_index = source_b.data.acquisition
+    assert source_index is not None
+    assert source_index.round_id.tolist() == [-1, 1, 2, 3, -1]
+    assert np.allclose(source_index.acquisition_time_s[[1, 2, 3]], [0.1, 1.1, 2.1])
+
+
+def test_synchronize_accumulates_quality_bits_never_replaces_them():
+    """An invalid observed knot becomes MISSING with the primitive's bits."""
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 1, 0), (1.0, 2, 0), (2.0, 3, 0), (3.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(
+        2,
+        [(-1.0, *_GUARD), (0.1, 1, 1), (1.1, 2, 1), (2.1, 3, 1), (3.1, *_GUARD)],
+        base=100.0,
+        invalid_rows=(1,),
+    )
+    out = synchronize(_sync_bundle((channel_a, channel_b)), _sync_spec())
+    channel_b_out = out.recording.streams[1]
+    expected = (
+        int(QualityFlag.OUTLIER)
+        | int(QualityFlag.GAP_TOO_LONG)
+        | int(QualityFlag.TIME_ALIGNED)
+    )
+    assert np.array_equal(
+        channel_b_out.data.support.kind,
+        np.array([[0, 0], [0, 0], [int(SupportKind.INTERPOLATED)] * 2], np.uint8),
+    )
+    assert np.array_equal(
+        channel_b_out.data.support.quality,
+        np.array(
+            [
+                [expected, expected],
+                [expected, expected],
+                [int(QualityFlag.TIME_ALIGNED)] * 2,
+            ],
+            np.uint32,
+        ),
+    )
+    assert np.isnan(channel_b_out.data.values[0]).all()
+
+
+def test_synchronize_marks_reinterpolated_ancestry():
+    """A synthetic ancestor adds REINTERPOLATED on top of TIME_ALIGNED."""
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 1, 0), (1.0, 2, 0), (2.0, 3, 0), (3.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(
+        2,
+        [(-1.0, *_GUARD), (0.05, 1, 1), (1.5, *_GUARD), (2.1, 2, 1), (3.0, *_GUARD)],
+        base=100.0,
+        synthetic_rows=(2,),
+    )
+    out = synchronize(_sync_bundle((channel_a, channel_b)), _sync_spec())
+    channel_b_out = out.recording.streams[1]
+    assert np.allclose(channel_b_out.data.time_s, [0.0, 1.0])
+    quality = channel_b_out.data.support.quality
+    assert (quality[0] == int(QualityFlag.TIME_ALIGNED)).all()
+    expected = int(QualityFlag.REINTERPOLATED) | int(QualityFlag.TIME_ALIGNED)
+    assert (quality[1] == expected).all()
+    assert (channel_b_out.data.support.kind[1] == int(SupportKind.INTERPOLATED)).all()
+
+
+# ── synchronization: absent/unmatched visits and hard errors ───────────
+
+
+def test_synchronize_unmatched_visits_are_missing_and_alignment_uncertain():
+    bundle = _missing_visit_bundle()
+    out = synchronize(bundle, _sync_spec())
+    channel_c = out.recording.streams[2]
+    # C has no visit in round 2 and one unmatched round 9 that yields no row
+    assert np.allclose(channel_c.data.time_s, [0.0, 1.0, 2.0])
+    kinds = channel_c.data.support.kind
+    quality = channel_c.data.support.quality
+    aligned = int(QualityFlag.TIME_ALIGNED)
+    uncertain = int(QualityFlag.ALIGNMENT_UNCERTAIN)
+    assert (kinds[0] == int(SupportKind.INTERPOLATED)).all()
+    assert (quality[0] == aligned).all()
+    assert (kinds[1] == int(SupportKind.MISSING)).all()
+    assert (quality[1] == uncertain).all()
+    assert np.isnan(channel_c.data.values[1]).all()
+    assert (kinds[2] == int(SupportKind.INTERPOLATED)).all()
+    assert (quality[2] == aligned).all()
+    index = channel_c.data.acquisition
+    assert index is not None
+    assert index.sample_id.tolist() == [-1, -1, -1]
+    assert (index.round_id == -1).all()
+    operation = out.graph.operations[-1]
+    assert operation.warnings == ("1 unmatched channel visit marked missing",)
+
+
+def test_synchronize_absent_visits_are_never_renumbered_or_filled_by_position():
+    out = synchronize(_missing_visit_bundle(), _sync_spec())
+    channel_c = out.recording.streams[2]
+    # exactly one output row per matched round, and the single-stream round 9
+    # visit (t = 1.5 s) is simply absent — not shifted into another row
+    assert channel_c.data.time_s.size == 3
+    assert 1.5 not in channel_c.data.time_s.tolist()
+    channel_a, _channel_b, _channel_c = out.recording.streams
+    assert channel_a.data.time_s.size == 3
+
+
+def test_synchronize_unmatched_error_raises_naming_channel_and_round():
+    with pytest.raises(ValueError, match="unmatched='error'") as ei:
+        synchronize(_missing_visit_bundle(), _sync_spec(unmatched="error"))
+    assert "channel 3" in str(ei.value)
+    assert "round 2" in str(ei.value)
+
+
+def test_synchronize_rejects_a_stream_without_round_visit_identity():
+    bundle = _sync_bundle((_artifact(4),))
+    with pytest.raises(ValueError, match=r"explicit \(round_id, visit_id\)"):
+        synchronize(bundle, _sync_spec())
+
+
+def test_synchronize_rejects_duplicate_round_visit_pairs():
+    # ``Recording`` already refuses a repeated pair, so the reader path cannot
+    # deliver one; skip model validation to exercise synchronize's own guard.
+    stream = _visit_stream(
+        1,
+        [(-1.0, *_GUARD), (0.0, 1, 0), (1.0, 1, 0), (2.0, 2, 0), (3.0, *_GUARD)],
+    )
+    graph = register_root_artifact(ArtifactGraph(), stream.artifact_id)
+    recording = Recording.model_construct(
+        recording_id=_RECORDING_ID,
+        source_asset=SOURCE_ASSET,
+        acquisition_mode=AcquisitionMode.SEQUENTIAL,
+        streams=(stream,),
+        acquisition_order=None,
+    )
+    bundle = ArtifactBundle.model_construct(recording=recording, graph=graph)
+    with pytest.raises(ValueError, match="duplicate"):
+        synchronize(bundle, _sync_spec())
+
+
+def test_synchronize_rejects_ambiguous_visits_within_a_matched_round():
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 1, 0), (0.5, 1, 1), (2.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(2, [(-1.0, *_GUARD), (0.1, 1, 0), (2.0, *_GUARD)])
+    with pytest.raises(ValueError, match="ambiguous"):
+        synchronize(_sync_bundle((channel_a, channel_b)), _sync_spec())
+
+
+def test_synchronize_rejects_nonmonotonic_round_order():
+    channel_a = _visit_stream(
+        1, [(-1.0, *_GUARD), (0.0, 2, 0), (1.0, 1, 0), (2.0, *_GUARD)]
+    )
+    channel_b = _visit_stream(
+        2, [(-1.0, *_GUARD), (0.1, 2, 0), (1.1, 1, 0), (2.0, *_GUARD)], base=100.0
+    )
+    with pytest.raises(ValueError, match="nonmonotonic"):
+        synchronize(_sync_bundle((channel_a, channel_b)), _sync_spec())
+
+
+def test_synchronize_requires_at_least_two_channels_per_matched_round():
+    channel_a = _visit_stream(1, [(-1.0, *_GUARD), (0.0, 1, 0), (2.0, *_GUARD)])
+    channel_b = _visit_stream(2, [(-1.0, *_GUARD), (0.1, 2, 0), (2.0, *_GUARD)])
+    with pytest.raises(ValueError, match="no round_id is shared"):
+        synchronize(_sync_bundle((channel_a, channel_b)), _sync_spec())
+
+
+def test_synchronize_rejects_a_non_sync_spec():
+    with pytest.raises(TypeError, match="SyncSpec"):
+        synchronize(_pair_bundle(), _sync_spec().interp)  # type: ignore[arg-type]
+
+
+def test_real_bdd_fixtures_carry_no_round_visit_identity_to_match():
+    """The DOP format cannot prove round/visit identity, so sync refuses it."""
+    bundle = load(Path("data") / "4-sensor-velocity" / "200RPM.BDD")
+    assert bundle.recording.acquisition_mode is AcquisitionMode.SEQUENTIAL
+    with pytest.raises(ValueError, match=r"explicit \(round_id, visit_id\)"):
+        synchronize(bundle, _sync_spec())
+
+
+# ── synchronization: purity, traceability and the DAG ──────────────────
+
+
+def test_synchronize_leaves_its_input_untouched_and_is_deterministic():
+    bundle = _pair_bundle()
+    before = (
+        _ids(bundle.recording.streams),
+        bundle.graph.operations,
+        bundle.graph.derivations,
+        bundle.graph.root_artifacts,
+    )
+    first = synchronize(bundle, _sync_spec())
+    second = synchronize(bundle, _sync_spec())
+    assert _ids(first.recording.streams) == _ids(second.recording.streams)
+    assert (
+        first.graph.operations[-1].operation_id
+        == second.graph.operations[-1].operation_id
+    )
+    after = (
+        _ids(bundle.recording.streams),
+        bundle.graph.operations,
+        bundle.graph.derivations,
+        bundle.graph.root_artifacts,
+    )
+    assert before == after
+
+
+def test_synchronized_streams_trace_to_their_source_roots():
+    out = synchronize(_pair_bundle(), _sync_spec())
+    operation = out.graph.operations[-1]
+    producers = {link.artifact_id: link.operation_id for link in out.graph.derivations}
+    for stream in out.recording.streams:
+        assert producers[stream.artifact_id] == operation.operation_id
+    assert set(operation.parents) <= set(out.graph.root_artifacts)
+
+
+def test_filtered_streams_synchronize_and_trace_to_sources():
+    bundle = _pair_bundle()
+    key = ChannelKey(device_channel=1)
+    filtered = filter(
+        select_channel(bundle, key), MedianFilterSpec(window=3, max_gap_s=10.0)
+    )
+    bundle = replace_channel(bundle, filtered)
+    out = synchronize(bundle, _sync_spec())
+    assert len(out.graph.operations) == 2
+    assert [op.kind for op in out.graph.operations] == ["filter.median", _SYNC_KIND]
+    operation = out.graph.operations[-1]
+    produced_by_filter = {
+        link.artifact_id
+        for link in out.graph.derivations
+        if link.operation_id == out.graph.operations[0].operation_id
+    }
+    assert set(operation.parents) <= produced_by_filter | set(out.graph.root_artifacts)
+    assert operation.parents[0] in produced_by_filter
+
+
+def test_bundle_json_metadata_projection_has_no_ndarray_and_no_absolute_path():
+    out = synchronize(_pair_bundle(), _sync_spec())
+    projection: dict[str, object] = {
+        "recording": {
+            "recording_id": out.recording.recording_id,
+            "source_asset": out.recording.source_asset.model_dump(mode="json"),
+            "acquisition_mode": out.recording.acquisition_mode.value,
+            "streams": [
+                {
+                    "artifact_id": stream.artifact_id,
+                    "acquisition": stream.acquisition.model_dump(mode="json"),
+                    "descriptor": stream.descriptor.model_dump(mode="json"),
+                    "config": stream.config.model_dump(mode="json"),
+                }
+                for stream in out.recording.streams
+            ],
+        },
+        "graph": out.graph.model_dump(mode="json"),
+    }
+    text = json.dumps(projection, sort_keys=True)
+    assert "/home" not in text
+    assert "ndarray" not in text
+
+    def walk(node: object) -> None:
+        assert not isinstance(node, np.ndarray), node
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, (list, tuple)):
+            for value in node:
+                walk(value)
+
+    walk(projection)
+    graph = projection["graph"]
+    assert isinstance(graph, dict)
+    assert len(graph["operations"]) == 1

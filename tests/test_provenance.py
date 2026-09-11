@@ -8,6 +8,8 @@ artifact ids, explicit scientific equality, the model invariants for
 
 from __future__ import annotations
 
+import json
+import math
 import re
 import subprocess
 import sys
@@ -28,6 +30,7 @@ from udv_echo_process.models import (
     QualityFlag,
     SignalDescriptor,
     SignalQuantity,
+    ValueModel,
     array_digest,
     artifacts_equal,
     derived_artifact_id,
@@ -37,6 +40,7 @@ from udv_echo_process.models import (
     source_artifact_id,
 )
 from udv_echo_process.models.identity import recording_id_for
+from udv_echo_process.process import derive, register_operation
 from udv_echo_process.provenance import (
     ArtifactDerivationLink,
     ArtifactGraph,
@@ -45,6 +49,7 @@ from udv_echo_process.provenance import (
     OperationRecord,
     implementation_ref,
     insert_operation,
+    insert_operation_many,
     operation_id_for,
     register_root_artifact,
     source_bundle,
@@ -477,16 +482,20 @@ def test_graph_accepts_a_root_and_a_resolvable_chain():
 
 
 def test_graph_accepts_a_parent_resolved_through_derivations():
-    operation = _operation(operation_id=_id(7), parents=(_id(2),))
+    root = _id(1)
+    first = _operation(operation_id=_id(7), parents=(root,))
+    second = _operation(operation_id=_id(8), parents=(_id(2),))
     graph = ArtifactGraph(
-        operations=(operation,),
+        operations=(first, second),
         derivations=(
             ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
             ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(7)),
+            ArtifactDerivationLink(artifact_id=_id(4), operation_id=_id(8)),
         ),
-        root_artifacts=(),
+        root_artifacts=(root,),
     )
-    assert len(graph.derivations) == 2
+    assert len(graph.derivations) == 3
+    assert graph.operations[1].parents == (_id(2),)
 
 
 def test_graph_rejects_duplicate_operation_ids():
@@ -665,3 +674,246 @@ def test_operation_id_for_is_deterministic_and_ordered():
     ordered = operation_id_for("a", 1, '{"x":1}', _IMPL, (_id(1), _id(2)))
     swapped = operation_id_for("a", 1, '{"x":1}', _IMPL, (_id(2), _id(1)))
     assert ordered != swapped
+
+
+# ══ Phase 7 — normalized DAG invariants, bounded metadata, the long chain ══
+
+
+class _ChainSpec(ValueModel):
+    """Identity-scale operation params for the phase-7 chain tests."""
+
+    scale: float = 1.0
+
+
+register_operation("prov.chain", _ChainSpec)
+
+_CHAIN_IMPL = implementation_ref("udv_echo_process.process.derive.derive")
+
+
+def _chain_step(bundle: ChannelBundle) -> ChannelBundle:
+    """One recorded identity operation over ``bundle`` (a fresh payload copy)."""
+    source = bundle.artifact.data
+    data = observed_signal(source.time_s, source.gate_depths_mm, source.values.copy())
+    return derive(
+        bundle,
+        kind="prov.chain",
+        spec=_ChainSpec(),
+        implementation=_CHAIN_IMPL,
+        data=data,
+    )
+
+
+def _chain(bundle: ChannelBundle, steps: int) -> ChannelBundle:
+    for _ in range(steps):
+        bundle = _chain_step(bundle)
+    return bundle
+
+
+def _tokens(text: str) -> int:
+    """Count opaque ``sha256:`` ids in ``text``."""
+    return len(_ID_RE.findall(text))
+
+
+def _artifact_metadata(artifact: ChannelArtifact) -> dict[str, object]:
+    """An artifact's JSON metadata: identity + descriptor + config, no arrays."""
+    return {
+        "artifact_id": artifact.artifact_id,
+        "acquisition": artifact.acquisition.model_dump(mode="json"),
+        "descriptor": artifact.descriptor.model_dump(mode="json"),
+        "config": artifact.config.model_dump(mode="json"),
+    }
+
+
+def _artifact_metadata_text(artifact: ChannelArtifact) -> str:
+    return json.dumps(_artifact_metadata(artifact), sort_keys=True)
+
+
+# ── cycles, ordering and reachability ──────────────────────────────────
+
+
+def test_graph_rejects_a_cycle():
+    """A derived artifact must never be an ancestor of its own operation."""
+    first = _operation(operation_id=_id(7), parents=(_id(2),))
+    second = _operation(operation_id=_id(8), parents=(_id(1),))
+    with pytest.raises(ValidationError) as ei:
+        _graph(
+            operations=(first, second),
+            derivations=(
+                ArtifactDerivationLink(artifact_id=_id(1), operation_id=_id(7)),
+                ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(8)),
+            ),
+        )
+    assert "cycle" in str(ei.value)
+
+
+def test_graph_rejects_operations_that_are_not_topologically_ordered():
+    """A parent operation must precede its child even without a cycle."""
+    parent = _operation(operation_id=_id(7), parents=(_id(1),))
+    child = _operation(operation_id=_id(8), parents=(_id(2),))
+    with pytest.raises(ValidationError, match="topologically ordered"):
+        _graph(
+            operations=(child, parent),
+            derivations=(
+                ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
+                ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(8)),
+            ),
+            root_artifacts=(_id(1),),
+        )
+
+
+def _two_step_graph() -> ArtifactGraph:
+    """``root A -> operation 7 -> artifact 2 -> operation 8 -> artifact 3``."""
+    root = _id(1)
+    graph = insert_operation(
+        register_root_artifact(ArtifactGraph(), root),
+        _operation(operation_id=_id(7), parents=(root,)),
+        artifact_id=_id(2),
+    )
+    return insert_operation(
+        graph,
+        _operation(operation_id=_id(8), parents=(_id(2),)),
+        artifact_id=_id(3),
+    )
+
+
+def test_graph_topology_is_deterministic_and_parents_precede_children():
+    graph = _two_step_graph()
+    assert [op.operation_id for op in graph.operations] == [_id(7), _id(8)]
+    producers = {link.artifact_id: link.operation_id for link in graph.derivations}
+    index = {op.operation_id: i for i, op in enumerate(graph.operations)}
+    for operation in graph.operations:
+        for parent in operation.parents:
+            producer = producers.get(parent)
+            if producer is not None:
+                assert index[producer] < index[operation.operation_id]
+
+
+def test_every_operation_is_reachable_from_a_root_artifact():
+    graph = _two_step_graph()
+    producers = {link.artifact_id: link.operation_id for link in graph.derivations}
+    by_id = {op.operation_id: op for op in graph.operations}
+    reachable = set(graph.root_artifacts)
+    changed = True
+    while changed:
+        changed = False
+        for artifact_id, operation_id in producers.items():
+            if artifact_id in reachable:
+                continue
+            if all(parent in reachable for parent in by_id[operation_id].parents):
+                reachable.add(artifact_id)
+                changed = True
+    assert reachable >= set(producers)
+
+
+def test_graph_rejects_duplicate_links():
+    link = ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7))
+    with pytest.raises(ValidationError, match="unique artifact_id"):
+        _graph(operations=(_operation(operation_id=_id(7)),), derivations=(link, link))
+
+
+def test_insert_operation_many_adds_one_node_and_every_link():
+    root = _id(1)
+    graph = register_root_artifact(ArtifactGraph(), root)
+    operation = _operation(operation_id=_id(7), parents=(root,))
+    updated = insert_operation_many(graph, operation, artifact_ids=(_id(2), _id(3)))
+    assert graph.operations == () and graph.derivations == ()
+    assert updated.operations == (operation,)
+    assert updated.derivations == (
+        ArtifactDerivationLink(artifact_id=_id(2), operation_id=_id(7)),
+        ArtifactDerivationLink(artifact_id=_id(3), operation_id=_id(7)),
+    )
+    with pytest.raises(ValueError, match="at least one"):
+        insert_operation_many(graph, operation, artifact_ids=())
+    with pytest.raises(ValidationError):
+        insert_operation_many(
+            updated,
+            _operation(operation_id=_id(8), parents=(root,)),
+            artifact_ids=(_id(2),),
+        )
+
+
+# ── JSON-only params, bounded artifact metadata, the long chain ─────────
+
+
+def _reject_json_constant(name: str) -> None:
+    raise AssertionError(f"non-finite JSON constant {name!r}")
+
+
+def _walk_json(node: object) -> None:
+    """Assert ``node`` is a pure JSON value (no ndarray/Path/callable/NaN)."""
+    if node is None or isinstance(node, (bool, int, str)):
+        return
+    if isinstance(node, float):
+        assert math.isfinite(node), node
+        return
+    if isinstance(node, dict):
+        for key, value in node.items():
+            assert isinstance(key, str), key
+            _walk_json(value)
+        return
+    if isinstance(node, list):
+        for item in node:
+            _walk_json(item)
+        return
+    raise AssertionError(f"non-JSON value {node!r}")
+
+
+def test_operation_params_json_is_canonical_json_only():
+    bundle = _chain(source_bundle(_artifact()), 3)
+    assert len(bundle.graph.operations) == 3
+    for operation in bundle.graph.operations:
+        parsed = json.loads(operation.params_json, parse_constant=_reject_json_constant)
+        assert isinstance(parsed, dict)
+        _walk_json(parsed)
+        canonical = json.dumps(
+            parsed,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        )
+        assert canonical == operation.params_json
+        _walk_json(operation.model_dump(mode="json"))
+
+
+def test_artifact_metadata_is_bounded_and_carries_no_history():
+    bundle = source_bundle(_artifact())
+    sizes: list[int] = []
+    for _ in range(120):
+        bundle = _chain_step(bundle)
+        sizes.append(len(_artifact_metadata_text(bundle.artifact)))
+    assert len(sizes) == 120
+    # the artifact's own metadata never grows: nothing is copied into it
+    assert len(set(sizes)) == 1
+    assert _tokens(_artifact_metadata_text(bundle.artifact)) == 3
+
+
+def test_long_chain_is_o1_per_artifact_and_one_node_per_operation():
+    bundle = _chain(source_bundle(_artifact()), 120)
+    links = bundle.graph.derivations
+    assert len(bundle.graph.operations) == 120
+    assert len(links) == 120
+    assert bundle.graph.root_artifacts == (
+        source_bundle(_artifact()).artifact.artifact_id,
+    )
+    assert len({op.operation_id for op in bundle.graph.operations}) == 120
+    assert len({link.artifact_id for link in links}) == 120
+    # exactly one node per operation, each consuming exactly its predecessor
+    previous = bundle.graph.root_artifacts[0]
+    for operation, link in zip(bundle.graph.operations, links, strict=True):
+        assert operation.parents == (previous,)
+        previous = link.artifact_id
+    # the terminal artifact is a plain five-field record: its provenance is its
+    # own id plus the one operation id the graph links to it, never a history
+    assert set(ChannelArtifact.model_fields) == {
+        "artifact_id",
+        "acquisition",
+        "descriptor",
+        "config",
+        "data",
+    }
+    final = bundle.artifact
+    assert _tokens(_artifact_metadata_text(final)) == 3
+    assert [
+        link.operation_id for link in links if link.artifact_id == final.artifact_id
+    ] == [bundle.graph.operations[-1].operation_id]

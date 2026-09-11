@@ -11,8 +11,10 @@ one of its streams.
 
 Everything here is immutable and pure: insertion helpers return a *new* graph
 and never touch their input, so a failed operation cannot partially update
-provenance (plan §8.3). Cycle detection, multi-parent ``derive_many()`` and the
-bundle-wide id-versus-graph scan are Phase 7 and are intentionally absent.
+provenance (plan §8.3). The full §8.2 invariant set is validated here — cycle
+rejection and a deterministic topological order included — and
+:class:`ArtifactBundle` additionally re-derives every *derived* stream id from
+its producing operation (the phase-7 bundle-wide scan).
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from udv_echo_process.models._canonical import canonical_json_bytes, stable_id
 from udv_echo_process.models.base import ArrayModel, ValueModel
 from udv_echo_process.models.identity import ChannelKey
 from udv_echo_process.models.recording import Recording
-from udv_echo_process.models.signal import ChannelArtifact
+from udv_echo_process.models.signal import ChannelArtifact, derived_artifact_id
 
 #: Opaque id form: ``sha256:`` plus 64 lower-case hex characters.
 _SHA256_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
@@ -246,12 +248,15 @@ def _require_unique(values: tuple[str, ...], *, field_name: str, label: str) -> 
 class ArtifactGraph(ValueModel):
     """Normalized provenance DAG: operations, derivation links and roots.
 
-    Enforces the Phase-3 subset of the §8.2 invariants: unique operation ids,
-    unique derived artifact ids, duplicate-free roots, one link per derived
-    artifact, every link pointing at an existing operation, no root/derived
-    overlap, and every parent resolving through ``derivations`` or exactly once
-    in ``root_artifacts`` (no dangling reference). Cycle detection and the
-    bundle-wide artifact scan are Phase 7.
+    Enforces the full §8.2 invariant set: unique operation ids, unique derived
+    artifact ids and duplicate-free roots; one link per derived artifact; every
+    link pointing at an existing operation; no root/derived overlap; every
+    parent resolving through ``derivations`` or exactly once in
+    ``root_artifacts`` (no dangling reference); and a deterministic topological
+    order — a parent operation precedes its children, so a cycle (a derived
+    artifact used as an ancestor of its own producing operation) is rejected and
+    every operation is reachable from the roots. The bundle-wide id-versus-graph
+    scan lives on :class:`ArtifactBundle`.
     """
 
     operations: tuple[OperationRecord, ...] = ()
@@ -301,7 +306,37 @@ class ArtifactGraph(ValueModel):
                         f"unresolved parent {parent!r}; a parent must be a derived "
                         "artifact or a root artifact"
                     )
+        self._check_topology()
         return self
+
+    def _check_topology(self) -> None:
+        """Require a deterministic topological order; reject any cycle (§8.2).
+
+        Every parent that resolves through a derivation must be produced by an
+        operation that appears *earlier* in :attr:`operations` — a parent always
+        precedes its children, and ties retain insertion order. A back edge is
+        therefore a hard error, so a derived artifact can never be an ancestor
+        of its own producing operation (a cycle) and, because a parent resolves
+        only to a root or to an earlier operation, every operation is reachable
+        from a root artifact.
+        """
+        position = {
+            operation.operation_id: index
+            for index, operation in enumerate(self.operations)
+        }
+        producer = {link.artifact_id: link.operation_id for link in self.derivations}
+        for index, operation in enumerate(self.operations):
+            for parent in operation.parents:
+                source = producer.get(parent)
+                if source is not None and position[source] >= index:
+                    raise ValueError(
+                        f"operations[{index}] ({operation.operation_id!r}) "
+                        f"consumes derived artifact {parent!r} produced by "
+                        f"{source!r}, but operations are not topologically "
+                        "ordered: a derived artifact must never be an ancestor "
+                        "of its own producing operation (cycle detected in the "
+                        "provenance DAG)"
+                    )
 
 
 class ChannelBundle(ArrayModel):
@@ -328,9 +363,14 @@ class ArtifactBundle(ArrayModel):
     """Recording-level processing state: a ``Recording`` plus its closed DAG.
 
     Enforces that every artifact carried by :attr:`recording` resolves in
-    :attr:`graph`, either as a root artifact or through a derivation (plan
-    §8.2). The graph itself keeps the Phase-3 invariants; cycle detection,
-    bundle-wide id revalidation and ``derive_many()`` are Phase 7.
+    :attr:`graph`, either as a root artifact or through a derivation, and — the
+    phase-7 bundle-wide scan — that a *derived* stream artifact is CONSISTENT
+    with its producing operation: its id is recomputed from the canonical
+    operation id plus the full output content (acquisition + descriptor + config
+    canonical JSON + every payload/support/index array digest) with the shared
+    :func:`~udv_echo_process.models.signal.derived_artifact_id` equation, never
+    re-derived here (plan §6.6, §8.2). A root stream is an external artifact, so
+    only its resolution is checked.
     """
 
     recording: Recording
@@ -338,16 +378,37 @@ class ArtifactBundle(ArrayModel):
 
     @model_validator(mode="after")
     def _check_streams_resolve(self) -> ArtifactBundle:
-        resolvable = set(self.graph.root_artifacts) | {
-            link.artifact_id for link in self.graph.derivations
+        graph = self.graph
+        resolvable = set(graph.root_artifacts) | {
+            link.artifact_id for link in graph.derivations
         }
+        producer = {link.artifact_id: link.operation_id for link in graph.derivations}
         for index, stream in enumerate(self.recording.streams):
-            if stream.artifact_id not in resolvable:
+            artifact_id = stream.artifact_id
+            channel = stream.acquisition.channel.device_channel
+            if artifact_id not in resolvable:
                 raise ValueError(
-                    f"recording stream {index} (channel "
-                    f"{stream.acquisition.channel.device_channel}) artifact "
-                    f"{stream.artifact_id!r} does not resolve in the graph (it "
-                    "is neither a root artifact nor a derived artifact)"
+                    f"recording stream {index} (channel {channel}) artifact "
+                    f"{artifact_id!r} does not resolve in the graph (it is "
+                    "neither a root artifact nor a derived artifact)"
+                )
+            operation_id = producer.get(artifact_id)
+            if operation_id is None:
+                continue
+            expected = derived_artifact_id(
+                operation_id,
+                stream.acquisition,
+                stream.descriptor,
+                stream.config,
+                stream.data,
+            )
+            if expected != artifact_id:
+                raise ValueError(
+                    f"recording stream {index} (channel {channel}) artifact "
+                    f"{artifact_id!r} is not consistent with its producing "
+                    f"operation {operation_id!r}: the derived artifact id "
+                    f"recomputes to {expected!r} (it hashes the canonical "
+                    "operation id plus the full output content)"
                 )
         return self
 
@@ -405,6 +466,53 @@ def insert_operation(
             *graph.derivations,
             ArtifactDerivationLink(
                 artifact_id=artifact_id, operation_id=operation.operation_id
+            ),
+        ),
+        root_artifacts=graph.root_artifacts,
+    )
+
+
+def insert_operation_many(
+    graph: ArtifactGraph,
+    operation: OperationRecord,
+    *,
+    artifact_ids: tuple[str, ...],
+) -> ArtifactGraph:
+    """Return a NEW graph with ``operation`` and one link per output artifact.
+
+    The multi-output sibling of :func:`insert_operation` (plan §8.3): one
+    operation node may produce several derived artifacts (``derive_many``), and
+    every output maps to that single operation. Pure and atomic — the
+    replacement graph is validated whole by :class:`ArtifactGraph`, so a
+    rejected insert (no outputs, duplicate operation/artifact id, unresolved
+    parent or a cycle) leaves the input untouched.
+
+    Args:
+        graph: the graph to extend.
+        operation: the single operation node to append.
+        artifact_ids: the derived artifact ids it produced, in output order.
+
+    Returns:
+        A new validated :class:`ArtifactGraph`.
+
+    Raises:
+        ValueError: when no output artifact id is supplied.
+        pydantic.ValidationError: when an invariant of the extended DAG fails.
+    """
+    if not artifact_ids:
+        raise ValueError(
+            "insert_operation_many: an operation must produce at least one "
+            "derived artifact id"
+        )
+    return ArtifactGraph(
+        operations=(*graph.operations, operation),
+        derivations=(
+            *graph.derivations,
+            *(
+                ArtifactDerivationLink(
+                    artifact_id=artifact_id, operation_id=operation.operation_id
+                )
+                for artifact_id in artifact_ids
             ),
         ),
         root_artifacts=graph.root_artifacts,
