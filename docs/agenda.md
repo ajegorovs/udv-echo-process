@@ -74,7 +74,94 @@ open-ended:
   while all archived real runs are steady single-state cases.
 
 The source checkout and private retirement pack remain in place; deleting them
-requires a separate explicit decision.
+requires a separate explicit decision — upstream is unreachable, so the pack is the
+only remaining copy. The pack was re-verified on 2026-09-12 (git bundle records a
+complete history, 167/168 files match their recorded sha256, 26 archived-baseline
+tests run and pass against it). The **standing file-level register** — every tracked
+source file's disposition, the unported items, and the verify/reconstruct recipe —
+is [`udv-analysis-reference.md`](udv-analysis-reference.md).
+
+Open decisions from that register:
+
+- Trace attribution for the absorbed MIT-licensed source: this repo carries no
+  `LICENSE`/`NOTICE`, and the pack's `licenses/` copies are the only surviving
+  statement of terms.
+- Re-seal the pack's `inventory.json`, whose recorded hash for
+  `baseline/validation_report.json` is stale (the report was rewritten ~1 min after
+  the seal).
+- Decide whether the unported register items are wanted: the exclusive depth rule,
+  `ChannelConfig` metadata coverage, and the visualization intents.
+
+---
+
+## Active work — sidebar notebook: time/gate selection
+
+`notebooks/channel_preview_sidebar.py` is the sandbox for the live-sidebar
+pattern (the selection cascade hosted in `mo.sidebar`; the pattern itself is
+written up in the provider repo's examples tree).
+
+**Landed 2026-09-12** — the four-control cascade is in place: recording →
+channel → **time** (`time_cursor`, a profile-index slider) → **gate**
+(`gate_cursor`, the old trace-view dropdown promoted into the sidebar). Both
+cursors drive the views, and the **heatmap crosshair** draws them on the
+time×gate map (vertical line = time, horizontal line = gate). `TraceScrubber`
+was **removed**: its scrub index is browser-local, so a second time cursor
+could only ever disagree with `time_cursor`. New `time_slice` (one profile
+across gates) and `cursor_readout` cells; `interp_trace` / `filter_gate_trace`
+now consume `gate_cursor`. Gates passed: `marimo check` (clean) and
+`marimo export html` — 5 sidebar blocks in cascade order, with the heatmap
+carrying both line shapes at the selected t / depth.
+
+**Next pass — step buttons.** ±1 plus coarse (±1 %/±10 %) jumps per cursor,
+mirroring the removed `TraceScrubber` button set. **Unblocked 2026-09-12.** The
+"read-only widget" note was right about the *assignment rule* and wrong about the
+achievable result, so no custom anywidget is needed. A paired block — buttons and
+slider over one shared `mo.state`, the slider created as `value=get_state()` — is
+a single usable value, and the frontend slider *follows* the buttons. Verified
+three ways on a throwaway probe notebook: a real
+browser click moved `state=2 → 3` **and** the rendered slider's displayed value
+`2 → 3`; an MCP `set_ui_value` on the slider moved the state `2 → 7`; and
+`set_ui_value` on a button fired its `on_click` (`state 7 → 8`), so buttons are
+drivable from MCP with no browser at all. Coarse jumps are still mandatory — the
+time axis is 400 profiles in one fixture and 4193–4927 in another.
+
+**Open**
+
+- Cursor **reactivity is now observed** (2026-09-12): switching the recording to
+  an echo file re-derived the channel dropdown and rebuilt the time slider for
+  the new profile count, and a cursor change re-ran its dependents (the readout
+  follows). Still unverified: the *rendered* crosshair following a cursor — the
+  plotly output payload truncates before `layout.shapes`, so it is only
+  export-verified, not session-verified — the per-recording cursor memory (needs
+  a *return* visit to the file), and sidebar stickiness.
+- Heatmap click-to-set (`mo.ui.plotly` selection events → set both cursors) is
+  the nicer interaction if 0.24.x supports it; the crosshair rebuild on every
+  step was accepted for now.
+- `channel_preview.py` still carries `TraceScrubber`, so the two notebooks are
+  no longer cell-for-cell identical (as `AGENTS.md` previously asserted):
+  decide whether to port the cursor cascade back or keep the sidebar file as
+  the deliberately divergent sandbox.
+
+**Design constraints** (still binding)
+
+- The time-slice profile answers the case the old notebook warns about: the
+  echo is a travelling wave whose peak sweeps across gates, so a *time-averaged*
+  gate profile mixes phases, while a single time slice is phase-coherent.
+- **`mo.sidebar(...)` renders only as a cell's final expression.** A mid-cell
+  call — e.g. a readout placed beside the figure it annotates — is dropped
+  silently (no error, no warning), and two calls in one cell keep only the last.
+  A sidebar readout therefore needs its own cell, ordered after its dependencies
+  so it stacks in the right place.
+- Widget values cannot be **assigned** from Python — `UIElement.value`'s setter
+  raises, and its message directs you to `mo.state()`. That is not a dead end: a
+  shared `mo.state` plus a re-created `value=` gives full programmatic control
+  (see the step-button note above), and a kernel-initiated `set_ui_value` can
+  move a widget as well.
+- A control is created and displayed in one cell and its `.value` is never read
+  there; extra `mo.sidebar` calls stack in cell order; `full_width=True` avoids
+  a clipped value; the sidebar is hidden below the `lg` breakpoint.
+- Time-index cardinality varies by an order of magnitude between fixtures, so
+  the heatmap stays strided for display.
 
 ---
 
@@ -114,6 +201,15 @@ requires a separate explicit decision.
   warranted before adding one to this repository.
 - Keep unreleased `marimo-inspect` development in its sibling repository; do
   not turn a temporary editable override into normal consumer setup.
+
+- Provider-side findings from driving a live notebook through MCP (2026-09-12)
+  live in the provider's own agenda, not here — `marimo-inspect` →
+  `docs/agenda-udv-consumer-findings.md` §Round 2 (T15–T19): no run-all
+  execution, session-identity churn, app-mode invisibility, and the recipe
+  gotcha that decides which session a browser lands on. The one item that bears
+  on this repo directly is the **sidebar blind spot** (T16): a `mo.sidebar(...)`
+  cell reports no output, so the sidebar notebook's central mechanism cannot be
+  verified through the MCP surface at all.
 
 ---
 

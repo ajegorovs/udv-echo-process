@@ -158,12 +158,23 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   `ArtifactBundle`, `select_channel` → `ChannelBundle`, discriminated specs,
   bundle-closed `filter`/`resample`). All computation stays in `src/`; cells are
   thin widget wrappers.
+  `notebooks/channel_preview_sidebar.py` — the same notebook with the
+  recording → channel selection moved into a `mo.sidebar` cascade (every other
+  cell identical; both files are kept side by side).
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
   `docs/agent-onboarding-demo-mcp.md` §Prerequisites). Zero-arg discovery also
   needs a **writable `~/.local/state/marimo/servers/`** (read-only home =
   empty registry, log O15) — when in doubt, pass `server_url` explicitly.
+- **A materialized notebook is not a *run* notebook.** No control holds a value
+  and no cell has output until the cells have actually run, so a freshly opened
+  window (or an un-run session) has inert widgets and empty execution state;
+  `marimo check` executes nothing either. Let the notebook finish running before
+  reviewing a live window, and verify a change with `marimo export html` or app
+  mode — both execute. Mechanism: provider
+  `docs/agent-onboarding-demo-mcp.md` §Prerequisites and
+  `reference://marimo-inspect/fallbacks-and-limits` §A session is not a run.
 - **MCP workflow authority:** after the server is connected, list and read its
   packaged resources before live mutation. The normal loop is
   `list_active_notebooks` → `get_cell_map` → read required cells → mutate/run
