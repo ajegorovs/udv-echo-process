@@ -153,10 +153,11 @@ def channel_select(bundle, channel_picker, mo, np):
 @app.cell(hide_code=True)
 def time_picker(data, file_picker, get_time_default, mo, set_time_default):
     # LEVEL 3 of the sidebar cascade: the time cursor, as a profile index.
-    # Created and displayed here; its .value is read by the cells below, never
-    # in this one. The starting index is remembered per recording so a cascade
-    # does not silently reset the cursor, and it is clamped so a stale index
-    # from a longer recording cannot exceed the new one.
+    # Created here but DISPLAYED by the `time_controls` cell below, which composes
+    # it with its step buttons into a single sidebar block. Its .value is read by
+    # the cells below, never in this one. The starting index is remembered per
+    # recording so a cascade does not silently reset the cursor, and it is clamped
+    # so a stale index from a longer recording cannot exceed the new one.
     if data is not None:
         _n = int(data.time_s.size)
         _saved = int(get_time_default().get(file_picker.value, _n // 2))
@@ -184,8 +185,67 @@ def time_picker(data, file_picker, get_time_default, mo, set_time_default):
             full_width=True,
             show_value=True,
         )
-    mo.sidebar([mo.md("### Time"), time_cursor])
     return (time_cursor,)
+
+
+@app.cell(hide_code=True)
+def _(data, file_picker, mo, set_time_default, time_cursor):
+    # Step buttons for the Time cursor, over the SAME mo.state the slider writes
+    # (`cursor_stores` above), so slider and buttons can never disagree.
+    # This cell must stay SEPARATE from `time_picker`: marimo never re-runs the
+    # cell that called a state setter, so a slider sharing a cell with its own
+    # buttons would never re-seed. It reads `time_cursor.value`; the sidebar block
+    # itself is composed by the `time_controls` cell below.
+    _n_profiles = int(data.time_s.size) if data is not None else 1
+    _hi = max(1, _n_profiles - 1)
+    _here = max(0, min(int(time_cursor.value), _hi))
+    _page = max(1, _n_profiles // 10)
+    _key = file_picker.value
+
+
+    def _step(_delta):
+        # Functional updater: the index is read from the state at CLICK time, so a
+        # rapid pair of clicks advances twice instead of merging into one write.
+        return lambda _count: set_time_default(
+            lambda store: {
+                **store,
+                _key: max(0, min(int(store.get(_key, _here)) + _delta, _hi)),
+            }
+        )
+
+
+    time_page_back = mo.ui.button(label=f"−{_page}", on_click=_step(-_page))
+    time_step_back = mo.ui.button(label="−1", on_click=_step(-1))
+    time_step_fwd = mo.ui.button(label="+1", on_click=_step(1))
+    time_page_fwd = mo.ui.button(label=f"+{_page}", on_click=_step(_page))
+    return time_page_back, time_page_fwd, time_step_back, time_step_fwd
+
+
+@app.cell(hide_code=True)
+def _(
+    mo,
+    time_cursor,
+    time_page_back,
+    time_page_fwd,
+    time_step_back,
+    time_step_fwd,
+):
+    # One sidebar block for LEVEL 3: the slider and its step buttons together.
+    # A `mo.sidebar` call that is not THIS cell's final expression is silently
+    # dropped, so the composed element IS the last statement.
+    mo.sidebar(
+        mo.vstack(
+            [
+                mo.md("### Time"),
+                time_cursor,
+                mo.hstack(
+                    [time_page_back, time_step_back, time_step_fwd, time_page_fwd],
+                    justify="space-between",
+                ),
+            ]
+        )
+    )
+    return
 
 
 @app.cell(hide_code=True)
