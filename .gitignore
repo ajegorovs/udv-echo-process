@@ -15,6 +15,7 @@ __marimo__/
 *.marimo.session_state
 marimo.toml
 .marimo/
+notebooks/layouts/
 
 # local agent-tool symlink dirs (machine-specific; skills live in .agents/)
 .claude/
