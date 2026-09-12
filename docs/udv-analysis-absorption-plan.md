@@ -14,6 +14,13 @@ change this repo's contracts — `docs/signal-model-rework-plan.md` (§5–§9),
 `docs/pipeline-conventions.md` and `docs/architecture.md` remain authoritative
 for the receiving model, transforms and boundaries.
 
+Standing inventory: [`udv-analysis-reference.md`](udv-analysis-reference.md) is the
+file-level companion — all 40 tracked source files with their disposition (absorbed
+→ where / rejected → why / open — no counterpart), how to verify and reconstruct the
+private preservation pack, and the live open items. Retirement is **not** performed:
+the source checkout and the pack both stay in place until the owner decides
+otherwise.
+
 ## 1. Why this exists
 
 `udv-analysis` is a separate, configuration-driven package for one job: robust
@@ -204,6 +211,8 @@ Each item below would violate a rule this repo already settled:
 
 | Question | Source |
 |---|---|
+| What exists in the source, file by file, and what happened to each file? | `udv-analysis-reference.md` §3 |
+| Which capabilities are preserved but not yet ported? | `udv-analysis-reference.md` §4 |
 | What is the receiving model's contract? | `docs/signal-model-rework-plan.md` §5–§9 |
 | How must a new module be shaped? | `docs/pipeline-conventions.md` |
 | Where does a change belong? | `docs/architecture.md` |

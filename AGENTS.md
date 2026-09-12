@@ -348,6 +348,12 @@ algorithms, and experimental-setup-specific algorithms.
   mapping, do-not-absorb list, sequencing, open decisions). Read it before
   adding state detection or profile-extraction code, and before deleting the
   source checkout.
+- `docs/udv-analysis-reference.md` — the standing preservation register for
+  `udv-analysis`: every tracked source file with its disposition (absorbed →
+  where / rejected → why / **open** — preserved, no counterpart), how to verify
+  and reconstruct the private pack, and the live open items. Read it before
+  re-opening a rejected decision, claiming a capability was fully absorbed, or
+  deleting the source checkout or pack.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
 
 ## Privacy — do not overexpose
