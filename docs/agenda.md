@@ -112,28 +112,54 @@ now consume `gate_cursor`. Gates passed: `marimo check` (clean) and
 `marimo export html` — 5 sidebar blocks in cascade order, with the heatmap
 carrying both line shapes at the selected t / depth.
 
-**Next pass — step buttons.** ±1 plus coarse (±1 %/±10 %) jumps per cursor,
-mirroring the removed `TraceScrubber` button set. **Unblocked 2026-09-12.** The
-"read-only widget" note was right about the *assignment rule* and wrong about the
-achievable result, so no custom anywidget is needed. A paired block — buttons and
-slider over one shared `mo.state`, the slider created as `value=get_state()` — is
-a single usable value, and the frontend slider *follows* the buttons. Verified
-three ways on a throwaway probe notebook: a real
-browser click moved `state=2 → 3` **and** the rendered slider's displayed value
-`2 → 3`; an MCP `set_ui_value` on the slider moved the state `2 → 7`; and
-`set_ui_value` on a button fired its `on_click` (`state 7 → 8`), so buttons are
-drivable from MCP with no browser at all. Coarse jumps are still mandatory — the
-time axis is 400 profiles in one fixture and 4193–4927 in another.
+**Landed 2026-09-12 (second pass) — time step buttons.** The time cursor now
+carries `−page / −1 / +1 / +page` buttons (`page = max(1, n_profiles // 10)`, so
+±40 on a 400-profile fixture). Three cells, because it must be: `time_picker`
+creates the slider, a buttons cell declares them, and a composition cell renders
+`mo.sidebar(mo.vstack([...]))` — shelling the two halves into one sidebar block
+(two `mo.sidebar` calls stack as separate blocks). The buttons write the **same**
+`mo.state` the slider's own `on_change` already wrote (`cursor_stores`'s
+`time_default`), so slider and buttons cannot disagree — no new state, no custom
+anywidget, and the frontend slider follows. The handler uses the functional
+updater (`State.__call__` accepts a callable), so the index is read at click time
+and a rapid double-click cannot lose a step. Verified live through MCP: `+1`
+200 → 201, `+40` → 241, `−1` → 240 with the readout following each time, and a
+`−1` at index 0 stayed at 0. Coarse jumps remain mandatory — the time axis is 400
+profiles in one fixture and 4193–4927 in another.
+
+**Next pass — gate slider and cleaner cursor text** (requested 2026-09-12).
+
+- **Promote the gate cursor from a dropdown to a slider** over the gate index,
+  labelled with the depth in mm, and give it the same
+  `−page / −1 / +1 / +page` button set as the time cursor. The gate is the last
+  control still on `mo.ui.dropdown`, so this is what makes all four cascade
+  levels uniform — and it makes the gate step-drivable from MCP exactly like the
+  time cursor. Sized separately from time: the gate axis is 26–55 entries
+  (200RPM.BDD ch6: 55 gates, 20.00 → 79.13 mm; 200.BDD ch4: 26 gates,
+  42.97 → 54.39 mm), so a tenth of the gates is only 2–5 — a fixed ±5 and
+  `±(n // 10)` are both defensible, but the number belongs in the button label
+  either way.
+- **Format the cursor state text more cleanly, showing min, max AND current for
+  both cursors.** Today the information is split awkwardly: the time slider's
+  label carries the range only (`t 0.000 → 44.211 s`, no current), while the
+  readout crams everything into one dense line
+  (`t = 22.2891 s (profile 200/399) · gate 27 = 49.57 mm · value 52.27`).
+  Wanted: a compact per-cursor line — range first, then current — that reads well
+  side by side, e.g. `time  0.000 – 44.211 s   now 22.289 s (200/399)` and
+  `gate  20.00 – 79.13 mm   now 49.57 mm (27/54)`, with the sampled value kept
+  separate and the 4-decimal readouts trimmed to one consistent precision.
 
 **Open**
 
-- Cursor **reactivity is now observed** (2026-09-12): switching the recording to
-  an echo file re-derived the channel dropdown and rebuilt the time slider for
-  the new profile count, and a cursor change re-ran its dependents (the readout
-  follows). Still unverified: the *rendered* crosshair following a cursor — the
-  plotly output payload truncates before `layout.shapes`, so it is only
-  export-verified, not session-verified — the per-recording cursor memory (needs
-  a *return* visit to the file), and sidebar stickiness.
+- Cursor **reactivity is observed** (2026-09-12): switching the recording to an
+  echo file re-derived the channel dropdown and rebuilt the time slider for the
+  new profile count, and a cursor change re-runs its dependents — once the step
+  buttons landed, every click moved the cursor and the readout followed with no
+  manual run (`200 → 201 → 241 → 240`). Still unverified: the *rendered*
+  crosshair following a cursor — the plotly output payload truncates before
+  `layout.shapes`, so it is only export-verified, not session-verified — the
+  per-recording cursor memory as an actual *return* visit to a file, and sidebar
+  stickiness.
 - Heatmap click-to-set (`mo.ui.plotly` selection events → set both cursors) is
   the nicer interaction if 0.24.x supports it; the crosshair rebuild on every
   step was accepted for now.
@@ -204,12 +230,18 @@ time axis is 400 profiles in one fixture and 4193–4927 in another.
 
 - Provider-side findings from driving a live notebook through MCP (2026-09-12)
   live in the provider's own agenda, not here — `marimo-inspect` →
-  `docs/agenda-udv-consumer-findings.md` §Round 2 (T15–T19): no run-all
-  execution, session-identity churn, app-mode invisibility, and the recipe
-  gotcha that decides which session a browser lands on. The one item that bears
-  on this repo directly is the **sidebar blind spot** (T16): a `mo.sidebar(...)`
-  cell reports no output, so the sidebar notebook's central mechanism cannot be
-  verified through the MCP surface at all.
+  `docs/agenda-udv-consumer-findings.md` §Round 2 (**T15–T22**): no run-all
+  execution, session-identity churn, app-mode invisibility, the recipe gotcha
+  that decides which session a browser lands on, plus three *reporting* gaps —
+  a button click `set_ui_value` cannot confirm (T20), a cell output restored from
+  cache with no staleness marker (T21), and a session whose owner is not named
+  (T22). Two of them bit here directly: **T21** caused the duplicate sidebar
+  slider (an `edit_cell` that removed a `mo.sidebar(...)` call left the previous
+  block still rendered), and **T22** forced a manual "take over" in the browser
+  once a session had been materialized agent-side. The **sidebar blind spot
+  (T16) no longer reproduces** — `get_cell_outputs` returned the composed sidebar
+  cell's whole block — so it is marked revised upstream and is no longer a
+  blocker for verifying the sidebar here.
 
 ---
 
