@@ -14,10 +14,12 @@ Three contract points this module owns:
 
 - **Frequency calibration.** The FFT frequency axis is calibrated by the
   *full-span effective interval* ``(t[-1] - t[0]) / (N - 1)``, never by the
-  median adjacent interval. A quantized DOP timebase alternates between two
-  timestamp quanta (``3.1``/``3.2`` ms on the committed echo fixtures), so the
-  median is the dominant quantum rather than the sampling period; using it
-  shifts every recovered RPM by ~1%.
+  median adjacent interval. A quantized DOP timebase mixes two timestamp quanta
+  (``3.1``/``3.2`` ms on the committed echo fixtures — 833 of the 650
+  recording's 4629 adjacent intervals are short), so the median is the dominant
+  quantum rather than the sampling period; using it shifts every recovered RPM
+  by ~0.6% (measured 0.562% on the committed fixtures: 650 → 645.92 instead of
+  649.58).
 - **Regularity guard.** ``np.fft.rfft`` assumes uniformly spaced samples, so the
   measured worst-case relative deviation of the adjacent intervals from their
   median is recorded on the result and must not exceed

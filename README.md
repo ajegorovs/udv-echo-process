@@ -7,9 +7,9 @@ Multi-sensor Ultrasonic Doppler Velocimetry (UDV) processing for rotating machin
 - **Parse** any `.ADD` file — auto-detect single/multi-sensor, echo/velocity, raw/stat
 - **Inspect** recording setup — channel count, gate depths, blocks, profiles, timing
 - **Visualize** per-channel heatmaps with synchronized time axis + gate profile statistics
-- **Analyze RPM** from single-sensor echo data via FFT (mean error 0.28%, max
-  1.5% across the 19 committed echo recordings) — on the `.ADD` path
-  (`rpm_from_echo`) and on the artifact model
+- **Analyze RPM** from single-sensor echo data via FFT (0.28% mean / 1.5% max
+  error against the filename setpoint across the 19 committed echo recordings)
+  — on the `.ADD` path (`rpm_from_echo`) and on the artifact model
   (`rpm_from_channel` → `EchoRpmEstimate`, plus a batch sweep)
 
 ### Supported Data
@@ -84,7 +84,8 @@ The package deliberately keeps two pipelines separate:
 ```text
 .ADD: parser.extract() → ExtractedData → viz / RPM / CLI
 .BDD: io.load() → ArtifactBundle → process transforms → provenance / storage
-                                    └→ analysis terminal results (states, profiles, echo RPM)
+                        └→ select_channel(...) → analysis terminal results
+                                                 (states, profiles, echo RPM)
 ```
 
 - The `.ADD` path is the established ASCII parser, visualization, and

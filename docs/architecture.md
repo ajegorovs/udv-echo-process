@@ -148,19 +148,38 @@ The five contract points that make it reproducible:
   committed echo recordings measure 3.125%). A structurally sampled
   (burst/visit) axis is refused with `EchoRpmInputError` instead of being
   compacted onto its median cadence — the four-channel
-  `data/echo-4-sensors-2x2/` fixture deviates by ~46x and is a refusal fixture.
-  A caller who wants a different time basis must resample through the artifact
-  process layer (``resample``) and estimate the derived bundle. Resampling is
-  not a way around the guard, though: a uniform grid is asserted, not created.
-  With the default long-gap policy the burst fixture still arrives with
-  ``MISSING`` cells (which this terminal step refuses too), and a caller who
-  forcibly bridges the inter-burst gaps only gets the acquisition structure
-  back as a spectral peak — that regime needs a visit-aware estimator, not a
-  resampled rFFT.
+  `data/echo-4-sensors-2x2/` fixture measures a `46.28` deviation (4628% off its
+  6.4 ms median) and is a refusal fixture. A caller who wants a different time
+  basis must resample through the artifact process layer (`resample`) and
+  estimate the derived bundle — but **resampling is not a protection**: it builds
+  an exactly uniform target grid (`t0 + arange(n + 1) * dt_s`), so the regularity
+  guard is trivially satisfied, and what actually stops the burst fixture is the
+  support check. With `long_gap="missing"` and a `max_bracket_span_s` below the
+  inter-burst gap the bridged rows arrive as `MISSING` cells and the
+  fully-valid-input rule refuses them (both parameters are required on every
+  interpolation spec — there is no default gap policy). A caller who raises
+  `max_bracket_span_s` past the gaps gets a plausible-looking number instead:
+  all four channels of that fixture then report **96.1 RPM** (the burst-envelope
+  rate, 68% below the 300 RPM label of the sibling `300RPM.ADD` in the same
+  experiment directory), and nothing on the result marks it as meaningless.
+  Burst/visit-sampled data needs a visit-aware estimator, not a resampled rFFT.
 - **The `/2` factor is rig-specific.** This campaign's echo amplitude modulates
   at twice the rotor frequency (two echo features per revolution). It is not a
   universal Doppler identity, so it is fixed in the estimator contract rather
   than exposed as a setting.
+
+The result carries its effective `settings`, the source `artifact_id`, the
+`descriptor`, `profile_count`/`gate_count`, the span-derived `time_step_s`, the
+measured `max_relative_interval_deviation`, `peak_index`, `peak_freq_hz`, `rpm`
+and the owned read-only `frequencies_hz`/`spectrum` arrays, and the model rejects
+any estimate whose frequency axis, peak or RPM does not replay from those fields
+(see `models/rpm.py`).
+
+**Refused inputs.** `EchoRpmInputError` (root-exported) covers a non-echo
+(velocity) channel, any invalid/`MISSING` support cell, fewer than 2 profiles,
+fewer than 1 gate, and a time axis outside `uniform_rtol`. A non-`ChannelBundle`
+(a bare `ChannelArtifact`) or a non-`EchoRpmSettings` settings object raises
+`TypeError`.
 
 The original single-channel sweep is reproduced by
 `run_artifact_rpm_sweep()` in `run_all.py`: it sniffs the immediate files of an

@@ -31,7 +31,12 @@ lives in `src/udv_echo_process/analysis/` — one module per feature.
 
 **Note on the echo-RPM entry:** the section labelled `Fourier` does not run an
 FFT. Its cell total-variation filters the profile trace, peak-detects it and
-computes `measuredRPM = (Total@mask/2) / (timeStepMilliseconds * (n-1) / 1000 / 60)`
+computes (source spelling, verbatim)
+
+```text
+measuredRPM=(Total@signalRPMpeakMask/2)/(timeStepMiliseconds*(Length@signalRPMpeakMask-1)/1000/60)
+```
+
 — a whole-recording peak *count* divided by the duration, with the step passed as
 the literal constant `3.2` ms. The ported estimator is instead the FFT peak /2
 method the later Python workflow uses (gate-averaged unnormalised magnitude

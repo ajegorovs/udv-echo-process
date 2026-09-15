@@ -165,9 +165,10 @@ def rpm_from_channel(
     The frequency axis is calibrated by the **full-span effective interval**
     ``(time_s[-1] - time_s[0]) / (N - 1)`` after an interval-regularity guard,
     never by the median adjacent interval: on a quantized DOP timebase the
-    median is the dominant timestamp quantum (3.2 ms of an alternating
-    3.1/3.2 ms axis), not the sampling period, and using it shifts every
-    recovered RPM by ~1% (see :mod:`udv_echo_process.models.rpm`).
+    median is the dominant timestamp quantum (3.2 ms of a 3.1/3.2 ms quantized
+    axis), not the sampling period, and using it shifts every recovered RPM by
+    ~0.6% (measured 0.562% on the committed fixtures; see
+    :mod:`udv_echo_process.models.rpm`).
 
     Args:
         bundle: the per-channel bundle (from ``select_channel``) to analyse.
