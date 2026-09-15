@@ -17,8 +17,8 @@ adapter that pretends they are the same model.
 
 | Path | Input and result | Purpose | Main entry points |
 |---|---|---|---|
-| `.ADD` legacy path | `parser.extract()` → `ExtractedData` | Existing ASCII parsing, plots, single-channel echo RPM, and CLI workflows | `parser.py`, `viz.py`, `analysis/rpm.py`, `cli.py` |
-| `.BDD` artifact path | `io.load()` → `ArtifactBundle` | Content-sniffed binary reading, scientifically typed transformations, normalized provenance, and durable storage | `io/`, `models/`, `process/`, `provenance/`, `storage/` |
+| `.ADD` legacy path | `parser.extract()` → `ExtractedData` | Existing ASCII parsing, plots, single-channel echo RPM, and CLI workflows | `parser.py`, `viz.py`, `analysis/rpm.py` (`rpm_from_echo`), `cli.py` |
+| `.BDD` artifact path | `io.load()` → `ArtifactBundle` | Content-sniffed binary reading, scientifically typed transformations, normalized provenance, durable storage, and terminal echo RPM | `io/`, `models/`, `process/`, `provenance/`, `storage/`, `analysis/rpm.py` (`rpm_from_channel`), `run_all.py` |
 
 The `.ADD` route remains intentionally separate and stable while the artifact
 pipeline matures. The reader dispatches by magic bytes rather than filename
@@ -37,7 +37,7 @@ src/udv_echo_process/
 ├── viz.py        independent .ADD visualization layer
 ├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles
 ├── export.py     terminal-result JSON/CSV/NPZ serialization (not bundle storage)
-├── run_all.py    batch `.ADD` echo-RPM + visualization flow
+├── run_all.py    batch echo-RPM flows (`.ADD` and artifact-model) + visualizations
 └── cli.py        udv-inspect, udv-viz, and udv-run-all entry points
 ```
 
@@ -76,6 +76,9 @@ ChannelBundle
   │      └── extract_robust_profiles(...) → RobustVelocityProfiles
   │             └── export_terminal_results(...) → JSON + CSV + NPZ
   │
+  ├── rpm_from_channel(bundle, EchoRpmSettings()) → EchoRpmEstimate
+  │      (terminal scalar/trace result; no derived artifact, no graph node)
+  │
   ├── filter(bundle, FilterSpec)
   └── resample(bundle, InterpSpec, *, times | dt_s)
   │
@@ -110,21 +113,99 @@ ArtifactBundle
 For exact support-propagation tables, ID equations, storage protocol, and
 current acceptance blockers, read the rework plan §§6–9 and §15.
 
+## Echo RPM: two entry points, one kernel
+
+Echo RPM exists on both pipelines and both call the same private FFT kernel
+(`analysis/rpm.py::_echo_rpm_spectrum`), so the numerical algorithm cannot drift
+between them:
+
+| Path | Entry point | Result |
+|---|---|---|
+| `.ADD` / `ExtractedData` | `rpm_from_echo(extracted, dt_s=None)` | `(rpm, peak_freq_hz, n_samples)` tuple |
+| artifact model | `rpm_from_channel(bundle, settings=None)` | `EchoRpmEstimate` |
+
+`rpm_from_channel` is a **terminal** `T -> U` product like the state/profile
+detectors: it adds no `SignalData` field, no `SupportKind`/`QualityFlag`, no
+provenance node and no storage payload, and it never mutates the source bundle.
+The five contract points that make it reproducible:
+
+- **Spectrum.** Unnormalised `mean(|rfft(values, axis=0)|)` across depth gates —
+  a magnitude spectrum, not a power/PSD estimate.
+- **DC exclusion.** Bin 0 is always excluded from the peak search, so a large
+  DC offset (which is the global maximum on real echo data) cannot be reported
+  as a 0 RPM result. There is no raw bin-index setting: a raw index is
+  recording-length-dependent.
+- **Frequency calibration.** The axis is calibrated by the **full-span effective
+  interval** `(t[-1] - t[0]) / (N - 1)`, i.e. the mean adjacent interval, never
+  by the median. The DOP timebase is quantized: the committed echo recordings
+  alternate 3.1/3.2 ms, so the median is the dominant *quantum* (3.2 ms) while
+  the effective period is 3.182 ms. Calibrating on the median shifts every
+  recovered RPM by ~0.6% (650 → 645.92 instead of 649.58).
+- **Quasi-uniformity guard.** `rfft` assumes uniform samples, so the worst-case
+  relative deviation of the adjacent intervals from their median is measured
+  before the transform and compared against
+  `EchoRpmSettings.uniform_rtol` (default `0.05`, hard ceiling `0.05`; the
+  committed echo recordings measure 3.125%). A structurally sampled
+  (burst/visit) axis is refused with `EchoRpmInputError` instead of being
+  compacted onto its median cadence — the four-channel
+  `data/echo-4-sensors-2x2/` fixture deviates by ~46x and is a refusal fixture.
+  A caller who wants a different time basis must resample through the artifact
+  process layer (``resample``) and estimate the derived bundle. Resampling is
+  not a way around the guard, though: a uniform grid is asserted, not created.
+  With the default long-gap policy the burst fixture still arrives with
+  ``MISSING`` cells (which this terminal step refuses too), and a caller who
+  forcibly bridges the inter-burst gaps only gets the acquisition structure
+  back as a spectral peak — that regime needs a visit-aware estimator, not a
+  resampled rFFT.
+- **The `/2` factor is rig-specific.** This campaign's echo amplitude modulates
+  at twice the rotor frequency (two echo features per revolution). It is not a
+  universal Doppler identity, so it is fixed in the estimator contract rather
+  than exposed as a setting.
+
+The original single-channel sweep is reproduced by
+`run_artifact_rpm_sweep()` in `run_all.py`: it sniffs the immediate files of an
+experiment directory (content, not extension), requires exactly one recording
+stream per file, derives the commanded setpoint from the filename and returns
+sorted `RpmResult` rows after writing the setpoint-vs-recovered summary plot.
+Multi-stream recordings raise instead of silently using stream 0. All 19
+`data/echo/*.BDD` recordings reproduce their paired `.ADD` estimates to
+floating-point precision and land within 2% of the filename setpoint.
+
+**Still open:** multi-channel/burst-sampled echo RPM. It needs decoded
+visit/burst boundaries, an irregular-sampling or visit-aware estimator, and a
+fixture with independently known RPM ground truth — not a concatenation of
+bursts at the median intra-burst interval.
+
 ## Public entry points
 
 ### Python
 
 ```python
-from udv_echo_process import extract, load, plot_all, rpm_from_echo
+from udv_echo_process import extract, load, plot_all, rpm_from_channel, rpm_from_echo
+from udv_echo_process.models import ChannelKey
+from udv_echo_process.provenance import select_channel
 
 # Existing ASCII workflow
 add_recording = extract("data/echo/650.ADD")
 rpm = rpm_from_echo(add_recording)
 plot_all(add_recording)
 
-# Artifact workflow
-bundle = load("data/echo/200.BDD")
+# Artifact workflow: one channel -> terminal echo-RPM estimate
+bundle = load("data/echo/650.BDD")
+channel = select_channel(bundle, ChannelKey(device_channel=4))
+estimate = rpm_from_channel(channel)
+print(estimate.rpm, estimate.peak_freq_hz)
+
+# Batch: reproduce the single-channel sweep and its summary plot
+from udv_echo_process.run_all import run_artifact_rpm_sweep
+
+rows = run_artifact_rpm_sweep("data/echo", "outputs/summary-artifact-rpm.png")
 ```
+
+`ChannelKey` is a models-layer name and `select_channel` is provenance-layer
+(`load`, `rpm_from_channel`, `rpm_from_echo` and the specs are root-level); the
+artifact RPM sweep is a Python entry point only — `udv-run-all` stays on the
+`.ADD` path because it also writes legacy heatmaps/profiles.
 
 The package root exports the stable convenience surface. Prefer importing model,
 process, provenance, or storage details from their own subpackages when writing
@@ -195,7 +276,9 @@ Test modules mirror the architecture:
 - `test_io_bdd_artifacts.py` and `test_storage_npy.py` cover reader and storage
   contracts.
 - `test_parser.py`, `test_viz.py`, and `test_analysis.py` protect the separate
-  `.ADD` route.
+  `.ADD` route; `test_echo_rpm.py` pins the artifact-model RPM estimator, the
+  shared kernel, and the 19-recording batch sweep against its paired `.ADD`
+  results.
 - `test_package_surface.py` prevents removed legacy APIs from returning.
 
 For a change that crosses these layers, test the invariant at the closest model

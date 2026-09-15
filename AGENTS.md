@@ -259,8 +259,12 @@ docs/                                — agenda, the landed rework plan, hardeni
 ```
 
 Two pipelines coexist by design: the `.ADD` path (`parser.py` → `viz.py`/`run_all.py`/
-`cli.py`/`analysis/rpm.py`) is untouched, and the `.BDD` path produces the artifact
-model above. `ChannelSeries`/`MultiplexedMeasurement` (and the legacy mutable `Model`
+`cli.py`/`analysis/rpm.py`) keeps its own entry points, and the `.BDD` path produces
+the artifact model above. Echo RPM now exists on **both** (`rpm_from_echo` /
+`rpm_from_channel`, one shared private kernel, numerically identical on the paired
+fixtures) but there is still **no `.ADD` → bundle adapter** — `udv-run-all` stays on
+the `.ADD` path because it also writes legacy heatmaps/profiles with no artifact-model
+counterpart. `ChannelSeries`/`MultiplexedMeasurement` (and the legacy mutable `Model`
 base) were **removed** in Phase 9 — do not reintroduce them or an adapter that
 masquerades as the new domain model.
 

@@ -29,6 +29,7 @@ recoverable from Git history.
 | 2026-09-11 | `udv-analysis` absorption Phases 0–1 preserved a private reproducible retirement baseline, adopted calculated BDD depths and grounded metadata, and made `udv-inspect` content-aware. | `docs/udv-analysis-absorption-plan.md`, BDD/CLI tests |
 | 2026-09-11 | The 93-column `.ADD` mux defect was fixed using units-driven velocity/echo groups; visualization now separates `(channel, quantity)` and echo RPM rejects mixed inputs. | parser, viz, RPM tests |
 | 2026-09-12 | Typed terminal operating-state detection and robust velocity profiles were absorbed with private 2-D TV-L1 preprocessing and a deterministic JSON/CSV/NPZ export boundary; archived steady runs and synthetic multi-state differential oracles match the retiring package exactly. A local dependency audit found no consumers; forensics bounded the immediate predecessor as unrecoverable without inventing lineage. | `docs/udv-analysis-absorption-plan.md`, state/profile/export tests |
+| 2026-09-15 | Single-channel echo RPM gained an artifact-model entry point (`rpm_from_channel(ChannelBundle) -> EchoRpmEstimate`) on the shared private FFT kernel, calibrated by the full-span effective interval after a quasi-uniformity guard instead of the timestamp-increment median, plus `run_artifact_rpm_sweep()` reproducing the 19-recording setpoint-vs-recovered summary plot; all 19 artifact estimates equal their paired `.ADD` results. Multi-channel/burst echo RPM stays open. | `docs/architecture.md` §"Echo RPM: two entry points, one kernel", `analysis/rpm.py`, `models/rpm.py`, `run_all.py`, `tests/test_echo_rpm.py` |
 
 ## Superseded concepts and where to find the replacement
 
@@ -39,6 +40,8 @@ recoverable from Git history.
 | `Recording -> Recording` examples using pre-convergence types | Historical illustration only | `ChannelBundle -> ChannelBundle`; `ArtifactBundle -> ArtifactBundle` rules in `docs/pipeline-conventions.md` |
 | BDD mode inferred from channel count | Rejected | `AcquisitionMode` and byte-evidence reader rules in `AGENTS.md` and `io/dop/bdd.py` |
 | Editable sibling `marimo-inspect` as normal consumer install | Development-only | `README.md` and `AGENTS.md` marimo setup guidance |
+| Echo RPM as an `.ADD`-only capability (FFT peak /2 reachable from `ExtractedData` alone) | Superseded 2026-09-15 | `rpm_from_channel` in `analysis/rpm.py`; `docs/architecture.md` §"Echo RPM: two entry points, one kernel" |
+| Calibrating the echo-RPM FFT by the median timestamp increment (and the Wolfram cell's literal `3.2` ms step) | Superseded 2026-09-15 | full-span effective interval `(t[-1] - t[0]) / (N - 1)`; `references/wolfram/README.md` note |
 
 ## Historical investigations retained for context
 

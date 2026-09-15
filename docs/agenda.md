@@ -204,7 +204,15 @@ profiles in one fixture and 4193–4927 in another.
 
 ### Analysis
 
-- Multi-channel echo RPM: per-channel estimates plus cross-channel agreement.
+- **Multi-channel / burst-sampled echo RPM.** The single-channel artifact-model
+  port **landed 2026-09-15** (`rpm_from_channel`, `run_artifact_rpm_sweep`; the
+  contract is `docs/architecture.md` §"Echo RPM: two entry points, one kernel").
+  What remains open needs decoded visit/burst boundaries, an irregular-sampling
+  or visit-aware estimator, and a fixture with independently known RPM ground
+  truth; the four-channel `data/echo-4-sensors-2x2/` recording is a **refusal**
+  fixture, so do not compact it onto the median intra-burst interval to make it
+  produce a plausible number, and do not compare it against the uniform-cadence
+  FFT method.
 - Velocity RPM / spectral-peak analysis on velocity fixtures.
 - Rotating-machinery analysis: unwrapped velocity, per-gate Doppler power, and
   blade-pass harmonics.
@@ -215,7 +223,9 @@ profiles in one fixture and 4193–4927 in another.
 - Additional decoded BDD metadata only when byte-level evidence, a destination
   domain field, propagation rules, and storage implications are all specified.
 - `.ADD` migration or redesign only when a dependency proves it necessary; the
-  current parser/viz/RPM path remains intentionally separate.
+  parser/viz path remains intentionally separate. The 2026-09-15 echo-RPM port
+  respected that boundary: the artifact entry point reads `.BDD` through the
+  artifact model directly and no `.ADD` → bundle adapter was added.
 
 ---
 
