@@ -85,6 +85,25 @@ def test_retired_legacy_surfaces_are_gone() -> None:
         assert not hasattr(udv_echo_process, name), f"stale bundled spec: {name}"
 
 
+def test_echo_rpm_surface_is_exported() -> None:
+    """The artifact-model echo-RPM terminal surface is public everywhere.
+
+    ``EchoRpmEstimate``/``EchoRpmSettings`` are domain models (re-exported by
+    ``analysis``) while ``EchoRpmInputError``/``rpm_from_channel`` belong to the
+    analysis layer alone, mirroring the states/profiles terminal surfaces.
+    """
+    from udv_echo_process import analysis as analysis_module
+    from udv_echo_process import models as models_module
+
+    for name in ("EchoRpmEstimate", "EchoRpmSettings"):
+        assert name in models_module.__all__, f"missing models export: {name}"
+        assert name in analysis_module.__all__, f"missing analysis export: {name}"
+        assert name in udv_echo_process.__all__, f"missing top-level export: {name}"
+    for name in ("EchoRpmInputError", "rpm_from_channel"):
+        assert name in analysis_module.__all__, f"missing analysis export: {name}"
+        assert name in udv_echo_process.__all__, f"missing top-level export: {name}"
+
+
 def test_modules_import_under_udv_echo_process_namespace() -> None:
     """Every module in the package imports cleanly on its own."""
     pkg_dir = Path(importlib.import_module("udv_echo_process").__file__).parent

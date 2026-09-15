@@ -8,6 +8,7 @@ Public API is re-exported here for convenient imports::
 from __future__ import annotations
 
 from udv_echo_process.analysis import (
+    EchoRpmInputError,
     RobustGateStatus,
     RobustProfileEnvelopeError,
     RobustProfileInputError,
@@ -20,6 +21,7 @@ from udv_echo_process.analysis import (
     detect_operating_states,
     extract_robust_profiles,
     mean_sample_interval_s,
+    rpm_from_channel,
     rpm_from_echo,
     setpoint_rpm_from_stem,
 )
@@ -35,6 +37,8 @@ from udv_echo_process.io import load
 from udv_echo_process.models import (
     AcquisitionMode,
     ChannelConfig,
+    EchoRpmEstimate,
+    EchoRpmSettings,
     OperatingStateDetection,
     OperatingStateInterval,
     ProfileStatistics,
@@ -89,6 +93,9 @@ __all__ = [
     "ChannelConfig",
     "ChannelFrame",
     "CubicInterpSpec",
+    "EchoRpmEstimate",
+    "EchoRpmInputError",
+    "EchoRpmSettings",
     "ExtractedData",
     "FilterSpec",
     "InterpSpec",
@@ -139,6 +146,7 @@ __all__ = [
     "plot_channel_stats",
     "plot_recording",
     "resample",
+    "rpm_from_channel",
     "rpm_from_echo",
     "setpoint_rpm_from_stem",
     "synchronize",

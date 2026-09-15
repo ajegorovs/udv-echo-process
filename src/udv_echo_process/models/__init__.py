@@ -25,6 +25,7 @@ from udv_echo_process.models.profiles import (
     TvL1Settings,
 )
 from udv_echo_process.models.recording import ProfileStatistics, Recording
+from udv_echo_process.models.rpm import EchoRpmEstimate, EchoRpmSettings
 from udv_echo_process.models.signal import (
     ChannelArtifact,
     SignalData,
@@ -53,6 +54,8 @@ __all__ = [
     "ChannelArtifact",
     "ChannelConfig",
     "ChannelKey",
+    "EchoRpmEstimate",
+    "EchoRpmSettings",
     "MeasType",
     "OperatingStateDetection",
     "OperatingStateInterval",
