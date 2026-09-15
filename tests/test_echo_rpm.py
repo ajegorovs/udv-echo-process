@@ -29,6 +29,7 @@ import pytest
 from pydantic import ValidationError
 
 from udv_echo_process import extract, rpm_from_echo
+from udv_echo_process.analysis import RpmResult
 from udv_echo_process.analysis.rpm import (
     EchoRpmInputError,
     _echo_rpm_spectrum,
@@ -50,6 +51,7 @@ from udv_echo_process.models import (
 )
 from udv_echo_process.models.identity import recording_id_for
 from udv_echo_process.provenance import ChannelBundle, source_bundle
+from udv_echo_process.run_all import collect_artifact_results, run_artifact_rpm_sweep
 
 ROOT = Path(__file__).resolve().parents[1]
 SINGLE_ADD = ROOT / "data" / "echo" / "650.ADD"
@@ -533,3 +535,208 @@ def test_channel_estimator_requires_a_bundle_not_a_bare_artifact() -> None:
     bundle = _bundle(_exact_bin_field())
     with pytest.raises(TypeError, match="ChannelBundle"):
         rpm_from_channel(bundle.artifact)  # type: ignore[arg-type]
+
+
+# ── artifact batch sweep ─────────────────────────────────────────────────
+#
+# Acceptance table pinned from the committed fixture set: the shared legacy
+# kernel plus the full-span effective interval. Each value equals its paired
+# ``.ADD`` result to floating-point precision (asserted separately below), and
+# the filename-derived setpoint is an experiment label, not independent
+# tachometer ground truth — so the 2% check is a campaign sanity limit rather
+# than an uncertainty claim.
+
+PINNED_ECHO_RPM: dict[int, tuple[int, float]] = {
+    200: (4180, 202.995583),
+    230: (4287, 230.918406),
+    250: (4193, 251.832871),
+    280: (4307, 280.192124),
+    300: (4517, 300.561842),
+    330: (4211, 331.358566),
+    350: (4284, 349.920135),
+    380: (4266, 380.125002),
+    400: (4813, 399.608697),
+    430: (4267, 430.857276),
+    450: (4927, 449.683825),
+    480: (4289, 477.007576),
+    500: (4465, 498.325472),
+    530: (4239, 529.340515),
+    550: (4675, 550.555590),
+    580: (4342, 579.750760),
+    600: (4553, 598.443550),
+    630: (4253, 629.572995),
+    650: (4630, 649.576228),
+}
+
+DATA_ECHO = ROOT / "data" / "echo"
+FOUR_CHANNEL_ECHO = ROOT / "data" / "echo-4-sensors-2x2" / "20260723_143754.jpg"
+FOUR_CHANNEL_VELOCITY = ROOT / "data" / "4-sensor-velocity" / "200RPM.BDD"
+
+
+@pytest.fixture(scope="module")
+def echo_sweep(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[list[RpmResult], Path]:
+    """Run the real 19-recording artifact sweep once and keep its PNG path."""
+    output = tmp_path_factory.mktemp("artifact-rpm") / "figures" / "summary.png"
+    rows = run_artifact_rpm_sweep(DATA_ECHO, output)
+    return rows, output
+
+
+def test_sweep_discovers_the_19_single_channel_echo_recordings(
+    echo_sweep: tuple[list[RpmResult], Path],
+) -> None:
+    rows, _ = echo_sweep
+    assert [r.setpoint_rpm for r in rows] == sorted(PINNED_ECHO_RPM)
+    assert len(rows) == 19
+
+
+def test_sweep_matches_the_pinned_acceptance_table(
+    echo_sweep: tuple[list[RpmResult], Path],
+) -> None:
+    rows, _ = echo_sweep
+    for row in rows:
+        profiles, expected_rpm = PINNED_ECHO_RPM[row.setpoint_rpm]
+        assert row.n_samples == profiles, row.setpoint_rpm
+        assert row.measured_rpm == pytest.approx(expected_rpm, abs=0.01)
+        assert row.rel_error_pct <= 2.0
+        expected_error = (
+            abs(row.measured_rpm - row.setpoint_rpm) / row.setpoint_rpm * 100
+        )
+        assert row.rel_error_pct == pytest.approx(expected_error, rel=1e-12)
+
+
+def test_sweep_writes_a_real_summary_figure(
+    echo_sweep: tuple[list[RpmResult], Path],
+) -> None:
+    _, output = echo_sweep
+    assert output.is_file()
+    assert output.stat().st_size > 0
+    assert output.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_sweep_rows_match_the_paired_add_estimates(
+    echo_sweep: tuple[list[RpmResult], Path],
+) -> None:
+    rows, _ = echo_sweep
+    for row in rows:
+        parsed = extract(DATA_ECHO / f"{row.setpoint_rpm}.ADD")
+        legacy_rpm, legacy_freq_hz, legacy_n = rpm_from_echo(parsed)
+        assert row.measured_rpm == pytest.approx(legacy_rpm, rel=1e-12, abs=1e-12)
+        assert row.peak_freq_hz == pytest.approx(legacy_freq_hz, rel=1e-12, abs=1e-12)
+        assert row.n_samples == legacy_n
+
+
+def test_collect_artifact_results_sorts_by_setpoint() -> None:
+    paths = [
+        DATA_ECHO / "650.BDD",
+        DATA_ECHO / "200.BDD",
+        DATA_ECHO / "300.BDD",
+    ]
+    rows = collect_artifact_results(paths)
+    assert [r.setpoint_rpm for r in rows] == [200, 300, 650]
+
+
+def test_collect_artifact_results_rows_match_the_estimates() -> None:
+    from udv_echo_process.io import load
+    from udv_echo_process.provenance import select_channel
+
+    path = DATA_ECHO / "650.BDD"
+    bundle = load(path)
+    channel = select_channel(bundle, bundle.recording.streams[0].acquisition.channel)
+    estimate = rpm_from_channel(channel)
+    (row,) = collect_artifact_results([path])
+    assert row.setpoint_rpm == 650
+    assert row.measured_rpm == estimate.rpm
+    assert row.peak_freq_hz == estimate.peak_freq_hz
+    assert row.n_samples == estimate.profile_count
+    assert row.rel_error_pct == pytest.approx(
+        abs(estimate.rpm - 650) / 650 * 100, rel=1e-12
+    )
+
+
+def test_collect_artifact_results_rejects_a_multi_stream_recording() -> None:
+    """Never silently reduce a four-channel recording to stream 0."""
+    with pytest.raises(ValueError) as excinfo:
+        collect_artifact_results([FOUR_CHANNEL_VELOCITY])
+    message = str(excinfo.value)
+    assert FOUR_CHANNEL_VELOCITY.name in message
+    assert "4 recording streams" in message
+    assert "rpm_from_channel() per channel" in message
+
+
+def test_estimator_rejects_one_channel_of_a_multi_stream_recording() -> None:
+    from udv_echo_process.io import load
+    from udv_echo_process.provenance import select_channel
+
+    bundle = load(FOUR_CHANNEL_VELOCITY)
+    channel = select_channel(bundle, bundle.recording.streams[0].acquisition.channel)
+    with pytest.raises(EchoRpmInputError, match="echo"):
+        rpm_from_channel(channel)
+
+
+def test_burst_sampled_echo_fixture_is_refused() -> None:
+    """The four-channel burst fixture is a refusal case, not an accuracy claim.
+
+    Its ``(1000, 35)`` echo payload is burst/visit sampled: the adjacent
+    intervals deviate from their median by ~46x, so *every* selected channel is
+    refused instead of being compacted onto a uniform cadence — the compacted
+    ~450 RPM figure is deliberately not pinned or documented.
+    """
+    from udv_echo_process.io import load
+    from udv_echo_process.provenance import select_channel
+
+    bundle = load(FOUR_CHANNEL_ECHO)
+    channels = [s.acquisition.channel for s in bundle.recording.streams]
+    assert len(channels) == 4
+    for key in channels:
+        channel = select_channel(bundle, key)
+        with pytest.raises(EchoRpmInputError, match="uniform"):
+            rpm_from_channel(channel)
+
+
+def test_sweep_skips_unrecognized_and_nested_entries(tmp_path: Path) -> None:
+    """Discovery is content-sniffed, non-recursive and extension-independent."""
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "650.BDD").symlink_to(DATA_ECHO / "650.BDD")  # real bytes
+    # real BDD bytes under a wrong extension: sniffing must keep it
+    (experiment / "200.jpg").symlink_to(DATA_ECHO / "200.BDD")
+    # .BDD extension over text bytes: sniffing must drop it
+    (experiment / "text.BDD").write_text("not a recording\n")
+    (experiment / "300_Stat.ADD").write_text("Gate Depth [mm]\n")
+    nested = experiment / "nested"
+    nested.mkdir()
+    (nested / "300.BDD").symlink_to(DATA_ECHO / "300.BDD")  # must not be scanned
+
+    output = tmp_path / "figures" / "summary.png"
+    rows = run_artifact_rpm_sweep(experiment, output)
+    assert [r.setpoint_rpm for r in rows] == [200, 650]
+    assert output.stat().st_size > 0
+
+
+def test_sweep_reports_a_recognized_recording_without_a_setpoint_stem(
+    tmp_path: Path,
+) -> None:
+    """A recognized recording with no filename setpoint fails loudly.
+
+    It is not silently dropped: ``setpoint_rpm_from_stem`` names the stem, so a
+    mis-named recording is visible instead of quietly missing from the sweep.
+    """
+    experiment = tmp_path / "experiment"
+    experiment.mkdir()
+    (experiment / "run-a.BDD").symlink_to(DATA_ECHO / "650.BDD")
+    with pytest.raises(ValueError, match="cannot parse RPM setpoint from stem"):
+        run_artifact_rpm_sweep(experiment, tmp_path / "summary.png")
+
+
+def test_sweep_raises_when_no_recording_is_recognized(tmp_path: Path) -> None:
+    (tmp_path / "text.BDD").write_text("not a recording\n")
+    (tmp_path / "200.ADD").write_text("Gate Depth [mm]\n")
+    with pytest.raises(ValueError, match="no artifact-model recordings"):
+        run_artifact_rpm_sweep(tmp_path, tmp_path / "summary.png")
+
+
+def test_sweep_rejects_a_missing_directory(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="not a directory"):
+        run_artifact_rpm_sweep(tmp_path / "absent", tmp_path / "summary.png")
