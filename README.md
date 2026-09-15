@@ -25,6 +25,7 @@ uv run udv-inspect <file.ADD-or-BDD>        # inspect by recording content
 uv run udv-viz <file.ADD>                   # heatmaps for one file
 uv run udv-viz                              # heatmaps for all data/* experiments
 uv run udv-run-all                          # batch echo RPM analysis + viz
+uv run python examples/filter_echo_minimal.py  # echo → filter, 3 statements
 ```
 
 Output goes to `outputs/<experiment>/<stem>/`:
@@ -82,8 +83,25 @@ live in [`docs/signal-model-rework-plan.md`](docs/signal-model-rework-plan.md).
 | File / Dir | Purpose |
 |------------|---------|
 | `src/udv_echo_process/` | Python package (parser, viz, analysis, CLI) |
+| `examples/` | Runnable scripts on the public API (`filter_echo_minimal.py`) |
 | `tests/` | Pytest suite |
 | `data/<experiment>/` | Raw UDV data per experiment (`.ADD`, `.BDD`, notes) |
 | `references/wolfram/` | Original Wolfram notebooks + porting map |
 | `outputs/` | Generated plots |
 | `pyproject.toml` | Project config (Python ≥3.14, uv, Pydantic, console scripts) |
+
+## Agent skills
+
+Repo-local agent skills live in `.agents/skills/` — one Markdown `SKILL.md` per
+skill.
+
+Hermes Agent does not auto-load skills from a cloned repo: a `SKILL.md` is a set
+of instructions the agent follows, so it requires explicit opt-in. Once per repo,
+per machine:
+
+```bash
+hermes skills trust
+```
+
+Run it from anywhere inside the repo. It takes effect in your **next** session.
+`hermes skills list` shows the loaded skills.
