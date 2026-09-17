@@ -55,6 +55,27 @@ pressed), while the same button opened its menu under the operator's real cursor
 locked-desktop run and never falls back to a posted message (which is known not to open
 this menu).
 
+The other property every real-cursor gesture has to survive is that **this application
+clips the cursor while its blocking popups are up** (``ClipCursor``; the Store dialog
+clips the pointer to its own rect, docs/dop3000/udop-automation.md §6). A ``SetCursorPos``
+to a point outside the clip rectangle is **silently clamped to the clip's edge**, and the
+live run that motivated this is exactly that: the operator's cursor was restored into the
+open menu's clip and landed in the menu's bottom-left corner, and the *next* attempt's
+hover of the menubar button at ``(204, 40)`` — outside the menu's rect — could not be
+placed at all. An unhandled clip is therefore a **systemic** hazard for every real-cursor
+move in this driver, not a one-off, so:
+
+* every real move reads the clip with ``GetClipCursor`` first and, when the target lies
+  outside a non-empty clip, releases it with ``ClipCursor(NULL)`` before moving
+  (:meth:`Win32Actuator._move_real_cursor`);
+* a move that still does not take is released and retried once, and a move that fails
+  with a clip up is raised **naming the clip rectangle and the target point** — never as
+  a locked desktop, which is a different failure with a different remedy;
+* the operator's cursor is restored *through* the same rule
+  (:meth:`Win32Actuator._restore_cursor`): a clip that does not contain the operator's own
+  position is released before the restore, so a restore can never be trapped inside a
+  popup's rectangle — which is what put the live run's cursor in the menu's corner.
+
 The popup that hover opens is read **structurally**, because no control in this
 application carries a caption: ``GetWindowText`` answers an empty string for every
 ``TSp_*`` widget — the live read of the open menu shows its overlay panel and its three
@@ -72,7 +93,19 @@ the live bug. Instead:
   holds the channel combo, and a dialog that does not hold it is closed with its LEFT
   button before the next entry by screen order is pressed. Its default button is never
   pressed — on the wrong dialog that button is what would commit the wrong dialog's
-  values, and the wrong dialog is exactly the one that has not been identified yet.
+  values, and the wrong dialog is exactly the one that has not been identified yet;
+* the **entry is taken with a real click** (:meth:`Win32Actuator._press_entry`). The
+  posted *held* press is answered by this application's ordinary controls, but evidently
+  not by a caption-less ``TSp_Button`` inside the custom overlay: in the live run the
+  posted press left the entry's dialog unopened and the entry loop advanced. The real
+  click is therefore the **primary** gesture — the same real-input path (and the same
+  ``allow_real_input`` gate) as the hover, and it moves the cursor *onto the popup's own
+  entry*, which a hover-opened menu keeps — while the posted press is kept only for a run
+  that has no real input. Every attempt then **records what the application actually
+  did**, whether the press worked or not: whether the popup closed, which panel appeared
+  that was not up before, and that panel's rect and top-level child classes
+  (:attr:`Win32Actuator.last_entry_attempt`). "The entry opened no dialog" is not a
+  diagnosis; the next live run has to be told what happened instead.
 """
 
 from __future__ import annotations
@@ -180,10 +213,17 @@ _HOVER_SETTLE_S, _HOVER_OPEN_S, _CURSOR_SETTLE_S = 0.3, 1.0, 0.05
 #: ``mouse_event``'s move flag and the recipe's nudge: a ``SetCursorPos`` jump alone can
 #: be missed by the application's menu loop, the relative move is what it sees.
 MOUSEEVENTF_MOVE = 0x0001
-#: The button flags: used by the one *real* click this driver makes — the fallback for a
-#: popup entry that ignores the posted press (:meth:`Win32Actuator._real_click_centre`).
+#: The button flags: used by the one *real* click this driver makes — the **primary**
+#: gesture for a popup entry (:meth:`Win32Actuator._real_click_centre`).
 MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
 _HOVER_MOVE_DX, _HOVER_MOVE_DY = 2, 0
+#: The two gestures a popup entry can be taken with, named in the diagnostics the caller
+#: reports. The **real cursor click** is the primary one: this application's caption-less
+#: ``TSp_Button`` inside its custom overlay did not take the posted held press in the live
+#: run, so the posted press is kept only for a run without real input
+#: (``allow_real_input=False``).
+GESTURE_REAL_CLICK = "real cursor click"
+GESTURE_POSTED_PRESS = "posted held press"
 #: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
 SEND_TIMEOUT_MS = 2000
 #: The key-event lParams the verified recipe used (scan code / transition packed).
@@ -220,6 +260,23 @@ class _CursorPoint(ctypes.Structure):
     """
 
     _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+
+class _ClipRect(ctypes.Structure):
+    """``RECT`` for ``GetClipCursor`` — the rectangle the cursor is confined to.
+
+    An empty rectangle (``right <= left`` or ``bottom <= top``) is *no clip*: on a
+    desktop that is not clipped ``GetClipCursor`` answers the screen rectangle, which
+    contains every point the driver ever asks for. Declared here rather than imported
+    from ``ctypes.wintypes`` for the same reason as :class:`_CursorPoint`.
+    """
+
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
 
 
 @lru_cache(maxsize=1)
@@ -272,6 +329,15 @@ def _user32():
         ctypes.c_size_t,
     )
     u32.mouse_event.restype = None
+    # The cursor *clip*: this application confines the pointer while its blocking popups
+    # are up (docs/dop3000/udop-automation.md §6), and ``SetCursorPos`` to a point outside
+    # that rectangle is silently clamped to the clip's edge — which is what parked a live
+    # run's cursor in the open menu's bottom-left corner. ``ClipCursor(NULL)`` releases
+    # the clip, so it is declared with a void pointer (only ``None`` is ever passed).
+    u32.GetClipCursor.argtypes = (ctypes.POINTER(_ClipRect),)
+    u32.GetClipCursor.restype = ctypes.c_int
+    u32.ClipCursor.argtypes = (ctypes.c_void_p,)
+    u32.ClipCursor.restype = ctypes.c_int
     return u32
 
 
@@ -343,6 +409,16 @@ def _inside(panel: dict | None, k: dict) -> bool:
     )
 
 
+def _point_in_rect(rect: tuple[int, int, int, int], point: tuple[int, int]) -> bool:
+    """True when ``point`` lies inside ``rect`` — both in screen coordinates.
+
+    Edge-inclusive on purpose: a point on the clip's boundary is *inside* it, so a move
+    there is not clamped and nothing needs releasing.
+    """
+    left, top, right, bottom = rect
+    return left <= point[0] <= right and top <= point[1] <= bottom
+
+
 def _bottom_row(panel: dict, kids: Sequence[dict], margin: int = 70) -> list[dict]:
     """The panel's own bottom button row, left -> right.
 
@@ -401,6 +477,37 @@ def _entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
     return sorted(
         (k for k in kids if k["cls"] == "TSp_Button" and _inside(overlay, k)),
         key=lambda k: (k["top"], k["left"]),
+    )
+
+
+def _observation_text(observation: Mapping | None) -> str:
+    """What one popup-entry press actually did, as one clause for a failure message.
+
+    The observations recorded by :meth:`Win32Actuator._observe_entry_attempt` are reported
+    verbatim — which gesture was used, whether the popup closed, any panel that appeared
+    that was not up before and its top-level child classes — because "the entry opened no
+    dialog" is not a diagnosis: the live run has to be read back from what the application
+    *did*, and the next run has to be able to say what it saw.
+    """
+    if not observation:
+        return "no popup entry press was attempted, so nothing was observed"
+    fresh = observation["new_panels"]
+    if fresh:
+        appeared = "; ".join(
+            f"a new panel at {p['rect']} with top-level children {list(p['classes'])}"
+            for p in fresh
+        )
+    else:
+        appeared = "no new panel or dialog appeared at all"
+    dialog = observation["dialog"]
+    if dialog is not None:
+        appeared += f"; the dialog found holds {list(dialog['classes'])}"
+    failed = " (the gesture itself failed)" if observation["gesture_failed"] else ""
+    return (
+        f"the {observation['gesture']} on the popup entry at "
+        f"{observation['entry_rect'][:2]} (rect {observation['entry_rect']}){failed} "
+        f"{'closed' if observation['overlay_closed'] else 'left open'} the popup and "
+        f"{appeared}"
     )
 
 
@@ -480,12 +587,15 @@ class Win32Actuator:
         an environment variable and nothing else. The value is validated on construction,
         not at the first press.
 
-        ``allow_real_input`` gates the one step posted messages cannot drive: the
-        menubar. ``True`` (the default) hovers the ``Parameters`` button with the
-        operator's real cursor and puts the cursor back; ``False`` refuses that step
-        with a named :class:`AcquisitionError` **before anything is moved**, for
-        unattended or locked-desktop runs. It never falls back to the posted press —
-        that press is known not to open this menu.
+        ``allow_real_input`` gates the steps posted messages cannot drive: the menubar,
+        and the popup entry behind it. ``True`` (the default) hovers the ``Parameters``
+        button with the operator's real cursor, takes the popup entry with a real click
+        and puts the cursor back; ``False`` refuses the menubar step with a named
+        :class:`AcquisitionError` **before anything is moved**, for unattended or
+        locked-desktop runs, and falls back to the posted held press for an entry — the
+        gesture this application's overlay does not answer, which is why the real click is
+        the default. The menubar never falls back to the posted press: it is known not to
+        open this menu.
         """
         self._class_name = class_name
         self._channel_setting = (
@@ -500,6 +610,12 @@ class Win32Actuator:
         self.last_hover_screen: tuple[int, int] | None = None
         #: The screen point the last real-cursor *entry click* used (diagnostics only).
         self.last_entry_click_screen: tuple[int, int] | None = None
+        #: What the application actually did on the last popup-entry press: the gesture
+        #: used, whether the popup closed, any panel that was not up before (its rect and
+        #: its top-level child classes) and the dialog that was found
+        #: (:meth:`_observe_entry_attempt`). Diagnostics only, never a binding — the next
+        #: live run must be told what the application did, not merely that a step failed.
+        self.last_entry_attempt: dict | None = None
         self.warnings: list[str] = []
 
     # ------------------------------------------------------------------ plumbing
@@ -596,6 +712,43 @@ class Win32Actuator:
         _post(hwnd, WM_LBUTTONUP, 0, lp)
         time.sleep(_CLICK_SETTLE_S)
 
+    def _clip_rect(self) -> tuple[int, int, int, int] | None:
+        """The rectangle the cursor is currently confined to, or ``None`` for no clip.
+
+        This application sets ``ClipCursor`` while its blocking popups are up
+        (docs/dop3000/udop-automation.md §6), and a ``SetCursorPos`` outside that
+        rectangle is silently clamped to its edge — which is what parked a live run's
+        cursor in the open menu's bottom-left corner and then made a menubar hover
+        impossible. Read before every real move, and again when a move refuses, so the
+        clip is a *named* fact rather than a guess.
+
+        An empty rectangle, a failed read and a host without the call all answer ``None``:
+        an unreadable clip is not evidence of a locked desktop, and the move's own
+        read-back stays the authority.
+        """
+        rect = _ClipRect()
+        try:
+            if not _user32().GetClipCursor(ctypes.byref(rect)):
+                return None
+        except Exception:  # noqa: BLE001 - no readable clip; the read-back still decides
+            return None
+        box = (int(rect.left), int(rect.top), int(rect.right), int(rect.bottom))
+        return None if box[2] <= box[0] or box[3] <= box[1] else box
+
+    def _release_clip(self) -> bool:
+        """``ClipCursor(NULL)``: drop the application's own confinement of the cursor.
+
+        Called only when the driver is about to move the cursor somewhere the clip forbids
+        (a move, or a restore) — never as a matter of course, so an open dialog keeps the
+        clip it wants. A release that fails is not raised here: the caller's read-back and
+        its failure message are what report it, naming the clip it could not clear.
+        """
+        try:
+            _user32().ClipCursor(None)
+        except Exception:  # noqa: BLE001 - reported by the caller's failure, not hidden
+            return False
+        return True
+
     def _cursor_position(self) -> tuple[int, int]:
         """The operator's cursor position, in screen coordinates.
 
@@ -613,9 +766,98 @@ class Win32Actuator:
         return int(point.x), int(point.y)
 
     def _restore_cursor(self, position: tuple[int, int]) -> None:
-        """Put the operator's cursor back where :meth:`_cursor_position` found it."""
-        _user32().SetCursorPos(int(position[0]), int(position[1]))
+        """Put the operator's cursor back where :meth:`_cursor_position` found it.
+
+        **Not into a clip.** This application confines the pointer while its popups are up,
+        and a restore is a ``SetCursorPos`` like any other: restored from inside a popup's
+        clip, it is silently clamped to the clip's edge — the live run's cursor was put
+        back "at" its own position and landed in the open menu's bottom-left corner. So a
+        clip that does not *contain* the operator's position is released with
+        ``ClipCursor(NULL)`` before the restore; a clip that already contains it is left
+        alone, because the restore cannot be trapped by it and an open dialog is entitled
+        to the clip it set.
+
+        Nothing here is raised: this runs from a ``finally``, and masking the real failure
+        would be worse than a cursor left where it is. When a clip *was* up, the restore is
+        read back and an unfaithful one is recorded instead.
+        """
+        point = (int(position[0]), int(position[1]))
+        clip = self._clip_rect()
+        if clip is not None and not _point_in_rect(clip, point):
+            self._note(
+                f"the operator's cursor at {point} lies outside the clip {clip} this "
+                "application set on its popup; released the clip (ClipCursor(NULL)) so "
+                "the restore is not trapped inside that rectangle"
+            )
+            self._release_clip()
+        _user32().SetCursorPos(*point)
         time.sleep(_CURSOR_SETTLE_S)
+        if clip is None:
+            return
+        try:
+            landed = self._cursor_position()
+        except AcquisitionError as exc:
+            self._note(f"the cursor restore could not be read back: {exc}")
+            return
+        if landed != point:
+            self._note(
+                f"the operator's cursor is at {landed} after the restore rather than "
+                f"{point}: a second clip {self._clip_rect()} is up — this runs on the "
+                "operator's desktop, so their cursor may have to be put back by hand"
+            )
+
+    def _move_real_cursor(
+        self, point: tuple[int, int], *, what: str, why: str
+    ) -> tuple[int, int]:
+        """Move the **real** cursor onto ``point``, clearing any clip that traps it.
+
+        This application clips the cursor on its blocking popups, so a move is never just
+        ``SetCursorPos``: the clip is read first and, when ``point`` lies outside it,
+        released — a clip clamps the move to its edge instead of refusing it, which looks
+        exactly like a cursor that "would not move". A move that still does not take is
+        released and retried once for the same reason. Only then is a failure raised, and
+        it **names the clip rectangle and the target point**; a failure with no clip up is
+        the locked-or-unattended-desktop case, which is named as such — attributing a
+        clamp to a locked desktop is what sent the live run looking in the wrong place.
+        """
+        x, y = int(point[0]), int(point[1])
+        target = (x, y)
+        u32 = _user32()
+        clip = self._clip_rect()
+        if clip is not None and not _point_in_rect(clip, target):
+            self._note(
+                f"the cursor is clipped to {clip} (this application clips it on its "
+                f"popups) and {target} lies outside that rectangle; released the clip "
+                "with ClipCursor(NULL) so the move is not clamped to the popup's edge"
+            )
+            self._release_clip()
+        u32.SetCursorPos(x, y)
+        time.sleep(_HOVER_SETTLE_S)
+        if self._cursor_position() == target:
+            return target
+        # The move did not take. If a clip is up it is the cause — the application can set
+        # it again between the read above and the move — so release and try once more.
+        clip = self._clip_rect()
+        if clip is not None:
+            self._release_clip()
+            u32.SetCursorPos(x, y)
+            time.sleep(_HOVER_SETTLE_S)
+            if self._cursor_position() == target:
+                return target
+            clip = self._clip_rect()
+        if clip is not None:
+            raise AcquisitionError(
+                f"the cursor would not move onto {what} at {target}: the application "
+                f"clips the cursor to {clip} and the point lies outside that rectangle, "
+                "so SetCursorPos is clamped to the clip's edge; releasing the clip "
+                "(ClipCursor(NULL)) did not free it either, so this is the application's "
+                "own popup clamp — not a locked or unattended desktop, which reports a "
+                "move that never happened rather than one clamped to a rectangle"
+            )
+        raise AcquisitionError(
+            f"the cursor would not move onto {what} at {target}: no cursor clip is set, "
+            f"so a locked or unattended desktop refused SetCursorPos — {why}"
+        )
 
     def _hover_centre(self, hwnd: int) -> tuple[int, int]:
         """Hover ``hwnd`` with the **real** cursor; return the screen point hovered.
@@ -631,24 +873,21 @@ class Win32Actuator:
         then the recipe's 1.0 s settle before the caller polls for the popup.
 
         The cursor now sits on the control, so the caller puts it back with
-        :meth:`_restore_cursor` — this runs on the operator's interactive desktop. A
-        ``SetCursorPos`` that did not take (a locked or unattended desktop silently
-        refuses it) is raised here by name: the menu would then open for no one, and
-        the popup poll would report the wrong cause eight seconds later.
+        :meth:`_restore_cursor` — this runs on the operator's interactive desktop. The
+        move itself goes through :meth:`_move_real_cursor`, so the clip this application
+        sets on an open popup cannot clamp the cursor short of the button and be mistaken
+        for a locked desktop: the menubar button is *outside* any open popup's clip, which
+        is precisely the move the live run could not make.
         """
         win32gui, _ = _gui()
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
         x, y = (left + right) // 2, (top + bottom) // 2
-        u32 = _user32()
-        u32.SetCursorPos(x, y)
-        time.sleep(_HOVER_SETTLE_S)
-        if self._cursor_position() != (x, y):
-            raise AcquisitionError(
-                f"the cursor would not move onto the {PARAMETERS_MENU!r} button at "
-                f"({x}, {y}): a locked or unattended desktop refuses SetCursorPos, and "
-                "this menubar answers nothing else"
-            )
-        u32.mouse_event(MOUSEEVENTF_MOVE, _HOVER_MOVE_DX, _HOVER_MOVE_DY, 0, 0)
+        self._move_real_cursor(
+            (x, y),
+            what=f"the {PARAMETERS_MENU!r} button",
+            why="this menubar answers nothing else, so nothing is posted to it",
+        )
+        _user32().mouse_event(MOUSEEVENTF_MOVE, _HOVER_MOVE_DX, _HOVER_MOVE_DY, 0, 0)
         time.sleep(_HOVER_OPEN_S)
         self.last_hover_screen = (x, y)
         return x, y
@@ -656,30 +895,28 @@ class Win32Actuator:
     def _real_click_centre(self, hwnd: int) -> tuple[int, int]:
         """Click ``hwnd``'s centre with the **real** cursor; return the point clicked.
 
-        The fallback for a popup entry that ignores the posted press
-        (:meth:`_press_entry`): a popup entry answers posted presses in every run so far,
-        but a menu that has to be *opened* by a real hover may also want to be *taken* by
-        a real click, and a real click is the only other gesture this driver has. It is
-        gated exactly like the hover: the caller only reaches this with
-        ``allow_real_input``, and the cursor is put back by
+        The **primary** gesture for a popup entry (:meth:`_press_entry`): this
+        application's ordinary controls answer a posted held press, but the caption-less
+        ``TSp_Button`` inside its custom overlay evidently does not — the live run's posted
+        press opened no dialog — while the same menu was opened by a real cursor gesture.
+        Moving onto the entry is safe for a hover-opened popup: the cursor moves *into* the
+        popup's own rectangle, which is where a menu expects it, not away from it. Gated
+        exactly like the hover (``allow_real_input``), and the cursor is put back by
         :meth:`_open_parameters_dialog`'s ``finally`` whatever happens here.
 
-        A ``SetCursorPos`` that did not take (a locked or unattended desktop refuses it
-        silently) is raised by name, as in :meth:`_hover_centre`: clicking where the
-        cursor is *not* would press whatever is there.
+        The move goes through :meth:`_move_real_cursor`, so the popup's own clip is dealt
+        with by name instead of being misread: clicking where the cursor is *not* would
+        press whatever is there.
         """
         win32gui, _ = _gui()
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
         x, y = (left + right) // 2, (top + bottom) // 2
+        self._move_real_cursor(
+            (x, y),
+            what="the popup entry",
+            why="clicking where the cursor is not would press whatever is there",
+        )
         u32 = _user32()
-        u32.SetCursorPos(x, y)
-        time.sleep(_HOVER_SETTLE_S)
-        if self._cursor_position() != (x, y):
-            raise AcquisitionError(
-                f"the cursor would not move onto the popup entry at ({x}, {y}): a locked "
-                "or unattended desktop refuses SetCursorPos, and clicking where the "
-                "cursor is not would press whatever is there"
-            )
         u32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
         time.sleep(max(0, int(PRESS_HOLD_MS)) / 1000.0)
         u32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
@@ -1213,27 +1450,95 @@ class Win32Actuator:
                 return None
             time.sleep(_MENU_POLL_S)
 
-    def _press_entry(self, entry: dict) -> dict | None:
-        """Press one popup entry; return the dialog it opened, or ``None``.
+    def _panel_observation(self, panel: dict, roles: dict) -> dict:
+        """One panel as the entry diagnostics report it: handle, rect, child classes.
 
-        The press is the posted **held** press popup entries answer (:meth:`_click_hold`).
-        If no dialog follows it, the same entry is clicked with the operator's real cursor
-        (:meth:`_real_click_centre`) — a menu that had to be opened by a real hover may
-        also want to be taken by a real click, and that is the only other gesture this
-        driver has; it is gated by ``allow_real_input`` exactly like the hover.
+        Classes only, never a caption: this application's widgets carry none (see the
+        module docstring), so the classes of the panel's *direct* children are the
+        structural fingerprint a live run can be read back against.
+        """
+        return {
+            "hwnd": panel["hwnd"],
+            "rect": tuple(panel["rect"]),
+            "classes": tuple(
+                sorted({k["cls"] for k in self._children_of(panel["hwnd"], roles)})
+            ),
+        }
+
+    def _observe_entry_attempt(
+        self,
+        entry: dict,
+        overlay: dict,
+        before: set[int],
+        gesture: str,
+        panel: dict | None,
+        *,
+        gesture_failed: bool = False,
+    ) -> dict:
+        """Record what the application actually did on one popup-entry press.
+
+        Mechanical on purpose — did the popup close, did a panel appear that was not up
+        before the press, and what does it hold — because the live run's failure was *not*
+        that the driver pressed the wrong thing: it was that the press did nothing at all
+        and the run could not say what the application did instead. The record is kept on
+        :attr:`last_entry_attempt` whether the press worked or not, and it is what the
+        caller puts in its failure message.
+        """
+        roles = self._resolve()
+        panels = self._panel_map(roles)
+        observation = {
+            "gesture": gesture,
+            "gesture_failed": bool(gesture_failed),
+            "entry_hwnd": entry["hwnd"],
+            "entry_rect": tuple(entry["rect"]),
+            "overlay_hwnd": overlay["hwnd"],
+            "overlay_closed": overlay["hwnd"] not in panels,
+            "new_panels": [
+                self._panel_observation(p, roles)
+                for hwnd, p in panels.items()
+                if hwnd not in before
+            ],
+            "dialog": None if panel is None else self._panel_observation(panel, roles),
+        }
+        self.last_entry_attempt = observation
+        return observation
+
+    def _press_entry(self, entry: dict, overlay: dict) -> dict | None:
+        """Take one popup entry; return the dialog it opened, or ``None``.
+
+        The **real click** is the primary gesture (:meth:`_real_click_centre`): the posted
+        *held* press (:meth:`_click_hold`) is answered by this application's ordinary
+        controls, but evidently not by a caption-less ``TSp_Button`` inside the custom
+        overlay — the live run's posted press left the popup's dialog unopened, and the
+        entry loop moved on. The real click is the same real-input path as the hover and is
+        gated by ``allow_real_input`` the same way; the posted press is kept only as the
+        fallback for a run that has no real input, never as a second attempt after a real
+        click that did nothing (a second gesture at the same point buys no information).
+
+        Whatever the gesture, the attempt is **observed**
+        (:meth:`_observe_entry_attempt`): the popup's state, any panel that appeared, and
+        that panel's rect and top-level child classes go on
+        :attr:`last_entry_attempt` — on success and on failure alike, and also when the
+        gesture itself raised — because the next live run must be told what the
+        application did, not merely that the step failed.
 
         Nothing here presses anything *inside* a dialog: which dialog opened is the
         caller's question, and it answers it by content.
         """
-        self._click_hold(entry["hwnd"])
-        panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
-        if panel is None and self._allow_real_input:
-            self._note(
-                f"the posted press on the popup entry at {entry['rect'][:2]} opened no "
-                "dialog; repeating it with the real cursor"
+        before = set(self._panel_map())
+        gesture = GESTURE_REAL_CLICK if self._allow_real_input else GESTURE_POSTED_PRESS
+        try:
+            if self._allow_real_input:
+                self._real_click_centre(entry["hwnd"])
+            else:
+                self._click_hold(entry["hwnd"])
+        except AcquisitionError:
+            self._observe_entry_attempt(
+                entry, overlay, before, gesture, None, gesture_failed=True
             )
-            self._real_click_centre(entry["hwnd"])
-            panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
+            raise
+        panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
+        self._observe_entry_attempt(entry, overlay, before, gesture, panel)
         return panel
 
     def _close_wrong_dialog(self, panel: dict) -> None:
@@ -1275,7 +1580,13 @@ class Win32Actuator:
            h > 120`` rect as the fallback when the appearance diff is ambiguous);
         2. the **entries** are the ``TSp_Button`` widgets lying inside that overlay,
            ordered by screen ``top`` — the first is ``Operating parameters``
-           (:func:`_entry_buttons`; enumeration order is not screen order);
+           (:func:`_entry_buttons`; enumeration order is not screen order) — and an entry
+           is taken with a **real click** on its centre (:meth:`_press_entry`): the posted
+           held press did not open the entry's dialog in the live run, so the real click is
+           the primary gesture and the posted press is kept only for a run with no real
+           input. Every attempt records what the application did (whether the popup closed,
+           any panel that appeared, its rect and its top-level child classes —
+           :attr:`last_entry_attempt`) and the failure below reports that record;
         3. the **dialog** is the one whose content says so: only the operating dialog
            holds the channel combo (:meth:`_channel_combo` — a ``TComboBox`` reached
            through a ``TSp_Value_Button`` listing ``'1'``..``'10'``). An entry whose
@@ -1291,11 +1602,15 @@ class Win32Actuator:
         held for :data:`…actuator.PRESS_HOLD_MS` (two live runs, both aborting safely) —
         while the same button opened its menu under a real cursor in
         ``recon/41_burst_sampling_volume.py``. Nothing posts a message to the menubar any
-        more. The cursor stays on the button while the menu is in use — through the poll
-        for the popup and through the entry press — and is put back once the entry has
-        been pressed or the attempt fails (:meth:`_restore_cursor`): a hover-opened popup
-        can be dismissed by moving the cursor off the menubar before the posted press
-        lands, and this still runs on the operator's desktop.
+        more. The cursor stays on the button through the poll for the popup — a
+        hover-opened popup can be dismissed by moving the cursor off the menubar — and then
+        moves *onto the entry* for the real click, which is inside the popup and so keeps it
+        open; once the entry has been taken, or the attempt has failed, the operator's
+        cursor is put back (:meth:`_restore_cursor`). Both moves — and the restore — go
+        through :meth:`_move_real_cursor`, which clears the clip this application sets on an
+        open popup: a clipped restore is what put a live run's cursor in the menu's
+        bottom-left corner, and a clipped hover is what made the button unreachable at
+        ``(204, 40)``.
         ``allow_real_input=False`` refuses this step by name instead — never falling
         back to the posted press, which is known not to open this menu.
         """
@@ -1332,11 +1647,12 @@ class Win32Actuator:
                     break
                 entry = entries[attempt]
                 pressed += 1
-                panel = self._press_entry(entry)
+                panel = self._press_entry(entry, overlay)
                 if panel is None:
                     self._note(
                         f"the popup entry at {entry['rect'][:2]} opened no dialog; trying "
-                        "the next entry in screen order"
+                        "the next entry in screen order — "
+                        f"{_observation_text(self.last_entry_attempt)}"
                     )
                     continue
                 try:
@@ -1353,7 +1669,8 @@ class Win32Actuator:
                 f"none of the {pressed} {PARAMETERS_MENU!r} popup entries pressed in "
                 f"screen order opened the {PARAMETERS_ENTRY!r} dialog: that dialog is the "
                 "one holding the channel combo, and within "
-                f"{_ENTRY_DIALOG_TIMEOUT_S:.1f} s per entry none produced it"
+                f"{_ENTRY_DIALOG_TIMEOUT_S:.1f} s per entry none produced it — "
+                f"{_observation_text(self.last_entry_attempt)}"
             )
         finally:
             # The menu has been used (or the attempt is over, hover or press): the
@@ -1384,11 +1701,12 @@ class Win32Actuator:
         1. open ``Parameters → Operating parameters`` — the menubar button is
            **hovered with the operator's real cursor** (:meth:`_hover_centre`: this
            application's menubar answers nothing posted), the popup is identified as the
-           panel that appeared on that hover, its caption-less entries are pressed in
-           **screen order** (the first is ``Operating parameters``) while the cursor is
-           still on the button (moving it off can dismiss a hover-opened popup), and the
-           cursor is put back once an entry has been pressed — the entry press is posted,
-           which popup entries do answer. Which dialog opened is decided **by content**,
+           panel that appeared on that hover, its caption-less entries are taken in
+           **screen order** (the first is ``Operating parameters``) with a **real click**
+           on the entry — the posted held press is not answered by this caption-less
+           ``TSp_Button`` in the live run — and the cursor is put back once an entry has
+           been taken, clearing the clip the open popup sets first so the restore is not
+           clamped into it. Which dialog opened is decided **by content**,
            never by a caption: a dialog that does not hold the channel combo is closed
            with its LEFT button and the next entry in screen order is tried;
         2. find the channel combo *structurally* (see :meth:`_channel_combo`);

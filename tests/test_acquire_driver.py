@@ -1461,11 +1461,11 @@ def test_the_menu_entry_is_the_first_by_screen_top_and_never_a_title() -> None:
 
     # The entry pressed is the first one *on screen* — the one the window enumerates last.
     assert app.entry_presses[:1] == [HWND_ENTRY_OPERATING]
-    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "posted") in app.events
+    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "real") in app.events
     # The menu was opened by the real-cursor *hover* — the cursor moved onto the button's
-    # centre and the menu opened on that — and the entry was pressed after it.
+    # centre and the menu opened on that — and the entry was taken after it.
     moved = app.events.index(("cursor", "moved", (160, 12)))
-    entry = app.events.index(("click", "popup-entry", HWND_ENTRY_OPERATING, "posted"))
+    entry = app.events.index(("click", "popup-entry", HWND_ENTRY_OPERATING, "real"))
     assert moved < entry, app.events
     assert ("click", "Parameters", PRESS_HOLD_MS) not in app.events  # never pressed
 
@@ -1553,6 +1553,16 @@ def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
     reason = str(excinfo.value)
     assert "Parameters" in reason and "Operating parameters" in reason
     assert "channel combo" in reason
+    # The failure carries the last attempt's observations, not just the fact of failure:
+    # the popup closed and the panel it left behind says what it holds.
+    assert driver.GESTURE_REAL_CLICK in reason
+    assert "closed the popup" in reason
+    assert "'TSp_Value_Button'" in reason
+    assert actuator.last_entry_attempt["dialog"]["hwnd"] == HWND_DEFAULT_DIALOG
+    assert actuator.last_entry_attempt["dialog"]["classes"] == (
+        "TSp_Button",
+        "TSp_Value_Button",
+    )
     assert app.entry_presses == list(POPUP_ENTRIES)  # every entry, in screen order
     assert app.events.count(("dialog", "close-wrong")) == len(POPUP_ENTRIES)
     assert ("dialog", "accept") not in app.events  # a wrong dialog is never accepted
@@ -1561,23 +1571,54 @@ def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
     assert events_of(app, "cursor")[-1][1] == "restored"
 
 
-def test_a_popup_entry_that_ignores_the_posted_press_is_clicked_with_the_real_cursor(
+def test_the_popup_entry_is_real_clicked_by_default_and_never_posted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A menu that needed a real hover may need a real click: posted first, then real."""
+    """The live fix: the posted press on this caption-less entry opened nothing, so the
+    **real click** is the primary gesture — the same real-input path as the hover.
+
+    ``posted_entry_press_ignored`` is what the live run showed (a posted press on the
+    overlay's ``TSp_Button`` opens no dialog). With real input allowed the driver no longer
+    sends that press at all: it takes the entry with the operator's real cursor, on the
+    entry's own centre, which is inside the popup and so does not dismiss it.
+    """
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
     monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, posted_entry_press_ignored=True)
     actuator = fake_driver(app, channel=2)
 
     assert actuator.ensure_channel() == 2
-
-    posted = app.events.index(("click", "posted-ignored", HWND_ENTRY_OPERATING))
-    clicked = app.events.index(("cursor", "clicked", HWND_ENTRY_OPERATING))
-    taken = app.events.index(("click", "popup-entry", HWND_ENTRY_OPERATING, "real"))
-    assert posted < clicked < taken, app.events
     assert app.channel == 2
-    assert any("real cursor" in note for note in actuator.warnings)
+
+    taken = [event for event in app.events if event[:2] == ("click", "popup-entry")]
+    assert taken and all(event[3] == "real" for event in taken), app.events
+    # Nothing was posted to the entry, and nothing was posted to the menubar either.
+    assert ("click", "posted-ignored", HWND_ENTRY_OPERATING) not in app.events
+    assert ("cursor", "clicked", HWND_ENTRY_OPERATING) in app.events
+    assert actuator.last_entry_attempt["gesture"] == driver.GESTURE_REAL_CLICK
+
+
+def test_the_posted_press_is_kept_only_for_a_run_without_real_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``allow_real_input=False`` has no cursor to click with: the posted press is the only
+    gesture there is, and it is still attempted — with what it did recorded either way."""
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1)
+    app.menu_open = True
+    actuator = fake_driver(app, channel=1, allow_real_input=False)
+    raw = app.nodes()
+    overlay = next(node for node in raw if node["hwnd"] == HWND_POPUP)
+    entry = driver._entry_buttons(overlay, raw)[0]
+
+    panel = actuator._press_entry(entry, overlay)
+
+    assert panel is not None and panel["hwnd"] == HWND_DIALOG
+    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "posted") in app.events
+    assert ("cursor", "clicked", HWND_ENTRY_OPERATING) not in app.events
+    assert actuator.last_entry_attempt["gesture"] == driver.GESTURE_POSTED_PRESS
+    assert actuator.last_entry_attempt["overlay_closed"] is True
 
 
 def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> None:
@@ -1602,12 +1643,14 @@ def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> 
 
     centre = (160, 12)  # the fake Parameters button's centre, in screen terms
     # One open of the dialog, in the order of the cursor/entry events: the cursor is read,
-    # moved onto the button's centre, the menu opens, its entry is pressed **with the
-    # cursor still on the button**, and only then is the cursor put back.
+    # moved onto the button's centre, the menu opens, the entry is then taken with a real
+    # click on its own centre (the cursor stays inside the popup for it, so the hover menu
+    # is not dismissed), and only then is the cursor put back.
     gesture = [event[:2] for event in app.events if event[0] in ("cursor", "click")]
-    assert gesture[:4] == [
+    assert gesture[:5] == [
         ("cursor", "read"),
         ("cursor", "moved"),
+        ("cursor", "clicked"),
         ("click", "popup-entry"),
         ("cursor", "restored"),
     ], app.events
@@ -1622,7 +1665,12 @@ def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> 
     assert [event for event in cursors if event[1] == "moved"] == [
         ("cursor", "moved", centre)
     ] * 2
-    assert cursors[2::3] == [("cursor", "restored", FakeDriver.CURSOR_POSITION)] * 2
+    assert [event for event in cursors if event[1] == "restored"] == [
+        ("cursor", "restored", FakeDriver.CURSOR_POSITION)
+    ] * 2
+    assert [event for event in cursors if event[1] == "clicked"] == [
+        ("cursor", "clicked", HWND_ENTRY_OPERATING)
+    ] * 2
 
 
 #: ``win32gui`` as far as the hover is concerned: the menubar button's screen rect.
@@ -1716,6 +1764,212 @@ def test_a_cursor_that_will_not_move_is_reported_instead_of_hovered_on(
     assert actuator.last_hover_screen is None
 
 
+class _ClippingUser32:
+    """``user32`` with a **clip**: ``SetCursorPos`` is clamped to it, as Windows clamps it.
+
+    The live application confines the cursor while its blocking popups are up, and a move
+    outside the clip rectangle is *not* refused — it lands on the rectangle's edge, which
+    is what parked a live run's cursor in the open menu's bottom-left corner. A move to a
+    point that is not where the caller asked for is therefore a *clamped* move, and the
+    clip is what says so. ``stubborn`` models an application that keeps the clip (or sets
+    it again): ``ClipCursor(NULL)`` is accepted and changes nothing.
+    """
+
+    def __init__(
+        self,
+        position: tuple[int, int] = (7, 11),
+        clip: tuple[int, int, int, int] | None = None,
+        *,
+        stubborn: bool = False,
+    ) -> None:
+        self.position = tuple(position)
+        self.clip = None if clip is None else tuple(clip)
+        self.stubborn = stubborn
+        self.calls: list[tuple] = []
+
+    def GetCursorPos(self, pointer) -> int:
+        self.calls.append(("GetCursorPos",))
+        point = ctypes.cast(pointer, ctypes.POINTER(driver._CursorPoint)).contents
+        point.x, point.y = self.position  # type: ignore[assignment]
+        return 1
+
+    def GetClipCursor(self, pointer) -> int:
+        self.calls.append(("GetClipCursor",))
+        if self.clip is None:
+            return 0  # nothing is clipped
+        rect = ctypes.cast(pointer, ctypes.POINTER(driver._ClipRect)).contents
+        rect.left, rect.top, rect.right, rect.bottom = self.clip  # type: ignore[assignment]
+        return 1
+
+    def ClipCursor(self, pointer) -> int:
+        self.calls.append(("ClipCursor", None if pointer is None else "rect"))
+        if self.stubborn:
+            return 0  # the clip stays up
+        self.clip = None
+        return 1
+
+    def SetCursorPos(self, x: int, y: int) -> int:
+        self.calls.append(("SetCursorPos", int(x), int(y)))
+        if self.clip is None:
+            self.position = (int(x), int(y))
+        else:
+            left, top, right, bottom = self.clip
+            self.position = (
+                min(max(int(x), left), right),  # the clip *clamps*; it never refuses
+                min(max(int(y), top), bottom),
+            )
+        return 1
+
+    def mouse_event(self, flags, dx, dy, _data, _extra) -> None:
+        self.calls.append(("mouse_event", flags, dx, dy))
+
+
+def test_a_clip_that_traps_the_hover_is_released_before_the_move(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live hazard: with the popup open the application clips the cursor, and a move
+    outside the clip rectangle is clamped to its edge instead of refused.
+
+    The menubar button lies *outside* an open popup's clip, so the clip is read before the
+    move and released: the cursor reaches the button, unclamped, instead of stopping on the
+    popup's edge and being reported as a locked desktop.
+    """
+    popup_clip = (169, 55, 401, 250)  # the live popup's own rectangle
+    user32 = _ClippingUser32(position=(7, 11), clip=popup_clip)
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(driver, "_gui", lambda: (_MenuBarGui, None))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    saved = actuator._cursor_position()
+    assert actuator._hover_centre(HWND_PARAMETERS) == (150, 220)
+
+    assert user32.calls[:5] == [
+        ("GetCursorPos",),
+        ("GetClipCursor",),  # the clip is read *before* the move
+        ("ClipCursor", None),  # ...and released, because (150, 220) lies outside it
+        ("SetCursorPos", 150, 220),
+        ("GetCursorPos",),  # read back: the move took, and it was not clamped
+    ]
+    assert user32.position == (150, 220)  # not the clip's edge
+    assert user32.clip is None
+    assert actuator.last_hover_screen == (150, 220)
+    assert any(
+        str(popup_clip) in note and "released the clip" in note
+        for note in actuator.warnings
+    )
+    # The rest of the recipe's gesture is unchanged: the relative move still follows.
+    assert (
+        "mouse_event",
+        driver.MOUSEEVENTF_MOVE,
+        driver._HOVER_MOVE_DX,
+        driver._HOVER_MOVE_DY,
+    ) in user32.calls
+    assert saved == (7, 11)
+
+
+def test_a_move_that_stays_clipped_is_reported_naming_the_clip_and_the_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A clip that cannot be released is named — with the point it refused — instead of
+    being reported as a locked desktop, which is a different failure entirely."""
+    popup_clip = (1200, 900, 1400, 1000)
+    user32 = _ClippingUser32(position=(7, 11), clip=popup_clip, stubborn=True)
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(driver, "_gui", lambda: (_MenuBarGui, None))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator._hover_centre(HWND_PARAMETERS)
+
+    reason = str(excinfo.value)
+    assert "cursor would not move" in reason
+    assert str(popup_clip) in reason  # the clip that clamped it
+    assert "(150, 220)" in reason  # and the point it was asked for
+    assert "not a locked or unattended desktop" in reason  # not misattributed
+    assert "clip" in reason
+    assert actuator.last_hover_screen is None  # nothing is hovered into a clamp
+    # It tried: read the clip, release it, move, read again — twice over.
+    assert user32.calls.count(("ClipCursor", None)) == 2
+    assert user32.calls.count(("SetCursorPos", 150, 220)) == 2
+
+
+def test_a_move_that_will_not_take_with_no_clip_still_names_the_locked_desktop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other branch: no clip at all, so the desktop is the remaining explanation."""
+    user32 = _ClippingUser32(position=(7, 11))  # answers "nothing is clipped"
+
+    def refuse(x: int, y: int) -> int:
+        user32.calls.append(("SetCursorPos", x, y))
+        return 0  # the cursor did not go anywhere
+
+    user32.SetCursorPos = refuse  # type: ignore[method-assign]
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(driver, "_gui", lambda: (_MenuBarGui, None))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator._hover_centre(HWND_PARAMETERS)
+
+    reason = str(excinfo.value)
+    assert "cursor would not move" in reason
+    assert "no cursor clip is set" in reason
+    assert "locked or unattended desktop" in reason
+    assert "ClipCursor" not in [call[0] for call in user32.calls]  # nothing to release
+
+
+def test_the_operator_s_cursor_is_restored_only_after_the_clip_is_released(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The restore is a real move too, and the live run's was clamped: the cursor was put
+    back "at" its own position and landed in the open menu's bottom-left corner.
+
+    A clip that does not *contain* the operator's position is released first, so the
+    restore lands where it was found — never inside the popup's rectangle.
+    """
+    popup_clip = (169, 55, 401, 250)
+    user32 = _ClippingUser32(position=(1234, 567), clip=popup_clip)
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    actuator._restore_cursor((1234, 567))
+
+    assert user32.calls[:3] == [
+        ("GetClipCursor",),
+        ("ClipCursor", None),  # released *before* the restore, never into the clip
+        ("SetCursorPos", 1234, 567),
+    ]
+    assert user32.position == (1234, 567)  # not clamped to the popup's edge
+    assert user32.clip is None
+    assert any("released the clip" in note for note in actuator.warnings)
+    # With a clip up, the restore is read back — and this one landed.
+    assert ("GetCursorPos",) in user32.calls
+    assert not any("after the restore" in note for note in actuator.warnings)
+
+
+def test_a_clip_the_restore_cannot_be_trapped_by_is_left_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An open dialog is entitled to confine the cursor to itself: a clip that already
+    contains the operator's position is not fought over."""
+    clip = (100, 100, 2000, 2000)
+    user32 = _ClippingUser32(position=(1234, 567), clip=clip)
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    actuator._restore_cursor((1234, 567))
+
+    assert [call[0] for call in user32.calls[:2]] == ["GetClipCursor", "SetCursorPos"]
+    assert user32.clip == clip  # untouched
+    assert user32.position == (1234, 567)
+    assert actuator.warnings == []
+
+
 def test_allow_real_input_false_refuses_the_menubar_and_moves_nothing() -> None:
     """An unattended or locked-desktop run must not have the operator's cursor taken.
 
@@ -1791,16 +2045,23 @@ def test_the_popup_is_polled_for_and_never_assumed(
     actuator = fake_driver(app, channel=2)
     assert actuator.ensure_channel() == 2
     assert app.channel == 2  # the selection was made and kept
-    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "posted") in app.events
+    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "real") in app.events
     # Both opens hovered the menu and then *waited* for the popup instead of assuming it
-    # was up. The cursor stayed on the button through that wait and through the press —
-    # a hover popup would be dismissed by putting the cursor back first — and both left
-    # the cursor where they found it, after the press.
+    # was up. The cursor stayed on the button through that wait and then moved onto the
+    # entry for the real click — a hover popup would be dismissed by putting the cursor
+    # back first — and both opens left the cursor where they found it, after the press.
     assert all(press < restore for press, restore in press_and_restore(app)), app.events
     cursors = events_of(app, "cursor")
-    assert [event[1] for event in cursors] == ["read", "moved", "restored"] * 2
+    assert [event[1] for event in cursors] == [
+        "read",
+        "moved",
+        "clicked",
+        "restored",
+    ] * 2
     moved = {event[2] for event in cursors if event[1] == "moved"}
     assert moved == {(160, 12)}  # the button's centre, every time
+    clicked = {event[2] for event in cursors if event[1] == "clicked"}
+    assert clicked == {HWND_ENTRY_OPERATING}  # the entry's own centre, inside the popup
 
 
 def test_a_hover_that_opens_nothing_fails_the_point_naming_the_menu(
@@ -1829,27 +2090,33 @@ def test_a_hover_that_opens_nothing_fails_the_point_naming_the_menu(
 
 
 def test_an_entry_press_that_fails_still_puts_the_cursor_back() -> None:
-    """The press is the last thing done with the cursor on the button, and still no path parks it.
+    """The press is the last thing done with the cursor on the popup, and no path parks it.
 
-    The entry press happens *inside* the hover's ``try``: it is the step the cursor has to
-    stay on the menubar for, and a press that fails must hand the operator's cursor back
-    just as a hover that opens nothing does.
+    The entry press happens *inside* the open's ``try``: it is the step the cursor has to
+    be moved for, and a press that fails must hand the operator's cursor back just as a
+    hover that opens nothing does.
     """
     app = FakeUdopWindow(channel=1)
     actuator = fake_driver(app, channel=1)
 
-    def refuse(hwnd: int, _hold_ms: int = PRESS_HOLD_MS) -> None:
+    def refuse(hwnd: int) -> tuple[int, int]:
         app.events.append(("press attempted", hwnd))
-        raise driver.AcquisitionError("the entry press could not be posted")
+        raise driver.AcquisitionError("the entry click could not be made")
 
-    actuator._click_hold = refuse  # type: ignore[method-assign]
+    actuator._real_click_centre = refuse  # type: ignore[method-assign]
 
     with pytest.raises(driver.AcquisitionError) as excinfo:
         actuator._open_parameters_dialog()
-    assert "the entry press could not be posted" in str(excinfo.value)
+    assert "the entry click could not be made" in str(excinfo.value)
     assert app.dialog_open is False
-    # The press was attempted with the cursor still on the button (the fake asserts the
-    # menu was open for it), and the cursor went back after it — never left parked.
+    # The gesture that failed is itself on the record, so a live run can tell a click that
+    # was never made from one that was made and did nothing.
+    assert actuator.last_entry_attempt["gesture_failed"] is True
+    assert actuator.last_entry_attempt["gesture"] == driver.GESTURE_REAL_CLICK
+    assert actuator.last_entry_attempt["overlay_closed"] is False
+    # The press was attempted with the cursor already moved onto the popup (the fake saw
+    # the menu open for it: the entry exists only while the popup does), and the cursor
+    # went back after it — never left parked.
     assert events_of(app, "cursor") == [
         ("cursor", "read", FakeDriver.CURSOR_POSITION),
         ("cursor", "moved", (160, 12)),
@@ -1859,6 +2126,94 @@ def test_an_entry_press_that_fails_still_puts_the_cursor_back() -> None:
     assert app.events.index(("press attempted", HWND_ENTRY_OPERATING)) < app.events.index(
         ("cursor", "restored", FakeDriver.CURSOR_POSITION)
     )
+
+
+def test_an_entry_press_that_opens_nothing_records_what_the_application_did(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live failure, made self-diagnosing: the popup stayed open and nothing appeared.
+
+    A press that does nothing is reported as *that* — the popup's state and the absence of
+    any new panel — instead of only as "no dialog followed", which is what left the live run
+    unable to say what the application had done.
+    """
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1)
+    app.menu_open = True
+    actuator = fake_driver(app, channel=1)
+    raw = app.nodes()
+    overlay = next(node for node in raw if node["hwnd"] == HWND_POPUP)
+    entry = driver._entry_buttons(overlay, raw)[0]
+
+    actuator._real_click_centre = lambda _hwnd: (0, 0)  # type: ignore[method-assign]
+
+    assert actuator._press_entry(entry, overlay) is None
+
+    observation = actuator.last_entry_attempt
+    assert observation["gesture"] == driver.GESTURE_REAL_CLICK
+    assert observation["gesture_failed"] is False
+    assert observation["entry_hwnd"] == HWND_ENTRY_OPERATING
+    assert observation["entry_rect"] == (190, 61, 365, 101)
+    assert observation["overlay_hwnd"] == HWND_POPUP
+    assert observation["overlay_closed"] is False  # the popup never closed
+    assert observation["new_panels"] == []  # and nothing appeared in its place
+    assert observation["dialog"] is None
+    # The same record is what a failure message carries.
+    text = driver._observation_text(observation)
+    assert driver.GESTURE_REAL_CLICK in text
+    assert "left open the popup" in text
+    assert "no new panel or dialog appeared at all" in text
+    assert "(190, 61)" in text
+
+
+def test_the_entry_attempt_is_recorded_when_the_press_works_too() -> None:
+    """Success is diagnosed as well: which panel appeared, and what that panel holds."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=3)
+
+    assert actuator.ensure_channel() == 3
+
+    observation = actuator.last_entry_attempt
+    assert observation["gesture"] == driver.GESTURE_REAL_CLICK
+    assert observation["overlay_closed"] is True  # the click closed the popup
+    assert [panel["hwnd"] for panel in observation["new_panels"]] == [HWND_DIALOG]
+    assert observation["dialog"]["hwnd"] == HWND_DIALOG
+    assert observation["dialog"]["rect"] == (300, 100, 660, 300)
+    # Classes only — this application's widgets carry no captions to report.
+    assert observation["dialog"]["classes"] == ("TSp_Button", "TSp_Value_Button")
+    text = driver._observation_text(observation)
+    assert "closed the popup" in text and "'TSp_Value_Button'" in text
+
+
+def test_a_failed_entry_loop_reports_what_the_application_did(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The named failure of the entry loop carries the last attempt's observations.
+
+    The entry that opened no dialog is worth nothing to a human reading the log; the popup
+    that stayed open and the panel that never appeared are what the next live run needs.
+    """
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=1)
+    actuator._real_click_centre = lambda _hwnd: (0, 0)  # type: ignore[method-assign]
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    reason = str(excinfo.value)
+    assert "none of the 3 'Parameters' popup entries" in reason  # every entry was tried
+    assert driver.GESTURE_REAL_CLICK in reason
+    assert "left open the popup" in reason
+    assert "no new panel or dialog appeared at all" in reason
+    assert "(188, 130)" in reason  # the last entry by screen top, named
+    assert actuator.last_entry_attempt["entry_rect"] == (188, 130, 336, 170)
+    # ...and each attempt's note carries its own record, in order.
+    notes = [note for note in actuator.warnings if "opened no dialog" in note]
+    assert len(notes) == 3, actuator.warnings
+    assert "(190, 61)" in notes[0] and "(188, 130)" in notes[-1]
 
 
 def test_a_channel_already_selected_is_read_back_and_not_rewritten() -> None:
