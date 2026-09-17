@@ -275,13 +275,24 @@ def _write_bytes(path: Path, raw: bytes) -> None:
 def _fsync_dir(path: Path) -> None:
     """Fsync a directory so a rename/marker is durable, where that is possible.
 
-    Windows has no directory flush: ``os.O_DIRECTORY`` is POSIX-only and
-    ``os.open`` refuses a directory there, while ``FlushFileBuffers`` is
-    documented for file and volume handles only, so this is an explicit no-op
-    on Windows. That stays safe for this store because every file's bytes are
-    already fsynced (:func:`_write_bytes`, :func:`_save_array`) before the
-    rename, so only the NTFS metadata ordering for the new directory entry is
-    left to the OS; a directory open/fsync failure on POSIX still propagates.
+    Windows has no documented, portable way to do this: ``os.O_DIRECTORY`` is
+    POSIX-only, ``os.open`` refuses a directory there in every mode (CPython has
+    no way to pass ``FILE_FLAG_BACKUP_SEMANTICS``), and ``FlushFileBuffers`` is
+    documented for file and volume handles only. An undocumented route exists —
+    ``ctypes`` ``CreateFileW`` with ``FILE_FLAG_BACKUP_SEMANTICS |
+    GENERIC_WRITE``, which did return TRUE when measured on NTFS — but it is
+    unverified, filesystem-dependent (it fails on SMB shares: Go's ``File.Sync``
+    takes that route and reports ``ERROR_INVALID_DEVICE_REQUEST`` there), and it
+    would add a failure mode in exchange for durability nothing here can
+    confirm. So the gate is an explicit no-op on Windows.
+
+    That gives up nothing this store was relying on: every file's bytes are
+    already fsynced (:func:`_write_bytes` for the manifest and ``COMPLETE``,
+    :func:`_save_array` for each array) before the rename, so only NTFS's own
+    ordering for the new directory entry is left to the OS — and the documented
+    alternative, ``FILE_FLAG_WRITE_THROUGH``, is a property of the handle used
+    for the write, which ``os.rename`` cannot request. On POSIX nothing changes:
+    a directory open or fsync failure still propagates.
     """
     if os.name == "nt":
         return
