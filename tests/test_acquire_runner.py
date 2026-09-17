@@ -1741,3 +1741,120 @@ def test_a_bare_run_point_still_verifies_the_channel(
     assert outcome.ok is True, outcome.reason
     assert fake.channel_checks == 1
     assert fake.verify_channel_flags == [False]
+
+
+# ------------------- 10c. the window the stored file actually covers
+#
+# `timing` was carried by every record ever written and populated by none of them
+# (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
+# and no field said how much observation a point had bought. The app's block is a ring,
+# so a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
+# point — "the plan says 12 s" and "the file covers 8.4 s" were the same row of the log.
+# Only the stored file's own profile timestamps can tell them apart, and these two cases
+# pin that they reach the record: one on a fixture whose window is known exactly, one on
+# the committed point, where the measurement and the plan's law disagree and both numbers
+# survive. The model's side is in `test_acquire_log.py` (section "the window a record has
+# to be read against").
+
+
+def test_the_record_carries_the_window_the_stored_file_covers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0.02 s of profiles behind a 1.0 s request is recorded as 0.02 s, not as 1.0 s.
+
+    The fixture stores five profiles 5 ms apart, so the window is known exactly: 0.02 s
+    from first to last, and a measured period that *equals* the plan's law for this point
+    (8 emissions at a 500 µs PRF plus the ~1 ms transfer term) — that makes this a case
+    about which quantity reaches the record, not about the rig being early or late. The
+    size guard is widened on purpose (a synthetic file is mostly header; the guard has
+    its own cases in section 5), and the run's channel 2 is what those profiles carry.
+    """
+    fixture = build_two_channel_point(
+        tmp_path / "window.BDD",
+        words=CHANNEL_TWO_WORDS,
+        other_channel=CHANNEL_ONE_WORDS,
+        period_raw=50,  # 5 ms in the reader's 0.1 ms timestamp units
+    )
+    fake, engine, log_path, _ = make_runner(
+        tmp_path,
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=SizeSignature(factor=50.0),
+        channel=2,
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(channel_two_point(), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.requested_duration_s == DURATION_S
+    assert record.stored_profiles == 5
+    assert record.stored_span_s == pytest.approx(0.02, abs=1e-9)
+    assert record.retained_fraction == pytest.approx(0.02, abs=1e-9)
+    # Five profiles against the default cap of 257: the block did not wrap, and the
+    # record says so from numbers that are both in it.
+    assert record.block_wrapped is False
+    # The measurement, and the plan's law beside it: two quantities, kept apart on
+    # purpose, and here they agree because the fixture was built that way.
+    assert record.timing.achieved_s == pytest.approx(0.005, abs=1e-9)
+    assert record.timing.target_s == pytest.approx(
+        channel_two_point().parameters.emissions_per_profile * 500e-6
+        + PERIOD_OVERHEAD_S
+    )
+    assert record.timing.within_tolerance() is True
+
+
+def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real point through the real reader: 129 profiles over 3.84 s of its own time.
+
+    The committed recording is a longer observation than this 1.0 s point asks for (the
+    harness stores the file it has), so the retained fraction lands above 1 here — on the
+    rig it is below 1, which is the case the field exists for. What the case pins is that
+    the record's window comes from the file and not from the request.
+
+    It also pins the disagreement: the plan's period law is fed the *plan's* emissions
+    (52), the file stores 150, and the measured interval is ~3x the law. The record keeps
+    both numbers; the same record already carries the 52-vs-150 advisory. Reconciling the
+    law with the instrument's own word is campaign-compilation work (the verdict's Phase
+    6), not something a baseline fix should paper over — so this case asserts the
+    disagreement rather than hiding it.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.stored_profiles == 129
+    assert record.stored_span_s == pytest.approx(3.8409, abs=1e-3)
+    assert record.timing.achieved_s == pytest.approx(0.0299, abs=1e-3)
+    assert record.retained_fraction == pytest.approx(
+        record.stored_span_s / DURATION_S, abs=1e-6
+    )
+    # Word 14 is now in the decode as well as in the advisory: the variance axis the
+    # canonical reader has no field for is on the record.
+    assert record.decoded is not None
+    assert record.decoded.emissions_per_profile == 150
+    assert record.timing.within_tolerance() is False
+    assert record.timing.target_s == pytest.approx(
+        point_for(1).parameters.emissions_per_profile
+        * point_for(1).parameters.prf_us
+        * 1e-6
+        + PERIOD_OVERHEAD_S
+    )

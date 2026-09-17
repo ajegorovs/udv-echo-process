@@ -320,3 +320,88 @@ def test_point_records_and_names_are_the_resume_inputs(tmp_path: Path) -> None:
     assert (
         settings.next_name(1, "161738", point_names(entries)) == "sw100-k1-161738b"
     )
+
+
+# ------------- the window a record has to be read against (findings 4 and 5)
+#
+# `timing` was carried by every record ever written and populated by none of them
+# (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
+# and no field said how much observation a point had bought. The app's block is a ring:
+# a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
+# point, so without the retained window "12 s requested" and "8.4 s stored" are the same
+# record. These cases pin the model's side of it; the runner's side is asserted against
+# real files in `test_acquire_runner.py`.
+
+
+def _windowed(**overrides: object) -> SweepPointRecord:
+    """A record in the 12 s-requested / 257-profile shape the bring-up measured."""
+    fields: dict[str, object] = {
+        "requested_duration_s": 12.0,
+        "block_cap_profiles": 257,
+        "decoded": DecodedBlock(
+            channel=1,
+            n_gates=805,
+            n_profiles=257,
+            span_s=8.4,
+            achieved_period_s=0.0327,
+        ),
+    }
+    fields.update(overrides)
+    return _record(**fields)
+
+
+def test_a_wrapped_block_is_recorded_as_the_window_it_really_covers() -> None:
+    """12 s asked for, 8.4 s retained: 0.7 of the window, at the cap, not a 12 s point."""
+    record = _windowed()
+    assert record.requested_duration_s == 12.0
+    assert record.stored_profiles == 257
+    assert record.stored_span_s == 8.4
+    assert record.retained_fraction == pytest.approx(0.7)
+    assert record.block_wrapped is True
+
+
+def test_a_block_below_its_cap_did_not_wrap() -> None:
+    record = _windowed(decoded=DecodedBlock(channel=1, n_gates=805, n_profiles=256))
+    assert record.block_wrapped is False
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"block_cap_profiles": None},  # the cap is not in the record
+        {"decoded": DecodedBlock(channel=1, n_gates=805)},  # nothing says how many
+    ),
+)
+def test_an_unknown_cap_or_count_leaves_the_wrap_unknown(
+    overrides: dict[str, object],
+) -> None:
+    """Unknown is `None`, never `False`: absence cannot support "it did not wrap"."""
+    assert _windowed(**overrides).block_wrapped is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"requested_duration_s": None},
+        {"decoded": DecodedBlock(channel=1, n_gates=805, n_profiles=257)},
+    ),
+)
+def test_the_retained_fraction_needs_both_the_request_and_the_file(
+    overrides: dict[str, object],
+) -> None:
+    assert _windowed(**overrides).retained_fraction is None
+
+
+def test_a_decode_without_profile_timestamps_reports_no_window() -> None:
+    """The window fields are optional evidence: a block that lacks them has none."""
+    block = DecodedBlock(channel=1, n_gates=805)
+    assert block.n_profiles is None
+    assert block.span_s is None
+    assert block.achieved_period_s is None
+
+
+def test_a_single_profile_is_a_zero_length_window() -> None:
+    """One stored profile is a 0.0 s window, and offers no interval to measure."""
+    block = DecodedBlock(channel=1, n_gates=805, n_profiles=1, span_s=0.0)
+    assert block.span_s == 0.0
+    assert block.achieved_period_s is None
