@@ -711,15 +711,25 @@ class Win32Actuator:
     # ------------------------------------------------------------------ Actuator
 
     def layout_note(self) -> str | None:
-        """``None`` only on the clean measurement layout; a note otherwise.
+        """``None`` only on the clean measurement layout; a summary note otherwise.
 
         A popup, a dialog or a simulator-only screen means parameter roles may resolve to
-        the wrong widgets, so a run must refuse to start.
+        the wrong widgets, so a run must refuse to start. The note names what was
+        resolved — window class, panel count, the strip's view and button row, any
+        overlay — so the refusal is diagnosable from the log alone.
         """
         roles = self._resolve()
         if roles["layout_expected"]:
             return None
-        note = roles.get("layout_note", "layout is not the clean measurement screen")
+        state = self._state_of(roles)
+        overlay = self._find_overlay(roles)
+        note = (
+            f"{self._class_name}: {len(roles['raw'])} visible controls in "
+            f"{len(roles['panels'])} panels (the clean measurement screen has "
+            f"{EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}); strip view "
+            f"{state.view.value} with {state.button_count} button(s); "
+            f"overlay {overlay[0].value if overlay else 'none'}"
+        )
         if roles["open_popup"]:
             note += "; a menu popup is open (never dismissed by WM_CLOSE here)"
         return note

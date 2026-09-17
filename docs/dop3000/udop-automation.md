@@ -534,3 +534,60 @@ whole chain can be re-run cheaply. **Production points will be 10–20 s.** Noth
 in the driver may depend on the short duration: a point stays a duration in
 seconds (§8), the cap assertion stays `T ≤ cap × period`, and the period stays
 whatever the instrument reports for that configuration.
+
+---
+
+## Live validation (simulator)
+
+Three points were executed by the committed driver (`Win32Actuator`) on the
+running simulation application — **unattended, no operator action, no application
+wedge** — and the strip returned to a known-good startable state after every
+point *(measured)*. They change nothing in §§1–10; they change what the runner
+must do *between* points.
+
+| point | stored | what it showed |
+|---|---|---|
+| 1 | **8,272,897 B** | ~6,045 implied profiles at 805 gates — a stale buffer, ~60× the expected size |
+| 2 | 87,281 B | ~64 profiles at 805 gates, 1.5 s — clean, after `Clear and restart` |
+| 3 | (write-path point) | 403 gates at resolution index 1, depth 100 mm |
+
+**A stale buffer is the contamination, not accumulation per point.** Point 1 was
+recorded into a buffer that still held roughly 6,000 profiles from earlier work:
+while it ran, the application's own status bar showed large **negative**
+`Time between profile` values — average and maximum — and the store wrote
+8,272,897 B where ~90–140 KB was expected. That is about **60×**, i.e. roughly
+**6,045 implied profiles at 805 gates**, and the file is valid-looking: nothing in
+it announces the corruption, so a sweep would have logged the point as good and
+corrupted itself silently.
+
+**The reset is the fix.** Point 2 pressed `Clear and restart` first: same 805
+gates, 1.5 s, and the store wrote **87,281 B** (~64 profiles) with the negative
+timing values gone. The 60× case was therefore entirely stale *buffer content*,
+not something a point accumulates — `Clear and restart` before a point removes it
+(press it in the no-slider view, then poll for `Record`, §4).
+
+**Point 3 exercised the parameter WRITE path.** `RESOLUTION` then `GATES` were
+written and read back as requested (`'0.243'`, `'403'`), and the stored file
+decoded to **403 gates**, resolution **index 1** (0.2433 mm at `c = 1460`),
+**depth 100 mm**, burst 4, emissions 150, PRF 169 µs — the depth law of §3,
+confirmed from the file's own words on a point the *driver* wrote.
+
+**The size signature catches the 60× case.** It is about **1.7 bytes per
+gate-profile** (8,272,897 B / (6,045 × 805)), so a point whose file is off by a
+large factor is rejected before it is decoded (§7 rule 4). It is an
+**approximate factor check, not an exact profile count**: two clean 1.5 s points
+implied 64 and 88 profiles, and file size is not perfectly linear in
+profiles × gates.
+
+**Consequence for the runner:**
+
+1. **Reset the block before every point** — `Clear and restart`, then poll until
+   `Record` is present again. Never record into whatever the previous point left
+   behind.
+2. **Refuse a point that fails the size signature.** A contaminated point that is
+   logged as valid is the worst failure mode available: not a crashed run, but a
+   wrong number in the matrix that nothing downstream can detect.
+
+**Unresolved.** The text of the warning the application raises when the per-block
+profile cap is crossed was still not captured — the state clears before it can be
+read (§11.3).
