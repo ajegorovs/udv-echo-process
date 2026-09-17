@@ -22,12 +22,59 @@ next. Written for a fresh session starting in this repository.
   the source of truth for the application's behaviour, `docs/16-record-strip-automation.md`
   the verified UI rule set, `recon/out/` the captures and JSONL logs.
 
-## 2. The immediate task — port the menu interaction VERBATIM
+## 2. The immediate task — port the menu interaction VERBATIM — **PORTED (2026-09-17)**
 
 Source of truth: `C:\Repos\dop-control\recon\41_burst_sampling_volume.py`,
 `open_operating_parameters()` (lines 109–135), plus `udop_roles.py` (`click_hold`,
 `resolve`, `children`, `combo_state`, `text_of`). This code opened the menu, selected
 `Operating parameters`, read the dialog, changed a combo, and accepted — repeatedly.
+
+**Landed in `acquire/driver.py`** (uncommitted at the time of writing — see §4), and
+**verified live on 2026-09-17** (see §5a: the menu cycle opened, read and closed cleanly,
+three times, including one run that recovered the dialog this port had left open):
+
+- the entry press is the **posted held press on the entry's own handle**
+  (`GESTURE_POSTED_PRESS`, `_press_entry` → `_click_hold`); the real-click path is gone,
+  together with `_real_click_centre`, `GESTURE_REAL_CLICK` and the mouse-button flags;
+- **the bottom button pair is the LAST TWO of the band** — `row[-2]` is Cancel/`No` and
+  `row[-1]` is Accept/`Do store`, which is the reference's own rule
+  (`recon/41`: `bottom[-1] if accept else bottom[-2]`). The port had used `row[0]`, the
+  band's *leftmost*: on the live dialog that is an **indicator** button
+  (`No emission on Probe In/Out`) and pressing it left the dialog open. Found and fixed
+  from the live run; never press the band's leftmost;
+- the popup **visibility precondition** is enforced twice: the overlay poll only ever
+  returns a visible panel, and `_require_visible_popup` refuses an overlay or entry that
+  reports `IsWindowVisible == False`, naming the pre-created panel (`_hidden_panels()`,
+  `_is_visible()`);
+- **dialogs are found structurally** (`_dialog_panels` / `_poll_dialog`): not the
+  parameter column, wider than 400 px, and full of controls (`>= 15` direct children, a
+  `TSp_Browse`, or input controls of its own). The channel combo is now only the test
+  that tells the operating dialog from another dialog, never the test that decides
+  whether a dialog opened;
+- the **channel combo's nesting was dropped**: identity is the item list (`'1'`..`'10'`).
+  The live dialog holds it in its **header** — a direct child of the panel at
+  `(1083, 373)`, read from the watch capture — so requiring a `TSp_Value_Button` around
+  it was an assumption that could reject the correctly opened dialog;
+- the **overlay is identified by the reference's own predicate first** (`left == 169 and
+  h > 120`, when visible); this port's appearance diff is demoted to the fallback for an
+  overlay painted elsewhere. An addition must never outrank the proven rule;
+- the **combo write settles for the reference's 0.8 s** (`_COMBO_SETTLE_S`), not the
+  shorter text-write settle: this is the path that decides the channel;
+- the per-entry dialog window is the reference's own 8 s (`_ENTRY_DIALOG_TIMEOUT_S`), not
+  a re-derived 2 s; the loop stays bounded by `_MAX_ENTRY_ATTEMPTS = 4`;
+- the entry-attempt record is read **before** the press (`_pressed_state`): after it the
+  popup is gone, and the record of a press that worked said `overlay_visible: false`,
+  `overlay_items: 0` — a record worse than none.
+
+Tests: `tests/test_acquire_driver.py` — the fake carries the **live-measured** dialog
+(627x384 at `(655, 364)`, its header channel combo, seven value fields, and a bottom band
+of **four** buttons: the two indicators, then `Cancel` `(1091, 703, 80x25)` and `Accept`
+`(1183, 702, 80x25)`), so the old `row[0]` bug now fails the suite instead of the
+instrument. 123 driver + actuator cases green, `ruff check` clean (the fake now scripts the
+live replacement dialog too, so the stale-handle bug is a suite failure and not an instrument
+one).
+
+Original instructions, kept for the record:
 
 **The entry press is `click_hold(entry_hwnd)`** — a *posted* held press
 (`WM_LBUTTONDOWN` with `MK_LBUTTON`, ~180 ms, `WM_LBUTTONUP`) on the entry's **own
@@ -46,6 +93,9 @@ press Accept on a dialog that has not been identified.
 **The hover**: `SetCursorPos(204, 40)` → 0.3 s → `mouse_event(MOUSEEVENTF_MOVE, 2, 0, 0, 0)`
 → 1.0 s. The driver derives the point from a resolved rect instead — pin it to the
 measured point, or require the overlay to *become visible* as proof the hover worked.
+(The derived centre *is* that point: the `Parameters` button's rect centres on
+`(204, 40)`. The appearance proof is what the driver now relies on, since a coordinate
+stated in logic is not allowed in this codebase.)
 
 **Precondition before pressing any entry**: the overlay panel must report
 `IsWindowVisible == True`. The panel `(169, 55, 401, 250)` is **pre-created in the control
@@ -78,11 +128,22 @@ sticky — it survives activation and needs an explicit close.
   configuration; use it as a *gross* factor check (the contamination cases were 10× and
   60×), never as a precise expectation. For reference, `466 B/profile + 1.20 B/gate` fits
   three clean points within 0.2%, but the profile count depends on the achieved period.
+- **The dialog's own geometry (read off the watch capture, 2026-09-17)** —
+  `Operating parameters` is a `627x384` panel at `(655, 364)`, holding seven
+  `TSp_Value_Button` value fields, four `TSp_Button`s (two checkboxes and the bottom row)
+  and its channel combo. That combo is the dialog's **header** field,
+  `Operating parameters for channel [n ▼]`, a `TComboBox` at `(1083, 373)` that is a
+  **direct child** of the panel — *not* nested in a value field, which is what an earlier
+  driver revision wrongly required.
+- **The overlay holds five entries** (screen tops 61, 95, 130, 165, 205 inside the
+  `169, 55, 401, 250` panel); the first is `Operating parameters`, the second
+  `Default parameters`.
 - **Profile period** — the manual gives `T_profile ≈ T_tran + T_prf * (16 + N_PRF)`, and
   word 17 = 16 in every file, which corroborates it. Compute the period from the point's
-  parameters; log the achieved value once per configuration as a certificate. Note: the
-  ported doc's §8 says "measure the period; do not trust the formula" — that line is the
-  assistant's over-caution and should be corrected.
+  parameters; log the achieved value once per configuration as a certificate. The ported
+  doc's §8 has been corrected accordingly (`docs/dop3000/udop-automation.md`, as have the
+  two code comments that repeated the withdrawn "measure it, don't trust the formula"
+  line: `acquire/runner.py::PERIOD_OVERHEAD_S`, `acquire/config.py::ProfileTiming`).
 - **One channel is the scope.** Everything measured on channel 1, c = 1460. The channel is
   a single knob: `UDV_CHANNEL` → `ChannelSetting` (default 1, range 1–10).
 - **Store dialog** — its `Working directory` field decides where points land (currently
@@ -104,18 +165,92 @@ sticky — it survives activation and needs an explicit close.
   (`verify.py`: gates exact, resolution rung inverted from the request, depth within
   tolerance), never from the request, the driver's intent, or a control's text.
 
+### The parameters dialog is per-channel, and a write replaces it (2026-09-17)
+
+Two live runs settled the channel path, and both changed what the driver may assume:
+
+- **The write works, in both directions, with the reference's own gesture.**
+  `CB_SETCURSEL` + a `CBN_SELCHANGE` posted to the combo's parent, no Enter, then accept,
+  then re-open and read the channel back: `verified channel: 2` and `verified channel: 1`,
+  each followed by a clean layout (`layout_note: None`, 43 controls in 4 panels). The
+  write's settle is the reference's own 0.8 s (`_COMBO_SETTLE_S`).
+- **The application *replaces* the dialog when the channel changes.** Measured: the write
+  closed `Operating parameters` at `(655, 364)` — 627x384, 21 direct children, seven
+  `TSp_Value_Button` fields, the two indicator buttons plus `Cancel`/`Accept` — and opened
+  **`Assisted mode parameters for channel 2`** at `(713, 364)`, 511x384, 14 visible
+  children, six value fields, the `Shorter acquisition time / Best quality` slider, and its
+  own `Cancel`/`Accept`. Every handle taken before the write is **dead**, so the read-back
+  and the accept must use a re-resolved panel. The reference did exactly this
+  (`find_dialog(resolve()) or dlg`, `recon/41_burst_sampling_volume.py`); the port kept its
+  old handle, pressed a window that no longer existed, and left the new dialog on the
+  operator's screen with nothing able to close it (twice — the operator reported it both
+  times, and was right). `ensure_channel` now re-resolves after the write
+  (`_poll_dialog(_DIALOG_REPLACE_S)`) and says so in a note.
+- **A channel's *mode* changes the whole screen, and the mode belongs to the channel.**
+  Measured live 2026-09-17, one channel change per run: selecting **channel 2** gives the
+  assisted panel, then selecting **channel 3** gives an assisted panel *too* (a mode that
+  flipped on every channel change would have alternated back to manual there), and returning to
+  **channel 1** gives the manual panel with its sidebar — the state it started in. So the
+  channel combo re-renders the parameters panel for the channel you pick; it does not toggle a
+  mode, and the operator can do exactly this from the same combo, from inside the dialog.
+  Assisted mode **removes the sidebar parameter column**: that screen is **21 visible controls
+  in 3 panels**, not 43 in 4, so `roles["params"]`/`param_rows` are empty there and a parameter
+  write has no target. Consequences:
+  - a **sweep cannot be parameterised on an assisted channel** — it fails at the first write
+    (now with a message that names the mode: `_assisted_mode_clause`), so pick a channel in
+    manual mode or leave assisted mode in the application's own Preference menu first;
+  - `layout_note` says the sidebar is absent and calls it what it is;
+  - `ensure_channel` records which panel the channel's parameters came up in
+    (`panel_mode`: the assisted panel carries the acquisition-rate/quality `TSp_Sliding_Bar`,
+    the manual one the value table) — the application's own statement of the mode, read
+    structurally because every widget here is caption-less;
+  - a probe that refuses to start on a non-clean screen will refuse to start on such a channel
+    at all, which is why `recon/55_restore_channel.py` exists to put the channel back.
+  What is **not** established, and is worth measuring on the next store: whether channels 2 and
+  3 were in assisted mode *before* this work touched them. The stored file carries the answer —
+  the header's `assisted Mode` flag (manual doc 10) — so the first stored point is the
+  certificate. Nothing else was changed: the channel selector was left where it was found.
+- **The `Parameters` popup's five entries are fixed labels** — read off a 3x screenshot of the
+  live menu: `Operating parameters`, `Default parameters` (the one the application itself
+  highlights), `Save parameters`, `Recall parameters`, `Tigger parameters` (the build's own
+  spelling of *trigger*). The manual's v6.6/6.7 menu lists `Assisted mode parameters` as an
+  entry of its own; **this build has no such entry**, and the assisted panel is reached by
+  selecting a channel that is in assisted mode. The driver presses entry 0 **by screen top,
+  never by caption** — which is why it keeps working across both builds — and then requires the
+  channel combo. `PARAMETERS_ENTRY` names the *entry that is expected*; the panel that opens is
+  identified structurally, as always, and its *own* title is the application's statement of the
+  mode (pixels only: no caption in the tree).
+
 ## 4. Open / unproven
 
-- No live run has yet pressed a popup entry with the posted held press on a **visible**
-  menu. That is the next live test, and it should be the first one after the port.
-- The real-click entry fallback, the "settle before the click" theory and the
-  "posted press needs a settle" theory are all moot once the verbatim port is in.
+- **The menu cycle is now live-verified** (2026-09-17, §5a): hover → visible overlay → posted
+  held press on the first entry by screen top → `Operating parameters` at `(655, 364, 1282,
+  748)` → channel combo read (`(1083, 373)`, items `1`..`10`, index 0) → Cancel → clean layout
+  (`43 controls in 4 panels`, `layout_note: None`). Nothing was written and nothing accepted.
+- **The channel *write* path is now live-verified in both directions** (2026-09-17): channel
+  1 → 2 and 2 → 1, each `verified channel: N` after accept + re-open, dialog closed and the
+  clean layout restored. What the write *does* to the dialog — replace it — is in §3.
+- **A whole point (strip press → hold → stop → Store dialog → `Do store`) has not been run
+  since the port**, and it is the next live step. The sequence the operator knows:
+  *(if needed `Clear and restart`, wait for the record button to come back) → record → stop →
+  `Do store` (the middle button) → the Store window appears with the cursor trapped in it →
+  (change the fields) → `Do store` on that window.* `recon/45_live_sweep_runner.py` is the
+  prototype that did this; nothing in the port has been live since the refactor.
+- **The write-replaces-the-dialog rule is pinned** (`test_the_dialog_is_re_resolved_after_a_
+  channel_write_replaces_it`): the fake scripts the replacement at the live geometry — the
+  operating dialog at `(655,364)` giving way to the assisted one at `(713,364)`, new handles —
+  and asserts the accept came *after* the replacement, i.e. on the new dialog's own button.
+- `dialog_note`/`layout_note` and the `Store` dialog's own band were not re-measured today; the
+  Store dialog's pair is assumed to be the same two-rightmost rule (it resolved correctly in
+  the port's tests, never live since the port).
 - `layout_note()` returns `None` for the clean screen (a documented sentinel) and a summary
   otherwise; `StripState.slider_max` is always `None` (the slider's range is never read).
 - The at-cap warning's text was never captured (the state clears before it can be read).
   With independent points and a 10,000-profile cap it is off the critical path.
 - A point's duration is nominal, not measured — the driver waits out the recording window
   blind, so the real length is uncertified (a few percent at 10–20 s points).
+- The §2 port is **uncommitted**; the branch is `feat/dop3010-acquisition` and the working
+  tree holds the driver + tests + docs changes together.
 
 ## 5. Running a live point
 
@@ -135,6 +270,69 @@ the dropdown panel's rect and `IsWindowVisible`, and the desktop pixels inside i
 snapshots the driver's own prelude (its strip press and its sidebar write) — that is what
 proved the prelude is not the cause and that focus is irrelevant.
 
+## 5a. Running a live test when the agent drives it (measured 2026-09-17)
+
+**The agent's own shell cannot touch the GUI.** Hermes' terminal tool runs in **session 0**
+on window station `Service-0x0-9a468fe$` (a service station), while UDOP runs in **session 1**
+on `WinSta0`; from session 0 `GetForegroundWindow()` returns 0, `GetCursorPos()` fails with
+*"requires an interactive window station"* (1459), `EnumWindows` sees no application window
+and `FindWindow("TMain_Scr")` returns 0 — so the driver refuses with *"no visible
+TMain_Scr window"*, which looks like a broken driver and is not one (`recon/49` proves it).
+`hermes computer-use` is not installed here either, so there is no second route.
+
+**The route that works: a scheduled task that runs in the interactive session.**
+
+```
+printf '47_menu_open_probe.py' > recon/out/task_target.txt   # which probe
+printf 'popup'                > recon/out/task_args.txt      # its args (may be empty)
+schtasks /run /tn hermes_gui_probe
+```
+
+The task is created once, with the caller's own principal so it lands in session 1 and needs
+no password:
+
+```
+schtasks /create /tn hermes_gui_probe /tr "C:\Repos\dop-control\recon\task_run.cmd" \
+         /sc once /st 23:59 /ru INTERACTIVE /it /f
+```
+
+The task starts **`pythonw.exe`, not a `.cmd`** — a `.cmd` action gives the task a *console
+window* on the interactive desktop, in front of the application, and that alone breaks the
+hover: measured 2026-09-17, the foreground window was `ConsoleWindowClass` / `cmd.exe` and
+UDOP reported `is_foreground=False`, after which the cursor moved onto `Parameters` and **no
+popup appeared**. `recon/task_run.py` is the action: it reads the probe name and its args from
+the two files above (argument quoting through `schtasks /tr` is where that breaks), runs the
+probe with the venv's python under `CREATE_NO_WINDOW`, and writes `out/task-<probe>.log`.
+Verified through it: no console window exists, and the driver's foreground precondition
+(`_require_foreground`, `driver.py`) is satisfied.
+stdout+stderr to `recon/out/task-<probe>.log` — which the agent then reads, so the whole
+transcript is machine-readable instead of a description.
+
+**The application must be in front for the hover, and that is now a precondition.**
+`_require_foreground` reads the foreground window, asks Windows to activate the application
+(`AttachThreadInput` + `SetForegroundWindow`, because a plain `SetForegroundWindow` from a
+process the user is not touching is refused by the foreground lock), reads it back, and
+**refuses** if it is still not the application. An inactive window ignores hover — its first
+mouse event only activates it — so without this check the failure is silence, and silence is
+indistinguishable from a gesture that does not work. It cost a live slot to learn exactly
+that; `recon/53` prints the foreground window, the cursor, the clip and the visible panels,
+and is the first thing to run when a hover opens nothing.
+
+**Screenshots are the only route to the *labels*.** Every `TSp_*` widget answers
+`GetWindowText` with `""`, so the painted text (which entry says `Operating parameters`,
+which button says `Cancel`) exists only in pixels. `recon/51` (`PIL.ImageGrab`, run in
+session 1) saves the full screen plus crops of the popup and the dialog, and the agent reads
+the PNG with its own vision. That is how the two indicator buttons were told from the
+Cancel/Accept pair.
+
+**Make the probe state its own expectations.** `recon/47` prints an `EXPECTED (plan) vs
+OBSERVED` table (overlay rect, entry count and tops, dialog rect, combo identity and items,
+channel) and flags each mismatch, so a divergence is a named line rather than a coordinate
+somewhere in a wall of text. Two of its rows were wrong about the plan and right about the
+instrument: the dialog directly owns **21** controls (the plan said 12; the probe's 42 was
+`EnumChildWindows` counting *descendants*), and the bottom band holds **four** buttons, not
+three.
+
 ## 6. Rules that were expensive to learn
 
 - **Refuse, don't press.** On an unrecognised state or panel, stop the run. The circuit
@@ -146,7 +344,19 @@ proved the prelude is not the cause and that focus is irrelevant.
 - **Trust the operator's eyes over telemetry.** Twice the control tree reported the popup
   open while the screen showed nothing; both times the eye was right.
 - **Port proven code verbatim before re-deriving it.** The working menu interaction existed
-  in `recon/41` all along; three fix cycles went into reinventing it.
+  in `recon/41` all along; three fix cycles went into reinventing it. The live run of
+  2026-09-17 found the *same* mistake once more, one line deep: the reference takes a dialog's
+  Cancel as `bottom[-2]` ("the last two of the band") and the port took `bottom[0]` ("the
+  leftmost"), which on this dialog is an indicator button — the dialog stayed open and the
+  operator saw it. **Corollary: an addition must never outrank the proven rule.** The
+  appearance-diff overlay finder was this port's invention and was tried *first*, ahead of
+  the reference's `left == 169 and h > 120`; it is now the fallback. When a rule in the
+  reference exists, it decides order and identity; this repository's additions are fallbacks
+  and diagnostics, and each one is written down as such.
+- **A record read after the fact is a record of the wrong fact.** The entry press closes the
+  popup, so "was the overlay visible / what entries did it offer" has to be read *before* the
+  gesture; read after, a press that had opened the dialog reported `overlay_visible: false`
+  and `overlay_items: 0`.
 
 ## 7. Delegation notes
 

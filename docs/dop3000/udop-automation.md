@@ -67,7 +67,8 @@ cycles of one parameter set (§7).
 | menubar buttons (`Parameters`, `Tools`, …) | **hover only** — the overlay opens on mouse-over, and a click after the hover *closes* it | n/a |
 | menu overlay entries | posted held click on the entry's handle | **yes** *(measured)* |
 | `WM_SETTEXT` alone, or `WM_CHAR` Enter | — | **no** — the control shows the value, the application keeps its own |
-| injected real input (`SetCursorPos` + `mouse_event`) | — | **no** |
+| injected real input (`SetCursorPos` + `mouse_event`) as a *click* | — | **no** |
+| injected real input as a **hover of a menubar button** | `SetCursorPos` onto the button's centre + a relative `mouse_event` move | **yes** — the one interaction posted messages cannot drive at all *(measured)* |
 | posted down/up inside the same millisecond | — | **no** |
 
 Two consequences organise everything else:
@@ -288,6 +289,54 @@ every press.
   instead of `Operating parameters` and raised a modal panel. Keep
   `Default parameters` off the critical path. Never `WM_CLOSE` an open popup —
   that wedges the menu loop until restart. `ESC` does nothing on these panels.
+- **Presence is not visibility: the `Parameters` overlay is pre-created and
+  hidden.** The panel is in the control tree from startup with a caption-less
+  `TSp_Panel` rect of `(169, 55, 401, 250)` and `IsWindowVisible == False`, and the
+  menubar hover is what shows it. An enumeration that ignores visibility (or a
+  rule that accepts a panel because it is *present*) therefore finds an "open
+  menu" that is not painted, and the press lands on whatever is behind it. **Rule:
+  the overlay *and* the entry must report `IsWindowVisible == True` before an
+  entry is pressed**, and a hidden candidate is named in the refusal rather than
+  pressed into. The overlay's five entries sit at screen tops 61, 95, 130, 165 and
+  205 — the first is `Operating parameters`.
+- **The menubar takes the real cursor; everything else takes messages.** Hovering
+  the `Parameters` button with the operator's own cursor (`SetCursorPos` onto the
+  button's centre, then one short relative `mouse_event` move) is what opens the
+  overlay — a posted move and a posted held press both opened nothing in live
+  runs — while the **popup entry** is taken with a plain *posted held press on the
+  entry's own handle*, exactly like a strip button. Do not "improve" the entry
+  press into a click: a re-derived real click on the same entry opened nothing.
+- **A dialog is identified structurally, and which dialog it is by its content.**
+  A dialog is a panel that is not the sidebar column, is wider than 400 px and is
+  full of controls (≥15 direct children, or a `TSp_Browse`, or input controls of
+  its own); the measured `Operating parameters` panel is `627x384` at `(655, 364)`,
+  directly owning **21** controls (42 descendants), holding seven
+  `TSp_Value_Button` fields, its bottom button band and — in its header, as a
+  direct child, **not** nested in a value field — the channel combo
+  (`Operating parameters for channel [n ▼]` at `(1083, 373)`, items `1`…`10`).
+  Requiring the channel combo to call a dialog "the operating one" is the content
+  test; requiring it to call a panel "a dialog" is stricter than the evidence and
+  rejects correctly opened dialogs.
+- **The bottom button pair is the *last two* of the band, not the first two.** Sort
+  the `TSp_Button`s whose `top` is in the dialog's last 60 px by `left`: `Accept`
+  (`Do store` on the Store dialog, `Yes` on a warning) is `row[-1]` and `Cancel`
+  (`No`) is `row[-2]` — the reference's own rule
+  (`recon/41_burst_sampling_volume.py`, `bottom[-1] if accept else bottom[-2]`).
+  Never the band's **leftmost**: the live `Operating parameters` band holds **four**
+  buttons — `No emission on Probe In/Out` `(663, 712)` and `Use US coupling
+  parameters` `(862, 712)` are *indicator* buttons painted to the left of the pair,
+  and pressing the leftmost pressed an indicator and left the dialog open
+  (measured 2026-09-17). The pair is narrow (`Cancel` `(1091, 703, 80x25)`, `Accept`
+  `(1183, 702, 80x25)`) while the indicators are wide; identity is positional, so
+  the rule is "the two rightmost", never a width or a title.
+- **The popup highlights `Default parameters` by itself.** A live screenshot of the
+  open menu shows the second entry highlighted (the application's own default
+  selection) with `Operating parameters` unhighlighted above it. So the *highlight*
+  is not a target, and "press the selected entry" opens the wrong dialog — press the
+  entry at the first screen `top` by its own handle.
+- **A press on an entry closes the popup before it opens the dialog**, so anything
+  that must be read about the popup — its visibility, its entries, their order —
+  has to be read *before* the gesture.
 - **Never `EnumWindows` to detect a dialog** — the Store dialog is a child panel
   and no top-level window appears.
 
@@ -354,12 +403,17 @@ profiles are an output.**
   cap, and what decides how many profiles (`= T / period`) a point produces.
 - Profiles per point are **derived**: used to size the cap and to sanity-check the
   recorded count, never to define the point.
-- **Measure the period per point; do not trust the formula.** First evidence:
-  `100 emissions × 200 µs PRF` was observed as `Time between profile = 21.2 ms`,
-  i.e. roughly `emissions × PRF + ~1 ms`, with depth and sound speed also
-  contributing ("the deeper we sample, the more it depends"). The manual's
-  `T_profile ≈ T_tran + T_prf·(16 + N_PRF)` gives 23.2 ms + transfer for the same
-  setting — close, but not the number the instrument reported.
+- **The manual's formula is the expectation; the instrument's own read-out is the
+  certificate.** `T_profile ≈ T_tran + T_prf · (16 + N_PRF)`, and the parameter
+  block corroborates it structurally: **word 17 = 16 in every file**, i.e. the
+  formula's constant term is a real, stored constant of the acquisition. Earlier
+  first evidence (`100 emissions × 200 µs PRF` observed at `21.2 ms`) was read as
+  a contradiction of the formula; it is not — an earlier revision of this section
+  said "measure the period, do not trust the formula", and that line is withdrawn.
+  Compute the period from the point's parameters (it is what must fit under the
+  cap), then **read `Time between profile` once per configuration and log
+  target-versus-achieved as the certificate** — a discrepancy is a finding about
+  the point, not a reason to redefine the physics.
 - That measured period also sets the *pace*: **~47–50 profiles/s**, so a
   10,000-profile block fills in about **3.5 minutes**, and the status-bar
   `Profile` counter is the less trustworthy of the two read-outs.

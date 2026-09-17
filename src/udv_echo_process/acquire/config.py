@@ -231,11 +231,15 @@ class ParameterSet(ValueModel):
 class ProfileTiming(ValueModel):
     """Target vs achieved ``Time between profile`` for one point (docs/16 §15).
 
-    ``achieved_s`` is not a curiosity: the profile period is what constrains the
-    parameter matrix, it is the only honest basis for deriving a profile count
-    (``T / period``), and it sizes the block cap. It is read per point — the
-    first evidence for the period law (``≈ emissions × PRF + ~1 ms``) is a rough
-    law, not a substitute for a measurement.
+    ``achieved_s`` is the **certificate**, not a curiosity: the profile period is
+    what constrains the parameter matrix, it is the honest basis for deriving a
+    profile count (``T / period``), and it sizes the block cap. The *target* comes
+    from the manual's law, ``T_profile ≈ T_tran + T_prf · (16 + N_PRF)`` — which
+    word 17 of every parameter block corroborates by storing its constant, 16 —
+    and the achieved read-out is what says whether the point behaved
+    (docs/dop3000/udop-automation.md §8, corrected: the target is the formula, the
+    measurement is the certificate; an earlier revision had it the other way
+    round). ``within_tolerance`` is the comparison.
     """
 
     target_s: float | None = Field(default=None, gt=0)

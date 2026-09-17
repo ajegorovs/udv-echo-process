@@ -141,10 +141,13 @@ RESET_TIMEOUT_S = 20.0
 #: recomputed the window for us.
 GATE_DRIFT_LIMIT = GATE_DRIFT_NOTE
 
-#: The constant term of the measured profile-period law: a profile of
-#: ``emissions_per_profile`` emissions takes ``emissions × PRF + ~1 ms``. An estimate,
-#: used only to count the profiles a window implies (which sizes the size check) —
-#: never a substitute for the achieved period, which the actuator cannot report.
+#: The constant term of the manual's profile-period law, ``T_profile ≈ T_tran +
+#: T_prf · (16 + N_PRF)``: the transfer term, kept as the 16-emission equivalent of
+#: the measured ``~1 ms``. The law is corroborated structurally — word 17 of the
+#: parameter block is 16 in every file, i.e. that constant is stored by the
+#: application itself (docs/dop3000/udop-automation.md §8, corrected) — so this is
+#: the *expectation* the profile count is sized from, never a substitute for the
+#: achieved period, which is read back per configuration as the certificate.
 PERIOD_OVERHEAD_S = 1e-3
 
 #: The sentence every aborted point's reason carries. An abort is not a worse point
