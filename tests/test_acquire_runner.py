@@ -635,11 +635,11 @@ def patch_reader(
 # ------------------------------------------------------ the module-local verifier
 
 #: The runner's verification hook: ``acquire/verify.py``'s ``verify_stored_point``,
-#: imported defensively by the runner so a checkout without that module still runs.
+#: looked up on the runner module at call time so a case can script a verdict.
 VERIFY_HOOK = "verify_stored_point"
 
 #: "The caller did not script a verifier" — distinct from ``None``, which is the
-#: runner's own "that module is not importable" state.
+#: runner's own "no word-level check available" state (a refusal, not a pass).
 UNSCRIPTED = object()
 
 
@@ -694,11 +694,11 @@ class ScriptedVerifier:
 
 
 def patch_verifier(monkeypatch: pytest.MonkeyPatch, verifier: object) -> object:
-    """Point the runner's verification hook at ``verifier``; ``None`` = unimportable.
+    """Point the runner's verification hook at ``verifier``; ``None`` = no verdict.
 
-    ``None`` is not a cop-out: it is exactly the state the runner is in when
-    ``acquire/verify.py`` is missing from the checkout, so the unavailable case is
-    tested the way it happens rather than through a flag.
+    ``None`` is the state the runner is in when the word-level check is missing from
+    the install (its import is guarded, so that state is reachable and testable): no
+    verdict exists, and the runner's answer to that is a refusal, not a pass.
     """
     assert hasattr(runner_module, VERIFY_HOOK), (
         f"{runner_module.__name__} exposes no {VERIFY_HOOK!r} hook, so the verification "
@@ -1383,32 +1383,33 @@ def test_verification_that_raises_refuses_the_point(
     assert records[0].status is not PointStatus.OK
 
 
-def test_verification_that_cannot_be_imported_is_reported_not_silently_passed(
+def test_a_point_with_no_verdict_is_refused_not_passed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``acquire/verify.py`` absent: the size guard still decides, but not silently.
+    """No word-level check available: the point is INVALID, not ``OK`` on a size.
 
-    ``verifier=None`` is the state the runner is in when that module is not in the
-    checkout, so the point keeps the verdict the size signature gave it — and its
-    reason, and the log record's failure, both say that nothing read the file's words.
+    ``verifier=None`` is the shape of the broken-install guard in the runner —
+    ``verify_stored_point`` is ``None``, so nothing can read the stored file's words.
+    The earlier behaviour kept the verdict the size signature gave the point and said
+    so in the reason; that still wrote an `OK` point whose only evidence was a *gross
+    contamination* check, which cannot say whether the file is this point's data. The
+    refusal is the point's own — the file is what it is — so the sweep carries on.
     """
     _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=None)
 
     outcome = engine.run_point(point_for(1), DURATION_S)
 
-    assert outcome.ok is True, outcome.reason  # the existing size behaviour, unchanged
-    assert status_of(outcome) is PointStatus.OK
+    assert outcome.ok is False
+    assert status_of(outcome) is PointStatus.INVALID
+    assert outcome.aborted is False, (
+        "an unread file is this point's failure, not a state the application is in"
+    )
     reason = outcome.reason or ""
-    assert "verif" in reason.lower(), reason
-    assert "not importable" in reason, reason
+    assert "not available in this install" in reason, reason
 
     records = point_records(read_entries(log_path))
     assert len(records) == 1
-    assert records[0].status is PointStatus.OK
-    assert records[0].decoded is not None
-    # The note reaches the log too: an OK point whose words nobody read says so.
-    logged = records[0].failure or ""
-    assert "verif" in logged.lower(), records[0].failure
+    assert records[0].status is PointStatus.INVALID
 
 
 # ------------------------------- 10b. the channel both reads of a file must name

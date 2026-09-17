@@ -47,12 +47,13 @@ module can produce, so:
   file's own words and compares them with the point's requested parameters: the
   size signature says *a file this size*, only the words say *this file*. A
   verification failure invalidates the point, with the mismatch strings in the
-  reason. That module is imported defensively — while it is not importable the point
-  is **not** silently passed: it is stored and logged with the reason recording that
-  verification was unavailable, and only the size signature stands behind it. (This
-  is the one check this module cannot make for itself: its own decode leaves
-  ``resolution_index`` and ``emissions_per_profile`` unset — see :func:`_decode` —
-  and a rule may never be derived from the file it is checking.)
+  reason, and a verification that **cannot run** is the same refusal: the check is
+  mandatory, because a stored file whose words nobody read is not this point's data.
+  The name is imported with a guard for the broken-install case rather than to make
+  verification optional — that branch refuses the point, it does not pass it with a
+  note. (This is the one check this module cannot make for itself: its own decode
+  leaves the op words' raw index and emissions unset — see :func:`_decode` — and a
+  rule may never be derived from the file it is checking.)
 
 **The expectation is built from the specification, never from the file.** The
 expected size is ``signature.expected_bytes(requested_gates, profiles)``, with
@@ -115,11 +116,15 @@ from udv_echo_process.acquire.plan import (
 )
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
+#: The word-level check. ``acquire/verify.py`` ships in this package, so *not
+#: importable* is a broken install rather than a verdict about a stored file — and the
+#: one thing this module must never do is call a point good because the rule that could
+#: have refused it was missing. The name is resolved at call time (``_verify_stored``),
+#: and the import failure is kept as a guard rather than an import error so that state
+#: stays testable; what it costs is a refused point, never an `OK` one.
 try:
-    # acquire/verify.py is the word-level check and lands on its own schedule: a
-    # missing module is a note on the outcome, never an import error at startup.
     from udv_echo_process.acquire.verify import verify_stored_point
-except ImportError:  # pragma: no cover - a checkout without the sibling module
+except ImportError:  # pragma: no cover - a broken install, and it must not pass
     verify_stored_point = None  # type: ignore[assignment]
 
 __all__ = [
@@ -564,12 +569,13 @@ class SweepRunner:
     ) -> _Attempt:
         """Step (6): the stored file's words against the point's requested parameters.
 
-        ``acquire/verify.py`` is imported defensively, so ``None`` here means the
-        sibling module is not in this checkout. The point then keeps the verdict the
-        size signature gave it — that behaviour is not changed — but its reason
-        records that nothing read the file's words, because a point that was never
-        verified must not pass *silently*, and a later reader of the log has to be
-        able to see that from the log alone.
+        ``acquire/verify.py`` is imported above with a broken-install guard, so ``None``
+        here means the sibling module is not there at all. The point is then **refused**:
+        keeping the size guard's verdict and saying so in the reason still logged a
+        point `OK` whose words nobody had read, and a size signature is a gross
+        contamination check — it cannot say whether this file is this point's data. A
+        point refused here fails for its own sake (the file is as bad as it is going to
+        be), so it does not trip the circuit breaker.
 
         A verifier that raises is not "unavailable": it produced no verdict at all,
         which is worse than a mismatch, so the point is refused rather than passed on
@@ -585,14 +591,15 @@ class SweepRunner:
         the two reads of one file must name the same channel.
         """
         if verify_stored_point is None:
-            attempt.status = PointStatus.OK
-            attempt.reason = (
+            return self._fail(
+                attempt,
                 f"{path.name} was never checked against this point's requested "
-                "parameters: udv_echo_process.acquire.verify is not importable "
-                "(verification unavailable), so only the size signature stands behind "
-                "this point"
+                "parameters: the word-level check (udv_echo_process.acquire.verify) "
+                "is not available in this install, so the size signature is the only "
+                "evidence there is — and a size cannot say whether this file is this "
+                "point's data",
+                status=PointStatus.INVALID,
             )
-            return attempt
         try:
             verification = verify_stored_point(
                 path, parameters, channel=self._channel_setting.channel
