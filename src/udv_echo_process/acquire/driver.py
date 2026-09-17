@@ -8,9 +8,10 @@ every launch: 43/43 classes at the same positions, 1/43 ids in common — and ne
 screen coordinate stated in logic), ``recon/40_sweep_depth100.py`` (the cycle:
 ``set_text_commit``, ``click_hold``, ``strip_view``, ``wait_view``, ``overlay_guard``,
 ``overwrite_warning``, ``record_stop_store``, ``get_text``, ``children_of``) and
-``recon/41_burst_sampling_volume.py`` (the menubar: a popup opens on a **posted press**
-held for :data:`…actuator.PRESS_HOLD_MS`, never on a hover, and its entries are ordered
-by their screen ``top`` before one is chosen — enumeration order is not screen order).
+``recon/41_burst_sampling_volume.py`` (the menubar: the popup opens on a **real-cursor
+hover** — ``SetCursorPos`` onto the button's centre plus one ``mouse_event`` move, the
+gesture that recipe opened this menu with — and its entries are ordered by their screen
+``top`` before one is chosen — enumeration order is not screen order).
 
 Three properties are load-bearing, each paid for once in the lab:
 
@@ -44,6 +45,15 @@ something other than the point*:
    and read back, and an unresolved mismatch fails the point naming both paths.
    Watching a folder the application is not writing to surfaces as a false
    "no file appeared" failure (docs/16 §12b).
+
+The menubar is the one step posted messages cannot drive at all: this application's
+menubar ignores them (a posted move opened nothing, and neither did a posted press held
+for :data:`…actuator.PRESS_HOLD_MS` — two live runs, both aborted safely with nothing
+pressed), while the same button opened its menu under the operator's real cursor in
+``recon/41_burst_sampling_volume.py``. That gesture moves the cursor, so it is gated:
+``allow_real_input=False`` refuses the menubar step **by name** for an unattended or
+locked-desktop run and never falls back to a posted message (which is known not to open
+this menu).
 """
 
 from __future__ import annotations
@@ -108,9 +118,11 @@ EXPECTED_PANEL_COUNT = 4
 WM_SETTEXT, WM_GETTEXT, WM_COMMAND = 0x000C, 0x000D, 0x0111
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
 WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
-#: Deliberately **unused**: a posted move never opens the application's menus (the
-#: popup opens on the posted press below), so nothing here sends this. It is named so
-#: the tests can assert that no move is posted while a menu is being opened.
+#: Deliberately **unused**: this application's menubar ignores posted messages — a
+#: posted move opened nothing (and so did a posted press), while the same button opened
+#: its menu under the *real* cursor hover (:meth:`Win32Actuator._hover_centre`) — so
+#: nothing here sends this. It is named so the tests can assert that no move is posted
+#: while a menu is being opened.
 WM_MOUSEMOVE = 0x0200
 EN_CHANGE, CBN_SELCHANGE, CB_SETCURSEL = 0x0300, 0x0001, 0x014E
 #: Combo *read-back* messages: the selected index, the item count, one item's text.
@@ -127,6 +139,15 @@ PARAMETERS_ENTRY = "Operating parameters"
 #: they are polled at — the reference recipe's own numbers (``while time.time() - t0 < 8:
 #: time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``), not a longer window.
 _MENU_TIMEOUT_S, _MENU_POLL_S = 8.0, 0.5
+#: The real-cursor hover the menubar needs, copied from the recipe that opened this menu
+#: (``SetCursorPos`` / ``sleep(0.3)`` / ``mouse_event(MOUSEEVENTF_MOVE, 2, 0, ..)`` /
+#: ``sleep(1.0)``): the settle after the jump, the second settle before the popup is
+#: polled for, and the settle after the cursor is put back.
+_HOVER_SETTLE_S, _HOVER_OPEN_S, _CURSOR_SETTLE_S = 0.3, 1.0, 0.05
+#: ``mouse_event``'s move flag and the recipe's nudge: a ``SetCursorPos`` jump alone can
+#: be missed by the application's menu loop, the relative move is what it sees.
+MOUSEEVENTF_MOVE = 0x0001
+_HOVER_MOVE_DX, _HOVER_MOVE_DY = 2, 0
 #: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
 SEND_TIMEOUT_MS = 2000
 #: The key-event lParams the verified recipe used (scan code / transition packed).
@@ -152,6 +173,17 @@ _CLICK_SETTLE_S, _OVERLAY_SETTLE_S, _POLL_S = 0.35, 0.8, 0.4
 
 class AcquisitionError(RuntimeError):
     """The cycle could not be completed; nothing was stored under this point's name."""
+
+
+class _CursorPoint(ctypes.Structure):
+    """``POINT`` for ``GetCursorPos``/``SetCursorPos``.
+
+    Declared here rather than imported from ``ctypes.wintypes``: that module is not
+    importable on a host without Windows headers, and this module has to import
+    cleanly anywhere (the ``ctypes`` description is portable).
+    """
+
+    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
 
 
 @lru_cache(maxsize=1)
@@ -189,6 +221,21 @@ def _user32():
         ctypes.c_size_t,
     )
     u32.PostMessageW.restype = ctypes.c_ssize_t
+    # The real-cursor gesture the menubar needs (``SetCursorPos`` + ``mouse_event``,
+    # with the read-back that proves the jump took). ``mouse_event``'s ``dwExtraInfo``
+    # is a ``ULONG_PTR``, so ``c_size_t``; its restype is ``None``.
+    u32.GetCursorPos.argtypes = (ctypes.POINTER(_CursorPoint),)
+    u32.GetCursorPos.restype = ctypes.c_int
+    u32.SetCursorPos.argtypes = (ctypes.c_int, ctypes.c_int)
+    u32.SetCursorPos.restype = ctypes.c_int
+    u32.mouse_event.argtypes = (
+        ctypes.c_uint,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.c_uint,
+        ctypes.c_size_t,
+    )
+    u32.mouse_event.restype = None
     return u32
 
 
@@ -392,6 +439,7 @@ class Win32Actuator:
         *,
         channel: int | None = None,
         note_sink: Callable[[str], None] | None = None,
+        allow_real_input: bool = True,
     ) -> None:
         """``channel`` is the measurement channel — the one knob.
 
@@ -399,15 +447,25 @@ class Win32Actuator:
         (explicit here > ``UDV_CHANNEL`` > the default), so retargeting the whole run is
         an environment variable and nothing else. The value is validated on construction,
         not at the first press.
+
+        ``allow_real_input`` gates the one step posted messages cannot drive: the
+        menubar. ``True`` (the default) hovers the ``Parameters`` button with the
+        operator's real cursor and puts the cursor back; ``False`` refuses that step
+        with a named :class:`AcquisitionError` **before anything is moved**, for
+        unattended or locked-desktop runs. It never falls back to the posted press —
+        that press is known not to open this menu.
         """
         self._class_name = class_name
         self._channel_setting = (
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
         self._note_sink = note_sink
+        self._allow_real_input = bool(allow_real_input)
         #: Diagnostics only — never used as a binding.
         self.last_roles: dict | None = None
         self.last_press_screen: tuple[int, int] | None = None
+        #: The screen point the last real-cursor hover used (diagnostics only).
+        self.last_hover_screen: tuple[int, int] | None = None
         self.warnings: list[str] = []
 
     # ------------------------------------------------------------------ plumbing
@@ -503,6 +561,63 @@ class Win32Actuator:
         time.sleep(max(0, int(hold_ms)) / 1000.0)
         _post(hwnd, WM_LBUTTONUP, 0, lp)
         time.sleep(_CLICK_SETTLE_S)
+
+    def _cursor_position(self) -> tuple[int, int]:
+        """The operator's cursor position, in screen coordinates.
+
+        Read before any real move, so the move can be undone
+        (:meth:`_restore_cursor`). An unreadable position is refused rather than
+        ignored: a cursor moved with no way back is the operator's cursor taken, and
+        that is worse than a failed point.
+        """
+        point = _CursorPoint()
+        if not _user32().GetCursorPos(ctypes.byref(point)):
+            raise AcquisitionError(
+                "the cursor position could not be read, so the real-cursor hover this "
+                "menubar needs would move the operator's cursor with no way back"
+            )
+        return int(point.x), int(point.y)
+
+    def _restore_cursor(self, position: tuple[int, int]) -> None:
+        """Put the operator's cursor back where :meth:`_cursor_position` found it."""
+        _user32().SetCursorPos(int(position[0]), int(position[1]))
+        time.sleep(_CURSOR_SETTLE_S)
+
+    def _hover_centre(self, hwnd: int) -> tuple[int, int]:
+        """Hover ``hwnd`` with the **real** cursor; return the screen point hovered.
+
+        The menubar is the one control in this application that posted messages cannot
+        drive: a posted ``WM_MOUSEMOVE`` opened nothing, and a posted press held for
+        :data:`…actuator.PRESS_HOLD_MS` opened nothing either (two live runs, both
+        aborting safely with nothing pressed), while the same button opened its menu
+        under the operator's real cursor in ``recon/41_burst_sampling_volume.py``. This
+        copies that gesture exactly, in that order: the control's centre in **screen**
+        coordinates (:meth:`win32gui.GetWindowRect`), ``SetCursorPos``, the recipe's
+        0.3 s settle, one ``mouse_event`` relative move of :data:`_HOVER_MOVE_DX` px,
+        then the recipe's 1.0 s settle before the caller polls for the popup.
+
+        The cursor now sits on the control, so the caller puts it back with
+        :meth:`_restore_cursor` — this runs on the operator's interactive desktop. A
+        ``SetCursorPos`` that did not take (a locked or unattended desktop silently
+        refuses it) is raised here by name: the menu would then open for no one, and
+        the popup poll would report the wrong cause eight seconds later.
+        """
+        win32gui, _ = _gui()
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        x, y = (left + right) // 2, (top + bottom) // 2
+        u32 = _user32()
+        u32.SetCursorPos(x, y)
+        time.sleep(_HOVER_SETTLE_S)
+        if self._cursor_position() != (x, y):
+            raise AcquisitionError(
+                f"the cursor would not move onto the {PARAMETERS_MENU!r} button at "
+                f"({x}, {y}): a locked or unattended desktop refuses SetCursorPos, and "
+                "this menubar answers nothing else"
+            )
+        u32.mouse_event(MOUSEEVENTF_MOVE, _HOVER_MOVE_DX, _HOVER_MOVE_DY, 0, 0)
+        time.sleep(_HOVER_OPEN_S)
+        self.last_hover_screen = (x, y)
+        return x, y
 
     # ------------------------------------------------------------------ binding
 
@@ -954,6 +1069,29 @@ class Win32Actuator:
         wanted = self._channel_setting
         return index == wanted.combo_index and text.strip() == str(wanted.channel)
 
+    def _poll_menu_entry(self) -> dict:
+        """Poll for the ``Operating parameters`` entry once the menubar was hovered.
+
+        Polled, never assumed: a popup that has accepted the hover still takes a moment
+        to paint, and the recipe waited the same way (``while time.time() - t0 < 8:
+        time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``). The entry is matched
+        by **title**, ordered by screen ``top`` (:func:`_entry_matching`), so
+        ``Default parameters`` is never the one pressed. A popup that has not shown it
+        inside :data:`_MENU_TIMEOUT_S` is reported by name instead of waited on.
+        """
+        deadline = time.monotonic() + _MENU_TIMEOUT_S
+        while True:
+            entry = _entry_matching(self._resolve()["raw"], PARAMETERS_ENTRY)
+            if entry is not None:
+                return entry
+            if time.monotonic() >= deadline:
+                break
+            time.sleep(_MENU_POLL_S)
+        raise AcquisitionError(
+            f"the {PARAMETERS_MENU!r} menu offered no {PARAMETERS_ENTRY!r} entry within "
+            f"{_MENU_TIMEOUT_S:.0f} s of its hover"
+        )
+
     def _open_parameters_dialog(self) -> dict:
         """Open ``Parameters → Operating parameters`` and return the dialog's panel.
 
@@ -961,22 +1099,34 @@ class Win32Actuator:
         control, and not a top-level window (``EnumWindows`` finds nothing: the app's
         dialogs are child panels, docs/16 §6).
 
-        The menu is opened by **pressing the menubar button**: the recipe's posted
-        ``WM_LBUTTONDOWN``, held for :data:`…actuator.PRESS_HOLD_MS` (180 ms) and
-        released, at the button's own client coordinates — the same held press every
-        other control this driver touches gets (:meth:`_click_hold`,
-        ``recon/41_burst_sampling_volume.py``). On the instrument the popup opens on
-        that press and *not* on a hover: the posted ``WM_MOUSEMOVE`` the driver used
-        first never reached the application's menu loop, so the first live run aborted
-        with "the 'Parameters' menu offered no 'Operating parameters' entry". Nothing
-        posts a move here any more.
+        The menu is opened by **hovering the menubar button with the operator's real
+        cursor** (:meth:`_hover_centre`): this application's menubar ignores posted
+        messages — a posted ``WM_MOUSEMOVE`` opened nothing and so did a posted press
+        held for :data:`…actuator.PRESS_HOLD_MS` (two live runs, both aborting safely) —
+        while the same button opened its menu under a real cursor in
+        ``recon/41_burst_sampling_volume.py``. Nothing posts a message to the menubar
+        any more. The cursor stays on the button while the menu is in use — through the
+        poll for the popup and the entry press below — and is put back once the entry has
+        been pressed or the attempt fails (:meth:`_restore_cursor`): a hover-opened popup
+        can be dismissed by moving the cursor off the menubar before the posted press
+        lands, and this still runs on the operator's desktop.
+        ``allow_real_input=False`` refuses this step by name instead — never falling
+        back to the posted press, which is known not to open this menu.
 
-        The popup is then **polled for** in :data:`_MENU_POLL_S` steps — it is never
-        assumed to be up — and the entry is matched by title (screen ``top`` order,
-        never enumeration order) before it is pressed held. Both waits are bounded by
-        the recipe's own window, :data:`_MENU_TIMEOUT_S`: a popup or dialog that has
-        not appeared in that time is reported by name instead of waited on.
+        The popup is then **polled for** (:meth:`_poll_menu_entry`), and the entry is
+        pressed **held, posted** (:meth:`_click_hold`) — popup entries, unlike the
+        menubar, do answer posted presses. The wait for the dialog is bounded by the
+        recipe's own window, :data:`_MENU_TIMEOUT_S`: a dialog that has not appeared in
+        that time is reported by name instead of waited on.
         """
+        if not self._allow_real_input:
+            raise AcquisitionError(
+                f"the {PARAMETERS_MENU!r} menu cannot be opened without real input: this "
+                "application's menubar ignores posted messages, so its button is hovered "
+                "with the operator's real cursor (SetCursorPos + mouse_event) and there "
+                "is deliberately no posted fallback — allow_real_input=False, so nothing "
+                "was moved on this unattended or locked desktop"
+            )
         roles = self._resolve()
         if roles["open_popup"]:
             raise AcquisitionError(
@@ -986,19 +1136,20 @@ class Win32Actuator:
         menu = (roles.get("menu") or {}).get(PARAMETERS_MENU)
         if menu is None:
             raise AcquisitionError(f"no {PARAMETERS_MENU!r} button in the menubar")
-        self._click_hold(menu["hwnd"])  # the popup opens on this held press
-        deadline = time.monotonic() + _MENU_TIMEOUT_S
-        entry = None
-        while entry is None and time.monotonic() < deadline:
-            entry = _entry_matching(self._resolve()["raw"], PARAMETERS_ENTRY)
-            if entry is None:
-                time.sleep(_MENU_POLL_S)
-        if entry is None:
-            raise AcquisitionError(
-                f"the {PARAMETERS_MENU!r} menu offered no {PARAMETERS_ENTRY!r} entry "
-                f"within {_MENU_TIMEOUT_S:.0f} s of its press"
-            )
-        self._click_hold(entry["hwnd"])
+        saved = self._cursor_position()
+        try:
+            self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
+            # Everything up to the entry press runs with the cursor still on the menubar:
+            # this popup was opened by a hover, so moving the cursor off the button can
+            # dismiss it before the posted press lands — and the press would then land on
+            # nothing. Poll for the popup, match the entry and press it first; only then
+            # hand the cursor back.
+            entry = self._poll_menu_entry()
+            self._click_hold(entry["hwnd"])  # popup entries do answer posted held presses
+        finally:
+            # The menu has been used (or the attempt is over, hover or press): the
+            # operator's cursor goes back, so no path leaves it parked on the menubar.
+            self._restore_cursor(saved)
         deadline = time.monotonic() + _MENU_TIMEOUT_S
         while time.monotonic() < deadline:
             panels = self._parameters_panels()
@@ -1032,8 +1183,11 @@ class Win32Actuator:
         the channel trap). The order is the load-bearing part:
 
         1. open ``Parameters → Operating parameters`` — the menubar button is
-           *pressed* (posted down, held, up); on the instrument the popup opens on
-           that press and not on a hover;
+           **hovered with the operator's real cursor** (:meth:`_hover_centre`: this
+           application's menubar answers nothing posted), the popup is polled for and its
+           entry pressed held **while that cursor is still on the button** (moving it off
+           can dismiss a hover-opened popup), and the cursor is put back once the entry
+           has been pressed — the entry press is posted, which popup entries do answer;
         2. find the channel combo *structurally* (see :meth:`_channel_combo`);
         3. read the channel back from the dialog; if it is not the configured one,
            write the selection (``CB_SETCURSEL`` + ``CBN_SELCHANGE``, no Enter) and

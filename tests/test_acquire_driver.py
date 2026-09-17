@@ -867,8 +867,8 @@ class FakeUdopWindow:
       (docs/16 §2);
     - ``text_writes_ignored`` — a text field that paints the new value and keeps
       its own (``WM_SETTEXT`` without the commit, docs/14 §4);
-    - ``menu_press_ignored`` — the menubar press opens nothing: the popup never
-      appears, which is the live failure this driver was fixed for;
+    - ``menu_hover_ignored`` — the menubar hover opens nothing: the popup never
+      appears, so the bounded poll runs out and the failure is reported by name;
     - ``menu_open_delay`` — the popup only appears after that many resolutions, so
       "the popup is polled for, never assumed" is exercised rather than asserted.
     """
@@ -881,7 +881,7 @@ class FakeUdopWindow:
         combo_writes_ignored: bool = False,
         combo_control_only: bool = False,
         text_writes_ignored: bool = False,
-        menu_press_ignored: bool = False,
+        menu_hover_ignored: bool = False,
         menu_open_delay: int = 0,
     ) -> None:
         self.channel = channel  # the application's own channel, 1-based
@@ -889,11 +889,11 @@ class FakeUdopWindow:
         self.combo_writes_ignored = combo_writes_ignored
         self.combo_control_only = combo_control_only
         self.text_writes_ignored = text_writes_ignored
-        self.menu_press_ignored = menu_press_ignored
+        self.menu_hover_ignored = menu_hover_ignored
         self.menu_open_delay = menu_open_delay
 
         self.menu_open = False
-        #: Resolutions the popup still takes to appear (see :meth:`press_menu`).
+        #: Resolutions the popup still takes to appear (see :meth:`hover_menu`).
         self._menu_pending = 0
         self.dialog_open = False
         self.store_open = False
@@ -990,15 +990,16 @@ class FakeUdopWindow:
     def combo_items(self, hwnd: int) -> tuple[str, ...]:
         return driver.channel_items() if hwnd in (HWND_DIALOG_COMBO, HWND_LEFT_COMBO, HWND_DECOY_COMBO) else ()
 
-    def press_menu(self) -> None:
-        """The menubar press: the popup opens on **this**, and never on a hover.
+    def hover_menu(self) -> None:
+        """The menubar hover: the popup opens on **this** — never on a posted message.
 
-        ``recon/41_burst_sampling_volume.py`` opens this menu with a posted press
-        (down, 180 ms hold, up); the live application ignores a posted mouse move, so
-        a hover is not the opening gesture (``menu_press_ignored`` scripts the press
-        that opens nothing).
+        ``recon/41_burst_sampling_volume.py`` opens this menu with a *real* cursor hover
+        (``SetCursorPos`` + ``mouse_event``, from the button's screen rect); the live
+        application ignores posted messages on its menubar entirely — a posted move and
+        a posted press held for 180 ms each opened nothing (two runs, both aborting
+        safely). ``menu_hover_ignored`` scripts the hover that opens nothing.
         """
-        if self.menu_press_ignored:
+        if self.menu_hover_ignored:
             return
         self._menu_pending = max(0, self.menu_open_delay)
         self.menu_open = self._menu_pending == 0
@@ -1076,26 +1077,46 @@ class FakeDriver(driver.Win32Actuator):
     def _children_of(self, parent: int, roles: dict) -> list[dict]:
         return [k for k in roles["raw"] if roles["parent_of"].get(k["hwnd"]) == parent]
 
-    def _hover(self, hwnd: int) -> None:
-        """A hover must never open a menu here: it is the live failure being fixed.
+    #: Where the fake "operator" left the cursor; the driver must put it back here.
+    CURSOR_POSITION = (1234, 567)
 
-        On the instrument the popup opens on a **posted press**; a posted mouse move
-        never reaches the application's menu loop, which is what made the first live
-        run abort with "the 'Parameters' menu offered no 'Operating parameters'
-        entry". Any hover is therefore a hard failure, not a code path.
+    def _cursor_position(self) -> tuple[int, int]:
+        self.app.events.append(("cursor", "read", self.CURSOR_POSITION))
+        return self.CURSOR_POSITION
+
+    def _restore_cursor(self, position: tuple[int, int]) -> None:
+        self.app.events.append(("cursor", "restored", tuple(position)))
+
+    def _hover_centre(self, hwnd: int) -> tuple[int, int]:
+        """The real-cursor hover, faked: the point from the fake's own rects.
+
+        Nothing here is a window and no cursor moves, so this **cannot** test that a
+        real hover opens the menu — that is the live verification's job, and it is said
+        so rather than pretended. What it pins is the driver's order (cursor read,
+        cursor moved onto the button's centre, the menu opens, the cursor put back) and
+        that the menubar is no longer pressed at all: a posted press to the menubar is a
+        hard failure in :meth:`_click_hold` below.
         """
-        raise AssertionError(
-            f"the driver hovered {hwnd}: the popup opens on the posted press "
-            "(recon/41_burst_sampling_volume.py), never on a hover"
-        )
+        if hwnd != HWND_PARAMETERS:
+            raise AssertionError(
+                f"the driver hovered {hwnd}: only the menubar's Parameters button is "
+                "hovered with the real cursor"
+            )
+        node = next((n for n in self.app.nodes() if n["hwnd"] == hwnd), None)
+        assert node is not None, "the Parameters button is not on screen"
+        point = (node["left"] + node["w"] // 2, node["top"] + node["h"] // 2)
+        self.app.events.append(("cursor", "moved", point))
+        self.app.hover_menu()
+        return point
 
     def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
         if hwnd == HWND_PARAMETERS:
-            # The recipe's menu press: posted, held for the recipe's 180 ms, released.
-            assert hold_ms == PRESS_HOLD_MS, hold_ms
-            self.app.events.append(("click", "Parameters", hold_ms))
-            self.app.press_menu()
-        elif hwnd == HWND_ENTRY_OPERATING:
+            raise AssertionError(
+                "the driver posted a press to the menubar: this application's menubar "
+                "answers nothing posted, so the gesture is the real-cursor hover "
+                "(recon/41_burst_sampling_volume.py)"
+            )
+        if hwnd == HWND_ENTRY_OPERATING:
             assert self.app.menu_open, "the entry was pressed before the menu was opened"
             self.app.menu_open = False
             self.app.events.append(("click", "Operating parameters"))
@@ -1184,6 +1205,20 @@ def events_of(app: FakeUdopWindow, kind: str) -> list[tuple]:
     return [event for event in app.events if event[0] == kind]
 
 
+def press_and_restore(app: FakeUdopWindow) -> list[tuple[int, int]]:
+    """``(entry press, cursor restore)`` positions, paired in order of appearance.
+
+    The restore must come **after** the entry press, once per opened menu: the menu this
+    driver opens is a *hover* popup, so putting the cursor back first is what would
+    dismiss it before the posted press lands — and the press would then land on nothing.
+    One press and one restore per open is itself part of the contract.
+    """
+    presses = [i for i, e in enumerate(app.events) if e[:2] == ("click", "Operating parameters")]
+    restores = [i for i, e in enumerate(app.events) if e[:2] == ("cursor", "restored")]
+    assert len(presses) == len(restores) != 0, app.events
+    return list(zip(presses, restores, strict=True))
+
+
 # ---------------------------------------------- the channel is one verified knob
 
 
@@ -1204,21 +1239,180 @@ def test_the_menu_entry_is_matched_by_title_not_by_enumeration_order() -> None:
     actuator = fake_driver(app, channel=3)
     actuator.ensure_channel()
     assert ("click", "Operating parameters") in app.events
-    # The menu was *pressed* open — posted, held for the recipe's 180 ms — and never
-    # hovered (`_hover` is a hard failure in this fake), and it was pressed first.
-    pressed = app.events.index(("click", "Parameters", PRESS_HOLD_MS))
+    # The menu was opened by the real-cursor *hover* — the cursor moved onto the
+    # button's centre and the menu opened on that — and the entry was pressed after it.
+    moved = app.events.index(("cursor", "moved", (160, 12)))
     entry = app.events.index(("click", "Operating parameters"))
-    assert pressed < entry, app.events
+    assert moved < entry, app.events
+    assert ("click", "Parameters", PRESS_HOLD_MS) not in app.events  # never pressed
 
 
-def test_the_menubar_is_opened_by_a_posted_press_not_a_hover(
+def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> None:
+    """The fixed gesture, in the fixed order, and the cursor is never left on the menubar.
+
+    This application's menubar answers nothing posted (two live runs, both aborting
+    safely with nothing pressed and no file written), so the driver hovers it with the
+    operator's real cursor. That cursor stays on the button while the menu is in use —
+    through the poll for the popup and through the posted entry press — and only then is
+    it put back: the popup was opened by a hover, so moving the cursor off the menubar
+    first is what would dismiss it before the press lands. A posted press to the menubar
+    is a hard failure in ``FakeDriver._click_hold``.
+
+    The fake cannot test that a *real* hover opens the menu — nothing here is a window
+    and no cursor moves. It pins the order and the restore; the gesture itself is the
+    live verification's job.
+    """
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=4)
+
+    assert actuator.ensure_channel() == 4
+
+    centre = (160, 12)  # the fake Parameters button's centre, in screen terms
+    # One open of the dialog, in the order of the cursor/entry events: the cursor is read,
+    # moved onto the button's centre, the menu opens, its entry is pressed **with the
+    # cursor still on the button**, and only then is the cursor put back.
+    gesture = [event[:2] for event in app.events if event[0] in ("cursor", "click")]
+    assert gesture[:4] == [
+        ("cursor", "read"),
+        ("cursor", "moved"),
+        ("click", "Operating parameters"),
+        ("cursor", "restored"),
+    ], app.events
+    assert app.events[:2] == [
+        ("cursor", "read", FakeDriver.CURSOR_POSITION),
+        ("cursor", "moved", centre),
+    ], app.events
+    # Both opens (the accept, then the re-open that confirms it) press first and restore
+    # after, and always back to the position the driver found.
+    assert all(press < restore for press, restore in press_and_restore(app)), app.events
+    cursors = events_of(app, "cursor")
+    assert [event for event in cursors if event[1] == "moved"] == [
+        ("cursor", "moved", centre)
+    ] * 2
+    assert cursors[2::3] == [("cursor", "restored", FakeDriver.CURSOR_POSITION)] * 2
+
+
+#: ``win32gui`` as far as the hover is concerned: the menubar button's screen rect.
+class _MenuBarGui:
+    @staticmethod
+    def GetWindowRect(_hwnd: int) -> tuple[int, int, int, int]:
+        return (100, 200, 200, 240)
+
+
+class _FakeUser32:
+    """``user32`` with only the real-input calls, every one of them recorded.
+
+    The live driver moves the real cursor here; in this fake the cursor is a pair of
+    integers, so the gesture can be read back as a list of calls without touching the
+    operator's desktop.
+    """
+
+    def __init__(self, position: tuple[int, int] = (7, 11)) -> None:
+        self.position = position
+        self.calls: list[tuple] = []
+
+    def GetCursorPos(self, pointer) -> int:
+        self.calls.append(("GetCursorPos",))
+        point = ctypes.cast(pointer, ctypes.POINTER(driver._CursorPoint)).contents
+        point.x, point.y = self.position  # type: ignore[assignment]
+        return 1
+
+    def SetCursorPos(self, x: int, y: int) -> int:
+        self.calls.append(("SetCursorPos", int(x), int(y)))
+        self.position = (int(x), int(y))
+        return 1
+
+    def mouse_event(self, flags, dx, dy, _data, _extra) -> None:
+        self.calls.append(("mouse_event", flags, dx, dy))
+
+
+def test_the_hover_is_the_recipe_s_gesture_and_the_cursor_is_put_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The instrument opens this menu on a held posted press; a posted move does nothing.
+    """``SetCursorPos`` onto the centre, the recipe's move, then the saved position back.
 
-    This exercises the driver's own ``_click_hold`` (posted ``WM_LBUTTONDOWN`` with
-    ``MK_LBUTTON``, the recipe's 180 ms, ``WM_LBUTTONUP``, at the button's *client*
-    coordinates) rather than the fake's stand-in for it.
+    ``recon/41_burst_sampling_volume.py`` opened this menu with exactly that: the
+    button's screen rectangle, ``SetCursorPos`` onto its centre, a settle, one
+    ``mouse_event`` move, a second settle — and the cursor read back, because a
+    ``SetCursorPos`` that did not take means the menu opened for no one.
+    """
+    user32 = _FakeUser32(position=(7, 11))
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(driver, "_gui", lambda: (_MenuBarGui, None))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    saved = actuator._cursor_position()
+    assert actuator._hover_centre(HWND_PARAMETERS) == (150, 220)  # the button's centre
+    actuator._restore_cursor(saved)
+
+    assert user32.calls == [
+        ("GetCursorPos",),
+        ("SetCursorPos", 150, 220),  # screen coordinates, from the window rect
+        ("GetCursorPos",),  # read back: the jump took, or the menu opens for no one
+        (
+            "mouse_event",
+            driver.MOUSEEVENTF_MOVE,
+            driver._HOVER_MOVE_DX,
+            driver._HOVER_MOVE_DY,
+        ),
+        ("SetCursorPos", 7, 11),  # the operator's cursor, where it was found
+    ]
+    assert actuator.last_hover_screen == (150, 220)
+
+
+def test_a_cursor_that_will_not_move_is_reported_instead_of_hovered_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A locked desktop refuses ``SetCursorPos`` silently: name it, do not hover into it."""
+    user32 = _FakeUser32(position=(7, 11))
+
+    def refuse(x: int, y: int) -> int:
+        user32.calls.append(("SetCursorPos", x, y))
+        return 0  # the cursor did not go anywhere
+
+    user32.SetCursorPos = refuse  # type: ignore[method-assign]
+    monkeypatch.setattr(driver, "_user32", lambda: user32)
+    monkeypatch.setattr(driver, "_gui", lambda: (_MenuBarGui, None))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+    actuator = driver.Win32Actuator(channel=1)
+
+    with pytest.raises(driver.AcquisitionError, match="cursor would not move"):
+        actuator._hover_centre(HWND_PARAMETERS)
+    assert [call[0] for call in user32.calls] == ["SetCursorPos", "GetCursorPos"]
+    assert actuator.last_hover_screen is None
+
+
+def test_allow_real_input_false_refuses_the_menubar_and_moves_nothing() -> None:
+    """An unattended or locked-desktop run must not have the operator's cursor taken.
+
+    The refusal is by name, it happens before anything is resolved or moved, and the
+    driver does *not* fall back to the posted press this application's menubar ignores.
+    """
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=2, allow_real_input=False)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    reason = str(excinfo.value)
+    assert "allow_real_input" in reason and "real cursor" in reason
+    assert "Parameters" in reason
+    # Nothing was read, moved, pressed or opened: no cursor event, no press, no dialog.
+    assert app.events == []
+    assert app.menu_open is False
+    assert app.dialog_open is False
+    assert actuator.last_hover_screen is None
+
+
+def test_the_popup_entry_is_pressed_posted_and_held(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Popup *entries* do answer posted presses (the menubar does not): down, 180 ms, up.
+
+    This exercises the driver's own ``_click_hold`` — posted ``WM_LBUTTONDOWN`` with
+    ``MK_LBUTTON``, the recipe's hold, ``WM_LBUTTONUP``, at the control's *client*
+    coordinates — on the target it is still used for.
     """
     messages: list[tuple[int, int, int, int]] = []
     monkeypatch.setattr(
@@ -1231,7 +1425,7 @@ def test_the_menubar_is_opened_by_a_posted_press_not_a_hover(
 
         @staticmethod
         def GetClientRect(_hwnd: int) -> tuple[int, int, int, int]:
-            return (0, 0, 80, 24)  # a menubar button's client area
+            return (0, 0, 200, 24)  # a popup entry's client area
 
         @staticmethod
         def ClientToScreen(_hwnd: int, point: tuple[int, int]) -> tuple[int, int]:
@@ -1240,40 +1434,49 @@ def test_the_menubar_is_opened_by_a_posted_press_not_a_hover(
     monkeypatch.setattr(driver, "_gui", lambda: (_FakeGui, None))
     actuator = driver.Win32Actuator(channel=1)
 
-    actuator._click_hold(HWND_PARAMETERS)
+    actuator._click_hold(HWND_ENTRY_OPERATING)
 
     assert [(hwnd, msg) for hwnd, msg, _wp, _lp in messages] == [
-        (HWND_PARAMETERS, driver.WM_LBUTTONDOWN),
-        (HWND_PARAMETERS, driver.WM_LBUTTONUP),
+        (HWND_ENTRY_OPERATING, driver.WM_LBUTTONDOWN),
+        (HWND_ENTRY_OPERATING, driver.WM_LBUTTONUP),
     ]
     assert [wp for _h, _m, wp, _lp in messages] == [driver.MK_LBUTTON, 0]
-    centre = (12 << 16) | 40  # (x, y) = the button's client centre
+    centre = (12 << 16) | 100  # (x, y) = the control's client centre
     assert [lp for _h, _m, _wp, lp in messages] == [centre, centre]
-    # The move that failed live is not sent at all: this menu opens on the press.
+    # The move that never opens this application's menus is not sent at all, and no
+    # press is posted to the menubar by any path: the menubar takes real input only.
     assert driver.WM_MOUSEMOVE not in [msg for _h, msg, _wp, _lp in messages]
+    assert HWND_PARAMETERS not in [hwnd for hwnd, _m, _wp, _lp in messages]
 
 
 def test_the_popup_is_polled_for_and_never_assumed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Entries that appear a few resolutions after the press are still opened."""
+    """Entries that appear a few resolutions after the hover are still opened."""
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
     app = FakeUdopWindow(channel=1, menu_open_delay=3)
     actuator = fake_driver(app, channel=2)
     assert actuator.ensure_channel() == 2
     assert app.channel == 2  # the selection was made and kept
     assert ("click", "Operating parameters") in app.events
-    # Both opens pressed the menu and then waited for the popup.
-    assert events_of(app, "click").count(("click", "Parameters", PRESS_HOLD_MS)) == 2
+    # Both opens hovered the menu and then *waited* for the popup instead of assuming it
+    # was up. The cursor stayed on the button through that wait and through the press —
+    # a hover popup would be dismissed by putting the cursor back first — and both left
+    # the cursor where they found it, after the press.
+    assert all(press < restore for press, restore in press_and_restore(app)), app.events
+    cursors = events_of(app, "cursor")
+    assert [event[1] for event in cursors] == ["read", "moved", "restored"] * 2
+    moved = {event[2] for event in cursors if event[1] == "moved"}
+    assert moved == {(160, 12)}  # the button's centre, every time
 
 
-def test_a_menu_press_that_opens_nothing_fails_the_point_naming_the_menu(
+def test_a_hover_that_opens_nothing_fails_the_point_naming_the_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The live failure, pinned: a press that opens no popup aborts, bounded and named."""
+    """The bounded failure: nothing opened, nothing pressed, and the cursor put back."""
     monkeypatch.setattr(driver, "_MENU_TIMEOUT_S", 0.05)
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    app = FakeUdopWindow(channel=1, menu_press_ignored=True)
+    app = FakeUdopWindow(channel=1, menu_hover_ignored=True)
     actuator = fake_driver(app, channel=1)
     with pytest.raises(driver.AcquisitionError) as excinfo:
         actuator.ensure_channel()
@@ -1281,6 +1484,46 @@ def test_a_menu_press_that_opens_nothing_fails_the_point_naming_the_menu(
     assert "Parameters" in reason and "Operating parameters" in reason
     assert ("click", "Operating parameters") not in app.events  # nothing was pressed on
     assert app.dialog_open is False
+    # The cursor went back even though the attempt failed: this runs on the operator's
+    # desktop, and a failed open must not leave their cursor sitting on the menubar.
+    assert events_of(app, "cursor") == [
+        ("cursor", "read", FakeDriver.CURSOR_POSITION),
+        ("cursor", "moved", (160, 12)),
+        ("cursor", "restored", FakeDriver.CURSOR_POSITION),
+    ]
+
+
+def test_an_entry_press_that_fails_still_puts_the_cursor_back() -> None:
+    """The press is the last thing done with the cursor on the button, and still no path parks it.
+
+    The entry press happens *inside* the hover's ``try``: it is the step the cursor has to
+    stay on the menubar for, and a press that fails must hand the operator's cursor back
+    just as a hover that opens nothing does.
+    """
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=1)
+
+    def refuse(hwnd: int, _hold_ms: int = PRESS_HOLD_MS) -> None:
+        app.events.append(("press attempted", hwnd))
+        raise driver.AcquisitionError("the entry press could not be posted")
+
+    actuator._click_hold = refuse  # type: ignore[method-assign]
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator._open_parameters_dialog()
+    assert "the entry press could not be posted" in str(excinfo.value)
+    assert app.dialog_open is False
+    # The press was attempted with the cursor still on the button (the fake asserts the
+    # menu was open for it), and the cursor went back after it — never left parked.
+    assert events_of(app, "cursor") == [
+        ("cursor", "read", FakeDriver.CURSOR_POSITION),
+        ("cursor", "moved", (160, 12)),
+        ("cursor", "restored", FakeDriver.CURSOR_POSITION),
+    ]
+    assert ("press attempted", HWND_ENTRY_OPERATING) in app.events
+    assert app.events.index(("press attempted", HWND_ENTRY_OPERATING)) < app.events.index(
+        ("cursor", "restored", FakeDriver.CURSOR_POSITION)
+    )
 
 
 def test_a_channel_already_selected_is_read_back_and_not_rewritten() -> None:
