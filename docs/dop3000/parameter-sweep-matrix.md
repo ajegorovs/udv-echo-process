@@ -5,15 +5,22 @@ instrument's measurement parameters one at a time, and analyse the recorded
 data. This document says *which* parameters are worth sweeping, *which are
 mathematically tied to each other*, and *which must never be swept*.
 
-> **Status:** analysis/planning only — no measurements, no code change.
+> **Status:** analysis/planning for the campaign — no code change yet. The
+> parameter *identities and write behaviour* marked *(measured)* below are now
+> verified on the instrument; [`udop-automation.md`](udop-automation.md) carries
+> the actuator recipes, the store chain, the failure modes and the validated
+> points. Those measurements are evidence for this plan, not a substitute for
+> running it.
 > **Control surface:** the 15 parameters directly settable in UDOP — US
 > frequency, burst length, emitting power, TGC, PRF, first-gate depth, number of
 > gates, resolution, sampling volume, emissions per profile, Doppler angle,
 > sensitivity, velocity scale factor, sound speed, skipped profiles.
 > **Sources:** `docs/dop3000/manual-reference/` (chapters cited inline as
-> *Ch. N*), the `.BDD` parameter table (§10.7, source PDF page 70), and the
-> decoded settings of the committed fixtures
-> (`src/udv_echo_process/io/dop/bdd.py`).
+> *Ch. N*), the `.BDD` parameter table (§10.7, source PDF page 70), the decoded
+> settings of the committed fixtures
+> (`src/udv_echo_process/io/dop/bdd.py`), and — for the items marked
+> *(measured)* — the instrument-side measurement records of
+> [`udop-automation.md`](udop-automation.md).
 
 ---
 
@@ -56,6 +63,13 @@ Numbered so the matrix below can reference them.
 | **C8** | `δf_d/f_d = k·λ/D·tanθ` (k = 2–3) | Ch. 15 | Intrinsic spectral width ⇒ variance floor of the velocity estimate |
 | **C9** | receive gain needed `≈ 2·α(f)·z` | Ch. 8.10–8.11 | TGC is a *function of depth and frequency*, so it is a per-point covariate, never a constant |
 | **C10** | `τ_burst = N_cycles/f_e ≪ T_prf` | Ch. 8.4, 14 | Burst length and frequency bound the shortest usable PRF period |
+| **C11** | `resolution_mm = (word 10 + 1) · c / 12000`; word 10 is the **0-based** resolution rung index | §10.7 row 10 — stated there as a time pitch — plus measurement | The mm ladder is `c`-dependent, so the rung a sweep asks for depends on the **read-back** `c`, never on the intended one |
+
+**C11 is additionally verified on the instrument** *(measured, 2026-09-17)*:
+word 10 = `4` reads 0.6083 mm at `c = 1460`, word 10 = `1` reads 0.250 mm at
+`c = 1500`. It is what makes a point's gate geometry checkable from `word 10`
+and `word 19` alone, and it is why a sweep table must be recomputed from the
+file's `c` before a run.
 
 **Verified against the committed fixtures** (both directions agree):
 `4 MHz / T_prf = 600 µs / c = 1460` ⇒ C2 gives 152.08 mm/s, the decoded
@@ -75,20 +89,28 @@ reads (when energy is sufficient). **Window**: geometry of *what* you compare.
 | # | Parameter | Stored as | What it physically changes | Class | Verdict |
 |---|-----------|-----------|----------------------------|-------|---------|
 | 1 | **US emitting frequency** `f_e` | word 0 (kHz); 0.45–10.5 MHz w/ option, else fixed 0.5/1/2/4/8/10 | λ (⇒ sample-volume length, C8 width), attenuation α(f), backscatter, `V_max` ∝ 1/`f_e` (C2, C7); sets the reach×speed product (C3) | Axis | **SWEEP** |
-| 2 | **Burst length** (emitted cycles) | word 8; 2–32 step 2/4 w/ Extended resolution, else fixed 4 | Pulse duration τ: depth resolution `c·τ/2`, spectral width ∝ 1/τ, pulse energy, near-probe ringing/dead zone | Axis | **SWEEP — paired with 9** |
+| 2 | **Burst length** (emitted cycles) | word 8 *(measured)*; 2–32 step 2/4 w/ Extended resolution, else fixed 4. Dialog-only write (no sidebar field), and changing it auto-selects the sampling volume | Pulse duration τ: depth resolution `c·τ/2`, spectral width ∝ 1/τ, pulse energy, near-probe ringing/dead zone | Axis | **SWEEP — paired with 9** |
 | 3 | **Emitting power** | word 7; 3 levels (≈0.5 / 5 / 35 W) | Transmitted energy ⇒ backscattered amplitude, ringing, cavitation risk, saturation | Conditioning (also scales echo data) | **SWEEP once, then freeze** |
-| 4 | **TGC / amplification** | words 23–25; −40…+40 dB, 256 levels / 80 dB, uniform·slope·custom·auto | Receive gain vs depth, compensating `2αz`; too high ⇒ A/D saturation ⇒ wrong values | Conditioning, depth-shaped (C9) | **SWEEP once per window, then freeze** |
+| 4 | **TGC / amplification** | words 23–25; −40…+40 dB, 256 levels / 80 dB, uniform·slope·custom·auto *(measured: word 42 = 40 is plausibly the `Tgc [dB]` value — the same ambiguity as word 18)* | Receive gain vs depth, compensating `2αz`; too high ⇒ A/D saturation ⇒ wrong values | Conditioning, depth-shaped (C9) | **SWEEP once per window, then freeze** |
 | 5 | **PRF** (period) | word 5 (µs); 64–100 000 µs w/ option, else 10 000–64 µs | Unambiguous depth (C1) and velocity (C2); where multiple-echo artifacts land; profile timing (C5) | Axis | **SWEEP** |
-| 6 | **First-gate depth** | word 9 (index → mm via C4); ≥ end of burst, ≳3 mm | Near end of the window; exclusion of dead zone / ringing / wall echo | Window | **FIX** (co-set with 7, 8) |
+| 6 | **First-gate depth** | word 9, a gate *index* → mm via C4 *(measured: it moves with `First gate depth`; 31 at first gate 2 mm)*; ≥ end of burst, ≳3 mm | Near end of the window; exclusion of dead zone / ringing / wall echo | Window | **FIX** (co-set with 7, 8) |
 | 7 | **Number of gates** | word 13; 4–1000 (4–100 without option) | Far end of the window; profile size, transfer time and jitter, memory | Window | **FIX** (sweep only as a data-rate axis) |
-| 8 | **Resolution** (gate pitch) | word 10, `(n+1)·0.166 µs`; 0.166–20 µs w/ option, else coarse/fine per `f_e` | How finely the window is sampled; overlap when pitch < thickness (C6) | Window + spatial sampling | **FIX** (bridge to 2/9) |
-| 9 | **Sampling volume** (longitudinal thickness) | word 27: 6 bandwidths 50–300 kHz | Acoustic averaging length — the *real* depth resolution; sets overlap/gap regime with 8 (C6) | Axis | **SWEEP — paired with 2** |
+| 8 | **Resolution** (gate pitch) | word 10, `(n+1)·0.166 µs`; 0.166–20 µs w/ option, else coarse/fine per `f_e` *(measured: word 10 is the 0-based rung index, rung length = C11)* | How finely the window is sampled; overlap when pitch < thickness (C6) | Window + spatial sampling | **FIX** (bridge to 2/9) |
+| 9 | **Sampling volume** (longitudinal thickness) | word 27, an **index** into the bandwidth list (6 bandwidths, 50–300 kHz) *(measured: index 3 = 0.900 mm at `c` = 1500; the allowed set is physics-driven, so read the combo and never hard-code a mm value)* | Acoustic averaging length — the *real* depth resolution; sets overlap/gap regime with 8 (C6) | Axis | **SWEEP — paired with 2** |
 | 10 | **Emissions per profile** `N_PRF` | word 14; 512–8 (DOP3010) | Number of emissions averaged per velocity estimate: variance ∝ 1/√N, temporal averaging window | Axis | **SWEEP** |
 | 11 | **Doppler angle** θ | word 20 (deg) | Pure scale `v_real = v_us/cos θ` (C7); also feeds flow-rate conversion | Scale | **FIX — never sweep** |
-| 12 | **Sensitivity** | word 18; 5 levels (> −100 dBm) | Detection threshold on Doppler energy: below it the value is **replaced by zero** | Validity gate | **SWEEP once (diagnostic), then freeze** |
+| 12 | **Sensitivity** | word 18 *(measured, but soft: it moved together with TGC in the fixture diff, so one recording that changes only sensitivity is still owed)*; 5 levels (> −100 dBm) | Detection threshold on Doppler energy: below it the value is **replaced by zero** | Validity gate | **SWEEP once (diagnostic), then freeze** |
 | 13 | **Velocity scale factor** `s` | word 15 = `1000·π·s` (3142 ⇒ s = 1 in every fixture) | Fraction of the Nyquist span the signed byte covers ⇒ quantisation step `V_max·s/128`; must equal 1 for alias auto-correction | Scale / quantisation | **FIX** (or sweep deliberately as a quantisation study) |
 | 14 | **Sound speed** `c` | word 19 (m/s) | Pure scale on **depth** (`c·t/2`) *and* **velocity** (C7); errors transfer 1:1 | Scale | **FIX — measure it, never sweep** |
-| 15 | **Number of skipped profiles** | word 84 ("skip profile") | Decimation of the acquired profile stream ⇒ effective time resolution and decorrelation of the stored series, without touching PRF or `N_PRF` | Data-rate axis | **SWEEP last** |
+| 15 | **Number of skipped profiles** | word 84 ("skip profile") *(measured: the `Operating parameters` field `Number of skipped profiles`, next to an `Apply skip profile` checkbox — the identity is settled, the semantics are not, see §9)* | Decimation of the acquired profile stream ⇒ effective time resolution and decorrelation of the stored series, without touching PRF or `N_PRF` | Data-rate axis | **SWEEP last** |
+
+The remaining word identities above were confirmed by the same labelled point:
+**5** `PRF [µs]`, **13** `Nb of gates`, **14** `Emissions/profile`, **19**
+`Sound speed [m/s]`, **20** `Doppler angle`, **15** velocity scale factor
+(`3141` = `1.00`) — that is, the "Stored as" column of this table is measured,
+not manual-derived, for every sweep parameter except `f_e` (word 0), emitting
+power (word 7) and the TGC words. The full word map is
+[`udop-automation.md`](udop-automation.md) §9.
 
 Two manual inconsistencies to settle **on the instrument**, not from the text:
 §8.4 gives the sampling-volume lengths as ≈0.64–3.19 mm in water, while the
@@ -161,7 +183,7 @@ walk part of your window past `P_max`.
 | 5 PRF | `T_prf` 125 → 1000 µs in ×2 steps, **window held** | aliasing onset (fold-over vs reference); artifact depth shifts; jitter in `T_profile` | mean ± min/max "time between profiles" (Ch. 8.8) |
 | 10 `N_PRF` | 8 / 16 / 32 / 64 / 128 / 256 | σ ∝ 1/√N until C8's floor, then flat | σ across profiles at a fixed gate |
 | 2 burst length | 2 / 4 / 8 / 16 / 32 cycles | thickness vs spectral-width trade; dead zone grows | first valid gate (zeros at profile start) |
-| 9 sampling volume | the 6 bandwidths, burst fixed | same trade-off, resolved independently of 2 | pulse profile sharpness across a known interface |
+| 9 sampling volume | the bandwidths the instrument offers (physics-driven; read the combo, do not hard-code a mm value), burst fixed | same trade-off, resolved independently of 2 | pulse profile sharpness across a known interface |
 | 15 skipped profiles | 0 / 1 / 2 / 3 / 7 | stored sample interval grows; inter-profile correlation drops | `TBD` column of the `.ADD` / timestamp deltas |
 
 Run Tier 1 in **randomised order with the baseline point repeated at the start,
@@ -199,11 +221,20 @@ Every sweep point must store enough to prove the point was valid:
    evidence that a velocity value is trustworthy; and it is the quantity the
    repo's RPM analysis consumes.
 2. **The parameter block itself.** The `.BDD` op-parameter table (§10.7, words
-   0–95) already stores every knob in this matrix — it is the sweep's log. `.ADD`
-   carries none of it.
+   0–95) already stores every knob in this matrix — it is the sweep's log, and
+   the only trustworthy read-back: a field's displayed text can disagree with the
+   application's model, so a point is accepted or rejected by decoding its stored
+   file, naming the channel it read *(measured — see*
+   [`udop-automation.md`](udop-automation.md)*, §2, §6, §9)*. `.ADD` carries none
+   of it.
 3. **Timing statistics**: mean / min / max time between profiles. A red
    "time between profiles" label means the acquisition is not constant — reduce
-   gate count, curves, or raise `T_prf` (Ch. 8.8).
+   gate count, curves, or raise `T_prf` (Ch. 8.8). *(Measured):* `Time between
+   profile` is an **input constraint**, not a derived curiosity — it decides how
+   many profiles a point produces and therefore what the block cap must be, and
+   it must be measured per point rather than trusted from C5: `100 emissions ×
+   200 µs` was reported as **21.2 ms** (≈ 47–50 profiles/s), against C5's 23.2 ms
+   plus transfer time. Seconds stay the specification; profiles are an output.
 4. **Validity counters**: zero fraction per gate (sensitivity + energy envelope),
    and the dead-zone extent (first gate with non-zero values).
 5. **An independent reference of the flow, on a shared clock.** The rig's own
@@ -242,6 +273,14 @@ edge sharpness across a known interface (acoustic resolution); aliasing margin
    variable gates, extended resolution, variable TGC, additional compute mode.
    Without them, `f_e`, resolution, first gate, gate count and `N_PRF` are not
    freely settable at all (Ch. 21/22).
+8. **Write order and read-back** *(measured).* Write the structure-determining
+   parameters (resolution, first gate) **before** the one the application derives
+   (gate count) and read the set back **before** recording: this channel's
+   per-channel auto-resolution and auto-gate-selection flags (words 11/12) make
+   the application silently recompute the gate count whenever the resolution
+   changes, which trimmed a requested 805 gates to 474 in the first sweep run.
+   The recomputation is visible in the control's own text, so a pre-record check
+   costs nothing; the decisive check stays the stored file (§6.2).
 
 ---
 
@@ -269,10 +308,14 @@ parameters. Missing, and needed to identify a sweep point from the file alone:
 
 | Parameter | Word | Status |
 |---|---|---|
-| Emissions per profile (`N_PRF`) | 14 | not decoded — the primary variance axis |
-| Sampling volume / bandwidth | 27 | declared as `ChannelConfig.sampling_volume_mm`, never populated |
-| Number of skipped profiles | 84 | not decoded — semantics also unconfirmed (see below) |
+| Emissions per profile (`N_PRF`) | 14 | not decoded — the primary variance axis; **identity measured** (it tracks `Emissions/profile`, 100 → 44) |
+| Sampling volume / bandwidth | 27 | declared as `ChannelConfig.sampling_volume_mm`, never populated; **identity measured** as an index into the physics-driven bandwidth list (index 3 = 0.900 mm at `c` = 1500) |
+| Number of skipped profiles | 84 | not decoded — **identity measured** (`Number of skipped profiles` in `Operating parameters`); its semantics are still unconfirmed (see below) |
 | (also) wall filter | 16 | declared as `ChannelConfig.wall_filter`, never populated |
+
+So what is missing is the decode, not the word identification — every identity
+above now comes from a labelled recording rather than from the manual's table
+([`udop-automation.md`](udop-automation.md) §9).
 
 Word 84's *name* comes from the manual's parameter table ("skip profile"); no
 narrative chapter describes its behaviour, so its exact semantics (skip N
@@ -285,10 +328,19 @@ instrument before it is used as a sweep axis.
 
 1. Is `c = 2740 m/s` in the echo fixtures a deliberate entry (a rig-specific
    calibration) or a stale default? Affects every existing conclusion about
-   depth and mm/s in that series.
+   depth and mm/s in that series. *(Measured on the instrument, 2026-09-17: one
+   stored file carried `c = 1460 m/s` on channel 1 and `c = 1500 m/s` on
+   channel 10 — `c` is a per-channel configuration value, so a read must name
+   the channel it read; see [`udop-automation.md`](udop-automation.md) §6.)*
 2. Which optional software packages are installed on this unit — the sweep
    surface is smaller without them.
 3. `skip profile` (word 84) semantics.
 4. Sampling-volume lengths: 0.64–3.19 mm (Ch. 8.4) vs 0.7–3.9 mm (Ch. 21/22).
 5. Is the reference flow stable enough over a full campaign, or does each axis
    need interleaved baseline points? (Decides randomised-ofat vs blocked design.)
+
+Instrument-side open questions from the same work — the block's behaviour past
+the configured cap, the shared-memory-pool question, the identity of the at-cap
+warning, the burst ↔ sampling-volume acceptance sets — are recorded in
+[`udop-automation.md`](udop-automation.md) §11; they constrain what a point may
+ask for, not which axes are worth sweeping.

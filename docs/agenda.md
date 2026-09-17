@@ -222,6 +222,12 @@ profiles in one fixture and 4193–4927 in another.
 - Velocity-field/time-depth contour visualizations beyond the current heatmap.
 - Additional decoded BDD metadata only when byte-level evidence, a destination
   domain field, propagation rules, and storage implications are all specified.
+- **Sweep-automation rules are verified on the instrument**
+  ([`dop3000/udop-automation.md`](dop3000/udop-automation.md)). Actionable here,
+  under the decoded-metadata gate above: decode `Emissions per profile` (word 14)
+  and `Sampling volume` (word 27), settle `skip profile` (word 84), and log the
+  achieved profile period per point, so a stored `.BDD` identifies its sweep
+  point on its own.
 - `.ADD` migration or redesign only when a dependency proves it necessary; the
   parser/viz path remains intentionally separate. The 2026-09-15 echo-RPM port
   respected that boundary: the artifact entry point reads `.BDD` through the
