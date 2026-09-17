@@ -575,6 +575,14 @@ class SweepRunner:
         which is worse than a mismatch, so the point is refused rather than passed on
         a shrug. Either way this is the file's problem, not the application's, so it
         never trips the circuit breaker.
+
+        The channel is forwarded from the one knob the decode above used. Without it
+        the reader defaults to channel 1 while the decode read the run's channel, so
+        every point of a channel-2 run comes back with mismatches that belong to
+        another channel's block — *gates: requested 10, found 20* for a file whose
+        channel 2 is exactly right. A point refused on another channel's words is
+        still a wasted live slot, and the fix belongs here rather than in the caller:
+        the two reads of one file must name the same channel.
         """
         if verify_stored_point is None:
             attempt.status = PointStatus.OK
@@ -586,7 +594,9 @@ class SweepRunner:
             )
             return attempt
         try:
-            verification = verify_stored_point(path, parameters)
+            verification = verify_stored_point(
+                path, parameters, channel=self._channel_setting.channel
+            )
         except Exception as exc:  # noqa: BLE001 - no verdict is not a pass
             return self._fail(
                 attempt,

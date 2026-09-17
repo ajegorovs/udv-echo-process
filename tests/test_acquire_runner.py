@@ -45,6 +45,7 @@ from __future__ import annotations
 import inspect
 import math
 import re
+import struct
 import types
 from collections.abc import Callable, Iterable, Mapping
 from enum import Enum
@@ -669,11 +670,19 @@ class ScriptedVerifier:
         self.result = FakeVerification(ok, mismatches)
         self.error = error
         self.calls: list[tuple[Path, object]] = []
+        #: The channel each call named, in order — ``None`` when the runner named none.
+        self.channels: list[int | None] = []
 
     def __call__(
-        self, path: object, requested: object, *args: object, **kwargs: object
+        self,
+        path: object,
+        requested: object,
+        channel: int | None = None,
+        *args: object,
+        **kwargs: object,
     ) -> FakeVerification:
         self.calls.append((Path(str(path)), requested))
+        self.channels.append(channel)
         if self.error is not None:
             raise self.error
         return self.result
@@ -729,7 +738,9 @@ def make_runner(
     block: DecodedBlock | None = None,
     script_reader: bool = True,
     verifier: object = UNSCRIPTED,
+    script_verifier: bool = True,
     fake_class: type[FakeActuator] = FakeActuator,
+    channel: int | None = None,
     **fake_kwargs: object,
 ) -> tuple[FakeActuator, object, Path, ScriptedReader | None]:
     """A runner over a fresh fake, a private capture directory and a private log.
@@ -740,7 +751,10 @@ def make_runner(
     the size guard and nothing else; pass a :class:`ScriptedVerifier` to script a
     verdict, or ``None`` for the state the runner is in without ``acquire/verify.py``.
     ``fake_class`` is the fake's own type, so a case can subclass it to make the
-    *application* misbehave without touching the runner.
+    *application* misbehave without touching the runner. ``channel`` binds the runner
+    to a measurement channel (``None`` takes the setting's default), and
+    ``script_verifier=False`` leaves ``acquire/verify.py``'s own
+    ``verify_stored_point`` in place for a case that must exercise it for real.
     """
     base = Path(base)
     directory = base / "capture"
@@ -754,13 +768,14 @@ def make_runner(
         directory,
         signature=signature,
         log_path=log_path,
+        channel=channel,
     )
     reader = (
         patch_reader(monkeypatch, block, fake=fake)
         if (monkeypatch and script_reader)
         else None
     )
-    if monkeypatch is not None:
+    if monkeypatch is not None and script_verifier:
         # After the reader patch on purpose: the reader scan walks the module's
         # callables, and the verification hook is not one of them.
         patch_verifier(
@@ -1394,6 +1409,209 @@ def test_verification_that_cannot_be_imported_is_reported_not_silently_passed(
     # The note reaches the log too: an OK point whose words nobody read says so.
     logged = records[0].failure or ""
     assert "verif" in logged.lower(), records[0].failure
+
+
+# ------------------------------- 10b. the channel both reads of a file must name
+#
+# The decode and the verification are two reads of one stored file, and they disagreed
+# about which channel it was: ``_decode`` filtered the stream by the run's channel while
+# ``verify_stored_point`` defaulted to channel 1. On a channel-2 run every point then
+# came back INVALID with three mismatches that belonged to channel 1's block — *gates:
+# requested 10, found 20* for a file whose channel 2 was exactly right — which costs a
+# live slot per point and, on a sweep, the whole run. The channel offsets were always
+# supported (``verify.read_words(path, 2)`` is tested in ``test_acquire_verify.py``) and
+# the decode always named the channel; only the wiring was missing. These two cases pin
+# the wiring: one on the call, one end to end through the real verifier and a real file.
+
+#: The canonical reader's measurement-block base offset and the op-table geometry. The
+#: reader's own layout, restated here so the fixture below is built independently of it.
+_MEAS_BASE_OFFSET = 31268
+_OPER_BASE_OFFSET = 548
+_OPER_CHANNEL_STRIDE = 1024
+_RATE_WORD = 29
+
+
+def build_two_channel_point(
+    path: Path,
+    *,
+    words: Mapping[int, int],
+    other_channel: Mapping[int, int],
+    profiles: int = 5,
+    period_raw: int = 299,
+) -> Path:
+    """Write a two-channel ``.BDD`` whose channel 2 carries ``profiles`` profiles.
+
+    The committed fixtures cannot serve here. ``sw100-k1-161738.BDD`` has data for
+    channel 1 only (channel 2's op block is a leftover table with no profiles behind
+    it), and the multiplexed recordings' own channels are 6..9 — which the op table's
+    ``548 + (channel - 1) * 1024`` stride does not address at all. So this builds the
+    smallest file the canonical reader accepts: the magic, one op block per channel,
+    and one measurement block per profile (echo payload, depth pseudo-profile, footer
+    carrying the profile's channel byte and a ``ms/10`` timestamp).
+
+    ``words`` is channel 2's op words (word index → value) and ``other_channel`` is
+    channel 1's. The caller passes them *different* on purpose, so a reader that
+    answers with channel 1's words disagrees on every core field.
+    """
+    raw = bytearray(_MEAS_BASE_OFFSET)
+    raw[0:8] = b"BINUDOPV"
+    for channel, channel_words in ((1, other_channel), (2, words)):
+        base = _OPER_BASE_OFFSET + (channel - 1) * _OPER_CHANNEL_STRIDE
+        for word, value in channel_words.items():
+            struct.pack_into("<i", raw, base + 4 * word, value)
+        # The packed acquisition rate: byte 0 is the index, the byte after it is the
+        # rate in MHz — (0, 6, 12, 40) is what every available file packs (6 MHz).
+        raw[base + 4 * _RATE_WORD] = 0
+        raw[base + 4 * _RATE_WORD + 1] = 6
+        raw[base + 4 * _RATE_WORD + 2] = 12
+        raw[base + 4 * _RATE_WORD + 3] = 40
+
+    def profile(profile_type: int, payload: bytes) -> bytes:
+        return struct.pack("<H", len(payload)) + bytes([profile_type]) + payload
+
+    timestamp = 1000
+    for channel, channel_words, count in ((1, other_channel, 1), (2, words, profiles)):
+        gates = channel_words[13]
+        # The depth pseudo-profile, in 0.1 mm, from the same law the reader inverts:
+        # depth(n) = c * ((gate1 + (res + 1) * (n - 1)) / (2 * rate) - hwDelay / 2e6).
+        rate_khz = 6.0 * 1e3
+        sound, gate1, resolution = (
+            channel_words[19],
+            channel_words[9],
+            channel_words[10],
+        )
+        gate_numbers = range(1, gates + 1)
+        depths = [
+            sound
+            * (
+                (gate1 + (resolution + 1) * (number - 1)) / (2.0 * rate_khz)
+                - channel_words.get(46, 0) / 2e6
+            )
+            for number in gate_numbers
+        ]
+        depth_profile = struct.pack(
+            f"<{gates}h", *[round(depth * 10) for depth in depths]
+        )
+        echo = bytes(index % 200 for index in range(gates))
+        for _ in range(count):
+            body = profile(1, echo) + profile(25, depth_profile) + b"\x00\x00"
+            footer = bytearray(16)
+            struct.pack_into("<I", footer, 4, timestamp)
+            footer[13] = channel
+            block = body + bytes(footer)
+            raw += struct.pack("<H", 2 + len(block)) + block
+            timestamp += period_raw
+    path.write_bytes(bytes(raw))
+    return path
+
+
+#: Channel 2's op words for the point these cases run: 10 gates at rung 9 of a
+#: 1460 m/s ladder (1.2167 mm), PRF 500 µs, burst 2, 8 emissions — the shape of the
+#: committed echo series' second channel.
+CHANNEL_TWO_WORDS = {
+    0: 2000,
+    2: 14,
+    5: 500,
+    8: 2,
+    9: 16,
+    10: 9,
+    13: 10,
+    14: 8,
+    19: 1460,
+}
+#: Channel 1's op words in the same file: a different window entirely, so a reader
+#: answering with this block cannot agree with the point below by accident.
+CHANNEL_ONE_WORDS = {0: 1000, 2: 69, 5: 250, 8: 4, 9: 2, 10: 5, 13: 20, 14: 8, 19: 2740}
+CHANNEL_TWO_GATES = 10
+
+
+def channel_two_point() -> SweepPoint:
+    """The planned point whose window *is* that channel-2 block, word for word."""
+    return SweepPoint(
+        key=1,
+        duration_s=DURATION_S,
+        parameters=ParameterSet(
+            sound_speed_ms=1460.0,
+            first_gate_mm=2.0,
+            resolution_mm=1460.0 * 10 / 12000.0,
+            gates=CHANNEL_TWO_GATES,
+            prf_us=500.0,
+            emissions_per_profile=8,
+            burst_length=2,
+        ),
+    )
+
+
+def test_the_verifier_is_asked_about_the_run_s_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The verify call carries the channel the decode used, from the one knob."""
+    verifier = ScriptedVerifier()
+    _fake, engine, _log_path, _ = make_runner(
+        tmp_path, monkeypatch, verifier=verifier, channel=2
+    )
+
+    engine.run_point(point_for(1), DURATION_S)
+
+    assert len(verifier.calls) == 1, verifier.calls
+    assert verifier.channels == [2], (
+        "the verifier was asked about another channel's words: the run measures on "
+        "channel 2 and the decode read channel 2"
+    )
+
+
+def test_a_point_on_channel_two_is_verified_against_channel_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: the real verifier, a real two-channel file, the run's channel.
+
+    The size guard is deliberately widened for this fixture — a synthetic
+    channel-addressing file is mostly header, and the case is about *which* channel's
+    words are read, not about the size. The guard has its own cases in section 5.
+    """
+    fixture = build_two_channel_point(
+        tmp_path / "two_channel.BDD",
+        words=CHANNEL_TWO_WORDS,
+        other_channel=CHANNEL_ONE_WORDS,
+    )
+    signature = SizeSignature(factor=50.0)
+    fake, engine, log_path, _ = make_runner(
+        tmp_path,
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=signature,
+        channel=2,
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(channel_two_point(), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    assert isinstance(outcome.decoded, DecodedBlock)
+    assert outcome.decoded.channel == 2
+    assert outcome.decoded.n_gates == CHANNEL_TWO_GATES
+    assert [record.status for record in point_records(read_entries(log_path))] == [
+        PointStatus.OK
+    ]
+
+    # The same file on channel 1 is refused, so the case above does not pass for a
+    # reason that has nothing to do with the channel: channel 1's block is 20 gates.
+    wrong_fake, wrong_engine, _wrong_log, _ = make_runner(
+        tmp_path / "wrong-channel",
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=signature,
+        channel=1,
+    )
+    wrong_fake.payload = fixture
+
+    wrong = wrong_engine.run_point(channel_two_point(), DURATION_S)
+
+    assert wrong.ok is False
+    assert status_of(wrong) is PointStatus.INVALID
+    assert wrong.reason is not None and "gates" in wrong.reason
 
 
 def test_the_channel_dialog_opens_once_for_a_multi_point_run(
