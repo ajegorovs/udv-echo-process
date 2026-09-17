@@ -76,7 +76,7 @@ actuator is a complete substitute.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -348,6 +348,10 @@ class SweepRunner:
     ) -> tuple[PointOutcome, ...]:
         """Plan ``definition`` and run points in order until the breaker trips.
 
+        The points come from :func:`plan_sweep`; a list that is already planned — a
+        campaign's, which may also carry a window per point — goes through
+        :meth:`run_points` instead.
+
         ``T = duration_s``. A point that fails for its own sake — a clamped read-back,
         a file whose size is off the signature, a file that will not decode, a
         verification mismatch — is logged and the next one starts: one contaminated
@@ -363,12 +367,38 @@ class SweepRunner:
         """
         if duration_s <= 0:
             raise ValueError(f"duration_s must be > 0, got {duration_s}")
+        return self.run_points(plan_sweep(definition), duration_s)
+
+    def run_points(
+        self, points: Iterable[SweepPoint], duration_s: float | None = None
+    ) -> tuple[PointOutcome, ...]:
+        """Run an explicit sequence of points, in the given order, until the breaker trips.
+
+        The seam a **campaign** needs. A sweep's points are its rungs, so :meth:`run` expands
+        them from the definition; a campaign's points are an explicit list — each with its own
+        label and, when the campaign says so, its own window — and they arrive already planned
+        (``acquire.campaign.plan_campaign``). ``duration_s`` forces one window on every point;
+        ``None`` uses each point's own ``duration_s``, which is what that caller passes, since
+        a campaign may plan different windows for different points while a
+        :class:`~udv_echo_process.acquire.plan.SweepDefinition`'s points never differ.
+
+        The loop and its rules are :meth:`run`'s, unchanged: a point that fails for its own
+        sake is logged and the next one starts, and a point that leaves the application's
+        state unverified or unstartable **ends** the run — the remaining points are not
+        attempted, so the returned tuple is shorter than ``points`` and its last outcome
+        carries ``aborted=True``.
+
+        Raises ``ValueError`` when ``duration_s`` is given and is not positive.
+        """
+        if duration_s is not None and duration_s <= 0:
+            raise ValueError(f"duration_s must be > 0, got {duration_s}")
         outcomes: list[PointOutcome] = []
-        for point in plan_sweep(definition):
-            outcome = self.run_point(point, duration_s)
+        for point in points:
+            window = point.duration_s if duration_s is None else duration_s
+            outcome = self.run_point(point, window)
             outcomes.append(outcome)
             if outcome.aborted:
-                break  # the state is not verified: the rest of the plan is void
+                break  # the state is not verified: the rest of the list is void
         return tuple(outcomes)
 
     def _execute(

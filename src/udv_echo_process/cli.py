@@ -18,8 +18,9 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import live
+from udv_echo_process.acquire import campaign, live
 from udv_echo_process.acquire.config import ChannelSetting
+from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.io import load
 from udv_echo_process.io.dop.bdd import sniff_bdd
 from udv_echo_process.parser import MAGIC_PREFIX, extract
@@ -193,6 +194,231 @@ def _acquire_store_directory(explicit: str | None) -> Path:
     raise SystemExit(2)
 
 
+def _campaign_point_payload(point: campaign.PlannedPoint) -> dict[str, object]:
+    """One planned point as a machine reads it: the scalars, and the window they make.
+
+    Flat on purpose — a machine wants the numbers it compares points by, not this layer's
+    model shape — and ``parameters`` are the four the point actually writes plus the two
+    the campaign fixes for every point of the run.
+    """
+    parameters = point.parameters
+    return {
+        "key": point.key,
+        "label": point.label,
+        "identity": point.identity,
+        "duration_s": point.duration_s,
+        "note": point.note,
+        "sound_speed_ms": parameters.sound_speed_ms,
+        "first_gate_mm": parameters.first_gate_mm,
+        "resolution_mm": parameters.resolution_mm,
+        "resolution_text": parameters.resolution_text,
+        "gates": parameters.gates,
+        "expected_depth_mm": point.expected_depth_mm,
+        "profiles": point.profiles,
+    }
+
+
+def _campaign_plan(args: argparse.Namespace, as_json: bool) -> int:
+    """``plan``: load a definition, validate every point, print the plan — touch nothing.
+
+    The half of the campaign feature that has to work anywhere: it reads one file and
+    applies the planning math, so it runs on a machine whose application is not running,
+    and on a machine that has no application at all. Exit 0 when the plan is valid, 2 when
+    the file or a point is invalid, with the reason on stderr.
+    """
+    try:
+        definition = campaign.load_campaign(Path(args.definition))
+        points = campaign.plan_campaign(definition)
+    except (ValueError, OSError) as exc:  # CampaignError is a ValueError
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    fingerprint = campaign.campaign_fingerprint(definition)
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "definition": str(args.definition),
+                    "job": definition.job,
+                    "channel": definition.channel,
+                    "duration_s": definition.duration_s,
+                    "store_dir": definition.store_dir,
+                    "fingerprint": fingerprint,
+                    "points": [_campaign_point_payload(point) for point in points],
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        return 0
+
+    print(
+        f"{definition.job}: channel {definition.channel}, {definition.duration_s:g} s per "
+        f"point, {len(points)} point(s), definition {fingerprint[:12]}"
+    )
+    if definition.store_dir:
+        print(f"points would land in: {definition.store_dir}")
+    print(
+        f"{'point':<20} {'c m/s':>6} {'res mm':>8} {'gates':>6} {'depth mm':>9} "
+        f"{'profiles':>8} {'window s':>8}"
+    )
+    for point in points:
+        parameters = point.parameters
+        print(
+            f"{point.label:<20} {parameters.sound_speed_ms:>6.0f} "
+            f"{parameters.resolution_mm:>8.3f} {parameters.gates:>6} "
+            f"{point.expected_depth_mm:>9.3f} {point.profiles:>8} "
+            f"{point.duration_s:>8.1f}"
+        )
+    for point in points:
+        if point.note:
+            print(f"note: {point.label}: {point.note}")
+    return 0
+
+
+def _campaign_run(
+    args: argparse.Namespace, notes: list[str], as_json: bool
+) -> int:
+    """``campaign``: run a definition point by point through the runner, and write its manifest.
+
+    The store directory is the flag's, else the definition's, else the live commands' own
+    rule (``UDV_STORE_DIR`` or a usage error) — never a guess, because the cycle *writes*
+    the Store dialog's directory when it differs. Exit 0 when every point ran, 1 when any
+    point was refused or failed, 2 when the definition or the directory cannot be used.
+    """
+    try:
+        definition = campaign.load_campaign(Path(args.definition))
+        if args.store_dir is not None:
+            directory = Path(args.store_dir)
+        elif definition.store_dir is not None:
+            directory = Path(definition.store_dir)
+        else:
+            directory = _acquire_store_directory(None)
+        channel = definition.channel if args.channel is None else args.channel
+        log_path = Path(args.log) if args.log else directory / campaign.DEFAULT_LOG_NAME
+        manifest = campaign.run_campaign(
+            definition,
+            live.live_actuator(channel, notes),
+            store_dir=directory,
+            log_path=log_path,
+            resume=args.resume,
+            channel=channel,
+            definition_path=Path(args.definition),
+            notes=notes,
+        )
+    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        # The manifest is the whole report: what the job was and how every point ended.
+        print(json.dumps(manifest.model_dump(mode="json"), indent=2, default=str))
+    else:
+        for outcome in manifest.outcomes:
+            # A refused or failed point says why; the stored file stays visible either way.
+            detail = outcome.file or ""
+            if not outcome.ok and outcome.reason:
+                detail = f"{detail}  {outcome.reason}".strip()
+            elif not detail:
+                detail = outcome.reason or ""
+            print(f"{outcome.label:<20} {outcome.status.value:<8} {detail}")
+        print(f"log      : {manifest.log_path}")
+        print(f"manifest : {campaign.manifest_path_for(log_path)}")
+        print(manifest.summary)
+    return 0 if manifest.failed_count == 0 and not manifest.aborted else 1
+
+
+def _campaign_report(args: argparse.Namespace, as_json: bool) -> int:
+    """``report``: a job log's per-point status and its summary — no instrument needed.
+
+    Reads the log (the authority for what happened) and the manifest beside it when there
+    is one (the only place the job's name, the definition's fingerprint and the window
+    length are written down). A log whose manifest is missing is still a complete
+    point-by-point record, so that is not an error. Exit 0, or 2 when the log cannot be
+    read — an unreadable log is a usage problem, not a failed job.
+    """
+    log_path = Path(args.log)
+    try:
+        records = point_records(read_entries(log_path))
+        manifest = campaign.read_manifest_if_present(campaign.manifest_path_for(log_path))
+    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    rows = [
+        {
+            "identity": campaign.record_identity(record),
+            "key": record.key,
+            "name": record.name,
+            "status": record.status.value,
+            "gates": record.requested.gates,
+            "readback_gates": record.readback_gates,
+            "file": record.file_path,
+            "failure": record.failure,
+        }
+        for record in records
+    ]
+    summary = {
+        "points": len(records),
+        "ok": sum(1 for record in records if record.status is PointStatus.OK),
+        "failed": sum(1 for record in records if record.status is PointStatus.FAILED),
+        "invalid": sum(1 for record in records if record.status is PointStatus.INVALID),
+        "recorded": sorted(
+            campaign.record_identity(record)
+            for record in records
+            if record.status is PointStatus.OK
+        ),
+    }
+
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "log": str(log_path),
+                    "manifest": None
+                    if manifest is None
+                    else manifest.model_dump(mode="json"),
+                    "summary": summary,
+                    "points": rows,
+                },
+                indent=2,
+                default=str,
+            )
+        )
+        return 0
+
+    if manifest is None:
+        print("job        : unknown (no manifest beside this log)")
+    else:
+        print(f"job        : {manifest.job} (fingerprint {manifest.fingerprint[:12]})")
+        print(f"started    : {manifest.started_at.isoformat()}")
+        print(f"finished   : {manifest.finished_at.isoformat()}")
+        print(
+            f"planned    : {manifest.planned} point(s), {manifest.points_skipped} skipped, "
+            f"{manifest.failed_count} not ok"
+        )
+        for note in manifest.log_errors:
+            print(f"log error  : {note}")
+    print(f"log        : {log_path}")
+    print(f"{'point':<24} {'status':<8} {'gates':>6} {'read':>6}  file / reason")
+    for row in rows:
+        readback = "" if row["readback_gates"] is None else f"{row['readback_gates']}"
+        # The file is evidence and stays visible; the reason is why a bad point is bad, so a
+        # point that is not ok says both.
+        detail = row["file"] or ""
+        if row["failure"]:
+            detail = f"{detail}  {row['failure']}".strip()
+        print(
+            f"{row['identity']:<24} {row['status']:<8} {row['gates']:>6} "
+            f"{readback:>6}  {detail}"
+        )
+    print(
+        f"summary    : {summary['ok']}/{summary['points']} ok, {summary['failed']} failed, "
+        f"{summary['invalid']} invalid"
+    )
+    return 0
+
+
 def acquire_main(argv: list[str] | None = None) -> None:
     """``udv-acquire`` — the live path: read the screen, exercise a cycle, store a point, sweep.
 
@@ -200,6 +426,13 @@ def acquire_main(argv: list[str] | None = None) -> None:
     its screen (``tools/live/README.md``); everything they report is a model from
     :mod:`udv_echo_process.acquire.actuator`, and ``--json`` prints it for a machine. Exit codes:
     0 ok, 1 a refused point or a failed verification, 2 usage or configuration.
+
+    ``plan`` and ``report`` are the campaign layer's two halves that touch no instrument at all:
+    ``plan`` validates a definition and prints the points it would run, ``report`` reads a job
+    log (and the manifest beside it) and prints how the job went. Both work on a machine whose
+    application is not running — including one that has no application — which is what makes a
+    campaign reviewable before anything is recorded. Only ``campaign`` drives the instrument,
+    through the same live actuator the other subcommands use.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -270,6 +503,35 @@ def acquire_main(argv: list[str] | None = None) -> None:
     channel_argument(decode_parser)
     decode_parser.add_argument("--json", action="store_true")
 
+    plan_parser = subcommands.add_parser(
+        "plan",
+        help="validate a campaign definition and print its points (touches no instrument)",
+    )
+    plan_parser.add_argument("--definition", required=True)
+    plan_parser.add_argument("--json", action="store_true")
+
+    campaign_parser = subcommands.add_parser(
+        "campaign", help="run a campaign definition, one JSONL entry per point"
+    )
+    campaign_parser.add_argument("--definition", required=True)
+    campaign_parser.add_argument("--store-dir", default=None)
+    campaign_parser.add_argument(
+        "--log", default=None, help="JSONL job log (default: <store-dir>/campaign.jsonl)"
+    )
+    campaign_parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="skip the points the log already holds as ok, and say how many",
+    )
+    channel_argument(campaign_parser)
+    campaign_parser.add_argument("--json", action="store_true")
+
+    report_parser = subcommands.add_parser(
+        "report", help="a job log's per-point status and summary (touches no instrument)"
+    )
+    report_parser.add_argument("--log", required=True)
+    report_parser.add_argument("--json", action="store_true")
+
     args = parser.parse_args(argv)
     notes: list[str] = []
     as_json = bool(getattr(args, "json", False))
@@ -279,6 +541,12 @@ def acquire_main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "status":
             _acquire_report(live.status(args.channel, notes), as_json)
+        elif args.command == "plan":
+            code = _campaign_plan(args, as_json)
+        elif args.command == "campaign":
+            code = _campaign_run(args, notes, as_json)
+        elif args.command == "report":
+            code = _campaign_report(args, as_json)
         elif args.command == "channel":
             verified, fingerprint = live.select_channel(args.number, notes)
             print(f"verified channel: {verified}")
