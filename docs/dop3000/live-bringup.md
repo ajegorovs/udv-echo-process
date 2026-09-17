@@ -39,16 +39,18 @@ present, so it separates *the code is wrong here* from *the machine is different
 
 ## 3. Stages 1-5 — against the instrument, in increasing order of commitment
 
-Run each through the dispatcher (`./tools/live/dispatch.sh <probe> [args]`), which starts it in
-the session that owns the screen and returns when it is done.
+Run each through the dispatcher (`./tools/live/dispatch.sh -m udv_echo_process.cli <command>`),
+which starts it in the session that owns the screen and returns when it is done. The commands
+come from the package, so a clone carries them; `--json` prints any report for a machine, and
+the exit codes are 0 ok / 1 a refused point / 2 usage or configuration.
 
 | stage | command | pass criterion |
 |---|---|---|
-| 1. inventory | `dispatch.sh status_screen.py 1` | the window is found by class (`TMain_Scr`), the strip shows a view, and **`layout_note: None`** — i.e. the clean measurement layout. Any other note names what is wrong (a dialog left open, a channel in assisted mode, a different app version's layout) |
-| 2. channel read | `dispatch.sh channel_select.py 1` | `verified channel: 1`, the panel counts reported, and the run's notes naming the channel's mode (`manual` / `assisted`). The dialog is read, and written only if the channel differs |
-| 3. cycle, nothing stored | `dispatch.sh point_cycle.py preflight` | record → `recording` → store view → `Do store` opens the **Store dialog**; the working directory it shows is the one configured; cancel returns a clean ready view. Nothing is written |
-| 4. one point | `UDV_STORE_DIR=<the app's directory> dispatch.sh point_cycle.py store bringup-01 3` | a `.BDD` file appears in that directory, and reading it back yields the application's own words — gates, depth, sound speed, PRF, emissions/profile, burst — which should agree with the application's own display |
-| 5. two-point sweep | `UDV_STORE_DIR=<the app's directory> dispatch.sh sweep_run.py 12 1 2` | two outcomes, both `ok`, and `outputs/live/sweep.jsonl` carrying one entry per point: `requested`, `readback_gates`/`readback_resolution`, `file_path`, `file_size_bytes`, `decoded`, `failure: null` |
+| 1. inventory (`acquire status`) | `dispatch.sh -m udv_echo_process.cli acquire status` | the window is found by class (`TMain_Scr`), the strip shows a view, and **`layout_note: None`** — i.e. the clean measurement layout. Any other note names what is wrong (a dialog left open, a channel in assisted mode, a different app version's layout) |
+| 2. channel read | `dispatch.sh -m udv_echo_process.cli acquire channel 1` | `verified channel: 1`, the panel counts reported, and the run's notes naming the channel's mode (`manual` / `assisted`). The dialog is read, and written only if the channel differs |
+| 3. cycle, nothing stored | `dispatch.sh -m udv_echo_process.cli acquire preflight` | record → `recording` → store view → `Do store` opens the **Store dialog**; the working directory it shows is the one configured; cancel returns a clean ready view. Nothing is written |
+| 4. one point | `UDV_STORE_DIR=<the app's dir> dispatch.sh -m udv_echo_process.cli acquire point bringup-01 --seconds 3` | a `.BDD` file appears in that directory, and reading it back yields the application's own words — gates, depth, sound speed, PRF, emissions/profile, burst — which should agree with the application's own display |
+| 5. two-point sweep | `UDV_STORE_DIR=<the app's dir> dispatch.sh -m udv_echo_process.cli acquire sweep --seconds 12 --rungs 1,2` | two outcomes, both `ok`, and `outputs/live/sweep.jsonl` carrying one entry per point: `requested`, `readback_gates`/`readback_resolution`, `file_path`, `file_size_bytes`, `decoded`, `failure: null` |
 
 Stage 3 is the operator's own sequence without the risk; stage 4 is the first thing that writes
 to the instrument; stage 5 is the runner's path end to end. A stage-1 failure is almost always

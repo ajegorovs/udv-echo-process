@@ -21,13 +21,22 @@ REPO="$(cd "$HERE/../.." && pwd)"
 OUT="$REPO/outputs/live"
 TASK="${LIVE_TASK_NAME:-hermes_gui_probe}"
 
-probe="${1:?usage: dispatch.sh <probe.py> [args...]}"
-shift
+# Two forms: a probe file, or `-m <module>` for the installed commands. `-m` takes its module
+# as the next argument, so typing it the way it reads works.
+if [ "${1:-}" = "-m" ]; then
+  probe="-m ${2:?usage: dispatch.sh -m <module> [args...]}"
+  shift 2
+else
+  probe="${1:?usage: dispatch.sh <probe.py> [args...] | -m <module> [args...]}"
+  shift
+fi
 mkdir -p "$OUT"
 
 printf '%s' "$probe" > "$OUT/task_target.txt"
 printf '%s' "$*" > "$OUT/task_args.txt"
-log="$OUT/task-$probe.log"
+# The same slug rule as task_run.py: `-m udv_echo_process.cli acquire-status` -> task-udv_echo_process.cli.log
+slug=$(printf '%s' "$probe" | sed 's/^-m //; s/[^A-Za-z0-9_.-]/-/g')
+log="$OUT/task-$slug.log"
 rm -f "$log"
 
 if ! schtasks /query /tn "$TASK" >/dev/null 2>&1; then

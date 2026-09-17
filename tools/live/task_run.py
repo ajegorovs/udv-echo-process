@@ -25,6 +25,7 @@ Nothing here touches the GUI: the child does that, in this same interactive sess
 
 from __future__ import annotations
 
+import re
 import shlex
 import subprocess
 import sys
@@ -54,20 +55,34 @@ def main() -> int:
     OUT.mkdir(parents=True, exist_ok=True)
     probe = (OUT / "task_target.txt").read_text(encoding="utf-8").strip()
     if not probe:
-        print("no probe named in outputs/live/task_target.txt")
-        return 2
-    if not (PROBES / probe).is_file():
-        print(f"no such probe: {PROBES / probe}")
+        print("nothing to run: outputs/live/task_target.txt is empty")
         return 2
     args = shlex.split((OUT / "task_args.txt").read_text(encoding="utf-8"))
 
-    log = OUT / f"task-{probe}.log"
+    # Two forms, because the interface is not always a file any more:
+    #   "-m <module> [args...]"  an installed module, run from the repository root — this is how
+    #                            the supported commands are reached (`udv-acquire`).
+    #   "<probe.py> [args...]"   a file under tools/live/probes, run from its own directory for
+    #                            the throwaway measurements that are not commands.
+    module = probe.removeprefix("-m ") if probe.startswith("-m ") else None
+    if module is None and not (PROBES / probe).is_file():
+        print(f"no such probe: {PROBES / probe}")
+        return 2
+    command = [str(PYTHON), "-m", module, *args] if module else [
+        str(PYTHON),
+        str(PROBES / probe),
+        *args,
+    ]
+    cwd = REPO if module else PROBES
+    slug = re.sub(r"[^A-Za-z0-9_.-]", "-", probe.removeprefix("-m "))
+
+    log = OUT / f"task-{slug}.log"
     started = time.strftime("%d/%m/%Y %H:%M:%S")
     header = f"=== {started} running {probe} {' '.join(args)} (no console: pythonw) ===\n"
     try:
         done = subprocess.run(
-            [str(PYTHON), str(PROBES / probe), *args],
-            cwd=str(PROBES),
+            command,
+            cwd=str(cwd),
             capture_output=True,
             text=True,
             timeout=TIMEOUT_S,

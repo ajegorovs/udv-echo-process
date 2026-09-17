@@ -38,11 +38,22 @@ Then dispatch (the same task is triggered on demand with `/run`):
 ./tools/live/dispatch.sh status_screen.py 1
 ```
 
-`dispatch.sh` writes the probe name and its arguments to `outputs/live/task_target.txt` and
-`task_args.txt`, starts the task, and **polls the probe's log** for its closing
+`dispatch.sh` writes the target and its arguments to `outputs/live/task_target.txt` and
+`task_args.txt`, starts the task, and **polls the target's log** for its closing
 `=== exit=<code> ===` instead of sleeping a fixed time — a fixed sleep makes a 24 s run look
 like a two-minute stall, and it hides *whose* time is being spent. Set
 `LIVE_TASK_NAME` to use a different task name, `PROBE_TIMEOUT_S` to change the poll cap.
+
+### Two forms of target
+
+```bash
+./tools/live/dispatch.sh -m udv_echo_process.cli acquire-status   # an installed command, from the repo root
+./tools/live/dispatch.sh status_screen.py 1                       # a probe file, from tools/live/probes
+```
+
+The `-m` form is how the supported commands are reached, and it is the one the bring-up
+checklist uses; the file form stays for measurements that are not commands (a geometry probe, a
+one-off diagnostic). Both write their log to `outputs/live/task-<target>.log`.
 
 ## The probes
 

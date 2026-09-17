@@ -303,6 +303,61 @@ def ordered_writes(parameters: ParameterSet) -> tuple[tuple[ParamRole, str], ...
     return tuple((role, values[role]) for role in PARAMETER_WRITE_ORDER)
 
 
+class ScreenFingerprint(ValueModel):
+    """What the application's screen is, read-only, as one record.
+
+    The first thing to read on a machine that is not the one the measurements came from
+    (``docs/dop3000/live-bringup.md`` §4). The counts say whether this is the clean
+    measurement layout — 43 visible controls in 4 panels on the reference install, and 21 in 3
+    for an **assisted-mode** channel, which is by design and not a fault — the strip view says
+    which of the three buttons means what, and the overlay says whether a modal is up while it
+    should not be; the geometry is there so a screen that does not match can be described.
+
+    JSON-serialisable on purpose: a fingerprint belongs in the job log beside the point it
+    preceded.
+    """
+
+    class_name: str
+    hwnd: int
+    rect: tuple[int, int, int, int]
+    maximized: bool
+    screen: tuple[int, int]
+    panels: int = Field(ge=0)
+    visible_controls: int = Field(ge=0)
+    strip: StripState
+    overlay: OverlayKind | None = None
+    layout_note: str | None = None
+    #: ``None`` when this session cannot read the cursor at all (the agent's own shell runs
+    #: in a service session: ``GetCursorPos`` fails there with error 1459).
+    cursor: tuple[int, int] | None = None
+    is_foreground: bool = False
+
+
+class PreflightReport(ValueModel):
+    """One whole cycle's shape with **nothing stored** — the operator's sequence, made read-only.
+
+    Every step's outcome is a field rather than only a line of output, because the point of a
+    preflight is to be read back afterwards on an instrument nobody here can see. ``channel``
+    is ``None`` when the run did not name one (the driver's own setting then decides, see
+    :class:`~udv_echo_process.acquire.config.ChannelSetting`).
+    """
+
+    started_from: str
+    view_after_record: str
+    held_s: float = Field(gt=0)
+    view_after_stop: str
+    view_after_cancel: str
+    channel: int | None = Field(default=None, ge=1)
+    store_dialog_size: str | None = None
+    store_dialog_children: int | None = Field(default=None, ge=0)
+    store_name: str | None = None
+    store_first_edit: str | None = None
+    store_working_directory: str | None = None
+    #: ``None`` when the caller named no directory to compare against.
+    working_directory_matches: bool | None = None
+    notes: tuple[str, ...] = ()
+
+
 class StripState(ValueModel):
     """What the strip shows right now: structure in, view derived out.
 

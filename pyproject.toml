@@ -25,6 +25,7 @@ marimo = [
 udv-inspect = "udv_echo_process.cli:inspect_main"
 udv-viz = "udv_echo_process.cli:viz_main"
 udv-run-all = "udv_echo_process.cli:run_all_main"
+udv-acquire = "udv_echo_process.cli:acquire_main"
 
 [build-system]
 requires = ["hatchling"]

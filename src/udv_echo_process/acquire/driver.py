@@ -149,6 +149,8 @@ from udv_echo_process.acquire.actuator import (
     DialogControl,
     OverlayKind,
     ParamRole,
+    PreflightReport,
+    ScreenFingerprint,
     StripControl,
     StripState,
     StripView,
@@ -698,6 +700,22 @@ def same_directory(shown: str, expected: str | Path) -> bool:
         )
     except (OSError, ValueError):
         return False
+
+
+def _same_directory(reported: str, expected: Path) -> bool:
+    """Is the dialog's working directory the one the caller meant?
+
+    Compared, never written: the cycle asserts this field and *sets* it when it differs, which
+    is precisely what a preflight must not do. Windows paths are case-insensitive and the
+    dialog pads its text, so the comparison normalises both sides rather than the caller.
+    """
+    return normalized_path(reported) == normalized_path(str(expected))
+
+
+def normalized_path(text: str) -> str:
+    """A path as it can be compared: trailing separators and case removed, slashes unified."""
+    cleaned = text.strip().replace("/", "\\").rstrip("\\")
+    return cleaned.casefold()
 
 
 class Win32Actuator:
@@ -2221,6 +2239,165 @@ class Win32Actuator:
         return wanted.channel
 
     # ------------------------------------------------------------------ Actuator
+
+    # ------------------------------------------------------------- the read-only surface
+
+    def screen_fingerprint(self) -> ScreenFingerprint:
+        """What the screen is right now, without pressing anything.
+
+        The first thing to read on an instrument nobody here can see
+        (``docs/dop3000/live-bringup.md`` §3, stage 1): the counts say whether this is the clean
+        measurement layout, the strip view says which of the three buttons means what, and the
+        overlay says whether a modal is up while it should not be. Nothing is pressed, no dialog
+        is opened and nothing is written, so it is safe to take on an instrument someone else is
+        using — which is the whole reason it exists as a supported call.
+
+        A screen that cannot be resolved at all *does* raise, from :meth:`_resolve`: no window
+        is an answer the caller has to see. An unreadable cursor does not — it comes back
+        ``None``, because this driver's own shell runs in a service session where
+        ``GetCursorPos`` fails with error 1459.
+        """
+        roles = self._resolve()
+        hwnd = self._main_hwnd()
+        win32gui, _ = _gui()  # loaded here, like every other win32 use in this module
+        user32 = ctypes.windll.user32  # this build of pywin32 has no IsZoomed/GetSystemMetrics
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        try:
+            cursor: tuple[int, int] | None = self._cursor_position()
+        except Exception:  # noqa: BLE001 - a cursor this session cannot read is not a fault
+            cursor = None
+        try:
+            foreground = self._foreground_window() == hwnd
+        except Exception:  # noqa: BLE001 - the foreground is a precondition of presses, not of reading
+            foreground = False
+        return ScreenFingerprint(
+            class_name=self._class_name,
+            hwnd=hwnd,
+            rect=(left, top, right, bottom),
+            maximized=bool(user32.IsZoomed(hwnd)),
+            screen=(user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)),
+            panels=len(roles["panels"]),
+            visible_controls=len(roles["raw"]),
+            # Through the public primitive rather than `_state_of(roles)` directly: it is the
+            # same read (`strip_state()` is `_state_of(_resolve())`), and it is the one a faked
+            # actuator can answer — the point of this method existing at all is that it is
+            # testable off the instrument.
+            strip=self.strip_state(),
+            # The detector the *cycle* uses (`_peek_overlay`), not the rect-rule finder: what
+            # a reader needs to know is whether a modal is up that the next step would trip on.
+            overlay=self.peek_overlay(),
+            layout_note=self.layout_note(),
+            cursor=cursor,
+            is_foreground=foreground,
+        )
+
+    def hold_recording(self, duration_s: float) -> None:
+        """Wait out a point's duration, watching the view and the overlays.
+
+        The public name for what the cycle itself uses, because a caller that drives the strip
+        by hand — a preflight, a probe — needs the *same* hold and not a ``time.sleep``: a
+        monotonic deadline measured from the **confirmed** recording view, a warning answered
+        instead of slept through (a modal stalls the application's own timers), and a recording
+        that stopped by itself raised rather than ignored.
+        """
+        self._hold_recording(duration_s)
+
+    def wait_for_view_guarded(
+        self, want: Iterable[StripView], timeout_s: float
+    ) -> StripState:
+        """Poll for a view while answering the overlays that would otherwise wedge the app."""
+        return self._wait_for_view_guarded(want, timeout_s)
+
+    def peek_overlay(self) -> OverlayKind | None:
+        """Which overlay is up, if any — read-only, and it presses nothing."""
+        return self._peek_overlay()
+
+    def preflight(
+        self,
+        duration_s: float = 2.0,
+        *,
+        expect_directory: Path | None = None,
+    ) -> PreflightReport:
+        """Run one whole cycle and throw the point away: record, stop, read the Store dialog, cancel.
+
+        The operator's sequence with the one dangerous step removed — the Store dialog is
+        answered with its **left** button, never its accept, so nothing is stored and no name is
+        committed. Its purpose is the first contact with an instrument whose application has
+        never been driven: the menubar, the strip, the store view and the Store dialog are the
+        four things a run depends on, and this is the check that all four are reachable *before*
+        a recording is spent on a point (`docs/dop3000/live-bringup.md` stage 3).
+
+        ``expect_directory`` is the directory the caller believes the application stores into;
+        the dialog's own working directory is compared with it rather than written (the cycle
+        itself asserts and *writes* that field, which is exactly what a preflight must not do).
+        Notes raised during the sequence are captured into the report as well as passed to the
+        caller's sink, so a failure on a remote instrument can be read back afterwards.
+        """
+        captured: list[str] = []
+        sink = self._note_sink
+
+        def capture(message: str) -> None:
+            captured.append(message)
+            if sink is not None:
+                sink(message)
+
+        self._note_sink = capture
+        try:
+            state = self.strip_state()
+            started_from = state.view.value
+            if state.view is StripView.STORE:
+                self.press(StripControl.NEW_ACQUISITION)
+                self._note("a leftover store view was up: cleared and restarted")
+                state = self.wait_for_view_guarded((StripView.READY,), VIEW_TIMEOUT_S)
+
+            self.press(StripControl.RECORD)
+            state = self.wait_for_view_guarded((StripView.RECORDING,), VIEW_TIMEOUT_S)
+            view_after_record = state.view.value
+            if state.view is not StripView.RECORDING:
+                raise AcquisitionError(
+                    f"the Record press did not start a recording (view {view_after_record!r})"
+                )
+
+            self.hold_recording(duration_s)
+            self.press(StripControl.STOP)
+            state = self.wait_for_view_guarded((StripView.STORE,), VIEW_TIMEOUT_S)
+            view_after_stop = state.view.value
+            if state.view is not StripView.STORE:
+                raise AcquisitionError(
+                    f"Stop did not reach the store view (view {view_after_stop!r})"
+                )
+
+            self.press(StripControl.DO_STORE)
+            panel, kids = self._require_store_dialog()
+            name_field = self._store_name_field(panel, kids)
+            name_edit, path_edit = self._store_edits(panel, kids)
+            store_name = self._get_text(name_field["hwnd"])
+            first_edit = self._get_text(name_edit["hwnd"])
+            working = None if path_edit is None else self._get_text(path_edit["hwnd"])
+            matches: bool | None = None
+            if working is not None and expect_directory is not None:
+                matches = _same_directory(working, expect_directory)
+
+            self._dialog_button(panel, kids, DialogControl.SAFE)
+            time.sleep(_OVERLAY_SETTLE_S)
+            view_after_cancel = self.strip_state().view.value
+            return PreflightReport(
+                started_from=started_from,
+                view_after_record=view_after_record,
+                held_s=duration_s,
+                view_after_stop=view_after_stop,
+                view_after_cancel=view_after_cancel,
+                channel=self._channel_setting.channel,
+                store_dialog_size=f"{panel['w']}x{panel['h']}",
+                store_dialog_children=len(kids),
+                store_name=store_name,
+                store_first_edit=first_edit,
+                store_working_directory=working,
+                working_directory_matches=matches,
+                notes=tuple(captured),
+            )
+        finally:
+            self._note_sink = sink
 
     def layout_note(self) -> str | None:
         """``None`` only on the clean measurement layout; a summary note otherwise.
