@@ -35,7 +35,7 @@ schtasks /create /tn hermes_gui_probe /tr "\"C:\path\to\clone\.venv\Scripts\pyth
 Then dispatch (the same task is triggered on demand with `/run`):
 
 ```bash
-./tools/live/dispatch.sh status_screen.py 1
+./tools/live/dispatch.sh -m udv_echo_process.cli acquire status
 ```
 
 `dispatch.sh` writes the target and its arguments to `outputs/live/task_target.txt` and
@@ -47,29 +47,44 @@ like a two-minute stall, and it hides *whose* time is being spent. Set
 ### Two forms of target
 
 ```bash
-./tools/live/dispatch.sh -m udv_echo_process.cli acquire-status   # an installed command, from the repo root
-./tools/live/dispatch.sh status_screen.py 1                       # a probe file, from tools/live/probes
+./tools/live/dispatch.sh -m udv_echo_process.cli acquire status   # a package command, from the repo root
+./tools/live/dispatch.sh move_window.py move                       # a probe file, from tools/live/probes
 ```
 
 The `-m` form is how the supported commands are reached, and it is the one the bring-up
 checklist uses; the file form stays for measurements that are not commands (a geometry probe, a
 one-off diagnostic). Both write their log to `outputs/live/task-<target>.log`.
 
-## The probes
+## The commands
 
-| probe | what it does | writes to the app? |
+The supported way to drive the instrument is the package's own CLI, started with the `-m` form
+above. Because it lives in the package it can be tested headless against the fakes, which is
+what the ported probe scripts could not be — they reached into the driver's private members.
+
+| command | what it does | writes to the app? |
 |---|---|---|
-| `status_screen.py <channel>` | read-only inventory: window class/rect/maximised, screen, panels, visible control count, strip view, overlay, `layout_note`, cursor | no |
-| `channel_select.py <channel>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, reports the channel's mode (manual/assisted) and the panel counts | only if the channel differs |
-| `point_cycle.py preflight` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel | no store; presses the strip |
-| `point_cycle.py store <name> <seconds> [channel] [lift]` | one whole point: reset, channel, record `seconds`, stop, name the file, store, read it back | stores a file |
-| `sweep_run.py <seconds> <channel> <rungs>` | the runner's own path for a multi-point sweep: `plan_sweep` → write → read back → record → store → decode → verify → one JSONL entry per point | stores files |
-| `move_window.py move\|restore` | relocates the application window (un-maximising first) so geometry assumptions can be tested; `restore` puts it back maximised | moves a window |
+| `acquire status` | read-only inventory: window class/rect/maximised, screen, panels, visible control count, strip view, overlay, `layout_note`, cursor, foreground | no |
+| `acquire channel <n>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, and reports the channel's mode (manual/assisted) with the panel counts | only if the channel differs |
+| `acquire preflight [--seconds N]` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel with its **left** button | no store; presses the strip |
+| `acquire point <name> --seconds N` | one whole point: reset, channel, record `N` seconds, stop, name the file, store, read it back and decode it | stores one file |
+| `acquire sweep --seconds N --rungs 1,2` | the runner's own path for a multi-point sweep: `plan_sweep` → write → read back → record → store → decode → verify → one JSONL entry per point | stores files |
+| `acquire decode <file> --channel N` | a stored file's own operation words, off the instrument: the file is the authority | no |
 
-`point_cycle.py` and `sweep_run.py` take the application's own working directory from
-`UDV_STORE_DIR` (the cycle **asserts** the Store dialog against it, so a wrong value refuses
-the point rather than scattering files). Logs, screenshots and sweep records land in
-`outputs/live/`; stored `.BDD` files land wherever the application is configured to write.
+`point` and `sweep` take the application's own working directory from `--store-dir` or
+`UDV_STORE_DIR` (the cycle **asserts** the Store dialog against it, so a wrong value refuses the
+point rather than scattering files). `--json` prints a machine-readable report — notes then go
+to stderr, so stdout stays parseable — and the exit codes are 0 ok, 1 a refused point, 2 usage.
+
+### What is still a probe
+
+`probes/` holds only what measures something no command covers. Today that is one file:
+`move_window.py move|restore` relocates the application window (un-maximising first) so the
+geometry assumptions can be tested, and puts it back.
+
+Anything that becomes a *capability* belongs in the package, where a fake can drive it. That is
+the rule the ported scripts broke: they worked on the instrument and could not be tested, so
+nothing caught them drifting. Logs, screenshots and job records land in `outputs/live/`; stored
+`.BDD` files land wherever the application is configured to write.
 
 ## Where the rest lives
 

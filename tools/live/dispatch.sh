@@ -13,7 +13,7 @@
 # visible as a timeout with the log printed.
 #
 # Usage:  ./dispatch.sh <probe.py> [args...]
-#         PROBE_TIMEOUT_S=900 ./dispatch.sh sweep_run.py 12 1 2
+#         PROBE_TIMEOUT_S=900 ./dispatch.sh -m udv_echo_process.cli acquire sweep --seconds 12 --rungs 1,2
 set -u
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
