@@ -866,7 +866,11 @@ class FakeUdopWindow:
       keeps its channel, which is the "a combo write can silently apply" case
       (docs/16 §2);
     - ``text_writes_ignored`` — a text field that paints the new value and keeps
-      its own (``WM_SETTEXT`` without the commit, docs/14 §4).
+      its own (``WM_SETTEXT`` without the commit, docs/14 §4);
+    - ``menu_press_ignored`` — the menubar press opens nothing: the popup never
+      appears, which is the live failure this driver was fixed for;
+    - ``menu_open_delay`` — the popup only appears after that many resolutions, so
+      "the popup is polled for, never assumed" is exercised rather than asserted.
     """
 
     def __init__(
@@ -877,14 +881,20 @@ class FakeUdopWindow:
         combo_writes_ignored: bool = False,
         combo_control_only: bool = False,
         text_writes_ignored: bool = False,
+        menu_press_ignored: bool = False,
+        menu_open_delay: int = 0,
     ) -> None:
         self.channel = channel  # the application's own channel, 1-based
         self.directory = directory
         self.combo_writes_ignored = combo_writes_ignored
         self.combo_control_only = combo_control_only
         self.text_writes_ignored = text_writes_ignored
+        self.menu_press_ignored = menu_press_ignored
+        self.menu_open_delay = menu_open_delay
 
         self.menu_open = False
+        #: Resolutions the popup still takes to appear (see :meth:`press_menu`).
+        self._menu_pending = 0
         self.dialog_open = False
         self.store_open = False
         self.combo_index = channel - 1
@@ -906,7 +916,16 @@ class FakeUdopWindow:
     # ------------------------------------------------------------- the structure
 
     def nodes(self) -> list[dict]:
-        """Every control currently visible, in enumeration order (not screen order)."""
+        """Every control currently visible, in enumeration order (not screen order).
+
+        A pending popup opens here: the application takes a moment to paint a menu,
+        so ``menu_open_delay`` resolutions are consumed before the entries appear —
+        which is why the driver polls for the popup instead of assuming it.
+        """
+        if self._menu_pending:
+            self._menu_pending -= 1
+            if not self._menu_pending:
+                self.menu_open = True
         out = [
             _node(HWND_MENU_BAR, "TSp_Panel", "", top=0, h=24, w=900),
             _node(HWND_PARAMETERS, "TSp_Button", "Parameters", left=120, top=2, w=80),
@@ -970,6 +989,19 @@ class FakeUdopWindow:
 
     def combo_items(self, hwnd: int) -> tuple[str, ...]:
         return driver.channel_items() if hwnd in (HWND_DIALOG_COMBO, HWND_LEFT_COMBO, HWND_DECOY_COMBO) else ()
+
+    def press_menu(self) -> None:
+        """The menubar press: the popup opens on **this**, and never on a hover.
+
+        ``recon/41_burst_sampling_volume.py`` opens this menu with a posted press
+        (down, 180 ms hold, up); the live application ignores a posted mouse move, so
+        a hover is not the opening gesture (``menu_press_ignored`` scripts the press
+        that opens nothing).
+        """
+        if self.menu_press_ignored:
+            return
+        self._menu_pending = max(0, self.menu_open_delay)
+        self.menu_open = self._menu_pending == 0
 
     def open_dialog(self) -> None:
         """The dialog appears showing the application's own channel."""
@@ -1045,12 +1077,26 @@ class FakeDriver(driver.Win32Actuator):
         return [k for k in roles["raw"] if roles["parent_of"].get(k["hwnd"]) == parent]
 
     def _hover(self, hwnd: int) -> None:
-        assert hwnd == HWND_PARAMETERS
-        self.app.menu_open = True
-        self.app.events.append(("hover", "Parameters"))
+        """A hover must never open a menu here: it is the live failure being fixed.
+
+        On the instrument the popup opens on a **posted press**; a posted mouse move
+        never reaches the application's menu loop, which is what made the first live
+        run abort with "the 'Parameters' menu offered no 'Operating parameters'
+        entry". Any hover is therefore a hard failure, not a code path.
+        """
+        raise AssertionError(
+            f"the driver hovered {hwnd}: the popup opens on the posted press "
+            "(recon/41_burst_sampling_volume.py), never on a hover"
+        )
 
     def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
-        if hwnd == HWND_ENTRY_OPERATING:
+        if hwnd == HWND_PARAMETERS:
+            # The recipe's menu press: posted, held for the recipe's 180 ms, released.
+            assert hold_ms == PRESS_HOLD_MS, hold_ms
+            self.app.events.append(("click", "Parameters", hold_ms))
+            self.app.press_menu()
+        elif hwnd == HWND_ENTRY_OPERATING:
+            assert self.app.menu_open, "the entry was pressed before the menu was opened"
             self.app.menu_open = False
             self.app.events.append(("click", "Operating parameters"))
             self.app.open_dialog()
@@ -1158,7 +1204,83 @@ def test_the_menu_entry_is_matched_by_title_not_by_enumeration_order() -> None:
     actuator = fake_driver(app, channel=3)
     actuator.ensure_channel()
     assert ("click", "Operating parameters") in app.events
-    assert ("hover", "Parameters") in app.events
+    # The menu was *pressed* open — posted, held for the recipe's 180 ms — and never
+    # hovered (`_hover` is a hard failure in this fake), and it was pressed first.
+    pressed = app.events.index(("click", "Parameters", PRESS_HOLD_MS))
+    entry = app.events.index(("click", "Operating parameters"))
+    assert pressed < entry, app.events
+
+
+def test_the_menubar_is_opened_by_a_posted_press_not_a_hover(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The instrument opens this menu on a held posted press; a posted move does nothing.
+
+    This exercises the driver's own ``_click_hold`` (posted ``WM_LBUTTONDOWN`` with
+    ``MK_LBUTTON``, the recipe's 180 ms, ``WM_LBUTTONUP``, at the button's *client*
+    coordinates) rather than the fake's stand-in for it.
+    """
+    messages: list[tuple[int, int, int, int]] = []
+    monkeypatch.setattr(
+        driver, "_post", lambda hwnd, msg, wp=0, lp=0: messages.append((hwnd, msg, wp, lp))
+    )
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    class _FakeGui:
+        """The two calls ``_click_hold`` makes, in the shapes it makes them."""
+
+        @staticmethod
+        def GetClientRect(_hwnd: int) -> tuple[int, int, int, int]:
+            return (0, 0, 80, 24)  # a menubar button's client area
+
+        @staticmethod
+        def ClientToScreen(_hwnd: int, point: tuple[int, int]) -> tuple[int, int]:
+            return (1000 + point[0], 2000 + point[1])
+
+    monkeypatch.setattr(driver, "_gui", lambda: (_FakeGui, None))
+    actuator = driver.Win32Actuator(channel=1)
+
+    actuator._click_hold(HWND_PARAMETERS)
+
+    assert [(hwnd, msg) for hwnd, msg, _wp, _lp in messages] == [
+        (HWND_PARAMETERS, driver.WM_LBUTTONDOWN),
+        (HWND_PARAMETERS, driver.WM_LBUTTONUP),
+    ]
+    assert [wp for _h, _m, wp, _lp in messages] == [driver.MK_LBUTTON, 0]
+    centre = (12 << 16) | 40  # (x, y) = the button's client centre
+    assert [lp for _h, _m, _wp, lp in messages] == [centre, centre]
+    # The move that failed live is not sent at all: this menu opens on the press.
+    assert driver.WM_MOUSEMOVE not in [msg for _h, msg, _wp, _lp in messages]
+
+
+def test_the_popup_is_polled_for_and_never_assumed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Entries that appear a few resolutions after the press are still opened."""
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    app = FakeUdopWindow(channel=1, menu_open_delay=3)
+    actuator = fake_driver(app, channel=2)
+    assert actuator.ensure_channel() == 2
+    assert app.channel == 2  # the selection was made and kept
+    assert ("click", "Operating parameters") in app.events
+    # Both opens pressed the menu and then waited for the popup.
+    assert events_of(app, "click").count(("click", "Parameters", PRESS_HOLD_MS)) == 2
+
+
+def test_a_menu_press_that_opens_nothing_fails_the_point_naming_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The live failure, pinned: a press that opens no popup aborts, bounded and named."""
+    monkeypatch.setattr(driver, "_MENU_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    app = FakeUdopWindow(channel=1, menu_press_ignored=True)
+    actuator = fake_driver(app, channel=1)
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+    reason = str(excinfo.value)
+    assert "Parameters" in reason and "Operating parameters" in reason
+    assert ("click", "Operating parameters") not in app.events  # nothing was pressed on
+    assert app.dialog_open is False
 
 
 def test_a_channel_already_selected_is_read_back_and_not_rewritten() -> None:

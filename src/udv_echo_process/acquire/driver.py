@@ -2,12 +2,15 @@
 
 This is the Windows half of :mod:`udv_echo_process.acquire` — the implementation that
 satisfies :class:`~udv_echo_process.acquire.actuator.Actuator`. Everything here is a
-*port* of two verified reference scripts, not a redesign: ``recon/udop_roles.py``
+*port* of three verified reference scripts, not a redesign: ``recon/udop_roles.py``
 (resolving controls by class + position — never by control id, because ids change on
 every launch: 43/43 classes at the same positions, 1/43 ids in common — and never by a
-screen coordinate stated in logic) and ``recon/40_sweep_depth100.py`` (the cycle:
+screen coordinate stated in logic), ``recon/40_sweep_depth100.py`` (the cycle:
 ``set_text_commit``, ``click_hold``, ``strip_view``, ``wait_view``, ``overlay_guard``,
-``overwrite_warning``, ``record_stop_store``, ``get_text``, ``children_of``).
+``overwrite_warning``, ``record_stop_store``, ``get_text``, ``children_of``) and
+``recon/41_burst_sampling_volume.py`` (the menubar: a popup opens on a **posted press**
+held for :data:`…actuator.PRESS_HOLD_MS`, never on a hover, and its entries are ordered
+by their screen ``top`` before one is chosen — enumeration order is not screen order).
 
 Three properties are load-bearing, each paid for once in the lab:
 
@@ -105,6 +108,9 @@ EXPECTED_PANEL_COUNT = 4
 WM_SETTEXT, WM_GETTEXT, WM_COMMAND = 0x000C, 0x000D, 0x0111
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
 WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
+#: Deliberately **unused**: a posted move never opens the application's menus (the
+#: popup opens on the posted press below), so nothing here sends this. It is named so
+#: the tests can assert that no move is posted while a menu is being opened.
 WM_MOUSEMOVE = 0x0200
 EN_CHANGE, CBN_SELCHANGE, CB_SETCURSEL = 0x0300, 0x0001, 0x014E
 #: Combo *read-back* messages: the selected index, the item count, one item's text.
@@ -117,10 +123,10 @@ _COMBO_NONE_ABOVE = 0xFFFF
 #: The menubar button and the popup entry the channel lives behind.
 PARAMETERS_MENU = "Parameters"
 PARAMETERS_ENTRY = "Operating parameters"
-#: How long the popup, the dialog, and a selection read-back are given, in seconds.
-_DIALOG_TIMEOUT_S = VIEW_TIMEOUT_S
-#: The hover that opens the menubar popup settles over this interval.
-_MENU_SETTLE_S = 0.5
+#: How long the popup, the dialog and a selection read-back are given, and the cadence
+#: they are polled at — the reference recipe's own numbers (``while time.time() - t0 < 8:
+#: time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``), not a longer window.
+_MENU_TIMEOUT_S, _MENU_POLL_S = 8.0, 0.5
 #: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
 SEND_TIMEOUT_MS = 2000
 #: The key-event lParams the verified recipe used (scan code / transition packed).
@@ -303,8 +309,10 @@ def _entry_matching(kids: Sequence[dict], title: str) -> dict | None:
 
     Matched by **text**, never by its position in the enumeration order: matching
     enumeration order once picked ``Default parameters`` instead of ``Operating
-    parameters`` and raised a modal panel (docs/16 §6). Ties are broken by screen
-    position, which is the order the operator would see.
+    parameters`` and raised a modal panel (docs/16 §6). The hits are ordered by their
+    screen ``top`` first — enumeration order is *not* screen order
+    (``recon/41_burst_sampling_volume.py``) — so even a tie is settled the way the
+    operator sees the popup.
     """
     wanted = title.strip().casefold()
     hits = [
@@ -848,22 +856,6 @@ class Win32Actuator:
         """The measurement channel this driver is bound to (the single knob)."""
         return self._channel_setting.channel
 
-    def _hover(self, hwnd: int) -> None:
-        """Post a mouse-move onto a control's centre — the menubar opens on hover.
-
-        The menubar buttons open their popup on a **hover** and a click right after
-        the hover *closes* it again (docs/16 §2), so the popup is opened by moving
-        onto the button without pressing it. Nothing here touches the operator's real
-        cursor: the move is a posted ``WM_MOUSEMOVE`` in the *target's* own client
-        coordinates, like every other message this driver sends.
-        """
-        win32gui, _ = _gui()
-        left, top, right, bottom = win32gui.GetClientRect(hwnd)
-        x, y = (right - left) // 2, (bottom - top) // 2
-        lp = ((y & 0xFFFF) << 16) | (x & 0xFFFF)
-        _post(hwnd, WM_MOUSEMOVE, 0, lp)
-        time.sleep(_MENU_SETTLE_S)
-
     def _combo_index(self, hwnd: int) -> int:
         """The combo's selected index, or ``-1`` when it has no selection.
 
@@ -967,10 +959,23 @@ class Win32Actuator:
 
         The dialog is a modal overlay reached through the menubar — not a sidebar
         control, and not a top-level window (``EnumWindows`` finds nothing: the app's
-        dialogs are child panels, docs/16 §6). The menu button is hovered (a click
-        after the hover closes the popup) and the entry is matched by title, then
-        pressed held. Everything is bounded: a popup or dialog that has not appeared
-        within :data:`_DIALOG_TIMEOUT_S` is reported by name instead of waited on.
+        dialogs are child panels, docs/16 §6).
+
+        The menu is opened by **pressing the menubar button**: the recipe's posted
+        ``WM_LBUTTONDOWN``, held for :data:`…actuator.PRESS_HOLD_MS` (180 ms) and
+        released, at the button's own client coordinates — the same held press every
+        other control this driver touches gets (:meth:`_click_hold`,
+        ``recon/41_burst_sampling_volume.py``). On the instrument the popup opens on
+        that press and *not* on a hover: the posted ``WM_MOUSEMOVE`` the driver used
+        first never reached the application's menu loop, so the first live run aborted
+        with "the 'Parameters' menu offered no 'Operating parameters' entry". Nothing
+        posts a move here any more.
+
+        The popup is then **polled for** in :data:`_MENU_POLL_S` steps — it is never
+        assumed to be up — and the entry is matched by title (screen ``top`` order,
+        never enumeration order) before it is pressed held. Both waits are bounded by
+        the recipe's own window, :data:`_MENU_TIMEOUT_S`: a popup or dialog that has
+        not appeared in that time is reported by name instead of waited on.
         """
         roles = self._resolve()
         if roles["open_popup"]:
@@ -981,28 +986,28 @@ class Win32Actuator:
         menu = (roles.get("menu") or {}).get(PARAMETERS_MENU)
         if menu is None:
             raise AcquisitionError(f"no {PARAMETERS_MENU!r} button in the menubar")
-        self._hover(menu["hwnd"])
-        deadline = time.monotonic() + _DIALOG_TIMEOUT_S
+        self._click_hold(menu["hwnd"])  # the popup opens on this held press
+        deadline = time.monotonic() + _MENU_TIMEOUT_S
         entry = None
         while entry is None and time.monotonic() < deadline:
             entry = _entry_matching(self._resolve()["raw"], PARAMETERS_ENTRY)
             if entry is None:
-                time.sleep(_POLL_S - 0.05)
+                time.sleep(_MENU_POLL_S)
         if entry is None:
             raise AcquisitionError(
                 f"the {PARAMETERS_MENU!r} menu offered no {PARAMETERS_ENTRY!r} entry "
-                f"within {_DIALOG_TIMEOUT_S:.0f} s"
+                f"within {_MENU_TIMEOUT_S:.0f} s of its press"
             )
         self._click_hold(entry["hwnd"])
-        deadline = time.monotonic() + _DIALOG_TIMEOUT_S
+        deadline = time.monotonic() + _MENU_TIMEOUT_S
         while time.monotonic() < deadline:
             panels = self._parameters_panels()
             if panels:
                 return panels[0]  # the panels are resolved top-to-bottom
-            time.sleep(_POLL_S - 0.05)
+            time.sleep(_MENU_POLL_S)
         raise AcquisitionError(
             f"the {PARAMETERS_ENTRY!r} dialog did not open within "
-            f"{_DIALOG_TIMEOUT_S:.0f} s of its menu entry"
+            f"{_MENU_TIMEOUT_S:.0f} s of its menu entry"
         )
 
     def _close_parameters_dialog(self, panel: dict) -> None:
@@ -1026,7 +1031,9 @@ class Win32Actuator:
         channel decodes as a perfectly valid point that is not the point (docs/16 §12,
         the channel trap). The order is the load-bearing part:
 
-        1. open ``Parameters → Operating parameters``;
+        1. open ``Parameters → Operating parameters`` — the menubar button is
+           *pressed* (posted down, held, up); on the instrument the popup opens on
+           that press and not on a hover;
         2. find the channel combo *structurally* (see :meth:`_channel_combo`);
         3. read the channel back from the dialog; if it is not the configured one,
            write the selection (``CB_SETCURSEL`` + ``CBN_SELCHANGE``, no Enter) and
