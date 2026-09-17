@@ -572,6 +572,44 @@ One PR-sized change, no Win32 reorganization:
 6. **Fix `_fsync_dir` on Windows** (§5a). Independent, five lines, and nothing in
    the artifact-storage path works on this box without it.
 
+### 7a. What landed, and where it diverged from the list above
+
+Items 1, 2, 3, 4 and 6 landed as PR #2 (`fix/acquisition-correctness-baseline`); item 5
+is deferred for the reason the agenda records — carrying a `ScreenFingerprint` needs an
+`Actuator` protocol extension, which belongs with Phase 6 rather than with the
+correctness baseline. Field names as shipped, because a decision record that names
+fields the code does not have is its own kind of drift: `decoded.n_profiles`,
+`decoded.span_s`, `decoded.achieved_period_s`, `decoded.median_interval_s`,
+`decoded.interval_deviation`, `retained_fraction`, `block_at_cap` / `block_wrapped`,
+`requested_duration_s`, `block_cap_profiles`, and `covariates_enforced` /
+`covariates_advisory` / `covariate_advisories`.
+
+Two of the six turned out to be load-bearing in ways this list did not anticipate:
+
+- item 3's "when the request carries them" is the whole substance of it. The first
+  implementation *assigned* the enforced list before reading the request, so a point
+  declaring only a sound speed still recorded all three covariates as checked —
+  claiming a verification that never happened, which is the opposite of what the field
+  is for.
+- item 4's period is the **full-span effective interval** `span / (N - 1)`, not the
+  median adjacent interval: the convention `analysis/rpm.py` derived for this timebase
+  (a measured 0.562% RPM shift from the median), which [the agenda's analysis
+  backlog](../agenda.md#analysis) restates for the burst fixtures: *do not compact it
+  onto the median intra-burst interval*. The median survives only as a diagnostic,
+  beside the regularity measure that module guards on — which, on the committed point,
+  reports a 9.36% maximum interval deviation against the 5% `uniform_rtol` such a path
+  refuses an axis on. Recorded, not adjudicated: whether acquisition points must satisfy
+  the same regularity is an acceptance-policy question (Phase 7).
+
+An independent review of PR #2 then requested three changes before merge. All three
+were verified against the code and accepted, with the above: `1fd60eb` (only compared
+covariates are reported, enforced and advisory alike), `ddb446f` (the period convention,
+with the diagnostic fields), `2028977` (reaching the cap is not a wrap), `7437303` (the
+`_fsync_dir` claim restated as the weaker durability guarantee it is). That review
+confirmed the deferrals — `driver.py`, the state machine, `Actuator`, `operation.py`
+and the instrument-snapshot layer — as out of scope for this slice, which is why §6
+stands unchanged.
+
 ## 8. Re-verification recipe
 
 ```bash

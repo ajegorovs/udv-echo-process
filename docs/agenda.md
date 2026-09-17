@@ -212,7 +212,8 @@ Binding outcomes:
   fail-closed, so a point nobody checked is refused instead of passing on its size;
   the settled covariates (words 19/5/8) are enforced while word 14 stays
   recorded-but-unenforced; and `ProfileTiming` plus the retained window (profile
-  count, span, wrap, retained fraction) are derived from the stored profile
+  count, span, the effective interval, the at-cap/wrap distinction, retained
+  fraction) are derived from the stored profile
   timestamps rather than from the request. The preflight fingerprint in the run
   record is **not** in this slice — it needs an `Actuator` protocol extension and
   belongs with campaign compilation.
