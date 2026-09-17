@@ -30,8 +30,10 @@ import pytest
 
 from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.acquire.verify import (
+    ADVISORY_COVARIATES,
     CHANNEL_1_OFFSET_BYTES,
     CHANNEL_STRIDE_BYTES,
+    ENFORCED_COVARIATES,
     VerificationResult,
     WordFacts,
     read_words,
@@ -126,15 +128,18 @@ def params_for(
     resolution_mm: float | None = None,
     first_gate_mm: float = FIRST_GATE_MM,
     sound_speed_ms: float = SOUND_SPEED_MS,
+    prf_us: float = PRF_US,
+    emissions_per_profile: int = EMISSIONS_PER_PROFILE,
+    burst_length: int = BURST_LENGTH,
 ) -> ParameterSet:
     return ParameterSet(
         sound_speed_ms=sound_speed_ms,
         first_gate_mm=first_gate_mm,
         resolution_mm=RUNG_MM * (rung + 1) if resolution_mm is None else resolution_mm,
         gates=gates,
-        prf_us=PRF_US,
-        emissions_per_profile=EMISSIONS_PER_PROFILE,
-        burst_length=BURST_LENGTH,
+        prf_us=prf_us,
+        emissions_per_profile=emissions_per_profile,
+        burst_length=burst_length,
     )
 
 
@@ -216,6 +221,110 @@ def test_default_depth_tolerance_is_one_and_a_half_mm() -> None:
     signature = inspect.signature(verify_stored_point)
     assert signature.parameters["depth_tolerance_mm"].default == 1.5
     assert signature.parameters["check_covariates"].default is False
+
+
+# --------------------------------------------------------------------------- #
+# The covariate split: three words a definition asserts about the instrument, and
+# one whose declaration has been the wrong side of the comparison.
+# --------------------------------------------------------------------------- #
+
+
+def test_the_settled_covariates_are_the_three_the_live_points_agreed_on() -> None:
+    """PRF, sound speed and burst — the words the six live points matched exactly."""
+    assert ENFORCED_COVARIATES == ("sound_speed_ms", "prf_us", "burst_length")
+    assert ADVISORY_COVARIATES == ("emissions_per_profile",)
+    assert set(ENFORCED_COVARIATES).isdisjoint(ADVISORY_COVARIATES)
+
+
+def test_a_prf_that_disagrees_is_enforced(tmp_path: Path) -> None:
+    """A declared PRF is an assertion about the instrument, so a mismatch refuses.
+
+    The stored point carries PRF 169 µs (the configuration of the committed
+    ``sw100`` recording); the request says 212 µs, which is what the reference
+    install was set to in the session that recorded the six-point campaign. Those
+    cannot both be true of one instrument at one moment, and the point must not be
+    logged good until that is resolved.
+    """
+    path = build_bdd(tmp_path / "prf.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, prf_us=212.0),
+        check_covariates=True,
+    )
+
+    assert result.ok is False
+    assert result.mismatches == (
+        "prf_us: requested 212, found 169 in word 5 (tolerance 1)",
+    )
+    assert result.advisories == ()  # word 14 agrees; nothing else to report
+    assert result.enforced_covariates == ENFORCED_COVARIATES
+
+
+def test_emissions_that_disagree_are_an_advisory_not_a_mismatch(tmp_path: Path) -> None:
+    """Word 14 is read and reported — and does not refuse the point.
+
+    The request says 52 emissions; the file says 150. The 52 is not a reading off the
+    instrument: it is the period law inverted to reproduce the committed recording's
+    own profile count (``EMISSIONS_PER_PROFILE`` in ``test_acquire_runner.py``). So the
+    *declaration* is what disagrees, and refusing the point over it would refuse a file
+    whose core words are all exactly right. It becomes an enforceable covariate when a
+    campaign compiles against a live instrument snapshot instead of a definition.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+        check_covariates=True,
+    )
+
+    assert result.mismatches == ()
+    assert result.ok is True
+    assert result.advisories == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+    # Read either way: the fact reaches the caller whether or not it is enforced.
+    assert result.facts.emissions_per_profile == EMISSIONS_PER_PROFILE
+
+
+def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
+    """The comparison is made on every call; only the three settled words refuse.
+
+    The advisory is evidence about the *declaration*, and a caller that never turns
+    enforcement on still has to be able to see it.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+    )
+
+    assert result.ok is True
+    assert result.enforced_covariates == ()
+    assert result.advisories == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+
+
+def test_a_covariate_nobody_declared_is_not_a_mismatch(tmp_path: Path) -> None:
+    """An absent covariate in the request is compared against nothing."""
+    path = build_bdd(tmp_path / "no-covariates.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        ParameterSet(
+            sound_speed_ms=SOUND_SPEED_MS,
+            first_gate_mm=FIRST_GATE_MM,
+            resolution_mm=0.122,
+            gates=805,
+        ),
+        check_covariates=True,
+    )
+
+    assert result.ok is True, result.mismatches
+    assert result.advisories == ()
 
 
 # --------------------------------------------------------------------------- #
@@ -457,14 +566,13 @@ def test_a_request_with_no_core_fields_cannot_read_as_fine(tmp_path: Path) -> No
     (
         (5, 200, "prf_us"),
         (8, 8, "burst_length"),
-        (14, 300, "emissions_per_profile"),
         (19, 1500, "sound_speed_ms"),
     ),
 )
-def test_covariate_disagreement_is_reported(
+def test_a_settled_covariate_disagreement_is_reported(
     tmp_path: Path, word: int, value: int, field: str
 ) -> None:
-    """The dialog-only parameters are carried in the file and checked too."""
+    """The dialog-only words a definition asserts about the instrument are checked."""
     words = live_words(0, 805, 100)
     words[(1, word)] = value
     path = build_bdd(tmp_path / f"cov_{field}.BDD", words)
@@ -476,6 +584,24 @@ def test_covariate_disagreement_is_reported(
     )
     assert result.ok is False
     assert any(message.startswith(f"{field}:") for message in result.mismatches)
+
+
+def test_an_emissions_disagreement_is_reported_as_an_advisory(tmp_path: Path) -> None:
+    """The fourth word is carried in the file, read, and reported — not enforced."""
+    words = live_words(0, 805, 100)
+    words[(1, 14)] = 300
+    path = build_bdd(tmp_path / "cov_emissions.BDD", words)
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122),
+        check_covariates=True,
+    )
+    assert result.mismatches == ()
+    assert result.ok is True
+    assert any(
+        message.startswith("emissions_per_profile:") for message in result.advisories
+    )
 
 
 def test_covariates_are_off_by_default(tmp_path: Path) -> None:
@@ -560,8 +686,10 @@ def test_real_rung0_point_reads_the_live_words() -> None:
         depth_tolerance_mm=0.01,
     ).ok
 
-    # Its words say emissions 150; a request of 52 cannot be confirmed by it.
-    enforced = verify_stored_point(
+    # Its words say emissions 150; a request of 52 cannot be confirmed by it — and
+    # since what disagrees is the *declaration* (52 is the period law inverted, not an
+    # instrument reading), the disagreement is an advisory on a point that still passes.
+    declared = verify_stored_point(
         REAL_RUNG0,
         ParameterSet(
             sound_speed_ms=SOUND_SPEED_MS,
@@ -572,8 +700,9 @@ def test_real_rung0_point_reads_the_live_words() -> None:
         ),
         check_covariates=True,
     )
-    assert enforced.ok is False
-    assert enforced.mismatches == (
+    assert declared.mismatches == ()
+    assert declared.ok is True
+    assert declared.advisories == (
         "emissions_per_profile: requested 52, found 150 in word 14",
     )
 

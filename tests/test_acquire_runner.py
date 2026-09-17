@@ -647,14 +647,23 @@ class FakeVerification:
     """The shape of a ``VerificationResult``, built without importing ``verify``.
 
     The interface is pinned by the runner's contract (``ok``, ``mismatches``,
-    ``facts``); this object answers to it so the tests do not depend on the sibling
-    module being in the checkout.
+    ``facts``, ``advisories``, ``enforced_covariates``); this object answers to it so
+    the tests do not depend on the sibling module being in the checkout.
     """
 
-    def __init__(self, ok: bool, mismatches: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        ok: bool,
+        mismatches: Iterable[str] = (),
+        *,
+        advisories: Iterable[str] = (),
+        enforced_covariates: Iterable[str] = (),
+    ) -> None:
         self.ok = bool(ok)
         self.mismatches = tuple(str(mismatch) for mismatch in mismatches)
         self.facts = None
+        self.advisories = tuple(str(advisory) for advisory in advisories)
+        self.enforced_covariates = tuple(str(field) for field in enforced_covariates)
 
 
 class ScriptedVerifier:
@@ -665,9 +674,16 @@ class ScriptedVerifier:
         *,
         ok: bool = True,
         mismatches: Iterable[str] = (),
+        advisories: Iterable[str] = (),
+        enforced_covariates: Iterable[str] = (),
         error: BaseException | None = None,
     ) -> None:
-        self.result = FakeVerification(ok, mismatches)
+        self.result = FakeVerification(
+            ok,
+            mismatches,
+            advisories=advisories,
+            enforced_covariates=enforced_covariates,
+        )
         self.error = error
         self.calls: list[tuple[Path, object]] = []
         #: The channel each call named, in order — ``None`` when the runner named none.
@@ -792,6 +808,16 @@ def stored_names(directory: Path) -> list[str]:
 def is_committed_point_sized(fixture: Path) -> bool:
     """The committed point is a ~100 kB recording, not a stub or a placeholder."""
     return 50_000 <= fixture.stat().st_size <= 400_000
+
+
+def committed_point_fixture() -> Path:
+    """The committed ``sw100`` point: rung index 0, 805 gates, c = 1460, PRF 169."""
+    return (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "dop3010-velocity"
+        / "sw100-k1-161738.BDD"
+    )
 
 
 def status_of(outcome: PointOutcome) -> PointStatus:
@@ -1136,12 +1162,7 @@ def test_a_real_committed_point_decodes_through_the_real_reader(
     within a few per cent of the size the signature expects for it, so the guard
     has to pass it.
     """
-    fixture = (
-        Path(__file__).resolve().parents[1]
-        / "data"
-        / "dop3010-velocity"
-        / "sw100-k1-161738.BDD"
-    )
+    fixture = committed_point_fixture()
     if not fixture.is_file():
         pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
     pytest.importorskip(
@@ -1410,6 +1431,77 @@ def test_a_point_with_no_verdict_is_refused_not_passed(
     records = point_records(read_entries(log_path))
     assert len(records) == 1
     assert records[0].status is PointStatus.INVALID
+
+
+def test_the_record_carries_what_was_enforced_and_what_was_only_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An advisory reaches the log without invalidating the point.
+
+    The runner keeps the verifier's enforced-field list and its advisories on the
+    record: "it agreed" and "nobody looked" are otherwise indistinguishable a week
+    later, and a disagreement that is deliberately not enforced is evidence that would
+    exist nowhere else.
+    """
+    advisory = "emissions_per_profile: requested 52, found 150 in word 14"
+    verifier = ScriptedVerifier(
+        advisories=(advisory,),
+        enforced_covariates=("sound_speed_ms", "prf_us", "burst_length"),
+    )
+    _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=verifier)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.covariate_advisories == (advisory,)
+    assert record.covariates_enforced == (
+        "sound_speed_ms",
+        "prf_us",
+        "burst_length",
+    )
+
+
+def test_the_committed_point_passes_with_its_emissions_disagreement_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real fixture through the real verifier: enforced words agree, word 14 does not.
+
+    ``sw100-k1-161738.BDD`` is the point this runner plans — rung 0, 805 gates,
+    c = 1460 m/s, PRF 169 µs, burst 4 — so the three enforced covariates agree, and the
+    size guard passes it unaided (139,193 B against ~139,617 expected). What does *not*
+    agree is word 14: the plan says 52 emissions, the file says 150. That is the
+    disagreement that made the covariate check optional in the first place, and the
+    point is still a good point — so it passes, with the disagreement on the record
+    instead of nowhere.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.covariates_enforced == (
+        "sound_speed_ms",
+        "prf_us",
+        "burst_length",
+    )
+    assert record.covariate_advisories == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
 
 
 # ------------------------------- 10b. the channel both reads of a file must name

@@ -226,6 +226,14 @@ class SweepPointRecord(ValueModel):
     expected_size_bytes: int | None = Field(default=None, ge=0)
     decoded: DecodedBlock | None = None
     failure: str | None = None
+    #: Covariate fields the word-level check *enforced* for this point. Empty means
+    #: nobody looked — the difference between "it agreed" and "it was never compared".
+    covariates_enforced: tuple[str, ...] = ()
+    #: Comparisons that disagreed and were deliberately **not** enforced (word 14,
+    #: emissions per profile: the declaration is derived, not read off the instrument).
+    #: An advisory never invalidates a point; it is here so the disagreement survives
+    #: in the record instead of being invisible.
+    covariate_advisories: tuple[str, ...] = ()
 
     @property
     def gate_drift(self) -> float | None:

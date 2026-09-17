@@ -243,6 +243,10 @@ class _Attempt:
     size_bytes: int | None = None
     expected_bytes: int | None = None
     aborted: bool = False
+    #: Comparisons the verifier made and *recorded* but did not enforce (word 14).
+    advisories: tuple[str, ...] = ()
+    #: The covariate fields the verifier enforced for this point.
+    enforced_covariates: tuple[str, ...] = ()
 
 
 class SweepRunner:
@@ -602,7 +606,10 @@ class SweepRunner:
             )
         try:
             verification = verify_stored_point(
-                path, parameters, channel=self._channel_setting.channel
+                path,
+                parameters,
+                channel=self._channel_setting.channel,
+                check_covariates=True,
             )
         except Exception as exc:  # noqa: BLE001 - no verdict is not a pass
             return self._fail(
@@ -612,6 +619,17 @@ class SweepRunner:
                 "not this point's data",
                 status=PointStatus.INVALID,
             )
+        # Kept whether or not the verdict is ok: the comparisons the verifier made but
+        # does not enforce are the evidence a later reader cannot reconstruct (word 14's
+        # 150 against a plan's 52 is the case), and an invalidated point is exactly
+        # where someone will want them.
+        attempt.advisories = tuple(
+            str(item) for item in (getattr(verification, "advisories", None) or ())
+        )
+        attempt.enforced_covariates = tuple(
+            str(item)
+            for item in (getattr(verification, "enforced_covariates", None) or ())
+        )
         if not verification.ok:
             mismatches = tuple(str(item) for item in (verification.mismatches or ()))
             detail = "; ".join(mismatches) or "the verifier named no mismatch"
@@ -773,6 +791,8 @@ class SweepRunner:
             expected_size_bytes=attempt.expected_bytes,
             decoded=attempt.decoded,
             failure=attempt.reason,
+            covariate_advisories=attempt.advisories,
+            covariates_enforced=attempt.enforced_covariates,
         )
 
     def _report(self, attempt: _Attempt) -> None:
