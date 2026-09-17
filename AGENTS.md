@@ -358,6 +358,12 @@ algorithms, and experimental-setup-specific algorithms.
   and reconstruct the private pack, and the live open items. Read it before
   re-opening a rejected decision, claiming a capability was fully absorbed, or
   deleting the source checkout or pack.
+- `docs/dop3000/acquisition-review-and-verdict.md` — the DOP3010 acquisition
+  review as received plus its verdict: findings verified with `file:line`
+  evidence, what the review over-stated or missed, the per-phase decision
+  (accepted / modified / deferred behind a trigger) and the first
+  implementation slice. Read it before re-proposing that review, before
+  extending the sweep parameters, and before splitting `acquire/driver.py`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
 
 ## Privacy — do not overexpose

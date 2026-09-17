@@ -191,6 +191,40 @@ profiles in one fixture and 4193–4927 in another.
 
 ---
 
+## Active work — DOP3010 acquisition: stabilize before extending
+
+An independent repository-wide review of the acquisition subsystem was assessed
+against the checkout on 2026-09-18: **all eight findings verified, the direction
+accepted, the refactor roadmap accepted only in part**. Decision record, review
+text and evidence lines:
+[`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md).
+
+Binding outcomes:
+
+- **First slice — acquisition correctness baseline** (no Win32 reorganization):
+  forward the channel into `verify_stored_point` (`runner.py:589` currently
+  verifies channel 1 while decoding the run's channel) with a runner-level
+  channel-2 regression test; make verification mandatory; enforce the settled
+  covariates (words 19/5/8) while word 14 stays recorded-but-unenforced; derive
+  `ProfileTiming`/retained span/`wrapped_block` from the stored profile
+  timestamps; carry the preflight fingerprint into the run record.
+- **Also open, independent of the review:** `storage/npy.py::_fsync_dir` opens a
+  directory with `os.open`, which raises `PermissionError` on Windows for any
+  directory — `store_bundle` cannot complete on this platform, and ~35
+  `test_storage_npy.py` failures are that defect, not environment noise. A
+  Linux CI would mask it.
+- **Deferred behind a trigger:** splitting `acquire/driver.py` (149 kB of
+  live-proven gestures — split only when a change forces the file open, and
+  mechanically); the explicit UDOP state machine in code; replacing rather than
+  wrapping the `Actuator` surface.
+- **Rules that constrain the work:** the decoded-metadata gate in
+  [UDV product backlog](#visualization-and-acquisition-support) (evidence,
+  destination field, propagation, storage implications — word 14/27 decoding is
+  already gated there), and the verbatim-port rule for `acquire/` and
+  `tools/live/` (move a proven gesture, never re-derive it).
+
+---
+
 ## UDV product backlog
 
 ### Pre-processing and filtering
