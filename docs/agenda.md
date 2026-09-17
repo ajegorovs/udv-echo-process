@@ -207,6 +207,14 @@ recorded in that PR's body and in
 [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md)
 §7a–§7b.
 
+**The next slice is planned, not started:**
+[PR #3](https://github.com/ajegorovs/udv-echo-process/pull/3) (draft) carries
+[`dop3000/acquisition-campaign-compilation-plan.md`](dop3000/acquisition-campaign-compilation-plan.md)
+— read the instrument's state, compile the campaign against it, and refuse before the
+first recording when the two disagree; plus the cap-provenance and period-law items the
+review of the first slice carried forward. Five decisions are left open in it (§5), and no
+code is written yet.
+
 Binding outcomes:
 
 - **First slice — acquisition correctness baseline** (no Win32 reorganization):
