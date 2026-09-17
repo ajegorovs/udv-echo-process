@@ -461,3 +461,76 @@ point's gate geometry checkable from `word 10 + word 19` alone.
 6. **The external-trigger / `Auto record` path is unexercised.** It remains the
    better design — it takes the strip out of the critical path entirely, and one
    arming can produce several files — but only the rig can exercise it.
+
+---
+
+## 12. Roadmap and standing decisions
+
+The stage this work is at, and the decisions that are settled rather than open —
+they are here so a later reader does not re-litigate them from the mechanism in
+§§1–10 alone.
+
+### 12.1 Stage: the simulation application only
+
+In order, and until each step is done the next one does not start:
+
+1. **The simulation application only.** Everything measured in §§1–10 was
+   measured on the simulator; nothing above is claimed for the connected
+   instrument.
+2. **Then a repo review** — what these points and this mechanism imply for the
+   code that consumes them (§10 is the first half of that; it is not the review).
+3. **Then the connected UDV box**, and the first thing to do there is **verify
+   how the UI elements map**: the same roles, the same top-to-bottom order, the
+   same view structures, or a documented difference. Nothing in §3 or §5 may be
+   assumed to carry over on the strength of the simulator alone.
+4. **Only then matrix construction.** The sweep matrix is planned against a
+   mechanism that is verified on the box it will run on.
+
+### 12.2 The external trigger is out of scope
+
+**All synchronization is done at the software level.** The driver holds the
+record window with its own clock and reads the achieved period back per point
+(§8); the instrument is never asked to start a recording on its own. The
+external-trigger / `Auto record` path of §11.6 stays unexercised and is **not**
+part of this plan: it is a separate decision to be taken deliberately, never a
+fallback the driver may switch to silently.
+
+### 12.3 PRF and the profile period
+
+- **PRF sets the maximum resolvable fluid velocity, and it is the operator who
+  chooses it, by observation.** It therefore stays a **runtime parameter** — it
+  is not derived from the matrix and must not be hard-coded.
+- **Minimum emissions per profile is 8.** Read that as the floor of the axis, not
+  as a default.
+- **The period target is not fixed yet.** It will be tuned during live tests,
+  aiming for a measurement period of at most roughly **100–150 ms**. Minimizing
+  the period matters because of the turbulent flow: the shorter the measurement
+  period, the more of the flow's structure survives into the recorded block.
+- **A fixed period target must therefore not be hard-coded** anywhere in the
+  driver. The period is measured and logged per point (§8), and every check that
+  needs it takes the measured value, not a constant.
+
+### 12.4 The block cap is not a planning limit
+
+The cap is **not** the constraint that shapes a point: the UI accepted more than
+a million profiles in one block (§7), so it is not a limit to plan the sweep
+around. The real constraint is this:
+
+> **A `memory full` condition must never silently corrupt a point.** The
+> recording does **not** stop at the cap, and the accumulated block is deposited
+> on save — so a stored file can look entirely valid while no longer covering the
+> intended window.
+
+A point that sees such a condition is therefore treated as **invalid** — reported
+as failed, not stored, not decoded, and not compared with its neighbours.
+Invalid is the only safe reading: the file gives the checker nothing to
+distinguish it from a good point (§7, §11.1).
+
+### 12.5 Point lengths
+
+While the mechanism is being stabilised, points are deliberately **short — 1–2 s
+— for fast iteration**: a point that is wrong is discovered in seconds and the
+whole chain can be re-run cheaply. **Production points will be 10–20 s.** Nothing
+in the driver may depend on the short duration: a point stays a duration in
+seconds (§8), the cap assertion stays `T ≤ cap × period`, and the period stays
+whatever the instrument reports for that configuration.
