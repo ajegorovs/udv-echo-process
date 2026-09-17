@@ -574,7 +574,8 @@ One PR-sized change, no Win32 reorganization:
 
 ### 7a. What landed, and where it diverged from the list above
 
-Items 1, 2, 3, 4 and 6 landed as PR #2 (`fix/acquisition-correctness-baseline`); item 5
+Items 1, 2, 3, 4 and 6 landed as PR #2, merged to `master` as `262b6ea` (16 commits,
+`29278c8`..`28ad7f9`); item 5
 is deferred for the reason the agenda records — carrying a `ScreenFingerprint` needs an
 `Actuator` protocol extension, which belongs with Phase 6 rather than with the
 correctness baseline. Field names as shipped, because a decision record that names
@@ -636,8 +637,8 @@ Recorded, not resolved here — the reviewer's verdict is that none of it holds 
   fitness for purpose (Phase 7), not for reusing an estimator's tolerance as an
   acquisition rule.
 
-The storage fix stays in this PR by the reviewer's judgement: it repairs the Windows
-baseline this PR uses as its own quality gate, and splitting it would only add
+The storage fix stayed in that PR by the reviewer's judgement: it repairs the Windows
+baseline that slice used as its own quality gate, and splitting it would only have added
 merge/rebase sequencing for the same two numbers.
 
 ## 8. Re-verification recipe

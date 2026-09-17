@@ -199,10 +199,13 @@ accepted, the refactor roadmap accepted only in part**. Decision record, review
 text and evidence lines:
 [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md).
 
-**The first slice is in review:**
-[PR #2](https://github.com/ajegorovs/udv-echo-process/pull/2),
-`fix/acquisition-correctness-baseline` — the correctness baseline below, plus the
-`_fsync_dir` fix, which the baseline needs for its own gate to mean anything.
+**The first slice is merged:**
+[PR #2](https://github.com/ajegorovs/udv-echo-process/pull/2) (`262b6ea`, 16 commits,
+`29278c8`..`28ad7f9`) — the correctness baseline below, plus the `_fsync_dir` fix, which
+the baseline needed for its own gate to mean anything. Two review rounds on it are
+recorded in that PR's body and in
+[`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md)
+§7a–§7b.
 
 Binding outcomes:
 
@@ -221,8 +224,7 @@ Binding outcomes:
   directory with `os.open`, which raises `PermissionError` on Windows for any
   directory — `store_bundle` cannot complete on this platform, and ~35
   `test_storage_npy.py` failures are that defect, not environment noise. A
-  Linux CI would mask it. **Fixed in PR #2** (`ec957e1`); still open on `master`
-  until that PR merges.
+  Linux CI would mask it. **Fixed on `master`** (`ec957e1`, merged in `262b6ea`).
 - **Deferred behind a trigger:** splitting `acquire/driver.py` (149 kB of
   live-proven gestures — split only when a change forces the file open, and
   mechanically); the explicit UDOP state machine in code; replacing rather than
