@@ -286,13 +286,17 @@ def _fsync_dir(path: Path) -> None:
     would add a failure mode in exchange for durability nothing here can
     confirm. So the gate is an explicit no-op on Windows.
 
-    That gives up nothing this store was relying on: every file's bytes are
-    already fsynced (:func:`_write_bytes` for the manifest and ``COMPLETE``,
-    :func:`_save_array` for each array) before the rename, so only NTFS's own
-    ordering for the new directory entry is left to the OS — and the documented
-    alternative, ``FILE_FLAG_WRITE_THROUGH``, is a property of the handle used
-    for the write, which ``os.rename`` cannot request. On POSIX nothing changes:
-    a directory open or fsync failure still propagates.
+    What this costs on Windows is a **weaker durability guarantee**, and it should be
+    read as one rather than as a no-op with no consequences: a POSIX directory fsync is
+    exactly what makes the directory *entry* durable — the rename, the new name appearing
+    in its parent — and on Windows that ordering is left to NTFS. The file **contents**
+    are not what is at risk. Every file's bytes are fsynced before the rename or the
+    marker (:func:`_write_bytes` for the manifest and ``COMPLETE``, :func:`_save_array`
+    for each array), so what is left unfenced is the appearance of the name after a power
+    loss, not the bytes behind it. The documented alternative,
+    ``FILE_FLAG_WRITE_THROUGH``, is a property of the handle used for the write, which
+    ``os.rename`` cannot request. On POSIX nothing changes: a directory open or fsync
+    failure still propagates.
     """
     if os.name == "nt":
         return
