@@ -61,7 +61,13 @@ three times, including one run that recovered the dialog this port had left open
 - the **combo write settles for the reference's 0.8 s** (`_COMBO_SETTLE_S`), not the
   shorter text-write settle: this is the path that decides the channel;
 - the per-entry dialog window is the reference's own 8 s (`_ENTRY_DIALOG_TIMEOUT_S`), not
-  a re-derived 2 s; the loop stays bounded by `_MAX_ENTRY_ATTEMPTS = 4`;
+  a re-derived 2 s. **The retry that walked down the popup is gone: one entry is pressed,
+  the topmost.** The second entry is `Default parameters`, and the manual's rule is "the
+  default parameters select the assisted mode" (doc 04) — so a retry to recover from a
+  transient failure switched the instrument's mode on, silently, while the popup (and its
+  cursor clip) was up. The reference never pressed more than the entry it meant. The
+  measured cost is in the mode section below; the guard is
+  `_assert_assisted_unchanged`;
 - the entry-attempt record is read **before** the press (`_pressed_state`): after it the
   popup is gone, and the record of a press that worked said `overlay_visible: false`,
   `overlay_items: 0` — a record worse than none.
@@ -206,10 +212,21 @@ Two live runs settled the channel path, and both changed what the driver may ass
     structurally because every widget here is caption-less;
   - a probe that refuses to start on a non-clean screen will refuse to start on such a channel
     at all, which is why `recon/55_restore_channel.py` exists to put the channel back.
-  What is **not** established, and is worth measuring on the next store: whether channels 2 and
-  3 were in assisted mode *before* this work touched them. The stored file carries the answer —
-  the header's `assisted Mode` flag (manual doc 10) — so the first stored point is the
-  certificate. Nothing else was changed: the channel selector was left where it was found.
+  **The assisted mode is not a consequence of a channel write, and now it is on the record:**
+  the stored file carries the mode in word 1 of its parameter block (`assisted Mode: 1 if
+  true`, manual doc 10; read with the repo's own `verify._word_offset`). Every one of the 23
+  files stored on this installation reads **0** — including `sw100-k2-161609.BDD` (16:16) and
+  `live-smoke-3-k2.BDD` (18:41), the two written while **channel 2** was selected by the
+  earlier session's prototype, and this session's own `port-probe-01.BDD` (22:05, channel 1).
+  Yet the application presented channel 2 (and channel 3) in assisted mode by 21:26. So the
+  state changed somewhere between 19:01 and 21:26 — a window whose only presses were this
+  driver's, which is why the popup walk above is the prime suspect and was removed: the
+  manual's `Default parameters` entry *selects* the assisted mode and the application
+  highlights that entry by itself. This driver now (a) presses only the topmost entry, (b)
+  refuses the point if the sidebar column disappears during the interaction, naming the mode
+  and the entry that does it, and (c) never leaves the mode itself — its own toggle is the
+  application's Preference menu, which `docs/16` records as deliberately not driven. Nothing
+  else was changed: the channel selector was left where it was found.
 - **The `Parameters` popup's five entries are fixed labels** — read off a 3x screenshot of the
   live menu: `Operating parameters`, `Default parameters` (the one the application itself
   highlights), `Save parameters`, `Recall parameters`, `Tigger parameters` (the build's own

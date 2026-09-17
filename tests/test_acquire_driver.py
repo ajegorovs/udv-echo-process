@@ -1886,11 +1886,27 @@ def test_the_entry_press_is_posted_and_held_on_the_entry_s_own_handle(
     # press is posted to the menubar by any path: the menubar takes real input only.
     assert driver.WM_MOUSEMOVE not in [msg for _h, msg, _wp, _lp in messages]
     assert HWND_PARAMETERS not in [hwnd for hwnd, _m, _wp, _lp in messages]
-    # No real-click path survives: the gesture is posted, and the driver holds no handle
-    # to the cursor for it.
+    # A real click *does* exist in this driver — the recording strip needs one, because it
+    # ignores posted messages — but it must never appear on this path: moving the cursor is
+    # also what closes the popup this press is aimed at, so the entry gesture is the one that
+    # holds no cursor. ``user32`` is therefore booby-trapped for a second press: reaching into
+    # it at all is the failure, whichever call it makes.
+    class NoUser32:
+        def __getattr__(self, name: str) -> typing.NoReturn:
+            raise AssertionError(
+                f"the popup-entry press reached into user32.{name}: this gesture is posted "
+                "and takes no cursor, because moving the cursor is what dismisses the popup"
+            )
+
+    monkeypatch.setattr(driver, "_user32", NoUser32)
+    actuator._click_hold(HWND_ENTRY_OPERATING)
+
+    # The removed helpers stay gone: the gesture is posted, and the driver holds no handle
+    # to the cursor for it — not for the entry, and not for the strip either (the strip's
+    # press is posted and held, which is what the live A/B measured).
     assert not hasattr(driver.Win32Actuator, "_real_click_centre")
+    assert not hasattr(driver.Win32Actuator, "_real_click")
     assert not hasattr(driver, "MOUSEEVENTF_LEFTDOWN")
-    assert not hasattr(driver, "GESTURE_REAL_CLICK")
     assert driver.GESTURE_POSTED_PRESS == "posted held press"
 
 
@@ -1962,42 +1978,48 @@ def test_the_operating_dialog_is_found_structurally_and_confirmed_by_its_content
         actuator._channel_combo(panels[0])
 
 
-def test_a_wrong_dialog_is_closed_with_its_left_button_and_the_next_entry_is_tried(
+def test_a_wrong_dialog_is_closed_with_its_left_button_and_no_lower_entry_is_pressed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The `Default parameters` trap, answered the only safe way.
+    """The `Default parameters` trap: the wrong dialog is closed with its LEFT button, and no
+    lower entry is pressed to recover — because the entry below the top one *changes state*.
 
-    The first entry by screen top opens a dialog without the channel combo. It is closed
-    with its **left** button — its default button is the one that would commit whatever
-    the wrong dialog holds — and the next entry by screen top is pressed instead.
+    The first entry by screen top opens a dialog without the channel combo. It is closed with
+    its **left** button (its Accept would commit whatever the wrong dialog holds) and the
+    attempt then **fails**: the next entry is `Default parameters`, and the manual's rule is
+    "the default parameters select the assisted mode" (doc 04). Walking down the popup to
+    recover from a transient failure therefore switches the instrument's mode on, silently,
+    while the popup is up — measured live 2026-09-17: the stored `assisted Mode` word read 0 in
+    every file up to 19:01 and 1 by 21:26, in a window whose only presses were this driver's.
     """
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
     monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, wrong_entry_attempts=1)
     actuator = fake_driver(app, channel=6)
 
-    assert actuator.ensure_channel() == 6
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
 
-    # Both entries were pressed, in screen order, and the wrong dialog came first.
-    assert app.entry_presses[:2] == [HWND_ENTRY_OPERATING, HWND_ENTRY_DEFAULTS]
+    # One press: the topmost entry. The mode-changing entry below it is never pressed.
+    assert app.entry_presses == [HWND_ENTRY_OPERATING], app.entry_presses
+    assert HWND_ENTRY_DEFAULTS not in app.entry_presses
     opened = app.events.index(("dialog", "open", "not-operating"))
     closed = app.events.index(("dialog", "close-wrong"))
-    assert opened < closed  # closed with the left button, before the next entry
-    assert ("dialog", "accept") in app.events  # only ever the operating dialog's
-    assert app.channel == 6
+    assert opened < closed  # closed with the left button, before anything else
+    assert ("dialog", "accept") not in app.events  # never the wrong dialog's Accept
     assert app.decoy_open is False
+    assert "channel combo" in str(excinfo.value)
     assert any("left button" in note for note in actuator.warnings)
 
 
-def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
+def test_a_popup_whose_topmost_entry_never_opens_the_operating_dialog_fails_by_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bounded: four entries tried, every wrong dialog closed, then a named failure.
+    """One entry, one press, then a named failure — never a walk down the popup.
 
-    The measured overlay holds five entries and the loop is bounded to four
-    (``_MAX_ENTRY_ATTEMPTS``): the first by screen top is the one that matters, and the
-    bound is what keeps a misidentified overlay from turning into a walk across the
-    menubar.
+    Every entry the measured overlay holds is reachable, and pressing them is exactly what must
+    not happen: the second selects the assisted mode, and the third and fourth open save and
+    recall dialogs. The bound that used to keep the walk finite is gone with the walk.
     """
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
     monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
@@ -2010,7 +2032,7 @@ def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
     reason = str(excinfo.value)
     assert "Parameters" in reason and "Operating parameters" in reason
     assert "channel combo" in reason
-    # The failure carries the last attempt's observations, not just the fact of failure:
+    # The failure carries the attempt's observations, not just the fact of failure:
     # the popup closed and the panel it left behind says what it holds.
     assert driver.GESTURE_POSTED_PRESS in reason
     assert "closed the popup" in reason
@@ -2023,26 +2045,24 @@ def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
         "TSp_Value_Button",
     )
     assert actuator.last_entry_attempt["overlay_visible"] is True
-    # Every entry the loop is allowed is pressed, in screen order, and no more.
-    assert app.entry_presses == list(POPUP_ENTRIES[: driver._MAX_ENTRY_ATTEMPTS])
-    assert driver._MAX_ENTRY_ATTEMPTS < len(POPUP_ENTRIES)  # the bound is real
-    assert app.events.count(("dialog", "close-wrong")) == driver._MAX_ENTRY_ATTEMPTS
+    assert app.entry_presses == [HWND_ENTRY_OPERATING]
+    assert app.events.count(("dialog", "close-wrong")) == 1
     assert ("dialog", "accept") not in app.events  # a wrong dialog is never accepted
     assert app.dialog_open is False and app.decoy_open is False
     # The operator's cursor went back even though the attempt failed.
     assert events_of(app, "cursor")[-1][1] == "restored"
 
 
-def test_an_entry_press_that_opens_nothing_is_reported_and_the_loop_moves_on(
+def test_an_entry_press_that_opens_nothing_is_reported_and_no_lower_entry_is_pressed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The live failure, made self-diagnosing — and the loop is bounded around it.
+    """The live failure, made self-diagnosing — and it stays a failure.
 
     ``entry_presses_ignored`` is what the live application did: the press on the popup's
-    caption-less entry left the popup open and opened nothing at all. The driver must
-    report *that* — the gesture, the entry, the popup's visibility and the absence of any
-    new panel — instead of "no dialog followed", which is what left the live run unable to
-    say what had happened.
+    caption-less entry left the popup open and opened nothing at all. The driver reports *that*
+    — the gesture, the entry, the popup's visibility and the absence of any new panel — instead
+    of "no dialog followed", which is what left the live run unable to say what had happened.
+    What it must not do is press the next entry down.
     """
     monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
     monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
@@ -2056,20 +2076,62 @@ def test_an_entry_press_that_opens_nothing_is_reported_and_the_loop_moves_on(
     assert driver.GESTURE_POSTED_PRESS in reason
     assert "left open the popup" in reason
     assert "no new panel or dialog appeared at all" in reason
-    # The failure carries the *last* attempt's record, which is the one a live run reads.
-    assert "(189, 165)" in reason
+    assert "(190, 61)" in reason  # the topmost entry's own rect, in the failure's record
+    assert "no lower entry is pressed on purpose" in reason
     observation = actuator.last_entry_attempt
     assert observation["gesture"] == driver.GESTURE_POSTED_PRESS
     assert observation["overlay_visible"] is True
     assert observation["overlay_closed"] is False
     assert observation["new_panels"] == []
     assert observation["dialog"] is None
-    assert app.entry_presses == list(POPUP_ENTRIES[: driver._MAX_ENTRY_ATTEMPTS])
+    assert app.entry_presses == [HWND_ENTRY_OPERATING]
     assert app.dialog_open is False
-    # Each attempt's note carries its own record, in order, so a live run can be read back.
-    notes = [note for note in actuator.warnings if "opened no dialog" in note]
-    assert len(notes) == driver._MAX_ENTRY_ATTEMPTS, actuator.warnings
-    assert "(190, 61)" in notes[0] and "(189, 165)" in notes[-1]
+
+
+def test_a_menu_interaction_that_switches_the_assisted_mode_on_is_refused(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A press that turns the assisted mode on is refused, naming the *mode*, not the symptom.
+
+    This is the live state change of 2026-09-17, pinned: the sidebar parameter column vanishes
+    (43 visible controls in 4 panels -> 21 in 3), so the point is already lost and every later
+    parameter write would fail with "no parameter column field" — a message that names the
+    symptom and hides the cause. The driver refuses the point here instead, and says what
+    happened and who has to clear it (the mode's own toggle is the application's Preference
+    menu, which this driver deliberately never drives).
+    """
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=1)
+    state = {"assisted": False}
+    real_resolve = actuator._resolve
+    real_press_entry = actuator._press_entry
+
+    def resolve() -> dict:
+        roles = real_resolve()
+        if state["assisted"]:
+            # What the application does when the assisted mode is on: no sidebar column.
+            # The fake's own roles carry no parameter column at all, so the "before" state is
+            # supplied here too — the guard turns on the column being there and then not.
+            return dict(roles, params={}, param_rows=[])
+        return dict(roles, params={"gain": {"edit": {"hwnd": 4242}}}, param_rows=[{"hwnd": 4242}])
+
+    def press_entry(entry: dict, overlay: dict) -> dict:
+        panel = real_press_entry(entry, overlay)
+        state["assisted"] = True  # "the default parameters select the assisted mode"
+        return panel
+
+    actuator._resolve = resolve  # type: ignore[method-assign]
+    actuator._press_entry = press_entry  # type: ignore[method-assign]
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    reason = str(excinfo.value)
+    assert "assisted mode was switched ON" in reason
+    assert "Default parameters" in reason and "select the assisted mode" in reason
+    assert "sidebar parameter column" in reason
+    assert "Preference menu" in reason  # who has to clear it
 
 
 def test_the_entry_press_is_not_gated_by_allow_real_input(
@@ -2871,4 +2933,60 @@ def test_a_point_is_failed_when_the_directory_cannot_be_asserted(tmp_path: Path)
     assert str(expected) in str(reason)
     assert str(tmp_path / "elsewhere") in str(reason)
     assert app.name_text == ""
+
+
+# ------------------------------------- the strip is clicked, it is never posted to
+
+
+def test_a_strip_press_is_a_posted_held_press_and_takes_no_cursor(monkeypatch) -> None:
+    """The strip answers a **held** posted press — measured by A/B on the live button.
+
+    Live, 2026-09-17 22:01, three buttons of the ready row, same button each time: the held
+    posted press started the recording (view ``ready`` -> ``recording``) and the same press on
+    the Stop button reached the store view, while ``SetCursorPos`` + ``mouse_event`` down/up —
+    the recipe ``recon/19_store_cycle_real.py`` uses — changed **nothing** on any of them.
+    ``recon/19``'s "the strip ignores posted messages" is `docs/16 §1`'s *instant* down/up in
+    the same millisecond: the **hold** is the whole gesture. So this gesture posts, and it must
+    never reach for the cursor — ``user32`` is booby-trapped, and the hold is asserted.
+    """
+    messages: list[tuple[int, int, int, int]] = []
+    sleeps: list[float] = []
+    monkeypatch.setattr(
+        driver, "_post", lambda hwnd, msg, wp=0, lp=0: messages.append((hwnd, msg, wp, lp))
+    )
+    monkeypatch.setattr(time, "sleep", lambda seconds: sleeps.append(seconds))
+
+    class _FakeGui:
+        @staticmethod
+        def GetClientRect(_hwnd: int) -> tuple[int, int, int, int]:
+            return (0, 0, 85, 20)  # the live Record button's size
+
+        @staticmethod
+        def ClientToScreen(_hwnd: int, point: tuple[int, int]) -> tuple[int, int]:
+            return (547 + point[0], 487 + point[1])  # its live position
+
+    monkeypatch.setattr(driver, "_gui", lambda: (_FakeGui, None))
+    actuator = driver.Win32Actuator(channel=1)
+
+    class NoUser32:
+        def __getattr__(self, name: str) -> typing.NoReturn:
+            raise AssertionError(
+                f"a strip press reached into user32.{name}: the strip answers a posted held "
+                "press, so this gesture takes no cursor at all"
+            )
+
+    monkeypatch.setattr(driver, "_user32", NoUser32)
+    record_hwnd = 9001
+    actuator._click_hold(record_hwnd)
+
+    assert [(hwnd, msg) for hwnd, msg, _wp, _lp in messages] == [
+        (record_hwnd, driver.WM_LBUTTONDOWN),
+        (record_hwnd, driver.WM_LBUTTONUP),
+    ]
+    # The hold is the gesture: an instant down/up in the same millisecond is ignored
+    # (docs/16 §1), and this is the whole reason the press is not a click.
+    assert PRESS_HOLD_MS / 1000.0 in sleeps, sleeps
+    assert not hasattr(driver.Win32Actuator, "_real_click")
+
+
 

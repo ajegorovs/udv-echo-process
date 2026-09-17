@@ -230,7 +230,6 @@ _DIALOG_INPUT_CLASSES = ("TEdit", "TSp_Edit", "TComboBox", "TSp_Value_Button")
 #: through entry by entry. The dialog window is the reference's own
 #: (``while time.time() - t0 < 8: time.sleep(0.5)`` — it polls at :data:`_MENU_POLL_S`), so
 #: a slow dialog is never mistaken for no dialog.
-_MAX_ENTRY_ATTEMPTS = 4
 _ENTRY_DIALOG_TIMEOUT_S = 8.0
 #: How long to let the application replace its parameters dialog after a channel write
 #: before reading the channel back from the one that is still up. The reference re-resolved
@@ -2014,50 +2013,89 @@ class Win32Actuator:
         # live 2026-09-17: a console window in front, no popup, nothing pressed).
         self._require_foreground(roles["window"])
         saved = self._cursor_position()
-        pressed = 0
+        sidebar_before = bool(roles.get("params"))
         try:
-            for attempt in range(_MAX_ENTRY_ATTEMPTS):
-                # The snapshot is taken *before* this hover, so "visible after, not
-                # before" is a statement about *this* attempt: a popup panel that a
-                # previous attempt left hidden is not in the set, and one the app reuses
-                # without hiding it falls back to the recorded rect below.
-                before = self._panel_map()
-                self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
-                overlay = self._poll_parameters_overlay(before)
-                entries = _entry_buttons(overlay, self._resolve()["raw"])
-                if attempt >= len(entries):
-                    break
-                entry = entries[attempt]
-                pressed += 1
-                panel = self._press_entry(entry, overlay)
-                if panel is None:
-                    self._note(
-                        f"the popup entry at {entry['rect'][:2]} opened no dialog; trying "
-                        "the next entry in screen order — "
-                        f"{_observation_text(self.last_entry_attempt)}"
-                    )
-                    continue
-                try:
-                    self._channel_combo(panel)
-                except AcquisitionError as exc:
-                    self._note(
-                        f"the popup entry at {entry['rect'][:2]} did not open the "
-                        f"{PARAMETERS_ENTRY!r} dialog: {exc}"
-                    )
-                    self._close_wrong_dialog(panel)
-                    continue
-                return panel
-            raise AcquisitionError(
-                f"none of the {pressed} {PARAMETERS_MENU!r} popup entries pressed in "
-                f"screen order opened the {PARAMETERS_ENTRY!r} dialog: that dialog is the "
-                "one holding the channel combo, and within "
-                f"{_ENTRY_DIALOG_TIMEOUT_S:.1f} s per entry none produced it — "
-                f"{_observation_text(self.last_entry_attempt)}"
-            )
+            # The snapshot is taken *before* this hover, so "visible after, not before" is
+            # a statement about *this* attempt: a popup panel a previous attempt left
+            # hidden is not in the set, and one the app reuses without hiding it falls back
+            # to the recorded rect below.
+            before = self._panel_map()
+            self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
+            overlay = self._poll_parameters_overlay(before)
+            entries = _entry_buttons(overlay, self._resolve()["raw"])
+            if not entries:
+                raise AcquisitionError(
+                    f"the {PARAMETERS_MENU!r} popup holds no entries to press; the entry is "
+                    "the ``TSp_Button`` inside the overlay, ordered by screen top — "
+                    f"{_observation_text(self.last_entry_attempt)}"
+                )
+            # **The topmost entry, and no other.** It is ``Operating parameters``; the ones
+            # below it are ``Default parameters``, ``Save parameters``, ``Recall
+            # parameters`` and the trigger parameters — and pressing *Default parameters*
+            # **selects the assisted mode** (manual doc 04: "the default parameters select
+            # the assisted mode"), which this application switches on silently while the
+            # popup is up. A retry that walks down the popup therefore changes the
+            # instrument's state in order to recover from a transient failure: the stored
+            # `assisted Mode` word read 0 in every file up to 19:01 and 1 by 21:26, in a
+            # window whose only presses were this driver's. The reference never pressed
+            # more than the entry it meant (`recon/41_burst_sampling_volume.py`).
+            entry = entries[0]
+            panel = self._press_entry(entry, overlay)
+            if panel is None:
+                raise AcquisitionError(
+                    f"the topmost {PARAMETERS_MENU!r} popup entry at {entry['rect'][:2]} "
+                    "opened no dialog, and no lower entry is pressed on purpose: the second "
+                    "one is 'Default parameters', which selects the assisted mode — "
+                    f"{_observation_text(self.last_entry_attempt)}"
+                )
+            try:
+                self._channel_combo(panel)
+            except AcquisitionError as exc:
+                self._close_wrong_dialog(panel)
+                raise AcquisitionError(
+                    f"the topmost {PARAMETERS_MENU!r} popup entry at {entry['rect'][:2]} "
+                    f"did not open the {PARAMETERS_ENTRY!r} dialog (the one holding the "
+                    f"channel combo): {exc} — "
+                    f"{_observation_text(self.last_entry_attempt)}"
+                ) from exc
+            self._assert_assisted_unchanged(sidebar_before)
+            return panel
         finally:
             # The menu has been used (or the attempt is over, hover or press): the
             # operator's cursor goes back, so no path leaves it parked on the menubar.
             self._restore_cursor(saved)
+
+    def _assert_assisted_unchanged(self, sidebar_before: bool) -> None:
+        """Refuse when this interaction switched the assisted mode **on** by itself.
+
+        The mode is the application's own state and this driver never sets it — but a press
+        one entry low in the ``Parameters`` popup does: the second entry is ``Default
+        parameters`` and the default parameters select the assisted mode. The visible
+        consequence is that the sidebar parameter column goes away (43 visible controls in 4
+        panels become 21 in 3) and every parameter write loses its target, so the point is
+        already lost: this raises *now*, naming the cause, instead of a sweep failing later
+        with a message about a missing field.
+
+        A mode that was already on when the interaction started is not this driver's doing
+        and is not raised here — :meth:`ensure_channel` records which mode the channel's
+        panel came up in, and a point on an assisted channel is refused by the parameter
+        write itself, with the mode named.
+        """
+        if not sidebar_before:
+            return
+        if self._resolve().get("params"):
+            return
+        raise AcquisitionError(
+            "the assisted mode was switched ON during this menu interaction: the sidebar "
+            "parameter column is gone, which is what this application does when the assisted "
+            "mode is on (43 visible controls in 4 panels -> 21 in 3). The second entry of the "
+            f"{PARAMETERS_MENU!r} popup is 'Default parameters', and the manual's rule is "
+            "'the default parameters select the assisted mode' — while the application "
+            "highlights that very entry by itself, so any press one entry low turns the mode "
+            "on silently. Nothing has been written to the instrument by this driver, which "
+            "does not leave the assisted mode either: its own toggle is the application's "
+            "Preference menu, so an operator has to clear it before the point can be made"
+        )
 
     def _close_parameters_dialog(self, panel: dict) -> None:
         """Close the dialog with its LEFT button (``Cancel``), never a window close.
@@ -2301,11 +2339,20 @@ class Win32Actuator:
         return state
 
     def press(self, control: StripControl) -> None:
-        """Press one strip button of the *current* view, held, by position.
+        """Press one strip button of the *current* view, **held**, by position.
 
-        The overlay guard runs **first** (posted clicks ignore modality, docs/16 §8), then
-        the strip is re-resolved — its rect and its children change with the view — and the
-        index comes from :func:`…actuator.press_index`, never from a width.
+        A posted held press is exactly what this strip answers — measured live 2026-09-17 by
+        A/B on the same button: the held posted press started the recording and the Stop press
+        reached the store view, while a *real* click (``SetCursorPos`` + ``mouse_event`` down/up,
+        the recipe `recon/19_store_cycle_real.py` uses) changed **nothing** on any of the three
+        buttons of the row. `docs/16 §1` already had the sharper statement of the rule — an
+        *instant* down/up in the same millisecond is ignored — which is what `recon/19` meant by
+        "the strip ignores posted messages". So the hold is the whole gesture, and no cursor is
+        taken here: the menubar hover stays the only real-input step.
+
+        The overlay guard runs **first** (posted clicks ignore modality, docs/16 §8), then the
+        strip is re-resolved — its rect and its children change with the view — and the index
+        comes from :func:`…actuator.press_index`, never from a width.
         """
         self._settle_press()
         roles = self._resolve()
