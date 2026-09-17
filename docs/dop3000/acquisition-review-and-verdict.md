@@ -610,6 +610,36 @@ confirmed the deferrals — `driver.py`, the state machine, `Actuator`, `operati
 and the instrument-snapshot layer — as out of scope for this slice, which is why §6
 stands unchanged.
 
+### 7b. Carried into Phase 6 by the review of this slice
+
+Recorded, not resolved here — the reviewer's verdict is that none of it holds the slice:
+
+- **`block_cap_profiles` is a declared setting, not a verified instrument fact**, so
+  wrap classification is an inference under a declared cap. `block_at_cap` reports the
+  observation, and `block_wrapped`'s `None` at the boundary is the conservative answer,
+  but even its `False` branch is conditional: 200 stored profiles against a declared cap
+  of 257 could be a block whose *actual* cap was 200, which wrapped. Phase 6 should
+  either tighten the vocabulary to `block_at_declared_cap` versus `block_wrapped` (the
+  latter only once the cap's provenance is live-verified) or carry the cap's provenance
+  as a field. This is the wrap-classification analogue of §7a's covariate point: the
+  record is now truthful about *what it compared*, and Phase 6 must make it truthful
+  about *what the instrument was set to*.
+- **Vocabulary alignment, deliberately not churned now**: the RPM result calls this
+  quantity `max_relative_interval_deviation`; `DecodedBlock.interval_deviation` is the
+  same measure. Align the names when the two models are next touched together, not for
+  its own sake.
+- **Acquisition must not adopt `EchoRpmSettings.uniform_rtol`.** Acquisition QC asks
+  whether the instrument produced a coherent, attributable recording; FFT/RPM
+  eligibility asks whether the time axis is uniform enough for *that* estimator, and a
+  legitimate acquisition can fail the second. The 9.36% deviation measured on a committed
+  real recording is the case for exposing the metric and letting each analysis define
+  fitness for purpose (Phase 7), not for reusing an estimator's tolerance as an
+  acquisition rule.
+
+The storage fix stays in this PR by the reviewer's judgement: it repairs the Windows
+baseline this PR uses as its own quality gate, and splitting it would only add
+merge/rebase sequencing for the same two numbers.
+
 ## 8. Re-verification recipe
 
 ```bash

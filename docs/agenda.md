@@ -227,6 +227,12 @@ Binding outcomes:
   live-proven gestures — split only when a change forces the file open, and
   mechanically); the explicit UDOP state machine in code; replacing rather than
   wrapping the `Actuator` surface.
+- **Carried into Phase 6 by the review of the first slice:** `block_cap_profiles` is a
+  declared setting rather than a verified instrument fact, so `block_wrapped` is an
+  inference under a declared cap — read or verify the cap from live state (and consider
+  the `block_at_declared_cap` / `block_wrapped` split) when campaigns compile against a
+  snapshot. Acquisition must **not** adopt the RPM path's `uniform_rtol`: acquisition QC
+  and estimator eligibility are different questions.
 - **Rules that constrain the work:** the decoded-metadata gate in
   [UDV product backlog](#visualization-and-acquisition-support) (evidence,
   destination field, propagation, storage implications — word 14/27 decoding is
