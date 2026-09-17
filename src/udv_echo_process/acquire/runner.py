@@ -910,9 +910,12 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
     lacking the gate count the log requires.
 
     What the record says about the *window* comes from the same read: the profile count,
-    the span from the first profile's timestamp to the last, and the median interval
-    between them. Those are measurements of what the file holds — the app's block is a
-    ring, so they are the only honest answer to "how long was this observation".
+    the span from the first profile's timestamp to the last, and the full-span effective
+    interval — ``span / (count - 1)``, the convention ``analysis/rpm.py`` calibrates this
+    timebase on — with the median adjacent interval and its maximum relative deviation
+    kept beside it as diagnostics. Those are measurements of what the file holds — the
+    app's block is a ring, so they are the only honest answer to "how long was this
+    observation".
 
     Two words the canonical reader does not expose are filled differently.
     ``resolution_index`` stays unset (the reader reports the pitch, and this module
@@ -945,9 +948,21 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
     profile_count = int(times.shape[0])
     span_s = float(times[-1] - times[0]) if profile_count else None
     achieved_period_s: float | None = None
+    median_interval_s: float | None = None
+    interval_deviation: float | None = None
     if profile_count >= 2:
-        median_s = float(np.median(np.diff(times)))
-        achieved_period_s = median_s if median_s > 0 else None
+        # The convention `analysis/rpm.py` calibrates on for this timebase: the full-span
+        # effective interval, never the median adjacent interval. The DOP timestamps are
+        # quantized, so the median is the dominant timestamp quantum rather than the
+        # sampling period (rpm.py measures a 0.562% RPM shift from calibrating on it).
+        # The median and its maximum relative deviation are kept as diagnostics.
+        intervals = np.diff(times)
+        effective = float((times[-1] - times[0]) / (profile_count - 1))
+        achieved_period_s = effective if effective > 0 else None
+        median = float(np.median(intervals))
+        if median > 0:
+            median_interval_s = median
+            interval_deviation = float(np.max(np.abs(intervals - median))) / median
     mapping: dict[str, object] = {
         "channel": channel_read,
         "n_gates": config.n_gates,
@@ -959,10 +974,13 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
         "source_freq_khz": config.source_freq_khz,
         "size_bytes": Path(path).stat().st_size,
         # The window the file actually covers — the authority on how much observation
-        # the point bought, as opposed to how much it asked for.
+        # the point bought, as opposed to how much it asked for. The period is the
+        # full-span effective interval (see `_decode`).
         "n_profiles": profile_count,
         "span_s": span_s,
         "achieved_period_s": achieved_period_s,
+        "median_interval_s": median_interval_s,
+        "interval_deviation": interval_deviation,
         # Word 14: read here because `bdd.ChannelConfig` has no field for it (the
         # canonical reader's docstring says so), and the variance axis is worth having
         # in the record.

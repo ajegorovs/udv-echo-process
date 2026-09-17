@@ -92,13 +92,24 @@ class DecodedBlock(ValueModel):
       13 (``n_gates``) is the count actually used.
 
     The profile timestamps give the rest, and they are the only evidence for it:
-    ``n_profiles``, ``span_s`` (last minus first) and ``achieved_period_s`` (the
-    median interval). Those three are what the *window* actually was, as opposed to
-    the window that was requested — the app's block is a ring, so a request for a
-    longer window than the cap covers stores only the last ``cap × period`` seconds
-    and still decodes as a valid point (docs/16 §15b). ``time_s`` is the quantised
-    ms/10 footer timestamp, so ``achieved_period_s`` is a measurement at that
-    resolution, not a derived quantity.
+    ``n_profiles``, ``span_s`` (last minus first) and ``achieved_period_s`` — the
+    **full-span effective interval**, ``span_s / (n_profiles - 1)``. Those three are what
+    the *window* actually was, as opposed to the window that was requested — the app's
+    block is a ring, so a request for a longer window than the cap covers stores only the
+    last ``cap × period`` seconds and still decodes as a valid point (docs/16 §15b).
+
+    ``achieved_period_s`` is the full-span interval and not the median adjacent interval,
+    following the convention :mod:`udv_echo_process.analysis.rpm` established for this
+    timebase: the DOP timestamps are quantized, so the median adjacent interval is the
+    dominant timestamp quantum rather than the sampling period, and calibrating on it
+    shifted every recovered RPM by a measured 0.562% on the committed fixtures. The
+    median is kept beside it as the diagnostic (``median_interval_s``) together with the
+    regularity measure that module guards on (``interval_deviation``, the maximum
+    relative deviation from the median). ``time_s`` is the quantised 0.1 ms footer
+    timestamp, so all three are measurements at that resolution, not derivations.
+
+    Using the full-span interval makes the window relation exact rather than
+    approximate: ``span_s == (n_profiles - 1) × achieved_period_s``.
 
     ``channel`` and ``n_gates`` are required: a block that does not say which
     channel it came from is not evidence.
@@ -120,8 +131,16 @@ class DecodedBlock(ValueModel):
     n_profiles: int | None = Field(default=None, ge=1)
     #: Last minus first profile timestamp, in seconds. ``0`` for a single profile.
     span_s: float | None = Field(default=None, ge=0)
-    #: Median interval between profile timestamps — the achieved period.
+    #: **Full-span effective interval**, ``span_s / (n_profiles - 1)`` — the profile
+    #: period this recording supports, and the convention ``analysis/rpm.py`` calibrates
+    #: on (never the median adjacent interval; see the class docstring).
     achieved_period_s: float | None = Field(default=None, gt=0)
+    #: The median adjacent interval, kept as a diagnostic: on a quantized timebase it is
+    #: the dominant timestamp quantum rather than the period.
+    median_interval_s: float | None = Field(default=None, gt=0)
+    #: ``max(|interval - median_interval|) / median_interval`` — the regularity measure
+    #: ``analysis/rpm.py`` refuses a structurally sampled axis on.
+    interval_deviation: float | None = Field(default=None, ge=0)
 
     @property
     def prf_hz(self) -> float | None:

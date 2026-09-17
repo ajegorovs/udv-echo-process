@@ -1813,6 +1813,14 @@ def test_the_record_carries_the_window_the_stored_file_covers(
         + PERIOD_OVERHEAD_S
     )
     assert record.timing.within_tolerance() is True
+    # A uniform fixture, so the diagnostic and the interval coincide and the deviation
+    # is zero; the committed point below is where they part.
+    assert record.decoded is not None
+    assert record.decoded.median_interval_s == pytest.approx(0.005, abs=1e-9)
+    assert record.decoded.interval_deviation == pytest.approx(0.0, abs=1e-9)
+    assert record.decoded.span_s == pytest.approx(
+        (record.decoded.n_profiles - 1) * record.decoded.achieved_period_s
+    )
 
 
 def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
@@ -1824,6 +1832,11 @@ def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
     harness stores the file it has), so the retained fraction lands above 1 here — on the
     rig it is below 1, which is the case the field exists for. What the case pins is that
     the record's window comes from the file and not from the request.
+
+    The period is the **full-span effective interval** here, 3.8409 / 128 = 0.03001 s,
+    while the median adjacent interval is 0.0299 s — they are not the same number on a
+    quantized timebase, which is why `analysis/rpm.py` calibrates on the former. Both are
+    on the record now, the interval as the measurement and the median as the diagnostic.
 
     It also pins the disagreement: the plan's period law is fed the *plan's* emissions
     (52), the file stores 150, and the measured interval is ~3x the law. The record keeps
@@ -1852,13 +1865,32 @@ def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
     assert record.status is PointStatus.OK
     assert record.stored_profiles == 129
     assert record.stored_span_s == pytest.approx(3.8409, abs=1e-3)
-    assert record.timing.achieved_s == pytest.approx(0.0299, abs=1e-3)
+    # The measurement is the full-span interval, exactly span / (count - 1)...
+    assert record.decoded is not None
+    assert record.timing.achieved_s == pytest.approx(
+        record.stored_span_s / (record.stored_profiles - 1), abs=1e-9
+    )
+    assert record.timing.achieved_s == pytest.approx(0.03001, abs=1e-4)
+    # ...while the median adjacent interval, kept as a diagnostic, is a different number
+    # (0.0299 here): the quantized timebase is why the repository calibrates on the span.
+    assert record.decoded.median_interval_s == pytest.approx(0.0299, abs=1e-3)
+    assert record.decoded.median_interval_s != record.timing.achieved_s
+    assert record.decoded.interval_deviation is not None
+    # Measured: the axis's largest interval is 9.36% away from its own median. That is
+    # above the 0.05 `EchoRpmSettings.uniform_rtol` default that `analysis/rpm.py`
+    # refuses a structurally sampled axis on — noted, not adjudicated here: whether an
+    # acquisition point should be held to the same regularity belongs with the
+    # acceptance policy, and the deviation is on the record for it to use.
+    assert record.decoded.interval_deviation == pytest.approx(0.0936, abs=1e-3)
+    assert record.decoded.interval_deviation > 0.05
+    assert record.decoded.span_s == pytest.approx(
+        (record.decoded.n_profiles - 1) * record.decoded.achieved_period_s
+    )
     assert record.retained_fraction == pytest.approx(
         record.stored_span_s / DURATION_S, abs=1e-6
     )
     # Word 14 is now in the decode as well as in the advisory: the variance axis the
     # canonical reader has no field for is on the record.
-    assert record.decoded is not None
     assert record.decoded.emissions_per_profile == 150
     assert record.timing.within_tolerance() is False
     assert record.timing.target_s == pytest.approx(

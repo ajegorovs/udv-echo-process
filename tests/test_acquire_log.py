@@ -343,7 +343,9 @@ def _windowed(**overrides: object) -> SweepPointRecord:
             n_gates=805,
             n_profiles=257,
             span_s=8.4,
-            achieved_period_s=0.0327,
+            achieved_period_s=8.4 / 256,
+            median_interval_s=0.0327,
+            interval_deviation=0.02,
         ),
     }
     fields.update(overrides)
@@ -405,3 +407,27 @@ def test_a_single_profile_is_a_zero_length_window() -> None:
     block = DecodedBlock(channel=1, n_gates=805, n_profiles=1, span_s=0.0)
     assert block.span_s == 0.0
     assert block.achieved_period_s is None
+
+
+def test_the_window_and_the_interval_are_two_views_of_one_measurement() -> None:
+    """``span == (profiles - 1) x period`` — the invariant the full-span interval buys.
+
+    It holds exactly, because the period *is* the span over the profile count minus one.
+    A median adjacent interval would leave the two fields describing slightly different
+    observations of the same recording, which is the reason `analysis/rpm.py` calibrates
+    on the full span and keeps the median only as a diagnostic.
+    """
+    decoded = _windowed().decoded
+    assert decoded is not None
+    assert decoded.n_profiles is not None
+    assert decoded.span_s is not None
+    assert decoded.achieved_period_s is not None
+    assert decoded.achieved_period_s == pytest.approx(
+        decoded.span_s / (decoded.n_profiles - 1)
+    )
+    assert decoded.span_s == pytest.approx(
+        (decoded.n_profiles - 1) * decoded.achieved_period_s
+    )
+    # The diagnostic is not the period: this record's median differs from its interval.
+    assert decoded.median_interval_s != decoded.achieved_period_s
+    assert decoded.interval_deviation is not None and decoded.interval_deviation > 0
