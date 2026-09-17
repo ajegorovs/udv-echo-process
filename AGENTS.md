@@ -366,3 +366,31 @@ This repo is public (`ajegorovs/udv-echo-process`). Never commit absolute
 local paths naming the user/machine (`~/Repos/…` is fine), credentials, or
 tailnet/RFC1918 IPs. Before committing docs/config, scan:
 `git grep -nE '/home/[a-z]+|api[_-]?key|password|secret|BEGIN .*PRIVATE|tailscale|vllm' -- . ':!uv.lock'`
+
+## Skills (agent tooling)
+
+Repo-local skills live in `.agents/skills/` — the cross-client Agent Skills layout
+(`SKILL.md` plus `references/`, `scripts/`, `assets/`), versioned with the code so a clone carries
+the project's *procedures*, not only its source. Update the copy here whenever a lesson is learned
+in this repository; the whole point is that it travels.
+
+- `windows-gui-automation/` — driving the DOP/UDOP acquisition application through the Win32
+  message layer: reconnaissance and role binding, the record/stop/store cycle, per-channel mode,
+  artefact decoding, the sweep and campaign workflow, and the staged bring-up for a machine that
+  is not the one the measurements were taken on. Read it before changing `tools/live/` or
+  `src/udv_echo_process/acquire/`.
+
+Most agentic harnesses load `.agents/skills/` on their own when the working directory is in the
+repository. **Hermes Agent needs the project trusted once per machine**, from the repository root:
+
+```bash
+hermes skills trust "$(git rev-parse --show-toplevel)"   # once per machine
+hermes skills untrust "$(git rev-parse --show-toplevel)" # revoke
+```
+
+Pass the root explicitly: `hermes skills trust` with no argument resolves the cwd itself and
+reports *"Not inside a git checkout"* even when run from this repository.
+
+
+`.hermes/` is git-ignored on purpose: agent working artifacts (dispatch plans, scratch state),
+never repository documentation.
