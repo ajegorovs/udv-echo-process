@@ -303,16 +303,66 @@ class SweepPointRecord(ValueModel):
         return span / self.requested_duration_s
 
     @property
-    def block_wrapped(self) -> bool | None:
-        """True when the stored profile count reached the cap, so the block wrapped.
+    def expected_profiles(self) -> float | None:
+        """Profiles the request implies: ``requested_duration_s / timing.target_s``.
+
+        Derived from the plan's period law, so it is only as good as the plan's
+        declaration — word 14 is the known case where that is not the instrument's own
+        value. ``None`` when either input is missing.
+        """
+        target = self.timing.target_s
+        if target is None or self.requested_duration_s is None:
+            return None
+        return self.requested_duration_s / target
+
+    @property
+    def block_at_cap(self) -> bool | None:
+        """The stored profile count reached the declared cap — an observation, nothing more.
+
+        Reaching the cap is compatible with the run having produced exactly that many
+        profiles, so it is not on its own evidence that anything was overwritten. See
+        :attr:`block_wrapped` for the claim; this is the fact.
 
         ``None`` when either the count or the cap is unknown — *not* ``False``, since
-        "it did not wrap" is a claim the missing number cannot support.
+        "it did not reach the cap" is a claim the missing number cannot support.
         """
         profiles = self.stored_profiles
         if profiles is None or self.block_cap_profiles is None:
             return None
         return profiles >= self.block_cap_profiles
+
+    @property
+    def block_wrapped(self) -> bool | None:
+        """True only when the block was over-produced *and* cut off at the cap.
+
+        A wrap means profiles were produced and thrown away, which takes two facts: the
+        stored count reached the cap, and the request implies more profiles than the cap
+        could hold. Either one alone is not enough — a run that produced exactly the cap
+        never overwrote anything, and its stored file looks identical to one that
+        produced 40% more. Hence three answers rather than two:
+
+        - ``False`` when the count is *below* the cap: nothing was retained past it, so
+          nothing was lost, whatever the request implied;
+        - ``True`` when the count is at the cap and the request implies more than the cap;
+        - ``None`` otherwise — at the cap with no over-production evidence, or with a
+          number missing. ``None`` is the honest answer at the boundary, where the count
+          cannot distinguish "produced exactly the cap" from "produced more and wrapped".
+
+        The cap is a declared setting rather than a live instrument fact until campaigns
+        compile against a snapshot, so ``True`` is conditional on that declaration being
+        right; the trigger for the property is the reader who needs to know whether early
+        profiles are missing, and ``None`` says "not established".
+        """
+        at_cap = self.block_at_cap
+        if at_cap is False:
+            return False
+        cap = self.block_cap_profiles
+        expected = self.expected_profiles
+        if at_cap is None or cap is None or expected is None:
+            return None
+        if expected > cap:
+            return True
+        return None
 
     @property
     def gate_drift(self) -> float | None:

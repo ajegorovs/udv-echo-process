@@ -1804,6 +1804,7 @@ def test_the_record_carries_the_window_the_stored_file_covers(
     assert record.retained_fraction == pytest.approx(0.02, abs=1e-9)
     # Five profiles against the default cap of 257: the block did not wrap, and the
     # record says so from numbers that are both in it.
+    assert record.block_at_cap is False  # five profiles against a cap of 257
     assert record.block_wrapped is False
     # The measurement, and the plan's law beside it: two quantities, kept apart on
     # purpose, and here they agree because the fixture was built that way.

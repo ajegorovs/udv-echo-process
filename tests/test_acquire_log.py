@@ -353,17 +353,43 @@ def _windowed(**overrides: object) -> SweepPointRecord:
 
 
 def test_a_wrapped_block_is_recorded_as_the_window_it_really_covers() -> None:
-    """12 s asked for, 8.4 s retained: 0.7 of the window, at the cap, not a 12 s point."""
+    """12 s asked for, 8.4 s retained: 0.7 of the window, at the cap, not a 12 s point.
+
+    The wrap is a claim here, and both of its facts are present: 257 profiles is the cap,
+    and the request implies ~566 of them (12 s at the 0.0212 s law) — 2.2x what could be
+    kept, so profiles were certainly discarded.
+    """
     record = _windowed()
     assert record.requested_duration_s == 12.0
     assert record.stored_profiles == 257
     assert record.stored_span_s == 8.4
     assert record.retained_fraction == pytest.approx(0.7)
+    assert record.block_at_cap is True
+    assert record.expected_profiles == pytest.approx(566, abs=1)
     assert record.block_wrapped is True
 
 
+def test_reaching_the_cap_without_over_production_is_not_a_wrap() -> None:
+    """The boundary the earlier inference got wrong: exactly the cap, nothing beyond.
+
+    The request is set so the plan implies exactly the cap: the block may have produced
+    just that many profiles, or more and lost its earliest ones, and the stored file
+    cannot tell the two apart. So the answer is `None` — "not established" — while
+    `block_at_cap` still reports the fact.
+    """
+    record = _windowed(
+        requested_duration_s=257 * 0.0212,
+        decoded=DecodedBlock(channel=1, n_gates=805, n_profiles=257),
+    )
+    assert record.block_at_cap is True
+    assert record.expected_profiles == pytest.approx(257)
+    assert record.block_wrapped is None
+
+
 def test_a_block_below_its_cap_did_not_wrap() -> None:
+    """Below the cap nothing was discarded, whatever the request implied."""
     record = _windowed(decoded=DecodedBlock(channel=1, n_gates=805, n_profiles=256))
+    assert record.block_at_cap is False
     assert record.block_wrapped is False
 
 
@@ -378,7 +404,9 @@ def test_an_unknown_cap_or_count_leaves_the_wrap_unknown(
     overrides: dict[str, object],
 ) -> None:
     """Unknown is `None`, never `False`: absence cannot support "it did not wrap"."""
-    assert _windowed(**overrides).block_wrapped is None
+    record = _windowed(**overrides)
+    assert record.block_at_cap is None
+    assert record.block_wrapped is None
 
 
 @pytest.mark.parametrize(
