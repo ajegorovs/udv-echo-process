@@ -168,8 +168,12 @@ class VerificationResult:
     ``advisories`` are comparisons that disagreed but are not enforced (see
     :data:`ADVISORY_COVARIATES`): they never affect ``ok`` and they are the reason a
     disagreement can be *recorded* without a good point being refused.
-    ``enforced_covariates`` names the covariate fields this call enforced, so a
-    reader of the log can tell "it agreed" from "nobody looked".
+
+    ``enforced_covariates`` and ``advisory_covariates`` name the covariate fields this
+    call actually **compared**, so a reader of the log can tell "it agreed" from "nobody
+    looked" — for both classes. A field the request left unset appears in neither: it was
+    never compared, and listing it would claim a verification that did not happen. When
+    ``check_covariates=False`` both are empty, since nothing was compared.
     """
 
     ok: bool
@@ -177,6 +181,7 @@ class VerificationResult:
     facts: WordFacts = WordFacts()
     advisories: tuple[str, ...] = ()
     enforced_covariates: tuple[str, ...] = ()
+    advisory_covariates: tuple[str, ...] = ()
 
 
 def _word_offset(word_index: int, channel: int) -> int:
@@ -500,15 +505,23 @@ def verify_stored_point(
         tolerance_mm=tolerance_mm,
     )
 
-    enforced: tuple[str, ...] = ()
+    enforced: list[str] = []
     if check_covariates:
-        enforced = ENFORCED_COVARIATES
         for field in ENFORCED_COVARIATES:
+            requested = _requested(requested_parameters, field)
+            if requested is None:
+                # Nothing was asked, so nothing was compared: the field must not appear
+                # in ``enforced_covariates``, whose whole purpose is to separate "it
+                # agreed" from "nobody looked" (see :class:`VerificationResult`).
+                # Requiring the fixed covariates before an acquisition starts is
+                # campaign-compilation work, not this check's job.
+                continue
+            enforced.append(field)
             tolerance = PRF_TOLERANCE_US if field == "prf_us" else 0.0
             _compare_number(
                 mismatches,
                 field=field,
-                requested=_requested(requested_parameters, field),
+                requested=requested,
                 found=getattr(facts, field),
                 tolerance=tolerance,
             )
@@ -516,11 +529,16 @@ def verify_stored_point(
     # Read and reported even when not enforced: a disagreement the request caused is
     # evidence, and it is only visible at all if something writes it down.
     advisories: list[str] = []
+    advisory_compared: list[str] = []
     for field in ADVISORY_COVARIATES:
+        requested = _requested(requested_parameters, field)
+        if requested is None:
+            continue
+        advisory_compared.append(field)
         _compare_number(
             advisories,
             field=field,
-            requested=_requested(requested_parameters, field),
+            requested=requested,
             found=getattr(facts, field),
         )
 
@@ -529,5 +547,6 @@ def verify_stored_point(
         mismatches=tuple(mismatches),
         facts=facts,
         advisories=tuple(advisories),
-        enforced_covariates=enforced,
+        enforced_covariates=tuple(enforced),
+        advisory_covariates=tuple(advisory_compared),
     )

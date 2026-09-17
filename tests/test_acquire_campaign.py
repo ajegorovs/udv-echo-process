@@ -1132,6 +1132,7 @@ def test_the_log_record_gained_no_field_for_this_layer() -> None:
         "failure",
         "covariates_enforced",
         "covariate_advisories",
+        "covariates_advisory",
     }
 
 

@@ -246,7 +246,7 @@ class SweepPointRecord(ValueModel):
     expected_size_bytes: int | None = Field(default=None, ge=0)
     decoded: DecodedBlock | None = None
     failure: str | None = None
-    #: Covariate fields the word-level check *enforced* for this point. Empty means
+    #: Covariate fields the word-level check *compared* for this point. Empty means
     #: nobody looked — the difference between "it agreed" and "it was never compared".
     covariates_enforced: tuple[str, ...] = ()
     #: Comparisons that disagreed and were deliberately **not** enforced (word 14,
@@ -254,6 +254,10 @@ class SweepPointRecord(ValueModel):
     #: An advisory never invalidates a point; it is here so the disagreement survives
     #: in the record instead of being invisible.
     covariate_advisories: tuple[str, ...] = ()
+    #: The covariate fields the check compared *without* enforcing. Read beside
+    #: ``covariate_advisories``: a declared field missing from the advisories agreed,
+    #: while a field missing from *both* lists was never declared and never compared.
+    covariates_advisory: tuple[str, ...] = ()
 
     @property
     def stored_profiles(self) -> int | None:

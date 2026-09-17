@@ -263,6 +263,9 @@ class _Attempt:
     advisories: tuple[str, ...] = ()
     #: The covariate fields the verifier enforced for this point.
     enforced_covariates: tuple[str, ...] = ()
+    #: The covariate fields it compared without enforcing — a field that was not
+    #: declared appears in neither list, because it was never compared.
+    advisory_covariates: tuple[str, ...] = ()
 
 
 class SweepRunner:
@@ -648,6 +651,13 @@ class SweepRunner:
             str(item)
             for item in (getattr(verification, "enforced_covariates", None) or ())
         )
+        # What the check *compared* without enforcing, for the same reason: word 14
+        # being absent from the advisories must be readable as "it agreed" rather than
+        # "nobody declared it".
+        attempt.advisory_covariates = tuple(
+            str(item)
+            for item in (getattr(verification, "advisory_covariates", None) or ())
+        )
         if not verification.ok:
             mismatches = tuple(str(item) for item in (verification.mismatches or ()))
             detail = "; ".join(mismatches) or "the verifier named no mismatch"
@@ -829,6 +839,7 @@ class SweepRunner:
             decoded=attempt.decoded,
             failure=attempt.reason,
             covariate_advisories=attempt.advisories,
+            covariates_advisory=attempt.advisory_covariates,
             covariates_enforced=attempt.enforced_covariates,
         )
 

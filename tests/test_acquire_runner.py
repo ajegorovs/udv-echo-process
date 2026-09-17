@@ -647,8 +647,9 @@ class FakeVerification:
     """The shape of a ``VerificationResult``, built without importing ``verify``.
 
     The interface is pinned by the runner's contract (``ok``, ``mismatches``,
-    ``facts``, ``advisories``, ``enforced_covariates``); this object answers to it so
-    the tests do not depend on the sibling module being in the checkout.
+    ``facts``, ``advisories``, ``enforced_covariates``, ``advisory_covariates``);
+    this object answers to it so the tests do not depend on the sibling module being in
+    the checkout.
     """
 
     def __init__(
@@ -658,12 +659,14 @@ class FakeVerification:
         *,
         advisories: Iterable[str] = (),
         enforced_covariates: Iterable[str] = (),
+        advisory_covariates: Iterable[str] = (),
     ) -> None:
         self.ok = bool(ok)
         self.mismatches = tuple(str(mismatch) for mismatch in mismatches)
         self.facts = None
         self.advisories = tuple(str(advisory) for advisory in advisories)
         self.enforced_covariates = tuple(str(field) for field in enforced_covariates)
+        self.advisory_covariates = tuple(str(field) for field in advisory_covariates)
 
 
 class ScriptedVerifier:
@@ -676,6 +679,7 @@ class ScriptedVerifier:
         mismatches: Iterable[str] = (),
         advisories: Iterable[str] = (),
         enforced_covariates: Iterable[str] = (),
+        advisory_covariates: Iterable[str] = (),
         error: BaseException | None = None,
     ) -> None:
         self.result = FakeVerification(
@@ -683,6 +687,7 @@ class ScriptedVerifier:
             mismatches,
             advisories=advisories,
             enforced_covariates=enforced_covariates,
+            advisory_covariates=advisory_covariates,
         )
         self.error = error
         self.calls: list[tuple[Path, object]] = []
@@ -1438,15 +1443,17 @@ def test_the_record_carries_what_was_enforced_and_what_was_only_reported(
 ) -> None:
     """An advisory reaches the log without invalidating the point.
 
-    The runner keeps the verifier's enforced-field list and its advisories on the
+    The runner keeps the verifier's compared-field lists and its advisories on the
     record: "it agreed" and "nobody looked" are otherwise indistinguishable a week
     later, and a disagreement that is deliberately not enforced is evidence that would
-    exist nowhere else.
+    exist nowhere else. Both lists are *compared* fields, so a reader never has to
+    guess whether a missing name means agreement or silence.
     """
     advisory = "emissions_per_profile: requested 52, found 150 in word 14"
     verifier = ScriptedVerifier(
         advisories=(advisory,),
         enforced_covariates=("sound_speed_ms", "prf_us", "burst_length"),
+        advisory_covariates=("emissions_per_profile",),
     )
     _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=verifier)
 
@@ -1456,6 +1463,7 @@ def test_the_record_carries_what_was_enforced_and_what_was_only_reported(
     record = point_records(read_entries(log_path))[0]
     assert record.status is PointStatus.OK
     assert record.covariate_advisories == (advisory,)
+    assert record.covariates_advisory == ("emissions_per_profile",)
     assert record.covariates_enforced == (
         "sound_speed_ms",
         "prf_us",
@@ -1502,6 +1510,7 @@ def test_the_committed_point_passes_with_its_emissions_disagreement_recorded(
     assert record.covariate_advisories == (
         "emissions_per_profile: requested 52, found 150 in word 14",
     )
+    assert record.covariates_advisory == ("emissions_per_profile",)
 
 
 # ------------------------------- 10b. the channel both reads of a file must name

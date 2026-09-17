@@ -34,6 +34,7 @@ from udv_echo_process.acquire.verify import (
     CHANNEL_1_OFFSET_BYTES,
     CHANNEL_STRIDE_BYTES,
     ENFORCED_COVARIATES,
+    WORD_EMISSIONS_PER_PROFILE,
     VerificationResult,
     WordFacts,
     read_words,
@@ -309,7 +310,12 @@ def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
 
 
 def test_a_covariate_nobody_declared_is_not_a_mismatch(tmp_path: Path) -> None:
-    """An absent covariate in the request is compared against nothing."""
+    """An absent covariate in the request is compared against nothing — and says so.
+
+    The point must not be refused for a field nobody asked about, and the record must not
+    claim it was checked either: only the field that *was* declared appears in
+    ``enforced_covariates``, so "it agreed" stays distinguishable from "nobody looked".
+    """
     path = build_bdd(tmp_path / "no-covariates.BDD", live_words(0, 805, 100))
 
     result = verify_stored_point(
@@ -325,6 +331,37 @@ def test_a_covariate_nobody_declared_is_not_a_mismatch(tmp_path: Path) -> None:
 
     assert result.ok is True, result.mismatches
     assert result.advisories == ()
+    assert result.enforced_covariates == ("sound_speed_ms",)
+    assert result.advisory_covariates == ()
+    assert "prf_us" not in result.enforced_covariates
+    assert "burst_length" not in result.enforced_covariates
+
+
+def test_only_the_covariates_the_request_declares_are_reported_as_compared(
+    tmp_path: Path,
+) -> None:
+    """A partial declaration reports exactly what it compared, enforced and advisory."""
+    words = live_words(0, 805, 100)
+    words[(1, WORD_EMISSIONS_PER_PROFILE)] = 900  # a disagreement, on the advisory word
+    path = build_bdd(tmp_path / "partial.BDD", words)
+
+    result = verify_stored_point(
+        path,
+        ParameterSet(
+            sound_speed_ms=SOUND_SPEED_MS,
+            first_gate_mm=FIRST_GATE_MM,
+            resolution_mm=0.122,
+            gates=805,
+            prf_us=PRF_US,
+            emissions_per_profile=EMISSIONS_PER_PROFILE,
+        ),
+        check_covariates=True,
+    )
+
+    assert result.enforced_covariates == ("sound_speed_ms", "prf_us")
+    assert "burst_length" not in result.enforced_covariates
+    assert result.advisory_covariates == ("emissions_per_profile",)
+    assert len(result.advisories) == 1
 
 
 # --------------------------------------------------------------------------- #
