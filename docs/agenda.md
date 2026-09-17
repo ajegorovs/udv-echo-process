@@ -199,15 +199,23 @@ accepted, the refactor roadmap accepted only in part**. Decision record, review
 text and evidence lines:
 [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md).
 
+**The first slice is in review:**
+[PR #2](https://github.com/ajegorovs/udv-echo-process/pull/2),
+`fix/acquisition-correctness-baseline` — the correctness baseline below, plus the
+`_fsync_dir` fix, which the baseline needs for its own gate to mean anything.
+
 Binding outcomes:
 
 - **First slice — acquisition correctness baseline** (no Win32 reorganization):
-  forward the channel into `verify_stored_point` (`runner.py:589` currently
-  verifies channel 1 while decoding the run's channel) with a runner-level
-  channel-2 regression test; make verification mandatory; enforce the settled
-  covariates (words 19/5/8) while word 14 stays recorded-but-unenforced; derive
-  `ProfileTiming`/retained span/`wrapped_block` from the stored profile
-  timestamps; carry the preflight fingerprint into the run record.
+  the channel now reaches `verify_stored_point` (it verified channel 1 while the
+  decode read the run's channel) with a channel-2 regression case; verification is
+  fail-closed, so a point nobody checked is refused instead of passing on its size;
+  the settled covariates (words 19/5/8) are enforced while word 14 stays
+  recorded-but-unenforced; and `ProfileTiming` plus the retained window (profile
+  count, span, wrap, retained fraction) are derived from the stored profile
+  timestamps rather than from the request. The preflight fingerprint in the run
+  record is **not** in this slice — it needs an `Actuator` protocol extension and
+  belongs with campaign compilation.
 - **Also open, independent of the review:** `storage/npy.py::_fsync_dir` opens a
   directory with `os.open`, which raises `PermissionError` on Windows for any
   directory — `store_bundle` cannot complete on this platform, and ~35
