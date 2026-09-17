@@ -9,6 +9,7 @@ recordings this repo parses.
 | File | What it is |
 |------|------------|
 | [`measurements-and-recordings.md`](measurements-and-recordings.md) | Explainer: how a DOP measures (basic physics), what a single-sensor recording contains (burst, emission, gate, profile, …), and how multiplexed recordings are organised (channels, sequences, blocks, TBD/block/channel columns). |
+| [`parameter-sweep-matrix.md`](parameter-sweep-matrix.md) | Planning note for a sensitivity campaign: the 15 settable UDOP parameters, their governing relations (reach/velocity limits, gate geometry, timing), which are genuinely independent axes, which must be co-set, and which must never be swept. |
 | [`manual-reference/`](manual-reference/) | Text-only, page-traceable transcription of the DOP3000/3010 User's Manual (software 6.6, revision 1), split into its front matter, 22 chapters, and index. |
 
 ## Manual reference
