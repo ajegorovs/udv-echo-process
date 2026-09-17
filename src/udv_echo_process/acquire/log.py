@@ -131,7 +131,9 @@ class DecodedBlock(ValueModel):
         recording into a log failure. Declared fields are validated as usual.
         """
         declared = set(cls.model_fields)
-        return cls(**{name: value for name, value in mapping.items() if name in declared})
+        return cls(
+            **{name: value for name, value in mapping.items() if name in declared}
+        )
 
 
 class SizeSignature(ValueModel):
@@ -160,7 +162,11 @@ class SizeSignature(ValueModel):
 
     def matches(self, size_bytes: int, n_gates: int, profiles: int) -> bool:
         """True when the size is within ``1/factor .. factor`` of expected."""
-        return 1.0 / self.factor <= self.ratio(size_bytes, n_gates, profiles) <= self.factor
+        return (
+            1.0 / self.factor
+            <= self.ratio(size_bytes, n_gates, profiles)
+            <= self.factor
+        )
 
 
 class SweepLogHeader(ValueModel):

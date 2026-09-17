@@ -178,9 +178,7 @@ class RecordSettings(ValueModel):
 
     capture_dir: str = Field(default="capture", min_length=1)
     name_prefix: str = Field(min_length=1)
-    max_profiles_per_block: int = Field(
-        default=DEFAULT_MAX_PROFILES_PER_BLOCK, ge=1
-    )
+    max_profiles_per_block: int = Field(default=DEFAULT_MAX_PROFILES_PER_BLOCK, ge=1)
 
     @field_validator("capture_dir", "name_prefix")
     @classmethod

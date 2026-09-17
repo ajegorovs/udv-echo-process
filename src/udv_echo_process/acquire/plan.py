@@ -69,7 +69,9 @@ DEFAULT_LIMITS = AcquisitionLimits()
 GATE_DRIFT_NOTE = 0.05
 
 
-def rung_mm(sound_speed_ms: float, *, limits: AcquisitionLimits = DEFAULT_LIMITS) -> float:
+def rung_mm(
+    sound_speed_ms: float, *, limits: AcquisitionLimits = DEFAULT_LIMITS
+) -> float:
     """One resolution-ladder rung in mm: ``c / 12000`` (docs/08 §1)."""
     if sound_speed_ms <= 0:
         raise ValueError(f"sound_speed_ms must be > 0, got {sound_speed_ms}")
@@ -222,7 +224,9 @@ def profiles_for_duration(duration_s: float, period_s: float) -> int:
     return math.ceil(duration_s / period_s)
 
 
-def window_fits(duration_s: float, period_s: float, max_profiles_per_block: int) -> bool:
+def window_fits(
+    duration_s: float, period_s: float, max_profiles_per_block: int
+) -> bool:
     """True when ``T / period`` fits the block cap (docs/16 §15b)."""
     return profiles_for_duration(duration_s, period_s) <= max_profiles_per_block
 
