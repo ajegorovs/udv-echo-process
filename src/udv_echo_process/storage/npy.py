@@ -273,7 +273,18 @@ def _write_bytes(path: Path, raw: bytes) -> None:
 
 
 def _fsync_dir(path: Path) -> None:
-    """Fsync a directory so a rename/marker is durable."""
+    """Fsync a directory so a rename/marker is durable, where that is possible.
+
+    Windows has no directory flush: ``os.O_DIRECTORY`` is POSIX-only and
+    ``os.open`` refuses a directory there, while ``FlushFileBuffers`` is
+    documented for file and volume handles only, so this is an explicit no-op
+    on Windows. That stays safe for this store because every file's bytes are
+    already fsynced (:func:`_write_bytes`, :func:`_save_array`) before the
+    rename, so only the NTFS metadata ordering for the new directory entry is
+    left to the OS; a directory open/fsync failure on POSIX still propagates.
+    """
+    if os.name == "nt":
+        return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     descriptor = os.open(path, flags)
     try:
