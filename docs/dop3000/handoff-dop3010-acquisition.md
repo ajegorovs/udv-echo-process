@@ -212,20 +212,23 @@ Two live runs settled the channel path, and both changed what the driver may ass
     structurally because every widget here is caption-less;
   - a probe that refuses to start on a non-clean screen will refuse to start on such a channel
     at all, which is why `recon/55_restore_channel.py` exists to put the channel back.
-  **The assisted mode is not a consequence of a channel write, and now it is on the record:**
-  the stored file carries the mode in word 1 of its parameter block (`assisted Mode: 1 if
-  true`, manual doc 10; read with the repo's own `verify._word_offset`). Every one of the 23
-  files stored on this installation reads **0** — including `sw100-k2-161609.BDD` (16:16) and
-  `live-smoke-3-k2.BDD` (18:41), the two written while **channel 2** was selected by the
-  earlier session's prototype, and this session's own `port-probe-01.BDD` (22:05, channel 1).
-  Yet the application presented channel 2 (and channel 3) in assisted mode by 21:26. So the
-  state changed somewhere between 19:01 and 21:26 — a window whose only presses were this
-  driver's, which is why the popup walk above is the prime suspect and was removed: the
-  manual's `Default parameters` entry *selects* the assisted mode and the application
-  highlights that entry by itself. This driver now (a) presses only the topmost entry, (b)
-  refuses the point if the sidebar column disappears during the interaction, naming the mode
-  and the entry that does it, and (c) never leaves the mode itself — its own toggle is the
-  application's Preference menu, which `docs/16` records as deliberately not driven. Nothing
+  **And the mode is per channel, and it predates every press this session made.** The same
+  word read at each channel's own offset (`_word_offset(word, channel)`: the parameter area
+  holds a block per channel) says channel 1 = **0** and channels 2, 3 and 4 = **1** — in
+  *every* file on the installation, `test.BDD` at 14:54 included, hours before the first
+  channel write at 21:26, and the two channel-2 files the earlier session stored at 16:16 and
+  18:41. That makes a falsifiable prediction, and it was tested: selecting **channel 4**,
+  which no write had ever touched, brings up the application's assisted panel with the
+  sidebar gone (21 visible controls in 3 panels), and channel 1 comes back with it (43 in 4).
+  The flag and the screen agree, so **the assisted mode of channels 2-4 is this
+  installation's long-standing per-channel configuration** — not a consequence of a channel
+  write, and not something this session switched on. The popup walk above was therefore a
+  real *hazard* (the manual's rule stands, and the application highlights `Default
+  parameters` by itself) but **not the cause** of what was seen here: it was removed as a
+  hazard, not as a culprit. The driver still refuses any point whose sidebar disappears
+  mid-interaction, and still never leaves the mode itself — its own toggle is the
+  application's Preference menu, which `docs/16` records as deliberately not driven.
+  Nothing
   else was changed: the channel selector was left where it was found.
 - **The `Parameters` popup's five entries are fixed labels** — read off a 3x screenshot of the
   live menu: `Operating parameters`, `Default parameters` (the one the application itself
@@ -247,12 +250,23 @@ Two live runs settled the channel path, and both changed what the driver may ass
 - **The channel *write* path is now live-verified in both directions** (2026-09-17): channel
   1 → 2 and 2 → 1, each `verified channel: N` after accept + re-open, dialog closed and the
   clean layout restored. What the write *does* to the dialog — replace it — is in §3.
-- **A whole point (strip press → hold → stop → Store dialog → `Do store`) has not been run
-  since the port**, and it is the next live step. The sequence the operator knows:
+- **A whole point runs through the port, live.** Three files, 2026-09-17: `port-probe-01.BDD`
+  (3 s, 111,080 bytes), `port-probe-02.BDD` (2 s, 88,859 — the repeat, same parameter
+  signature), both on channel 1, and `port-probe-03.BDD` (3 s, 79,286) on channel 2 with the
+  layout gate lifted by the probe. Each came out through `record_and_store`: `ensure_channel`
+  (read, written, verified), `Record` → hold → `Stop`, `Do store`, the working directory
+  asserted, the name written, `Do store` on the Store dialog, the file waited for and read
+  back with `verify.read_words` (gates 804, resolution 0.12 mm, depth 99 mm, sound speed
+  1460 m/s, PRF 212 µs, 150 emissions/profile, burst 4). The operator's sequence is
   *(if needed `Clear and restart`, wait for the record button to come back) → record → stop →
-  `Do store` (the middle button) → the Store window appears with the cursor trapped in it →
-  (change the fields) → `Do store` on that window.* `recon/45_live_sweep_runner.py` is the
-  prototype that did this; nothing in the port has been live since the refactor.
+  `Do store` → the Store window with the cursor trapped in it → (change the fields) →
+  `Do store`*, and `recon/56_point_cycle.py preflight` runs it read-only (it opens the Store
+  dialog, reads its name and working directory, cancels) — the run's own notes for a channel
+  write are in §3.
+  The write reaches the **data**, not just the label: each stored profile record carries its
+  channel — `port-probe-02` (channel 1) and `port-probe-03` (channel 2), same configuration,
+  differ at byte 881 and then at every 1024-byte stride, reading 1 and 2, and nowhere else in
+  the file.
 - **The write-replaces-the-dialog rule is pinned** (`test_the_dialog_is_re_resolved_after_a_
   channel_write_replaces_it`): the fake scripts the replacement at the live geometry — the
   operating dialog at `(655,364)` giving way to the assisted one at `(713,364)`, new handles —
