@@ -6,7 +6,6 @@
   "prf_us": 212.0,
   "emissions_per_profile": 150,
   "burst_length": 4,
-  "store_dir": "C:\\REPOS\\DOP-CONTROL\\RECON\\OUT\\CAPTURE",
   "max_profiles_per_block": 257,
   "points": [
     {
