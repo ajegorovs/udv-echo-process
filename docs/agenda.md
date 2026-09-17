@@ -220,7 +220,8 @@ Binding outcomes:
   directory with `os.open`, which raises `PermissionError` on Windows for any
   directory — `store_bundle` cannot complete on this platform, and ~35
   `test_storage_npy.py` failures are that defect, not environment noise. A
-  Linux CI would mask it.
+  Linux CI would mask it. **Fixed in PR #2** (`ec957e1`); still open on `master`
+  until that PR merges.
 - **Deferred behind a trigger:** splitting `acquire/driver.py` (149 kB of
   live-proven gestures — split only when a change forces the file open, and
   mechanically); the explicit UDOP state machine in code; replacing rather than
