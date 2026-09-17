@@ -1,0 +1,140 @@
+# Sweep automation: measured lessons from the DOP3010/UDOP rig
+
+Hard-won rules from driving a 32-bit Delphi/VCL instrument app (UDOP 6.07.4) through
+parameter sweeps. Most generalise to any posted-message UI automation; the specifics
+are marked.
+
+## Driving the UI
+
+- **The menu bar opens on a real cursor hover; the entry takes a posted held press.** The parameters
+  menu ignores posted messages entirely (a posted move and a posted held press both opened nothing), so
+  hover the button with `SetCursorPos` onto its centre plus one short relative `mouse_event` move, then
+  poll for the popup. The entry underneath is taken with the ordinary widget recipe — posted
+  `WM_LBUTTONDOWN` (hold ~180 ms) `WM_LBUTTONUP` on the entry's **own handle** — which needs no cursor.
+  Do not "improve" that into a real click on the entry: the re-derived click opened no dialog.
+- **Order popup entries by screen `top`, never by enumeration order** (enumeration order once pressed a
+  destructive entry), and **never match one by title** — these widgets carry no captions. The overlay
+  holds five entries (screen tops 61, 95, 130, 165, 205 inside the panel at `(169, 55, 401, 250)`); the
+  first is `Operating parameters`, the second resets parameters.
+- **A pre-created overlay is not an open overlay.** That panel exists in the child tree from startup
+  with `IsWindowVisible` false. Enforce `IsWindowVisible` on the overlay *and* the entry before
+  pressing, and name the hidden panel in the refusal — a tree hit alone is a hypothesis
+  (`custom-menus-clipcursor-and-real-input.md`).
+- **Bind by role + geometry (class name + rect), never by control id or caption.** These
+  widgets (`TSp_*`) carry no captions, so captions cannot be used to identify them.
+- **Find a combo by its item list, not by its nesting.** Burst length and sampling volume are nested
+  inside `TSp_Value_Button` children, but the measurement channel is the dialog's **header** field — a
+  direct child of the panel (`Operating parameters for channel [n ▼]`, measured at `(1083, 373)`, items
+  `1`…`10`). Recurse the dialog's whole subtree and identify each combo by what it lists; requiring a
+  value-button wrapper around one particular combo rejects the correctly opened dialog. A lookalike
+  combo listing the same items exists in the sidebar, so scope the search to the dialog panel.
+- **Identify a dialog structurally, then tell two dialogs apart by content.** A dialog is a panel that
+  is not the sidebar column, is wider than 400 px and is full of controls of its own (≥15 direct
+  children, a `TSp_Browse`, or input controls); the operating dialog measures `627x384` at
+  `(655, 364)` with seven `TSp_Value_Button` fields. Answer an unidentified dialog with its **leftmost**
+  bottom button (`Cancel`/`No`); the rightmost is `Accept`/`Do store`.
+- **Write order matters where the app has auto-flags.** With automatic resolution/gate-count
+  selection active, writing the gate count first gets silently clamped (805 -> 474). Write
+  the resolution first, then the gate count, then verify.
+- **Verify against the artifact, never against the control's text.** A control can read back
+  what you wrote while the application keeps something else; re-open a dialog to re-read it,
+  and treat the stored file as the authority for what a point actually was.
+- **Never dismiss a popup with `WM_CLOSE`** - it wedges the modal menu loop until restart.
+  Posted clicks ignore modality, which is what makes them usable at all; a modal dialog that
+  sets `ClipCursor` still blocks real injected input.
+- **The main-window record strip takes the posted *held* press** (Record / Stop / Clear). A/B on all
+  three of its buttons: the held posted press started the recording and the Stop reached the store
+  view, while `SetCursorPos` + `mouse_event` down/up did nothing on any of them. The strip, the popup
+  entries and the dialog buttons are message surfaces; only the menubar hover needs the real cursor.
+- **A channel has its own mode, and the mode changes the whole screen.** Selecting a channel inside
+  the operating dialog re-renders the panel for *that* channel's mode: an assisted channel shows
+  `Assisted mode parameters for channel [n]` with no sidebar parameter column (21 visible controls in
+  3 panels against 43 in 4 with the column), so a parameter write there has no target and a *sweep*
+  must be refused while a single store is still valid. Read the mode from the panel the application
+  built (the assisted one carries a slider the others do not), record it on the run, refuse by naming
+  the mode rather than the missing field, and never leave the mode yourself — its toggle is the
+  application's Preference menu, which the automation deliberately does not drive.
+
+## Reading a stored point (DOP3010 `.BDD`)
+
+- uint32 little-endian words, 256 per channel, stride 1024 bytes; channel 1 starts at byte
+  offset 548. Word *i* of channel *c* is at `548 + (c-1)*1024 + i*4`.
+- w2 = depth in mm, w5 = PRF in microseconds, w8 = burst length, w10 = 0-based resolution
+  index (`resolution_mm = (w10+1) * sound_speed_ms / 12000`), w13 = gate count,
+  w14 = emissions per profile, w19 = sound speed in m/s. w17 is the constant 16. **w1 = `assisted
+  Mode`** (1 while that channel is in assisted mode), per the manual's parameter table.
+- **Read a word at the channel's own offset, and never conclude uniformity from one block.** The
+  parameter area holds one block per channel, so word *i* read at channel 1 for a point measured on
+  channel 2 is channel 1's field and not the point's — read that way the mode flag looked like "0 in
+  every file" while the blocks actually read channel 1 = 0 and channels 2-4 = 1. Print the value for
+  every channel before calling it uniform, and corroborate a pattern against a channel you have not
+  touched (the mode read off the files predicted an untouched channel's panel correctly).
+- **Each stored profile record carries its channel.** Two files written from one configuration on
+  different channels differ at byte 881 and then at every 1024-byte stride (values 1 and 2) and
+  nowhere else — the cheap proof that a channel write reached the data and not just the label.
+- **Sweep rungs are 1-based multipliers**, not indices: k = 1, 2, 4 give 0.1217 / 0.2433 /
+  0.4867 mm at c = 1460. Word 10 stores `k - 1`.
+- The stored depth word is the application's own derivation and deviates a few tenths of a
+  mm from `first_gate + gates * resolution` - there is no consistent floor-or-round rule, so
+  compare depth with a tolerance (~1.5 mm) rather than exactly.
+- **Profile period is computable, not measured:** `T_profile ~= T_tran + T_prf * (16 + N_PRF)`
+  where `N_PRF` is emissions per profile and 16 is the fixed constant stored as word 17.
+  Deviations are expected (mechanics, electrical, a non-real-time OS), so log the achieved
+  value as a per-point certificate instead of calibrating models from it. Measured at the production
+  length (12 s, 797 gates at 0.122 mm) the law predicts 366 profiles (33 ms) while the block holds
+  228 — an achieved period of **53 ms**, and **46 ms** at 399 gates: the transfer term is ~1.6x larger
+  than the law and it scales with the gate count, as that term implies. So compute the achieved period
+  from the artefact itself (size / (gates x 1.7 B) -> profile count; period = T / profiles; flag a wrap
+  when the count reaches the block cap) and carry it on the point's record — a point log whose timing
+  field is empty cannot support a duration-based comparison, and the size guard's factor-of-2 tolerance
+  is loose enough to pass a 0.62 ratio.
+
+## Run safety
+
+- **Clear the block before every independent point.** A stale buffer (a few thousand leftover
+  profiles from an earlier failed cycle) produced a stored file ~60x the expected size that
+  still decoded as a perfectly valid point - silent corruption. Clearing first produced the
+  correct size. On screen the symptom is large **negative** `Time between profile` values.
+- **Keep the size guard gross, not precise.** Contamination shows up as 10x/60x. Profile
+  timing carries OS and mechanical jitter, so a tight expectation is illusory: ~1.7 bytes per
+  gate-profile with a factor of 2-4 is the right shape. Note the ratio drifts with gate count
+  (a per-profile overhead plus ~1.2 bytes per gate), so do not enforce it across rungs.
+- **Circuit breaker: stop the run when the application's state is unverified** - unknown
+  overlay, unstartable strip, a cycle that raised - instead of cascading the failure across
+  every remaining point. Refuse and stop on an unrecognised panel; never press a button on a
+  popup you cannot identify.
+- **A file that exists but disagrees with the requested parameters must not be logged as
+  valid.** Existence is not success.
+- **Failures before a file exists are run-level (abort); failures after it exists are
+  point-level (continue).** That boundary is the clean place to hang the circuit breaker.
+- **Make channels/retargeting a single knob** (config field + environment variable, one
+  source of truth). A rig that needs code edits in several places to change channel will be
+  retargeted wrongly at some point.
+
+## Process
+
+- A live run that must be observed: run it in the **foreground** (timeout <= 600 s) so the
+  result returns inline. Above that cap it is promoted to a background process and the result
+  arrives later as a notification.
+- Probe the live app read-only first (current state, panels, view) and build every object
+  before touching the GUI, so a construction error costs nothing. An introspection failure
+  must print and exit, not half-run.
+- **A whole point and a short sweep run through the runner's own API, not through hand-rolled presses:**
+  plan -> write -> read-back -> record -> store -> decode -> verify -> one JSONL entry per point, whose
+  fields (`sweep_id`, `key`, `name`, `status`, `requested`, `readback_*`, `file_path`, sizes, `decoded`,
+  `failure`) are the minimum a tracking layer needs — build the campaign on that record rather than
+  inventing a second one. A definition is JSON (`job`, `channel`, `duration_s`, `name_prefix`, `prf_us`,
+  `emissions_per_profile`, `burst_length`, `store_dir`, `max_profiles_per_block`, and `points` of
+  `{label, parameters}`), driven by `acquire plan|campaign|report`. Resume keys on
+  `<name_prefix>-<label>` read out of the record's own name, so the record gains no field; the stored
+  file is `<prefix>-<label>-<stamp>`, which means a label that repeats the prefix doubles it. Only the
+  sidebar parameters (resolution, gate count) vary per point — sound speed, first gate and burst length
+  are dialog-only, so a point may repeat them but never change them, and the plan refuses such a change
+  by name. The block cap is an input to state, not a law to assert on: the 12 s production point keeps
+  ~8.4 s, so the plan reports that per point and runs. Measured: 6/6 points in 104 s at 12 s each on
+  channel 1, one parameters dialog for the whole job, `--resume` skipping every recorded point in 4 s
+  (gates 797/399/199/100 read back as planned). An assisted-mode channel has no sidebar at all, so a
+  campaign must target a manual one. One axis per sweep, and keep the window, channel and duration fixed across
+  the points, so the two files differ only in the parameter under study.
+- Print the field names and types of an unfamiliar model when construction fails; it turns a
+  guess into one exact fix (`rungs` being 1-based multipliers was found this way).

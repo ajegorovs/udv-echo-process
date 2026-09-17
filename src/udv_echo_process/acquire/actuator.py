@@ -1,0 +1,525 @@
+"""The actuator interface: what the GUI-driving implementation must provide.
+
+This module is **pure Python on purpose** — no ``pywinauto``, no ``watchdog``, no
+``PIL`` — so the interface can be satisfied by a fake in tests and so importing
+``udv_echo_process.acquire`` stays safe on any host. The Windows implementation
+lands later; it satisfies :class:`Actuator` and owns the message-based recipes.
+
+Everything here is *binding data or a pure rule*, never a hard-coded window id or
+screen coordinate. That property is load-bearing:
+
+- the strip panel is **draggable and morphs** (``98x40`` → ``352x40`` → ``413x123``),
+  so it is located structurally and its buttons are identified by their **order in
+  the current view** — 134 vs 138 px is too close a width to be an identity
+  (docs/16 §7, §10);
+- the parameter column is resolved by position (``left == 0``, tall panel, value
+  fields top-to-bottom) — see ``PARAM_COLUMN_ORDER``;
+- control ids change on every launch (43/43 classes at the same positions, 1/43
+  ids in common), so nothing can key on an id.
+
+The ported recipes, kept here as documented constants so the implementation can
+not drift from what was verified:
+
+- a strip button needs a **held** press — posted ``WM_LBUTTONDOWN``, ~180 ms,
+  ``WM_LBUTTONUP``; an instant down/up in the same millisecond is ignored, which
+  is exactly what every early attempt sent (docs/16 §1);
+- a numeric field needs ``WM_SETTEXT`` + ``WM_COMMAND(EN_CHANGE)`` + a
+  **``VK_RETURN`` key event** — ``WM_SETTEXT`` alone changes the control's text
+  and the application keeps its own value (docs/14 §4);
+- posted clicks **ignore modality**, so every press is preceded by an overlay
+  check (docs/16 §8).
+
+Two of the ported rules are *ordering* rules and live here rather than in the
+values module: the write order (resolution before gates) and the safe overlay
+answer (leftmost button). Both are table lookups, not branches.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterable
+from enum import Enum
+from pathlib import Path
+from typing import Protocol, runtime_checkable
+
+from pydantic import Field
+
+from udv_echo_process.acquire.config import ParameterSet
+from udv_echo_process.models.base import ValueModel
+
+__all__ = [
+    "DIALOG_ONLY_PARAMETERS",
+    "NUMERIC_WRITE_RECIPE",
+    "OVERLAY_ANSWERS",
+    "PARAMETER_WRITE_ORDER",
+    "PARAM_COLUMN_ORDER",
+    "PRESS_HOLD_MS",
+    "STARTABLE_VIEWS",
+    "STORE_TIMEOUT_S",
+    "STRIP_BUTTON_ORDER",
+    "VIEW_TIMEOUT_S",
+    "Actuator",
+    "DialogControl",
+    "OverlayKind",
+    "ParamRole",
+    "StripControl",
+    "StripState",
+    "StripView",
+    "classify_strip_view",
+    "ordered_writes",
+    "overlay_answer",
+    "press_index",
+    "strip_controls",
+]
+
+#: A strip press must be held: down, ``PRESS_HOLD_MS``, up (docs/16 §1).
+PRESS_HOLD_MS = 180
+
+#: How long a view change is polled for before the cycle is declared failed.
+VIEW_TIMEOUT_S = 12.0
+
+#: The Store dialog can sit behind a store of a large block; the reference
+#: implementation waited up to 40 s for the file to appear (docs/16 §5).
+STORE_TIMEOUT_S = 60.0
+
+#: The numeric-field commit recipe, in order. ``WM_SETTEXT`` alone never
+#: commits; the ``VK_RETURN`` key event is the commit (docs/14 §4).
+NUMERIC_WRITE_RECIPE: tuple[str, ...] = (
+    "WM_SETTEXT",
+    "WM_COMMAND(EN_CHANGE)",
+    "WM_KEYDOWN(VK_RETURN)",
+    "WM_KEYUP(VK_RETURN)",
+)
+
+#: Parameters with **no** parameter-column field — they are set in the
+#: ``Operating parameters`` dialog only, so a sweep that varies one of them needs
+#: the dialog path. ``sampling_volume`` is the exception that proves the rule: the
+#: app chooses it from the burst length and the physics, so it is read back, never
+#: written (docs/16 §13, docs/13 §1).
+DIALOG_ONLY_PARAMETERS: tuple[str, ...] = (
+    "first_gate_depth",
+    "burst_length",
+    "sampling_volume",
+    "sound_speed",
+    "tgc",
+)
+
+
+class ParamRole(str, Enum):
+    """A parameter-column value field, by role — never by id or coordinate."""
+
+    US_FREQUENCY = "us_frequency_khz"
+    PRF = "prf_us"
+    GATES = "gates"
+    RESOLUTION = "resolution_mm"
+    VELOCITY_SCALE_FACTOR = "velocity_scale_factor"
+    EMISSIONS_PER_PROFILE = "emissions_per_profile"
+    DOPPLER_ANGLE = "doppler_angle_deg"
+
+
+#: The parameter column's value fields in their fixed **top-to-bottom** order;
+#: that order is the identity of a field (docs/16 §12, ``recon/udop_roles.py``).
+PARAM_COLUMN_ORDER: tuple[ParamRole, ...] = (
+    ParamRole.US_FREQUENCY,
+    ParamRole.PRF,
+    ParamRole.GATES,
+    ParamRole.RESOLUTION,
+    ParamRole.VELOCITY_SCALE_FACTOR,
+    ParamRole.EMISSIONS_PER_PROFILE,
+    ParamRole.DOPPLER_ANGLE,
+)
+
+#: **Write order: resolution first, then the gate count.** This channel has the
+#: manual's auto-resolution / auto-selection-of-gates flags set, so writing the
+#: resolution makes the app recompute the gate count; writing gates last makes our
+#: value the final request it sees. Measured: 805 gates requested → 474 accepted
+#: in the wrong order, 805 accepted in this one (docs/16 §14).
+PARAMETER_WRITE_ORDER: tuple[ParamRole, ...] = (ParamRole.RESOLUTION, ParamRole.GATES)
+
+
+class StripControl(str, Enum):
+    """A record-strip button, addressed by role and by its position in the view."""
+
+    PAUSE = "pause"
+    RECORD = "record"
+    STOP = "stop"
+    DO_STORE = "do_store"
+    CLEAR_AND_RESTART = "clear_and_restart"
+    NEW_ACQUISITION = "new_acquisition"
+    REMOVE_CURRENT_BLOCK = "remove_current_block"
+
+
+class DialogControl(str, Enum):
+    """The two ends of a dialog's bottom button pair (never a title, never a rect)."""
+
+    #: Leftmost: ``Cancel`` in every dialog seen, and ``No`` on the overwrite warning.
+    SAFE = "safe"
+    #: Rightmost: ``Accept`` / ``Do store``.
+    CONFIRM = "confirm"
+
+
+class OverlayKind(str, Enum):
+    """A panel that is up while it should not be (docs/16 §8).
+
+    The app reuses one geometry for all its warnings, so the file-exists warning
+    is not distinguishable from any other warning by structure; a ``WARNING``
+    answered during a store therefore means "the name was taken — retry with a
+    fresh one" (docs/16 §12b).
+    """
+
+    STORE_DIALOG = "store_dialog"
+    WARNING = "warning"
+
+
+#: Which button answers an overlay; ``None`` means **do not press anything**.
+#: The Store dialog is not an overlay to dismiss — it is where the point's name is
+#: set and the store committed, so the caller fills its two ``TEdit`` fields and
+#: presses :attr:`DialogControl.CONFIRM`. Every warning is answered with the LEFT
+#: button so an existing file is never silently replaced (docs/16 §8, §12b).
+OVERLAY_ANSWERS: dict[OverlayKind, DialogControl | None] = {
+    OverlayKind.STORE_DIALOG: None,
+    OverlayKind.WARNING: DialogControl.SAFE,
+}
+
+
+class StripView(str, Enum):
+    """The strip's view, recognised structurally (button count + slider presence)."""
+
+    #: One top-row button: ``[Stop]``.
+    RECORDING = "recording"
+    #: Stopped with data, no slider: the ``Record`` row (3 or 4 buttons).
+    READY = "ready"
+    #: After ``Stop``: three top-row buttons **and** a ``TSp_Sliding_Bar`` child.
+    STORE = "store"
+    #: Anything else — do not guess, refuse the cycle.
+    UNKNOWN = "unknown"
+
+
+#: The top-row button order per ``(view, button_count)``, left → right.
+#: The identity of a button is its **position in the view**, never its width.
+#: ``record_and_store`` may only start from a verified ``READY`` view: starting
+#: from ``RECORDING`` stores a leftover recording under the next point's name
+#: (docs/16 §15b).
+STRIP_BUTTON_ORDER: dict[tuple[StripView, int], tuple[StripControl, ...]] = {
+    (StripView.RECORDING, 1): (StripControl.STOP,),
+    (StripView.READY, 3): (
+        StripControl.PAUSE,
+        StripControl.RECORD,
+        StripControl.CLEAR_AND_RESTART,
+    ),
+    # The no-slider row is documented both with and without a `Do store`; both
+    # readings keep `Record` at index 1, which is what the reference
+    # implementation relied on (`row[1]` = Record, docs/16 §7/§10).
+    (StripView.READY, 4): (
+        StripControl.PAUSE,
+        StripControl.RECORD,
+        StripControl.DO_STORE,
+        StripControl.CLEAR_AND_RESTART,
+    ),
+    (StripView.STORE, 3): (
+        StripControl.NEW_ACQUISITION,
+        StripControl.DO_STORE,
+        StripControl.CLEAR_AND_RESTART,
+    ),
+    (StripView.STORE, 4): (
+        StripControl.NEW_ACQUISITION,
+        StripControl.DO_STORE,
+        StripControl.CLEAR_AND_RESTART,
+        StripControl.REMOVE_CURRENT_BLOCK,
+    ),
+}
+
+#: Views a point cycle may start from. ``RECORDING`` is never a legal start: a
+#: running recording keeps its data and the next ``Do store`` writes it (docs/16
+#: §15b).
+STARTABLE_VIEWS: tuple[StripView, ...] = (StripView.READY, StripView.STORE)
+
+
+def classify_strip_view(button_count: int, has_slider: bool) -> StripView:
+    """Recognise the strip's view from structure alone (docs/16 §3, §7).
+
+    The slider is decisive: it exists only in the store view. Otherwise one
+    top-row button means a recording in progress, 3-4 mean stopped with data, and
+    anything else is unrecognised.
+    """
+    if button_count < 0:
+        raise ValueError(f"button_count must be >= 0, got {button_count}")
+    if has_slider:
+        return StripView.STORE
+    if button_count == 1:
+        return StripView.RECORDING
+    if button_count in (3, 4):
+        return StripView.READY
+    return StripView.UNKNOWN
+
+
+def strip_controls(view: StripView, button_count: int) -> tuple[StripControl, ...]:
+    """The top-row controls of a view, left → right."""
+    try:
+        return STRIP_BUTTON_ORDER[(view, button_count)]
+    except KeyError:
+        raise ValueError(
+            f"no known button row for view {view.value!r} with "
+            f"{button_count} button(s); the view must be re-resolved, not guessed"
+        ) from None
+
+
+def press_index(view: StripView, control: StripControl, button_count: int) -> int:
+    """Left→right index of ``control`` in ``view`` — the binding of a press.
+
+    The implementation resolves the strip panel structurally, sorts the top row
+    by ``left`` and presses the widget at this index. This is the whole reason
+    button widths must not be used as identity.
+    """
+    row = strip_controls(view, button_count)
+    try:
+        return row.index(control)
+    except ValueError:
+        raise ValueError(
+            f"no {control.value!r} in the {view.value!r} view "
+            f"({[c.value for c in row]})"
+        ) from None
+
+
+def overlay_answer(kind: OverlayKind) -> DialogControl | None:
+    """Which button answers ``kind``; ``None`` means the caller handles it."""
+    return OVERLAY_ANSWERS[kind]
+
+
+def ordered_writes(parameters: ParameterSet) -> tuple[tuple[ParamRole, str], ...]:
+    """The ordered ``(role, value)`` writes that apply one point's window.
+
+    Resolution before gates, always — see :data:`PARAMETER_WRITE_ORDER`. The
+    resolution is written at 3 decimals to match the app's display, and the gate
+    count as an integer (docs/16 §12a, §14).
+
+    Only the two depth-window fields are here. ``PARAM_COLUMN_ORDER``'s other
+    fields are covariates read once per sweep, and anything in
+    :data:`DIALOG_ONLY_PARAMETERS` has no column field at all.
+    """
+    values: dict[ParamRole, str] = {
+        ParamRole.RESOLUTION: parameters.resolution_text,
+        ParamRole.GATES: str(parameters.gates),
+    }
+    return tuple((role, values[role]) for role in PARAMETER_WRITE_ORDER)
+
+
+class ScreenFingerprint(ValueModel):
+    """What the application's screen is, read-only, as one record.
+
+    The first thing to read on a machine that is not the one the measurements came from
+    (``docs/dop3000/live-bringup.md`` §4). The counts say whether this is the clean
+    measurement layout — 43 visible controls in 4 panels on the reference install, and 21 in 3
+    for an **assisted-mode** channel, which is by design and not a fault — the strip view says
+    which of the three buttons means what, and the overlay says whether a modal is up while it
+    should not be; the geometry is there so a screen that does not match can be described.
+
+    JSON-serialisable on purpose: a fingerprint belongs in the job log beside the point it
+    preceded.
+    """
+
+    class_name: str
+    hwnd: int
+    rect: tuple[int, int, int, int]
+    maximized: bool
+    screen: tuple[int, int]
+    panels: int = Field(ge=0)
+    visible_controls: int = Field(ge=0)
+    strip: StripState
+    overlay: OverlayKind | None = None
+    layout_note: str | None = None
+    #: ``None`` when this session cannot read the cursor at all (the agent's own shell runs
+    #: in a service session: ``GetCursorPos`` fails there with error 1459).
+    cursor: tuple[int, int] | None = None
+    is_foreground: bool = False
+
+
+class PreflightReport(ValueModel):
+    """One whole cycle's shape with **nothing stored** — the operator's sequence, made read-only.
+
+    Every step's outcome is a field rather than only a line of output, because the point of a
+    preflight is to be read back afterwards on an instrument nobody here can see. ``channel``
+    is ``None`` when the run did not name one (the driver's own setting then decides, see
+    :class:`~udv_echo_process.acquire.config.ChannelSetting`).
+    """
+
+    started_from: str
+    view_after_record: str
+    held_s: float = Field(gt=0)
+    view_after_stop: str
+    view_after_cancel: str
+    channel: int | None = Field(default=None, ge=1)
+    store_dialog_size: str | None = None
+    store_dialog_children: int | None = Field(default=None, ge=0)
+    store_name: str | None = None
+    store_first_edit: str | None = None
+    store_working_directory: str | None = None
+    #: ``None`` when the caller named no directory to compare against.
+    working_directory_matches: bool | None = None
+    notes: tuple[str, ...] = ()
+
+
+class StripState(ValueModel):
+    """What the strip shows right now: structure in, view derived out.
+
+    ``view`` is derived from the structure so a state cannot contradict itself;
+    every press re-resolves the strip afterwards, because the panel's own rect
+    and its child list change with the view.
+    """
+
+    button_count: int = Field(ge=0)
+    has_slider: bool = False
+    #: The store slider's maximum: the *selected block's* profile count, i.e. a
+    #: free "how much is there to store" readout (docs/16 §3, §7).
+    slider_max: int | None = Field(default=None, ge=0)
+
+    @property
+    def view(self) -> StripView:
+        """The view this structure implies."""
+        return classify_strip_view(self.button_count, self.has_slider)
+
+    @property
+    def controls(self) -> tuple[StripControl, ...]:
+        """The top-row controls, left → right (empty for an unknown view)."""
+        try:
+            return strip_controls(self.view, self.button_count)
+        except ValueError:
+            return ()
+
+    @property
+    def is_startable(self) -> bool:
+        """True when a point cycle may legally start from here."""
+        return self.view in STARTABLE_VIEWS
+
+    def index_of(self, control: StripControl) -> int:
+        """Left→right index of ``control`` in this state's row."""
+        return press_index(self.view, control, self.button_count)
+
+
+@runtime_checkable
+class Actuator(Protocol):
+    """The GUI-driving surface a UDOP implementation must satisfy.
+
+    Implementations must respect three contracts that were each paid for once:
+
+    1. **Resolve structurally, never by id or coordinate.** Controls are located
+       by role and geometry (the strip by its widgets' parent, the parameter
+       column by position); nothing may key on a control id, and the strip must be
+       re-resolved after every press (§7, §10).
+    2. **Hold every strip press** (:data:`PRESS_HOLD_MS`) and **commit every
+       numeric write** with the key event — the app's model, not the control's
+       text, is what the read-back is compared against.
+    3. **Check for an overlay before every press** (posted clicks ignore
+       modality) and never leave one behind: an overlay left open traps the
+       operator's cursor in the app (docs/16 §8, §9).
+    """
+
+    def layout_note(self) -> str | None:
+        """A note when the screen is *not* the clean measurement layout.
+
+        ``None`` means the clean measurement screen (43 visible controls in 4
+        panels on the tested instance; dialogs and popups change the count).
+        A note — a popup, a dialog, a simulator-only screen — means parameter
+        roles may resolve to the wrong widgets, so a run must refuse to start.
+        """
+        ...
+
+    def read_parameter(self, role: ParamRole) -> str:
+        """The parameter column's current text for ``role``.
+
+        The text is the *control's* value, which is why it is only used for the
+        pre-record gate-clamp check; the stored file is the authority (docs/16
+        §14).
+        """
+        ...
+
+    def write_parameter(self, role: ParamRole, value: str) -> None:
+        """Write and commit one parameter column field.
+
+        Must use the numeric commit recipe (:data:`NUMERIC_WRITE_RECIPE`) — a
+        write without the key event leaves the display changed and the model
+        untouched (docs/14 §4).
+        """
+        ...
+
+    def strip_state(self) -> StripState:
+        """The strip's current structure, freshly resolved."""
+        ...
+
+    def wait_for_view(
+        self, views: Iterable[StripView], *, timeout_s: float = VIEW_TIMEOUT_S
+    ) -> StripState:
+        """Poll until the strip reaches one of ``views``, then return its state.
+
+        Returns the last state seen on timeout — the caller decides whether that
+        is a failure, so a wedged view is reported rather than retried blindly.
+        """
+        ...
+
+    def press(self, control: StripControl) -> None:
+        """Press one strip button of the *current* view, held, by position."""
+        ...
+
+    def answer_overlay(self) -> OverlayKind | None:
+        """Answer an overlay if one is up, and say what it was.
+
+        Returns ``None`` when nothing was up. For
+        :attr:`OverlayKind.STORE_DIALOG` nothing is pressed (the caller owns the
+        name and the commit); for :attr:`OverlayKind.WARNING` the LEFT button is
+        pressed (:func:`overlay_answer`).
+        """
+        ...
+
+    def set_store_name(self, name: str) -> None:
+        """Write the Store dialog's file-name field with the commit recipe.
+
+        ``name`` must be unique: a repeat raises the overwrite warning, which
+        wedges the app modal when unanswered (docs/16 §12b).
+        """
+        ...
+
+    def commit_store(self) -> None:
+        """Press the Store dialog's rightmost bottom button (``Do store``)."""
+        ...
+
+    def wait_for_stored_file(
+        self,
+        directory: Path,
+        *,
+        known: Iterable[str],
+        timeout_s: float = STORE_TIMEOUT_S,
+    ) -> Path:
+        """Wait for a file that was not in ``directory`` before, and return it.
+
+        Detects the *new name* rather than the arrival of any file, and the
+        caller still has to let it quiesce before decoding: nothing is written
+        before ``Do store``, but a file being written is not a file finished
+        (docs/09 §5, docs/16 §7).
+        """
+        ...
+
+    def record_and_store(
+        self,
+        name: str,
+        duration_s: float,
+        directory: Path,
+        *,
+        timeout_s: float = STORE_TIMEOUT_S,
+    ) -> Path:
+        """The composed cycle: record ``duration_s``, stop, store as ``name``.
+
+        The contract, all of it measured:
+
+        - start only from a verified :attr:`StripView.READY` (or dismiss a store
+          view first) — never from :attr:`StripView.RECORDING`, or a leftover
+          recording is stored under this point's name (docs/16 §15b);
+        - answer overlays at every step, including the file-exists warning, which
+          must be answered with ``No`` and then retried under a fresh name;
+        - ``duration_s`` is the specification of the point; the achieved profile
+          period is read from the status bar and logged, and the block cap must
+          already have been checked against it
+          (:func:`udv_echo_process.acquire.plan.assert_window_fits`);
+        - return the stored file's path; the file's size and content are the
+          authority, so the caller sizes it against the signature and decodes it
+          (:mod:`udv_echo_process.acquire.log`).
+        """
+        ...

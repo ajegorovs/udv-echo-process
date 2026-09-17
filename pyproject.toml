@@ -14,6 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+acquire = ["pywin32"]
 dev = ["pytest>=8.0", "ruff>=0.16.6"]
 marimo = [
     "marimo-inspect",
@@ -24,6 +25,7 @@ marimo = [
 udv-inspect = "udv_echo_process.cli:inspect_main"
 udv-viz = "udv_echo_process.cli:viz_main"
 udv-run-all = "udv_echo_process.cli:run_all_main"
+udv-acquire = "udv_echo_process.cli:acquire_main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1,0 +1,66 @@
+{
+  "job": "dop3010-single-channel-resolution-ladder",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "c1",
+  "prf_us": 212.0,
+  "emissions_per_profile": 150,
+  "burst_length": 4,
+  "max_profiles_per_block": 257,
+  "points": [
+    {
+      "label": "c1460-k1-a",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.121667,
+        "gates": 797
+      }
+    },
+    {
+      "label": "c1460-k2",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.243333,
+        "gates": 399
+      }
+    },
+    {
+      "label": "c1460-k4",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.486667,
+        "gates": 199
+      }
+    },
+    {
+      "label": "c1460-k1-b",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.121667,
+        "gates": 797
+      }
+    },
+    {
+      "label": "c1460-k8",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.973333,
+        "gates": 100
+      }
+    },
+    {
+      "label": "c1460-k1-c",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.121667,
+        "gates": 797
+      }
+    }
+  ]
+}

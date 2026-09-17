@@ -2474,6 +2474,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+acquire = [
+    { name = "pywin32" },
+]
 dev = [
     { name = "pytest" },
     { name = "ruff" },
@@ -2492,11 +2495,12 @@ requires-dist = [
     { name = "plotly", specifier = ">=5.24" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pywin32", marker = "extra == 'acquire'" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16.6" },
     { name = "scikit-image", specifier = ">=0.26.0" },
     { name = "scipy", specifier = ">=1.16.0" },
 ]
-provides-extras = ["dev", "marimo"]
+provides-extras = ["acquire", "dev", "marimo"]
 
 [[package]]
 name = "uncalled-for"

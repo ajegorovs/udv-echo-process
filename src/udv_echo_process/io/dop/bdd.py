@@ -69,6 +69,36 @@ Acquisition topology (plan §6.7, §14). The reader sets ``AcquisitionMode`` fro
 The content SHA-256 is computed in bounded chunks and no absolute path is
 stored anywhere in the returned models (``SourceAsset.file_name`` is a
 basename).
+
+Reconciliation of this map with an independent decoder (2026-09-17). A second,
+independently written decoder of the same operation-parameter table — the
+instrument-side session vendored into ``docs/dop3000/udop-automation.md`` §9,
+pinned against a labelled UI point — was compared word by word against the
+fields above. **No word decodes differently in value.** Three differences are
+worth recording, because each could otherwise be mistaken for an error:
+
+* Word 10 is the session's "0-based resolution rung index" and its law
+  ``resolution_mm = (word 10 + 1) x c / 12000`` is numerically identical to this
+  reader's ``c x (word 10 + 1) / (2 x rate)``, because every available file
+  (committed fixtures and captures alike) packs word 29 as ``(0, 6, 12, 40)``,
+  i.e. rate byte ``6`` → 6000 kHz. The rung law has no rate term at all; the two
+  forms only diverge if a file ever packs a different rate byte, and such a file
+  would trip the stored-depth validation below rather than decode silently.
+* Word 2 (the session's "``Depth`` = first gate + gates x resolution") is the
+  *UI's* integer window depth. It is not the last gate of the canonical axis —
+  they differ by up to ~0.5 mm — so it is deliberately not decoded or used here;
+  word 9 (first gate) and word 46 (hardware delay) carry the offset instead.
+* Words 3 (velocity scale x100), 14 (emissions/profile), 27 (sampling-volume
+  index), 42 (the session's *probable* ``Tgc [dB]``, which the manual's table
+  calls "internal use") and 84 (skipped profiles) are verified by that session
+  but stay undecoded: ``ChannelConfig`` has no field for them, or — for words 27
+  and 42 — the field's identity is not settled (``udop-automation.md`` §10).
+  Word 3 is redundant with word 15 for the Nyquist velocity this reader reports.
+  TGC therefore comes from the manual's rows 23–25 (mode + start/end), not from
+  word 42.
+
+``tests/test_bdd_verified_map.py`` pins that map against the two committed
+captures in ``data/dop3010-velocity/``.
 """
 
 from __future__ import annotations
