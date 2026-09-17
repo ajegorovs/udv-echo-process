@@ -16,7 +16,43 @@ module can produce, so:
 - the write read-back is compared with the request before a recording is spent, so
   a window the app clamped is refused without leaving a junk file behind;
 - every outcome is logged through ``append_entry``, valid or not, and a point is
-  ``OK`` only when a file was stored, decoded **and** matched the signature.
+  ``OK`` only when a file was stored, decoded, matched the signature **and** was
+  verified against the request;
+- **a point that leaves the application's state unverified or unstartable stops the
+  run.** A layout that is not the measurement one, an overlay that is not
+  recognised, a block that will not come back startable, a parameter write that
+  raised, a cycle that failed or claimed a store that is not there: none of those
+  say *this point was bad*, they say *we no longer know where the application is*.
+  Continuing from there burns every remaining point into an identical failure — a
+  wedged application answers every point the same way — so the runner trips a
+  circuit breaker instead: the remaining points are **not attempted**, the outcome
+  tuple ends at the aborting point, and that outcome carries ``aborted=True`` and
+  says so in its reason (:data:`ABORT_NOTE`). A point refused *for its own sake* —
+  a clamped read-back, a file whose size is off the signature, a file that will not
+  decode, a verification mismatch — is a normal point failure: the application
+  finished that point and its state is known, so the sweep continues. The boundary
+  is the stored file: everything before a file exists is the application's state and
+  trips the breaker, everything after it is evidence about that file and does not;
+- **on a panel the runner does not recognise, the policy is refuse and stop — never
+  press.** A posted press ignores modality, so a button on an unknown panel is the
+  one press that does real damage (``Replace ?`` answered *yes*, a strip press
+  landing on a dialog). The actuator answers and reports the panels it owns
+  (:data:`~udv_echo_process.acquire.actuator.OVERLAY_ANSWERS`); anything else — and
+  a Store dialog at a moment the runner is not mid-store — refuses the point
+  without pressing anything and trips the same breaker. No button on a panel that
+  is not one of the known ones is ever pressed;
+- **the stored file is checked against the request, not only against its size.**
+  After a successful store the file goes to
+  :mod:`udv_echo_process.acquire.verify` (``verify_stored_point``), which reads the
+  file's own words and compares them with the point's requested parameters: the
+  size signature says *a file this size*, only the words say *this file*. A
+  verification failure invalidates the point, with the mismatch strings in the
+  reason. That module is imported defensively — while it is not importable the point
+  is **not** silently passed: it is stored and logged with the reason recording that
+  verification was unavailable, and only the size signature stands behind it. (This
+  is the one check this module cannot make for itself: its own decode leaves
+  ``resolution_index`` and ``emissions_per_profile`` unset — see :func:`_decode` —
+  and a rule may never be derived from the file it is checking.)
 
 **The expectation is built from the specification, never from the file.** The
 expected size is ``signature.expected_bytes(requested_gates, profiles)``, with
@@ -28,7 +64,11 @@ cap, which ``plan.assert_window_fits`` checks against at plan time — shows up 
 as a file far *smaller* than expected, so the same guard covers it.
 
 A failure anywhere in :meth:`SweepRunner.run_point` returns an outcome; it never
-raises. Only the :class:`~udv_echo_process.acquire.actuator.Actuator` protocol is
+raises. A failure that says nothing about the application's state fails that one
+point; a failure that leaves the state unverified or unstartable additionally trips
+the circuit breaker, so :meth:`SweepRunner.run` stops there instead of spending the
+rest of the plan on a wedged application. Only the
+:class:`~udv_echo_process.acquire.actuator.Actuator` protocol is
 driven — no ``ctypes``, ``win32``, ``pywinauto`` or ``PIL``, no control id, no
 screen coordinate, no absolute path — so the module imports on any host and a fake
 actuator is a complete substitute.
@@ -43,14 +83,20 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from udv_echo_process.acquire.actuator import (
+    OVERLAY_ANSWERS,
     STARTABLE_VIEWS,
     Actuator,
+    OverlayKind,
     ParamRole,
     StripControl,
     StripState,
     StripView,
 )
-from udv_echo_process.acquire.config import ParameterSet, RecordSettings
+from udv_echo_process.acquire.config import (
+    ChannelSetting,
+    ParameterSet,
+    RecordSettings,
+)
 from udv_echo_process.acquire.log import (
     DecodedBlock,
     PointStatus,
@@ -69,7 +115,15 @@ from udv_echo_process.acquire.plan import (
 )
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
+try:
+    # acquire/verify.py is the word-level check and lands on its own schedule: a
+    # missing module is a note on the outcome, never an import error at startup.
+    from udv_echo_process.acquire.verify import verify_stored_point
+except ImportError:  # pragma: no cover - a checkout without the sibling module
+    verify_stored_point = None  # type: ignore[assignment]
+
 __all__ = [
+    "ABORT_NOTE",
     "GATE_DRIFT_LIMIT",
     "PERIOD_OVERHEAD_S",
     "RESET_TIMEOUT_S",
@@ -92,6 +146,15 @@ GATE_DRIFT_LIMIT = GATE_DRIFT_NOTE
 #: used only to count the profiles a window implies (which sizes the size check) —
 #: never a substitute for the achieved period, which the actuator cannot report.
 PERIOD_OVERHEAD_S = 1e-3
+
+#: The sentence every aborted point's reason carries. An abort is not a worse point
+#: failure — it is the run being cut short — and the reason is the only part of that
+#: a later reader of the log has, so it says so in words as well as in
+#: :attr:`PointOutcome.aborted`.
+ABORT_NOTE = (
+    "the run stops here: the application's state is not verified, so the remaining "
+    "points are not attempted"
+)
 
 
 class SweepActuator(Actuator, Protocol):
@@ -117,9 +180,16 @@ class SweepActuator(Actuator, Protocol):
 class PointOutcome:
     """What one point did: the file, the decoded block, and whether it counts.
 
-    ``ok`` is true only for a point that was stored, decoded and matched the size
-    signature. A point that is not ok may still carry a ``file`` — an invalid file is
-    evidence and is kept — so a non-``None`` file must never be read as success.
+    ``ok`` is true only for a point that was stored, decoded, matched the size
+    signature **and** verified against the request. A point that is not ok may still
+    carry a ``file`` — an invalid file is evidence and is kept — so a non-``None``
+    file must never be read as success.
+
+    ``aborted`` is the second, different thing a caller has to see: ``ok=False`` says
+    *this point was bad*, ``aborted=True`` says *the application's state is not
+    verified and the run was cut short here*, i.e. no later point was attempted and
+    the outcome tuple ends at this one (:meth:`SweepRunner.run`). An aborted outcome
+    is never ok, and its ``reason`` ends with :data:`ABORT_NOTE`.
     """
 
     point: SweepPoint | None
@@ -128,6 +198,7 @@ class PointOutcome:
     status: PointStatus
     reason: str | None
     decoded: DecodedBlock | None
+    aborted: bool = False
 
 
 @dataclass
@@ -135,7 +206,9 @@ class _Attempt:
     """The working record of one point, and the log line's raw material.
 
     ``status`` is the single source of truth: ``ok`` is derived from it, so a point
-    cannot be reported good and logged bad.
+    cannot be reported good and logged bad. ``aborted`` is set only by
+    :meth:`SweepRunner._fail` with ``abort=True``, and it is the one field that
+    reaches the caller as more than this point's own verdict.
     """
 
     point: SweepPoint
@@ -148,6 +221,7 @@ class _Attempt:
     readback_resolution: str | None = None
     size_bytes: int | None = None
     expected_bytes: int | None = None
+    aborted: bool = False
 
 
 class SweepRunner:
@@ -166,21 +240,39 @@ class SweepRunner:
         directory: Path,
         signature: SizeSignature | None = None,
         log_path: Path | None = None,
+        *,
+        channel: int | None = None,
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
         ``signature=None`` means the calibrated default (1.7 B per gate-profile,
         factor 2); ``log_path=None`` returns outcomes without writing a JSONL log.
+
+        ``channel`` is the measurement channel, taken from the one knob
+        (:class:`~udv_echo_process.acquire.config.ChannelSetting`): explicit here,
+        else ``UDV_CHANNEL``, else the default. It is not a sweep-level detail —
+        a stored file holds an independent configuration per channel and a decode
+        of the wrong channel's block once "disproved" a write that had worked
+        (docs/16 §12, the channel trap) — so the runner names it on every decode
+        instead of letting the reader guess between channels.
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
         self._log_path = None if log_path is None else Path(log_path)
+        self._channel_setting = (
+            ChannelSetting() if channel is None else ChannelSetting(channel=channel)
+        )
         self._sweep_id = sweep_id_for(datetime.now(tz=UTC).astimezone())
         #: Log entries that could not be written. Never silent, never fatal.
         self.log_errors: list[str] = []
         self._used_names: set[str] = set()
+
+    @property
+    def channel(self) -> int:
+        """The measurement channel every point is decoded on."""
+        return self._channel_setting.channel
 
     def run_point(
         self, point: SweepPoint, duration_s: float, *, reset: bool = True
@@ -190,39 +282,71 @@ class SweepRunner:
         In order: reset the block (unless ``reset=False``) and confirm a startable
         view; apply the parameters and compare the read-back with the request; record
         and store under a free name; decode the stored file; check its size against
-        the signature; append one log entry, valid or not; return. Only a caller that
-        has just reset the block itself should pass ``reset=False`` — a stale block is
-        stored under this point's name otherwise.
+        the signature; verify the file's own words against the request; append one log
+        entry, valid or not; return. Only a caller that has just reset the block
+        itself should pass ``reset=False`` — a stale block is stored under this
+        point's name otherwise.
+
+        Two kinds of bad point come back, and a sweep must tell them apart: a failure
+        of the point itself (``ok=False``, ``aborted=False`` — the application is
+        where it was and the next point may run) and a failure that leaves the
+        application's state unverified or unstartable (``aborted=True`` — nothing
+        later may be attempted, see :meth:`run`).
         """
         try:
             attempt = self._execute(point, duration_s, reset=reset)
         except Exception as exc:  # noqa: BLE001 - reported as an outcome below
             name = self._settings.point_name(point.key, self._sweep_id)
             attempt = _Attempt(point=point, name=name)
-            self._fail(attempt, f"the point cycle raised {type(exc).__name__}: {exc}")
+            # An exception out of the cycle is the least verified state there is:
+            # nothing here knows how far the application got.
+            self._fail(
+                attempt,
+                f"the point cycle raised {type(exc).__name__}: {exc}",
+                abort=True,
+            )
         self._report(attempt)
         return self._outcome(attempt)
 
     def run(
         self, definition: SweepDefinition, duration_s: float
     ) -> tuple[PointOutcome, ...]:
-        """Plan ``definition`` and run every point in order, with ``T = duration_s``.
+        """Plan ``definition`` and run points in order until the breaker trips.
 
-        The sweep does not stop at the first bad point: a failed or refused point is
-        logged and the next one starts, so one contaminated window costs one point.
+        ``T = duration_s``. A point that fails for its own sake — a clamped read-back,
+        a file whose size is off the signature, a file that will not decode, a
+        verification mismatch — is logged and the next one starts: one contaminated
+        window costs one point. A point that leaves the application's state unverified
+        or unstartable is where the run **ends**: the remaining points are not
+        attempted at all, so the returned tuple is shorter than the plan and its last
+        outcome carries ``aborted=True`` (and :data:`ABORT_NOTE` in its reason). A
+        caller distinguishing "this point was bad" from "the run was cut short" only
+        has to look at that flag.
+
         Raises ``ValueError`` when ``duration_s`` is not positive or the definition
         cannot be planned (``plan_sweep`` refuses a point the app would clamp).
         """
         if duration_s <= 0:
             raise ValueError(f"duration_s must be > 0, got {duration_s}")
-        return tuple(
-            self.run_point(point, duration_s) for point in plan_sweep(definition)
-        )
+        outcomes: list[PointOutcome] = []
+        for point in plan_sweep(definition):
+            outcome = self.run_point(point, duration_s)
+            outcomes.append(outcome)
+            if outcome.aborted:
+                break  # the state is not verified: the rest of the plan is void
+        return tuple(outcomes)
 
     def _execute(
         self, point: SweepPoint, duration_s: float, *, reset: bool
     ) -> _Attempt:
-        """Steps 1-5 of a point; returns the attempt, good or bad."""
+        """Steps 1-6 of a point; returns the attempt, good or bad.
+
+        Every return on the application's half of the cycle (the layout, the overlay
+        guard, the reset, the write, the store) carries ``abort=True``: those failures
+        say the application's state is unknown, not that this point's data was bad.
+        From the moment the stored file exists the failures are this file's, and the
+        sweep may carry on.
+        """
         attempt = _Attempt(
             point=point,
             name=self._settings.next_name(point.key, self._sweep_id, self._used_names),
@@ -234,22 +358,36 @@ class SweepRunner:
         except Exception as exc:  # noqa: BLE001 - an unchecked layout is not clean
             note = f"the layout check failed ({type(exc).__name__}: {exc})"
         if note is not None:
-            # Roles may resolve to the wrong widgets; no point may start on this.
-            return self._fail(attempt, f"not the measurement layout: {note}")
+            # Roles may resolve to the wrong widgets; no point may start on this, and
+            # a layout that is not the measurement one does not fix itself by waiting.
+            return self._fail(
+                attempt, f"not the measurement layout: {note}", abort=True
+            )
+        overlay = self._overlay_guard()
+        if overlay is not None:
+            return self._fail(attempt, overlay, abort=True)
         if reset:
             failure = self._reset_block()
             if failure is not None:
-                return self._fail(attempt, failure)
+                return self._fail(attempt, failure, abort=True)
 
         # (2) apply the window, then compare the app's read-back with the request.
         parameters = point.parameters
+        # The parameter column is only the column while no panel is over it.
+        overlay = self._overlay_guard()
+        if overlay is not None:
+            return self._fail(attempt, overlay, abort=True)
         try:
             readbacks = self._actuator.apply_point(parameters)
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards
-            return self._fail(attempt, f"applying the parameters failed: {exc!r}")
+            # A write that raised left the app's model unknown: no point may follow it.
+            return self._fail(
+                attempt, f"applying the parameters failed: {exc!r}", abort=True
+            )
         refusal = self._check_readback(attempt, parameters, readbacks)
         if refusal is not None:
-            # Refused before recording: no recording spent, no junk file left.
+            # Refused before recording: no recording spent, no junk file left. The
+            # application answered and is where it was, so the sweep continues.
             return self._fail(attempt, refusal, status=PointStatus.INVALID)
 
         # The size expectation — step (5)'s input — is computed here, from the
@@ -266,35 +404,49 @@ class SweepRunner:
 
         # (3) name the file and run the cycle.
         self._used_names.add(attempt.name)
+        overlay = self._overlay_guard()  # the guard the cycle's own presses cannot undo
+        if overlay is not None:
+            return self._fail(attempt, overlay, abort=True)
         try:
             stored, result = self._actuator.try_record_and_store(
                 attempt.name, duration_s, self._directory
             )
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards
-            return self._fail(attempt, f"the record/store cycle raised {exc!r}")
+            # The step is unaccounted for: a dialog may be up and a recording may
+            # still be running, so the next point cannot be trusted with the app.
+            return self._fail(
+                attempt, f"the record/store cycle raised {exc!r}", abort=True
+            )
         if not stored:
-            return self._fail(attempt, f"the record/store cycle failed: {result}")
+            return self._fail(
+                attempt, f"the record/store cycle failed: {result}", abort=True
+            )
         path = Path(str(result))
         attempt.file = path
         self._used_names.add(path.name)
         if not path.is_file():
             return self._fail(
                 attempt,
-                f"the cycle reported a store to {path.name}, which does not exist",
+                f"the cycle reported a store to {path.name}, which does not exist: the "
+                "step is unverifiable, so the application's state cannot be trusted",
                 status=PointStatus.INVALID,
+                abort=True,
             )
         try:
             attempt.size_bytes = path.stat().st_size
         except OSError as exc:
+            # The file is there and its size is not: that is this file's problem, and
+            # the application is past the point of the cycle.
             return self._fail(
                 attempt,
                 f"{path.name} could not be measured: {exc}",
                 status=PointStatus.INVALID,
             )
 
-        # (4) the file is the authority: decode it.
+        # (4) the file is the authority: decode it — on the channel this run
+        # measures on, from the one knob, never guessed between channels.
         try:
-            attempt.decoded = _decode(path)
+            attempt.decoded = _decode(path, self._channel_setting.channel)
         except Exception as exc:  # noqa: BLE001 - a file we cannot read is not a point
             return self._fail(
                 attempt,
@@ -326,8 +478,97 @@ class SweepRunner:
                 "not this point's data",
                 status=PointStatus.INVALID,
             )
+        # (6) the file's own words, against the request. The size signature says "a file
+        # this size"; only the file's words say "the file this point asked for".
+        return self._verify_stored(attempt, path, parameters)
+
+    def _verify_stored(
+        self, attempt: _Attempt, path: Path, parameters: ParameterSet
+    ) -> _Attempt:
+        """Step (6): the stored file's words against the point's requested parameters.
+
+        ``acquire/verify.py`` is imported defensively, so ``None`` here means the
+        sibling module is not in this checkout. The point then keeps the verdict the
+        size signature gave it — that behaviour is not changed — but its reason
+        records that nothing read the file's words, because a point that was never
+        verified must not pass *silently*, and a later reader of the log has to be
+        able to see that from the log alone.
+
+        A verifier that raises is not "unavailable": it produced no verdict at all,
+        which is worse than a mismatch, so the point is refused rather than passed on
+        a shrug. Either way this is the file's problem, not the application's, so it
+        never trips the circuit breaker.
+        """
+        if verify_stored_point is None:
+            attempt.status = PointStatus.OK
+            attempt.reason = (
+                f"{path.name} was never checked against this point's requested "
+                "parameters: udv_echo_process.acquire.verify is not importable "
+                "(verification unavailable), so only the size signature stands behind "
+                "this point"
+            )
+            return attempt
+        try:
+            verification = verify_stored_point(path, parameters)
+        except Exception as exc:  # noqa: BLE001 - no verdict is not a pass
+            return self._fail(
+                attempt,
+                f"{path.name} could not be verified against the request "
+                f"({type(exc).__name__}: {exc}): a file whose words were never read is "
+                "not this point's data",
+                status=PointStatus.INVALID,
+            )
+        if not verification.ok:
+            mismatches = tuple(str(item) for item in (verification.mismatches or ()))
+            detail = "; ".join(mismatches) or "the verifier named no mismatch"
+            return self._fail(
+                attempt,
+                f"{path.name} does not say what the point asked for: {detail}",
+                status=PointStatus.INVALID,
+            )
         attempt.status = PointStatus.OK
         return attempt
+
+    def _overlay_guard(self) -> str | None:
+        """Ask the actuator to clear any overlay; ``None`` when it is safe to press.
+
+        The rule this enforces: **nothing is pressed on a panel the runner does not
+        recognise**. A posted press ignores modality, so a button on an unknown panel
+        is the one press that can do real damage (``Replace ?`` answered *yes*, a strip
+        press landing on a dialog), and no amount of retrying makes an unknown panel
+        known. The actuator answers the panels it owns — the warnings in
+        :data:`~udv_echo_process.acquire.actuator.OVERLAY_ANSWERS` — and reports what
+        was up; the Store dialog is reported back *untouched* because its fields are
+        the caller's, and at this point in the cycle the runner is not mid-store, so
+        its presence means the run is out of step with the application.
+
+        A refusal here is an abort, not a point failure: an unrecognised panel is not
+        this point's fault and it is still up for the next one.
+        """
+        try:
+            kind = self._actuator.answer_overlay()
+        except Exception as exc:  # noqa: BLE001 - an unchecked overlay is not clean
+            return (
+                f"the overlay check failed ({type(exc).__name__}: {exc}), so the "
+                "application's state is not known"
+            )
+        if kind is None:
+            return None
+        try:
+            known = kind in OVERLAY_ANSWERS
+        except TypeError:  # unhashable: not a panel kind this runner knows
+            known = False
+        if not known:
+            return (
+                f"an unrecognised panel ({kind!r}) is up: no button on a panel that is "
+                "not one of the known ones is pressed, so this point is refused"
+            )
+        if kind is OverlayKind.STORE_DIALOG:
+            return (
+                "the Store dialog is up when the runner is not mid-store: the run is "
+                "out of step with the application, and nothing is typed into it"
+            )
+        return None
 
     def _reset_block(self) -> str | None:
         """Press ``CLEAR_AND_RESTART`` and confirm a startable view; ``None`` if clean.
@@ -458,11 +699,23 @@ class SweepRunner:
             )
 
     def _fail(
-        self, attempt: _Attempt, reason: str, *, status: PointStatus | None = None
+        self,
+        attempt: _Attempt,
+        reason: str,
+        *,
+        status: PointStatus | None = None,
+        abort: bool = False,
     ) -> _Attempt:
-        """Mark an attempt not-ok and return it — the only way a point ends badly."""
+        """Mark an attempt not-ok and return it — the only way a point ends badly.
+
+        ``abort=True`` is the circuit breaker: it marks the attempt as one that leaves
+        the application's state unverified or unstartable, which is what
+        :meth:`run` stops on. The reason carries :data:`ABORT_NOTE` as well as the
+        flag, because the reason is the only part of an abort that the log keeps.
+        """
         attempt.status = status or PointStatus.FAILED
-        attempt.reason = reason
+        attempt.reason = f"{reason}; {ABORT_NOTE}" if abort else reason
+        attempt.aborted = abort
         return attempt
 
     @staticmethod
@@ -475,6 +728,7 @@ class SweepRunner:
             status=attempt.status,
             reason=attempt.reason,
             decoded=attempt.decoded,
+            aborted=attempt.aborted,
         )
 
 

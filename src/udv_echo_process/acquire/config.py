@@ -27,6 +27,12 @@ Every rule encoded here was measured on the running application, not derived:
   writing the resolution makes the app recompute the gate count and silently
   trim the gates just written (805 requested → 474 accepted in the wrong order,
   docs/16 §14).
+- **The measurement channel is one knob.** A stored ``.BDD`` holds an
+  independent configuration per channel, so a point measured on the wrong
+  channel is not the point (docs/16 §12's channel trap). The channel is
+  therefore a *setting* (:class:`ChannelSetting`), not a literal: it is stated
+  once — on this model, or in :data:`CHANNEL_ENV_VAR` — and every consumer (the
+  driver that selects it, the decode that names it) reads it from there.
 
 The ordered write itself lives in ``acquire.actuator`` (it is the actuator's
 job to pick the control); this module owns the values.
@@ -34,20 +40,108 @@ job to pick the control); this module owns the values.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+import os
+from collections.abc import Iterable, Mapping
 
 from pydantic import Field, field_validator, model_validator
 
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "CHANNEL_ENV_VAR",
+    "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",
+    "MAX_CHANNEL",
+    "MIN_CHANNEL",
     "RUNG_DIVISOR",
     "AcquisitionLimits",
+    "ChannelSetting",
     "ParameterSet",
     "ProfileTiming",
     "RecordSettings",
+    "channel_from_environment",
 ]
+
+#: The environment variable that retargets the measurement channel. Setting it
+#: and nothing else moves a run to another channel: no code edit, no second
+#: constant to keep in step.
+CHANNEL_ENV_VAR = "UDV_CHANNEL"
+
+#: The channel a run measures on when nothing says otherwise — the channel the
+#: verified sessions used (the sidebar and the decoder both sat on 1).
+DEFAULT_CHANNEL = 1
+
+#: The channels the ``Operating parameters`` dialog offers, as the combo's items
+#: ``'1'``..``'10'`` with ``'1'`` at index 0 (probe of the running application).
+MIN_CHANNEL = 1
+MAX_CHANNEL = 10
+
+
+def channel_from_environment(environ: Mapping[str, str] | None = None) -> int:
+    """The channel named by :data:`CHANNEL_ENV_VAR`, or the default when unset.
+
+    ``environ`` defaults to ``os.environ``; passing a mapping is what makes the
+    precedence testable without touching the process environment. An empty or
+    whitespace-only value means *unset*, not channel 0. A value that is not a
+    channel number raises immediately and names the variable, the value and the
+    accepted range — a run that silently fell back to channel 1 after a typo in
+    the variable would measure the wrong channel and log it as valid, which is
+    the one failure the channel trap makes undetectable downstream.
+    """
+    source = os.environ if environ is None else environ
+    raw = source.get(CHANNEL_ENV_VAR)
+    if raw is None or not str(raw).strip():
+        return DEFAULT_CHANNEL
+    text = str(raw).strip()
+    try:
+        value = int(text)
+    except ValueError:
+        raise ValueError(
+            f"{CHANNEL_ENV_VAR}={raw!r} is not a channel number; name one of "
+            f"{MIN_CHANNEL}..{MAX_CHANNEL}"
+        ) from None
+    if not MIN_CHANNEL <= value <= MAX_CHANNEL:
+        raise ValueError(
+            f"{CHANNEL_ENV_VAR}={raw!r} is outside the channels the application "
+            f"offers ({MIN_CHANNEL}..{MAX_CHANNEL})"
+        )
+    return value
+
+
+class ChannelSetting(ValueModel):
+    """The one measurement channel a run measures on — the single knob.
+
+    Precedence, in order:
+
+    1. an **explicit** value (``ChannelSetting(channel=7)``);
+    2. :data:`CHANNEL_ENV_VAR` (``UDV_CHANNEL``), read only when the field is
+       *omitted* — the field's ``default_factory`` is what consults it;
+    3. :data:`DEFAULT_CHANNEL`.
+
+    The precedence is pydantic's own: a ``default_factory`` runs only for an
+    omitted field, so an explicit value cannot be overridden by the environment
+    and the environment cannot be overridden by the default. ``validate_default``
+    is on (``models.base.ValueModel``), so the factory's value is validated
+    against ``MIN_CHANNEL..MAX_CHANNEL`` like any other.
+
+    ``channel`` is the channel number the application calls a channel; the
+    ``Operating parameters`` combo is 0-based, so the index is
+    :attr:`combo_index` and never a second constant.
+    """
+
+    channel: int = Field(
+        default_factory=channel_from_environment, ge=MIN_CHANNEL, le=MAX_CHANNEL
+    )
+
+    @property
+    def combo_index(self) -> int:
+        """The 0-based index of this channel in the dialog's combo.
+
+        The probe of the running application found the items ``'1'``..``'10'``
+        with channel 1 at index 0, so the mapping is ``channel - MIN_CHANNEL`` —
+        derived, never a table to keep in step.
+        """
+        return self.channel - MIN_CHANNEL
 
 #: One resolution-ladder rung is ``sound_speed / RUNG_DIVISOR`` mm (docs/08 §1).
 RUNG_DIVISOR = 12000.0

@@ -24,13 +24,31 @@ Three properties are load-bearing, each paid for once in the lab:
 ``ctypes.windll`` and ``win32gui``/``win32con`` are touched **only inside functions**
 (:func:`_user32`, :func:`_gui`), so this module imports cleanly on any host.
 ``pywinauto``, ``watchdog`` and ``PIL`` are not dependencies of this file.
+
+Two further rules are enforced inside the cycle, both of them about *not measuring
+something other than the point*:
+
+4. **The measurement channel is verified before every point** (:meth:`Win32Actuator.ensure_channel`).
+   It is one knob (:class:`~udv_echo_process.acquire.config.ChannelSetting`); the
+   driver selects it in ``Parameters → Operating parameters`` and reads the
+   selection back **from the dialog** — index *and* text — then re-opens the
+   dialog to confirm the application kept it. A wrong channel produces a file
+   that decodes as a valid point and is not the point (docs/16 §12, the channel
+   trap), so a selection that cannot be verified fails the point instead.
+5. **The Store dialog's ``Working directory`` is asserted, never assumed**
+   (:meth:`Win32Actuator._ensure_working_directory`). The field decides where the
+   point lands; if it differs from the directory the caller expects, it is written
+   and read back, and an unresolved mismatch fails the point naming both paths.
+   Watching a folder the application is not writing to surfaces as a false
+   "no file appeared" failure (docs/16 §12b).
 """
 
 from __future__ import annotations
 
 import ctypes
+import os
 import time
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import lru_cache
 from pathlib import Path
 
@@ -53,9 +71,14 @@ from udv_echo_process.acquire.actuator import (
     ordered_writes,
     overlay_answer,
 )
-from udv_echo_process.acquire.config import ParameterSet
+from udv_echo_process.acquire.config import (
+    MAX_CHANNEL,
+    MIN_CHANNEL,
+    ChannelSetting,
+    ParameterSet,
+)
 
-__all__ = ["AcquisitionError", "Win32Actuator"]
+__all__ = ["AcquisitionError", "Win32Actuator", "channel_items", "same_directory"]
 
 MAIN_CLASS = "TMain_Scr"
 #: The menu bar's buttons, left -> right (``recon/udop_roles.py``).
@@ -82,8 +105,22 @@ EXPECTED_PANEL_COUNT = 4
 WM_SETTEXT, WM_GETTEXT, WM_COMMAND = 0x000C, 0x000D, 0x0111
 WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
 WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
+WM_MOUSEMOVE = 0x0200
 EN_CHANGE, CBN_SELCHANGE, CB_SETCURSEL = 0x0300, 0x0001, 0x014E
+#: Combo *read-back* messages: the selected index, the item count, one item's text.
+CB_GETCOUNT, CB_GETCURSEL, CB_GETLBTEXT = 0x0146, 0x0147, 0x0148
 VK_RETURN, SMTO_ABORTIFHUNG = 0x0D, 0x0002
+#: A `CB_GETCURSEL`/`CB_GETCOUNT` answer above this is not an index or a count: the
+#: value comes back through an unsigned ``LRESULT``, so ``CB_ERR`` (-1) arrives as a
+#: huge number. Treating it as "no selection" is the only safe reading.
+_COMBO_NONE_ABOVE = 0xFFFF
+#: The menubar button and the popup entry the channel lives behind.
+PARAMETERS_MENU = "Parameters"
+PARAMETERS_ENTRY = "Operating parameters"
+#: How long the popup, the dialog, and a selection read-back are given, in seconds.
+_DIALOG_TIMEOUT_S = VIEW_TIMEOUT_S
+#: The hover that opens the menubar popup settles over this interval.
+_MENU_SETTLE_S = 0.5
 #: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
 SEND_TIMEOUT_MS = 2000
 #: The key-event lParams the verified recipe used (scan code / transition packed).
@@ -251,6 +288,88 @@ def _strip_row(panel: dict, kids: Sequence[dict]) -> list[dict]:
     )
 
 
+def channel_items() -> tuple[str, ...]:
+    """The channel combo's items, as the application shows them: ``'1'``..``'10'``.
+
+    Derived from the one range (:data:`…config.MIN_CHANNEL`/:data:`…config.MAX_CHANNEL`),
+    never listed again: a second copy of the channel list is exactly the parallel
+    constant this module must not have.
+    """
+    return tuple(str(n) for n in range(MIN_CHANNEL, MAX_CHANNEL + 1))
+
+
+def _entry_matching(kids: Sequence[dict], title: str) -> dict | None:
+    """The topmost ``TSp_Button`` whose text names ``title``, or ``None``.
+
+    Matched by **text**, never by its position in the enumeration order: matching
+    enumeration order once picked ``Default parameters`` instead of ``Operating
+    parameters`` and raised a modal panel (docs/16 §6). Ties are broken by screen
+    position, which is the order the operator would see.
+    """
+    wanted = title.strip().casefold()
+    hits = [
+        k
+        for k in kids
+        if k["cls"] == "TSp_Button"
+        and (k.get("text") or "").strip().casefold().startswith(wanted)
+    ]
+    hits.sort(key=lambda k: (k["top"], k["left"]))
+    return hits[0] if hits else None
+
+
+def _descendants(roles: Mapping, root: int) -> list[dict]:
+    """Every already-resolved control inside ``root``, breadth first.
+
+    The tree comes from the resolution's own parent map, so this walks the *same*
+    snapshot the roles were resolved from instead of re-enumerating the window.
+    """
+    by_parent: dict[int, list[dict]] = {}
+    for node in roles["raw"]:
+        by_parent.setdefault(roles["parent_of"].get(node["hwnd"], 0), []).append(node)
+    out: list[dict] = []
+    queue = list(by_parent.get(root, []))
+    while queue:
+        node = queue.pop(0)
+        out.append(node)
+        queue.extend(by_parent.get(node["hwnd"], []))
+    return out
+
+
+def _ancestors(roles: Mapping, hwnd: int) -> list[dict]:
+    """The chain from ``hwnd`` up to (and including) the topmost control below the window.
+
+    Used as *identity*: "nested inside a ``TSp_Value_Button``" is a property of this
+    chain, and the chain's last element is the panel that owns the control.
+    """
+    index = {node["hwnd"]: node for node in roles["raw"]}
+    chain: list[dict] = []
+    node = index.get(hwnd)
+    while node is not None:
+        chain.append(node)
+        node = index.get(roles["parent_of"].get(node["hwnd"]))
+    return chain
+
+
+def same_directory(shown: str, expected: str | Path) -> bool:
+    """True when the dialog's ``Working directory`` text names ``expected``.
+
+    Compared on the *resolved* path, never on the two strings: the application
+    renders the path in its own normal form (case, trailing separator, its own
+    contraction), and a cosmetic difference must not fail a point — while a real
+    difference must never pass as one. An empty or unreadable value is *not* a
+    match: "no path shown" is not "the path I expected".
+    """
+    text = (shown or "").strip().strip('"').strip()
+    if not text:
+        return False
+    try:
+        return os.path.normcase(str(Path(text).resolve())) == os.path.normcase(
+            str(Path(expected).resolve())
+        )
+    except (OSError, ValueError):
+        return False
+
+
 class Win32Actuator:
     """The live :class:`Actuator`: UDOP driven over posted Win32 messages.
 
@@ -263,9 +382,20 @@ class Win32Actuator:
         self,
         class_name: str = MAIN_CLASS,
         *,
+        channel: int | None = None,
         note_sink: Callable[[str], None] | None = None,
     ) -> None:
+        """``channel`` is the measurement channel — the one knob.
+
+        ``None`` takes it from :class:`~udv_echo_process.acquire.config.ChannelSetting`
+        (explicit here > ``UDV_CHANNEL`` > the default), so retargeting the whole run is
+        an environment variable and nothing else. The value is validated on construction,
+        not at the first press.
+        """
         self._class_name = class_name
+        self._channel_setting = (
+            ChannelSetting() if channel is None else ChannelSetting(channel=channel)
+        )
         self._note_sink = note_sink
         #: Diagnostics only — never used as a binding.
         self.last_roles: dict | None = None
@@ -462,6 +592,9 @@ class Win32Actuator:
             "client": (cw, ch),
             "origin": (ox, oy),
             "raw": kids,
+            # The resolved tree, so "nested inside X" is a property of the snapshot
+            # rather than another enumeration of the window.
+            "parent_of": {k["hwnd"]: parent_of(k["hwnd"]) for k in kids},
         }
 
         # --- panels -------------------------------------------------------------------
@@ -708,6 +841,241 @@ class Win32Actuator:
         self._click_hold(target["hwnd"], hold_ms)
         return target
 
+    # -------------------------------------------------- the measurement channel
+
+    @property
+    def channel(self) -> int:
+        """The measurement channel this driver is bound to (the single knob)."""
+        return self._channel_setting.channel
+
+    def _hover(self, hwnd: int) -> None:
+        """Post a mouse-move onto a control's centre — the menubar opens on hover.
+
+        The menubar buttons open their popup on a **hover** and a click right after
+        the hover *closes* it again (docs/16 §2), so the popup is opened by moving
+        onto the button without pressing it. Nothing here touches the operator's real
+        cursor: the move is a posted ``WM_MOUSEMOVE`` in the *target's* own client
+        coordinates, like every other message this driver sends.
+        """
+        win32gui, _ = _gui()
+        left, top, right, bottom = win32gui.GetClientRect(hwnd)
+        x, y = (right - left) // 2, (bottom - top) // 2
+        lp = ((y & 0xFFFF) << 16) | (x & 0xFFFF)
+        _post(hwnd, WM_MOUSEMOVE, 0, lp)
+        time.sleep(_MENU_SETTLE_S)
+
+    def _combo_index(self, hwnd: int) -> int:
+        """The combo's selected index, or ``-1`` when it has no selection.
+
+        ``CB_GETCURSEL`` answers ``CB_ERR`` (-1) through an unsigned result, so a
+        value above :data:`_COMBO_NONE_ABOVE` means *no selection*, never a huge
+        index. This is the control's own belief, which is why it is never the only
+        read-back (:meth:`_channel_readback`).
+        """
+        raw = self._send(hwnd, CB_GETCURSEL, 0, 0)
+        return -1 if raw > _COMBO_NONE_ABOVE else raw
+
+    def _combo_items(self, hwnd: int) -> tuple[str, ...]:
+        """Every item the combo holds, in order (``CB_GETCOUNT`` + ``CB_GETLBTEXT``).
+
+        The item *list* is how the channel combo is identified, so it is read rather
+        than assumed; a nonsense count is an empty list, not a spin.
+        """
+        count = self._send(hwnd, CB_GETCOUNT, 0, 0)
+        if count <= 0 or count > _COMBO_NONE_ABOVE:
+            return ()
+        items: list[str] = []
+        for index in range(count):
+            buf = ctypes.create_unicode_buffer(64)
+            self._send(hwnd, CB_GETLBTEXT, index, ctypes.addressof(buf))
+            items.append(buf.value)
+        return tuple(items)
+
+    def _parameters_panels(self, roles: Mapping | None = None) -> list[dict]:
+        """The panels that are value dialogs — they own ``TSp_Value_Button`` children.
+
+        ``Operating parameters`` and ``Record settings`` are the same *kind* of panel,
+        and the sidebar's parameter column owns ``TSp_Value_Button`` fields too, so the
+        column is excluded **by identity** (the resolved ``left_panel``), never by
+        position or by a title.
+        """
+        roles = self._resolve() if roles is None else roles
+        left = roles.get("left_panel")
+        out: list[dict] = []
+        for panel in roles.get("panels") or []:
+            if left is not None and panel["hwnd"] == left["hwnd"]:
+                continue
+            direct = [
+                k
+                for k in roles["raw"]
+                if roles["parent_of"].get(k["hwnd"]) == panel["hwnd"]
+            ]
+            if any(k["cls"] == "TSp_Value_Button" for k in direct):
+                out.append(panel)
+        return out
+
+    def _channel_combo(self, panel: dict, roles: Mapping | None = None) -> tuple[dict, int]:
+        """The channel combo inside ``panel``: ``(combo, its parent's hwnd)``.
+
+        Identity, exactly as the running application was probed: a ``TComboBox``
+        reached *through* a ``TSp_Value_Button`` whose items are the application's
+        channels, ``'1'``..``'10'``. Never an id (ids change on every launch), never a
+        screen coordinate stated in logic, and never "the first combo" — the item list
+        *is* the identity. Two matches are an ambiguity, not a choice to make.
+        """
+        roles = self._resolve() if roles is None else roles
+        wanted = channel_items()
+        matches: list[tuple[dict, int]] = []
+        for node in _descendants(roles, panel["hwnd"]):
+            if node["cls"] != "TComboBox":
+                continue
+            chain = _ancestors(roles, node["hwnd"])
+            if not any(a["cls"] == "TSp_Value_Button" for a in chain):
+                continue
+            if self._combo_items(node["hwnd"]) == wanted:
+                parent = roles["parent_of"].get(node["hwnd"])
+                matches.append((node, 0 if parent is None else parent))
+        if not matches:
+            raise AcquisitionError(
+                f"no channel combo in the {PARAMETERS_ENTRY!r} dialog: expected a combo "
+                f"nested in a TSp_Value_Button listing {list(wanted)}"
+            )
+        if len(matches) > 1:
+            raise AcquisitionError(
+                f"{len(matches)} combos in the {PARAMETERS_ENTRY!r} dialog list "
+                f"{list(wanted)}; the channel combo is ambiguous, so nothing is selected"
+            )
+        return matches[0]
+
+    def _channel_readback(self, combo: dict) -> tuple[int, str]:
+        """The dialog's own statement of the channel: the combo's index **and** text.
+
+        Both, because either alone lies: ``CB_GETCURSEL`` reports only what the control
+        believes, and a combo's painted text has been seen to keep showing the previous
+        entry after a write (docs/16 §2). A read-back that does not name the configured
+        channel is a selection that did not take.
+        """
+        return self._combo_index(combo["hwnd"]), self._get_text(combo["hwnd"])
+
+    def _channel_matches(self, index: int, text: str) -> bool:
+        """True when a dialog read-back names the configured channel exactly."""
+        wanted = self._channel_setting
+        return index == wanted.combo_index and text.strip() == str(wanted.channel)
+
+    def _open_parameters_dialog(self) -> dict:
+        """Open ``Parameters → Operating parameters`` and return the dialog's panel.
+
+        The dialog is a modal overlay reached through the menubar — not a sidebar
+        control, and not a top-level window (``EnumWindows`` finds nothing: the app's
+        dialogs are child panels, docs/16 §6). The menu button is hovered (a click
+        after the hover closes the popup) and the entry is matched by title, then
+        pressed held. Everything is bounded: a popup or dialog that has not appeared
+        within :data:`_DIALOG_TIMEOUT_S` is reported by name instead of waited on.
+        """
+        roles = self._resolve()
+        if roles["open_popup"]:
+            raise AcquisitionError(
+                "a menu popup is already open; the entry press would be unreliable — "
+                "close it from the UI, this driver never WM_CLOSEs a popup"
+            )
+        menu = (roles.get("menu") or {}).get(PARAMETERS_MENU)
+        if menu is None:
+            raise AcquisitionError(f"no {PARAMETERS_MENU!r} button in the menubar")
+        self._hover(menu["hwnd"])
+        deadline = time.monotonic() + _DIALOG_TIMEOUT_S
+        entry = None
+        while entry is None and time.monotonic() < deadline:
+            entry = _entry_matching(self._resolve()["raw"], PARAMETERS_ENTRY)
+            if entry is None:
+                time.sleep(_POLL_S - 0.05)
+        if entry is None:
+            raise AcquisitionError(
+                f"the {PARAMETERS_MENU!r} menu offered no {PARAMETERS_ENTRY!r} entry "
+                f"within {_DIALOG_TIMEOUT_S:.0f} s"
+            )
+        self._click_hold(entry["hwnd"])
+        deadline = time.monotonic() + _DIALOG_TIMEOUT_S
+        while time.monotonic() < deadline:
+            panels = self._parameters_panels()
+            if panels:
+                return panels[0]  # the panels are resolved top-to-bottom
+            time.sleep(_POLL_S - 0.05)
+        raise AcquisitionError(
+            f"the {PARAMETERS_ENTRY!r} dialog did not open within "
+            f"{_DIALOG_TIMEOUT_S:.0f} s of its menu entry"
+        )
+
+    def _close_parameters_dialog(self, panel: dict) -> None:
+        """Close the dialog with its LEFT button (``Cancel``), never a window close.
+
+        The app confines the cursor to its dialogs, so an open one traps the operator
+        (docs/16 §6); a panel whose bottom row cannot be resolved is noted instead of
+        raising, so a failed point is never masked by a failed cleanup.
+        """
+        try:
+            kids = self._children_of(panel["hwnd"], self._resolve())
+            self._dialog_button(panel, kids, DialogControl.SAFE)
+        except AcquisitionError as exc:
+            self._note(f"the {PARAMETERS_ENTRY!r} dialog could not be closed: {exc}")
+
+    def ensure_channel(self) -> int:
+        """Make the application measure on the configured channel, and prove it took.
+
+        Called before **every** point, because the channel is what decides which
+        channel's block the stored file carries — and a point recorded on the wrong
+        channel decodes as a perfectly valid point that is not the point (docs/16 §12,
+        the channel trap). The order is the load-bearing part:
+
+        1. open ``Parameters → Operating parameters``;
+        2. find the channel combo *structurally* (see :meth:`_channel_combo`);
+        3. read the channel back from the dialog; if it is not the configured one,
+           write the selection (``CB_SETCURSEL`` + ``CBN_SELCHANGE``, no Enter) and
+           read it back **again** — a combo write can silently not apply (docs/16 §2);
+        4. accept the dialog, then re-open it and read the selection again: only the
+           re-opened dialog shows what the *application* kept, not what the control
+           believes;
+        5. close it with the left button.
+
+        Returns the verified channel. Any step that cannot be verified raises
+        :class:`AcquisitionError` naming what was asked for and what the dialog showed,
+        which fails the point — recording on an unverified channel is the worst outcome
+        this driver can produce.
+        """
+        wanted = self._channel_setting
+        panel = self._open_parameters_dialog()
+        try:
+            combo, parent = self._channel_combo(panel)
+            index, text = self._channel_readback(combo)
+            if not self._channel_matches(index, text):
+                self._combo_select(combo["hwnd"], wanted.combo_index, parent)
+                index, text = self._channel_readback(combo)
+            if not self._channel_matches(index, text):
+                raise AcquisitionError(
+                    f"the measurement channel was not selected: channel {wanted.channel} "
+                    f"(combo index {wanted.combo_index}) was requested in the "
+                    f"{PARAMETERS_ENTRY!r} dialog, but the dialog reads back index {index} "
+                    f"({text!r}) — recording here would store another channel's block"
+                )
+            kids = self._children_of(panel["hwnd"], self._resolve())
+            self._dialog_button(panel, kids, DialogControl.CONFIRM)  # accept the dialog
+        except BaseException:
+            self._close_parameters_dialog(panel)
+            raise
+        confirmed = self._open_parameters_dialog()
+        try:
+            combo, _parent = self._channel_combo(confirmed)
+            index, text = self._channel_readback(combo)
+            if not self._channel_matches(index, text):
+                raise AcquisitionError(
+                    f"the application did not keep the measurement channel: channel "
+                    f"{wanted.channel} (combo index {wanted.combo_index}) was selected and "
+                    f"accepted, but a re-opened {PARAMETERS_ENTRY!r} dialog reads back index "
+                    f"{index} ({text!r})"
+                )
+        finally:
+            self._close_parameters_dialog(confirmed)
+        return wanted.channel
+
     # ------------------------------------------------------------------ Actuator
 
     def layout_note(self) -> str | None:
@@ -860,6 +1228,49 @@ class Win32Actuator:
             self._store_name_field(panel, kids)["hwnd"], name, panel["hwnd"]
         )
 
+    def assert_working_directory(self, directory: Path) -> str:
+        """Assert the Store dialog's ``Working directory``, and set it when it differs.
+
+        The field decides where the point lands, so it is never assumed: it is read,
+        compared with ``directory`` (the path the caller will watch), written with the
+        numeric/text commit recipe when it differs, and read **back** — because a write
+        that did not commit leaves the application storing somewhere else while the
+        control paints the new value (docs/16 §12a, §12b). Returns the verified text.
+
+        An unresolved mismatch raises :class:`AcquisitionError` **naming both paths**,
+        which fails the point: watching a folder the application is not writing to
+        surfaces only as a false "no file appeared", minutes later, with nothing in it
+        pointing at the real cause.
+        """
+        panel, kids = self._require_store_dialog()
+        path_edit = self._store_edits(panel, kids)[1]
+        if path_edit is None:
+            edits = [
+                self._get_text(k["hwnd"])
+                for k in kids
+                if k["cls"] in ("TEdit", "TSp_Edit")
+            ]
+            raise AcquisitionError(
+                "the Store dialog shows no path-looking field, so its Working directory "
+                f"cannot be asserted against '{directory}' (the dialog's edits are {edits})"
+            )
+        shown = self._get_text(path_edit["hwnd"])
+        if same_directory(shown, directory):
+            return shown
+        self._set_text_commit(path_edit["hwnd"], str(directory), panel["hwnd"])
+        readback = self._get_text(path_edit["hwnd"])
+        if not same_directory(readback, directory):
+            raise AcquisitionError(
+                f"the Store dialog's Working directory is '{readback}' where '{directory}' "
+                f"is expected (it showed '{shown}' before the write): the point would land "
+                "outside the directory the caller watches, so it is refused rather than "
+                "stored and waited for in the wrong folder"
+            )
+        self._note(
+            f"the Store dialog's Working directory was {shown!r}; wrote {readback!r}"
+        )
+        return readback
+
     def commit_store(self) -> None:
         """Press the Store dialog's rightmost bottom button (``Do store``)."""
         panel, kids = self._require_store_dialog()
@@ -923,6 +1334,10 @@ class Win32Actuator:
                 raise AcquisitionError(
                     f"the cycle must start from the ready view, not {state.view.value!r}"
                 )
+            # The channel is a precondition of the point, verified from the dialog
+            # before a recording is spent: another channel's block decodes as a valid
+            # point that is not this point (docs/16 §12).
+            self.ensure_channel()
             self.press(StripControl.RECORD)
             state = self._wait_for_view_guarded((StripView.RECORDING,), VIEW_TIMEOUT_S)
             if state.view is not StripView.RECORDING:
@@ -938,6 +1353,10 @@ class Win32Actuator:
                 )
             self.press(StripControl.DO_STORE)
             self._await_store_dialog(VIEW_TIMEOUT_S)
+            # Where the store will land is asserted before anything is named or
+            # committed: the caller watches this directory, not the one the dialog
+            # happened to remember (docs/16 §12b).
+            self.assert_working_directory(directory)
             known = self._names_in(directory)
             self.set_store_name(name)
             self.commit_store()
@@ -1060,8 +1479,14 @@ class Win32Actuator:
             time.sleep(_POLL_S)
         raise AcquisitionError("the Store dialog did not open after Do store")
 
-    def _store_name_field(self, panel: dict, kids: Sequence[dict]) -> dict:
-        """The Store dialog's file-name edit: the one whose text is not a path."""
+    def _store_edits(self, panel: dict, kids: Sequence[dict]) -> tuple[dict, dict | None]:
+        """The Store dialog's ``(name edit, path edit)``, top to bottom.
+
+        The path field is recognised by its **separator** (``:`` or ``\\``), never by
+        its position: which of the two edits is on top is not a fact this driver may
+        assume. ``path`` is ``None`` when neither edit holds a path — a dialog that has
+        never stored anything — which the caller reports rather than guesses around.
+        """
         edits = sorted(
             (k for k in kids if k["cls"] in ("TEdit", "TSp_Edit")),
             key=lambda k: k["top"],
@@ -1070,18 +1495,20 @@ class Win32Actuator:
             raise AcquisitionError(
                 "the Store dialog does not show both a path and a name field"
             )
-        path_edit = next(
-            (
-                k
-                for k in edits
-                if ":" in self._get_text(k["hwnd"]) or "\\" in self._get_text(k["hwnd"])
-            ),
-            None,
-        )
+
+        def looks_like_a_path(k: dict) -> bool:
+            text = self._get_text(k["hwnd"])
+            return ":" in text or "\\" in text
+
+        path_edit = next((k for k in edits if looks_like_a_path(k)), None)
         name_edit = next((k for k in edits if k is not path_edit), None)
         if name_edit is None:
             raise AcquisitionError("could not identify the Store dialog's name field")
-        return name_edit
+        return name_edit, path_edit
+
+    def _store_name_field(self, panel: dict, kids: Sequence[dict]) -> dict:
+        """The Store dialog's file-name edit: the one whose text is not a path."""
+        return self._store_edits(panel, kids)[0]
 
     @staticmethod
     def _names_in(directory: Path) -> frozenset[str]:

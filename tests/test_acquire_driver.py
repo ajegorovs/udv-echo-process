@@ -22,7 +22,9 @@ calls cannot be observed without a running DOP3010 (docs/16, ``udop-automation.m
 
 from __future__ import annotations
 
+import ctypes
 import inspect
+import os
 import time
 import typing
 from collections.abc import Iterable
@@ -801,3 +803,550 @@ def test_the_windows_actuator_is_constructible_without_sending_a_message(
             f"Win32Actuator() is not constructible in this environment: {exc!r}"
         )
     assert isinstance(actuator, Actuator)
+
+
+# ------------------------------- the channel knob and the store directory (§12b)
+
+driver = pytest.importorskip(
+    "udv_echo_process.acquire.driver",
+    reason="the Windows driver lands separately; its cycle cannot be exercised yet",
+)
+
+#: The fake window's handles. They are deliberately *not* meaningful: the driver may
+#: not key on a control id (ids change on every launch), so nothing here depends on
+#: their value either.
+HWND_MENU_BAR, HWND_PARAMETERS = 1, 2
+HWND_POPUP, HWND_ENTRY_DEFAULTS, HWND_ENTRY_OPERATING = 3, 4, 5
+HWND_LEFT_PANEL, HWND_LEFT_VALUE, HWND_LEFT_COMBO = 6, 7, 8
+HWND_DIALOG, HWND_DIALOG_VALUE_BUTTON, HWND_DIALOG_COMBO = 9, 10, 11
+HWND_DIALOG_CANCEL, HWND_DIALOG_ACCEPT = 12, 13
+HWND_STORE_DIALOG, HWND_STORE_DIR, HWND_STORE_NAME = 14, 15, 16
+HWND_STORE_CANCEL, HWND_STORE_DOSTORE = 17, 18
+HWND_DECOY_COMBO = 19
+
+
+def _node(
+    hwnd: int,
+    cls: str,
+    text: str = "",
+    *,
+    left: int = 0,
+    top: int = 0,
+    w: int = 60,
+    h: int = 20,
+) -> dict:
+    """One control, in the shape ``_resolve`` produces."""
+    return {
+        "hwnd": hwnd,
+        "cls": cls,
+        "text": text,
+        "rect": (left, top, left + w, top + h),
+        "left": left,
+        "top": top,
+        "w": w,
+        "h": h,
+        "id": 0,  # ids are never an identity here
+    }
+
+
+class FakeUdopWindow:
+    """The pieces of the running application the channel and store paths touch.
+
+    It holds the two panels the driver must distinguish (the sidebar's parameter
+    column and the ``Operating parameters`` dialog), the store dialog's two edits,
+    and the application's *own* channel. Nothing here is a window: the driver's
+    message layer is what is faked, and every fact the driver may key on (class,
+    nesting, item list, text) is present in the structure it resolves.
+
+    Scripted failures, each one a documented hazard:
+
+    - ``combo_writes_ignored`` — a selection that never reaches the application
+      (its combo stays where it was): ``CB_SETCURSEL`` did nothing;
+    - ``combo_control_only`` — the combo's own state moves while the application
+      keeps its channel, which is the "a combo write can silently apply" case
+      (docs/16 §2);
+    - ``text_writes_ignored`` — a text field that paints the new value and keeps
+      its own (``WM_SETTEXT`` without the commit, docs/14 §4).
+    """
+
+    def __init__(
+        self,
+        *,
+        channel: int = 1,
+        directory: str = "",
+        combo_writes_ignored: bool = False,
+        combo_control_only: bool = False,
+        text_writes_ignored: bool = False,
+    ) -> None:
+        self.channel = channel  # the application's own channel, 1-based
+        self.directory = directory
+        self.combo_writes_ignored = combo_writes_ignored
+        self.combo_control_only = combo_control_only
+        self.text_writes_ignored = text_writes_ignored
+
+        self.menu_open = False
+        self.dialog_open = False
+        self.store_open = False
+        self.combo_index = channel - 1
+        self.combo_text = str(channel)
+        self.name_text = ""
+        self.strip = READY_THREE
+        self.recording = False
+        #: The observable order of everything that happened.
+        self.events: list[tuple] = []
+        #: The panel the driver is told is open at the store step.
+        self.store_panel = _node(
+            HWND_STORE_DIALOG, "TSp_Panel", "Store", left=300, top=300, w=560, h=300
+        )
+        self.store_buttons = (
+            _node(HWND_STORE_CANCEL, "TSp_Button", "Cancel", left=700, top=560),
+            _node(HWND_STORE_DOSTORE, "TSp_Button", "Do store", left=790, top=560),
+        )
+
+    # ------------------------------------------------------------- the structure
+
+    def nodes(self) -> list[dict]:
+        """Every control currently visible, in enumeration order (not screen order)."""
+        out = [
+            _node(HWND_MENU_BAR, "TSp_Panel", "", top=0, h=24, w=900),
+            _node(HWND_PARAMETERS, "TSp_Button", "Parameters", left=120, top=2, w=80),
+            _node(HWND_LEFT_PANEL, "TSp_Panel", "", top=30, w=200, h=600),
+            _node(HWND_LEFT_VALUE, "TSp_Value_Button", "", left=10, top=200, w=180),
+            _node(HWND_LEFT_COMBO, "TComboBox", "1", left=40, top=202, w=120),
+            # A decoy: a combo the sidebar nests the same way, listing the same
+            # channels. It must never be the one that is selected.
+            _node(HWND_DECOY_COMBO, "TComboBox", "1", left=40, top=260, w=120),
+        ]
+        if self.menu_open:
+            out += [
+                _node(HWND_POPUP, "TSp_Panel", "", left=120, top=24, w=200, h=80),
+                # `Default parameters` is enumerated FIRST — the order the reference
+                # implementation walked into when it matched by position (docs §6).
+                _node(HWND_ENTRY_DEFAULTS, "TSp_Button", "Default parameters", left=124, top=30),
+                _node(
+                    HWND_ENTRY_OPERATING,
+                    "TSp_Button",
+                    "Operating parameters",
+                    left=124,
+                    top=54,
+                ),
+            ]
+        if self.dialog_open:
+            out += [
+                _node(HWND_DIALOG, "TSp_Panel", "", left=300, top=100, w=360, h=200),
+                _node(HWND_DIALOG_VALUE_BUTTON, "TSp_Value_Button", "Channel", left=310, top=140),
+                _node(HWND_DIALOG_COMBO, "TComboBox", self.combo_text, left=340, top=142, w=120),
+                _node(HWND_DIALOG_CANCEL, "TSp_Button", "Cancel", left=520, top=260),
+                _node(HWND_DIALOG_ACCEPT, "TSp_Button", "Accept", left=600, top=260),
+            ]
+        if self.store_open:
+            out += [
+                self.store_panel,
+                _node(HWND_STORE_DIR, "TEdit", self.directory, left=380, top=350, w=400),
+                _node(HWND_STORE_NAME, "TEdit", self.name_text, left=380, top=390, w=400),
+                *self.store_buttons,
+            ]
+        return out
+
+    def parent_of(self, hwnd: int) -> int:
+        """The fake's own parent map (the windows' real nesting)."""
+        if hwnd in (HWND_ENTRY_DEFAULTS, HWND_ENTRY_OPERATING):
+            return HWND_POPUP
+        if hwnd == HWND_POPUP or hwnd == HWND_PARAMETERS:
+            return HWND_MENU_BAR
+        if hwnd in (HWND_LEFT_COMBO, HWND_DECOY_COMBO):
+            return HWND_LEFT_VALUE
+        if hwnd == HWND_LEFT_VALUE:
+            return HWND_LEFT_PANEL
+        if hwnd in (HWND_DIALOG_VALUE_BUTTON, HWND_DIALOG_CANCEL, HWND_DIALOG_ACCEPT):
+            return HWND_DIALOG
+        if hwnd == HWND_DIALOG_COMBO:
+            return HWND_DIALOG_VALUE_BUTTON
+        if hwnd in (HWND_STORE_DIR, HWND_STORE_NAME, *[b["hwnd"] for b in self.store_buttons]):
+            return HWND_STORE_DIALOG
+        return 0  # the main window
+
+    # --------------------------------------------------------- the application
+
+    def combo_items(self, hwnd: int) -> tuple[str, ...]:
+        return driver.channel_items() if hwnd in (HWND_DIALOG_COMBO, HWND_LEFT_COMBO, HWND_DECOY_COMBO) else ()
+
+    def open_dialog(self) -> None:
+        """The dialog appears showing the application's own channel."""
+        self.dialog_open = True
+        self.combo_index = self.channel - 1
+        self.combo_text = str(self.channel)
+        self.events.append(("dialog", "open", self.channel))
+
+    def select(self, index: int) -> None:
+        """``CB_SETCURSEL`` + ``CBN_SELCHANGE``, with the scripted failure modes."""
+        self.events.append(("combo", "select", index))
+        if self.combo_writes_ignored:
+            return  # the control never moves
+        self.combo_index = index
+        self.combo_text = driver.channel_items()[index]
+        if not self.combo_control_only:
+            self.channel = index + 1  # the combo commits on the change notification
+
+    def accept(self) -> None:
+        self.events.append(("dialog", "accept"))
+        self.dialog_open = False
+
+    def cancel(self) -> None:
+        self.events.append(("dialog", "cancel"))
+        self.dialog_open = False
+
+    def write_text(self, hwnd: int, text: str) -> None:
+        self.events.append(("text", hwnd, text))
+        if self.text_writes_ignored:
+            return
+        if hwnd == HWND_STORE_DIR:
+            self.directory = text
+        elif hwnd == HWND_STORE_NAME:
+            self.name_text = text
+
+
+class FakeDriver(driver.Win32Actuator):
+    """``Win32Actuator`` over :class:`FakeUdopWindow`: every message layer faked.
+
+    What is *not* faked is the logic under test — the resolution walk, the channel
+    combo's identity, the read-back, the working-directory assertion and the order
+    the cycle takes them in. Nothing here posts input to any window.
+    """
+
+    def __init__(self, app: FakeUdopWindow, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.app = app
+
+    # ----------------------------------------------------------- the window layer
+
+    def _resolve(self) -> dict:
+        nodes = self.app.nodes()
+        raw = [{k: v for k, v in node.items() if not k.startswith("_")} for node in nodes]
+        by_hwnd = {node["hwnd"]: node for node in nodes}
+        handles = [HWND_MENU_BAR, HWND_LEFT_PANEL]
+        if self.app.dialog_open:
+            handles.append(HWND_DIALOG)
+        panels = [by_hwnd[hwnd] for hwnd in handles if hwnd in by_hwnd]
+        return {
+            "window": 0,
+            "raw": raw,
+            "parent_of": {node["hwnd"]: self.app.parent_of(node["hwnd"]) for node in nodes},
+            "panels": sorted(panels, key=lambda p: p["top"]),
+            "left_panel": by_hwnd.get(HWND_LEFT_PANEL),
+            "menu": {"Parameters": by_hwnd.get(HWND_PARAMETERS)},
+            "open_popup": self.app.menu_open,
+            "value_dialogs": set(),
+            "browse_dialogs": set(),
+            "strip_panel": None,
+        }
+
+    def _children_of(self, parent: int, roles: dict) -> list[dict]:
+        return [k for k in roles["raw"] if roles["parent_of"].get(k["hwnd"]) == parent]
+
+    def _hover(self, hwnd: int) -> None:
+        assert hwnd == HWND_PARAMETERS
+        self.app.menu_open = True
+        self.app.events.append(("hover", "Parameters"))
+
+    def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
+        if hwnd == HWND_ENTRY_OPERATING:
+            self.app.menu_open = False
+            self.app.events.append(("click", "Operating parameters"))
+            self.app.open_dialog()
+        elif hwnd == HWND_ENTRY_DEFAULTS:
+            raise AssertionError("the driver pressed `Default parameters`")
+        elif hwnd == HWND_DIALOG_ACCEPT:
+            self.app.accept()
+        elif hwnd == HWND_DIALOG_CANCEL:
+            self.app.cancel()
+        else:
+            self.app.events.append(("press", hwnd))
+
+    def _send(self, hwnd: int, msg: int, wp: int = 0, lp: int = 0, timeout_ms: int = 0) -> int:
+        """The two combo read-backs, answered the way the real control answers."""
+        if msg == driver.CB_GETCURSEL:
+            return self.app.combo_index if hwnd == HWND_DIALOG_COMBO and self.app.dialog_open else 0xFFFF_FFFF_FFFF_FFFF
+        if msg == driver.CB_GETCOUNT:
+            return len(self.app.combo_items(hwnd))
+        if msg == driver.CB_GETLBTEXT:
+            text = self.app.combo_items(hwnd)[wp]
+            ctypes.memmove(lp, (text + "\x00").encode("utf-16-le"), 2 * (len(text) + 1))
+            return len(text)
+        raise AssertionError(f"unexpected message {msg:#x}")
+
+    def _get_text(self, hwnd: int) -> str:
+        for node in self.app.nodes():
+            if node["hwnd"] == hwnd:
+                return node["text"]
+        return ""
+
+    def _set_text_commit(self, hwnd: int, text: str, parent: int | None = None) -> None:
+        self.app.write_text(hwnd, text)
+
+    def _combo_select(self, hwnd: int, index: int, parent: int | None = None) -> None:
+        assert hwnd == HWND_DIALOG_COMBO, hwnd
+        self.app.select(index)
+
+    def _require_store_dialog(self) -> tuple[dict, list[dict]]:
+        roles = self._resolve()
+        return self.app.store_panel, self._children_of(HWND_STORE_DIALOG, roles)
+
+    # ------------------------------------------------- the rest of the point cycle
+
+    def layout_note(self) -> str | None:
+        return None
+
+    def strip_state(self) -> StripState:
+        if self.app.recording:
+            return RECORDING_ONE
+        return self.app.strip
+
+    def press(self, control: StripControl) -> None:
+        self.app.events.append(("press", control.value))
+        if control is StripControl.RECORD:
+            self.app.recording, self.app.strip = True, READY_THREE
+        elif control is StripControl.STOP:
+            self.app.recording, self.app.strip = False, STORE_FOUR
+        elif control is StripControl.DO_STORE:
+            self.app.store_open = True
+
+    def wait_for_view(self, views, *, timeout_s: float = VIEW_TIMEOUT_S) -> StripState:
+        return self.strip_state()
+
+    def _wait_for_view_guarded(self, want, timeout_s: float) -> StripState:
+        return self.strip_state()
+
+    def _hold_recording(self, duration_s: float) -> None:
+        self.app.events.append(("hold", duration_s))
+
+    def _await_store_dialog(self, timeout_s: float) -> tuple[dict, list[dict]]:
+        return self._require_store_dialog()
+
+    def _store_until_file(
+        self, name: str, directory: Path, known: frozenset[str], timeout_s: float
+    ) -> Path:
+        self.app.events.append(("stored", name))
+        return Path(directory) / f"{name}.BDD"
+
+
+def fake_driver(app: FakeUdopWindow, **kwargs) -> FakeDriver:
+    return FakeDriver(app, **kwargs)
+
+
+def events_of(app: FakeUdopWindow, kind: str) -> list[tuple]:
+    return [event for event in app.events if event[0] == kind]
+
+
+# ---------------------------------------------- the channel is one verified knob
+
+
+def test_the_channel_combo_is_identified_structurally_not_by_position() -> None:
+    """The sidebar nests a combo listing the same channels; it is never the one."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=4)
+    panel = actuator._open_parameters_dialog()
+    combo, parent = actuator._channel_combo(panel)
+    assert combo["hwnd"] == HWND_DIALOG_COMBO
+    assert parent == HWND_DIALOG_VALUE_BUTTON  # reached *through* a value button
+    assert panel["hwnd"] == HWND_DIALOG
+
+
+def test_the_menu_entry_is_matched_by_title_not_by_enumeration_order() -> None:
+    """Matching position once selected `Default parameters` and raised a modal (docs §6)."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=3)
+    actuator.ensure_channel()
+    assert ("click", "Operating parameters") in app.events
+    assert ("hover", "Parameters") in app.events
+
+
+def test_a_channel_already_selected_is_read_back_and_not_rewritten() -> None:
+    """Nothing is written when the dialog already stands on the configured channel."""
+    app = FakeUdopWindow(channel=2)
+    actuator = fake_driver(app, channel=2)
+    assert actuator.ensure_channel() == 2
+    assert events_of(app, "combo") == []  # no write was needed
+    # ...and the dialog was accepted and then closed (never left trapping the cursor).
+    assert ("dialog", "accept") in app.events
+    assert ("dialog", "cancel") in app.events
+    assert app.dialog_open is False
+
+
+def test_a_different_channel_is_selected_read_back_and_kept() -> None:
+    """Channel 7 from a dialog standing on channel 1: index 6, verified, kept."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=7)
+    assert actuator.ensure_channel() == 7
+    assert events_of(app, "combo") == [("combo", "select", 6)]
+    assert app.channel == 7  # the application took the selection
+    assert app.dialog_open is False
+    # The dialog was re-opened to confirm the application kept it: two opens.
+    assert events_of(app, "dialog").count(("dialog", "open", 7)) == 1
+
+
+def test_a_selection_that_does_not_take_fails_the_point_naming_the_channel() -> None:
+    """A combo write that silently did nothing must never become a recorded point."""
+    app = FakeUdopWindow(channel=1, combo_writes_ignored=True)
+    actuator = fake_driver(app, channel=6)
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+    reason = str(excinfo.value)
+    assert "channel 6" in reason and "index 5" in reason and "'1'" in reason
+    assert app.dialog_open is False  # closed on the way out, never left modal
+
+
+def test_a_selection_the_application_does_not_keep_fails_the_point() -> None:
+    """The control believed it; the re-opened dialog shows the application did not."""
+    app = FakeUdopWindow(channel=1, combo_control_only=True)
+    actuator = fake_driver(app, channel=9)
+    with pytest.raises(Exception, match="did not keep"):
+        actuator.ensure_channel()
+    assert app.dialog_open is False
+
+
+def test_an_invalid_channel_is_refused_at_construction() -> None:
+    app = FakeUdopWindow()
+    with pytest.raises(Exception, match="channel"):
+        fake_driver(app, channel=11)
+    with pytest.raises(Exception, match="channel"):
+        fake_driver(app, channel=0)
+
+
+def test_cb_err_is_read_as_no_selection_not_as_a_huge_index() -> None:
+    """``CB_GETCURSEL`` answers ``CB_ERR`` (-1) as an unsigned giant."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=1)
+
+    def send_none(hwnd, msg, wp=0, lp=0, timeout_ms=0):
+        return 0xFFFF_FFFF_FFFF_FFFF
+
+    actuator._send = send_none  # type: ignore[method-assign]
+    assert actuator._combo_index(HWND_DIALOG_COMBO) == -1
+
+
+# --------------------------------------- the store dialog's Working directory
+
+
+def test_same_directory_normalises_the_application_s_own_rendering(tmp_path: Path) -> None:
+    expected = tmp_path / "capture"
+    for shown in (
+        str(expected),
+        f"{expected}{os.sep}",  # the app adds a trailing separator
+        f'"{expected}"',  # a quoted path
+        f"  {expected}  ",
+    ):
+        assert driver.same_directory(shown, expected), shown
+    assert not driver.same_directory("", expected)  # no path shown is not the path
+    assert not driver.same_directory(str(tmp_path / "elsewhere"), expected)
+    assert not driver.same_directory(str(expected / "deeper"), expected)
+
+
+def test_a_matching_working_directory_is_left_alone(tmp_path: Path) -> None:
+    directory = tmp_path / "capture"
+    app = FakeUdopWindow(channel=1, directory=str(directory))
+    app.store_open = True
+    actuator = fake_driver(app)
+    assert actuator.assert_working_directory(directory) == str(directory)
+    assert events_of(app, "text") == []  # read, compared, and nothing written
+
+
+def test_a_different_working_directory_is_written_and_read_back(tmp_path: Path) -> None:
+    """The write path is exercised: the field decides where the point lands."""
+    directory = tmp_path / "capture"
+    app = FakeUdopWindow(channel=1, directory=str(tmp_path / "somewhere-else"))
+    app.store_open = True
+    actuator = fake_driver(app)
+    assert actuator.assert_working_directory(directory) == str(directory)
+    assert events_of(app, "text") == [("text", HWND_STORE_DIR, str(directory))]
+    assert app.directory == str(directory)
+    assert any("Working directory was" in note for note in actuator.warnings)
+
+
+def test_an_unresolved_working_directory_mismatch_names_both_paths(tmp_path: Path) -> None:
+    """A write that does not commit fails the point instead of watching the wrong folder."""
+    expected = tmp_path / "capture"
+    other = tmp_path / "somewhere-else"
+    app = FakeUdopWindow(channel=1, directory=str(other), text_writes_ignored=True)
+    app.store_open = True
+    actuator = fake_driver(app)
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.assert_working_directory(expected)
+    reason = str(excinfo.value)
+    assert str(other) in reason and str(expected) in reason
+
+
+def test_a_store_dialog_without_a_path_field_is_refused(tmp_path: Path) -> None:
+    """Never guess which edit is the directory: report it and fail the point."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app)
+    app.nodes = lambda: [  # a dialog whose two edits both hold names
+        _node(HWND_STORE_DIALOG, "TSp_Panel", "Store", left=300, top=300, w=560, h=300),
+        _node(HWND_STORE_NAME, "TEdit", "point-1", left=380, top=390, w=400),
+        _node(HWND_STORE_NAME + 1, "TEdit", "comments", left=380, top=420, w=400),
+        *app.store_buttons,
+    ]
+    with pytest.raises(Exception, match="Working directory"):
+        actuator.assert_working_directory(tmp_path / "capture")
+
+
+# ------------------------------------- the order a point takes them in (§12, §12b)
+
+
+def test_a_point_verifies_the_channel_before_recording(tmp_path: Path) -> None:
+    """The channel is a precondition of the point, not a setting applied earlier."""
+    directory = tmp_path / "capture"
+    directory.mkdir()
+    # The dialog remembers *another* folder, as it does between runs: the point must
+    # write its own and verify it, not follow the remembered one.
+    app = FakeUdopWindow(channel=1, directory=str(tmp_path / "somewhere-else"))
+    actuator = fake_driver(app, channel=5)
+
+    stored = actuator.record_and_store("sw100-k1-161738", 0.5, directory)
+
+    assert stored == directory / "sw100-k1-161738.BDD"
+    order = [event[0] for event in app.events]
+    dialog = order.index("dialog")
+    press_record = app.events.index(("press", StripControl.RECORD.value))
+    assert dialog < press_record, app.events  # the channel was verified first
+    assert app.channel == 5
+    # The store dialog's directory was asserted before anything was named or stored.
+    write_dir = app.events.index(("text", HWND_STORE_DIR, str(directory)))
+    write_name = next(
+        i for i, event in enumerate(app.events) if event[0] == "text" and event[1] == HWND_STORE_NAME
+    )
+    assert write_dir < write_name, app.events
+    assert app.directory == str(directory)
+    assert app.name_text == "sw100-k1-161738"
+
+
+def test_a_point_is_failed_when_the_channel_cannot_be_verified(tmp_path: Path) -> None:
+    """The failure names the channel, and nothing is recorded or stored."""
+    directory = tmp_path / "capture"
+    directory.mkdir()
+    app = FakeUdopWindow(channel=1, combo_writes_ignored=True, directory=str(directory))
+    actuator = fake_driver(app, channel=4)
+
+    ok, reason = actuator.try_record_and_store("sw100-k1-161738", 0.5, directory)
+
+    assert ok is False
+    assert "channel 4" in str(reason)
+    assert app.store_open is False
+    assert app.name_text == ""
+    assert [p.name for p in directory.iterdir()] == []
+
+
+def test_a_point_is_failed_when_the_directory_cannot_be_asserted(tmp_path: Path) -> None:
+    """The failure names both paths, and nothing is stored under this point's name."""
+    expected = tmp_path / "capture"
+    expected.mkdir()
+    app = FakeUdopWindow(channel=1, directory=str(tmp_path / "elsewhere"), text_writes_ignored=True)
+    actuator = fake_driver(app, channel=1)
+
+    ok, reason = actuator.try_record_and_store("sw100-k1-161738", 0.5, expected)
+
+    assert ok is False
+    assert str(expected) in str(reason)
+    assert str(tmp_path / "elsewhere") in str(reason)
+    assert app.name_text == ""
+

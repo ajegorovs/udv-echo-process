@@ -47,12 +47,18 @@ from udv_echo_process.acquire.actuator import (
     strip_controls,
 )
 from udv_echo_process.acquire.config import (
+    CHANNEL_ENV_VAR,
+    DEFAULT_CHANNEL,
     DEFAULT_MAX_PROFILES_PER_BLOCK,
+    MAX_CHANNEL,
+    MIN_CHANNEL,
     RUNG_DIVISOR,
     AcquisitionLimits,
+    ChannelSetting,
     ParameterSet,
     ProfileTiming,
     RecordSettings,
+    channel_from_environment,
 )
 from udv_echo_process.acquire.log import (
     DecodedBlock,
@@ -88,9 +94,13 @@ from udv_echo_process.acquire.plan import (
 )
 
 __all__ = [
+    "CHANNEL_ENV_VAR",
+    "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",
     "DIALOG_ONLY_PARAMETERS",
     "GATE_DRIFT_NOTE",
+    "MAX_CHANNEL",
+    "MIN_CHANNEL",
     "NUMERIC_WRITE_RECIPE",
     "OVERLAY_ANSWERS",
     "PARAMETER_WRITE_ORDER",
@@ -103,6 +113,7 @@ __all__ = [
     "VIEW_TIMEOUT_S",
     "AcquisitionLimits",
     "Actuator",
+    "ChannelSetting",
     "DecodedBlock",
     "DialogControl",
     "OverlayKind",
@@ -122,6 +133,7 @@ __all__ = [
     "SweepPointRecord",
     "append_entry",
     "assert_window_fits",
+    "channel_from_environment",
     "clamp_resolution",
     "classify_strip_view",
     "depth_mm",

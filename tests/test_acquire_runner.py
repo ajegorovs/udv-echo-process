@@ -27,6 +27,17 @@ The load-bearing case is
 recording stored under the next point's name is 10x the signature and still
 decodes as a valid point (docs/16 §15b), so a size off the signature must fail
 the point *and* must never be appended as valid.
+
+Two rules that were added to the module after this file's first cut are pinned in
+the last two sections. A point that leaves the **application's** state unverified or
+unstartable ends the run instead of burning the rest of the plan, and a panel nobody
+recognises is refused rather than pressed (:func:`…stops_the_run`,
+:func:`…instead_of_pressing`). Both are driven through a fake, never through the
+application on the operator's desktop. Verification is scripted the way the decoder
+is: the fake's "stored files" are sized buffers, not real ``.BDD`` files, so every
+assertion is about what the runner does with a verdict — and the shared helper
+installs a verifier that agrees, so the cases above the new sections keep asserting
+the size guard and nothing else.
 """
 
 from __future__ import annotations
@@ -36,6 +47,7 @@ import math
 import re
 import types
 from collections.abc import Callable, Iterable, Mapping
+from enum import Enum
 from pathlib import Path
 
 import pytest
@@ -604,6 +616,74 @@ def patch_reader(
     return reader
 
 
+# ------------------------------------------------------ the module-local verifier
+
+#: The runner's verification hook: ``acquire/verify.py``'s ``verify_stored_point``,
+#: imported defensively by the runner so a checkout without that module still runs.
+VERIFY_HOOK = "verify_stored_point"
+
+#: "The caller did not script a verifier" — distinct from ``None``, which is the
+#: runner's own "that module is not importable" state.
+UNSCRIPTED = object()
+
+
+class FakeVerification:
+    """The shape of a ``VerificationResult``, built without importing ``verify``.
+
+    The interface is pinned by the runner's contract (``ok``, ``mismatches``,
+    ``facts``); this object answers to it so the tests do not depend on the sibling
+    module being in the checkout.
+    """
+
+    def __init__(self, ok: bool, mismatches: Iterable[str] = ()) -> None:
+        self.ok = bool(ok)
+        self.mismatches = tuple(str(mismatch) for mismatch in mismatches)
+        self.facts = None
+
+
+class ScriptedVerifier:
+    """The stand-in for ``verify_stored_point``: a verdict, or a raise."""
+
+    def __init__(
+        self,
+        *,
+        ok: bool = True,
+        mismatches: Iterable[str] = (),
+        error: BaseException | None = None,
+    ) -> None:
+        self.result = FakeVerification(ok, mismatches)
+        self.error = error
+        self.calls: list[tuple[Path, object]] = []
+
+    def __call__(
+        self, path: object, requested: object, *args: object, **kwargs: object
+    ) -> FakeVerification:
+        self.calls.append((Path(str(path)), requested))
+        if self.error is not None:
+            raise self.error
+        return self.result
+
+    @property
+    def paths(self) -> list[Path]:
+        """Every file the runner asked about, in order."""
+        return [path for path, _requested in self.calls]
+
+
+def patch_verifier(monkeypatch: pytest.MonkeyPatch, verifier: object) -> object:
+    """Point the runner's verification hook at ``verifier``; ``None`` = unimportable.
+
+    ``None`` is not a cop-out: it is exactly the state the runner is in when
+    ``acquire/verify.py`` is missing from the checkout, so the unavailable case is
+    tested the way it happens rather than through a flag.
+    """
+    assert hasattr(runner_module, VERIFY_HOOK), (
+        f"{runner_module.__name__} exposes no {VERIFY_HOOK!r} hook, so the verification "
+        "step cannot be scripted; the step must call the imported name"
+    )
+    monkeypatch.setattr(runner_module, VERIFY_HOOK, verifier)
+    return verifier
+
+
 # ------------------------------------------------------------------------ helpers
 
 
@@ -633,15 +713,26 @@ def make_runner(
     signature: SizeSignature | None = None,
     block: DecodedBlock | None = None,
     script_reader: bool = True,
+    verifier: object = UNSCRIPTED,
+    fake_class: type[FakeActuator] = FakeActuator,
     **fake_kwargs: object,
 ) -> tuple[FakeActuator, object, Path, ScriptedReader | None]:
-    """A runner over a fresh fake, a private capture directory and a private log."""
+    """A runner over a fresh fake, a private capture directory and a private log.
+
+    Both module-local adapters are scripted: the decoder (a real ``.BDD`` read needs a
+    real file, and the fake stores buffers) and the verifier. ``verifier`` defaults to
+    one that agrees with the file, so a case that is not about verification asserts
+    the size guard and nothing else; pass a :class:`ScriptedVerifier` to script a
+    verdict, or ``None`` for the state the runner is in without ``acquire/verify.py``.
+    ``fake_class`` is the fake's own type, so a case can subclass it to make the
+    *application* misbehave without touching the runner.
+    """
     base = Path(base)
     directory = base / "capture"
     directory.mkdir(parents=True, exist_ok=True)
     log_path = base / "logs" / "sweep.jsonl"
     signature = SizeSignature() if signature is None else signature
-    fake = FakeActuator(directory, signature=signature, **fake_kwargs)
+    fake = fake_class(directory, signature=signature, **fake_kwargs)
     engine = SweepRunner(
         fake,
         RecordSettings(name_prefix="sw100"),
@@ -654,6 +745,12 @@ def make_runner(
         if (monkeypatch and script_reader)
         else None
     )
+    if monkeypatch is not None:
+        # After the reader patch on purpose: the reader scan walks the module's
+        # callables, and the verification hook is not one of them.
+        patch_verifier(
+            monkeypatch, ScriptedVerifier() if verifier is UNSCRIPTED else verifier
+        )
     return fake, engine, log_path, reader
 
 
@@ -1034,3 +1131,251 @@ def test_a_real_committed_point_decodes_through_the_real_reader(
     assert outcome.decoded.channel == 1
     assert outcome.decoded.n_gates == GATES
     assert outcome.decoded.sound_speed_ms == SOUND_SPEED_MS
+
+
+# ---------------------------------------------------------- 9. the circuit breaker
+#
+# A failure that leaves the *application's* state unverified or unstartable is not a
+# worse point failure — it is the run being cut short. Two shapes matter: a strip that
+# will not come back startable, and a panel nobody recognises. The first must stop the
+# sweep, the second must stop it *without pressing anything*; and a point that merely
+# fails on its own evidence (the size guard, a clamp) must still leave the sweep
+# running, which is what section 5 asserts.
+
+
+class WedgingActuator(FakeActuator):
+    """A fake whose strip stops coming back startable from the Nth point on.
+
+    The first :attr:`healthy` points run normally; after them the strip reports a
+    structure the view table has no row for — what an application that has dropped
+    into a panel of its own, or gone deaf to the strip, looks like from here. Nothing
+    about the *file* fails: the wedge is in the application's state, which is the
+    difference the circuit breaker is about.
+    """
+
+    def __init__(
+        self, directory: Path, *, healthy: int = 1, **fake_kwargs: object
+    ) -> None:
+        super().__init__(directory, **fake_kwargs)
+        self.healthy = healthy
+        self.applied_count = 0
+
+    @property
+    def wedged(self) -> bool:
+        """True once the strip has stopped answering with a startable view."""
+        return self.applied_count >= self.healthy
+
+    def _state(self) -> StripState:
+        if self.wedged:
+            return StripState(button_count=7)  # no row in STRIP_BUTTON_ORDER
+        return super()._state()
+
+    def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole | str, str]:
+        """Apply a window and count it — one count per point that got this far."""
+        self.applied_count += 1
+        return super().apply_point(parameters)
+
+
+def test_a_point_that_will_not_come_back_startable_stops_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Point 2 of 4 wedges the strip: points 3 and 4 are never attempted."""
+    definition = definition_for(1, 2, 3, 4)
+    assert len(plan_sweep(definition)) == 4
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, fake_class=WedgingActuator, healthy=1
+    )
+
+    outcomes = engine.run(definition, DURATION_S)
+
+    # The outcome tuple ends at the aborting point: there is no outcome for k=3 or k=4.
+    assert [getattr(outcome.point, "key", None) for outcome in outcomes] == [1, 2]
+    assert outcomes[0].ok is True, outcomes[0].reason
+    assert outcomes[-1].ok is False
+
+    # The abort is *marked*: a caller has to be able to tell "this point was bad"
+    # from "the run was cut short", and the outcome surface must carry it.
+    fields = set(getattr(PointOutcome, "model_fields", {}) or {}) or set(
+        inspect.signature(PointOutcome).parameters
+    )
+    assert "aborted" in fields, fields
+    assert outcomes[0].aborted is False
+    assert outcomes[-1].aborted is True
+    note = getattr(runner_module, "ABORT_NOTE", None)
+    assert note and note in (outcomes[-1].reason or ""), outcomes[-1].reason
+
+    # Points 3 and 4 were never attempted: no window applied, no store cycle, no
+    # third name, no second file.
+    assert fake.applied_count == 1, fake.calls
+    assert len([call for call in fake.calls if call[0] in STORE_CALLS]) == 1
+    assert len(stored_names(fake.directory)) == 1
+
+    records = point_records(read_entries(log_path))
+    assert [record.key for record in records] == [1, 2], "the abort is logged, once"
+    assert [record.status is PointStatus.OK for record in records] == [True, False]
+    assert len(sweep_log.point_names(read_entries(log_path))) == 2
+
+
+class UnrecognisedPanel(Enum):
+    """A panel the runner's table has no row for — deliberately not an ``OverlayKind``."""
+
+    DEVICE_OFFLINE = "device_offline"
+
+
+class OverlayActuator(FakeActuator):
+    """A fake that reports one panel to ``answer_overlay``, forever.
+
+    Every press the runner asks for is recorded, so "did it press anything?" is an
+    assertion about the call sequence and nothing else.
+    """
+
+    def __init__(
+        self, directory: Path, *, panel: object, **fake_kwargs: object
+    ) -> None:
+        super().__init__(directory, **fake_kwargs)
+        self.panel = panel
+
+    def answer_overlay(self) -> object:  # type: ignore[override] - a panel may be odd
+        """Report what is up — a warning, the Store dialog, or something unknown."""
+        value = getattr(self.panel, "value", self.panel)
+        self.calls.append(("answer_overlay", value))
+        return self.panel
+
+
+def test_an_unrecognised_overlay_stops_the_run_instead_of_pressing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The policy on an unknown panel: refuse and stop — press nothing on it."""
+    assert not isinstance(UnrecognisedPanel.DEVICE_OFFLINE, OverlayKind)
+    definition = definition_for(1, 2)
+    fake, engine, log_path, _ = make_runner(
+        tmp_path,
+        monkeypatch,
+        fake_class=OverlayActuator,
+        panel=UnrecognisedPanel.DEVICE_OFFLINE,
+    )
+
+    outcomes = engine.run(definition, DURATION_S)
+
+    assert len(outcomes) == 1, "the run must stop at the unrecognised panel"
+    outcome = outcomes[0]
+    assert outcome.ok is False
+    assert outcome.aborted is True
+    assert "device_offline" in (outcome.reason or ""), outcome.reason
+
+    # Not one button on it: no strip press, no cycle, no recording, no file.
+    assert [call for call in fake.calls if call[0] == "press"] == [], fake.calls
+    assert [call for call in fake.calls if call[0] in STORE_CALLS] == []
+    assert fake.applied is None
+    assert stored_names(fake.directory) == []
+
+    records = point_records(read_entries(log_path))
+    assert len(records) == 1
+    assert records[0].status is not PointStatus.OK
+
+
+def test_a_known_warning_is_answered_and_the_run_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The refusal is for panels nobody recognises, not for overlays as such."""
+    definition = definition_for(1, 2)
+    fake, engine, _, _ = make_runner(
+        tmp_path, monkeypatch, fake_class=OverlayActuator, panel=OverlayKind.WARNING
+    )
+
+    outcomes = engine.run(definition, DURATION_S)
+
+    assert [outcome.ok for outcome in outcomes] == [True, True], [
+        outcome.reason for outcome in outcomes
+    ]
+    assert len([call for call in fake.calls if call[0] == "answer_overlay"]) >= 2
+
+
+# ------------------------------------------------- 10. verified from the artifact
+#
+# The size signature says "a file this size"; only the file's own words say "the file
+# this point asked for". That check is delegated to acquire/verify.py, so what these
+# cases pin is what the runner does with the verdict — and that no verdict is never a
+# pass.
+
+
+def test_a_file_that_does_not_say_what_was_asked_for_is_not_ok(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A verification mismatch invalidates the point, mismatches and all."""
+    mismatches = (
+        "n_gates: the file holds 766, the point asked for 805",
+        "emissions_per_profile: the file holds 40, the point asked for 52",
+    )
+    verifier = ScriptedVerifier(ok=False, mismatches=mismatches)
+    fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=verifier)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert status_of(outcome) is not PointStatus.OK
+    assert outcome.aborted is False, "a mismatch is this point's failure, not an abort"
+    assert outcome.reason and all(
+        mismatch in outcome.reason for mismatch in mismatches
+    ), outcome.reason
+
+    # The check ran on this point's own stored file, against this point's request.
+    assert len(verifier.calls) == 1, verifier.calls
+    verified_path, requested = verifier.calls[0]
+    assert outcome.file is not None
+    assert Path(str(outcome.file)) == verified_path
+    assert requested == point_for(1).parameters
+
+    # The rejected file is evidence: still there, still this point's record, and the
+    # record is never valid.
+    assert stored_names(fake.directory) == [Path(str(outcome.file)).name]
+    records = point_records(read_entries(log_path))
+    assert len(records) == 1
+    assert records[0].status is not PointStatus.OK
+    assert records[0].decoded is not None
+
+
+def test_verification_that_raises_refuses_the_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No verdict is not a pass: a verifier that blows up leaves the file unproven."""
+    verifier = ScriptedVerifier(error=RuntimeError("the block carries no word 10"))
+    _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=verifier)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is False
+    assert outcome.reason and "word 10" in outcome.reason, outcome.reason
+
+    records = point_records(read_entries(log_path))
+    assert len(records) == 1
+    assert records[0].status is not PointStatus.OK
+
+
+def test_verification_that_cannot_be_imported_is_reported_not_silently_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``acquire/verify.py`` absent: the size guard still decides, but not silently.
+
+    ``verifier=None`` is the state the runner is in when that module is not in the
+    checkout, so the point keeps the verdict the size signature gave it — and its
+    reason, and the log record's failure, both say that nothing read the file's words.
+    """
+    _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=None)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason  # the existing size behaviour, unchanged
+    assert status_of(outcome) is PointStatus.OK
+    reason = outcome.reason or ""
+    assert "verif" in reason.lower(), reason
+    assert "not importable" in reason, reason
+
+    records = point_records(read_entries(log_path))
+    assert len(records) == 1
+    assert records[0].status is PointStatus.OK
+    assert records[0].decoded is not None
+    # The note reaches the log too: an OK point whose words nobody read says so.
+    logged = records[0].failure or ""
+    assert "verif" in logged.lower(), records[0].failure
