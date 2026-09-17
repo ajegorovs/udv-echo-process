@@ -54,6 +54,25 @@ pressed), while the same button opened its menu under the operator's real cursor
 ``allow_real_input=False`` refuses the menubar step **by name** for an unattended or
 locked-desktop run and never falls back to a posted message (which is known not to open
 this menu).
+
+The popup that hover opens is read **structurally**, because no control in this
+application carries a caption: ``GetWindowText`` answers an empty string for every
+``TSp_*`` widget — the live read of the open menu shows its overlay panel and its three
+entries all caption-less — so an entry can never be found by a title. Matching one was
+the live bug. Instead:
+
+* the **overlay** is the panel that became visible when the menubar was hovered (the
+  panel set is snapshotted first; the reference's own predicate, ``left == 169 and
+  h > 120`` on the panel it read live at ``(169, 55, 401, 250)``, is the fallback when
+  that diff is ambiguous);
+* the **entries** are the ``TSp_Button`` widgets lying inside that overlay, ordered by
+  screen ``top`` — enumeration order is *not* screen order — and the first is
+  ``Operating parameters`` (entries at top 61, 95, 130);
+* the **dialog** an entry opened is identified by its content: only the operating dialog
+  holds the channel combo, and a dialog that does not hold it is closed with its LEFT
+  button before the next entry by screen order is pressed. Its default button is never
+  pressed — on the wrong dialog that button is what would commit the wrong dialog's
+  values, and the wrong dialog is exactly the one that has not been identified yet.
 """
 
 from __future__ import annotations
@@ -132,9 +151,23 @@ VK_RETURN, SMTO_ABORTIFHUNG = 0x0D, 0x0002
 #: value comes back through an unsigned ``LRESULT``, so ``CB_ERR`` (-1) arrives as a
 #: huge number. Treating it as "no selection" is the only safe reading.
 _COMBO_NONE_ABOVE = 0xFFFF
-#: The menubar button and the popup entry the channel lives behind.
+#: The menubar button, and the popup entry the channel lives behind — that entry being a
+#: *name used in messages only*: this application's widgets carry no captions, so nothing
+#: here matches a control against it (see the module docstring).
 PARAMETERS_MENU = "Parameters"
 PARAMETERS_ENTRY = "Operating parameters"
+#: The popup overlay's own geometry, as read live off the open menu: a caption-less
+#: ``TSp_Panel`` at ``(169, 55, 401, 250)`` — 195 px tall — with its entries at screen
+#: tops 61, 95 and 130. This rect is the **fallback** identity only (the primary one is
+#: the panel that was not visible before the hover), and it is the reference's own
+#: predicate, ``left == 169 and h > 120`` (``recon/41_burst_sampling_volume.py``).
+_OVERLAY_LEFT, _OVERLAY_MIN_H = 169, 120
+#: How many popup entries are tried, and how long one entry's press is given to produce a
+#: dialog before the real-click fallback and the next entry. Both are bounded: a
+#: misidentified overlay must never turn the entry loop into a walk across the menubar.
+#: The reference polled the dialog at 0.5 s and found it on its first poll, so one entry's
+#: press is not given the popup's whole window.
+_MAX_ENTRY_ATTEMPTS, _ENTRY_DIALOG_TIMEOUT_S = 4, 2.0
 #: How long the popup, the dialog and a selection read-back are given, and the cadence
 #: they are polled at — the reference recipe's own numbers (``while time.time() - t0 < 8:
 #: time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``), not a longer window.
@@ -147,6 +180,9 @@ _HOVER_SETTLE_S, _HOVER_OPEN_S, _CURSOR_SETTLE_S = 0.3, 1.0, 0.05
 #: ``mouse_event``'s move flag and the recipe's nudge: a ``SetCursorPos`` jump alone can
 #: be missed by the application's menu loop, the relative move is what it sees.
 MOUSEEVENTF_MOVE = 0x0001
+#: The button flags: used by the one *real* click this driver makes — the fallback for a
+#: popup entry that ignores the posted press (:meth:`Win32Actuator._real_click_centre`).
+MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP = 0x0002, 0x0004
 _HOVER_MOVE_DX, _HOVER_MOVE_DY = 2, 0
 #: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
 SEND_TIMEOUT_MS = 2000
@@ -351,25 +387,21 @@ def channel_items() -> tuple[str, ...]:
     return tuple(str(n) for n in range(MIN_CHANNEL, MAX_CHANNEL + 1))
 
 
-def _entry_matching(kids: Sequence[dict], title: str) -> dict | None:
-    """The topmost ``TSp_Button`` whose text names ``title``, or ``None``.
+def _entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
+    """The overlay's entries: every ``TSp_Button`` lying inside it, **screen order**.
 
-    Matched by **text**, never by its position in the enumeration order: matching
-    enumeration order once picked ``Default parameters`` instead of ``Operating
-    parameters`` and raised a modal panel (docs/16 §6). The hits are ordered by their
-    screen ``top`` first — enumeration order is *not* screen order
-    (``recon/41_burst_sampling_volume.py``) — so even a tie is settled the way the
-    operator sees the popup.
+    Geometry is the only identity available: this application's widgets carry no captions
+    (``GetWindowText`` is empty on every ``TSp_*`` widget), so a title can never find an
+    entry — that was the live bug. The entries are the buttons whose centre lies inside
+    the overlay's rect, ordered by screen ``top`` and then ``left``, because enumeration
+    order is *not* screen order: the reference pressed ``Default parameters`` the once it
+    trusted it (``recon/41_burst_sampling_volume.py``, docs/16 §13a). The **first** in
+    this order is ``Operating parameters``.
     """
-    wanted = title.strip().casefold()
-    hits = [
-        k
-        for k in kids
-        if k["cls"] == "TSp_Button"
-        and (k.get("text") or "").strip().casefold().startswith(wanted)
-    ]
-    hits.sort(key=lambda k: (k["top"], k["left"]))
-    return hits[0] if hits else None
+    return sorted(
+        (k for k in kids if k["cls"] == "TSp_Button" and _inside(overlay, k)),
+        key=lambda k: (k["top"], k["left"]),
+    )
 
 
 def _descendants(roles: Mapping, root: int) -> list[dict]:
@@ -466,6 +498,8 @@ class Win32Actuator:
         self.last_press_screen: tuple[int, int] | None = None
         #: The screen point the last real-cursor hover used (diagnostics only).
         self.last_hover_screen: tuple[int, int] | None = None
+        #: The screen point the last real-cursor *entry click* used (diagnostics only).
+        self.last_entry_click_screen: tuple[int, int] | None = None
         self.warnings: list[str] = []
 
     # ------------------------------------------------------------------ plumbing
@@ -617,6 +651,40 @@ class Win32Actuator:
         u32.mouse_event(MOUSEEVENTF_MOVE, _HOVER_MOVE_DX, _HOVER_MOVE_DY, 0, 0)
         time.sleep(_HOVER_OPEN_S)
         self.last_hover_screen = (x, y)
+        return x, y
+
+    def _real_click_centre(self, hwnd: int) -> tuple[int, int]:
+        """Click ``hwnd``'s centre with the **real** cursor; return the point clicked.
+
+        The fallback for a popup entry that ignores the posted press
+        (:meth:`_press_entry`): a popup entry answers posted presses in every run so far,
+        but a menu that has to be *opened* by a real hover may also want to be *taken* by
+        a real click, and a real click is the only other gesture this driver has. It is
+        gated exactly like the hover: the caller only reaches this with
+        ``allow_real_input``, and the cursor is put back by
+        :meth:`_open_parameters_dialog`'s ``finally`` whatever happens here.
+
+        A ``SetCursorPos`` that did not take (a locked or unattended desktop refuses it
+        silently) is raised by name, as in :meth:`_hover_centre`: clicking where the
+        cursor is *not* would press whatever is there.
+        """
+        win32gui, _ = _gui()
+        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
+        x, y = (left + right) // 2, (top + bottom) // 2
+        u32 = _user32()
+        u32.SetCursorPos(x, y)
+        time.sleep(_HOVER_SETTLE_S)
+        if self._cursor_position() != (x, y):
+            raise AcquisitionError(
+                f"the cursor would not move onto the popup entry at ({x}, {y}): a locked "
+                "or unattended desktop refuses SetCursorPos, and clicking where the "
+                "cursor is not would press whatever is there"
+            )
+        u32.mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, 0)
+        time.sleep(max(0, int(PRESS_HOLD_MS)) / 1000.0)
+        u32.mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, 0)
+        time.sleep(_CLICK_SETTLE_S)
+        self.last_entry_click_screen = (x, y)
         return x, y
 
     # ------------------------------------------------------------------ binding
@@ -1029,6 +1097,11 @@ class Win32Actuator:
         channels, ``'1'``..``'10'``. Never an id (ids change on every launch), never a
         screen coordinate stated in logic, and never "the first combo" — the item list
         *is* the identity. Two matches are an ambiguity, not a choice to make.
+
+        This is also how the *dialog* is identified on the way in
+        (:meth:`_open_parameters_dialog`): among the dialogs this application can open
+        from the same popup, the operating one is the one this method answers for. No
+        caption takes part in it — there are none to read.
         """
         roles = self._resolve() if roles is None else roles
         wanted = channel_items()
@@ -1044,12 +1117,13 @@ class Win32Actuator:
                 matches.append((node, 0 if parent is None else parent))
         if not matches:
             raise AcquisitionError(
-                f"no channel combo in the {PARAMETERS_ENTRY!r} dialog: expected a combo "
-                f"nested in a TSp_Value_Button listing {list(wanted)}"
+                f"no channel combo in the dialog at {panel['rect'][:2]}: the measurement "
+                f"channel lives in a TComboBox nested in a TSp_Value_Button whose items "
+                f"are {list(wanted)}, and nothing in this dialog lists them"
             )
         if len(matches) > 1:
             raise AcquisitionError(
-                f"{len(matches)} combos in the {PARAMETERS_ENTRY!r} dialog list "
+                f"{len(matches)} combos in the dialog at {panel['rect'][:2]} list "
                 f"{list(wanted)}; the channel combo is ambiguous, so nothing is selected"
             )
         return matches[0]
@@ -1069,28 +1143,119 @@ class Win32Actuator:
         wanted = self._channel_setting
         return index == wanted.combo_index and text.strip() == str(wanted.channel)
 
-    def _poll_menu_entry(self) -> dict:
-        """Poll for the ``Operating parameters`` entry once the menubar was hovered.
+    def _panel_map(self, roles: Mapping | None = None) -> dict[int, dict]:
+        """Every visible ``TSp_Panel`` right now, by handle.
 
-        Polled, never assumed: a popup that has accepted the hover still takes a moment
-        to paint, and the recipe waited the same way (``while time.time() - t0 < 8:
-        time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``). The entry is matched
-        by **title**, ordered by screen ``top`` (:func:`_entry_matching`), so
-        ``Default parameters`` is never the one pressed. A popup that has not shown it
-        inside :data:`_MENU_TIMEOUT_S` is reported by name instead of waited on.
+        The panels are re-read, never remembered: the popup is a panel the application
+        shows and hides, so the snapshot taken before the hover is only worth anything
+        compared with a *fresh* one. Nothing here is keyed on a caption — these widgets
+        have none (see the module docstring).
+        """
+        roles = self._resolve() if roles is None else roles
+        return {k["hwnd"]: k for k in roles["raw"] if k["cls"] == "TSp_Panel"}
+
+    def _poll_parameters_overlay(self, before: Mapping[int, dict]) -> dict:
+        """The ``Parameters`` popup overlay: the panel that appeared on the hover.
+
+        Identified by **appearance**, because a caption can never identify it: every
+        caption-less ``TSp_*`` widget in this application answers ``GetWindowText`` with
+        the empty string, so the overlay is the ``TSp_Panel`` that is visible now and was
+        **not** in the ``before`` snapshot taken just before the menubar was hovered.
+
+        When the diff is ambiguous — more than one new panel, or none yet — the reference
+        recipe's own predicate decides (``recon/41_burst_sampling_volume.py``:
+        ``left == 169 and h > 120``, the panel it read live at ``(169, 55, 401, 250)``;
+        the popup is reused or re-shown by some menus, and then it was visible before the
+        second hover and the diff alone would find nothing). Polled, never assumed: the
+        recipe waited the same way and the popup takes a moment to paint. A popup that
+        has shown neither within :data:`_MENU_TIMEOUT_S` is reported by name.
         """
         deadline = time.monotonic() + _MENU_TIMEOUT_S
         while True:
-            entry = _entry_matching(self._resolve()["raw"], PARAMETERS_ENTRY)
-            if entry is not None:
-                return entry
+            panels = self._panel_map()
+            fresh = [p for hwnd, p in panels.items() if hwnd not in before]
+            if len(fresh) == 1:
+                return fresh[0]
+            recorded = sorted(
+                (
+                    p
+                    for p in panels.values()
+                    if p["left"] == _OVERLAY_LEFT and p["h"] > _OVERLAY_MIN_H
+                ),
+                key=lambda p: p["top"],
+            )
+            if recorded:
+                return recorded[0]
             if time.monotonic() >= deadline:
                 break
             time.sleep(_MENU_POLL_S)
         raise AcquisitionError(
-            f"the {PARAMETERS_MENU!r} menu offered no {PARAMETERS_ENTRY!r} entry within "
-            f"{_MENU_TIMEOUT_S:.0f} s of its hover"
+            f"the {PARAMETERS_MENU!r} popup did not appear within {_MENU_TIMEOUT_S:.0f} s "
+            f"of its hover, so no {PARAMETERS_ENTRY!r} entry could be pressed: no panel "
+            "became visible that was not visible before the hover, and none matched the "
+            "overlay the live application paints"
         )
+
+    def _poll_dialog(self, timeout_s: float) -> dict | None:
+        """The dialog panel that is up, or ``None`` when none appeared in ``timeout_s``.
+
+        A dialog here is a panel owning ``TSp_Value_Button`` fields — the same structure
+        for every dialog this application opens (:meth:`_parameters_panels`), which is
+        why it is found rather than named. ``None`` is a fact to report, not to paper
+        over: the caller falls back to a real click or tries the next entry.
+        """
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while True:
+            panels = self._parameters_panels()
+            if panels:
+                return panels[0]  # the panels are resolved top-to-bottom
+            if time.monotonic() >= deadline:
+                return None
+            time.sleep(_MENU_POLL_S)
+
+    def _press_entry(self, entry: dict) -> dict | None:
+        """Press one popup entry; return the dialog it opened, or ``None``.
+
+        The press is the posted **held** press popup entries answer (:meth:`_click_hold`).
+        If no dialog follows it, the same entry is clicked with the operator's real cursor
+        (:meth:`_real_click_centre`) — a menu that had to be opened by a real hover may
+        also want to be taken by a real click, and that is the only other gesture this
+        driver has; it is gated by ``allow_real_input`` exactly like the hover.
+
+        Nothing here presses anything *inside* a dialog: which dialog opened is the
+        caller's question, and it answers it by content.
+        """
+        self._click_hold(entry["hwnd"])
+        panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
+        if panel is None and self._allow_real_input:
+            self._note(
+                f"the posted press on the popup entry at {entry['rect'][:2]} opened no "
+                "dialog; repeating it with the real cursor"
+            )
+            self._real_click_centre(entry["hwnd"])
+            panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
+        return panel
+
+    def _close_wrong_dialog(self, panel: dict) -> None:
+        """Close a dialog that is not the operating one with its **LEFT** button.
+
+        Never its right-hand/default button: on a parameters dialog that button *accepts*
+        the dialog's values, and this is precisely the dialog whose identity is not yet
+        established — a default parameters dialog's Accept is a change nobody asked for.
+        The leftmost button of the bottom row is ``Cancel`` on every dialog this
+        application paints (:func:`_bottom_row`, :data:`…actuator.DialogControl.SAFE`).
+        A close that does not resolve is noted, never raised through: the caller still has
+        entries to try, and the bounded loop is what keeps that safe.
+        """
+        try:
+            kids = self._children_of(panel["hwnd"], self._resolve())
+            self._dialog_button(panel, kids, DialogControl.SAFE)
+            self._note(
+                f"a dialog without the channel combo was up at {panel['rect'][:2]}; closed "
+                "it with its left button — never its default button"
+            )
+        except AcquisitionError as exc:
+            self._note(f"a dialog without the channel combo could not be closed: {exc}")
 
     def _open_parameters_dialog(self) -> dict:
         """Open ``Parameters → Operating parameters`` and return the dialog's panel.
@@ -1099,25 +1264,40 @@ class Win32Actuator:
         control, and not a top-level window (``EnumWindows`` finds nothing: the app's
         dialogs are child panels, docs/16 §6).
 
+        Nothing on this path matches a control by its caption, and nothing can: this
+        application's widgets are caption-less (``GetWindowText`` is empty for all of them
+        — the live read of the open popup showed the overlay panel and its three entries
+        with empty captions), which is why a title lookup found no entry at all. What
+        identifies each thing instead:
+
+        1. the **overlay** is the panel that became visible on the hover
+           (:meth:`_poll_parameters_overlay`, with the reference's ``left == 169 and
+           h > 120`` rect as the fallback when the appearance diff is ambiguous);
+        2. the **entries** are the ``TSp_Button`` widgets lying inside that overlay,
+           ordered by screen ``top`` — the first is ``Operating parameters``
+           (:func:`_entry_buttons`; enumeration order is not screen order);
+        3. the **dialog** is the one whose content says so: only the operating dialog
+           holds the channel combo (:meth:`_channel_combo` — a ``TComboBox`` reached
+           through a ``TSp_Value_Button`` listing ``'1'``..``'10'``). An entry whose
+           dialog does not hold it is tried past: that dialog is closed with its **left**
+           button (:meth:`_close_wrong_dialog`, never its Accept, which on a parameters
+           dialog is what would commit whatever it holds), and the next entry by screen
+           order is pressed. A bounded number of entries is tried; when none yields the
+           operating dialog the failure is raised by name.
+
         The menu is opened by **hovering the menubar button with the operator's real
         cursor** (:meth:`_hover_centre`): this application's menubar ignores posted
         messages — a posted ``WM_MOUSEMOVE`` opened nothing and so did a posted press
         held for :data:`…actuator.PRESS_HOLD_MS` (two live runs, both aborting safely) —
         while the same button opened its menu under a real cursor in
-        ``recon/41_burst_sampling_volume.py``. Nothing posts a message to the menubar
-        any more. The cursor stays on the button while the menu is in use — through the
-        poll for the popup and the entry press below — and is put back once the entry has
+        ``recon/41_burst_sampling_volume.py``. Nothing posts a message to the menubar any
+        more. The cursor stays on the button while the menu is in use — through the poll
+        for the popup and through the entry press — and is put back once the entry has
         been pressed or the attempt fails (:meth:`_restore_cursor`): a hover-opened popup
         can be dismissed by moving the cursor off the menubar before the posted press
         lands, and this still runs on the operator's desktop.
         ``allow_real_input=False`` refuses this step by name instead — never falling
         back to the posted press, which is known not to open this menu.
-
-        The popup is then **polled for** (:meth:`_poll_menu_entry`), and the entry is
-        pressed **held, posted** (:meth:`_click_hold`) — popup entries, unlike the
-        menubar, do answer posted presses. The wait for the dialog is bounded by the
-        recipe's own window, :data:`_MENU_TIMEOUT_S`: a dialog that has not appeared in
-        that time is reported by name instead of waited on.
         """
         if not self._allow_real_input:
             raise AcquisitionError(
@@ -1137,29 +1317,48 @@ class Win32Actuator:
         if menu is None:
             raise AcquisitionError(f"no {PARAMETERS_MENU!r} button in the menubar")
         saved = self._cursor_position()
+        pressed = 0
         try:
-            self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
-            # Everything up to the entry press runs with the cursor still on the menubar:
-            # this popup was opened by a hover, so moving the cursor off the button can
-            # dismiss it before the posted press lands — and the press would then land on
-            # nothing. Poll for the popup, match the entry and press it first; only then
-            # hand the cursor back.
-            entry = self._poll_menu_entry()
-            self._click_hold(entry["hwnd"])  # popup entries do answer posted held presses
+            for attempt in range(_MAX_ENTRY_ATTEMPTS):
+                # The snapshot is taken *before* this hover, so "visible after, not
+                # before" is a statement about *this* attempt: a popup panel that a
+                # previous attempt left hidden is not in the set, and one the app reuses
+                # without hiding it falls back to the recorded rect below.
+                before = self._panel_map()
+                self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
+                overlay = self._poll_parameters_overlay(before)
+                entries = _entry_buttons(overlay, self._resolve()["raw"])
+                if attempt >= len(entries):
+                    break
+                entry = entries[attempt]
+                pressed += 1
+                panel = self._press_entry(entry)
+                if panel is None:
+                    self._note(
+                        f"the popup entry at {entry['rect'][:2]} opened no dialog; trying "
+                        "the next entry in screen order"
+                    )
+                    continue
+                try:
+                    self._channel_combo(panel)
+                except AcquisitionError as exc:
+                    self._note(
+                        f"the popup entry at {entry['rect'][:2]} did not open the "
+                        f"{PARAMETERS_ENTRY!r} dialog: {exc}"
+                    )
+                    self._close_wrong_dialog(panel)
+                    continue
+                return panel
+            raise AcquisitionError(
+                f"none of the {pressed} {PARAMETERS_MENU!r} popup entries pressed in "
+                f"screen order opened the {PARAMETERS_ENTRY!r} dialog: that dialog is the "
+                "one holding the channel combo, and within "
+                f"{_ENTRY_DIALOG_TIMEOUT_S:.1f} s per entry none produced it"
+            )
         finally:
             # The menu has been used (or the attempt is over, hover or press): the
             # operator's cursor goes back, so no path leaves it parked on the menubar.
             self._restore_cursor(saved)
-        deadline = time.monotonic() + _MENU_TIMEOUT_S
-        while time.monotonic() < deadline:
-            panels = self._parameters_panels()
-            if panels:
-                return panels[0]  # the panels are resolved top-to-bottom
-            time.sleep(_MENU_POLL_S)
-        raise AcquisitionError(
-            f"the {PARAMETERS_ENTRY!r} dialog did not open within "
-            f"{_MENU_TIMEOUT_S:.0f} s of its menu entry"
-        )
 
     def _close_parameters_dialog(self, panel: dict) -> None:
         """Close the dialog with its LEFT button (``Cancel``), never a window close.
@@ -1184,10 +1383,14 @@ class Win32Actuator:
 
         1. open ``Parameters → Operating parameters`` — the menubar button is
            **hovered with the operator's real cursor** (:meth:`_hover_centre`: this
-           application's menubar answers nothing posted), the popup is polled for and its
-           entry pressed held **while that cursor is still on the button** (moving it off
-           can dismiss a hover-opened popup), and the cursor is put back once the entry
-           has been pressed — the entry press is posted, which popup entries do answer;
+           application's menubar answers nothing posted), the popup is identified as the
+           panel that appeared on that hover, its caption-less entries are pressed in
+           **screen order** (the first is ``Operating parameters``) while the cursor is
+           still on the button (moving it off can dismiss a hover-opened popup), and the
+           cursor is put back once an entry has been pressed — the entry press is posted,
+           which popup entries do answer. Which dialog opened is decided **by content**,
+           never by a caption: a dialog that does not hold the channel combo is closed
+           with its LEFT button and the next entry in screen order is tried;
         2. find the channel combo *structurally* (see :meth:`_channel_combo`);
         3. read the channel back from the dialog; if it is not the configured one,
            write the selection (``CB_SETCURSEL`` + ``CBN_SELCHANGE``, no Enter) and

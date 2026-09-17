@@ -823,6 +823,29 @@ HWND_DIALOG_CANCEL, HWND_DIALOG_ACCEPT = 12, 13
 HWND_STORE_DIALOG, HWND_STORE_DIR, HWND_STORE_NAME = 14, 15, 16
 HWND_STORE_CANCEL, HWND_STORE_DOSTORE = 17, 18
 HWND_DECOY_COMBO = 19
+#: The popup's third caption-less entry, the plot behind the popup, a *titled* button
+#: outside it (a title lookup would press this one), and the dialog an entry can open
+#: that is **not** the operating one.
+HWND_ENTRY_THIRD = 20
+HWND_TITLED_DECOY = 21
+HWND_PLOT = 22
+HWND_DEFAULT_DIALOG, HWND_DEFAULT_VALUE_BUTTON, HWND_DEFAULT_COMBO = 23, 24, 25
+HWND_DEFAULT_CANCEL, HWND_DEFAULT_ACCEPT = 26, 27
+
+#: The popup's entries, and the order the *screen* puts them in: `Operating parameters`
+#: first. The live read of the open menu (and the reference that got it wrong once,
+#: docs/16 §13a) is what these rects are copied from.
+POPUP_ENTRIES = (HWND_ENTRY_OPERATING, HWND_ENTRY_DEFAULTS, HWND_ENTRY_THIRD)
+
+#: The live measurement, in the fake: `(left, top, w, h)` for the caption-less popup
+#: panel, its three caption-less entries, and the plot that stays visible behind them.
+MEASURED_RECTS: dict[int, tuple[int, int, int, int]] = {
+    HWND_POPUP: (169, 55, 232, 195),  # (169, 55, 401, 250) live: h = 195
+    HWND_ENTRY_OPERATING: (190, 61, 175, 40),  # (190, 61, 365, 101)  Operating parameters
+    HWND_ENTRY_DEFAULTS: (190, 95, 158, 40),  # (190, 95, 348, 135)
+    HWND_ENTRY_THIRD: (188, 130, 148, 40),  # (188, 130, 336, 170)
+    HWND_PLOT: (200, 65, 400, 400),  # TDop_Plot, behind the popup
+}
 
 
 def _node(
@@ -849,14 +872,23 @@ def _node(
     }
 
 
+def _measured(hwnd: int, cls: str, text: str = "") -> dict:
+    """A node at the rect the live application was measured at (:data:`MEASURED_RECTS`)."""
+    left, top, w, h = MEASURED_RECTS[hwnd]
+    return _node(hwnd, cls, text, left=left, top=top, w=w, h=h)
+
+
 class FakeUdopWindow:
     """The pieces of the running application the channel and store paths touch.
 
     It holds the two panels the driver must distinguish (the sidebar's parameter
-    column and the ``Operating parameters`` dialog), the store dialog's two edits,
-    and the application's *own* channel. Nothing here is a window: the driver's
-    message layer is what is faked, and every fact the driver may key on (class,
-    nesting, item list, text) is present in the structure it resolves.
+    column and the dialog holding the channel combo — the ``Operating parameters``
+    one, named here but identified by the driver *by that content*), the popup and
+    its caption-less entries at the measured geometry, the dialog that is not the
+    operating one, the store dialog's two edits, and the application's *own*
+    channel. Nothing here is a window: the driver's message layer is what is faked,
+    and every fact the driver may key on (class, nesting, geometry, item list, text)
+    is present in the structure it resolves.
 
     Scripted failures, each one a documented hazard:
 
@@ -870,7 +902,17 @@ class FakeUdopWindow:
     - ``menu_hover_ignored`` — the menubar hover opens nothing: the popup never
       appears, so the bounded poll runs out and the failure is reported by name;
     - ``menu_open_delay`` — the popup only appears after that many resolutions, so
-      "the popup is polled for, never assumed" is exercised rather than asserted.
+      "the popup is polled for, never assumed" is exercised rather than asserted;
+    - ``wrong_entry_attempts`` — the first that many popup entries open the *wrong*
+      dialog (one without the channel combo, as the live `Default parameters` trap
+      does): the driver must close it with the LEFT button and try the next entry;
+    - ``posted_entry_press_ignored`` — a popup entry that ignores the posted press, so
+      the real-cursor click fallback is what takes it.
+
+    Every popup widget here is **caption-less**, exactly as the live application's
+    ``TSp_*`` widgets are, and at the geometry the live popup was measured at
+    (:data:`MEASURED_RECTS`): a title-based lookup could not find an entry, and the
+    enumeration order is not the screen order.
     """
 
     def __init__(
@@ -883,6 +925,8 @@ class FakeUdopWindow:
         text_writes_ignored: bool = False,
         menu_hover_ignored: bool = False,
         menu_open_delay: int = 0,
+        wrong_entry_attempts: int = 0,
+        posted_entry_press_ignored: bool = False,
     ) -> None:
         self.channel = channel  # the application's own channel, 1-based
         self.directory = directory
@@ -891,11 +935,17 @@ class FakeUdopWindow:
         self.text_writes_ignored = text_writes_ignored
         self.menu_hover_ignored = menu_hover_ignored
         self.menu_open_delay = menu_open_delay
+        self.wrong_entry_attempts = wrong_entry_attempts
+        self.posted_entry_press_ignored = posted_entry_press_ignored
 
         self.menu_open = False
         #: Resolutions the popup still takes to appear (see :meth:`hover_menu`).
         self._menu_pending = 0
         self.dialog_open = False
+        #: The dialog that is *not* the operating one (no channel combo).
+        self.decoy_open = False
+        #: Every popup entry that was taken, in order — the driver's entry order.
+        self.entry_presses: list[int] = []
         self.store_open = False
         self.combo_index = channel - 1
         self.combo_text = str(channel)
@@ -935,28 +985,42 @@ class FakeUdopWindow:
             # A decoy: a combo the sidebar nests the same way, listing the same
             # channels. It must never be the one that is selected.
             _node(HWND_DECOY_COMBO, "TComboBox", "1", left=40, top=260, w=120),
+            # ...and the title decoy: a sidebar button *titled* like the popup entry.
+            # A caption lookup would press this one; geometry cannot (its centre is
+            # nowhere near the popup) — which is the whole point of the change.
+            _node(HWND_TITLED_DECOY, "TSp_Button", "Operating parameters", left=10, top=300, w=180),
         ]
         if self.menu_open:
+            # The popup as the live application was measured: a caption-less overlay, the
+            # plot still visible behind it, and three caption-less entries whose
+            # *enumeration* order is not their screen order (the entry the driver must
+            # press first, `Operating parameters`, is enumerated last).
             out += [
-                _node(HWND_POPUP, "TSp_Panel", "", left=120, top=24, w=200, h=80),
-                # `Default parameters` is enumerated FIRST — the order the reference
-                # implementation walked into when it matched by position (docs §6).
-                _node(HWND_ENTRY_DEFAULTS, "TSp_Button", "Default parameters", left=124, top=30),
-                _node(
-                    HWND_ENTRY_OPERATING,
-                    "TSp_Button",
-                    "Operating parameters",
-                    left=124,
-                    top=54,
-                ),
+                _measured(HWND_PLOT, "TDop_Plot"),
+                _measured(HWND_POPUP, "TSp_Panel"),
+                _measured(HWND_ENTRY_THIRD, "TSp_Button"),
+                _measured(HWND_ENTRY_DEFAULTS, "TSp_Button"),
+                _measured(HWND_ENTRY_OPERATING, "TSp_Button"),
             ]
         if self.dialog_open:
             out += [
                 _node(HWND_DIALOG, "TSp_Panel", "", left=300, top=100, w=360, h=200),
-                _node(HWND_DIALOG_VALUE_BUTTON, "TSp_Value_Button", "Channel", left=310, top=140),
+                _node(HWND_DIALOG_VALUE_BUTTON, "TSp_Value_Button", "", left=310, top=140),
+                # The combo's text *is* the read-back: its selected item, as the
+                # application paints it. That is content, not a caption.
                 _node(HWND_DIALOG_COMBO, "TComboBox", self.combo_text, left=340, top=142, w=120),
-                _node(HWND_DIALOG_CANCEL, "TSp_Button", "Cancel", left=520, top=260),
-                _node(HWND_DIALOG_ACCEPT, "TSp_Button", "Accept", left=600, top=260),
+                _node(HWND_DIALOG_CANCEL, "TSp_Button", "", left=520, top=260),
+                _node(HWND_DIALOG_ACCEPT, "TSp_Button", "", left=600, top=260),
+            ]
+        if self.decoy_open:
+            # The dialog that is **not** the operating one: the same structure, but the
+            # combo nested in its value button lists a burst, not the channels.
+            out += [
+                _node(HWND_DEFAULT_DIALOG, "TSp_Panel", "", left=300, top=100, w=360, h=200),
+                _node(HWND_DEFAULT_VALUE_BUTTON, "TSp_Value_Button", "", left=310, top=140),
+                _node(HWND_DEFAULT_COMBO, "TComboBox", "2", left=340, top=142, w=120),
+                _node(HWND_DEFAULT_CANCEL, "TSp_Button", "", left=520, top=260),
+                _node(HWND_DEFAULT_ACCEPT, "TSp_Button", "", left=600, top=260),
             ]
         if self.store_open:
             out += [
@@ -969,18 +1033,22 @@ class FakeUdopWindow:
 
     def parent_of(self, hwnd: int) -> int:
         """The fake's own parent map (the windows' real nesting)."""
-        if hwnd in (HWND_ENTRY_DEFAULTS, HWND_ENTRY_OPERATING):
+        if hwnd in POPUP_ENTRIES:
             return HWND_POPUP
         if hwnd == HWND_POPUP or hwnd == HWND_PARAMETERS:
             return HWND_MENU_BAR
         if hwnd in (HWND_LEFT_COMBO, HWND_DECOY_COMBO):
             return HWND_LEFT_VALUE
-        if hwnd == HWND_LEFT_VALUE:
+        if hwnd in (HWND_LEFT_VALUE, HWND_TITLED_DECOY):
             return HWND_LEFT_PANEL
         if hwnd in (HWND_DIALOG_VALUE_BUTTON, HWND_DIALOG_CANCEL, HWND_DIALOG_ACCEPT):
             return HWND_DIALOG
         if hwnd == HWND_DIALOG_COMBO:
             return HWND_DIALOG_VALUE_BUTTON
+        if hwnd in (HWND_DEFAULT_VALUE_BUTTON, HWND_DEFAULT_CANCEL, HWND_DEFAULT_ACCEPT):
+            return HWND_DEFAULT_DIALOG
+        if hwnd == HWND_DEFAULT_COMBO:
+            return HWND_DEFAULT_VALUE_BUTTON
         if hwnd in (HWND_STORE_DIR, HWND_STORE_NAME, *[b["hwnd"] for b in self.store_buttons]):
             return HWND_STORE_DIALOG
         return 0  # the main window
@@ -988,7 +1056,13 @@ class FakeUdopWindow:
     # --------------------------------------------------------- the application
 
     def combo_items(self, hwnd: int) -> tuple[str, ...]:
-        return driver.channel_items() if hwnd in (HWND_DIALOG_COMBO, HWND_LEFT_COMBO, HWND_DECOY_COMBO) else ()
+        """A combo's item list — the identity the driver must read, never assume."""
+        if hwnd == HWND_DEFAULT_COMBO:
+            # The wrong dialog's combo: a burst, nested exactly like the channel one.
+            return ("0.5", "1", "2", "5")
+        if hwnd in (HWND_DIALOG_COMBO, HWND_LEFT_COMBO, HWND_DECOY_COMBO):
+            return driver.channel_items()
+        return ()
 
     def hover_menu(self) -> None:
         """The menubar hover: the popup opens on **this** — never on a posted message.
@@ -1029,6 +1103,37 @@ class FakeUdopWindow:
         self.events.append(("dialog", "cancel"))
         self.dialog_open = False
 
+    # ------------------------------------------------- the popup's entries
+
+    def take_entry(self, hwnd: int) -> str:
+        """A popup entry was taken: the popup closes and *a* dialog opens.
+
+        Which dialog is the scripted hazard: the first ``wrong_entry_attempts`` entries
+        open the wrong one (the live `Default parameters` trap — the reference pressed it
+        the once it trusted the enumeration order, docs/16 §13a), and every entry after
+        that opens the operating dialog. Returns the dialog that opened, for the test.
+        """
+        self.entry_presses.append(hwnd)
+        self.menu_open = False
+        if len(self.entry_presses) <= self.wrong_entry_attempts:
+            self.decoy_open = True
+            self.events.append(("dialog", "open", "not-operating"))
+            return "not-operating"
+        self.open_dialog()
+        return "operating"
+
+    def close_decoy(self) -> None:
+        """The wrong dialog's **LEFT** button: it closes, and nothing else happens."""
+        self.events.append(("dialog", "close-wrong"))
+        self.decoy_open = False
+
+    def accept_decoy(self) -> None:
+        """The wrong dialog's default button: never pressed, on any path."""
+        raise AssertionError(
+            "the driver pressed the default button of a dialog that is not the operating "
+            "one: that is the button that commits the dialog's values"
+        )
+
     def write_text(self, hwnd: int, text: str) -> None:
         self.events.append(("text", hwnd, text))
         if self.text_writes_ignored:
@@ -1060,6 +1165,8 @@ class FakeDriver(driver.Win32Actuator):
         handles = [HWND_MENU_BAR, HWND_LEFT_PANEL]
         if self.app.dialog_open:
             handles.append(HWND_DIALOG)
+        if self.app.decoy_open:
+            handles.append(HWND_DEFAULT_DIALOG)
         panels = [by_hwnd[hwnd] for hwnd in handles if hwnd in by_hwnd]
         return {
             "window": 0,
@@ -1116,19 +1223,52 @@ class FakeDriver(driver.Win32Actuator):
                 "answers nothing posted, so the gesture is the real-cursor hover "
                 "(recon/41_burst_sampling_volume.py)"
             )
-        if hwnd == HWND_ENTRY_OPERATING:
-            assert self.app.menu_open, "the entry was pressed before the menu was opened"
-            self.app.menu_open = False
-            self.app.events.append(("click", "Operating parameters"))
-            self.app.open_dialog()
-        elif hwnd == HWND_ENTRY_DEFAULTS:
-            raise AssertionError("the driver pressed `Default parameters`")
+        if hwnd == HWND_TITLED_DECOY:
+            raise AssertionError(
+                "the driver pressed the sidebar button *titled* `Operating parameters`: "
+                "this application's popup entries carry no captions, so the entry is the "
+                "first one by screen top — never a title match"
+            )
+        if hwnd in POPUP_ENTRIES:
+            self._take_popup_entry(hwnd, real=False)
         elif hwnd == HWND_DIALOG_ACCEPT:
             self.app.accept()
         elif hwnd == HWND_DIALOG_CANCEL:
             self.app.cancel()
+        elif hwnd == HWND_DEFAULT_ACCEPT:
+            self.app.accept_decoy()  # the wrong dialog's default button: never
+        elif hwnd == HWND_DEFAULT_CANCEL:
+            self.app.close_decoy()  # the wrong dialog's LEFT button
         else:
             self.app.events.append(("press", hwnd))
+
+    def _take_popup_entry(self, hwnd: int, *, real: bool) -> None:
+        """One popup entry press, posted or real (see :meth:`_real_click_centre`)."""
+        if not real and self.app.posted_entry_press_ignored:
+            # An entry that ignores the posted press: the popup stays open and nothing
+            # opens — the case the real-cursor fallback exists for.
+            self.app.events.append(("click", "posted-ignored", hwnd))
+            return
+        assert self.app.menu_open, "the entry was pressed before the popup was opened"
+        self.app.events.append(("click", "popup-entry", hwnd, "real" if real else "posted"))
+        self.app.take_entry(hwnd)
+
+    def _real_click_centre(self, hwnd: int) -> tuple[int, int]:
+        """The real-cursor click, faked: recorded, then the entry is taken.
+
+        Nothing here is a window and no cursor moves, so this cannot test that a real
+        click *does* take a menu entry on the live application — that is the live
+        verification's job, and it is said so rather than pretended. What it pins is that
+        the fallback is reached only **after** a posted press opened nothing, and that the
+        menubar is never real-clicked either.
+        """
+        if hwnd == HWND_PARAMETERS:
+            raise AssertionError(
+                "the driver real-clicked the menubar: the menubar gesture is the hover"
+            )
+        self.app.events.append(("cursor", "clicked", hwnd))
+        self._take_popup_entry(hwnd, real=True)
+        return (0, 0)
 
     def _send(self, hwnd: int, msg: int, wp: int = 0, lp: int = 0, timeout_ms: int = 0) -> int:
         """The two combo read-backs, answered the way the real control answers."""
@@ -1213,7 +1353,7 @@ def press_and_restore(app: FakeUdopWindow) -> list[tuple[int, int]]:
     dismiss it before the posted press lands — and the press would then land on nothing.
     One press and one restore per open is itself part of the contract.
     """
-    presses = [i for i, e in enumerate(app.events) if e[:2] == ("click", "Operating parameters")]
+    presses = [i for i, e in enumerate(app.events) if e[:2] == ("click", "popup-entry")]
     restores = [i for i, e in enumerate(app.events) if e[:2] == ("cursor", "restored")]
     assert len(presses) == len(restores) != 0, app.events
     return list(zip(presses, restores, strict=True))
@@ -1233,18 +1373,211 @@ def test_the_channel_combo_is_identified_structurally_not_by_position() -> None:
     assert panel["hwnd"] == HWND_DIALOG
 
 
-def test_the_menu_entry_is_matched_by_title_not_by_enumeration_order() -> None:
-    """Matching position once selected `Default parameters` and raised a modal (docs §6)."""
+def test_the_popup_entries_are_caption_less_at_the_measured_geometry() -> None:
+    """The live read, pinned: the overlay and its entries all have an empty caption.
+
+    This is the fact the whole path turns on — a title lookup cannot find an entry here —
+    so the fake carries the measured rectangles and *no* captions, and the order the
+    screen imposes is not the order the window enumerates them in.
+    """
+    app = FakeUdopWindow(channel=1)
+    app.menu_open = True
+    raw = app.nodes()
+    by_hwnd = {node["hwnd"]: node for node in raw}
+    popup = by_hwnd[HWND_POPUP]
+    assert popup["cls"] == "TSp_Panel" and popup["text"] == ""
+    assert (popup["left"], popup["top"], popup["w"], popup["h"]) == (169, 55, 232, 195)
+
+    entries = [by_hwnd[hwnd] for hwnd in POPUP_ENTRIES]
+    assert all(entry["cls"] == "TSp_Button" and entry["text"] == "" for entry in entries)
+    assert [entry["top"] for entry in entries] == [61, 95, 130]  # the screen order
+    assert [entry["rect"] for entry in entries] == [
+        (190, 61, 365, 101),
+        (190, 95, 348, 135),
+        (188, 130, 336, 170),
+    ]
+    # Enumeration order is *not* screen order: the entry that must be pressed first is
+    # enumerated last, which is exactly how the reference pressed the wrong one.
+    enumerated = [node["hwnd"] for node in raw if node["hwnd"] in set(POPUP_ENTRIES)]
+    assert enumerated == [HWND_ENTRY_THIRD, HWND_ENTRY_DEFAULTS, HWND_ENTRY_OPERATING]
+    assert enumerated != list(POPUP_ENTRIES)
+
+
+def test_the_popup_entries_are_ordered_by_screen_top_not_by_enumeration_order() -> None:
+    """The first entry *on screen* is `Operating parameters` — the geometry rule."""
+    app = FakeUdopWindow(channel=1)
+    app.menu_open = True
+    raw = app.nodes()
+    overlay = next(node for node in raw if node["hwnd"] == HWND_POPUP)
+
+    entries = driver._entry_buttons(overlay, raw)
+
+    assert [entry["hwnd"] for entry in entries] == list(POPUP_ENTRIES)
+    # The plot behind the popup is not a button, and the sidebar's *titled* button is not
+    # inside the overlay: neither is ever an entry.
+    assert HWND_PLOT not in [entry["hwnd"] for entry in entries]
+    assert HWND_TITLED_DECOY not in [entry["hwnd"] for entry in entries]
+
+
+def test_the_overlay_is_identified_by_appearance_after_the_hover() -> None:
+    """The popup is the panel that was not visible before the hover — never a caption."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=2)
+
+    before = actuator._panel_map()
+    assert HWND_POPUP not in before and HWND_LEFT_PANEL in before
+
+    actuator._hover_centre(HWND_PARAMETERS)  # the popup opens on this real hover
+    overlay = actuator._poll_parameters_overlay(before)
+
+    assert overlay["hwnd"] == HWND_POPUP
+    assert overlay["text"] == ""  # caption-less, like every widget here
+
+
+def test_an_ambiguous_appearance_diff_falls_back_to_the_measured_overlay_rect() -> None:
+    """Two "new" panels cannot be told apart by appearance; the recorded rect decides."""
+    app = FakeUdopWindow(channel=1)
+    app.menu_open = True
+    actuator = fake_driver(app, channel=1)
+    popup = next(node for node in actuator._resolve()["raw"] if node["hwnd"] == HWND_POPUP)
+    before = {
+        popup["hwnd"]: popup,
+        0xDEAD: _node(0xDEAD, "TSp_Panel", "", left=800, top=800),
+    }
+
+    overlay = actuator._poll_parameters_overlay(before)  # the diff is ambiguous here
+
+    assert overlay["hwnd"] == HWND_POPUP
+    assert overlay["left"] == driver._OVERLAY_LEFT
+    assert overlay["h"] > driver._OVERLAY_MIN_H
+
+
+def test_the_menu_entry_is_the_first_by_screen_top_and_never_a_title() -> None:
+    """The live bug: caption-less entries, so geometry is the only identity there is."""
     app = FakeUdopWindow(channel=1)
     actuator = fake_driver(app, channel=3)
+
     actuator.ensure_channel()
-    assert ("click", "Operating parameters") in app.events
-    # The menu was opened by the real-cursor *hover* — the cursor moved onto the
-    # button's centre and the menu opened on that — and the entry was pressed after it.
+
+    # The entry pressed is the first one *on screen* — the one the window enumerates last.
+    assert app.entry_presses[:1] == [HWND_ENTRY_OPERATING]
+    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "posted") in app.events
+    # The menu was opened by the real-cursor *hover* — the cursor moved onto the button's
+    # centre and the menu opened on that — and the entry was pressed after it.
     moved = app.events.index(("cursor", "moved", (160, 12)))
-    entry = app.events.index(("click", "Operating parameters"))
+    entry = app.events.index(("click", "popup-entry", HWND_ENTRY_OPERATING, "posted"))
     assert moved < entry, app.events
     assert ("click", "Parameters", PRESS_HOLD_MS) not in app.events  # never pressed
+
+
+def test_no_caption_is_matched_on_the_parameters_path() -> None:
+    """The title lookup is gone and must not come back: nothing here reads a caption.
+
+    The live application's widgets carry none (``GetWindowText`` is empty for all of
+    them), so a title matched nothing at all — the popup opened and the driver still
+    failed. The identity is geometry (the overlay and the entries) and content (the
+    channel combo).
+    """
+    source = inspect.getsource(driver)
+    assert not hasattr(driver, "_entry_matching")
+    assert '["text"]' not in source  # no node's caption is ever read
+    assert 'get("text")' not in source
+    assert "startswith(PARAMETERS_ENTRY" not in source
+
+
+def test_the_operating_dialog_is_identified_by_its_content_not_by_a_caption() -> None:
+    """Only the operating dialog holds the channel combo; that is what identifies it."""
+    app = FakeUdopWindow(channel=1)
+    actuator = fake_driver(app, channel=3)
+
+    panel = actuator._open_parameters_dialog()
+
+    assert panel["hwnd"] == HWND_DIALOG
+    assert panel["text"] == ""  # caption-less: the identity is the content
+    combo, parent = actuator._channel_combo(panel)
+    assert combo["hwnd"] == HWND_DIALOG_COMBO and parent == HWND_DIALOG_VALUE_BUTTON
+
+    # The dialog that is *not* the operating one has the same structure — a combo nested
+    # in a value button — and it is told apart by what its combo lists, not by a caption.
+    app.dialog_open = False
+    app.decoy_open = True
+    decoy = next(
+        node
+        for node in actuator._resolve()["panels"]
+        if node["hwnd"] == HWND_DEFAULT_DIALOG
+    )
+    assert decoy["text"] == ""
+    with pytest.raises(driver.AcquisitionError, match="no channel combo"):
+        actuator._channel_combo(decoy)
+
+
+def test_a_wrong_dialog_is_closed_with_its_left_button_and_the_next_entry_is_tried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The `Default parameters` trap, answered the only safe way.
+
+    The first entry by screen top opens a dialog without the channel combo. It is closed
+    with its **left** button — its default button is the one that would commit whatever
+    the wrong dialog holds — and the next entry by screen top is pressed instead.
+    """
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1, wrong_entry_attempts=1)
+    actuator = fake_driver(app, channel=6)
+
+    assert actuator.ensure_channel() == 6
+
+    # Both entries were pressed, in screen order, and the wrong dialog came first.
+    assert app.entry_presses[:2] == [HWND_ENTRY_OPERATING, HWND_ENTRY_DEFAULTS]
+    opened = app.events.index(("dialog", "open", "not-operating"))
+    closed = app.events.index(("dialog", "close-wrong"))
+    assert opened < closed  # closed with the left button, before the next entry
+    assert ("dialog", "accept") in app.events  # only ever the operating dialog's
+    assert app.channel == 6
+    assert app.decoy_open is False
+    assert any("left button" in note for note in actuator.warnings)
+
+
+def test_a_popup_whose_entries_never_open_the_operating_dialog_fails_by_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bounded: every entry tried, every wrong dialog closed, then a named failure."""
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1, wrong_entry_attempts=99)
+    actuator = fake_driver(app, channel=2)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    reason = str(excinfo.value)
+    assert "Parameters" in reason and "Operating parameters" in reason
+    assert "channel combo" in reason
+    assert app.entry_presses == list(POPUP_ENTRIES)  # every entry, in screen order
+    assert app.events.count(("dialog", "close-wrong")) == len(POPUP_ENTRIES)
+    assert ("dialog", "accept") not in app.events  # a wrong dialog is never accepted
+    assert app.dialog_open is False and app.decoy_open is False
+    # The operator's cursor went back even though the attempt failed.
+    assert events_of(app, "cursor")[-1][1] == "restored"
+
+
+def test_a_popup_entry_that_ignores_the_posted_press_is_clicked_with_the_real_cursor(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A menu that needed a real hover may need a real click: posted first, then real."""
+    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1, posted_entry_press_ignored=True)
+    actuator = fake_driver(app, channel=2)
+
+    assert actuator.ensure_channel() == 2
+
+    posted = app.events.index(("click", "posted-ignored", HWND_ENTRY_OPERATING))
+    clicked = app.events.index(("cursor", "clicked", HWND_ENTRY_OPERATING))
+    taken = app.events.index(("click", "popup-entry", HWND_ENTRY_OPERATING, "real"))
+    assert posted < clicked < taken, app.events
+    assert app.channel == 2
+    assert any("real cursor" in note for note in actuator.warnings)
 
 
 def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> None:
@@ -1275,7 +1608,7 @@ def test_the_menubar_is_opened_by_a_cursor_hover_and_the_cursor_comes_back() -> 
     assert gesture[:4] == [
         ("cursor", "read"),
         ("cursor", "moved"),
-        ("click", "Operating parameters"),
+        ("click", "popup-entry"),
         ("cursor", "restored"),
     ], app.events
     assert app.events[:2] == [
@@ -1458,7 +1791,7 @@ def test_the_popup_is_polled_for_and_never_assumed(
     actuator = fake_driver(app, channel=2)
     assert actuator.ensure_channel() == 2
     assert app.channel == 2  # the selection was made and kept
-    assert ("click", "Operating parameters") in app.events
+    assert ("click", "popup-entry", HWND_ENTRY_OPERATING, "posted") in app.events
     # Both opens hovered the menu and then *waited* for the popup instead of assuming it
     # was up. The cursor stayed on the button through that wait and through the press —
     # a hover popup would be dismissed by putting the cursor back first — and both left
@@ -1482,7 +1815,9 @@ def test_a_hover_that_opens_nothing_fails_the_point_naming_the_menu(
         actuator.ensure_channel()
     reason = str(excinfo.value)
     assert "Parameters" in reason and "Operating parameters" in reason
-    assert ("click", "Operating parameters") not in app.events  # nothing was pressed on
+    assert not [
+        event for event in app.events if event[:2] == ("click", "popup-entry")
+    ]  # nothing was pressed on
     assert app.dialog_open is False
     # The cursor went back even though the attempt failed: this runs on the operator's
     # desktop, and a failed open must not leave their cursor sitting on the menubar.
