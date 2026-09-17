@@ -68,9 +68,19 @@ what the ported probe scripts could not be — they reached into the driver's pr
 | `acquire preflight [--seconds N]` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel with its **left** button | no store; presses the strip |
 | `acquire point <name> --seconds N` | one whole point: reset, channel, record `N` seconds, stop, name the file, store, read it back and decode it | stores one file |
 | `acquire sweep --seconds N --rungs 1,2` | the runner's own path for a multi-point sweep: `plan_sweep` → write → read back → record → store → decode → verify → one JSONL entry per point | stores files |
+| `acquire plan --definition FILE` | loads and validates a campaign definition and prints its points, with a note wherever the window outruns what the block will keep | no |
+| `acquire campaign --definition FILE [--resume]` | runs a definition point by point through the runner — one JSONL entry per point, a job manifest beside the log, and `--resume` skipping what the log already holds | stores files |
+| `acquire report --log FILE` | reads a finished job (log + manifest) and prints each point's status and the summary | no |
 | `acquire decode <file> --channel N` | a stored file's own operation words, off the instrument: the file is the authority | no |
 
-`point` and `sweep` take the application's own working directory from `--store-dir` or
+The campaign is the near-term goal written down: one channel, one 10-15 s window, a slot of
+parameter permutations. `examples/campaign-single-channel.json` is a working one — 12 s points
+over the resolution ladder k=1/2/4/8 at the 99 mm window, with the k=1 baseline repeated at the
+start, middle and end of the axis. Measured on the first machine: six points in 104 s, one
+parameters dialog for the whole run, and a re-run with `--resume` finishing in seconds with
+nothing to do.
+
+`point`, `sweep` and `campaign` take the application's own working directory from `--store-dir` or
 `UDV_STORE_DIR` (the cycle **asserts** the Store dialog against it, so a wrong value refuses the
 point rather than scattering files). `--json` prints a machine-readable report — notes then go
 to stderr, so stdout stays parseable — and the exit codes are 0 ok, 1 a refused point, 2 usage.

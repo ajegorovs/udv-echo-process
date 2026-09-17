@@ -42,7 +42,10 @@ present, so it separates *the code is wrong here* from *the machine is different
 Run each through the dispatcher (`./tools/live/dispatch.sh -m udv_echo_process.cli <command>`),
 which starts it in the session that owns the screen and returns when it is done. The commands
 come from the package, so a clone carries them; `--json` prints any report for a machine, and
-the exit codes are 0 ok / 1 a refused point / 2 usage or configuration.
+the exit codes are 0 ok / 1 a refused point / 2 usage or configuration. They are preceded by
+the one command that needs no application at all — `acquire plan --definition <file>` prints
+every point of a job with the window and gate count it would ask for, and states per point what
+a block cap means for the stored file, so a definition can be checked before UDOP is installed.
 
 | stage | command | pass criterion |
 |---|---|---|
@@ -51,9 +54,12 @@ the exit codes are 0 ok / 1 a refused point / 2 usage or configuration.
 | 3. cycle, nothing stored | `dispatch.sh -m udv_echo_process.cli acquire preflight` | record → `recording` → store view → `Do store` opens the **Store dialog**; the working directory it shows is the one configured; cancel returns a clean ready view. Nothing is written |
 | 4. one point | `UDV_STORE_DIR=<the app's dir> dispatch.sh -m udv_echo_process.cli acquire point bringup-01 --seconds 3` | a `.BDD` file appears in that directory, and reading it back yields the application's own words — gates, depth, sound speed, PRF, emissions/profile, burst — which should agree with the application's own display |
 | 5. two-point sweep | `UDV_STORE_DIR=<the app's dir> dispatch.sh -m udv_echo_process.cli acquire sweep --seconds 12 --rungs 1,2` | two outcomes, both `ok`, and `outputs/live/sweep.jsonl` carrying one entry per point: `requested`, `readback_gates`/`readback_resolution`, `file_path`, `file_size_bytes`, `decoded`, `failure: null` |
+| 6. the goal: a campaign | `dispatch.sh -m udv_echo_process.cli acquire campaign --definition examples/campaign-single-channel.json --log outputs/live/ladder.jsonl` | one stored point per permutation, `N/N point(s) ok` — 6/6 took 104 s on the first machine — a `ladder.manifest.json` beside the log, and `acquire report --log outputs/live/ladder.jsonl` reading the job back with the ladder's own gate counts (797/399/199/100). Re-run it with `--resume`: it finishes in seconds having skipped every point, which is the job tracking. The definition carries the store directory, so no `UDV_STORE_DIR` is needed here |
 
 Stage 3 is the operator's own sequence without the risk; stage 4 is the first thing that writes
-to the instrument; stage 5 is the runner's path end to end. A stage-1 failure is almost always
+to the instrument; stage 5 is the runner's path end to end; stage 6 is the project's near-term
+goal itself — one channel, one ~12 s window, a slot of parameter permutations, and a job that
+can be resumed rather than repeated. A stage-1 failure is almost always
 configuration (a dialog, the channel's mode); a stage-4 failure is almost always the store
 directory or the channel; a stage-5 failure carries its own reason per point in the log.
 
