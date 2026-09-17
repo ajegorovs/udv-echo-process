@@ -39,7 +39,11 @@ knowing about: the rung-0 805-gate point derives 99.94 mm and the app stored
 **100**, so word 2 is the app's own derivation, not always the floor of this
 module's arithmetic — which is why the depth check is a tolerance (1.5 mm
 absorbs it) rather than an equality. The covariate words (5, 8, 14, 19) are
-therefore read by default but only *enforced* when ``check_covariates=True``.
+therefore read by default; the three a definition asserts about the instrument
+(sound speed, PRF, burst — see :data:`ENFORCED_COVARIATES`) are *enforced* when
+``check_covariates=True``, and word 14 (emissions per profile, the primary variance
+axis) is compared into :attr:`VerificationResult.advisories` instead, because what
+has disagreed about it so far was the plan, not the file.
 
 Two rules follow from "a bad point must not read as fine":
 
@@ -64,8 +68,10 @@ from typing import BinaryIO
 from udv_echo_process.acquire.config import RUNG_DIVISOR
 
 __all__ = [
+    "ADVISORY_COVARIATES",
     "CHANNEL_1_OFFSET_BYTES",
     "CHANNEL_STRIDE_BYTES",
+    "ENFORCED_COVARIATES",
     "WORDS_PER_CHANNEL",
     "WORD_BURST_LENGTH",
     "WORD_DEPTH_MM",
@@ -108,13 +114,28 @@ _WORD_OF = {
     "sound_speed_ms": WORD_SOUND_SPEED_MS,
 }
 
-#: Optional (dialog-only) parameters, compared only when requested.
-_COVARIATES = (
+#: Optional (dialog-only) parameters — the words the *application* holds, which a
+#: request can neither write nor read back from the sidebar. Splitting them is the
+#: point of this table: see :data:`ENFORCED_COVARIATES` and
+#: :data:`ADVISORY_COVARIATES`.
+ENFORCED_COVARIATES = (
     "sound_speed_ms",
     "prf_us",
-    "emissions_per_profile",
     "burst_length",
 )
+
+#: Read, reported and returned, but **not** enforced: word 14
+#: (``emissions_per_profile``). Its value in a definition is not an instrument
+#: reading yet — it is derived from the period law to reproduce a stored profile
+#: count (``52`` in ``test_acquire_runner.py`` is exactly that derivation), which is
+#: why the committed point ``sw100-k1-161738.BDD`` stores 150 while the plan said 52.
+#: Enforcing it would therefore refuse a point whose core words are all correct, for
+#: a disagreement the *request* caused. It becomes enforceable when a campaign is
+#: compiled against a live instrument snapshot instead of against a definition (the
+#: review's Phase 6); until then its disagreement is an advisory on the record.
+ADVISORY_COVARIATES = ("emissions_per_profile",)
+
+_COVARIATES = ENFORCED_COVARIATES + ADVISORY_COVARIATES
 
 #: The app writes integer microseconds; a requested value may carry a fraction.
 PRF_TOLERANCE_US = 1.0
@@ -142,11 +163,25 @@ class WordFacts:
 
 @dataclass(frozen=True)
 class VerificationResult:
-    """``ok`` is ``not mismatches``; every mismatch names field, request, found."""
+    """``ok`` is ``not mismatches``; every mismatch names field, request, found.
+
+    ``advisories`` are comparisons that disagreed but are not enforced (see
+    :data:`ADVISORY_COVARIATES`): they never affect ``ok`` and they are the reason a
+    disagreement can be *recorded* without a good point being refused.
+
+    ``enforced_covariates`` and ``advisory_covariates`` name the covariate fields this
+    call actually **compared**, so a reader of the log can tell "it agreed" from "nobody
+    looked" — for both classes. A field the request left unset appears in neither: it was
+    never compared, and listing it would claim a verification that did not happen. When
+    ``check_covariates=False`` both are empty, since nothing was compared.
+    """
 
     ok: bool
     mismatches: tuple[str, ...] = ()
     facts: WordFacts = WordFacts()
+    advisories: tuple[str, ...] = ()
+    enforced_covariates: tuple[str, ...] = ()
+    advisory_covariates: tuple[str, ...] = ()
 
 
 def _word_offset(word_index: int, channel: int) -> int:
@@ -172,6 +207,15 @@ def read_words(path: Path, channel: int = 1) -> WordFacts:
     Never raises: a missing file, an unreadable one or one that ends before a
     word all yield ``None`` for the fields the file could not supply, so the
     caller can tell "word says X" from "there is no word".
+
+    ``channel`` addresses the operation table's own channel slot
+    (``548 + (channel - 1) * 1024``), which is what a manual-mode acquisition's
+    channel means. It is **not** a universal channel selector: on a multiplexed
+    recording the table's slots do not describe the recording's channels — measured,
+    ``data/4-sensor-velocity/200RPM.BDD`` reads slot 1 as gates 20 at c = 2740 while
+    its own streams are channels 6..9 at 55 gates and c = 1460. A slot read that way
+    returns a plausible table for a channel the file does not describe there, so a
+    multiplexed file must be identified by its decoded streams, not by this table.
     """
     depth: int | None = None
     prf: int | None = None
@@ -360,13 +404,20 @@ def verify_stored_point(
     naming the field, the request and the found value.
 
     With ``check_covariates=True`` the dialog-only words are enforced as well:
-    sound speed (word 19), PRF (word 5, within :data:`PRF_TOLERANCE_US`), burst
-    length (word 8) and emissions per profile (word 14). They are off by default
-    because a real committed point (``sw100-k1-161738.BDD``, 805 gates at rung 0,
-    all three core words as requested) stores word 14 = 150 while the runner
-    planned 52 — until that request is explained, enforcing word 14 would refuse
-    a point whose core words are all correct. The words are read and returned in
-    :class:`WordFacts` either way, so nothing is hidden.
+    sound speed (word 19), PRF (word 5, within :data:`PRF_TOLERANCE_US`) and burst
+    length (word 8) — the three a definition asserts about the *instrument*, and the
+    three the six-point live campaign matched exactly (request 212 µs / 1460 m/s / 4
+    against the stored words of every point). They are off by default for this
+    module's own callers, which verify a *file*, not a run.
+
+    Emissions per profile (word 14) is read, returned in :class:`WordFacts` and
+    compared into :attr:`VerificationResult.advisories` — never into ``ok``. The
+    disagreement that forced that decision is a real committed point
+    (``sw100-k1-161738.BDD``, 805 gates at rung 0, all three core words as
+    requested) storing word 14 = 150 against a plan that said 52; the 52 is the
+    period law inverted to reproduce that recording's profile count, not a reading
+    off the instrument, so the *request* is what is wrong. It becomes enforceable
+    once a campaign compiles against a live snapshot instead of a definition.
 
     ``requested_parameters`` is duck-typed: ``gates``, ``resolution_mm``,
     ``first_gate_mm`` and the optional covariates are read with ``getattr``, so a
@@ -454,19 +505,48 @@ def verify_stored_point(
         tolerance_mm=tolerance_mm,
     )
 
+    enforced: list[str] = []
     if check_covariates:
-        for field in _COVARIATES:
+        for field in ENFORCED_COVARIATES:
+            requested = _requested(requested_parameters, field)
+            if requested is None:
+                # Nothing was asked, so nothing was compared: the field must not appear
+                # in ``enforced_covariates``, whose whole purpose is to separate "it
+                # agreed" from "nobody looked" (see :class:`VerificationResult`).
+                # Requiring the fixed covariates before an acquisition starts is
+                # campaign-compilation work, not this check's job.
+                continue
+            enforced.append(field)
             tolerance = PRF_TOLERANCE_US if field == "prf_us" else 0.0
             _compare_number(
                 mismatches,
                 field=field,
-                requested=_requested(requested_parameters, field),
+                requested=requested,
                 found=getattr(facts, field),
                 tolerance=tolerance,
             )
+
+    # Read and reported even when not enforced: a disagreement the request caused is
+    # evidence, and it is only visible at all if something writes it down.
+    advisories: list[str] = []
+    advisory_compared: list[str] = []
+    for field in ADVISORY_COVARIATES:
+        requested = _requested(requested_parameters, field)
+        if requested is None:
+            continue
+        advisory_compared.append(field)
+        _compare_number(
+            advisories,
+            field=field,
+            requested=requested,
+            found=getattr(facts, field),
+        )
 
     return VerificationResult(
         ok=not mismatches,
         mismatches=tuple(mismatches),
         facts=facts,
+        advisories=tuple(advisories),
+        enforced_covariates=tuple(enforced),
+        advisory_covariates=tuple(advisory_compared),
     )

@@ -191,6 +191,56 @@ profiles in one fixture and 4193–4927 in another.
 
 ---
 
+## Active work — DOP3010 acquisition: stabilize before extending
+
+An independent repository-wide review of the acquisition subsystem was assessed
+against the checkout on 2026-09-18: **all eight findings verified, the direction
+accepted, the refactor roadmap accepted only in part**. Decision record, review
+text and evidence lines:
+[`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md).
+
+**The first slice is in review:**
+[PR #2](https://github.com/ajegorovs/udv-echo-process/pull/2),
+`fix/acquisition-correctness-baseline` — the correctness baseline below, plus the
+`_fsync_dir` fix, which the baseline needs for its own gate to mean anything.
+
+Binding outcomes:
+
+- **First slice — acquisition correctness baseline** (no Win32 reorganization):
+  the channel now reaches `verify_stored_point` (it verified channel 1 while the
+  decode read the run's channel) with a channel-2 regression case; verification is
+  fail-closed, so a point nobody checked is refused instead of passing on its size;
+  the settled covariates (words 19/5/8) are enforced while word 14 stays
+  recorded-but-unenforced; and `ProfileTiming` plus the retained window (profile
+  count, span, the effective interval, the at-cap/wrap distinction, retained
+  fraction) are derived from the stored profile
+  timestamps rather than from the request. The preflight fingerprint in the run
+  record is **not** in this slice — it needs an `Actuator` protocol extension and
+  belongs with campaign compilation.
+- **Also open, independent of the review:** `storage/npy.py::_fsync_dir` opens a
+  directory with `os.open`, which raises `PermissionError` on Windows for any
+  directory — `store_bundle` cannot complete on this platform, and ~35
+  `test_storage_npy.py` failures are that defect, not environment noise. A
+  Linux CI would mask it. **Fixed in PR #2** (`ec957e1`); still open on `master`
+  until that PR merges.
+- **Deferred behind a trigger:** splitting `acquire/driver.py` (149 kB of
+  live-proven gestures — split only when a change forces the file open, and
+  mechanically); the explicit UDOP state machine in code; replacing rather than
+  wrapping the `Actuator` surface.
+- **Carried into Phase 6 by the review of the first slice:** `block_cap_profiles` is a
+  declared setting rather than a verified instrument fact, so `block_wrapped` is an
+  inference under a declared cap — read or verify the cap from live state (and consider
+  the `block_at_declared_cap` / `block_wrapped` split) when campaigns compile against a
+  snapshot. Acquisition must **not** adopt the RPM path's `uniform_rtol`: acquisition QC
+  and estimator eligibility are different questions.
+- **Rules that constrain the work:** the decoded-metadata gate in
+  [UDV product backlog](#visualization-and-acquisition-support) (evidence,
+  destination field, propagation, storage implications — word 14/27 decoding is
+  already gated there), and the verbatim-port rule for `acquire/` and
+  `tools/live/` (move a proven gesture, never re-derive it).
+
+---
+
 ## UDV product backlog
 
 ### Pre-processing and filtering

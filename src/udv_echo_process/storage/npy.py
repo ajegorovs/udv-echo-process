@@ -273,7 +273,33 @@ def _write_bytes(path: Path, raw: bytes) -> None:
 
 
 def _fsync_dir(path: Path) -> None:
-    """Fsync a directory so a rename/marker is durable."""
+    """Fsync a directory so a rename/marker is durable, where that is possible.
+
+    Windows has no documented, portable way to do this: ``os.O_DIRECTORY`` is
+    POSIX-only, ``os.open`` refuses a directory there in every mode (CPython has
+    no way to pass ``FILE_FLAG_BACKUP_SEMANTICS``), and ``FlushFileBuffers`` is
+    documented for file and volume handles only. An undocumented route exists —
+    ``ctypes`` ``CreateFileW`` with ``FILE_FLAG_BACKUP_SEMANTICS |
+    GENERIC_WRITE``, which did return TRUE when measured on NTFS — but it is
+    unverified, filesystem-dependent (it fails on SMB shares: Go's ``File.Sync``
+    takes that route and reports ``ERROR_INVALID_DEVICE_REQUEST`` there), and it
+    would add a failure mode in exchange for durability nothing here can
+    confirm. So the gate is an explicit no-op on Windows.
+
+    What this costs on Windows is a **weaker durability guarantee**, and it should be
+    read as one rather than as a no-op with no consequences: a POSIX directory fsync is
+    exactly what makes the directory *entry* durable — the rename, the new name appearing
+    in its parent — and on Windows that ordering is left to NTFS. The file **contents**
+    are not what is at risk. Every file's bytes are fsynced before the rename or the
+    marker (:func:`_write_bytes` for the manifest and ``COMPLETE``, :func:`_save_array`
+    for each array), so what is left unfenced is the appearance of the name after a power
+    loss, not the bytes behind it. The documented alternative,
+    ``FILE_FLAG_WRITE_THROUGH``, is a property of the handle used for the write, which
+    ``os.rename`` cannot request. On POSIX nothing changes: a directory open or fsync
+    failure still propagates.
+    """
+    if os.name == "nt":
+        return
     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     descriptor = os.open(path, flags)
     try:

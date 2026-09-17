@@ -320,3 +320,142 @@ def test_point_records_and_names_are_the_resume_inputs(tmp_path: Path) -> None:
     assert (
         settings.next_name(1, "161738", point_names(entries)) == "sw100-k1-161738b"
     )
+
+
+# ------------- the window a record has to be read against (findings 4 and 5)
+#
+# `timing` was carried by every record ever written and populated by none of them
+# (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
+# and no field said how much observation a point had bought. The app's block is a ring:
+# a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
+# point, so without the retained window "12 s requested" and "8.4 s stored" are the same
+# record. These cases pin the model's side of it; the runner's side is asserted against
+# real files in `test_acquire_runner.py`.
+
+
+def _windowed(**overrides: object) -> SweepPointRecord:
+    """A record in the 12 s-requested / 257-profile shape the bring-up measured."""
+    fields: dict[str, object] = {
+        "requested_duration_s": 12.0,
+        "block_cap_profiles": 257,
+        "decoded": DecodedBlock(
+            channel=1,
+            n_gates=805,
+            n_profiles=257,
+            span_s=8.4,
+            achieved_period_s=8.4 / 256,
+            median_interval_s=0.0327,
+            interval_deviation=0.02,
+        ),
+    }
+    fields.update(overrides)
+    return _record(**fields)
+
+
+def test_a_wrapped_block_is_recorded_as_the_window_it_really_covers() -> None:
+    """12 s asked for, 8.4 s retained: 0.7 of the window, at the cap, not a 12 s point.
+
+    The wrap is a claim here, and both of its facts are present: 257 profiles is the cap,
+    and the request implies ~566 of them (12 s at the 0.0212 s law) — 2.2x what could be
+    kept, so profiles were certainly discarded.
+    """
+    record = _windowed()
+    assert record.requested_duration_s == 12.0
+    assert record.stored_profiles == 257
+    assert record.stored_span_s == 8.4
+    assert record.retained_fraction == pytest.approx(0.7)
+    assert record.block_at_cap is True
+    assert record.expected_profiles == pytest.approx(566, abs=1)
+    assert record.block_wrapped is True
+
+
+def test_reaching_the_cap_without_over_production_is_not_a_wrap() -> None:
+    """The boundary the earlier inference got wrong: exactly the cap, nothing beyond.
+
+    The request is set so the plan implies exactly the cap: the block may have produced
+    just that many profiles, or more and lost its earliest ones, and the stored file
+    cannot tell the two apart. So the answer is `None` — "not established" — while
+    `block_at_cap` still reports the fact.
+    """
+    record = _windowed(
+        requested_duration_s=257 * 0.0212,
+        decoded=DecodedBlock(channel=1, n_gates=805, n_profiles=257),
+    )
+    assert record.block_at_cap is True
+    assert record.expected_profiles == pytest.approx(257)
+    assert record.block_wrapped is None
+
+
+def test_a_block_below_its_cap_did_not_wrap() -> None:
+    """Below the cap nothing was discarded, whatever the request implied."""
+    record = _windowed(decoded=DecodedBlock(channel=1, n_gates=805, n_profiles=256))
+    assert record.block_at_cap is False
+    assert record.block_wrapped is False
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"block_cap_profiles": None},  # the cap is not in the record
+        {"decoded": DecodedBlock(channel=1, n_gates=805)},  # nothing says how many
+    ),
+)
+def test_an_unknown_cap_or_count_leaves_the_wrap_unknown(
+    overrides: dict[str, object],
+) -> None:
+    """Unknown is `None`, never `False`: absence cannot support "it did not wrap"."""
+    record = _windowed(**overrides)
+    assert record.block_at_cap is None
+    assert record.block_wrapped is None
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    (
+        {"requested_duration_s": None},
+        {"decoded": DecodedBlock(channel=1, n_gates=805, n_profiles=257)},
+    ),
+)
+def test_the_retained_fraction_needs_both_the_request_and_the_file(
+    overrides: dict[str, object],
+) -> None:
+    assert _windowed(**overrides).retained_fraction is None
+
+
+def test_a_decode_without_profile_timestamps_reports_no_window() -> None:
+    """The window fields are optional evidence: a block that lacks them has none."""
+    block = DecodedBlock(channel=1, n_gates=805)
+    assert block.n_profiles is None
+    assert block.span_s is None
+    assert block.achieved_period_s is None
+
+
+def test_a_single_profile_is_a_zero_length_window() -> None:
+    """One stored profile is a 0.0 s window, and offers no interval to measure."""
+    block = DecodedBlock(channel=1, n_gates=805, n_profiles=1, span_s=0.0)
+    assert block.span_s == 0.0
+    assert block.achieved_period_s is None
+
+
+def test_the_window_and_the_interval_are_two_views_of_one_measurement() -> None:
+    """``span == (profiles - 1) x period`` — the invariant the full-span interval buys.
+
+    It holds exactly, because the period *is* the span over the profile count minus one.
+    A median adjacent interval would leave the two fields describing slightly different
+    observations of the same recording, which is the reason `analysis/rpm.py` calibrates
+    on the full span and keeps the median only as a diagnostic.
+    """
+    decoded = _windowed().decoded
+    assert decoded is not None
+    assert decoded.n_profiles is not None
+    assert decoded.span_s is not None
+    assert decoded.achieved_period_s is not None
+    assert decoded.achieved_period_s == pytest.approx(
+        decoded.span_s / (decoded.n_profiles - 1)
+    )
+    assert decoded.span_s == pytest.approx(
+        (decoded.n_profiles - 1) * decoded.achieved_period_s
+    )
+    # The diagnostic is not the period: this record's median differs from its interval.
+    assert decoded.median_interval_s != decoded.achieved_period_s
+    assert decoded.interval_deviation is not None and decoded.interval_deviation > 0

@@ -1106,7 +1106,13 @@ def test_the_shipped_example_is_a_single_channel_slot_of_permutations() -> None:
 
 
 def test_the_log_record_gained_no_field_for_this_layer() -> None:
-    """The resume reads ``name`` and ``sweep_id``; the log's shape is not this layer's to change."""
+    """The resume reads ``name`` and ``sweep_id``; the log's shape is not this layer's to change.
+
+    The set is pinned exactly, so a field added *for a campaign* fails here. The four
+    fields below that a campaign never reads are the acquisition layer's own evidence:
+    what the word-level check enforced, what it reported without enforcing, the window
+    that was requested, and the block cap it ran under.
+    """
     assert set(SweepPointRecord.model_fields) == {
         "record_type",
         "sweep_id",
@@ -1115,6 +1121,8 @@ def test_the_log_record_gained_no_field_for_this_layer() -> None:
         "status",
         "requested",
         "timing",
+        "requested_duration_s",
+        "block_cap_profiles",
         "readback_gates",
         "readback_resolution",
         "file_path",
@@ -1122,6 +1130,9 @@ def test_the_log_record_gained_no_field_for_this_layer() -> None:
         "expected_size_bytes",
         "decoded",
         "failure",
+        "covariates_enforced",
+        "covariate_advisories",
+        "covariates_advisory",
     }
 
 

@@ -45,6 +45,7 @@ from __future__ import annotations
 import inspect
 import math
 import re
+import struct
 import types
 from collections.abc import Callable, Iterable, Mapping
 from enum import Enum
@@ -634,11 +635,11 @@ def patch_reader(
 # ------------------------------------------------------ the module-local verifier
 
 #: The runner's verification hook: ``acquire/verify.py``'s ``verify_stored_point``,
-#: imported defensively by the runner so a checkout without that module still runs.
+#: looked up on the runner module at call time so a case can script a verdict.
 VERIFY_HOOK = "verify_stored_point"
 
 #: "The caller did not script a verifier" — distinct from ``None``, which is the
-#: runner's own "that module is not importable" state.
+#: runner's own "no word-level check available" state (a refusal, not a pass).
 UNSCRIPTED = object()
 
 
@@ -646,14 +647,26 @@ class FakeVerification:
     """The shape of a ``VerificationResult``, built without importing ``verify``.
 
     The interface is pinned by the runner's contract (``ok``, ``mismatches``,
-    ``facts``); this object answers to it so the tests do not depend on the sibling
-    module being in the checkout.
+    ``facts``, ``advisories``, ``enforced_covariates``, ``advisory_covariates``);
+    this object answers to it so the tests do not depend on the sibling module being in
+    the checkout.
     """
 
-    def __init__(self, ok: bool, mismatches: Iterable[str] = ()) -> None:
+    def __init__(
+        self,
+        ok: bool,
+        mismatches: Iterable[str] = (),
+        *,
+        advisories: Iterable[str] = (),
+        enforced_covariates: Iterable[str] = (),
+        advisory_covariates: Iterable[str] = (),
+    ) -> None:
         self.ok = bool(ok)
         self.mismatches = tuple(str(mismatch) for mismatch in mismatches)
         self.facts = None
+        self.advisories = tuple(str(advisory) for advisory in advisories)
+        self.enforced_covariates = tuple(str(field) for field in enforced_covariates)
+        self.advisory_covariates = tuple(str(field) for field in advisory_covariates)
 
 
 class ScriptedVerifier:
@@ -664,16 +677,33 @@ class ScriptedVerifier:
         *,
         ok: bool = True,
         mismatches: Iterable[str] = (),
+        advisories: Iterable[str] = (),
+        enforced_covariates: Iterable[str] = (),
+        advisory_covariates: Iterable[str] = (),
         error: BaseException | None = None,
     ) -> None:
-        self.result = FakeVerification(ok, mismatches)
+        self.result = FakeVerification(
+            ok,
+            mismatches,
+            advisories=advisories,
+            enforced_covariates=enforced_covariates,
+            advisory_covariates=advisory_covariates,
+        )
         self.error = error
         self.calls: list[tuple[Path, object]] = []
+        #: The channel each call named, in order — ``None`` when the runner named none.
+        self.channels: list[int | None] = []
 
     def __call__(
-        self, path: object, requested: object, *args: object, **kwargs: object
+        self,
+        path: object,
+        requested: object,
+        channel: int | None = None,
+        *args: object,
+        **kwargs: object,
     ) -> FakeVerification:
         self.calls.append((Path(str(path)), requested))
+        self.channels.append(channel)
         if self.error is not None:
             raise self.error
         return self.result
@@ -685,11 +715,11 @@ class ScriptedVerifier:
 
 
 def patch_verifier(monkeypatch: pytest.MonkeyPatch, verifier: object) -> object:
-    """Point the runner's verification hook at ``verifier``; ``None`` = unimportable.
+    """Point the runner's verification hook at ``verifier``; ``None`` = no verdict.
 
-    ``None`` is not a cop-out: it is exactly the state the runner is in when
-    ``acquire/verify.py`` is missing from the checkout, so the unavailable case is
-    tested the way it happens rather than through a flag.
+    ``None`` is the state the runner is in when the word-level check is missing from
+    the install (its import is guarded, so that state is reachable and testable): no
+    verdict exists, and the runner's answer to that is a refusal, not a pass.
     """
     assert hasattr(runner_module, VERIFY_HOOK), (
         f"{runner_module.__name__} exposes no {VERIFY_HOOK!r} hook, so the verification "
@@ -729,7 +759,9 @@ def make_runner(
     block: DecodedBlock | None = None,
     script_reader: bool = True,
     verifier: object = UNSCRIPTED,
+    script_verifier: bool = True,
     fake_class: type[FakeActuator] = FakeActuator,
+    channel: int | None = None,
     **fake_kwargs: object,
 ) -> tuple[FakeActuator, object, Path, ScriptedReader | None]:
     """A runner over a fresh fake, a private capture directory and a private log.
@@ -740,7 +772,10 @@ def make_runner(
     the size guard and nothing else; pass a :class:`ScriptedVerifier` to script a
     verdict, or ``None`` for the state the runner is in without ``acquire/verify.py``.
     ``fake_class`` is the fake's own type, so a case can subclass it to make the
-    *application* misbehave without touching the runner.
+    *application* misbehave without touching the runner. ``channel`` binds the runner
+    to a measurement channel (``None`` takes the setting's default), and
+    ``script_verifier=False`` leaves ``acquire/verify.py``'s own
+    ``verify_stored_point`` in place for a case that must exercise it for real.
     """
     base = Path(base)
     directory = base / "capture"
@@ -754,13 +789,14 @@ def make_runner(
         directory,
         signature=signature,
         log_path=log_path,
+        channel=channel,
     )
     reader = (
         patch_reader(monkeypatch, block, fake=fake)
         if (monkeypatch and script_reader)
         else None
     )
-    if monkeypatch is not None:
+    if monkeypatch is not None and script_verifier:
         # After the reader patch on purpose: the reader scan walks the module's
         # callables, and the verification hook is not one of them.
         patch_verifier(
@@ -777,6 +813,16 @@ def stored_names(directory: Path) -> list[str]:
 def is_committed_point_sized(fixture: Path) -> bool:
     """The committed point is a ~100 kB recording, not a stub or a placeholder."""
     return 50_000 <= fixture.stat().st_size <= 400_000
+
+
+def committed_point_fixture() -> Path:
+    """The committed ``sw100`` point: rung index 0, 805 gates, c = 1460, PRF 169."""
+    return (
+        Path(__file__).resolve().parents[1]
+        / "data"
+        / "dop3010-velocity"
+        / "sw100-k1-161738.BDD"
+    )
 
 
 def status_of(outcome: PointOutcome) -> PointStatus:
@@ -1121,12 +1167,7 @@ def test_a_real_committed_point_decodes_through_the_real_reader(
     within a few per cent of the size the signature expects for it, so the guard
     has to pass it.
     """
-    fixture = (
-        Path(__file__).resolve().parents[1]
-        / "data"
-        / "dop3010-velocity"
-        / "sw100-k1-161738.BDD"
-    )
+    fixture = committed_point_fixture()
     if not fixture.is_file():
         pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
     pytest.importorskip(
@@ -1368,32 +1409,311 @@ def test_verification_that_raises_refuses_the_point(
     assert records[0].status is not PointStatus.OK
 
 
-def test_verification_that_cannot_be_imported_is_reported_not_silently_passed(
+def test_a_point_with_no_verdict_is_refused_not_passed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``acquire/verify.py`` absent: the size guard still decides, but not silently.
+    """No word-level check available: the point is INVALID, not ``OK`` on a size.
 
-    ``verifier=None`` is the state the runner is in when that module is not in the
-    checkout, so the point keeps the verdict the size signature gave it — and its
-    reason, and the log record's failure, both say that nothing read the file's words.
+    ``verifier=None`` is the shape of the broken-install guard in the runner —
+    ``verify_stored_point`` is ``None``, so nothing can read the stored file's words.
+    The earlier behaviour kept the verdict the size signature gave the point and said
+    so in the reason; that still wrote an `OK` point whose only evidence was a *gross
+    contamination* check, which cannot say whether the file is this point's data. The
+    refusal is the point's own — the file is what it is — so the sweep carries on.
     """
     _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=None)
 
     outcome = engine.run_point(point_for(1), DURATION_S)
 
-    assert outcome.ok is True, outcome.reason  # the existing size behaviour, unchanged
-    assert status_of(outcome) is PointStatus.OK
+    assert outcome.ok is False
+    assert status_of(outcome) is PointStatus.INVALID
+    assert outcome.aborted is False, (
+        "an unread file is this point's failure, not a state the application is in"
+    )
     reason = outcome.reason or ""
-    assert "verif" in reason.lower(), reason
-    assert "not importable" in reason, reason
+    assert "not available in this install" in reason, reason
 
     records = point_records(read_entries(log_path))
     assert len(records) == 1
-    assert records[0].status is PointStatus.OK
-    assert records[0].decoded is not None
-    # The note reaches the log too: an OK point whose words nobody read says so.
-    logged = records[0].failure or ""
-    assert "verif" in logged.lower(), records[0].failure
+    assert records[0].status is PointStatus.INVALID
+
+
+def test_the_record_carries_what_was_enforced_and_what_was_only_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An advisory reaches the log without invalidating the point.
+
+    The runner keeps the verifier's compared-field lists and its advisories on the
+    record: "it agreed" and "nobody looked" are otherwise indistinguishable a week
+    later, and a disagreement that is deliberately not enforced is evidence that would
+    exist nowhere else. Both lists are *compared* fields, so a reader never has to
+    guess whether a missing name means agreement or silence.
+    """
+    advisory = "emissions_per_profile: requested 52, found 150 in word 14"
+    verifier = ScriptedVerifier(
+        advisories=(advisory,),
+        enforced_covariates=("sound_speed_ms", "prf_us", "burst_length"),
+        advisory_covariates=("emissions_per_profile",),
+    )
+    _fake, engine, log_path, _ = make_runner(tmp_path, monkeypatch, verifier=verifier)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.covariate_advisories == (advisory,)
+    assert record.covariates_advisory == ("emissions_per_profile",)
+    assert record.covariates_enforced == (
+        "sound_speed_ms",
+        "prf_us",
+        "burst_length",
+    )
+
+
+def test_the_committed_point_passes_with_its_emissions_disagreement_recorded(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real fixture through the real verifier: enforced words agree, word 14 does not.
+
+    ``sw100-k1-161738.BDD`` is the point this runner plans — rung 0, 805 gates,
+    c = 1460 m/s, PRF 169 µs, burst 4 — so the three enforced covariates agree, and the
+    size guard passes it unaided (139,193 B against ~139,617 expected). What does *not*
+    agree is word 14: the plan says 52 emissions, the file says 150. That is the
+    disagreement that made the covariate check optional in the first place, and the
+    point is still a good point — so it passes, with the disagreement on the record
+    instead of nowhere.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.covariates_enforced == (
+        "sound_speed_ms",
+        "prf_us",
+        "burst_length",
+    )
+    assert record.covariate_advisories == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+    assert record.covariates_advisory == ("emissions_per_profile",)
+
+
+# ------------------------------- 10b. the channel both reads of a file must name
+#
+# The decode and the verification are two reads of one stored file, and they disagreed
+# about which channel it was: ``_decode`` filtered the stream by the run's channel while
+# ``verify_stored_point`` defaulted to channel 1. On a channel-2 run every point then
+# came back INVALID with three mismatches that belonged to channel 1's block — *gates:
+# requested 10, found 20* for a file whose channel 2 was exactly right — which costs a
+# live slot per point and, on a sweep, the whole run. The channel offsets were always
+# supported (``verify.read_words(path, 2)`` is tested in ``test_acquire_verify.py``) and
+# the decode always named the channel; only the wiring was missing. These two cases pin
+# the wiring: one on the call, one end to end through the real verifier and a real file.
+
+#: The canonical reader's measurement-block base offset and the op-table geometry. The
+#: reader's own layout, restated here so the fixture below is built independently of it.
+_MEAS_BASE_OFFSET = 31268
+_OPER_BASE_OFFSET = 548
+_OPER_CHANNEL_STRIDE = 1024
+_RATE_WORD = 29
+
+
+def build_two_channel_point(
+    path: Path,
+    *,
+    words: Mapping[int, int],
+    other_channel: Mapping[int, int],
+    profiles: int = 5,
+    period_raw: int = 299,
+) -> Path:
+    """Write a two-channel ``.BDD`` whose channel 2 carries ``profiles`` profiles.
+
+    The committed fixtures cannot serve here. ``sw100-k1-161738.BDD`` has data for
+    channel 1 only (channel 2's op block is a leftover table with no profiles behind
+    it), and the multiplexed recordings' own channels are 6..9 — which the op table's
+    ``548 + (channel - 1) * 1024`` stride does not address at all. So this builds the
+    smallest file the canonical reader accepts: the magic, one op block per channel,
+    and one measurement block per profile (echo payload, depth pseudo-profile, footer
+    carrying the profile's channel byte and a ``ms/10`` timestamp).
+
+    ``words`` is channel 2's op words (word index → value) and ``other_channel`` is
+    channel 1's. The caller passes them *different* on purpose, so a reader that
+    answers with channel 1's words disagrees on every core field.
+    """
+    raw = bytearray(_MEAS_BASE_OFFSET)
+    raw[0:8] = b"BINUDOPV"
+    for channel, channel_words in ((1, other_channel), (2, words)):
+        base = _OPER_BASE_OFFSET + (channel - 1) * _OPER_CHANNEL_STRIDE
+        for word, value in channel_words.items():
+            struct.pack_into("<i", raw, base + 4 * word, value)
+        # The packed acquisition rate: byte 0 is the index, the byte after it is the
+        # rate in MHz — (0, 6, 12, 40) is what every available file packs (6 MHz).
+        raw[base + 4 * _RATE_WORD] = 0
+        raw[base + 4 * _RATE_WORD + 1] = 6
+        raw[base + 4 * _RATE_WORD + 2] = 12
+        raw[base + 4 * _RATE_WORD + 3] = 40
+
+    def profile(profile_type: int, payload: bytes) -> bytes:
+        return struct.pack("<H", len(payload)) + bytes([profile_type]) + payload
+
+    timestamp = 1000
+    for channel, channel_words, count in ((1, other_channel, 1), (2, words, profiles)):
+        gates = channel_words[13]
+        # The depth pseudo-profile, in 0.1 mm, from the same law the reader inverts:
+        # depth(n) = c * ((gate1 + (res + 1) * (n - 1)) / (2 * rate) - hwDelay / 2e6).
+        rate_khz = 6.0 * 1e3
+        sound, gate1, resolution = (
+            channel_words[19],
+            channel_words[9],
+            channel_words[10],
+        )
+        gate_numbers = range(1, gates + 1)
+        depths = [
+            sound
+            * (
+                (gate1 + (resolution + 1) * (number - 1)) / (2.0 * rate_khz)
+                - channel_words.get(46, 0) / 2e6
+            )
+            for number in gate_numbers
+        ]
+        depth_profile = struct.pack(
+            f"<{gates}h", *[round(depth * 10) for depth in depths]
+        )
+        echo = bytes(index % 200 for index in range(gates))
+        for _ in range(count):
+            body = profile(1, echo) + profile(25, depth_profile) + b"\x00\x00"
+            footer = bytearray(16)
+            struct.pack_into("<I", footer, 4, timestamp)
+            footer[13] = channel
+            block = body + bytes(footer)
+            raw += struct.pack("<H", 2 + len(block)) + block
+            timestamp += period_raw
+    path.write_bytes(bytes(raw))
+    return path
+
+
+#: Channel 2's op words for the point these cases run: 10 gates at rung 9 of a
+#: 1460 m/s ladder (1.2167 mm), PRF 500 µs, burst 2, 8 emissions — the shape of the
+#: committed echo series' second channel.
+CHANNEL_TWO_WORDS = {
+    0: 2000,
+    2: 14,
+    5: 500,
+    8: 2,
+    9: 16,
+    10: 9,
+    13: 10,
+    14: 8,
+    19: 1460,
+}
+#: Channel 1's op words in the same file: a different window entirely, so a reader
+#: answering with this block cannot agree with the point below by accident.
+CHANNEL_ONE_WORDS = {0: 1000, 2: 69, 5: 250, 8: 4, 9: 2, 10: 5, 13: 20, 14: 8, 19: 2740}
+CHANNEL_TWO_GATES = 10
+
+
+def channel_two_point() -> SweepPoint:
+    """The planned point whose window *is* that channel-2 block, word for word."""
+    return SweepPoint(
+        key=1,
+        duration_s=DURATION_S,
+        parameters=ParameterSet(
+            sound_speed_ms=1460.0,
+            first_gate_mm=2.0,
+            resolution_mm=1460.0 * 10 / 12000.0,
+            gates=CHANNEL_TWO_GATES,
+            prf_us=500.0,
+            emissions_per_profile=8,
+            burst_length=2,
+        ),
+    )
+
+
+def test_the_verifier_is_asked_about_the_run_s_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The verify call carries the channel the decode used, from the one knob."""
+    verifier = ScriptedVerifier()
+    _fake, engine, _log_path, _ = make_runner(
+        tmp_path, monkeypatch, verifier=verifier, channel=2
+    )
+
+    engine.run_point(point_for(1), DURATION_S)
+
+    assert len(verifier.calls) == 1, verifier.calls
+    assert verifier.channels == [2], (
+        "the verifier was asked about another channel's words: the run measures on "
+        "channel 2 and the decode read channel 2"
+    )
+
+
+def test_a_point_on_channel_two_is_verified_against_channel_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """End to end: the real verifier, a real two-channel file, the run's channel.
+
+    The size guard is deliberately widened for this fixture — a synthetic
+    channel-addressing file is mostly header, and the case is about *which* channel's
+    words are read, not about the size. The guard has its own cases in section 5.
+    """
+    fixture = build_two_channel_point(
+        tmp_path / "two_channel.BDD",
+        words=CHANNEL_TWO_WORDS,
+        other_channel=CHANNEL_ONE_WORDS,
+    )
+    signature = SizeSignature(factor=50.0)
+    fake, engine, log_path, _ = make_runner(
+        tmp_path,
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=signature,
+        channel=2,
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(channel_two_point(), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    assert isinstance(outcome.decoded, DecodedBlock)
+    assert outcome.decoded.channel == 2
+    assert outcome.decoded.n_gates == CHANNEL_TWO_GATES
+    assert [record.status for record in point_records(read_entries(log_path))] == [
+        PointStatus.OK
+    ]
+
+    # The same file on channel 1 is refused, so the case above does not pass for a
+    # reason that has nothing to do with the channel: channel 1's block is 20 gates.
+    wrong_fake, wrong_engine, _wrong_log, _ = make_runner(
+        tmp_path / "wrong-channel",
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=signature,
+        channel=1,
+    )
+    wrong_fake.payload = fixture
+
+    wrong = wrong_engine.run_point(channel_two_point(), DURATION_S)
+
+    assert wrong.ok is False
+    assert status_of(wrong) is PointStatus.INVALID
+    assert wrong.reason is not None and "gates" in wrong.reason
 
 
 def test_the_channel_dialog_opens_once_for_a_multi_point_run(
@@ -1430,3 +1750,153 @@ def test_a_bare_run_point_still_verifies_the_channel(
     assert outcome.ok is True, outcome.reason
     assert fake.channel_checks == 1
     assert fake.verify_channel_flags == [False]
+
+
+# ------------------- 10c. the window the stored file actually covers
+#
+# `timing` was carried by every record ever written and populated by none of them
+# (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
+# and no field said how much observation a point had bought. The app's block is a ring,
+# so a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
+# point — "the plan says 12 s" and "the file covers 8.4 s" were the same row of the log.
+# Only the stored file's own profile timestamps can tell them apart, and these two cases
+# pin that they reach the record: one on a fixture whose window is known exactly, one on
+# the committed point, where the measurement and the plan's law disagree and both numbers
+# survive. The model's side is in `test_acquire_log.py` (section "the window a record has
+# to be read against").
+
+
+def test_the_record_carries_the_window_the_stored_file_covers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """0.02 s of profiles behind a 1.0 s request is recorded as 0.02 s, not as 1.0 s.
+
+    The fixture stores five profiles 5 ms apart, so the window is known exactly: 0.02 s
+    from first to last, and a measured period that *equals* the plan's law for this point
+    (8 emissions at a 500 µs PRF plus the ~1 ms transfer term) — that makes this a case
+    about which quantity reaches the record, not about the rig being early or late. The
+    size guard is widened on purpose (a synthetic file is mostly header; the guard has
+    its own cases in section 5), and the run's channel 2 is what those profiles carry.
+    """
+    fixture = build_two_channel_point(
+        tmp_path / "window.BDD",
+        words=CHANNEL_TWO_WORDS,
+        other_channel=CHANNEL_ONE_WORDS,
+        period_raw=50,  # 5 ms in the reader's 0.1 ms timestamp units
+    )
+    fake, engine, log_path, _ = make_runner(
+        tmp_path,
+        monkeypatch,
+        script_reader=False,
+        script_verifier=False,
+        signature=SizeSignature(factor=50.0),
+        channel=2,
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(channel_two_point(), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.requested_duration_s == DURATION_S
+    assert record.stored_profiles == 5
+    assert record.stored_span_s == pytest.approx(0.02, abs=1e-9)
+    assert record.retained_fraction == pytest.approx(0.02, abs=1e-9)
+    # Five profiles against the default cap of 257: the block did not wrap, and the
+    # record says so from numbers that are both in it.
+    assert record.block_at_cap is False  # five profiles against a cap of 257
+    assert record.block_wrapped is False
+    # The measurement, and the plan's law beside it: two quantities, kept apart on
+    # purpose, and here they agree because the fixture was built that way.
+    assert record.timing.achieved_s == pytest.approx(0.005, abs=1e-9)
+    assert record.timing.target_s == pytest.approx(
+        channel_two_point().parameters.emissions_per_profile * 500e-6
+        + PERIOD_OVERHEAD_S
+    )
+    assert record.timing.within_tolerance() is True
+    # A uniform fixture, so the diagnostic and the interval coincide and the deviation
+    # is zero; the committed point below is where they part.
+    assert record.decoded is not None
+    assert record.decoded.median_interval_s == pytest.approx(0.005, abs=1e-9)
+    assert record.decoded.interval_deviation == pytest.approx(0.0, abs=1e-9)
+    assert record.decoded.span_s == pytest.approx(
+        (record.decoded.n_profiles - 1) * record.decoded.achieved_period_s
+    )
+
+
+def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The real point through the real reader: 129 profiles over 3.84 s of its own time.
+
+    The committed recording is a longer observation than this 1.0 s point asks for (the
+    harness stores the file it has), so the retained fraction lands above 1 here — on the
+    rig it is below 1, which is the case the field exists for. What the case pins is that
+    the record's window comes from the file and not from the request.
+
+    The period is the **full-span effective interval** here, 3.8409 / 128 = 0.03001 s,
+    while the median adjacent interval is 0.0299 s — they are not the same number on a
+    quantized timebase, which is why `analysis/rpm.py` calibrates on the former. Both are
+    on the record now, the interval as the measurement and the median as the diagnostic.
+
+    It also pins the disagreement: the plan's period law is fed the *plan's* emissions
+    (52), the file stores 150, and the measured interval is ~3x the law. The record keeps
+    both numbers; the same record already carries the 52-vs-150 advisory. Reconciling the
+    law with the instrument's own word is campaign-compilation work (the verdict's Phase
+    6), not something a baseline fix should paper over — so this case asserts the
+    disagreement rather than hiding it.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.stored_profiles == 129
+    assert record.stored_span_s == pytest.approx(3.8409, abs=1e-3)
+    # The measurement is the full-span interval, exactly span / (count - 1)...
+    assert record.decoded is not None
+    assert record.timing.achieved_s == pytest.approx(
+        record.stored_span_s / (record.stored_profiles - 1), abs=1e-9
+    )
+    assert record.timing.achieved_s == pytest.approx(0.03001, abs=1e-4)
+    # ...while the median adjacent interval, kept as a diagnostic, is a different number
+    # (0.0299 here): the quantized timebase is why the repository calibrates on the span.
+    assert record.decoded.median_interval_s == pytest.approx(0.0299, abs=1e-3)
+    assert record.decoded.median_interval_s != record.timing.achieved_s
+    assert record.decoded.interval_deviation is not None
+    # Measured: the axis's largest interval is 9.36% away from its own median. That is
+    # above the 0.05 `EchoRpmSettings.uniform_rtol` default that `analysis/rpm.py`
+    # refuses a structurally sampled axis on — noted, not adjudicated here: whether an
+    # acquisition point should be held to the same regularity belongs with the
+    # acceptance policy, and the deviation is on the record for it to use.
+    assert record.decoded.interval_deviation == pytest.approx(0.0936, abs=1e-3)
+    assert record.decoded.interval_deviation > 0.05
+    assert record.decoded.span_s == pytest.approx(
+        (record.decoded.n_profiles - 1) * record.decoded.achieved_period_s
+    )
+    assert record.retained_fraction == pytest.approx(
+        record.stored_span_s / DURATION_S, abs=1e-6
+    )
+    # Word 14 is now in the decode as well as in the advisory: the variance axis the
+    # canonical reader has no field for is on the record.
+    assert record.decoded.emissions_per_profile == 150
+    assert record.timing.within_tolerance() is False
+    assert record.timing.target_s == pytest.approx(
+        point_for(1).parameters.emissions_per_profile
+        * point_for(1).parameters.prf_us
+        * 1e-6
+        + PERIOD_OVERHEAD_S
+    )

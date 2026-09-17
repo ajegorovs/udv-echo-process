@@ -760,3 +760,22 @@ def test_interrupted_write_cleans_staging_and_leaves_no_destination(
     assert calls["count"] == 2
     assert not destination.exists()
     assert list(tmp_path.glob(f".{destination.name}.staging-*")) == []
+
+
+# ── platform gate: directory flush ─────────────────────────────────────
+
+
+def test_fsync_dir_survives_the_platform_directory_flush_gap(tmp_path, monkeypatch):
+    """Windows cannot flush a directory, so the gate must not mask POSIX failures."""
+    from udv_echo_process.storage import npy
+
+    assert npy._fsync_dir(tmp_path) is None
+    if os.name == "nt":
+        return
+
+    def explode(descriptor):
+        raise OSError("simulated directory fsync failure")
+
+    monkeypatch.setattr(npy.os, "fsync", explode)
+    with pytest.raises(OSError, match="simulated directory fsync failure"):
+        npy._fsync_dir(tmp_path)

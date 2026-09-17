@@ -80,7 +80,7 @@ class PointStatus(str, Enum):
 
 
 class DecodedBlock(ValueModel):
-    """The stored file's own parameter block for one channel.
+    """The stored file's own parameter block for one channel — and its observation window.
 
     Words, as decoded from the file, for the channel that measured:
 
@@ -90,6 +90,26 @@ class DecodedBlock(ValueModel):
       that the window arithmetic landed (docs/15 §2);
     - word 14 (``emissions_per_profile``) is the primary variance axis and word
       13 (``n_gates``) is the count actually used.
+
+    The profile timestamps give the rest, and they are the only evidence for it:
+    ``n_profiles``, ``span_s`` (last minus first) and ``achieved_period_s`` — the
+    **full-span effective interval**, ``span_s / (n_profiles - 1)``. Those three are what
+    the *window* actually was, as opposed to the window that was requested — the app's
+    block is a ring, so a request for a longer window than the cap covers stores only the
+    last ``cap × period`` seconds and still decodes as a valid point (docs/16 §15b).
+
+    ``achieved_period_s`` is the full-span interval and not the median adjacent interval,
+    following the convention :mod:`udv_echo_process.analysis.rpm` established for this
+    timebase: the DOP timestamps are quantized, so the median adjacent interval is the
+    dominant timestamp quantum rather than the sampling period, and calibrating on it
+    shifted every recovered RPM by a measured 0.562% on the committed fixtures. The
+    median is kept beside it as the diagnostic (``median_interval_s``) together with the
+    regularity measure that module guards on (``interval_deviation``, the maximum
+    relative deviation from the median). ``time_s`` is the quantised 0.1 ms footer
+    timestamp, so all three are measurements at that resolution, not derivations.
+
+    Using the full-span interval makes the window relation exact rather than
+    approximate: ``span_s == (n_profiles - 1) × achieved_period_s``.
 
     ``channel`` and ``n_gates`` are required: a block that does not say which
     channel it came from is not evidence.
@@ -107,6 +127,20 @@ class DecodedBlock(ValueModel):
     emissions_per_profile: int | None = Field(default=None, ge=1)
     source_freq_khz: float | None = Field(default=None, gt=0)
     size_bytes: int | None = Field(default=None, ge=0)
+    #: Profiles the block actually holds — never "how many were asked for".
+    n_profiles: int | None = Field(default=None, ge=1)
+    #: Last minus first profile timestamp, in seconds. ``0`` for a single profile.
+    span_s: float | None = Field(default=None, ge=0)
+    #: **Full-span effective interval**, ``span_s / (n_profiles - 1)`` — the profile
+    #: period this recording supports, and the convention ``analysis/rpm.py`` calibrates
+    #: on (never the median adjacent interval; see the class docstring).
+    achieved_period_s: float | None = Field(default=None, gt=0)
+    #: The median adjacent interval, kept as a diagnostic: on a quantized timebase it is
+    #: the dominant timestamp quantum rather than the period.
+    median_interval_s: float | None = Field(default=None, gt=0)
+    #: ``max(|interval - median_interval|) / median_interval`` — the regularity measure
+    #: ``analysis/rpm.py`` refuses a structurally sampled axis on.
+    interval_deviation: float | None = Field(default=None, ge=0)
 
     @property
     def prf_hz(self) -> float | None:
@@ -219,6 +253,11 @@ class SweepPointRecord(ValueModel):
     status: PointStatus
     requested: ParameterSet
     timing: ProfileTiming = Field(default_factory=ProfileTiming)
+    #: The window that was *asked* for, in seconds. Carried because the retained
+    #: fraction is meaningless without it, and neither the request nor the file has it.
+    requested_duration_s: float | None = Field(default=None, gt=0)
+    #: The block cap in force at this point, so a wrapped block is legible from the log.
+    block_cap_profiles: int | None = Field(default=None, ge=1)
     readback_gates: int | None = Field(default=None, ge=0)
     readback_resolution: str | None = None
     file_path: str | None = None
@@ -226,6 +265,104 @@ class SweepPointRecord(ValueModel):
     expected_size_bytes: int | None = Field(default=None, ge=0)
     decoded: DecodedBlock | None = None
     failure: str | None = None
+    #: Covariate fields the word-level check *compared* for this point. Empty means
+    #: nobody looked — the difference between "it agreed" and "it was never compared".
+    covariates_enforced: tuple[str, ...] = ()
+    #: Comparisons that disagreed and were deliberately **not** enforced (word 14,
+    #: emissions per profile: the declaration is derived, not read off the instrument).
+    #: An advisory never invalidates a point; it is here so the disagreement survives
+    #: in the record instead of being invisible.
+    covariate_advisories: tuple[str, ...] = ()
+    #: The covariate fields the check compared *without* enforcing. Read beside
+    #: ``covariate_advisories``: a declared field missing from the advisories agreed,
+    #: while a field missing from *both* lists was never declared and never compared.
+    covariates_advisory: tuple[str, ...] = ()
+
+    @property
+    def stored_profiles(self) -> int | None:
+        """Profiles the stored block holds; ``None`` when no file was decoded."""
+        return None if self.decoded is None else self.decoded.n_profiles
+
+    @property
+    def stored_span_s(self) -> float | None:
+        """Seconds the stored profiles actually cover; ``None`` when unknown."""
+        return None if self.decoded is None else self.decoded.span_s
+
+    @property
+    def retained_fraction(self) -> float | None:
+        """Stored span over requested window — what the request actually bought.
+
+        ``None`` when either side is unknown. Below 1 means the observation is shorter
+        than asked for, which is the app's ring behaviour once the profile count crosses
+        the block cap; it is not by itself a reason to refuse the point (the 12 s
+        request that stores ~8.4 s is the project's own operating point).
+        """
+        span = self.stored_span_s
+        if span is None or self.requested_duration_s is None:
+            return None
+        return span / self.requested_duration_s
+
+    @property
+    def expected_profiles(self) -> float | None:
+        """Profiles the request implies: ``requested_duration_s / timing.target_s``.
+
+        Derived from the plan's period law, so it is only as good as the plan's
+        declaration — word 14 is the known case where that is not the instrument's own
+        value. ``None`` when either input is missing.
+        """
+        target = self.timing.target_s
+        if target is None or self.requested_duration_s is None:
+            return None
+        return self.requested_duration_s / target
+
+    @property
+    def block_at_cap(self) -> bool | None:
+        """The stored profile count reached the declared cap — an observation, nothing more.
+
+        Reaching the cap is compatible with the run having produced exactly that many
+        profiles, so it is not on its own evidence that anything was overwritten. See
+        :attr:`block_wrapped` for the claim; this is the fact.
+
+        ``None`` when either the count or the cap is unknown — *not* ``False``, since
+        "it did not reach the cap" is a claim the missing number cannot support.
+        """
+        profiles = self.stored_profiles
+        if profiles is None or self.block_cap_profiles is None:
+            return None
+        return profiles >= self.block_cap_profiles
+
+    @property
+    def block_wrapped(self) -> bool | None:
+        """True only when the block was over-produced *and* cut off at the cap.
+
+        A wrap means profiles were produced and thrown away, which takes two facts: the
+        stored count reached the cap, and the request implies more profiles than the cap
+        could hold. Either one alone is not enough — a run that produced exactly the cap
+        never overwrote anything, and its stored file looks identical to one that
+        produced 40% more. Hence three answers rather than two:
+
+        - ``False`` when the count is *below* the cap: nothing was retained past it, so
+          nothing was lost, whatever the request implied;
+        - ``True`` when the count is at the cap and the request implies more than the cap;
+        - ``None`` otherwise — at the cap with no over-production evidence, or with a
+          number missing. ``None`` is the honest answer at the boundary, where the count
+          cannot distinguish "produced exactly the cap" from "produced more and wrapped".
+
+        The cap is a declared setting rather than a live instrument fact until campaigns
+        compile against a snapshot, so ``True`` is conditional on that declaration being
+        right; the trigger for the property is the reader who needs to know whether early
+        profiles are missing, and ``None`` says "not established".
+        """
+        at_cap = self.block_at_cap
+        if at_cap is False:
+            return False
+        cap = self.block_cap_profiles
+        expected = self.expected_profiles
+        if at_cap is None or cap is None or expected is None:
+            return None
+        if expected > cap:
+            return True
+        return None
 
     @property
     def gate_drift(self) -> float | None:
