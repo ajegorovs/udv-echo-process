@@ -1,0 +1,348 @@
+# Plan — compile campaigns against live instrument state (the review's Phase 6)
+
+**Status: plan only. Nothing in this document is implemented.**
+It is the first commit of the PR that carries it, which is the branch the implementation
+continues on. The slice before it — the acquisition correctness baseline — is merged
+(`262b6ea`, PR #2), and its decision record is
+[`acquisition-review-and-verdict.md`](acquisition-review-and-verdict.md), whose §6 Phase 6
+and §7a–§7b are the authority for what follows. The two reviews of that slice are the
+source of the carried-forward items in W5 and W6.
+
+## 1. The goal
+
+Today a campaign is a JSON definition that **describes** the instrument, and the only
+check that the instrument actually was in that state happens *after* the file is stored,
+when `verify_stored_point` compares the stored words against the request. A campaign can
+therefore spend live recordings on an instrument configured differently from its own
+declaration, and nothing notices until each point is refused — or, for word 14, notices
+only as an advisory.
+
+The end state this plan works toward:
+
+```
+CampaignDefinition                (what the experiment wants)
+        |
+        v  static validation        plan_campaign() — pure, unchanged
+        |
+        v  UDOP session snapshot    read the instrument: layout, channel, mode, settings
+InstrumentSnapshot                (what the DOP3010 actually is, right now)
+        |
+        v  compile                  reconcile the two, or refuse
+ExecutableCampaign                (per-point expectations + fixed configuration + policy)
+        |
+        v  for each point           reset → apply → readback → acquire → store
+        |                           → canonical decode → acceptance → durable record
+        v
+    (Phase 7 owns the certificate; this plan leaves the seams for it)
+```
+
+Phase 6 is the box between "static validation" and "for each point": **the snapshot, the
+reconciliation, and the refusal before the first recording.** It is the largest remaining
+item of the review's roadmap that is not decomposition, and it is what makes the
+scientific claims (what stayed fixed) checkable rather than declared.
+
+## 2. Current state — verified, with pointers
+
+What happens on a campaign run today (`campaign.run_campaign`, `campaign.py:640`):
+
+1. `plan_campaign(definition)` (`campaign.py:522`) validates and expands the points —
+   pure arithmetic from the JSON, no I/O.
+2. The store directory, the log path and the effective channel are resolved; the channel
+   is range-checked (`MIN_CHANNEL..MAX_CHANNEL`) but **not read from the application**.
+3. `resume` drops the points the log already holds as successful, keyed by
+   `record_identity` (`campaign.py:432`).
+4. `SweepRunner` (`runner.py`) runs each remaining point: it verifies the channel once per
+   run (`runner.py:323`, through `ensure_channel`), resets the block, applies the window,
+   reads it back, records, stops, stores, decodes the stored file, sizes it, verifies its
+   words and appends the log entry — valid or not.
+5. `JobManifest` (`campaign.py:362`) is written with
+   `fingerprint=campaign_fingerprint(definition)` (`campaign.py:470`) — a hash of the
+   **definition**, so two runs of one definition on two differently-configured instruments
+   are indistinguishable in the record.
+
+The facts that gap leaves:
+
+- **The declared fixed facts are never read.** `CampaignDefinition` (`campaign.py:201`)
+  requires `prf_us` and `emissions_per_profile`, optionally `burst_length`, and declares
+  `max_profiles_per_block`; its own docstring says of the cap "State it explicitly and
+  check it against the instrument" — and no code does. The published evidence for the cap
+  is that the tested install accepted `1000000` while the block was measured to stop at
+  ~257 profiles (docs/16 §15b, `handoff-dop3010-acquisition.md` §4).
+- **Most of them cannot be read through the existing roles.** `ParamRole`
+  (`actuator.py:107`) covers `us_frequency`, `prf`, `gates`, `resolution`,
+  `velocity_scale_factor`, `emissions_per_profile`, `doppler_angle`. Sound speed, first
+  gate and burst length are **not** roles — so of the campaign's fixed facts only PRF and
+  emissions are readable today, through `read_parameter`.
+- **The port does not expose the screen.** `Actuator` (`actuator.py:398`) has eleven
+  primitives (`layout_note`, `read_parameter`, `write_parameter`, `strip_state`,
+  `wait_for_view`, `press`, `answer_overlay`, `set_store_name`, `commit_store`,
+  `wait_for_stored_file`, `record_and_store`); `SweepActuator` (`runner.py:180`) adds
+  `apply_point`, `ensure_channel` and `try_record_and_store`, and the runner casts to it
+  (`runner.py:303`). `screen_fingerprint()` (`driver.py:2245`) and `preflight()`
+  (`driver.py:2315`) are **driver-only** and called directly by `live.py` — which is why
+  the run record cannot carry a `ScreenFingerprint` today. `ScreenFingerprint` already
+  says it "belongs in the job log beside the point it preceded" (`actuator.py:306`).
+- **The channel mode is known to the driver but not to the campaign.** Assisted-mode
+  channels show 21 controls in 3 panels against the clean 43 in 4
+  (`ScreenFingerprint`'s docstring), the driver records which mode a channel's dialog
+  showed (`driver.py:2103`), and nothing refuses a manual-mode campaign against an
+  assisted channel before recording.
+- **The period law uses the plan's emissions.** `_profile_period_s` (`campaign.py:910`)
+  and the runner's law are fed `emissions_per_profile` from the definition; the committed
+  point is the case where that declaration is wrong (plan 52, file 150), so `timing.
+  target_s` is 0.0098 s against a measured 0.030007 s.
+
+## 3. Acceptance criteria for this slice
+
+Checkable, and each becomes a test:
+
+1. A campaign aimed at an instrument whose configuration contradicts it **refuses before
+   the first recording**, naming the fact that disagreed, with no file stored and the
+   application left in a clean state.
+2. A run record can answer, offline: which channel and mode were active, which fixed facts
+   were **read from the instrument**, which were only declared, and what the compiled plan
+   asked for.
+3. The compiled plan is deterministic and hashable: the same definition against the same
+   snapshot gives the same fingerprint, and a different snapshot gives a different one —
+   so a resume can tell the two apart instead of silently continuing.
+4. Nothing in the acquisition path claims an instrument fact that was not read: an unread
+   fact is `None` or explicitly `declared`, never presented as verified.
+5. **No recipe changes.** With the instrument in its expected configuration, the stored
+   files, their names and the log entries are what they were before this slice. No Win32
+   gesture is re-derived (verbatim-port rule), and no existing test changes for a reason
+   other than the seams this plan adds deliberately.
+
+## 4. Work items
+
+Each item states what changes, where, and what makes it done. Ordered so that the
+independent reconnaissance (W1) never blocks the model work (W2–W4).
+
+### W1 — Read the instrument's remaining fixed facts (reconnaissance, independent)
+
+**What.** Establish where a running UDOP shows the sound speed, the first gate and the
+burst length for the selected channel, and extend `ParamRole` (`actuator.py:107`) with the
+roles needed to read them. If any of the three is not readable through the measurement
+screen at all, record that as a fact about the instrument and leave it declared — do not
+invent a read.
+
+**Where.** A probe under `tools/live/probes/` (the directory that exists for exactly what
+a supported command does not cover) plus the manual corpus in `docs/dop3000/` for the
+semantics. `PARAM_COLUMN_ORDER` (`actuator.py:126`) fixes a field's identity as its
+top-to-bottom position, so a new role must be placed by evidence, not by guess.
+
+**Done when.** The probe prints all five fixed facts from a running application, one
+control-tree snapshot per screen state is committed as a JSON fixture (`tests/data/`), and
+`ParamRole` carries the new roles with a docstring line each saying which screen they come
+from.
+
+**Risk.** Needs the live machine and the interactive session (`tools/live/README.md`). If
+the machine is unavailable, this item waits and W2–W4 proceed with the three unreadable
+facts explicitly marked unreadable — which is the honest state either way.
+
+### W2 — `InstrumentSnapshot`, and a port method that returns it
+
+**What.** A frozen `ValueModel` describing what the instrument *is*: the
+`ScreenFingerprint`, the channel, the mode (`manual`/`assisted`, from the panel/control
+counts and the flag the driver already records at `driver.py:2103`), every fixed fact that
+*is* readable with its value, and — as named fields, not omissions — the facts that could
+not be read. Then one additive method on `SweepActuator`:
+
+```python
+def instrument_snapshot(self) -> InstrumentSnapshot:
+    """Read the instrument's current state, pressing nothing that changes it."""
+```
+
+`SweepActor` already has the precedent for a composed call (`try_record_and_store`,
+`runner.py:198`), and `Win32Actuator` already computes every piece (it builds the
+fingerprint at `driver.py:2245`, reads the parameter column for the read-back, and knows
+the mode). The method must be **additive**: no existing protocol method changes signature,
+so every existing fake keeps working with one added stub.
+
+**Where.** New `src/udv_echo_process/acquire/snapshot.py` (model + the reconciliation-free
+reading helpers); one method on `SweepActuator` (`runner.py:180`) and its implementation
+in `driver.py`; the port docstring says which facts are read and which are not.
+
+**Done when.** A fake port returns a snapshot and the model round-trips through JSON; a
+snapshot captured from the real machine parses as a committed fixture; and a test asserts
+that a fact that was not read appears as unread rather than as a value (criterion 4).
+
+### W3 — `compile_campaign(definition, snapshot) -> ExecutableCampaign`
+
+**What.** The step the review asked for by name: reconcile the definition against the
+snapshot and produce an explicit executable plan, or refuse. The compiled plan carries:
+
+- the per-point expectations the static planner already computes (`PlannedPoint`,
+  `campaign.py:275`);
+- the **fixed configuration** as the snapshot read it, with each fixed fact marked `read`
+  or `declared`;
+- the acceptance policy, per fact: `refuse` / `warn` / `accept`, with `refuse` the default
+  for the settled covariates and for a channel-mode mismatch.
+
+The rule, stated so it can be implemented without further interpretation: **a fact the
+snapshot read must agree with the definition, or the campaign refuses before the first
+recording; a fact the snapshot could not read stays declared and is marked as such on
+every record.** Word 14 keeps its special case — the known-wrong declaration means a
+snapshot disagreement is recorded against both values rather than refusing, until the
+declaration's derivation is fixed (W6).
+
+**Where.** `campaign.py`, next to `campaign_fingerprint` (`campaign.py:470`) and
+`plan_campaign` (`campaign.py:522`); the refusal is a `CampaignError` (`campaign.py:150`)
+carrying the fact and both values, matching how a foreign channel is refused today.
+
+**Done when.** One test per case: PRF mismatch (refuse), emissions mismatch (record both,
+proceed, advisory), burst mismatch (refuse), assisted-mode channel against a manual
+campaign (refuse), an unreadable fact (marked declared, proceed), and the happy path
+(nothing changes). Plus the criterion-3 test: same inputs, same fingerprint; different
+snapshot, different fingerprint.
+
+### W4 — Wire the snapshot into the campaign run, the manifest and the resume
+
+**What.** `run_campaign` (`campaign.py:640`) takes the snapshot once per run — before the
+first recording, next to where the channel is verified — compiles, and carries the result:
+`JobManifest` gains the snapshot and a compiled fingerprint; `resume` compares *both*
+fingerprints, so a job resumed against a different instrument or a different fixed
+configuration says so instead of quietly continuing (the review's Phase 8 first half). A
+`--plan-only` dry run prints the compiled plan, the reconciliation result and the refusals
+with nothing recorded, which is also how the live acceptance sequence is rehearsed.
+`--no-snapshot` exists for the operator who must run without a snapshot; the manifest and
+every record from such a run are marked `declared only`.
+
+**Where.** `campaign.py` (`run_campaign`, `JobManifest`, `ManifestPoint`,
+`campaign_fingerprint` usage), `cli.py`'s `acquire_main` (`cli.py:422`) for the flags and
+the dry-run verb, and `docs/dop3000/live-bringup.md` for the operator-facing sequence.
+
+**Done when.** A dry run against a deliberately-wrong instrument refuses with the named
+fact and the store directory still empty; a real run writes the snapshot into the
+manifest; a resume against a changed snapshot reports the difference; and the end-to-end
+campaign tests pass with the fake's snapshot in place.
+
+### W5 — Cap provenance (carried forward from the review of the correctness slice)
+
+**What.** `max_profiles_per_block` is a declared setting, and the wrap classification is
+currently an inference under that declaration — even `SweepPointRecord.block_wrapped`'s
+`False` branch is conditional (200 stored against a declared 257 could be a block whose
+actual cap was 200, which wrapped). Read or verify the cap from the application where it
+can be, and where it cannot, carry the provenance on the record (`declared` vs `read`) and
+split the vocabulary as the reviewer asked: `block_at_declared_cap` for what is observed
+today, `block_wrapped` reserved for a cap whose provenance is verified.
+
+**Where.** `log.py` (`SweepPointRecord`, `block_at_cap` at `log.py:319`, `block_wrapped`
+at `log.py:335`, `block_cap_profiles`), `snapshot.py` (the read, when the app exposes one),
+`campaign.py` (the declared value's provenance).
+
+**Done when.** The record distinguishes a read cap from a declared one; `block_wrapped`
+answers `None` when the cap's provenance is unverified; the rename or the split is done
+one way and documented one way; and the test that asserts `True`/`None`/`False` says which
+provenance it is under.
+
+### W6 — Feed the period law the instrument's own emissions
+
+**What.** `_profile_period_s` (`campaign.py:910`) and the runner's law use the
+declaration. With a snapshot available, the law's emissions input becomes the
+instrument's own value (word 14 read from the dialog, and the file's word 14 as the
+post-hoc certificate). Keep the plan-vs-measured split explicit on the record — the
+correctness slice already stores both — so a reader can see which was used for what.
+
+**Where.** `campaign.py:910`, the runner's period computation, and the record's
+`ProfileTiming` usage (already carries `target_s` and `achieved_s`).
+
+**Done when.** On the committed point, `timing.target_s` is computed from the instrument's
+150 rather than the plan's 52, the test states that explicitly, and the plan/measurement
+distinction is preserved rather than collapsed.
+
+## 5. Decisions to make before coding
+
+| # | Decision | Options | Recommendation |
+|---|---|---|---|
+| D1 | How the snapshot reaches the caller | add `instrument_snapshot()` to `SweepActuator`; or introduce the review's separate `InstrumentSession` port now | **Add the method.** Additive, precedented by `try_record_and_store`, and it keeps the fakes single-protocol. A separate port is the review's Phase 5, and belongs with the `driver.py` extraction, not before it. |
+| D2 | Snapshot cadence | once per run; or per point | **Once per run**, beside the existing once-per-run channel check. Per point costs modal dialogs an operator watches open and close, for facts that do not change within a run. |
+| D3 | No snapshot available | refuse the run; or `--no-snapshot` with the records marked `declared only` | **Both**: refuse by default, allow the explicit flag. Silence is the only unacceptable option (criterion 4). |
+| D4 | Mismatch policy | refuse before the first recording; or record and continue | **Refuse for the settled facts and the channel mode**; record-and-continue only for word 14, whose declaration is known wrong until W6. |
+| D5 | Where the compiled plan lives | a frozen model in `campaign.py` with its own fingerprint; or new fields on the JSON definition | **A separate model.** The definition expresses experimental intent and is authored by a human; the compiled plan is instrument-specific and machine-generated. Merging them would put the instrument into the campaign file. |
+
+## 6. Constraints and gates this work is subject to
+
+- **Verbatim-port rule** for `acquire/` and `tools/live/` (agenda, "Rules that constrain
+  the work"): move a proven gesture, never re-derive it. W1's new reads must be captured
+  from the live application, not inferred from the manual.
+- **Decoded-metadata gate**: a new decoded word needs byte-level evidence, a destination
+  domain field, propagation rules and storage implications. W5/W6 add no new word decoding
+  beyond what the correctness slice already landed (words 5/8/14/19 via `verify.py`).
+- **Models** (`AGENTS.md:106`): Pydantic `BaseModel`; the frozen `ValueModel` pair; "Do not
+  add dataclasses." `InstrumentSnapshot` and `ExecutableCampaign` are `ValueModel`s, never
+  dataclasses.
+- **No CI**: `uv run --no-sync --extra dev ruff check src tests` and `pytest -q` are the
+  gate, run locally. `ruff format --check` is dirty in 14 files at baseline — format only
+  what was clean and what you touched.
+- **Never claim an unread instrument fact.** This is the rule the correctness slice's
+  review settled, and W2–W4 exist to enforce it structurally.
+- **Acquisition must not adopt `EchoRpmSettings.uniform_rtol`** (verdict §7b): acquisition
+  QC and estimator eligibility are different questions.
+- **The instrument's recipes are not to be touched.** No change to `driver.py`'s gestures,
+  press holds, dialog rules or control resolution in this slice.
+
+## 7. Verification plan
+
+- **Fakes first.** `FakeActuator` (`tests/test_acquire_runner.py`) and the campaign fakes
+  gain `instrument_snapshot()` returning a scripted snapshot, so every run-logic test
+  keeps running without the instrument. The fake's default snapshot is the expected
+  configuration, so existing campaign tests keep passing unchanged (criterion 5).
+- **Real-machine fixtures.** Serialized control-tree and fingerprint JSON for the states
+  the review listed — manual-ready, assisted-ready, recording, store view, store dialog,
+  manual parameters, assisted parameters, warning — committed under `tests/data/` as they
+  are captured. Binding and mode tests then run without Windows.
+- **Red before green**, per repo convention: the failing assertion's real output goes in
+  the commit body.
+- **The live acceptance sequence** (manual, on the machine owning the screen, dispatched
+  through `tools/live/`): status → snapshot → preflight → one short stored point →
+  canonical decode → certificate → clean READY. This is the gate that the fake cannot be.
+- **Gate numbers in the PR body as a comparison**: `pytest -q` on the branch against
+  `master` at `abf2ead` (**1568 passed, 22 skipped, 0 failed**).
+
+## 8. Sequencing, as PR-sized slices
+
+| slice | content | depends on | can land alone |
+|---|---|---|---|
+| P1 | W2 — snapshot model, port method, fake stub, docstrings | — | yes (no behaviour change) |
+| P2 | W1 — reconnaissance, `ParamRole` extension, fixtures | the live machine | yes |
+| P3 | W3 — `compile_campaign` + refusals + policy, no run-path change | P1 | yes |
+| P4 | W4 — wire into `run_campaign`, manifest, resume, `--plan-only` | P1, P3 | yes |
+| P5 | W5 + W6 — cap provenance, period-law source | P1 | yes |
+
+P1 and P3 change no recording path, so they can land and be reviewed before anything
+touches a real campaign. P4 is the first slice that changes how a campaign behaves, and
+its tests are the ones that must show the recipe is untouched (criterion 5).
+
+## 9. Out of scope — do not re-open without a decision
+
+- The review's Phase 1–5 items: `io/dop/operation.py`, splitting `acquire/driver.py`,
+  the explicit UDOP state machine in code, replacing rather than wrapping `Actuator`, and
+  the separate `InstrumentSession` port. Deferred with triggers in the decision record §6.
+- Phase 7 (the per-point acceptance certificate): the next milestone after this one. The
+  pieces this plan must leave for it are the compiled plan's policy, the snapshot on the
+  record, and the per-fact `read`/`declared` provenance.
+- Phase 8's log-schema versioning beyond the resume fingerprint; Phase 9's
+  hardware-in-the-loop gate beyond the fixtures W1 captures.
+- Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
+  under `tools/live/probes/`.
+
+## 10. Picking this up cold
+
+```bash
+cd C:/Repos/udv-echo-process
+git fetch origin && git switch feat/acquisition-campaign-compilation
+
+# read, in this order: this plan  →  the decision record's §6/§7a/§7b
+#   docs/dop3000/acquisition-review-and-verdict.md
+#   src/udv_echo_process/acquire/campaign.py      (run_campaign:640, plan_campaign:522)
+#   src/udv_echo_process/acquire/actuator.py      (ParamRole:107, Actuator:398)
+#   src/udv_echo_process/acquire/runner.py        (SweepActuator:180)
+#   tests/test_acquire_campaign.py                (the campaign-level behaviour to keep)
+
+uv run --no-sync --extra dev ruff check src tests
+uv run --no-sync --extra dev pytest -q
+```
+
+The measured facts a fresh session would otherwise re-derive are at the end of
+`docs/dop3000/acquisition-review-and-verdict.md` §8 and in the committed fixtures; the
+live-run evidence is in the gitignored `outputs/live/*.jsonl`.
