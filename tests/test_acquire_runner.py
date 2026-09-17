@@ -243,6 +243,9 @@ class FakeActuator:
         self.profile_period_s = profile_period_s
         self.signature = SizeSignature() if signature is None else signature
         self.calls: list[tuple] = []
+        #: How often the run read the channel from the dialog, and what each point asked for.
+        self.channel_checks = 0
+        self.verify_channel_flags: list[bool] = []
         self.parameters: dict[str, str] = {}
         self.timeouts: list[float] = []
         self.gates_readback: str | None = None
@@ -300,6 +303,12 @@ class FakeActuator:
     def write_parameter(self, role: ParamRole, value: str) -> None:
         self.parameters[role.value] = value
         self.calls.append(("write_parameter", role.value, value))
+
+    def ensure_channel(self) -> int:
+        """The dialog read. Counted, never appended to ``calls``: it is once per run, and
+        ``calls`` is the per-point sequence the other assertions read."""
+        self.channel_checks += 1
+        return 1
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole | str, str]:
         """The point's window, written in the committed order, and its read-back.
@@ -411,10 +420,12 @@ class FakeActuator:
         directory: Path,
         *,
         timeout_s: float = STORE_TIMEOUT_S,
+        verify_channel: bool = True,
         **extra: object,
     ) -> tuple[bool, object]:
         """The specification's cycle: ``(ok, path)`` or ``(False, reason)``."""
         self.calls.append(("try_record_and_store", name, float(duration_s)))
+        self.verify_channel_flags.append(verify_channel)
         if extra:
             self.extra.append(("try_record_and_store", extra))
         if self.store_failure is not None:
@@ -519,6 +530,9 @@ class ExplodingActuator:
     ) -> Path:
         raise RuntimeError("the cycle failed")
 
+    def ensure_channel(self) -> int:
+        raise RuntimeError("the channel cannot be read")
+
     def try_record_and_store(
         self,
         name: str,
@@ -526,6 +540,7 @@ class ExplodingActuator:
         directory: Path,
         *,
         timeout_s: float = STORE_TIMEOUT_S,
+        verify_channel: bool = True,
     ) -> tuple[bool, object]:
         raise RuntimeError("the cycle failed")
 
@@ -1379,3 +1394,39 @@ def test_verification_that_cannot_be_imported_is_reported_not_silently_passed(
     # The note reaches the log too: an OK point whose words nobody read says so.
     logged = records[0].failure or ""
     assert "verif" in logged.lower(), records[0].failure
+
+
+def test_the_channel_dialog_opens_once_for_a_multi_point_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Four points, one dialog: the channel is verified once, before the first recording.
+
+    Per point it proved nothing new — nothing inside a run changes the channel, and every
+    stored file is checked against the run's channel by the decoder, which *refuses* a file
+    carrying no data for it — while costing a modal dialog the operator watches open and close
+    for every point. The guard is hoisted, not dropped: a wrong channel still fails the point
+    whose file came back with no data for the run's channel.
+    """
+    definition = definition_for(1, 2, 3, 4)
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch)
+
+    outcomes = engine.run(definition, DURATION_S)
+
+    assert len(outcomes) == 4
+    assert all(outcome.ok for outcome in outcomes), [o.reason for o in outcomes]
+    assert fake.channel_checks == 1
+    assert fake.verify_channel_flags == [False, False, False, False]
+
+
+def test_a_bare_run_point_still_verifies_the_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``run_point`` on its own gets the dialog guard — a sweep is not always driving it."""
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch)
+    point = plan_sweep(definition_for(1))[0]
+
+    outcome = engine.run_point(point, DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    assert fake.channel_checks == 1
+    assert fake.verify_channel_flags == [False]

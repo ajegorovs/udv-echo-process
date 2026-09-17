@@ -172,10 +172,23 @@ class SweepActuator(Actuator, Protocol):
         """Apply a window in the committed write order; return the app's read-back."""
         ...
 
+    def ensure_channel(self) -> int:
+        """Verify the measurement channel from the dialog and return it."""
+        ...
+
     def try_record_and_store(
-        self, name: str, duration_s: float, directory: Path
+        self,
+        name: str,
+        duration_s: float,
+        directory: Path,
+        *,
+        verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
-        """Record, stop, store as ``name``; ``(True, path)`` or ``(False, reason)``."""
+        """Record, stop, store as ``name``; ``(True, path)`` or ``(False, reason)``.
+
+        ``verify_channel=False`` skips the dialog read for a point whose run has already
+        verified the channel once (:meth:`SweepRunner._verify_channel_once`).
+        """
         ...
 
 
@@ -268,6 +281,8 @@ class SweepRunner:
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
         self._sweep_id = sweep_id_for(datetime.now(tz=UTC).astimezone())
+        #: Set once the measurement channel has been read from the dialog for this run.
+        self._channel_verified = False
         #: Log entries that could not be written. Never silent, never fatal.
         self.log_errors: list[str] = []
         self._used_names: set[str] = set()
@@ -276,6 +291,23 @@ class SweepRunner:
     def channel(self) -> int:
         """The measurement channel every point is decoded on."""
         return self._channel_setting.channel
+
+    def _verify_channel_once(self) -> None:
+        """Verify the measurement channel from the dialog, once per run.
+
+        The channel is the one thing a stored block cannot be *checked* against after the
+        fact: another channel's block decodes as a valid point that is not this point
+        (docs/16 §12), which is why it is read from the dialog before the first recording is
+        spent. Doing it for **every** point re-opened the same modal once per point while
+        proving nothing new — nothing inside a run changes the channel, and the decode proves
+        the channel of every file afterwards, refusing a file that carries no data for the
+        channel it is asked for. So the dialog opens once, and a mid-run channel change still
+        fails the point that follows it, on its own file.
+        """
+        if self._channel_verified:
+            return
+        self._actuator.ensure_channel()
+        self._channel_verified = True
 
     def run_point(
         self, point: SweepPoint, duration_s: float, *, reset: bool = True
@@ -405,14 +437,26 @@ class SweepRunner:
                 parameters.gates, profiles
             )
 
-        # (3) name the file and run the cycle.
+        # (3) the channel, once per run, before the first recording is spent. Anchored here
+        # rather than per point: see `_verify_channel_once`.
+        try:
+            self._verify_channel_once()
+        except Exception as exc:  # noqa: BLE001 - an unverified channel is not a point
+            return self._fail(
+                attempt, f"the measurement channel could not be verified: {exc}", abort=True
+            )
+
+        # (4) name the file and run the cycle.
         self._used_names.add(attempt.name)
         overlay = self._overlay_guard()  # the guard the cycle's own presses cannot undo
         if overlay is not None:
             return self._fail(attempt, overlay, abort=True)
         try:
             stored, result = self._actuator.try_record_and_store(
-                attempt.name, duration_s, self._directory
+                attempt.name,
+                duration_s,
+                self._directory,
+                verify_channel=False,  # verified once per run, below and before the first
             )
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards
             # The step is unaccounted for: a dialog may be up and a recording may

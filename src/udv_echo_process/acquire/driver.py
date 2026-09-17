@@ -32,7 +32,12 @@ Three properties are load-bearing, each paid for once in the lab:
 Two further rules are enforced inside the cycle, both of them about *not measuring
 something other than the point*:
 
-4. **The measurement channel is verified before every point** (:meth:`Win32Actuator.ensure_channel`).
+4. **The measurement channel is verified once per run, before the first recording is
+   spent** (:meth:`Win32Actuator.ensure_channel`) — a different channel's block decodes as a
+   valid point that is not this point (docs/16 §12), and the guard costs a modal dialog. Every
+   stored file is then checked against the run's channel by the decode, which *refuses* a file
+   carrying no data for the channel it is asked for, so a per-point dialog proved nothing the
+   file does not prove.
    It is one knob (:class:`~udv_echo_process.acquire.config.ChannelSetting`); the
    driver selects it in ``Parameters → Operating parameters`` and reads the
    selection back **from the dialog** — index *and* text — then re-opens the
@@ -2485,6 +2490,7 @@ class Win32Actuator:
         directory: Path,
         *,
         timeout_s: float = STORE_TIMEOUT_S,
+        verify_channel: bool = True,
     ) -> Path:
         """Record ``duration_s``, stop, store as ``name``; return the stored path.
 
@@ -2505,6 +2511,7 @@ class Win32Actuator:
                 self.press(
                     StripControl.NEW_ACQUISITION
                 )  # dismiss the leftover block view
+                self._note("cleared the leftover block view")
                 state = self.wait_for_view((StripView.READY,), timeout_s=VIEW_TIMEOUT_S)
             if state.view not in STARTABLE_VIEWS or state.view is not StripView.READY:
                 raise AcquisitionError(
@@ -2513,14 +2520,21 @@ class Win32Actuator:
             # The channel is a precondition of the point, verified from the dialog
             # before a recording is spent: another channel's block decodes as a valid
             # point that is not this point (docs/16 §12).
-            self.ensure_channel()
+            if verify_channel:
+                self._note("verifying the channel from the parameters dialog")
+                self.ensure_channel()
+                self._note("the channel is verified; pressing Record")
+            else:
+                self._note("the channel was verified once for this run; pressing Record")
             self.press(StripControl.RECORD)
             state = self._wait_for_view_guarded((StripView.RECORDING,), VIEW_TIMEOUT_S)
             if state.view is not StripView.RECORDING:
                 raise AcquisitionError(
                     f"the Record press did not start a recording (view {state.view.value!r})"
                 )
+            self._note(f"recording confirmed; holding {duration_s:.1f} s")
             self._hold_recording(duration_s)
+            self._note(f"the {duration_s:.1f} s hold is over; pressing Stop")
             self.press(StripControl.STOP)
             state = self._wait_for_view_guarded((StripView.STORE,), VIEW_TIMEOUT_S)
             if state.view is not StripView.STORE:
@@ -2534,9 +2548,15 @@ class Win32Actuator:
             # happened to remember (docs/16 §12b).
             self.assert_working_directory(directory)
             known = self._names_in(directory)
+            self._note(f"the Store dialog is up; naming the file {name!r}")
             self.set_store_name(name)
             self.commit_store()
-            return self._store_until_file(name, directory, known, timeout_s)
+            stored = self._store_until_file(name, directory, known, timeout_s)
+            # The size is the runner's to log (`file_size_bytes`); a note must not touch the
+            # filesystem, because a sweep may be faked against an actuator with no disk behind
+            # it and a note that raises would turn a stored point into a failed one.
+            self._note(f"stored {stored.name}")
+            return stored
         except AcquisitionError as exc:
             self._recover()
             raise AcquisitionError(f"{name}: {exc}") from exc
@@ -2551,6 +2571,7 @@ class Win32Actuator:
         directory: Path,
         *,
         timeout_s: float = STORE_TIMEOUT_S,
+        verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
         """``record_and_store`` with the failure in the return value instead of a raise.
 
@@ -2558,7 +2579,11 @@ class Win32Actuator:
         """
         try:
             return True, self.record_and_store(
-                name, duration_s, directory, timeout_s=timeout_s
+                name,
+                duration_s,
+                directory,
+                timeout_s=timeout_s,
+                verify_channel=verify_channel,
             )
         except AcquisitionError as exc:
             return False, str(exc)

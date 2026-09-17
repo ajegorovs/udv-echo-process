@@ -267,6 +267,24 @@ Two live runs settled the channel path, and both changed what the driver may ass
   channel — `port-probe-02` (channel 1) and `port-probe-03` (channel 2), same configuration,
   differ at byte 881 and then at every 1024-byte stride, reading 1 and 2, and nowhere else in
   the file.
+- **The channel guard is once per run, not once per point** (2026-09-17). `ensure_channel`
+  opened the `Operating parameters` modal for every point of a sweep, which an operator sees as
+  windows opening and closing for no visible reason, and which proved nothing a point's own file
+  does not: the decoder **refuses** a file carrying no data for the channel it is asked for
+  (`port-probe-03.BDD`, stored on channel 2, raises "carries no data for channel 1"), so every
+  stored point is checked against the run's channel by its own file. `SweepRunner` now verifies
+  the channel once, before the first recording is spent (`_verify_channel_once`), and passes
+  `verify_channel=False` for every point; a bare `run_point` still gets the dialog. Two tests
+  pin it: one dialog for a four-point run, and a standalone `run_point` still verifying.
+- **A run says what it is doing.** The cycle's stages were silent, so its normal 7-8 s of setup
+  per point — the block reset, the channel dialog, the parameter writes — was indistinguishable
+  from a stalled run to anyone watching the screen. The actuator's note channel now carries the
+  stage boundaries (channel verified, recording confirmed and held, hold over, Store dialog up
+  and named, stored), and `recon/62` streams them with their offsets: measured 2026-09-17, a 3 s
+  point cost 13.3 s of wall clock and a 6 s point 8.6 s, with the holds exactly 3.0 s and 6.0 s
+  from the confirmed recording view to the Stop press. **A note must not touch the
+  filesystem** — the first version stat'ed the stored file and turned a *faked* store into a
+  failed point, which is how it was caught.
 - **A two-point sweep runs through the runner** (`recon/60_two_point_sweep.py`, 2026-09-17):
   one channel, one duration (12 s, inside the operator's 10-15 s band), **one axis** — the
   resolution ladder at a *constant* 99 mm window, k=1 (0.122 mm, 797 gates) and k=2
@@ -277,18 +295,24 @@ Two live runs settled the channel path, and both changed what the driver may ass
   `status`, `requested`, `readback_gates`, `readback_resolution`, `file_path`,
   `file_size_bytes`, `expected_size_bytes`, `decoded`, `failure` — which is the job-tracking
   record in its minimal usable form.
-  **What the record does not carry, and what this run measured about it:** `timing` is
-  `target_s: None, achieved_s: None`, so the achieved window is nowhere in a point's record —
-  and that is the one field "same duration" comparability needs. The size expectation is built
-  on the manual's period law (366 profiles at 33 ms for 12 s) while the blocks hold **228**
-  profiles at k=1 and **259** at k=2 — a ratio of 0.62, i.e. an achieved period of **53 ms** at
-  797 gates and **46 ms** at 399. Two things follow: the law's transfer term is short by ~1.6x
-  and the period does move with the gate count, as that term predicts (new measured evidence
-  for the corrected law); and `SizeSignature.matches` accepts anything within a factor of 2
-  either way, so a contaminated block 1.9x too small would pass as well. The size check cannot
-  stand in for the achieved duration — `timing.achieved_s` (profiles from the file's own size,
-  period = T / profiles, a wrap flagged against `max_profiles_per_block`) is the field to fill
-  before a multi-point campaign leans on the log.
+  **What the record does not carry, and what that hid — measured twice, `recon/62`:** the
+  block is a **ring that stops at about 257 profiles**. A 4 s recording at the same
+  configuration stores 123 profiles (83,499 B) — an implied period of **32.5 ms**, i.e. the
+  manual's law (33 ms) to within measurement — while a 12 s recording at that configuration
+  stores 257 (174,623 B, and 259 in the sweep): **~8.4 s of signal, not 12**, at a ratio of
+  2.09 where the durations are 3.00. So the manual's period law is *right* and the long block is
+  **truncated**; the earlier reading in this document — that the law's transfer term is short by
+  ~1.6x — was an artefact of counting the missing profiles as a longer period, and is retracted
+  here. Nothing refused the point: `assert_window_fits` is checked against the *law's* period and
+  `RecordSettings.max_profiles_per_block` (default 1,000,000) is not the application's own
+  "Do not keep in a block more profiles than" setting, `SizeSignature.matches` tolerates a
+  factor of 2 either way (0.62 passes), and `timing` is `target_s: None, achieved_s: None` —
+  the one field that would have said so. **For the operator's goal this is the number that
+  matters:** a 10-15 s recording at these settings keeps only its last ~8.4 s, identically for
+  every point, so a like-for-like comparison holds — but a campaign that wants 10-15 s *stored*
+  has to raise the application's block cap, and the log has to carry the achieved duration
+  (profiles from the file's own size, period = T / profiles, the cap flagged) before that can be
+  taken on trust.
 - **The write-replaces-the-dialog rule is pinned** (`test_the_dialog_is_re_resolved_after_a_
   channel_write_replaces_it`): the fake scripts the replacement at the live geometry — the
   operating dialog at `(655,364)` giving way to the assisted one at `(713,364)`, new handles —
