@@ -267,6 +267,28 @@ Two live runs settled the channel path, and both changed what the driver may ass
   channel — `port-probe-02` (channel 1) and `port-probe-03` (channel 2), same configuration,
   differ at byte 881 and then at every 1024-byte stride, reading 1 and 2, and nowhere else in
   the file.
+- **A two-point sweep runs through the runner** (`recon/60_two_point_sweep.py`, 2026-09-17):
+  one channel, one duration (12 s, inside the operator's 10-15 s band), **one axis** — the
+  resolution ladder at a *constant* 99 mm window, k=1 (0.122 mm, 797 gates) and k=2
+  (0.243 mm, 399 gates), the two rungs `plan_sweep` computes from the measured laws. Both
+  points `ok`, no abort, no note from the actuator, and the permutation is in the stored
+  words: resolution 0.1217 -> 0.2433 mm, depth 99 mm and channel 1 on both, burst 4. The log
+  (`recon/out/two-point-sweep.jsonl`) carries one entry per point — `sweep_id`, `key`, `name`,
+  `status`, `requested`, `readback_gates`, `readback_resolution`, `file_path`,
+  `file_size_bytes`, `expected_size_bytes`, `decoded`, `failure` — which is the job-tracking
+  record in its minimal usable form.
+  **What the record does not carry, and what this run measured about it:** `timing` is
+  `target_s: None, achieved_s: None`, so the achieved window is nowhere in a point's record —
+  and that is the one field "same duration" comparability needs. The size expectation is built
+  on the manual's period law (366 profiles at 33 ms for 12 s) while the blocks hold **228**
+  profiles at k=1 and **259** at k=2 — a ratio of 0.62, i.e. an achieved period of **53 ms** at
+  797 gates and **46 ms** at 399. Two things follow: the law's transfer term is short by ~1.6x
+  and the period does move with the gate count, as that term predicts (new measured evidence
+  for the corrected law); and `SizeSignature.matches` accepts anything within a factor of 2
+  either way, so a contaminated block 1.9x too small would pass as well. The size check cannot
+  stand in for the achieved duration — `timing.achieved_s` (profiles from the file's own size,
+  period = T / profiles, a wrap flagged against `max_profiles_per_block`) is the field to fill
+  before a multi-point campaign leans on the log.
 - **The write-replaces-the-dialog rule is pinned** (`test_the_dialog_is_re_resolved_after_a_
   channel_write_replaces_it`): the fake scripts the replacement at the live geometry — the
   operating dialog at `(655,364)` giving way to the assisted one at `(713,364)`, new handles —
