@@ -80,7 +80,7 @@ class PointStatus(str, Enum):
 
 
 class DecodedBlock(ValueModel):
-    """The stored file's own parameter block for one channel.
+    """The stored file's own parameter block for one channel — and its observation window.
 
     Words, as decoded from the file, for the channel that measured:
 
@@ -90,6 +90,15 @@ class DecodedBlock(ValueModel):
       that the window arithmetic landed (docs/15 §2);
     - word 14 (``emissions_per_profile``) is the primary variance axis and word
       13 (``n_gates``) is the count actually used.
+
+    The profile timestamps give the rest, and they are the only evidence for it:
+    ``n_profiles``, ``span_s`` (last minus first) and ``achieved_period_s`` (the
+    median interval). Those three are what the *window* actually was, as opposed to
+    the window that was requested — the app's block is a ring, so a request for a
+    longer window than the cap covers stores only the last ``cap × period`` seconds
+    and still decodes as a valid point (docs/16 §15b). ``time_s`` is the quantised
+    ms/10 footer timestamp, so ``achieved_period_s`` is a measurement at that
+    resolution, not a derived quantity.
 
     ``channel`` and ``n_gates`` are required: a block that does not say which
     channel it came from is not evidence.
@@ -107,6 +116,12 @@ class DecodedBlock(ValueModel):
     emissions_per_profile: int | None = Field(default=None, ge=1)
     source_freq_khz: float | None = Field(default=None, gt=0)
     size_bytes: int | None = Field(default=None, ge=0)
+    #: Profiles the block actually holds — never "how many were asked for".
+    n_profiles: int | None = Field(default=None, ge=1)
+    #: Last minus first profile timestamp, in seconds. ``0`` for a single profile.
+    span_s: float | None = Field(default=None, ge=0)
+    #: Median interval between profile timestamps — the achieved period.
+    achieved_period_s: float | None = Field(default=None, gt=0)
 
     @property
     def prf_hz(self) -> float | None:
@@ -219,6 +234,11 @@ class SweepPointRecord(ValueModel):
     status: PointStatus
     requested: ParameterSet
     timing: ProfileTiming = Field(default_factory=ProfileTiming)
+    #: The window that was *asked* for, in seconds. Carried because the retained
+    #: fraction is meaningless without it, and neither the request nor the file has it.
+    requested_duration_s: float | None = Field(default=None, gt=0)
+    #: The block cap in force at this point, so a wrapped block is legible from the log.
+    block_cap_profiles: int | None = Field(default=None, ge=1)
     readback_gates: int | None = Field(default=None, ge=0)
     readback_resolution: str | None = None
     file_path: str | None = None
@@ -234,6 +254,42 @@ class SweepPointRecord(ValueModel):
     #: An advisory never invalidates a point; it is here so the disagreement survives
     #: in the record instead of being invisible.
     covariate_advisories: tuple[str, ...] = ()
+
+    @property
+    def stored_profiles(self) -> int | None:
+        """Profiles the stored block holds; ``None`` when no file was decoded."""
+        return None if self.decoded is None else self.decoded.n_profiles
+
+    @property
+    def stored_span_s(self) -> float | None:
+        """Seconds the stored profiles actually cover; ``None`` when unknown."""
+        return None if self.decoded is None else self.decoded.span_s
+
+    @property
+    def retained_fraction(self) -> float | None:
+        """Stored span over requested window — what the request actually bought.
+
+        ``None`` when either side is unknown. Below 1 means the observation is shorter
+        than asked for, which is the app's ring behaviour once the profile count crosses
+        the block cap; it is not by itself a reason to refuse the point (the 12 s
+        request that stores ~8.4 s is the project's own operating point).
+        """
+        span = self.stored_span_s
+        if span is None or self.requested_duration_s is None:
+            return None
+        return span / self.requested_duration_s
+
+    @property
+    def block_wrapped(self) -> bool | None:
+        """True when the stored profile count reached the cap, so the block wrapped.
+
+        ``None`` when either the count or the cap is unknown — *not* ``False``, since
+        "it did not wrap" is a claim the missing number cannot support.
+        """
+        profiles = self.stored_profiles
+        if profiles is None or self.block_cap_profiles is None:
+            return None
+        return profiles >= self.block_cap_profiles
 
     @property
     def gate_drift(self) -> float | None:

@@ -60,9 +60,17 @@ expected size is ``signature.expected_bytes(requested_gates, profiles)``, with
 ``profiles = T / period`` from the point's own ``emissions_per_profile`` and
 ``prf_us`` (the measured ``emissions × PRF + ~1 ms`` law). An expectation taken
 from the file under test would simply agree with it — 6,000 stale profiles would
-"expect" the 8.3 MB they held. A wrapped block — a window longer than the profile
-cap, which ``plan.assert_window_fits`` checks against at plan time — shows up here
-as a file far *smaller* than expected, so the same guard covers it.
+"expect" the 8.3 MB they held.
+
+That guard is a **gross contamination check** and is treated as one: at the
+production window length a factor-2 band admitted a block holding 0.62 of what the
+period law predicted, so passing it means "not grossly contaminated", not "this is
+the window that was asked for". The retained window is answered instead by the
+stored file's own profile timestamps — count, span and the achieved period — which
+land in the record as ``decoded.n_profiles``/``span_s``/``timing.achieved_s``, and
+are what ``requested_duration_s``/``retained_fraction``/``block_wrapped`` are read
+against. A wrapped block therefore appears in the record as what it is (a shorter
+observation) rather than as a size anomaly a later reader has to re-derive.
 
 A failure anywhere in :meth:`SweepRunner.run_point` returns an outcome; it never
 raises. A failure that says nothing about the application's state fails that one
@@ -83,6 +91,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol, cast
 
+import numpy as np
+
 from udv_echo_process.acquire.actuator import (
     OVERLAY_ANSWERS,
     STARTABLE_VIEWS,
@@ -96,6 +106,7 @@ from udv_echo_process.acquire.actuator import (
 from udv_echo_process.acquire.config import (
     ChannelSetting,
     ParameterSet,
+    ProfileTiming,
     RecordSettings,
 )
 from udv_echo_process.acquire.log import (
@@ -123,8 +134,9 @@ from udv_echo_process.io.dop.bdd import read as _read_bdd
 #: and the import failure is kept as a guard rather than an import error so that state
 #: stays testable; what it costs is a refused point, never an `OK` one.
 try:
-    from udv_echo_process.acquire.verify import verify_stored_point
+    from udv_echo_process.acquire.verify import read_words, verify_stored_point
 except ImportError:  # pragma: no cover - a broken install, and it must not pass
+    read_words = None  # type: ignore[assignment]
     verify_stored_point = None  # type: ignore[assignment]
 
 __all__ = [
@@ -235,6 +247,10 @@ class _Attempt:
     point: SweepPoint
     name: str
     status: PointStatus = PointStatus.FAILED
+    #: The window that was asked for, and the period the request implies — the two
+    #: inputs the retained fraction and the timing certificate are read against.
+    duration_s: float | None = None
+    period_s: float | None = None
     file: Path | None = None
     reason: str | None = None
     decoded: DecodedBlock | None = None
@@ -424,6 +440,7 @@ class SweepRunner:
         attempt = _Attempt(
             point=point,
             name=self._settings.next_name(point.key, self._sweep_id, self._used_names),
+            duration_s=duration_s,
         )
         if duration_s <= 0:
             return self._fail(attempt, f"duration_s must be > 0, got {duration_s}")
@@ -470,6 +487,7 @@ class SweepRunner:
         if parameters.emissions_per_profile and parameters.prf_us:
             period = parameters.emissions_per_profile * parameters.prf_us * 1e-6
             period += PERIOD_OVERHEAD_S
+        attempt.period_s = period
         profiles = profiles_for_duration(duration_s, period) if period else None
         if profiles:
             attempt.expected_bytes = self._signature.expected_bytes(
@@ -777,13 +795,32 @@ class SweepRunner:
         return None
 
     def _record(self, attempt: _Attempt, status: PointStatus) -> SweepPointRecord:
-        """The log record for an attempt, at the status it ended with."""
+        """The log record for an attempt, at the status it ended with.
+
+        The window evidence is assembled here from what the point was asked for and what
+        the file turned out to hold: ``requested_duration_s`` (the request),
+        ``block_cap_profiles`` (the configuration it ran under), ``timing`` (the
+        period the request implies, against the period the profile timestamps measured)
+        and the decoded block's own ``n_profiles``/``span_s``. Together those are the
+        difference between "the plan says 12 s" and "the file covers 8.4 s of it" —
+        which the app's ring behaviour makes two different facts.
+        """
+        duration = attempt.duration_s
         return SweepPointRecord(
             sweep_id=self._sweep_id,
             key=attempt.point.key,
             name=attempt.name,
             status=status,
             requested=attempt.point.parameters,
+            timing=ProfileTiming(
+                target_s=attempt.period_s,
+                achieved_s=(
+                    None if attempt.decoded is None
+                    else attempt.decoded.achieved_period_s
+                ),
+            ),
+            requested_duration_s=duration if duration and duration > 0 else None,
+            block_cap_profiles=self._settings.max_profiles_per_block,
             readback_gates=attempt.readback_gates,
             readback_resolution=attempt.readback_resolution,
             file_path=None if attempt.file is None else str(attempt.file),
@@ -857,11 +894,21 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
     data in the file*. The reader reports one artifact per channel that produced
     profiles, and a multi-channel file is refused rather than guessed at — reading the
     wrong channel's block is the easiest possible way to "prove" a write failed.
-    ``resolution_index`` and ``emissions_per_profile`` are left unset: the reader
-    exposes neither op word 10 nor word 14, and this module never derives a check
-    quantity from the file it is checking. ``depth_mm`` is the file's own depth axis
-    rounded to whole mm. Raises ``ValueError`` for a file with no channel data, with
-    more than one channel's, or with a block lacking the gate count the log requires.
+    ``depth_mm`` is the file's own depth axis rounded to whole mm. Raises ``ValueError``
+    for a file with no channel data, with more than one channel's, or with a block
+    lacking the gate count the log requires.
+
+    What the record says about the *window* comes from the same read: the profile count,
+    the span from the first profile's timestamp to the last, and the median interval
+    between them. Those are measurements of what the file holds — the app's block is a
+    ring, so they are the only honest answer to "how long was this observation".
+
+    Two words the canonical reader does not expose are filled differently.
+    ``resolution_index`` stays unset (the reader reports the pitch, and this module
+    never derives a check quantity from the file it is checking).
+    ``emissions_per_profile`` *is* read, through ``acquire/verify.py``'s word reader
+    and only for the record — see :func:`_stored_emissions`; the same value decides
+    nothing here.
     """
     name = Path(path).name
     streams = tuple(_read_bdd(Path(path)).recording.streams)
@@ -882,8 +929,16 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
 
     stream = streams[0]
     config = stream.config
+    channel_read = int(stream.acquisition.channel.device_channel)
+    times = np.asarray(stream.data.time_s, dtype=np.float64)
+    profile_count = int(times.shape[0])
+    span_s = float(times[-1] - times[0]) if profile_count else None
+    achieved_period_s: float | None = None
+    if profile_count >= 2:
+        median_s = float(np.median(np.diff(times)))
+        achieved_period_s = median_s if median_s > 0 else None
     mapping: dict[str, object] = {
-        "channel": int(stream.acquisition.channel.device_channel),
+        "channel": channel_read,
         "n_gates": config.n_gates,
         "depth_mm": None if config.max_depth_mm is None else round(config.max_depth_mm),
         "resolution_mm": config.resolution_mm,
@@ -892,11 +947,39 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
         "burst_length": config.burst_length,
         "source_freq_khz": config.source_freq_khz,
         "size_bytes": Path(path).stat().st_size,
+        # The window the file actually covers — the authority on how much observation
+        # the point bought, as opposed to how much it asked for.
+        "n_profiles": profile_count,
+        "span_s": span_s,
+        "achieved_period_s": achieved_period_s,
+        # Word 14: read here because `bdd.ChannelConfig` has no field for it (the
+        # canonical reader's docstring says so), and the variance axis is worth having
+        # in the record.
+        "emissions_per_profile": _stored_emissions(Path(path), channel_read),
     }
     try:
         return DecodedBlock.from_mapping(mapping)
     except ValueError as exc:
         raise ValueError(f"{name} decoded a block the log cannot hold: {exc}") from exc
+
+
+def _stored_emissions(path: Path, channel: int) -> int | None:
+    """Word 14 of the channel that measured, or ``None`` when it cannot be read.
+
+    Read through ``acquire/verify.py``'s word reader because the canonical reader has
+    no field for it (``io/dop/bdd.py``'s docstring lists word 14 among the words it
+    verifies but does not decode). ``read_words`` addresses the operation table's own
+    channel slot, which is what a manual-mode acquisition's channel means — see its
+    docstring for what it is not: on a multiplexed recording those slots do not
+    describe the recording's channels.
+
+    Never raises, and never refuses a decode: the value is recorded evidence, not a
+    rule, so a channel word that cannot be read leaves the field unset rather than
+    failing a stored point that is otherwise perfectly readable.
+    """
+    if read_words is None:  # pragma: no cover - a broken install
+        return None
+    return read_words(path, channel).emissions_per_profile
 
 
 def _period_us(freq_hz: float | None) -> float | None:
