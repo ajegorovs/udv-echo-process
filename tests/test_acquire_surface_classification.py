@@ -28,7 +28,6 @@ at each fixture.
 
 from __future__ import annotations
 
-import pytest
 from test_acquire_layout_gate import ORIGIN, _button, _panel, manual_screen
 
 from udv_echo_process.acquire import driver
@@ -166,11 +165,6 @@ def replacement_surface() -> dict:
 
 
 # B08: UI-OVERLAY-19 / UI-OVERLAY-21 / UI-OVERLAY-22 (the replacement surfaces).
-@pytest.mark.xfail(
-    strict=True,
-    reason="B08: a whole-screen replacement surface is still read as an assisted channel "
-    "(and the strip clause is about its widget band) — PATCH-2 gives the surface its own kind",
-)
 def test_a_replacement_surface_is_not_classified_as_a_measurement_screen() -> None:
     """B08: a replaced screen is a *surface*, and never a channel mode.
 

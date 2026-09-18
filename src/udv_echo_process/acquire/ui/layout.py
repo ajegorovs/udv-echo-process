@@ -11,9 +11,15 @@ What the module owns, and why each piece is here rather than in the driver:
   (:func:`layout_evidence`) and their composition (:func:`layout_refusal`) — plan §24.3/§24.5,
   pure over the tree so the same tree answers them on a captured fixture, on a fake and on the
   live screen;
+- the **surface classification** (:func:`surface_kind`, :func:`classify_surface` and the clauses
+  of :func:`surface_clauses`): which surface is this — measurement, overlay, dialog, popup,
+  replacement or unknown — decided **before** any press target is resolved, so an overlay cannot
+  be read as the strip (ledger B06) and a whole-screen replacement surface is never read as a
+  channel mode (ledger B08);
 - the **stated process mode** clause (:func:`process_mode_clause`) — the one thing that cannot
   be checked structurally, because only the caption states it;
-- the **channel mode** reading (:func:`screen_mode`), read off the panel that resolved;
+- the **channel mode** reading (:func:`screen_mode`), which reads a mode out of the panel that
+  resolved and never out of the panel that did not (ledger B01);
 - the pure geometry the binding rules are written in (:func:`_inside`,
   :func:`_point_in_rect`, :func:`_contains`, :func:`_column_bands`) and the dialog-panel
   predicate (:func:`_is_dialog_panel`), plus the path comparison a Store-dialog field is held to
@@ -334,6 +340,31 @@ def _status_bands(observation: ScreenObservation) -> tuple[UiNode, ...]:
     )
 
 
+def _hosts_button_band(observation: ScreenObservation) -> bool:
+    """True when some panel of this tree hosts a ``TSp_Button`` of its own, anywhere."""
+    return any(
+        observation.tree.inside(panel, cls="TSp_Button") for panel in observation.panels
+    )
+
+
+def _replacement_evidence(observation: ScreenObservation) -> bool:
+    """True when the client area is another surface's content, not a measurement screen.
+
+    ``UI-OVERLAY-22`` is the measured frame: a whole-window capture of ``Compare profiles`` in
+    which the parameter column, the menu band, the strip and the status bar are **all** gone and
+    only the surface's own widget band is left (``UI-OVERLAY-19``, ``Measure US field``, is the
+    other instance the ledger names). So the evidence is the *absence of the measurement
+    skeleton* — no menubar band and no plot — together with a client area that still hosts a
+    button band of its own. Nothing about a channel mode is read from it (ledger B08): the same
+    frame is what the old reading took for an assisted channel.
+    """
+    return (
+        not _menubar_resolved(observation)
+        and observation.plot is None
+        and _hosts_button_band(observation)
+    )
+
+
 def _overlay_candidates(observation: ScreenObservation) -> tuple[UiNode, ...]:
     """Panels **besides the resolved strip** that host a button row inside the plot's band.
 
@@ -388,9 +419,12 @@ def surface_kind(observation: ScreenObservation) -> SurfaceKind:
        trustworthy, so ``UNKNOWN``;
     2. an application dialog panel is up — ``DIALOG``;
     3. the menubar's own popup is open — ``POPUP`` (it is the strip resolver's decoy);
-    4. a second button panel sits in the plot's middle band — ``OVERLAY`` (B06);
-    5. the measurement anchors all resolved — ``MEASUREMENT``;
-    6. otherwise ``UNKNOWN``: the refusal state, which has no binding and no mode.
+    4. the measurement skeleton is gone while the client area hosts a widget band —
+       ``REPLACEMENT`` (B08: ``Compare profiles`` / ``Measure US field`` replace the client
+       area, so "no sidebar and no strip" is another *surface* and not a channel mode);
+    5. a second button panel sits in the plot's middle band — ``OVERLAY`` (B06);
+    6. the measurement anchors all resolved — ``MEASUREMENT``;
+    7. otherwise ``UNKNOWN``: the refusal state, which has no binding and no mode.
 
     A kind is **not** a press permission: ``MEASUREMENT`` says the surface is the measurement
     screen, and the gate's other clauses (the parameter panel's state, the strip view, the
@@ -402,6 +436,8 @@ def surface_kind(observation: ScreenObservation) -> SurfaceKind:
         return SurfaceKind.DIALOG
     if observation.popup_open:
         return SurfaceKind.POPUP
+    if _replacement_evidence(observation):
+        return SurfaceKind.REPLACEMENT
     if _overlay_candidates(observation):
         return SurfaceKind.OVERLAY
     if (
@@ -428,14 +464,26 @@ def surface_clauses(observation: ScreenObservation) -> tuple[str, ...]:
     This is what "classify before you diagnose" means in the gate: the clauses here are built
     from the *surface* the resolver's tree shows, and they come before the strip row, the
     parameter column and the bands — because the row a wrong-surface screen would diagnose is a
-    symptom of the surface being wrong (ledger B06). Every clause names the evidence it rests on
-    and where it was read, so the refusal is diagnosable from the log alone (plan §24.5 D5).
+    symptom of the surface being wrong (ledger B06, ledger B08: a replacement surface would
+    otherwise be diagnosed as a missing menubar, plot and status *band*). Every clause names the
+    evidence it rests on and where it was read, so the refusal is diagnosable from the log alone
+    (plan §24.5 D5).
 
     ``UNKNOWN`` contributes nothing: it is the absence of a classification, and the structural
     clauses of :func:`layout_shape_reasons` (the window class, the menubar band, the plot, the
     status band) already state exactly what was missing.
     """
     clauses: list[str] = []
+    if _replacement_evidence(observation):
+        band = ", ".join(_rect_text(panel) for panel in observation.panels)
+        clauses.append(
+            "the active surface is not the measurement screen: no menubar band and no plot "
+            f"band resolved while {len(observation.panels)} panel(s) of the client area host "
+            f"the surface's own buttons ({band}) — a whole-screen replacement surface "
+            "('Compare profiles', 'Measure US field') replaces the client area, so 'no sidebar "
+            "and no strip' is another surface here and not a channel mode, and no press may be "
+            "bound against it"
+        )
     for panel in _overlay_candidates(observation):
         strip = observation.strip.panel
         clauses.append(
@@ -668,10 +716,11 @@ def layout_evidence(roles: Mapping) -> str:
     two sessions can see a drift — while nothing a run does is stopped by one.
 
     Read off the normalized observation (:func:`observation_of`), so the sentence and the clauses
-    above are answers about the *same* tree. The **parameter panel's state** is carried here for
-    the same reason the counts are: it is the reading an operator needs beside a refusal, and it
-    is what tells "this channel has no manual panel to write" apart from "the panel was there and
-    the tree was read wrong" (ledger B01).
+    above are answers about the *same* tree. The **surface kind** and the **parameter panel's
+    state** are carried here for the same reason the counts are: they are the readings an
+    operator needs beside a refusal, and the two together are what tell "this is another
+    surface" and "this channel has no manual panel to write" apart from "the tree was read
+    wrong" (ledger B01, B08).
     """
     observation = observation_of(roles)
     panels = list(observation.panels)
@@ -683,8 +732,9 @@ def layout_evidence(roles: Mapping) -> str:
         f"{len(panels)} panels (the reference install's clean screen reads "
         f"{EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}); the strip's row holds "
         f"{len(row)} button(s) in view {observation.strip.state_reading!r}; the parameter column "
-        f"resolved with {len(params)} of {len(PARAM_COLUMN_ORDER)} role(s); the fast-access "
-        f"panel reads {observation.parameter_panel.value!r}; "
+        f"resolved with {len(params)} of {len(PARAM_COLUMN_ORDER)} role(s); the active surface "
+        f"reads {surface_kind(observation).value!r} with the fast-access panel "
+        f"{observation.parameter_panel.value!r}; "
         f"{'a menu popup is open' if observation.popup_open else 'no menu popup'}; "
         f"{dialogs} dialog panel(s)"
     )
