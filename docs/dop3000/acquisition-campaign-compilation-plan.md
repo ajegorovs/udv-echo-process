@@ -3279,8 +3279,9 @@ spec.
 
 ### 26.6 The UI crop set, indexed — and what a second reader of the pixels found
 
-`docs/dop3000/ui-element-index.md` and `docs/dop3000/ui-crops/`: 30 hand-cut crops, indexed as
-`UI-<FAMILY>-<nn>` (12 `MENU`, 15 `OVERLAY`, 1 `SIDEBAR`, 1 `BAR`, 1 `STRIP`), one row each with the surface,
+`docs/dop3000/ui-element-index.md` and `docs/dop3000/ui-crops/`: 41 hand-cut crops after the second pass,
+indexed as `UI-<FAMILY>-<nn>` (17 `MENU`, 20 `OVERLAY`, 1 `SIDEBAR`, 1 `BAR`, 1 `STRIP`, 1 `WINDOW`), one row
+each with the surface,
 the state at capture, the readable captions and the `blocking` column. The header states the set is **partial**;
 two sections name what it does **not** cover — the operator's own `Measure US field` and `Compare profiles`,
 plus every surface the plan names with no crop (the monitor and its plots, the title bar and the mode
@@ -3337,7 +3338,7 @@ map of the application the record did not have, and it corrects §26.5 and §26.
 | `Parameters` | **every** entry spawns a blocking overlay |
 | `Compute` | no overlays at all: each entry is a button switching which curve the monitor plots |
 | `Cursors` | `Show cursors` is a toggle, and showing them **expands the submenu** with `Add a cursor on curve` plus a colour-selector button |
-| `Filters` | togglable entries; with either filter on, the submenu **gains** `Define filtering parameters`, which spawns a blocking `Filters parameters` overlay |
+| `Filters` | togglable entries; with the moving-average/mediane filter ticked, the submenu **gains** `Define filtering parameters` — and **the aliasing auto-correction being on is *not* enough** (measured in the second pass, §26.10), which narrows this row's first draft. That entry spawns the blocking dialog whose own caption is about the aliasing correction, the operator's name for it being `Filters parameters` |
 | `Tools` | `Define TGC`, `Search artefacts`, `Acquire raw data` are **non-blocking**; `Measure sound speed` and `Measure US field` are **blocking**, and `Measure US field` also changes the plot |
 | `Channels` | buttons, dropdowns, edits and checkboxes only — no overlay at all |
 | `Display` | buttons only |
@@ -3428,14 +3429,33 @@ depth**. Three consequences, in order of usefulness:
   carries it at all is an open question with an obvious cheap test (place a cursor, read the tree, look for the
   depth and the value; then check whether either is painted or a control text, since §26.6's rule about
   unpainted edits applies to any control whose text is not the displayed value).
+- **The dropdown grows with the cursors, and one of its entries is a statistics engine.** Measured in the
+  second pass: with cursors shown there are two entries (`Show cursors`, `Add a cursor on curve`); once one
+  cursor exists the dropdown paints three more — **`Remove cursor`**, **`Left mouse button move`** (each
+  cursor row carrying its own colour swatch, the move entry bearing a white `X`) and **`Compute statistics`**.
+  `Compute statistics` is the second candidate mechanism for §11.1 item 5's analysis, and a stronger one than
+  the info box: it is the *application* computing over a cursor's values, so an experiment's outcome might be
+  an application-computed number rather than something this project derives. It belongs in the matrix question
+  list alongside the cursor readout — and with the info box it is measured in the same crop, which reads
+  `Depth = 45.0 mm`, `Velocity = 0.0 mm/s`.
 
 **`Measure US field` replaces the monitor with a single echo plot.** The second whole-screen replacement, after
 `Compare profiles`: it is a different surface, not the measurement screen with a dialog on it, and it is
 blocking. Both are crops now or soon.
 
 **The application's own PRF search is a search, not an axis.** The operator started `Tools → Search artefacts`
-(the overlay captioned `Sweep PRF`): it runs **continuously** and offers to keep whatever it finds, and it could
-not be characterised further because *there is nothing being measured on this machine right now*.
+(the overlay captioned `Sweep PRF`): it runs **continuously**, `Start` becomes **`Stop`**, a third button
+**`Keep and exit`** appears, and the overlay carries a **live readout — `562 µs`, against the frame's `600 µs`.**
+So the mechanics *are* characterised, and the second pass corrected this section's first draft which said they
+could not be. Two things follow, and the first is a hazard:
+
+- **Running the search moves the instrument's PRF.** A live readout of `562 µs` while the frame stands at
+  `600 µs` means the search is *writing* the parameter it is searching over — the same class of state change
+  the assisted toggle made (§26.4), and the reason a search has to sit **before** a run and never inside one.
+  Any run that follows a search must re-state the frame, exactly as §26.4's restore did.
+- **What remains unknown is what it optimises for**, not how it is operated: the operator's own answer — that
+  they could not tell because nothing is being measured on this machine — stands as the account of the
+  *objective*, and that is the part a moving target would answer.
 
 That last clause is the finding, and it is the same one the science has:
 
@@ -3452,4 +3472,52 @@ search inside a run, that is a different experiment and it would have to say wha
 
 **A full-window capture now exists** (`app-whole.png`), which closes the index's "no whole-frame view" gap, and
 the crop set stands at 41 files with one rename recorded.
+
+### 26.10 The second pass: what it corrected, and three gaps a camera cannot close
+
+**It corrected four accounts — three of them the operator's or mine — so each is written down with its
+measurement.**
+
+- **`Define filtering parameters` needs a *filter*, not the aliasing correction.** §26.7's row is narrowed
+  accordingly: with the aliasing auto-correction **on** and both filters off, the entry is **absent**; ticking
+  the moving-average filter makes it appear. Two crops from the same session separate the two states, which is
+  the only reason the distinction can be made at all.
+- **The dialog that entry opens is about the aliasing correction**, not about "filters parameters" as such: it
+  carries `Used method = Two PRF`, `PRF difference [%] = 20`, a *use filtered reference profile for correction*
+  option marked *recommended!*, `mediane`, `Filter length [profile] = 3`, `Apply jump filter` with its own
+  length, `Show corrected profiles`, and a button reading `Enable` while the correction is off and `Disable`
+  while it is on. The operator's name for the surface and the window's own caption differ again — the same
+  pattern §26.8 recorded for `Search artefacts`/`Sweep PRF` and `Record options`/`Record settings`.
+- **The `Sweep PRF` running state *is* characterised** (§26.9, corrected in place): a live PRF readout, `Start`
+  becoming `Stop`, and `Keep and exit`. What is missing is the search's objective, not its mechanics.
+- **The cursors dropdown gains three entries once a cursor exists**, not one — including **`Compute statistics`**,
+  which §26.9 now carries as the stronger of the two matrix candidates.
+
+**And one claim the second pass could not confirm:** the operator's "`Measure US field` changes to a single echo
+plot". The crop holds the field/slice schematic — `Width 20.0 mm`, `step 0.50 mm`, `Slice depth 50 mm`,
+`Xorg/Yorg 100.0/100.0`, buttons `Parameters`, `Recall from file`, `Add slice`, `Show slices`, `Exit`, and no
+black corner triangle, the only overlay crop without one — and **no plot axis at all**: the monitor is not in
+the crop. So that half of the claim rests on the operator's report rather than on pixels, recorded as
+reported-not-confirmed, and it is the reason the change to the *monitor* wants its own capture.
+
+**Three gaps a camera cannot close.** `app-whole.png` is the authority here — the whole window at native
+resolution — and it paints **no button row below the parameter column and nothing under the plot**:
+
+- the **four-button band** of §18.7, and
+- the **two caption-less buttons below the recording strip** (§11.1 item 5) are **not painted in the current
+  state**: like the `Parameters` popup, they exist in the tree and not on the screen, so no crop can close them
+  while they are hidden. Making them paint would take a press, and the cheap route is a tree read.
+- the **`TGC mode indicator` rect `[434,182,498,203]`** is plain plot area with grid in the same capture, for the
+  reason §26.3 gives: that control *is* the `Define TGC` overlay's own combo, hidden whenever the overlay is
+  closed — so it cannot be photographed closed either.
+
+**What the whole-window capture did cover is one of the items the hand-over list asked for:** the parameter
+column **in `Uniform` with the `Tgc [dB]` row painted at `40`** (the auto-state crop could not show it), the
+title bar carrying `UDOP DOP3010.43`, the strip floating inside the monitor at `x 344–693, y 415–452` with
+nothing painted below it, and the bottom band reading `Profile : 1043 CH: 1 Block : 1 Memory : Filling
+Time bewteen profile = 22.3 ms [22.3 22.4]` beside an `Exit` button.
+
+**Remaining gaps, as the index names them:** `Compare profiles`; the power↔TGC warning modal and the
+sampling-volume rejection; the single-echo-plot half of `Measure US field`; the two side-by-side plots beside
+`Define TGC`; and the three unpaintable items above.
 
