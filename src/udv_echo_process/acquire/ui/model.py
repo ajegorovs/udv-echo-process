@@ -36,7 +36,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from enum import Enum
 
-from udv_echo_process.acquire.actuator import PARAM_COLUMN_ORDER
+from udv_echo_process.acquire.actuator import PARAM_COLUMN_ORDER, StripView
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
@@ -295,6 +295,9 @@ class StripObservation(ValueModel):
     #: string a tree carries is evidence about a moment, and re-classifying it here would let a
     #: second opinion disagree with the row it was read from.
     state_reading: str | None = None
+    #: The slider mark the resolver read off the panel's **own children** and classified that view
+    #: from, projected from ``roles["strip_slider"]`` — never re-read here, so this cannot answer a
+    #: slider the classification did not (see :meth:`ScreenObservation.from_roles`).
     has_slider: bool = False
 
 
@@ -380,15 +383,31 @@ class ScreenObservation(ValueModel):
             ),
         )
         strip_panel = project(roles.get("strip_panel"))
+        # The slider's mark has **one** authority, and it is the resolver's: ``_resolve`` reads it off
+        # the strip panel's own children (``ui.strip.has_slider``), carries it as ``strip_slider`` and
+        # classifies ``state`` from that same reading, so a map that states the reading is projected
+        # from it and nothing else. Re-reading it here over every node whose centre falls inside the
+        # panel is what let a *nested* widget answer a slider the view and the press binding were
+        # never classified with — one tree, two opinions. Only a partial (legacy) map that states no
+        # reading is answered for: from the view it classified (``STORE`` **is** the slider's view,
+        # the fallback ``udop.recording._state_of`` reads a captured tree with), and from the tree's
+        # own nodes when it states no view either, so a captured tree with no window behind it still
+        # reads — but never over a reading the resolver already took.
+        if "strip_slider" in roles:
+            has_slider = bool(roles["strip_slider"])
+        elif roles.get("state") is not None:
+            has_slider = roles.get("state") == StripView.STORE.value
+        else:
+            has_slider = any(
+                node.cls == "TSp_Sliding_Bar" for node in tree.inside(strip_panel)
+            )
         strip = StripObservation(
             panel=strip_panel,
             row=tuple(
                 node for node in (project(row) for row in (roles.get("strip_row") or ())) if node
             ),
             state_reading=None if roles.get("state") is None else str(roles["state"]),
-            has_slider=any(
-                node.cls == "TSp_Sliding_Bar" for node in tree.inside(strip_panel)
-            ),
+            has_slider=has_slider,
         )
         dialog_hwnds = set(roles.get("value_dialogs") or ()) | set(
             roles.get("browse_dialogs") or ()

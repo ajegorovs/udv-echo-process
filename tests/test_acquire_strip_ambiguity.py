@@ -30,7 +30,7 @@ rather than as a role map: the day a capture lands, this module is where the ans
 from __future__ import annotations
 
 import pytest
-from test_acquire_layout_gate import manual_screen
+from test_acquire_layout_gate import _widget, manual_screen
 
 from udv_echo_process.acquire import driver
 from udv_echo_process.acquire.actuator import (
@@ -41,6 +41,7 @@ from udv_echo_process.acquire.actuator import (
     press_index,
     strip_controls,
 )
+from udv_echo_process.acquire.ui.model import ScreenObservation
 
 
 # B10: UI-STRIP-01 (ui-crops/run-controls.png) and the store row's own four.
@@ -170,3 +171,46 @@ def test_the_shape_gate_does_not_treat_a_four_button_no_slider_row_as_known() ->
 
     assert reasons, "the gate accepted the ambiguous four-button no-slider row as a known strip"
     assert any("strip" in clause.lower() for clause in reasons), reasons
+
+
+# The observation is one projection of one tree: it may not take a second opinion on the slider.
+def test_the_observation_projects_the_resolvers_carried_slider_reading() -> None:
+    """The slider mark has **one** authority — the reading the resolver classified the view from.
+
+    ``driver._resolve`` reads the mark off the strip panel's **own children**
+    (``ui.strip.has_slider``) and carries it as ``roles["strip_slider"]``; ``roles["state"]`` is
+    classified from that same reading. Here the panel holds a container and *that* container holds
+    a ``TSp_Sliding_Bar``, so the resolver's reading is ``False`` and the carried classification is
+    ``READY`` — while a geometric rescan of every node whose centre falls inside the panel (the
+    observation's own rule) finds the grandchild and answers a slider the classification never saw.
+    The observation would then disagree with the view and with the press binding taken against the
+    same tree, which is the one thing ``ScreenObservation.from_roles`` exists to prevent: it
+    projects the carried reading, and only a map that states none is read off the tree instead.
+    """
+    roles = manual_screen(strip_row=3)
+    strip = roles["strip_panel"]
+    left, top = strip["rect"][0], strip["rect"][1]
+
+    # A slider one level deeper than the panel's children: the resolver's own-children rule cannot
+    # see it, the geometric descendant rule cannot miss it.
+    container = _widget(900, "TSp_Panel", left + 6, top + 6, 120, 24)
+    grandchild = _widget(901, "TSp_Sliding_Bar", left + 10, top + 10, 100, 12)
+    roles["raw"] += [container, grandchild]
+    roles["parent_of"][container["hwnd"]] = strip["hwnd"]
+    roles["parent_of"][grandchild["hwnd"]] = container["hwnd"]
+    roles["strip_slider"] = False
+    roles["state"] = classify_strip_view(
+        len(roles["strip_row"]), roles["strip_slider"]
+    ).value
+
+    assert roles["state"] == StripView.READY.value, (
+        "the carried classification under test"
+    )
+
+    observation = ScreenObservation.from_roles(roles)
+
+    assert observation.strip.state_reading == StripView.READY.value
+    assert observation.strip.has_slider is False, (
+        "the observation re-found a nested slider geometrically and answered a slider the "
+        "carried reading (roles['strip_slider']=False, READY) never saw"
+    )
