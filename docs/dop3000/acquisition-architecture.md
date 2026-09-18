@@ -71,7 +71,7 @@ layout gate) as the refactor base`), branch `refactor/acquire-foundation`:
 
 | module | lines | bytes | what it is |
 |---|---|---|---|
-| `acquire/driver.py` | 1,756 | 89,992 | **the facade module**, **re-measured at this tip** (every other row here is the freeze-commit count): `class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` plus the facade's own methods (the transport, the cursor, the enumeration and the resolve, the class's state, the read-only surface and the protocol surface), its own `COMBO_ORDER`/`_same_directory`, and every name it re-exports — so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are this module's own objects. `acquire/udop/session.py` (41 lines) is its compatibility name |
+| `acquire/driver.py` | 1,783 | 91,946 | **the facade module**, **re-measured at this tip (`3ea7c1c`)** (every other row here is the freeze-commit count): `class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` plus the facade's own methods (the transport, the cursor, the enumeration and the resolve, the class's state, the read-only surface and the protocol surface), its own `COMBO_ORDER`/`_same_directory`, and every name it re-exports — so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are this module's own objects. `acquire/udop/session.py` (41 lines) is its compatibility name |
 | `acquire/campaign.py` | 1,836 | 94,417 | definitions, planning, compilation/reconciliation, resume identity, manifest IO, execution orchestration |
 | `acquire/runner.py` | 1,151 | 60,144 | `SweepRunner` — per-point orchestration, logging, verification call sites |
 | `acquire/actuator.py` | 694 | 30,715 | the pure `Actuator` protocol, the ported binding tables (`STRIP_BUTTON_ORDER`, `PARAM_COLUMN_ORDER`, `DIALOG_FIELD_ORDER`, …), `StripView`, `ParamRole` (`actuator.py:115`), `ScreenFingerprint` (`actuator.py:435`), `PreflightReport` (`actuator.py:490`) |
@@ -99,7 +99,8 @@ its widget slice moved the three remaining pure interpreters after it — the re
 (`messages.py`), the cursor, the clip and the foreground precondition (`cursor.py`), and the
 enumeration with its visibility rule (`tree.py`). Patch 4 moved the **state-changing live
 workflows** out of the class into `acquire/udop/` — the `Parameters` interaction
-(`parameters.py`, 1,003 lines), the strip lifecycle and the record/stop/store cycle
+(`parameters.py`, 1,003 lines then and 1,072 at this tip), the strip lifecycle and the
+record/stop/store cycle
 (`recording.py`, 443) and the Store dialog (`store.py`, 237) — as three mixin classes, one per
 surface, and composed them into the one live class. Where the facade's own code sits was got wrong
 once and then corrected: Patch 4 first left `acquire/driver.py` as a 34-line shim that published
@@ -173,10 +174,16 @@ surface, name for name, not a second definition — so `from …udop.session imp
 pieces' method sets are **disjoint**, so the base order changes no resolution, and every moved body
 reaches its collaborators through `self` — which is what keeps a subclass that overrides a private
 (`tests/test_acquire_driver.py`'s `FakeDriver`) overriding exactly the method it always did, and
-what keeps the flat class's method set (96 names) intact. `tests/test_acquire_udop.py` pins the
-composition (the MRO, the disjointness, every method's `__module__`), the published surface and the
-package's import hygiene over the ASTs. Sizes at this tip: `parameters.py` 1,003 lines,
-`recording.py` 443, `store.py` 237, `driver.py` 1,756, `session.py` 41, `__init__.py` 38.
+what keeps the class's method set a superset of the flat class's — `bfbbb10`'s own 96 names plus the
+one documented addition, `_has_slider` included (see below; the earlier text here claimed 96 names
+intact, which read as "the surface is frozen" and was wrong twice over).
+`tests/test_acquire_udop.py` pins the composition (the MRO, the disjointness, every method's
+`__module__`), the published surface, the package's import hygiene over the ASTs — and the pin an
+independent review of this branch found missing: **`bfbbb10`'s 96-name class surface, recorded as a
+name list and compared against the class's own names**, so a method that leaves the class fails there
+by name instead of vanishing inside a list nobody compares against. Sizes at this tip:
+`parameters.py` 1,072 lines, `recording.py` 443, `store.py` 237, `driver.py` 1,783, `session.py` 41,
+`__init__.py` 38.
 
 Rules the target layout pins:
 
@@ -214,35 +221,77 @@ Rules the target layout pins:
   two exceptions — `NUMERIC_WRITE_RECIPE` and `lru_cache`, both *incidental imports* that lived
   in `driver.py` only to feed the commit recipe's assertion and the two lazy handles. Nothing in
   `src/`, `tests/` or `tools/` referenced either through the driver; the recipe name is
-  `acquire/actuator.py`'s and is re-exported by `acquire`. **Patch 4 measured it once more, over
-  the whole class**, and the module-graph correction re-measured it over the moved code: all 96
-  methods and all 3 module-level functions of the flat module are
-  AST-identical at this tip (0 removed, 0 added, 0 changed — decorators and docstrings included),
-  all 173 module-level bindings the flat module published at Patch 3's tip still resolve from
-  `driver` with none lost, and the 96 class attributes are unchanged (MRO:
-  `Win32Actuator → ParametersSurface → RecordingSurface → StoreSurface → object`). The one thing
-  Patch 4 recorded as a caveat is corrected here instead: a **value patch** on the workflow timings
-  that moved with their loops (`DIALOG_FILL_TIMEOUT_S`, `_ENTRY_DIALOG_TIMEOUT_S`,
+  `acquire/actuator.py`'s and is re-exported by `acquire`. **That measurement is taken at `50625b5`,
+  so the four names Patch 2's `acquire/ui` slice had already removed from the module namespace
+  (`ChannelMode`, `STRIP_BUTTON_ORDER`, `os`, `pairwise` — all present at `bfbbb10`) are outside its
+  field of view; the reconciliation against the freeze commit is the correction below.**
+  **The move's identity claim, re-measured at this tip rather than repeated.** Patch 4's measurement
+  was about the *moved workflow bodies* and the class's *name set*; stated as the numbers actually
+  come out against `bfbbb10`, and staged at `b68b80d` — the commit whose message carries this
+  section's own measurements: of `bfbbb10`'s **96** `Win32Actuator` methods, **61 were AST-identical
+  at `b68b80d`** (decorators and docstrings included) and **34 already differed there** — the
+  Patch-2/Patch-3 seam this section names (the `_send`/`_post`/`_gui` wrappers that now delegate into
+  `win32/`, the readers that now call `ui/`) — with `_has_slider` already gone from the class. **At
+  this tip the count is 59 identical and 37 different**: four bodies changed in the commits that
+  answered the first V0 instrument session (`_close_any_dialog`, `_open_parameters_dialog`,
+  `_resolve`, `read_dialog_parameters`), `_has_slider` came back as a seam over
+  `ui/strip.has_slider` rather than byte-identically, and `_screen_anchor_text`
+  (`udop/parameters.py`) is **new on the class**, split out of `_dialog_refusal` when that rule moved
+  to `ui/dialog.py`. "0 removed, 0 added, 0 changed" was therefore true of neither side at this
+  tip; what is true, and what `tests/test_acquire_udop.py` now records and asserts, is the half that
+  matters — **no flat method name was lost** — with the class's own name set at **97**, `bfbbb10`'s
+  96 plus the one named addition.
+  The module namespace is where the earlier text was wrong twice, and it is corrected here.
+  `len([n for n in vars(driver) if not n.startswith("__")])` is **173** at this tip — the figure the
+  earlier text quoted as *Patch 3's tip* count, which is to say the sentence compared the facade's own
+  namespace against itself. Measured from the other side, against the freeze commit: `bfbbb10`'s flat
+  module declared **145** top-level bindings (definitions, classes, assignments and imports, read from
+  the source), of which **139 resolve from `driver`** and **six do not** — `ChannelMode`,
+  `STRIP_BUTTON_ORDER`, `os` and `pairwise`, dropped by Patch 2's `acquire/ui` slice, and
+  `NUMERIC_WRITE_RECIPE` and `lru_cache`, the two incidental imports named above. All six are imports
+  and tables rather than API — `STRIP_BUTTON_ORDER` and `NUMERIC_WRITE_RECIPE` are
+  `acquire/actuator.py`'s and are re-exported by `acquire` — and no file in `src/`, `tests/` or
+  `tools/` reads any of them through the driver;
+  `tests/test_acquire_udop.py`'s `DROPPED_FROM_THE_FLAT_NAMESPACE` pins all six absent, each with its
+  cause, so a facade that is narrower than the flat module says so instead of rounding it off. The
+  class's attribute set is otherwise the flat one's plus the single addition above, MRO unchanged:
+  `Win32Actuator → ParametersSurface → RecordingSurface → StoreSurface → object`.
+  The one thing Patch 4 recorded as a caveat is corrected here instead: a **value patch** on the
+  workflow timings that moved with their loops (`DIALOG_FILL_TIMEOUT_S`, `_ENTRY_DIALOG_TIMEOUT_S`,
   `_DIALOG_REPLACE_S`, `_MENU_TIMEOUT_S`, `_MENU_POLL_S`, `_OVERLAY_SETTLE_S`, `_POLL_S`).
   `monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)` resolves — the name is re-exported — but the
   loop that reads that cadence resolves it in `udop/parameters.py`'s own globals, so the patch that
-  *bites* is the one on the module that runs the loop. The 18 test sites that patch these knobs are
-  therefore repointed, all of them to `udop/parameters.py` — the surface that owns the dialog fill,
-  the popup's wait and poll cadence, the entry-dialog wait and the dialog replacement. `_POLL_S` is
-  the one knob read by three surfaces: defined once, in `udop/recording.py`, and read by the view
-  waits there, by the dialog fill in `udop/parameters.py` and by the wait for the stored file in
-  `udop/store.py`, so the definition is not duplicated and its one repointed test site is the loop
-  that test was written for (the dialog fill). `_OVERLAY_SETTLE_S` has one second reader, the
-  facade's own `preflight`, which holds the copy it imported; that is named here rather than
-  rounded off. A module-level copy cannot follow a later rebinding, and a call-time reference from
-  the surface back to the facade would be an import cycle, so the knob lives with the loop and the
-  patch target for it is the module that reads it. The suite is back to ~70 s from 112 s, and two
+  *bites* is the one on the module that runs the loop. **"Owner" is the definition, not the only
+  binding, and that is the rule the table above understated:** `from … import v` copies a reference,
+  so every importer holds a binding of its own, and a rebinding on the module that *defines* a knob
+  reaches only that module's own loops. Measured at this tip: `_POLL_S` is defined once, in
+  `udop/recording.py`, and held as its own binding by `udop/parameters.py`, `udop/store.py` and the
+  facade as well — setting `recording._POLL_S = 0.0` leaves `driver`, `parameters` and `store`
+  reading 0.4, so the dialog fill and the two store polls each need their own module patched.
+  `_OVERLAY_SETTLE_S` is the same seam in the other direction: its readers are `recording`'s overlay
+  waits and the facade's own `preflight`, each on its own binding, so a patch on either module leaves
+  the other's path at 0.8 s. The 24 test sites that patch these knobs *by name* are repointed
+  accordingly — 20 in `tests/test_acquire_driver.py` and 4 in `tests/test_acquire_dialog.py`, all of
+  them to `udop/parameters.py` (the dialog fill, the popup's wait and its cadence, the entry-dialog
+  wait and the dialog replacement); `_POLL_S` now has two of them, both the dialog fill, the knob's
+  other two readers being the store's and the recording view's own loops. A module-level copy
+  cannot follow a later rebinding, and a call-time reference from the surface back to the facade
+  would be an import cycle, so the knob lives with the loop it feeds and the patch target for it
+  is the module that reads it. `tests/test_acquire_udop.py` therefore records both of the facts
+  its identity assertion cannot see — which modules hold a binding of each knob (`KNOB_HOLDERS`)
+  and which modules' loops read it (`KNOB_READERS`, asserted off the ASTs, i.e. the patch
+  targets), plus the rebinding itself — so a new silent copy of a knob fails there instead of
+  lengthening the suite quietly.
+  The suite at this tip is **1835 passed, 22 skipped in 77 s** (`uv run --no-sync --extra dev pytest
+  -q`, the three pins this paragraph's correction added included); the `b68b80d` repointing is what
+  took it from 111 s back to 68 s at that commit, and the tests added since — the instrument-screen
+  replay and its fixture — carry the difference. Two
   tests assert the loop's own cadence and deadline off a recorded clock
   (`tests/test_acquire_driver.py`'s
   `test_the_popup_wait_is_shortened_on_the_surface_that_owns_the_loop`,
   `tests/test_acquire_dialog.py`'s
   `test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs`) so it fails if a knob stops
-  biting again.
+  biting again; neither guard covers `_OVERLAY_SETTLE_S`'s second binding.
 
 ## 6. Phase plan, and which patch lands what
 
