@@ -10,19 +10,27 @@ are in [`pipeline-conventions.md`](pipeline-conventions.md).
 > provenance-identity hardening are accepted. The artifact pipeline's enforced
 > contracts are summarized below and specified in the rework plan §15.
 
-## Two pipelines, by design
+## Three pipelines, by design
 
-The project intentionally supports two distinct paths. Do not introduce an
+The project intentionally supports three distinct paths. Do not introduce an
 adapter that pretends they are the same model.
 
 | Path | Input and result | Purpose | Main entry points |
 |---|---|---|---|
 | `.ADD` legacy path | `parser.extract()` → `ExtractedData` | Existing ASCII parsing, plots, single-channel echo RPM, and CLI workflows | `parser.py`, `viz.py`, `analysis/rpm.py` (`rpm_from_echo`), `cli.py` |
 | `.BDD` artifact path | `io.load()` → `ArtifactBundle` | Content-sniffed binary reading, scientifically typed transformations, normalized provenance, durable storage, and terminal echo RPM | `io/`, `models/`, `process/`, `provenance/`, `storage/`, `analysis/rpm.py` (`rpm_from_channel`), `run_all.py` |
+| Acquisition path | a plan/definition → stored `.BDD` + a JSONL job log | Driving the DOP3010's Windows application unattended, storing points and verifying them from their own bytes | `acquire/`, `tools/live/`, `udv-acquire` |
 
 The `.ADD` route remains intentionally separate and stable while the artifact
 pipeline matures. The reader dispatches by magic bytes rather than filename
 extension; a misnamed binary is still recognized by its content.
+
+The acquisition path is the **only platform-bound** one: `acquire/driver.py` is the single
+module allowed to import `pywin32` (lazily), `acquire/__init__.py` is import-safe everywhere,
+and its tests run against fakes, so the whole path is developed and tested off-Windows. What it
+cannot do off-Windows is *verify* a gesture, a geometry, a caption or the application's
+acceptance of a write; the split and the protocol for closing it are in
+[`dev-handoff.md`](dev-handoff.md).
 
 ## Package map
 
@@ -36,10 +44,17 @@ src/udv_echo_process/
 ├── parser.py     independent .ADD parser returning ExtractedData
 ├── viz.py        independent .ADD visualization layer
 ├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles
+├── acquire/      the instrument path: plan/config (pure math), actuator protocol + driver
+│                 (Windows-only, lazily imported), campaign/runner/log/verify, live commands
 ├── export.py     terminal-result JSON/CSV/NPZ serialization (not bundle storage)
 ├── run_all.py    batch echo-RPM flows (`.ADD` and artifact-model) + visualizations
-└── cli.py        udv-inspect, udv-viz, and udv-run-all entry points
+└── cli.py        udv-inspect, udv-viz, udv-run-all, udv-acquire entry points
 ```
+
+Companion trees outside the package: `tools/live/` (the interactive-session route for probes
+that must touch the screen) and `tools/ui/` (the committed UI crops, their checker, and the
+magnify/glyph step) — see [`dev-handoff.md`](dev-handoff.md) for what each can and cannot
+establish off-instrument.
 
 ### Dependency boundaries
 
@@ -54,6 +69,10 @@ src/udv_echo_process/
   model.
 - `analysis/` contains terminal `T -> U` results; it is not an intermediate
   transform layer.
+- `acquire/` may use the readers (`io/`) to verify what a stored point actually
+  contains; it must not reach into `viz.py`/`run_all.py`, and nothing outside it may
+  import `driver.py` (the Windows half). A capability belongs in the package — where a
+  fake can drive it — never in `tools/live/probes/`.
 
 ## Artifact-model flow
 
@@ -262,6 +281,8 @@ construct validated specs, and display returned figures.
 | New terminal domain result | `analysis/` | The middle of a processing chain |
 | Durable artifact persistence | `storage/` | Inline JSON arrays or pickle |
 | `.ADD` display or batch behavior | `viz.py`, `run_all.py`, or `cli.py` | The artifact pipeline unless migration is explicitly planned |
+| A new capability that drives the instrument | `acquire/` behind `Actuator`, with a fake-driven test | A script under `tools/live/probes/` (probes are for measuring what no command covers) |
+| A new measurement of the live application | `tools/live/probes/` (a probe), then the finding into `docs/dop3000/` | A code comment only; the driver's comments carry the *rule*, the evidence belongs in the doc |
 
 ## Testing and verification
 
@@ -299,6 +320,15 @@ Test modules mirror the architecture:
   shared kernel, and the 19-recording batch sweep against its paired `.ADD`
   results.
 - `test_package_surface.py` prevents removed legacy APIs from returning.
+- `test_acquire_*.py` protect the instrument path: `actuator`/`config`/`plan` (pure
+  planning and the binding tables), `driver`/`dialog`/`live` (the cycle against the
+  fakes and a stubbed actuator), `campaign`/`runner`/`log`/`verify`/`snapshot`. These run
+  everywhere; what they cannot establish is listed in [`dev-handoff.md`](dev-handoff.md) §3.
+
+Evidence that is committed rather than re-run: `tests/data/*.json` are measured live
+control-tree captures, each naming the probe that produced it, and
+`docs/dop3000/ui-crops/` holds the 45 UI crops with `tools/ui/crop_index.py` as their
+checker (`uv run --extra acquire python tools/ui/crop_index.py`).
 
 For a change that crosses these layers, test the invariant at the closest model
 boundary and add an outside-in probe that does not merely repeat the
@@ -314,3 +344,6 @@ implementation's own test fixture assumptions.
 | How should a new module or transform be structured? | [`pipeline-conventions.md`](pipeline-conventions.md) |
 | How does BDD decoding relate to the device? | [`doppy-analysis.md`](doppy-analysis.md) and `docs/dop3000/manual-reference/` |
 | How do live notebooks and MCP co-work operate? | [`marimo-integration-plan.md`](marimo-integration-plan.md) and [`marimo-integration-log.md`](marimo-integration-log.md) |
+| How do I work here from a machine that cannot reach the instrument? | [`dev-handoff.md`](dev-handoff.md) |
+| How is the instrument driven, and what was measured about it? | [`dop3000/udop-automation.md`](dop3000/udop-automation.md), [`dop3000/handoff-dop3010-acquisition.md`](dop3000/handoff-dop3010-acquisition.md), [`dop3000/live-bringup.md`](dop3000/live-bringup.md) |
+| What is left to fix in the acquisition path? | [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md) |

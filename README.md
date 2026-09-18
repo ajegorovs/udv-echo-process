@@ -79,13 +79,16 @@ contributors do not need it.
 
 ## Architecture
 
-The package deliberately keeps two pipelines separate:
+The package deliberately keeps two *analysis* pipelines separate, and carries a third path
+that produces the recordings they read:
 
 ```text
 .ADD: parser.extract() → ExtractedData → viz / RPM / CLI
 .BDD: io.load() → ArtifactBundle → process transforms → provenance / storage
                         └→ select_channel(...) → analysis terminal results
                                                  (states, profiles, echo RPM)
+acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job log
+                        └→ verify the point from its own decoded words
 ```
 
 - The `.ADD` path is the established ASCII parser, visualization, and
@@ -99,35 +102,51 @@ The package deliberately keeps two pipelines separate:
 - The artifact-model implementation landed through Phase 9 but has two active
   provenance-identity acceptance fixes; see the rework plan §15 before treating
   it as complete.
+- The acquisition path (`acquire/`, `uvd-acquire`, `tools/live/`) is the only
+  platform-bound one: it drives the DOP3010's Windows application over Win32
+  messages, so a gesture, a geometry or a painted caption can only be *verified*
+  on a machine that runs that application. Everything else about it — planning,
+  the cycle, verification, the log — runs and is tested anywhere.
 
 For the package map, boundaries, public entry points, and testing workflow, see
 [`docs/architecture.md`](docs/architecture.md). The precise artifact contracts
 live in [`docs/signal-model-rework-plan.md`](docs/signal-model-rework-plan.md).
+Working from a machine that cannot reach the instrument (a refactor on Linux,
+say): start at [`docs/dev-handoff.md`](docs/dev-handoff.md).
 
 ## Project Structure
 
 | File / Dir | Purpose |
 |------------|---------|
-| `src/udv_echo_process/` | Python package (parser, viz, analysis, CLI) |
-| `examples/` | Runnable scripts on the public API (`filter_echo_minimal.py`) |
-| `tests/` | Pytest suite |
+| `src/udv_echo_process/` | Python package (parser, viz, analysis, acquire, CLI) |
+| `examples/` | Runnable scripts on the public API (`filter_echo_minimal.py`, `campaign-single-channel.json`) |
+| `tests/` | Pytest suite; `tests/data/` holds measured control-tree fixtures |
 | `data/<experiment>/` | Raw UDV data per experiment (`.ADD`, `.BDD`, notes) |
 | `references/wolfram/` | Original Wolfram notebooks + porting map |
-| `outputs/` | Generated plots |
+| `tools/live/` | The interactive-session route for instrument probes (Windows-only) |
+| `tools/ui/` | The committed UI crops, their index checker, and the magnify/glyph tool |
+| `outputs/` | Generated plots, dispatch logs, captures (git-ignored) |
 | `pyproject.toml` | Project config (Python ≥3.14, uv, Pydantic, console scripts) |
 
 ## Agent skills
 
 Repo-local agent skills live in `.agents/skills/` — one Markdown `SKILL.md` per
-skill.
+skill. `udop-acquisition` is the one for the instrument: the Win32 driving craft,
+the record/store cycle, the crops/vision route and the bring-up for a second
+machine.
 
 Hermes Agent does not auto-load skills from a cloned repo: a `SKILL.md` is a set
 of instructions the agent follows, so it requires explicit opt-in. Once per repo,
-per machine:
+per machine, from the repository root:
 
 ```bash
-hermes skills trust
+hermes skills trust "$(git rev-parse --show-toplevel)"
 ```
 
-Run it from anywhere inside the repo. It takes effect in your **next** session.
-`hermes skills list` shows the loaded skills.
+Pass the root explicitly: the no-argument form resolves the caller's cwd itself and
+reports *"Not inside a git checkout"* even when it is run from inside this repository.
+It takes effect in your **next** session; `hermes skills list` shows the loaded skills.
+
+A project-local skill **wins** over a profile-global skill of the same name, so keep the
+local names distinct (`udop-acquisition`, not `windows-gui-automation`) — a local copy that
+falls behind the global one silently hides it.
