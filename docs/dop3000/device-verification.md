@@ -9,7 +9,10 @@ a second file is a checklist that drifts.
 (`uv run --extra dev pytest -q`, `uv run --extra dev ruff check src tests`) and only in an
 interactive session that owns the application's desktop — see
 [`live-bringup.md`](live-bringup.md) §1 for the session/scheduled-task prerequisite and
-`tools/live/README.md` for the dispatcher.
+`tools/live/README.md` for the dispatcher. **One item may be run unattended: V0 is a read-only
+inventory that sends no message and moves no cursor.** V1-V8 involve gestures, a hand-reached
+state, or a decision only the operator can make; §Session record is the account of what a
+first, unattended V0 found.
 
 **What it is for.** Verifying **behavioural equivalence and newly conservative refusals** —
 not continuing reconnaissance. Pass criteria are written so that "refused, and said why" is
@@ -203,8 +206,61 @@ state that was left behind — never attempt a speculative recovery gesture.
   **with the session's evidence named**; failed hypotheses stay in that ledger as history
   rather than quietly leaving the text (Patch 6).
 - Record the exact verified application/version/device scope on this page when it is
-  established. Until then this document covers **no** specific version: nothing in this set
-  has been verified against the instrument by the refactor session itself.
+  established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant, V0 only.
+  Every other item still covers **no** specific version.
+
+## Session record
+
+### 2026-09-18 — the first V0 after the refactor, and the finding it caught
+
+Application: **`UDOP DOP3010.43`**, instrument (non-simulation) variant — the window caption is
+the discriminator (ledger B14) — 1920x1080, maximized. Revision under test: branch
+`refactor/acquire-foundation`; the three readings below are the merge base `bfbbb10` (before
+the refactor), the tip `b68b80d` (patches 0-4 with the module-graph correction) and `e1a8e47`
+(the fix this session forced). One command, read-only, unchanged across all three:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status
+```
+
+| reading | revision | `layout_shape_reasons` | what else the output read |
+|---|---|---|---|
+| before the refactor | `bfbbb10` | `[]` | 44 visible controls in 4 panels; strip `ready`, 3 buttons, no slider; no overlay; `layout_note: None` |
+| after patches 0-4 | `b68b80d` | **the anchor clause** | the anchor refused as *"not at its measured location: the bar's buttons were bound [] to the left of it"*, on the same screen the pre-refactor code read cleanly |
+| after the fix | `e1a8e47` | `[]` | the same 44/4 reading, plus the surface evidence clause `the active surface reads 'measurement' with the fast-access panel 'present_complete'` |
+
+**What the refusal was.** Not a typo — a *class* of bug, and the reason this session exists.
+The anchor's name clause read `observation.menu.named`, the binding the resolver publishes,
+while `Win32Actuator._resolve` publishes `roles["menu"] = {}` and fills it **as the result of**
+proving the anchor. The clause therefore read its own output and could never pass on a live
+tree, where no widget carries text and nothing names the anchor's predecessors. It passed in
+the suite only because every synthetic screen hands the resolver a fully *named* bar — a screen
+this application never paints. **The tests were not wrong; they were describing a tree the
+device does not produce**, which is exactly the class of assumption a cloud-only refactor
+cannot settle on its own.
+
+**The fix** (`e1a8e47`, its own commit per the stop condition): the anchor is proven by
+**position** — the third button of a bar whose painted length is one of the two measured ones —
+and a binding a tree *does* publish is held to agreement with that bar (its names in the
+vocabulary's own left→right order, and `Parameters` bound to the bar's third entry), which is
+the check that believes the bar and not the map. The predecessors' names are no longer demanded,
+because no tree states them: what settles the identity on a device is the chain **after** the
+hover. Three tests pin it, all driven off the instrument's own measured bar (quoted in
+`tests/test_acquire_ui_counterexamples.py` from
+`tests/data/udop-measurement-screen-tree-instrument.json`), and the first was run against the
+un-fixed module to confirm it fails there — it did, with the live symptom.
+
+**Settled by this session.** **V0 passes** on the instrument's own clean screen, with nothing
+changed on the device (the status command is read-only), and the **precondition half of V2**:
+the anchor is provable on the real bar, so the gesture is reachable rather than refused before
+it starts.
+
+**Not attempted, and why.** The gesture half of V2 (real-cursor hover → popup → topmost entry →
+dialog → safe close) and all of V1, V3-V8. A popup this application opens cannot be closed
+programmatically (ledger B20), so a gesture that went wrong would strand the application with
+nobody at the console, and V4's four-button state has to be reached by hand. `acquire status`
+does not exercise a gesture at all, which is precisely why V0 could be run unattended and V2
+cannot.
 
 ## What this session may **not** claim
 
