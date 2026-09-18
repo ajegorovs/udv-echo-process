@@ -349,20 +349,43 @@ answers `None` when the cap's provenance is unverified; the rename or the split 
 one way and documented one way; and the test that asserts `True`/`None`/`False` says which
 provenance it is under.
 
-### W6 — Feed the period law the instrument's own emissions
+### W6 — Feed the period law the instrument's own emissions, without erasing the declaration
 
-**What.** `_profile_period_s` (`campaign.py:910`) and the runner's law use the
-declaration. With a snapshot available, the law's emissions input becomes the
-instrument's own value (word 14 read from the dialog, and the file's word 14 as the
-post-hoc certificate). Keep the plan-vs-measured split explicit on the record — the
-correctness slice already stores both — so a reader can see which was used for what.
+**What.** `_profile_period_s` (`campaign.py:910`) and the runner's law use the declaration.
+On the committed point the definition says 52 while the instrument — and the stored file's
+own word 14 — say 150, so `timing.target_s` is 0.0098 s against a measured 0.030007 s. With a
+snapshot available, the law should use what the instrument says.
 
-**Where.** `campaign.py:910`, the runner's period computation, and the record's
-`ProfileTiming` usage (already carries `target_s` and `achieved_s`).
+The trap is *how*. Writing `point.parameters.emissions_per_profile = 150` would make the
+record agree with itself by destroying the evidence it exists to hold. Four facts have to
+survive, and they are four, not two:
 
-**Done when.** On the committed point, `timing.target_s` is computed from the instrument's
-150 rather than the plan's 52, the test states that explicitly, and the plan/measurement
-distinction is preserved rather than collapsed.
+```
+definition declared      52     what the experiment asked for
+instrument read         150     what the application was configured to do
+effective timing used   150     what the law was actually fed
+stored file confirmed   150     what the acquired block's own word 14 says
+```
+
+So the compiled plan carries the fixed configuration in three named projections —
+`declared_fixed_configuration`, `observed_fixed_configuration`,
+`effective_fixed_configuration` — each fact keeping its value **and its provenance**, and the
+rule is:
+
+- the timing law uses the **effective** value, which for emissions is the observed one;
+- the **declared** value stays exactly as the definition wrote it, on the campaign and on
+  every record from it;
+- the **reconciliation result** stays on the record too, so the 52-vs-150 disagreement is
+  still visible *as* a disagreement after this fix rather than edited into agreement.
+
+**Where.** `campaign.py:910` and the definition-to-effective resolution; the runner's period
+computation; `ExecutableCampaign` (W3) for the three projections; the record's `ProfileTiming`
+(already carries `target_s` and `achieved_s`).
+
+**Done when.** On the committed point, `timing.target_s` is computed from the effective 150
+while the record still shows the declaration as 52 and the disagreement as a disagreement —
+**one test asserts all three together**, so no later change can collapse them back into a
+single number. This is also what makes Phase 7's certificate possible.
 
 ## 5. Decisions to make before coding
 
