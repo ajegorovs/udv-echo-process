@@ -32,6 +32,12 @@ nobody asked it. Four of the six are also decoded from a *stored file*
 recording has been spent — the whole point of reading them before the first point is that the
 first point must not be what tells us.
 
+**The projection keeps the provenance and drops the prose** (:class:`Provenance`). A fact's
+``reason`` is written for a reader who has no instrument in front of them — which is exactly why
+it gets rewritten — and compatibility hashed on it would turn a documentation improvement into
+"a different instrument" and re-run a point that was already measured. So the identity is each
+fact's *value and source* and nothing else, and everything a human reads stays in the reading.
+
 This module is **pure Python on purpose**, like :mod:`~udv_echo_process.acquire.actuator`: it
 imports no Win32 binding, so the models can be built, compared and round-tripped through JSON on
 any host, and a fake actuator can answer the port with one.
@@ -54,6 +60,7 @@ __all__ = [
     "FactSource",
     "InstrumentFact",
     "InstrumentSnapshot",
+    "Provenance",
     "declared",
     "identity_digest",
     "unreadable",
@@ -88,9 +95,9 @@ class FactSource(str, Enum):
         by which panel it builds for the channel, and never by a caption (every widget here is
         caption-less), so the structure is the statement.
     ``DECLARED``
-        A caller's claim: what the run *intends*, not what the instrument said. The configured
-        channel is the standing case — the run routes to it and the dialog's read-back proves
-        it, but proving it belongs to the routing step's own record.
+        A caller's claim, with nothing of the application's behind it: what the run *intends*.
+        A campaign's own statement about the instrument — "it is at 169 µs" — is the standing
+        case, and it is the state a compile reconciles *against* rather than believes.
     ``UNREADABLE``
         Nothing can read this fact yet, so there is no value at all and ``reason`` says why.
         Carried rather than omitted: a fact missing from a record and a fact the instrument
@@ -155,6 +162,15 @@ class InstrumentFact(ValueModel):
         """True only for a value the application's own surface produced."""
         return self.source is FactSource.READ
 
+    def provenance(self) -> Provenance:
+        """This fact as what a resume compares: the value, the source, and no prose.
+
+        The one mapping from evidence to identity, so the projection cannot be spelled one way
+        in one place and another way somewhere else — and so that a fact's explanation, which is
+        edited for readers, can never move a digest.
+        """
+        return Provenance(value=self.value, source=self.source)
+
 
 def unreadable(reason: str) -> InstrumentFact:
     """A fact nothing can read yet — carried with its reason, never as a value."""
@@ -164,6 +180,45 @@ def unreadable(reason: str) -> InstrumentFact:
 def declared(value: str, reason: str | None = None) -> InstrumentFact:
     """A fact the caller states rather than the instrument, marked as such."""
     return InstrumentFact(value=value, source=FactSource.DECLARED, reason=reason)
+
+
+class Provenance(ValueModel):
+    """A fact as compatibility reads it: the value and the source, with the prose left out.
+
+    :class:`InstrumentFact` carries a ``reason``, and that reason is *diagnostic* text — written
+    for a reader with no instrument in front of them, and rewritten whenever it can be made
+    clearer. Hashing it would make the identity depend on wording: the same instrument, the same
+    evidence strength, two digests, and a resume that re-runs points already measured. So the
+    projection has no field for a reason at all — this is a structural guarantee rather than a
+    convention someone has to remember.
+
+    The source *is* in the projection, deliberately: a fact that moved from ``read`` to
+    ``unreadable`` between two runs is a weaker claim about the same instrument, and a resume
+    that ignored that would be comparing evidence it no longer has.
+    """
+
+    value: str | None = None
+    source: FactSource
+
+    @model_validator(mode="after")
+    def _check_provenance(self) -> Provenance:
+        """The value/source combinations that are a fact, and no others.
+
+        The same rule :class:`InstrumentFact` enforces, minus everything about ``reason``: only
+        an ``unreadable`` fact has no value, and a ``read`` or ``declared`` one without a value
+        is a fact nobody established.
+        """
+        if self.source is FactSource.UNREADABLE:
+            if self.value is not None:
+                raise ValueError(
+                    "an unreadable fact carries no value: that is what makes it unreadable"
+                )
+        elif self.value is None:
+            raise ValueError(
+                f"a {self.source.value} fact must carry the value it came with: with no value "
+                "there is nothing to compare"
+            )
+        return self
 
 
 class InstrumentSnapshot(ValueModel):
@@ -227,20 +282,21 @@ class CompilationIdentity(ValueModel):
 
     In it, because a campaign can disagree with it or a read depends on it: the channel and its
     mode (an assisted channel has its own parameter surface entirely, so a manual campaign
-    against it has nothing to write), every fixed fact *with its provenance* (the provenance
-    belongs in the identity: a fact that moved from ``read`` to ``unreadable`` between two runs
-    is a weaker claim about the same instrument, and a resume that ignored that would be
-    comparing evidence it no longer has), and the layout signature — the window class, the panel
-    and visible-control counts, and the strip's view and structure — because a changed layout
-    means the reads themselves are suspect.
+    against it has nothing to write), every fixed fact *with its provenance* — a :class:`Provenance`,
+    value and source, never the prose that explains it (the provenance belongs in the identity: a
+    fact that moved from ``read`` to ``unreadable`` between two runs is a weaker claim about the
+    same instrument, and a resume that ignored that would be comparing evidence it no longer has)
+    — and the layout signature: the window class, the panel and visible-control counts, and the
+    strip's view.
 
     Out of it, deliberately: ``hwnd``, ``rect``, ``maximized``, ``screen``, ``cursor``,
     ``is_foreground`` and ``layout_note`` (true only of a session: a restart or a drag must not
     read as a different instrument), ``overlay`` (a modal being up is a precondition failure the
-    compiler refuses on, not a property of the instrument), and the store slider's **maximum** —
-    the strip's *structure* is in, its slider's range is not, because that range is the selected
-    block's profile count: a property of the data in the application's buffer, and of how far the
-    run has already got, not of the layout.
+    compiler refuses on, not a property of the instrument), every ``reason`` (see
+    :class:`Provenance`), and the store slider's **maximum** — the strip's *structure* is in, its
+    slider's range is not, because that range is the selected block's profile count: a property
+    of the data in the application's buffer, and of how far the run has already got, not of the
+    layout.
 
     The strip's button count is the one part of this projection whose stability is **not** yet
     measured: this application's ready row gains ``Do store`` once its block holds data, so a
@@ -250,14 +306,14 @@ class CompilationIdentity(ValueModel):
     refuses — and it is listed as something the fixture set (W1) has to settle rather than assume.
     """
 
-    channel: InstrumentFact
-    mode: InstrumentFact
-    prf_us: InstrumentFact
-    emissions_per_profile: InstrumentFact
-    burst_length: InstrumentFact
-    sound_speed_ms: InstrumentFact
-    first_gate_mm: InstrumentFact
-    max_profiles_per_block: InstrumentFact
+    channel: Provenance
+    mode: Provenance
+    prf_us: Provenance
+    emissions_per_profile: Provenance
+    burst_length: Provenance
+    sound_speed_ms: Provenance
+    first_gate_mm: Provenance
+    max_profiles_per_block: Provenance
     class_name: str
     panels: int = Field(ge=0)
     visible_controls: int = Field(ge=0)
@@ -274,13 +330,15 @@ class CompilationIdentity(ValueModel):
 
         Built by field name from the snapshot's own facts, so a fact added to the snapshot and
         forgotten here is refused at construction (``extra="forbid"``) instead of being silently
-        left out of every resume comparison.
+        left out of every resume comparison. Each fact goes through
+        :meth:`InstrumentFact.provenance`, so the identity keeps the value and the source and
+        cannot inherit the explanation.
         """
         fingerprint = snapshot.fingerprint
         strip = fingerprint.strip
         return cls(
             **{
-                name: getattr(snapshot, name)
+                name: getattr(snapshot, name).provenance()
                 for name in ("channel", "mode", *FIXED_FACT_FIELDS)
             },
             class_name=fingerprint.class_name,
@@ -298,7 +356,9 @@ def identity_digest(identity: CompilationIdentity) -> str:
     Canonical JSON (keys sorted, no whitespace, ASCII) through SHA-256, the way
     :func:`~udv_echo_process.acquire.campaign.campaign_fingerprint` hashes a definition: the
     same reading hashes the same on every host and every load, and a change to any fact, to a
-    fact's provenance or to the layout changes it.
+    fact's provenance or to the layout changes it. What it hashes is the projected values and
+    their sources — never the commentary around them, which would make the digest a function of
+    how the diagnostic text was last worded.
     """
     canonical = json.dumps(
         identity.model_dump(mode="json"),

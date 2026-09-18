@@ -13,6 +13,9 @@ the next slice compiles against, and it pins them on the plan's own criteria:
   mode and the layout signature), and it does **not** move with anything a restart changes
   (``hwnd``, rect, maximised state, screen, cursor, foreground) or with the store slider's
   maximum, which is the selected block's profile count rather than the layout.
+- **the projection is values and sources, never wording** — a ``reason`` rewritten for a human
+  reader does not move the identity, because a documentation improvement must not re-run a point
+  that was already measured.
 
 Everything here is headless and instrument-free: the readings are built from the measured
 shapes (43 visible controls in 4 panels on the clean manual screen, 169.0 µs and 52 emissions
@@ -36,6 +39,7 @@ from udv_echo_process.acquire.snapshot import (
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
+    Provenance,
     declared,
     identity_digest,
     unreadable,
@@ -247,13 +251,20 @@ def test_the_store_sliders_maximum_is_not_the_layout() -> None:
 def test_every_fixed_fact_moves_the_identity_by_value_and_by_provenance(
     name: str,
 ) -> None:
-    """Each of the six facts, and each fact's provenance: a weaker claim is not the same claim."""
-    base = digest(snapshot())
-    other_value = digest(snapshot(**{name: read("999")}))
+    """Each of the six facts, and each fact's provenance: a weaker claim is not the same claim.
+
+    The baseline *reads* the fact, so both directions are measurable on it — another value, and
+    the same fact carried as one nothing read. This is the half that keeps "the instrument said
+    999" and "something claims 999" from being the same instrument, and it is also why the
+    reason cannot be in the projection: for the four facts that are unreadable today, the only
+    thing that used to tell one reading from another was the wording of the explanation.
+    """
+    baseline = digest(snapshot(**{name: read("999")}))
+    other_value = digest(snapshot(**{name: read("998")}))
     unproven = digest(snapshot(**{name: unreadable("nothing could read it")}))
 
-    assert other_value != base, name
-    assert unproven != base, name
+    assert other_value != baseline, name
+    assert unproven != baseline, name
     assert unproven != other_value, name
 
 
@@ -326,3 +337,68 @@ def test_the_digest_is_stable_and_names_a_change() -> None:
     assert digest(snapshot()) == digest(snapshot())
     assert len(digest(snapshot())) == 64
     assert digest(snapshot()) != digest(snapshot(prf_us=read("212.0")))
+
+
+# ------------------------------------------ a reason is explanatory prose, not compatibility
+
+
+@pytest.mark.parametrize(
+    ("label", "first", "second"),
+    [
+        (
+            "a declared fact's explanation reworded",
+            {
+                "channel": declared(
+                    "1", reason="the configured channel, routed before this read"
+                )
+            },
+            {
+                "channel": declared(
+                    "1",
+                    reason="the channel the routing step selected and verified before this read",
+                )
+            },
+        ),
+        (
+            "an unreadable fact's reason reworded",
+            {"max_profiles_per_block": unreadable(CAP_REASON)},
+            {
+                "max_profiles_per_block": unreadable(
+                    "the Preferences dialog is not currently read by this driver"
+                )
+            },
+        ),
+    ],
+)
+def test_a_reason_is_prose_and_is_not_the_identity(
+    label: str, first: dict[str, object], second: dict[str, object]
+) -> None:
+    """The same value from the same source, explained in other words, is the same instrument.
+
+    ``reason`` is written for a reader with no instrument in front of them, which is exactly why
+    it gets edited — and a digest that covered it would turn a documentation improvement into
+    "a different instrument" and re-run points that were already measured. The readings
+    themselves still differ: the explanation is evidence, it is just not *compatibility*.
+    """
+    reworded = snapshot(**second)
+    assert reworded != snapshot(**first)
+    assert digest(reworded) == digest(snapshot(**first))
+
+
+def test_the_identity_cannot_carry_prose_at_all() -> None:
+    """Structural rather than conventional: a reason has no field of the identity to live in.
+
+    A rule that lived only in this docstring would be one refactor away from being undone — an
+    identity field typed ``InstrumentFact`` would put the explanation back into the digest
+    without any test noticing which field it happened to.
+    """
+    assert set(Provenance.model_fields) == {"value", "source"}
+    assert "reason" not in CompilationIdentity.model_fields
+    assert all(
+        CompilationIdentity.model_fields[name].annotation is Provenance
+        for name in ("channel", "mode", *FIXED_FACT_FIELDS)
+    )
+    assert Provenance(value="1", source=FactSource.DECLARED).model_dump() == {
+        "value": "1",
+        "source": "declared",
+    }
