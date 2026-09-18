@@ -1318,6 +1318,43 @@ Plus one control *above* the value table that the table does not contain: a comb
 cell, but only the operator can confirm that the cell at (0,2) says "emitting power" beside its `Medium` and
 that the `40` at (0,3) is the TGC — the two assignments this table infers from value shape rather than label.
 
+### 18.8 The labels, read off the pixels — and which source to trust for what
+
+Screenshot-plus-vision — the route the earlier prototyping used and dropped when vision detoured through a
+lossy auxiliary path — is back, because it is the only way to see a painted label. `tools/live/probes/dialog_shot.py`
+captures the dialog's own rect and the full screen as lossless PNGs in about four seconds, asserts both images
+are non-blank, checks the frame is stable, reports the DPI status, and closes the dialog; with
+`model.supports_vision: true` the parent reads the actual pixels.
+
+**The dialog, as printed** (channel 1):
+
+| column | rows, top to bottom |
+|---|---|
+| 1 | `US Frequency [kHz]` 4000 · `Burst length` 4 ▼ · `Emitting power` Medium ▼ · `Tgc [dB]` 40 |
+| 2 | `PRF [us]` 212 · `First gate depth [mm]` 2 · `Nb of gates` 797 · `Resolution [mm]` 0.122 · `Sampling volume [mm]` 0.876 ▼ · `Number of skipped profiles` 0  +  `[ ] Apply skip profile` |
+| 3 | `Emissions/profile` 150 · `Doppler angle` 0 · `Sensitivity` medium ▼ · `Velocity scale factor` 3.168 · `Sound speed [m/s]` 1460 |
+
+Header: `Operating parameters for channel 1` — the channel combo of §16.1. Read-only readouts above the table:
+`Depth = 99 mm`, `Velocity scale = 292.1 mm/s`. A green note under sampling volume: `Sampling volumes
+overlapped`. At the foot, two items marked with a red X and not enabled (`No emission on Probe In/Out`,
+`Use US coupling parameters`), and the buttons `Cancel` / `Accept`.
+
+**Two source rules, both earned in this comparison.**
+
+- **Labels exist only in the pixels.** Every text read through this repo's APIs returns empty for these
+  controls, so the label map could only come from an image. It confirms §18.6 row for row, including the two
+  assignments that could only be inferred from value shape there: TGC `40`, emitting power `Medium`.
+- **Neither source is sufficient alone.** A vision transcription of this same image reported `Tgc 10`,
+  `Resolution 3.122`, `Doppler angle 3` and `Sound speed 1450` — four misread digits, all four contradicted by
+  the API read. Conversely the API read's cell mapping put `0.68` where the screen plainly prints `3.168`
+  (`Velocity scale factor`). Rule: **labels from the pixels, numbers from the API, and every disagreement
+  resolved by looking again** — which is what caught both.
+
+**Sharper open item, carried into the writer slice.** The stray `TSp_Edit` controls reading `89` (three of
+them) correspond to no value printed in the dialog, and one of them is exactly what mis-assigned
+`Velocity scale factor`. A reader must bind the specific control it means, never "the first thing inside the
+cell" — so pinning each cell's own control is the first thing the writer must settle.
+
 **Harness trap, paid for once.** `./tools/live/dispatch.sh tools/live/probes/<probe>.py` does **not** run the
 probe: the launcher joins its argument onto the probe directory, finds nothing, and returns without writing a
 log — so the dispatcher polls for a line that can never appear. The working form is the bare name:
