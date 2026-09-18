@@ -15,7 +15,10 @@ transaction §19.1 describes rather than to trust it:
    archive's combo recipe), re-read the cell and the whole table, then commit with the bottom band's
    **rightmost** button (``Accept``). Re-open, dump and photograph again;
 3. **compare** — diff two dumps control by control and cell by cell, so "the dialog came back to its
-   baseline" is a measurement rather than an impression.
+   baseline" is a measurement rather than an impression;
+4. **below-floor** — request a ``sampling volume`` the burst's floor does not allow, record the modal
+   it raises, answer that modal, and read what the field holds afterwards. This is §19.2's rejection
+   as a run: the point is refused either way and nothing is committed.
 
 **What it refuses, and why that is the point.** §19.1's write is a transaction: a value the combo
 does not offer refuses the write instead of proceeding, and a **modal warning is not pressed
@@ -32,6 +35,25 @@ states what was written; (2) after ``Accept``, a re-opened dialog agrees; (3) th
 word. This probe reaches **1 and 2**. Rung 3 is deliberately out of scope: it needs a real recording
 on the channel, and this is a dialog round trip. The report says so rather than implying more.
 
+**The read-back rule, which is the fourth mode's reason to exist.** §19.2's couple (`burst` →
+`sampling volume`) can revert a request apart from any modal, so no write is believed on the strength
+of having been sent. Every ``write`` run therefore ends with a ``read_back`` verdict — the requested
+pair against the re-opened dialog's own statement — and reports ``refused`` (with the reason) when
+they differ, or when a modal appeared anywhere on the path. ``below-floor`` is that same rule as an
+experiment: it requests a volume **below** the burst's floor, which is the one request this
+application is documented to answer with ``Warning — The burst length should be reduced``, records
+that modal (its structure, its words, its button band, and a photograph of it), answers it, and reads
+what the field actually holds afterwards. It never ``Accept``\\ s: the requested value is not held, so
+the point is refused and the dialog is left with its ``Cancel``.
+
+**The one place this probe presses a modal's affirmative.** :func:`dismiss_modal` never presses the
+rightmost button of a warning, because a single-button warning's only button is ``Continue`` and
+answering it is a decision this experiment does not have. ``below-floor`` is the exception, and it is
+narrow: the modal *is* the measurement there — what ``Continue`` does to the field is the thing being
+asked — so ``--answer continue`` presses the band's rightmost button, and ``--answer safe`` presses
+its leftmost instead when the labels have to be read off the pixels before anything is pressed. No
+other mode, and no other button, is ever pressed through a warning.
+
 **Where the machinery comes from.** The dialog gesture, the reader and the writers are the driver's
 own private steps (:meth:`…driver.Win32Actuator._open_parameters_dialog`, ``_poll_dialog_fields``,
 ``_combo_select``, ``_dialog_button``) — never a reimplementation, so this probe cannot drift from
@@ -45,6 +67,7 @@ the same dialog taken by two different routines are two opinions.
 
     PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py dump --out outputs/live/x.json
     PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --burst 2 --out outputs/live/y.json
+    PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py below-floor --volume 0.584 --out z.json
     ./tools/live/dispatch.sh dialog_write.py compare --baseline outputs/live/x.json --after outputs/live/y.json
 """
 
@@ -254,6 +277,64 @@ def dismiss_modal(actuator: driver.Win32Actuator, report: dict) -> dict:
     return state
 
 
+def read_modal(actuator: driver.Win32Actuator) -> dict | None:
+    """The warning, in full: its structure, its **words**, and the band of buttons it offers.
+
+    :func:`modal_state` deliberately reports structure only, because that is all a guard needs. This
+    is the experiment's read: the modal's exact wording is one of the things §18.10 has to record, and
+    this application's dialogs are caption-less through ``WM_GETTEXT`` at the panel level but not at
+    the child level (a ``TSp_Label``'s own text reads back), so the wording is read from the widget
+    rather than guessed from a screenshot. Nothing here is pressed.
+    """
+    found = actuator._find_overlay()
+    if found is None:
+        return None
+    kind, panel, kids = found
+    rows = probe_fields.walk(panel["hwnd"], actuator._get_text)
+    band = driver._bottom_row(panel, kids)
+    return {
+        "kind": kind.value,
+        "rect": panel["rect"],
+        "panel_text": actuator._get_text(panel["hwnd"]),
+        "words": [
+            {"cls": row.get("cls"), "text": row.get("text"), "rect": row.get("rect")}
+            for row in rows
+            if row.get("text")
+        ],
+        "child_classes": [row.get("cls") for row in rows],
+        "buttons": [{"rect": b["rect"], "hwnd": b["hwnd"]} for b in band],
+        "button_count": len(band),
+    }
+
+
+def press_modal_button(actuator: driver.Win32Actuator, which: str) -> dict:
+    """Press one button of the modal's own band — the rightmost, or the leftmost, by position.
+
+    ``which`` is ``"continue"`` (the band's rightmost button: the affirmative, pressed **only** by
+    the ``below-floor`` mode, where the modal is the measurement) or ``"safe"`` (its leftmost: the
+    ``Cancel``/``No`` end this driver answers every other warning with). A band of one button is
+    pressed by either name, because one button is one button — and that is exactly the case where
+    the single button *is* ``Continue``.
+    """
+    found = actuator._find_overlay()
+    if found is None:
+        return {"pressed": None, "note": "no modal was up when a button was to be pressed"}
+    _kind, panel, kids = found
+    band = driver._bottom_row(panel, kids)
+    if not band:
+        return {"pressed": None, "note": "the modal's band holds no TSp_Button: nothing pressed"}
+    target = band[-1] if which == "continue" else band[0]
+    actuator._click_hold(target["hwnd"])
+    time.sleep(SETTLE_S)
+    return {
+        "pressed": which,
+        "side": "rightmost" if which == "continue" else "leftmost",
+        "rect": target["rect"],
+        "band": [b["rect"] for b in band],
+        "still_up": bool(win32gui.IsWindowVisible(panel["hwnd"])),
+    }
+
+
 def open_dialog(actuator: driver.Win32Actuator, report: dict) -> dict | None:
     """The driver's own open gesture, with its refusal recorded rather than raised."""
     state = modal_state(actuator)
@@ -323,6 +404,12 @@ def shot_stem(args: argparse.Namespace) -> Path:
     return stem if stem.is_absolute() else REPO / stem
 
 
+def modal_stem(args: argparse.Namespace) -> Path:
+    """The warning's own PNG stem, one name away from the dialog's so neither overwrites the other."""
+    stem = shot_stem(args)
+    return stem.with_name(stem.name + "-modal")
+
+
 def output_path(args: argparse.Namespace) -> Path:
     """``--out`` as an absolute path, for the same working-directory reason as :func:`shot_stem`."""
     path = Path(args.out)
@@ -371,6 +458,52 @@ def select_by_value(actuator: driver.Win32Actuator, combo: dict, wanted: str) ->
     return match
 
 
+def read_back_verdict(requested: dict, post: dict) -> dict:
+    """Whether the re-opened dialog states what was requested — the gate on recording a point.
+
+    §19.2's couple can revert a request with no modal at all, so a write that was *sent* is not a
+    write that *took*: this compares the two cells' own stated text against the request and reports
+    every difference. ``matches`` is the whole verdict, and a caller that finds it false must refuse
+    the point rather than record what came back.
+
+    It also reports each combo's own belief (``CB_GETCURSEL``'s index and the item that index holds)
+    beside the text the cell states, because those two disagreed on the live dialog at the start of
+    §18.10's run — text ``4`` with cursel ``3`` (whose item is ``8``) — and a reader that believed the
+    index would have recorded a burst the cell does not state and the instrument was not at.
+    """
+    cells = {"burst": BURST_CELL, "sampling_volume": SAMPLING_VOLUME_CELL}
+    stated = {name: value_at(post["table"], *cell) for name, cell in cells.items()}
+    effective = {name: row.get("value") for name, row in stated.items()}
+    asked = {name: value for name, value in requested.items() if value is not None}
+    mismatch = {
+        name: {"asked": value, "effective": effective.get(name)}
+        for name, value in asked.items()
+        if str(effective.get(name, "")).strip() != str(value).strip()
+    }
+    belief = {}
+    for name, row in stated.items():
+        items, index = row.get("combo_items") or [], row.get("combo_index")
+        at_index = items[index] if isinstance(index, int) and 0 <= index < len(items) else None
+        belief[name] = {
+            "text": row.get("value"),
+            "cursel": index,
+            "item_at_cursel": at_index,
+            "agrees": at_index is not None and str(at_index).strip() == str(row.get("value")).strip(),
+        }
+    return {
+        "asked": asked,
+        "effective": effective,
+        "stated": stated,
+        "combo_belief": belief,
+        "mismatch": mismatch,
+        "matches": not mismatch,
+        "rule": (
+            "a dialog write is believed only where the re-opened dialog states what was asked; a "
+            "mismatch — or a modal anywhere on the path — refuses the point rather than recording it"
+        ),
+    }
+
+
 def run_write(actuator: driver.Win32Actuator, args: argparse.Namespace, started: float) -> int:
     """The write mode: one or two combo cells, ``Accept``, then the re-opened dialog read back."""
     report: dict[str, object] = {
@@ -395,29 +528,35 @@ def run_write(actuator: driver.Win32Actuator, args: argparse.Namespace, started:
         burst = cell(pre_table, *BURST_CELL, BURST_CLASS)
         volume = cell(pre_table, *SAMPLING_VOLUME_CELL, SAMPLING_VOLUME_CLASS)
 
-        # --- 2. the burst write, then the whole table again ---------------------------
-        report["burst_index"] = select_by_value(actuator, burst, args.burst)
-        after_burst_table = read_table(actuator, panel)
-        report["after_burst_write"] = {
-            "burst": value_at(after_burst_table, *BURST_CELL),
-            "sampling_volume": value_at(after_burst_table, *SAMPLING_VOLUME_CELL),
-            "table": after_burst_table,
-            "note": (
-                "read in the SAME dialog, before Accept: the coupled sampling volume moving here is "
-                "the application's own reaction to the burst notification (§19.2), which is the "
-                "only same-dialog evidence that the message reached the model rather than only the "
-                "control"
-            ),
-        }
-        if modal_state(actuator) is not None:
-            dismiss_modal(actuator, report)
-            report["stopped"] = "a modal appeared after the burst write; nothing was accepted"
-            close_dialog(actuator, panel, report)
-            report["driver_notes"] = list(actuator.warnings)
-            emit(report, output_path(args), started)
-            return 1
+        # --- 2. the burst write (when one was asked for), then the whole table again ----
+        if args.burst is not None:
+            report["burst_index"] = select_by_value(actuator, burst, args.burst)
+            after_burst_table = read_table(actuator, panel)
+            report["after_burst_write"] = {
+                "burst": value_at(after_burst_table, *BURST_CELL),
+                "sampling_volume": value_at(after_burst_table, *SAMPLING_VOLUME_CELL),
+                "table": after_burst_table,
+                "note": (
+                    "read in the SAME dialog, before Accept: the coupled sampling volume moving here "
+                    "is the application's own reaction to the burst notification (§19.2), which is "
+                    "the only same-dialog evidence that the message reached the model rather than "
+                    "only the control"
+                ),
+            }
+            if modal_state(actuator) is not None:
+                dismiss_modal(actuator, report)
+                report["stopped"] = (
+                    "a modal appeared after the burst write; nothing was accepted"
+                )
+                report["refused"] = report["stopped"]
+                close_dialog(actuator, panel, report)
+                report["driver_notes"] = list(actuator.warnings)
+                emit(report, output_path(args), started)
+                return 1
+        else:
+            report["burst_index"] = None
 
-        # --- 3. the coupled knob, only when the restore needs it ----------------------
+        # --- 3. the coupled knob, only when the request carries one -------------------
         if args.volume is not None:
             report["volume_index"] = select_by_value(actuator, volume, args.volume)
             after_volume_table = read_table(actuator, panel)
@@ -428,7 +567,10 @@ def run_write(actuator: driver.Win32Actuator, args: argparse.Namespace, started:
             }
             if modal_state(actuator) is not None:
                 dismiss_modal(actuator, report)
-                report["stopped"] = "a modal appeared after the sampling-volume write; nothing accepted"
+                report["stopped"] = (
+                    "a modal appeared after the sampling-volume write; nothing accepted"
+                )
+                report["refused"] = report["stopped"]
                 close_dialog(actuator, panel, report)
                 report["driver_notes"] = list(actuator.warnings)
                 emit(report, output_path(args), started)
@@ -477,13 +619,158 @@ def run_write(actuator: driver.Win32Actuator, args: argparse.Namespace, started:
         close_dialog(actuator, panel2, report)
     report["post"]["burst"] = value_at(report["post"]["table"], *BURST_CELL)
     report["post"]["sampling_volume"] = value_at(report["post"]["table"], *SAMPLING_VOLUME_CELL)
+    report["read_back"] = read_back_verdict(report["requested"], report["post"])
     report["driver_notes"] = list(actuator.warnings)
     images = (report.get("capture") or {}).get("images") or {}
     report["non_blank"] = all(row["non_blank"] for row in images.values()) if images else False
+    if not report["read_back"]["matches"]:
+        report["refused"] = (
+            "the re-opened dialog does not state what was asked:" + " " + json.dumps(
+                report["read_back"]["mismatch"], default=str
+            )
+        )
     emit(report, output_path(args), started)
     if report.get("stranded"):
         return 3
-    return 0
+    return 0 if report["read_back"]["matches"] else 1
+
+
+def run_below_floor(actuator: driver.Win32Actuator, args: argparse.Namespace, started: float) -> int:
+    """Request a volume below the burst's floor, answer the modal, read what the field holds.
+
+    §19.2 says a request below the floor is **rejected** with a modal warning; the operator's own
+    hand-measurement says ``Continue`` puts the field back to the value that was there *before* the
+    request and never to a burst-implied one. This run measures which, and it is the only run in this
+    probe that presses a warning's affirmative: the modal's own answer *is* the thing being asked
+    about.
+
+    The dialog is left with its ``Cancel``, never its ``Accept``: the requested value was not held, so
+    there is nothing to commit, and ``Cancel`` is what leaves the instrument as it was found. The mode
+    exits non-zero by design — its whole output is a refusal.
+    """
+    report: dict[str, object] = {
+        "probe": "dialog_write",
+        "mode": "below-floor",
+        "requested": {"sampling_volume": args.volume, "answer": args.answer},
+    }
+    panel = open_dialog(actuator, report)
+    if panel is None:
+        emit(report, output_path(args), started)
+        return 2
+    report["opened"] = True
+    closed = False
+    try:
+        pre_table = read_table(actuator, panel)
+        report["pre"] = {
+            "burst": value_at(pre_table, *BURST_CELL),
+            "sampling_volume": value_at(pre_table, *SAMPLING_VOLUME_CELL),
+            "table": pre_table,
+        }
+        volume = cell(pre_table, *SAMPLING_VOLUME_CELL, SAMPLING_VOLUME_CLASS)
+        report["volume_index"] = select_by_value(actuator, volume, args.volume)
+        modal = read_modal(actuator)
+        report["modal_after_select"] = modal
+        if modal is not None:
+            report["modal_moment"] = "the select's own notification"
+            report["modal_capture"] = capture(actuator, _modal_panel(actuator), modal_stem(args))
+            report["answer"] = press_modal_button(actuator, args.answer)
+            if report["answer"].get("still_up"):
+                report["stranded_modal"] = (
+                    "the warning is still up after its button was pressed: nothing else is pressed "
+                    "and the experiment stops here — a modal owns the input, and this probe does not "
+                    "press into one"
+                )
+                report["driver_notes"] = list(actuator.warnings)
+                emit(report, output_path(args), started)
+                return 3
+            after_table = read_table(actuator, panel)
+            report["after_answer"] = {
+                "burst": value_at(after_table, *BURST_CELL),
+                "sampling_volume": value_at(after_table, *SAMPLING_VOLUME_CELL),
+                "table": after_table,
+                "note": (
+                    "read in the SAME dialog the request was made in, after the modal was answered: "
+                    "this is the field's own statement, before anything is committed"
+                ),
+            }
+            report["read_back"] = read_back_verdict(
+                {"sampling_volume": args.volume}, {"table": after_table}
+            )
+            report["refused"] = (
+                f"the request for {args.volume} raised a modal and the modal was answered with its "
+                f"{report['answer'].get('side')} button; the field now states "
+                f"{report['read_back']['effective'].get('sampling_volume')!r}, so the below-floor "
+                "request was not applied — the point is refused, and nothing is committed"
+            )
+            close_dialog(actuator, panel, report)
+            closed = True
+        else:
+            # The modal did not come on the notification. The other moment it could come is the
+            # commit, so Accept is pressed — the one run in this probe that presses Accept on a
+            # request that is expected to be rejected, and it is pressed to *find out*.
+            report["modal_moment"] = "not on the select — none was up"
+            kids = actuator._children_of(panel["hwnd"], actuator._resolve())
+            target = actuator._dialog_button(panel, kids, driver.DialogControl.CONFIRM)
+            report["accept"] = {"rect": target["rect"], "hwnd": target["hwnd"]}
+            time.sleep(SETTLE_S)
+            accepted = not bool(win32gui.IsWindowVisible(panel["hwnd"]))
+            report["accepted"] = accepted
+            closed = accepted
+            modal = read_modal(actuator)
+            report["modal_after_accept"] = modal
+            if modal is not None:
+                report["modal_capture"] = capture(actuator, _modal_panel(actuator), modal_stem(args))
+                report["answer"] = press_modal_button(actuator, args.answer)
+            panel2 = open_dialog(actuator, report)
+            if panel2 is None:
+                report["error_after_accept"] = report.get("error")
+                report["refused"] = (
+                    "no modal came on the request and the re-opened dialog could not be read: the "
+                    "below-floor request's fate is unmeasured and the point is refused"
+                )
+                report["driver_notes"] = list(actuator.warnings)
+                emit(report, output_path(args), started)
+                return 1
+            try:
+                report["post"] = dump_state(actuator, panel2)
+                report["capture"] = capture(actuator, panel2, shot_stem(args))
+            finally:
+                close_dialog(actuator, panel2, report)
+            report["read_back"] = read_back_verdict(
+                {"sampling_volume": args.volume}, report["post"]
+            )
+            report["refused"] = (
+                "no modal warning appeared for a below-floor request: §19.2's rejection did not "
+                "reproduce on this run, so the request's fate is decided by the instrument alone — "
+                "the re-opened dialog states "
+                f"{report['read_back']['effective'].get('sampling_volume')!r} for a request of "
+                f"{args.volume!r}, and the point is refused either way"
+            )
+    finally:
+        if not closed:
+            try:
+                if win32gui.IsWindowVisible(panel["hwnd"]):
+                    report.setdefault(
+                        "note",
+                        "the dialog survived; it is closed with its left button so nothing is left "
+                        "pending",
+                    )
+                    close_dialog(actuator, panel, report)
+            except win32gui.error:
+                pass
+    report["driver_notes"] = list(actuator.warnings)
+    emit(report, output_path(args), started)
+    if report.get("stranded") or report.get("stranded_modal"):
+        return 3
+    return 1
+
+
+def _modal_panel(actuator: driver.Win32Actuator) -> dict:
+    """The modal panel's own row, for photographing the warning instead of the dialog behind it."""
+    found = actuator._find_overlay()
+    if found is None:
+        raise Refused("no modal is up, so there is nothing to photograph")
+    return found[1]
 
 
 def state_of(record: dict) -> dict:
@@ -501,8 +788,18 @@ def state_of(record: dict) -> dict:
 
 
 def load(path: str) -> dict:
-    """One dump, read back from the JSON the probe wrote — the comparison's two sides."""
-    with open(path, encoding="utf-8") as handle:
+    """One dump, read back from the JSON the probe wrote — the comparison's two sides.
+
+    A relative path is taken from the repository root, the same rule ``--out`` follows: the probe
+    runs with its working directory set to *this* directory (``task_run.py``), so
+    ``--baseline outputs/live/x.json`` as typed at the repository would otherwise be looked for
+    beside the source and fail there (measured: ``FileNotFoundError`` on the first compare run of
+    §18.10, which is why this is resolved rather than opened verbatim).
+    """
+    resolved = Path(path)
+    if not resolved.is_absolute():
+        resolved = REPO / resolved
+    with open(resolved, encoding="utf-8") as handle:
         return json.load(handle)
 
 
@@ -585,10 +882,27 @@ def main(argv: list[str] | None = None) -> int:
     dump.add_argument("--shot", help="PNG stem (default: the --out stem)")
 
     write = sub.add_parser("write", help="select combo cell(s), Accept, re-open and read back")
-    write.add_argument("--burst", required=True, help="the burst-length value to select")
+    write.add_argument("--burst", help="the burst-length value to select (omit to leave it alone)")
     write.add_argument("--volume", help="optionally set the sampling volume to this value too")
     write.add_argument("--out", required=True, help="where the JSON report is written")
     write.add_argument("--shot", help="PNG stem (default: the --out stem)")
+
+    below = sub.add_parser(
+        "below-floor",
+        help="request a volume below the burst's floor, answer the modal, read what the field holds",
+    )
+    below.add_argument("--volume", required=True, help="the sampling volume to request")
+    below.add_argument(
+        "--answer",
+        choices=("continue", "safe"),
+        default="continue",
+        help=(
+            "which button of the warning's band to press: 'continue' is its rightmost (the "
+            "affirmative this experiment asks about) and 'safe' its leftmost"
+        ),
+    )
+    below.add_argument("--out", required=True, help="where the JSON report is written")
+    below.add_argument("--shot", help="PNG stem (default: the --out stem)")
 
     compare = sub.add_parser("compare", help="diff two dumps, control by control and cell by cell")
     compare.add_argument("--baseline", required=True)
@@ -596,6 +910,8 @@ def main(argv: list[str] | None = None) -> int:
     compare.add_argument("--out", help="where the JSON comparison is written")
 
     args = parser.parse_args(argv)
+    if args.mode == "write" and args.burst is None and args.volume is None:
+        parser.error("write needs at least one of --burst or --volume: nothing to write")
     started = time.monotonic()
     OUT.mkdir(parents=True, exist_ok=True)
 
@@ -606,6 +922,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.mode == "dump":
             return run_dump(actuator, args, started)
+        if args.mode == "below-floor":
+            return run_below_floor(actuator, args, started)
         return run_write(actuator, args, started)
     except Refused as exc:
         # A refused write is the designed outcome for a value the control does not offer: the JSON
