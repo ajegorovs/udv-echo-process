@@ -9,10 +9,18 @@ a second file is a checklist that drifts.
 (`uv run --extra dev pytest -q`, `uv run --extra dev ruff check src tests`) and only in an
 interactive session that owns the application's desktop — see
 [`live-bringup.md`](live-bringup.md) §1 for the session/scheduled-task prerequisite and
-`tools/live/README.md` for the dispatcher. **One item may be run unattended: V0 is a read-only
-inventory that sends no message and moves no cursor.** V1-V8 involve gestures, a hand-reached
-state, or a decision only the operator can make; §Session record is the account of what a
-first, unattended V0 found.
+`tools/live/README.md` for the dispatcher. **V0 may be run unattended: it is a read-only
+inventory that sends no message and moves no cursor.** V2's read half is the one *gesture* that is
+also read-only — `tools/live/probes/w1_fixed_facts.py`, which hovers with the operator's real
+cursor, presses the popup's topmost entry and the dialog's left button, and nothing else — and it
+still wants the operator able to clear a stranded popup or restart the application, because
+nothing this driver sends dismisses a popup once one is up (ledger B20). V2's write half, V1 and
+V3-V8 involve a hand-reached state or a decision only the operator can make; §Session record is the
+account of what the sessions so far found.
+
+**Evidence that cannot be committed.** The readings a live session leaves live under `outputs/`,
+which is git-ignored, so their authority is the §Session record that quotes them: name the file,
+and quote what it printed.
 
 **What it is for.** Verifying **behavioural equivalence and newly conservative refusals** —
 not continuing reconnaissance. Pass criteria are written so that "refused, and said why" is
@@ -83,10 +91,17 @@ Goal: prove the refactored binding still opens only `Parameters` → `Operating 
 
 1. Put the application in the foreground (the hover cannot be satisfied from a background
    process — see [`live-bringup.md`](live-bringup.md) §4).
-2. Invoke the read-only fixed-fact/dialog command.
-3. Confirm: the popup opens; the **top** entry (by screen `top`, not by highlight) is the
-   one selected; no lower entry is pressed; the dialog's channel matches the routed channel;
-   the dialog closes by the safe/cancel path; and no parameter changed.
+2. Invoke the read-only fixed-fact/dialog command:
+   `PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py`. **Not** `acquire compile` and
+   **not** `select_channel`: those route first, so they *write* the channel before the dialog is
+   read, which this item forbids on an instrument standing on another channel. The probe reports
+   the dialog's **own** channel (`read_dialog_parameters` never routes); comparing it with the
+   channel the run is configured for is the caller's step, because the read route does not
+   perform it.
+3. Confirm: the popup opens; the **top** entry (by screen `top`, not by highlight) is the one
+   selected; no lower entry is pressed; the dialog's channel equals the run's channel; the dialog
+   closes by the safe/cancel path — its **left** button on the read route, its accept end being
+   the routing route's and not this one's; and no parameter changed.
 4. Repeat in the simulation build only if it is available and useful.
 
 **Pass:** the same successful gesture as the pre-refactor code, with no configuration
@@ -206,8 +221,8 @@ state that was left behind — never attempt a speculative recovery gesture.
   **with the session's evidence named**; failed hypotheses stay in that ledger as history
   rather than quietly leaving the text (Patch 6).
 - Record the exact verified application/version/device scope on this page when it is
-  established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant, V0 only.
-  Every other item still covers **no** specific version.
+  established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant, **V0 and
+  V2**. Every other item still covers **no** specific version.
 
 ## Session record
 
@@ -260,13 +275,124 @@ dialog → safe close) and all of V1, V3-V8. A popup this application opens cann
 programmatically (ledger B20), so a gesture that went wrong would strand the application with
 nobody at the console, and V4's four-button state has to be reached by hand. `acquire status`
 does not exercise a gesture at all, which is precisely why V0 could be run unattended and V2
-cannot.
+cannot. (The next subsection is what happened when the gesture was attempted against this
+refactor.)
 
-## What this session may **not** claim
+### 2026-09-19 — the V2 gesture, and the defects standing between it and a completed run
+
+Application: **`UDOP DOP3010.43`**, instrument (non-simulation) variant, 1920x1080, maximized —
+the installation the V0 reading above came from. Revision under test: branch
+`refactor/acquire-foundation`, tip **`7de790c`** (the five commits `45e2ae4`, `b5a2bd3`,
+`f194d77`, `b9ecb29`, `7de790c` past the refactor the V0 session read). The gesture runs through
+the read-only probe, because no in-repo command is both read-only and gesture-performing:
+`acquire status` presses nothing, while `acquire compile` and `select_channel` route first and
+therefore **write** the channel. Two commands, in this order, both pinned at `7de790c`:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status
+PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py
+```
+
+**Evidence.** `outputs/live/task-w1_fixed_facts.py.log` — the probe's JSON, run
+`19/09/2026 01:04:33`, `=== exit=0 ===` — and `outputs/live/task-udv_echo_process.cli.log` — the
+post-run status, `01:06:07`, `exit=0`. `outputs/` is git-ignored, so the readings are quoted here
+rather than committed; both commands can be re-run and compared against this page.
+
+| what the run reported | the reading |
+|---|---|
+| popup at start / the bar | `popup_open_at_start: false`; the menubar resolves to exactly `["Parameters"]` |
+| the surface the gesture opened | the `Operating parameters` dialog: `TSp_Panel` at `(655, 364, 1282, 748)`, 627x384, 21 direct children — 15 `TSp_Value_Button`, 5 `TSp_Button`, 1 `TComboBox`, classes `{TComboBox, TSp_Button, TSp_Value_Button}` — i.e. the measured dialog the committed fixture `tests/data/udop-parameters-dialog-tree.json` carries |
+| the dialog's channel | `'1'` (`dialog_reading.channel`), the channel this run is configured for (`UDV_CHANNEL` unset → `DEFAULT_CHANNEL = 1`); this run wrote no channel |
+| the three dialog-only facts | `burst_length 4`, `first_gate_mm 1`, `sound_speed_ms 1480`, all `source: read`, through `read_dialog_parameters` — the reader the campaign's own compile step hands to the snapshot (`campaign.py:1320`) — and in the same run's snapshot taken *without* the reading handed over, all three `unreadable` with the reason |
+| the close | `dialog_closed: true`, by the dialog's own left (`Cancel`) button, and asked of the screen afterwards rather than assumed |
+| error keys | none: no `popup_error`, `resolve_error`, `dialog_error`, `dialog_close_error` or `read_path_error` — and no popup reported stranded |
+| the framed facts | `prf_us 600` and `emissions_per_profile 20`, read off the parameter column before the dialog work and the same after it; `max_profiles_per_block` still `unreadable` — a Preference, not a parameter, so V5's cap stays **unproven** |
+| post-run `acquire status` | **byte-identical** to the pre-run one: 44 visible controls in 4 panels, strip `ready` / 3 buttons / no slider, `overlay: None`, `layout_note: None`, `layout_shape_reasons: []`, `process_mode: instrument`, mode `manual`, `layout_evidence` naming the fast-access panel `present_complete`, no menu popup, 0 dialog panels |
+
+**V2 passes, both the precondition and the read-only gesture halves, on the instrument.** The
+popup opens off the real-cursor hover on the anchor the V0 session proved positionally; the entry
+taken is the topmost one, proved by its outcome and not by its highlight — the surface that
+appeared is the `Operating parameters` dialog, where a lower entry (`Default parameters`)
+selects the assisted mode, and the screen
+after the run still reads `manual` with the fast-access panel complete; the dialog's own channel
+agrees with the run's; the close is the dialog's safe end and the screen is clean afterwards; and
+the run's only presses are the topmost entry and the dialog's left button — no lower entry, and
+nothing on the dialog's own field row — so nothing on the instrument changed: the pre- and
+post-run status readings are identical field for field. The gesture is also not a one-off: the
+probe's read half opens and closes the dialog three times in that one run (the dialog dump, the
+reader's own diagnostic, and the accepted reading), and all three came out the same.
+**B03/B04 (the anchor and the entry order) and B20's popup behaviour are what this settles** — the
+ledger rows those blind spots live in are promoted per §After the session, with this record named
+as their evidence. V1, V3-V8 stay device-pending, V4's four-button role map and V5's block cap
+included; the popup's own entry inventory (`--popup`, five caption-less entries, measured
+2026-09-18) was not re-run, because that reconnaissance leaves the application in a state only the
+operator can clear, and the *write* half of the gesture — `ensure_channel`, which presses the
+dialog's **accept** end and writes the channel — is a different path from the read this session
+ran (its home is V5/V6).
+
+**What the attempt before this one exposed.** The session opened from a live test on this
+instrument that had not completed, and the V2 path was traced end to end against `eafc0e2` before
+anything was touched. The trace found the ways the path could fail *or lie*; each fix is its own
+commit (the stop condition's rule), and each had passed the cloud suite unchanged:
+
+- **`45e2ae4` — the dialog could be classified as the strip, and the surface as a popup.** The
+  resolver decided which panels are dialogs by a rule of its own (a direct `TEdit`/`TSp_Edit`
+  **and** a `TSp_Browse`), while every other reader of that question uses
+  `ui.dialog._is_dialog_panel` — wider than 400 px and full of controls. The measured dialog
+  satisfies the canonical predicate and not the narrower one, so `value_dialogs`/`browse_dialogs`
+  came back empty on the one screen that has a dialog on it; the dialog stayed in the strip vote,
+  outvoted the recording strip's three buttons (its five-button row centre sits at 0.68 of the
+  plot's height, inside the 0.30-0.70 band) and was bound as `strip_panel`; the screen's own strip
+  was then read as an open menu popup and `classify_surface` answered **POPUP** where `DIALOG` was
+  the truth. That is B06's own rule — classify the surface *before* diagnosing it — inverted on
+  the surface it was written for.
+- **`b5a2bd3` — the dialog's close could not report its own failure.** `read_dialog_parameters`
+  closed on the panel handle it had opened, and the close swallows its error into a note: if the
+  application replaces the dialog while the table is being read (measured on a channel write), the
+  close presses a dead handle, nothing is raised, and V2's "closes by the safe end" can be unmet
+  while the command exits 0 with a modal dialog still on the operator's screen. The close now
+  re-resolves through `_close_any_dialog` as the routing path already did, and ends by asking the
+  screen whether a dialog is still up — naming it by its rect and the remedy if it is.
+- **`f194d77` — a failure after the hover said nothing about the popup it left up.** Nothing this
+  driver sends dismisses a hover-opened popup — not `ESC`, not the cursor restore, not a click
+  outside, not a posted `WM_CANCELMODE` — and `WM_CLOSE` to a popup **wedges** the modal menu loop
+  until the application is restarted (B20). A gesture that failed after the hover therefore left
+  an application this driver can neither clear nor verify, and said so nowhere. The failure now
+  names the popup, where the attempt last saw it, that the application's state is **unverified**,
+  and who has to act.
+- **`b9ecb29` — the observation could contradict the view it belongs to.**
+  `ScreenObservation` re-scanned all descendants for a slider after the resolver had classified
+  the strip from its direct children, so a nested slider could make the observation answer
+  `has_slider: True` for a strip the view and its press binding read as `ready`/no-slider. The
+  carried reading is projected first now, and geometry is scanned only when no reading exists.
+- **`7de790c` — the layout gate could raise instead of refusing.** Its incomplete-column clause
+  indexed the raw row's `rect` although a captured row may state equivalent `left/top/w/h`, so a
+  gate documented as *total over an already-resolved role map* raised `KeyError` on a rect-less
+  capture instead of returning its normal refusal.
+
+Which of them the earlier attempt hit is not recorded here; what is recorded is that each was a
+live-plausible path in the code that attempt ran, and that the run at `7de790c` — after all five —
+completed with the readings above. Four of the five correct behaviour that predates the move: the
+review that found them checked each path against `bfbbb10` and found the panel/dialog/strip block,
+`read_dialog_parameters` and both close paths, and the hover's `try`/`finally` and press-entry body
+byte-identical there, and the clause `7de790c` renders is in `bfbbb10`'s flat module unchanged
+(`bfbbb10:src/udv_echo_process/acquire/driver.py:970`). The fifth, `b9ecb29`, is a divergence the
+refactor's own new projection introduced — `ScreenObservation` has no counterpart at `bfbbb10` at
+all. The device, not the move, is what would have found the four — which is the point of running
+this page's items at all.
+
+## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency
   with primitives and with the fake's event vocabulary, never the installation's numbers.
 - That a hover, a held press or a Store-dialog commit still works because the code moved
-  verbatim — the *verbatim* part is exactly what V2/V4/V6 exist to check.
+  verbatim — the *verbatim* part is what V4/V6 still exist to check; V2's hover and its
+  topmost-entry press are now device-verified, and only those.
+- That the read half of V2 passing means its write half works: the routing route
+  (`ensure_channel`) presses the dialog's **accept** end and writes the channel before it reads,
+  and this session never ran it.
+- That a reported stranded popup is a repaired one. What `f194d77` added is a truthful report
+  with the remedy; nothing this driver sends dismisses a popup, so the operator still clears it
+  or restarts the application.
 - That the four-button strip state is understood because a crop shows its captions.
 - That a painted value (store directory, block cap) is a read path.

@@ -250,8 +250,8 @@ assertion is not available yet.
 |---|---|---|---|---|
 | B01 | the sidebar can be hidden by `Preferences` independently of assisted mode (UI-OVERLAY-06) | a no-column screen is misclassified as assisted | stop inferring channel mode from absence; a manual sweep requires a complete sidebar; refuse with an ambiguity message | cloud-supported by committed live record; device regression pending |
 | B02 | TGC `Uniform`/`Auto` changes the visible-control total (44 vs 42) | false clean-layout/resume mismatch | counts are diagnostic only, never a gate and never in the identity | live-reported, screenshot/docs supported |
-| B03 | menubar buttons differ between app variants and tree captions are empty | an index map silently renames menu roles | dedicated `Parameters` anchor + post-open verification; no generic menu role list — **landed by Patch 2's widget slice**: `acquire/ui/menu.py` publishes the anchor by its relative location in a bar of a measured painted length, and publishes none (refusing before the hover) when it cannot. **The first version of that clause was corrected on the instrument 2026-09-18** (`e1a8e47`): it demanded the names of the entries left of the anchor — which no tree states — and read the binding whose publication it was itself the precondition of, so it refused the application's own clean measurement screen; the proof is now positional, and a *published* binding is held to agreement with the bar | **precondition verified on the instrument** (V0, 2026-09-18: the clean screen proves the anchor again); the gesture half of V2 (hover → popup → topmost entry → dialog) stays device-pending |
-| B04 | popup/dropdown contents can be state dependent | entry-by-index can hit the wrong action | each menu surface owns its own binding; the `Parameters` recipe only, not generalised | screenshot/docs supported |
+| B03 | menubar buttons differ between app variants and tree captions are empty | an index map silently renames menu roles | dedicated `Parameters` anchor + post-open verification; no generic menu role list — **landed by Patch 2's widget slice**: `acquire/ui/menu.py` publishes the anchor by its relative location in a bar of a measured painted length, and publishes none (refusing before the hover) when it cannot. **The first version of that clause was corrected on the instrument 2026-09-18** (`e1a8e47`): it demanded the names of the entries left of the anchor — which no tree states — and read the binding whose publication it was itself the precondition of, so it refused the application's own clean measurement screen; the proof is now positional, and a *published* binding is held to agreement with the bar | **verified on the instrument**: V0 (2026-09-18) proved the anchor precondition on the clean bar; V2 (2026-09-19, `device-verification.md` §Session record) completed the real-cursor hover → popup → topmost entry → Operating parameters dialog path and left no popup or dialog |
+| B04 | popup/dropdown contents can be state dependent | entry-by-index can hit the wrong action | each menu surface owns its own binding; the `Parameters` recipe only, not generalised | **verified for the Parameters recipe on the instrument** (V2, 2026-09-19): the screen-top entry opened Operating parameters, no lower entry was pressed, and the post-run screen remained manual with the fast-access panel complete; other popup surfaces remain unverified |
 | B05 | the raw tree grows after first-show surfaces | total tree size, handles and pre-show rects are unstable identities | bind a normalized visible projection; raw rows are diagnostics | fixture/docs supported |
 | B06 | an overlay can be selected as a strip candidate | misleading diagnosis; a wrong press if checks are reordered | classify the active surface before the target resolver; refusal precedes diagnostics | live-reported; offline synthetic regression required |
 | B07 | Alt-Tab can release cursor capture | modality is not a safety boundary | a software gate before every press; expect multiple coexisting surfaces | operator/live-reported |
@@ -273,10 +273,9 @@ assertion is not available yet.
 
 1. **B10** — the four-button strip state (device tree, then a role map, then a binding).
 2. **B01** — the sidebar/manual-mode prerequisite.
-3. **B03** — the `Parameters` menubar anchor on the real process.
-4. **B06** — overlay-first surface classification.
-5. **B17** — dialog/routed-channel attribution.
-6. The existing compile mismatch, the six-point campaign and resume — i.e. the standing
+3. **B06** — overlay-first surface classification.
+4. **B17** — dialog/routed-channel attribution.
+5. The existing compile mismatch, the six-point campaign and resume — i.e. the standing
    acceptance rehearsal in [`live-bringup.md`](live-bringup.md) §§3-4, re-run after the
    refactor.
 
