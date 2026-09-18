@@ -135,9 +135,13 @@ import os
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import lru_cache
+from itertools import pairwise
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import (
+    DIALOG_ANCHORS,
+    DIALOG_COLUMN_ROWS,
+    DIALOG_FIELD_ORDER,
     DIALOG_ONLY_PARAMETERS,
     NUMERIC_WRITE_RECIPE,
     PARAM_COLUMN_ORDER,
@@ -148,6 +152,7 @@ from udv_echo_process.acquire.actuator import (
     Actuator,
     ChannelMode,
     DialogControl,
+    DialogField,
     OverlayKind,
     ParamRole,
     PreflightReport,
@@ -166,6 +171,7 @@ from udv_echo_process.acquire.config import (
     ParameterSet,
 )
 from udv_echo_process.acquire.snapshot import (
+    DialogParameters,
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
@@ -235,6 +241,20 @@ _OVERLAY_LEFT, _OVERLAY_MIN_H = 169, 120
 #: kind of structural evidence and is accepted by the same predicate, so a dialog the
 #: reference would have found is never rejected here.
 _DIALOG_MIN_W, _DIALOG_MIN_CHILDREN = 400, 15
+
+#: How wide a gap between two value fields' left edges makes them different **columns** of the
+#: dialog's table. Measured 2026-09-18: fields inside one column sit within 5 px of each other
+#: (786/783/788) while the columns are 200 px apart (786 → 987 → 1187), so anything from ~50 to
+#: ~190 px separates them and the middle of that range is not a magic number but a margin.
+DIALOG_COLUMN_GAP = 100
+
+#: How long the dialog is given to state its values before the read gives up on it. Measured:
+#: an application that has just started builds the table **empty** the first time it is opened
+#: and states it on the next open, so a read that took the first empty answer as the answer would
+#: record three unreadable facts on an instrument that states them perfectly well; a read that
+#: waited forever would hang a live run on a dialog that is never going to fill. Two seconds is
+#: several times the measured fill (the second open states everything immediately).
+DIALOG_FILL_TIMEOUT_S = 2.0
 #: The classes that make a panel an *input* panel rather than a strip or a warning row.
 _DIALOG_INPUT_CLASSES = ("TEdit", "TSp_Edit", "TComboBox", "TSp_Value_Button")
 #: How many popup entries are tried, and how long one entry's press is given to produce a
@@ -575,7 +595,7 @@ def screen_mode(roles: Mapping) -> ChannelMode | None:
 
 
 def _dialog_only_reason(name: str) -> str:
-    """Why a fact that lives in the ``Operating parameters`` dialog cannot be read here.
+    """Why a fact that lives in the ``Operating parameters`` dialog has no screen read path.
 
     ``first_gate_depth``, ``burst_length``, ``sound_speed`` and ``sampling_volume`` have no
     parameter-column field at all (:data:`DIALOG_ONLY_PARAMETERS`): the column is the surface a
@@ -587,6 +607,122 @@ def _dialog_only_reason(name: str) -> str:
         f"{name!r} has no parameter-column field: it is set in the {PARAMETERS_ENTRY!r} "
         "dialog only, so nothing on the measurement screen states it"
     )
+
+
+def dialog_value_fields(
+    children: Sequence[Mapping], read_text
+) -> list[dict[str, object]]:
+    """The dialog's value table as ``(column, row)`` fields, with the text each one states.
+
+    A field is one row of that table: the ``TComboBox`` a row offers when it has one — a parameter
+    chosen from a list, which is what the burst length, the sensitivity and the sampling volume
+    are — and otherwise the ``TSp_Edit`` beside it. That rule is *measured* rather than preferred:
+    at ``burst = 4`` the row reads a combo ``'4'`` with an inner ``'4'`` **and** a ``TSp_Edit``
+    ``'89'``, and the ``89`` is the value beside it rather than the parameter (the corpus' sampling
+    volume at 1460 m/s is 0.876 mm, and the campaign declares the ``4``). Rows are the
+    ``TSp_Value_Button`` widgets, and a field's identity is its **position**: the column is the
+    band its left edge falls in — the measured bands are the value edits' lefts, 786 / 987 / 1187 px
+    in a dialog at 655,364 — and inside a column, top to bottom. Never an id, never a caption:
+    every one of these widgets is caption-less (measured through ``WM_GETTEXT`` as well as
+    ``GetWindowText``, 2026-09-18) and control ids change on every launch.
+
+    Only controls **inside** a value button count, which is what keeps the channel field out of
+    the table: the dialog's header combo sits above every button (measured ``top`` 373 against the
+    table's 443), and reading it as a field would put the channel in the middle of the parameter
+    order.
+
+    An empty table is answered with an empty list and not an error: a dialog that has not built its
+    value buttons yet is a state this read has to *report* (measured on the running application: the
+    first open after a restart can come back with no table at all), and a crash inside the reader
+    would take the whole snapshot down over a fact that is merely unread.
+    """
+    buttons = sorted(
+        (row for row in children if row.get("cls") == "TSp_Value_Button"),
+        key=lambda row: (row["left"], row["top"]),
+    )
+    fields: list[dict[str, object]] = []
+    for button in buttons:
+        inside = [
+            row
+            for row in children
+            if row.get("cls") in ("TSp_Edit", "TComboBox") and _contains(button, row)
+        ]
+        if not inside:
+            continue
+        combo = next((row for row in inside if row.get("cls") == "TComboBox"), None)
+        field = combo if combo is not None else inside[0]
+        fields.append(
+            {
+                "left": field["left"],
+                "top": button["top"],
+                "cls": field["cls"],
+                "hwnd": field["hwnd"],
+                "value": read_text(field["hwnd"]),
+            }
+        )
+    columns = _column_bands([int(row["left"]) for row in fields])
+    for row, column in zip(fields, columns, strict=True):
+        row["column"] = column
+    ordered: list[dict[str, object]] = []
+    for column in sorted(set(columns)):
+        band = sorted(
+            (row for row in fields if row["column"] == column), key=lambda row: row["top"]
+        )
+        for index, row in enumerate(band):
+            ordered.append({**row, "row": index})
+    return ordered
+
+
+def _contains(outer: Mapping, inner: Mapping) -> bool:
+    """True when ``inner``'s rect lies inside ``outer``'s, as the application lays them out."""
+    return (
+        outer["left"] <= inner["left"]
+        and outer["top"] <= inner["top"]
+        and inner["left"] + inner["w"] <= outer["left"] + outer["w"]
+        and inner["top"] + inner["h"] <= outer["top"] + outer["h"]
+    )
+
+
+def _column_bands(lefts: Sequence[int]) -> list[int]:
+    """Column index per left edge, splitting where the gap is wider than :data:`DIALOG_COLUMN_GAP`.
+
+    The bands are derived rather than hard-coded so that the *rule* is evidence — the columns of
+    this table are 200 px apart while fields inside one are within a few px (measured) — and the
+    shape that comes out of it is then checked against :data:`DIALOG_COLUMN_ROWS`.
+    """
+    if not lefts:
+        return []
+    order = sorted(set(lefts))
+    band = {order[0]: 0}
+    for previous, current in pairwise(order):
+        band[current] = band[previous] + (1 if current - previous > DIALOG_COLUMN_GAP else 0)
+    return [band[left] for left in lefts]
+
+
+def _dialog_fact(parameters: DialogParameters | None, field: DialogField) -> InstrumentFact:
+    """One dialog-only fact, on the authority of a dialog *read* — or of nothing at all.
+
+    The same rule the channel is held to (:meth:`Win32Actuator._channel_fact`): the reader that
+    opened the dialog is a *step*, and this reading cannot claim what no step established. A
+    snapshot taken without one carries the fact as ``unreadable``, which is a true statement about
+    the run — the alternative, reading the dialog here, would make this method press things, and a
+    reading that presses is no longer something an instrument somebody else is using can be read
+    with.
+    """
+    if parameters is None:
+        return unreadable(
+            f"{_dialog_only_reason(field.value)} — and no read of that dialog was handed to this "
+            "snapshot, so nothing established it (read_dialog_parameters reads it, and a caller "
+            "that wants this fact has to have paid for that step)"
+        )
+    value = parameters.value(field.value)
+    if value is None:
+        return unreadable(
+            parameters.reason
+            or f"the {PARAMETERS_ENTRY!r} dialog stated no {field.value!r}, so there is nothing "
+            "to compare it with"
+        )
+    return InstrumentFact(value=value, source=FactSource.READ, reason=parameters.reason or None)
 
 
 def _is_dialog_panel(panel: dict, kids: Sequence[dict]) -> bool:
@@ -2337,7 +2473,209 @@ class Win32Actuator:
             is_foreground=foreground,
         )
 
-    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
+    def read_dialog_parameters(self) -> DialogParameters:
+        """Read the sound speed, the first gate and the burst length off the ``Parameters`` dialog.
+
+        **Which surface.** These three facts are the ones no measurement-screen surface states:
+        they are not parameter-column roles (the column is the surface a *point* writes, and a
+        point never writes them), they live in the ``Operating parameters`` dialog only, and they
+        are stated **for the channel that dialog is showing**. So the read has to open the dialog
+        and has to say whose parameters it described — both of which are carried in the reading
+        (:class:`~udv_echo_process.acquire.snapshot.DialogParameters`).
+
+        **How.** The routing step's own gesture: hover the menubar button with the operator's real
+        cursor and press the topmost entry (:meth:`_open_parameters_dialog`), read the table, and
+        close the dialog with its own left button in a ``finally``. The close is not housekeeping:
+        an open dialog confines the cursor to itself and traps the operator, and **Escape closes
+        nothing in this application** (reported 2026-09-18, and noted before).
+
+        **What is checked before any value is believed.** A field's identity here is a *position*
+        (:data:`DIALOG_FIELD_ORDER`), so a dialog that is not the table those bindings were
+        measured against would hand the compile a plausible wrong fact — the one failure a
+        pre-run check must not have. Three checks stand between the two:
+
+        * the table **filled**: an application that has just started builds this table *empty* the
+          first time the dialog is opened and states it on the next open (measured 2026-09-18 —
+          the first-open table read 2 stating controls where the second read 22), so the read polls
+          rather than recording an empty dialog as a filled one;
+        * the table's **shape** is the measured one (:data:`DIALOG_COLUMN_ROWS`), and it states
+          the channel it is showing in its header combo;
+        * every **anchor** (:data:`DIALOG_ANCHORS`) reads the same text the measurement screen
+          reads, which is what makes the positions evidence rather than habit.
+
+        **What it does when it refuses.** It returns an unreadable reading whose reason names what
+        happened — a dialog that never filled, a shape that is not this table, an anchor that
+        disagrees with the screen, a header that does not resolve, a gesture that failed (noted in
+        the run log as well). It never raises for those, and it never invents a value: the facts
+        stay ``unreadable`` in the snapshot, and the compile refuses on them.
+        """
+        try:
+            panel = self._open_parameters_dialog()
+        except AcquisitionError as exc:
+            self._note(f"the {PARAMETERS_ENTRY!r} dialog could not be opened for a read: {exc}")
+            return DialogParameters(
+                reason=f"the {PARAMETERS_ENTRY!r} dialog could not be opened: {exc}"
+            )
+        try:
+            fields = self._poll_dialog_fields(panel)
+            channel = self._dialog_channel_text(self._descendants_of(panel["hwnd"]), fields)
+            refusal = self._dialog_refusal(fields, channel)
+            if refusal:
+                return DialogParameters(channel=channel, reason=refusal)
+            return DialogParameters(
+                channel=channel,
+                fields=tuple(
+                    (field.value, self._text_at(fields, column, row))
+                    for field, column, row in DIALOG_FIELD_ORDER
+                ),
+            )
+        finally:
+            self._close_parameters_dialog(panel)
+
+    def _descendants_of(self, hwnd: int) -> list[dict]:
+        """Every descendant of ``hwnd``, walked live — because the dialog's values are one level in.
+
+        The resolver's own ``raw`` list stops at the **direct** children of a panel, and this
+        dialog states nothing at that level: measured on the running application 2026-09-18, the
+        ``Operating parameters`` dialog's 21 direct children are its 15 ``TSp_Value_Button``
+        widgets, its header and its bottom buttons, and *no* control among them carries a value —
+        each field's text lives in the ``TSp_Edit``/``TComboBox`` **inside** its value button. A
+        read built on the resolver's children therefore sees a dialog with no table at all, which
+        is exactly how it failed on the live application the first time, so the table is walked
+        here instead.
+
+        Rows carry what the rest of the driver's rows carry (class, rect, handle); the text is read
+        separately by whoever needs it, through the same ``WM_GETTEXT`` reader as everywhere else.
+        """
+        win32gui, _ = _gui()
+        rows: list[dict] = []
+        stack = [hwnd]
+        while stack:
+            parent = stack.pop()
+            child = win32gui.GetWindow(parent, 5)  # GW_CHILD
+            while child:
+                try:
+                    left, top, right, bottom = win32gui.GetWindowRect(child)
+                    rows.append(
+                        {
+                            "hwnd": child,
+                            "cls": win32gui.GetClassName(child),
+                            "left": left,
+                            "top": top,
+                            "w": right - left,
+                            "h": bottom - top,
+                        }
+                    )
+                    stack.append(child)
+                except win32gui.error:  # a control that died mid-walk is not a failed read
+                    pass
+                child = win32gui.GetWindow(child, 2)  # GW_HWNDNEXT
+        return rows
+
+    def _poll_dialog_fields(self, panel: dict) -> list[dict[str, object]]:
+        """The dialog's value table, re-read until it states something or the wait runs out.
+
+        The application fills this table a moment after the dialog appears — and *not at all* the
+        first time it is opened on a freshly started application (measured). Reading it once, the
+        moment it appears, is therefore the difference between three read facts and three facts
+        recorded as unreadable on an instrument that states them perfectly well.
+        """
+        deadline = time.monotonic() + DIALOG_FILL_TIMEOUT_S
+        while True:
+            fields = dialog_value_fields(self._descendants_of(panel["hwnd"]), self._get_text)
+            if any(row["value"] for row in fields) or time.monotonic() >= deadline:
+                return fields
+            time.sleep(_POLL_S)
+
+    def _text_at(self, fields: Sequence[Mapping], column: int, row: int) -> str:
+        """The text stated at ``(column, row)`` of the dialog's table, or ``\"\"``."""
+        for field in fields:
+            if int(field["column"]) == column and int(field["row"]) == row:
+                return self._get_text(field["hwnd"])
+        return ""
+
+    def _dialog_channel_text(self, kids: Sequence[Mapping], fields: Sequence[Mapping]) -> str:
+        """The channel the dialog is showing, read from its header combo.
+
+        The header is the combo that is **not** a table row (measured: it sits at the dialog's top,
+        ``top`` 373 against the table's 443). It is read because the dialog — not the caller — is
+        the surface that decides whose parameters are shown: a reading that did not carry it would
+        let a compile compare one channel's sound speed against another channel's run, which is the
+        channel trap this driver already refuses to make when it stores a block (docs/16 §12).
+        """
+        rows = {field["hwnd"] for field in fields}
+        headers = [
+            row
+            for row in kids
+            if row.get("cls") == "TComboBox" and row.get("hwnd") not in rows
+        ]
+        if not headers:
+            return ""
+        top = min(headers, key=lambda row: row["top"])
+        return self._get_text(top["hwnd"])
+
+    def _dialog_refusal(self, fields: Sequence[Mapping], channel: str) -> str:
+        """Why no dialog-only fact may be believed, or ``\"\"`` when the reading may be trusted.
+
+        Every refusal is written out in full rather than summarised: the reason lands in a run
+        record read by someone with no instrument in front of them, and "the dialog did not read"
+        would leave them unable to tell a stale binding from an application that was busy.
+        """
+        if not any(field["value"] for field in fields):
+            built = (
+                "built no value buttons at all"
+                if not fields
+                else "built its value buttons but stated nothing in them"
+            )
+            return (
+                f"the {PARAMETERS_ENTRY!r} dialog {built} within {DIALOG_FILL_TIMEOUT_S:g} s of "
+                "being opened, so there is no table to bind: a freshly started application builds "
+                "this table empty (or not at all) the first time it is opened (measured), and an "
+                "empty field is not a value"
+            )
+        columns = tuple(sorted({int(field["column"]) for field in fields}))
+        counts = tuple(
+            sum(1 for field in fields if int(field["column"]) == column) for column in columns
+        )
+        if counts != DIALOG_COLUMN_ROWS:
+            return (
+                f"the {PARAMETERS_ENTRY!r} dialog built {counts} value fields per column where "
+                f"this driver's bindings were measured against {DIALOG_COLUMN_ROWS}: these fields "
+                "are read by position, so a different shape is not the table they were bound in, "
+                "and nothing in it is read"
+            )
+        if not channel:
+            return (
+                f"the {PARAMETERS_ENTRY!r} dialog stated no channel, so a read of it could not say "
+                "which channel's parameters these are"
+            )
+        roles = self._resolve()
+        for role, column, row in DIALOG_ANCHORS:
+            screen = (roles.get("params") or {}).get(role)
+            dialog_text = self._text_at(fields, column, row)
+            screen_text = "" if screen is None else self._get_text(screen["edit"]["hwnd"])
+            if not dialog_text or not screen_text:
+                return (
+                    f"the {PARAMETERS_ENTRY!r} dialog could not be checked against the screen: "
+                    f"{role.value!r} is the anchor at column {column}, row {row}, and it is not "
+                    "stated on both surfaces, so the positions the dialog-only facts are read at "
+                    "could not be confirmed"
+                )
+            if dialog_text != screen_text:
+                return (
+                    f"the {PARAMETERS_ENTRY!r} dialog disagrees with the measurement screen about "
+                    f"{role.value!r}: the dialog reads {dialog_text!r} where the column reads "
+                    f"{screen_text!r}, so this dialog is not the table these bindings were "
+                    "measured against and nothing in it is read"
+                )
+        return ""
+
+    def instrument_snapshot(
+        self,
+        *,
+        routed_channel: int | None,
+        dialog_parameters: DialogParameters | None = None,
+    ) -> InstrumentSnapshot:
         """Read the instrument's current state, pressing nothing that changes it.
 
         Read-only with respect to the configuration — it writes no parameter, accepts no dialog
@@ -2348,18 +2686,24 @@ class Win32Actuator:
         (:meth:`_channel_fact`). An instrument somebody else is using is therefore safe to read
         this way.
 
-        The channel is the one fact this reading cannot establish for itself, so it is not asked
-        for — it is **handed over**: ``routed_channel`` is the channel :meth:`ensure_channel`
-        selected and read back, or ``None`` when no routing step established one. It is required
-        and keyword-only on purpose: this method is public and composable, and a default would let
-        a caller leave a verification implied that never happened, which is the one thing a
-        reading must never do.
+        The channel and the dialog-only facts are the two things this reading cannot establish for
+        itself, so neither is asked for — each is **handed over**: ``routed_channel`` is the
+        channel :meth:`ensure_channel` selected and read back, and ``dialog_parameters`` is what
+        :meth:`read_dialog_parameters` read while the ``Operating parameters`` dialog was open.
+        Both are keyword-only, and only the channel is required, because that is the difference
+        between a caller that *cannot* have established a fact and one that merely did not:
+        routing always happens before a run, while the dialog read is a step a caller may not have
+        paid for. A caller that established nothing passes ``None`` — or omits it — and the facts
+        are carried as ``unreadable``, with the reason saying what no step established. A default
+        per fact would let a caller leave a verification implied that never happened, which is the
+        one thing a reading must never do.
 
-        Two of the six fixed facts come off the column and are recorded as ``read``; the four
-        that live in the ``Operating parameters`` dialog or in a ``Preference`` are carried as
-        ``unreadable`` with the reason. That asymmetry is the honest state today, and the one
-        fact that changes here is a fact about the *driver*: a read path that reconnaissance
-        finds later becomes a read, without the models changing.
+        Two of the six fixed facts come off the column and are recorded as ``read``; three more are
+        recorded as ``read`` when the dialog reading was handed over and the values came out of it;
+        the block cap is carried as ``unreadable`` with its reason, because it is an application
+        Preference and nothing in this driver reads the Preference surface. That asymmetry is the
+        honest state today, and the fact that changes here is a fact about the *driver*: a read
+        path that reconnaissance finds later becomes a read, without the models changing.
 
         A screen that cannot be resolved at all raises, from :meth:`_resolve` — the same answer
         :meth:`screen_fingerprint` gives, for the same reason: no window is a fact the caller has
@@ -2389,9 +2733,9 @@ class Win32Actuator:
             ),
             prf_us=self._column_fact(roles, ParamRole.PRF),
             emissions_per_profile=self._column_fact(roles, ParamRole.EMISSIONS_PER_PROFILE),
-            burst_length=unreadable(_dialog_only_reason("burst_length")),
-            sound_speed_ms=unreadable(_dialog_only_reason("sound_speed_ms")),
-            first_gate_mm=unreadable(_dialog_only_reason("first_gate_mm")),
+            burst_length=_dialog_fact(dialog_parameters, DialogField.BURST_LENGTH),
+            sound_speed_ms=_dialog_fact(dialog_parameters, DialogField.SOUND_SPEED_MS),
+            first_gate_mm=_dialog_fact(dialog_parameters, DialogField.FIRST_GATE_MM),
             max_profiles_per_block=unreadable(
                 "the block cap is an application Preference (\"Do not keep in a block more "
                 "profiles than\"), not a measurement parameter, and nothing in this driver "
