@@ -394,6 +394,21 @@ refactor's own new projection introduced — `ScreenObservation` has no counterp
 all. The device, not the move, is what would have found the four — which is the point of running
 this page's items at all.
 
+### 2026-09-19 — post-review recheck stopped at the foreground precondition
+
+After the independent review fixes (`00fd6a0`) and their evidence correction (`3a3cc29`), the same
+three-command bracket was attempted again. Both status reads were clean and equal on the screen
+fields — 44 visible controls in 4 panels, ready three-button strip, no overlay, no popup, no dialog,
+and no layout refusal — but `w1_fixed_facts.py` stopped **before the hover** because `TMain_Scr` was
+not the foreground window and Windows did not grant foreground activation within 1.0 s. The reported
+foreground window was `Windows.UI.Core.CoreWindow`; the remedy is to bring UDOP to the front and stop
+anything that steals focus, then rerun.
+
+That refusal moved no cursor, opened no popup or dialog and pressed nothing, and the post-run status
+confirmed that nothing was stranded. It proves the foreground guard on the final head, not the V2
+clean path: the successful V2 device claim remains pinned to `7de790c`, while the review fixes in
+`00fd6a0` are cloud-verified until this exact bracket completes with UDOP already in front.
+
 ## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency
