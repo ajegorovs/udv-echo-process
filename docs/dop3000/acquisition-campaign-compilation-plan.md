@@ -3040,3 +3040,94 @@ layout instead of by its position in a visible list, and let `layout_evidence` s
 `MENU_ORDER`'s eleven names resolved — evidence, not a gate, for the same reason D4 gives about the visible
 count. Until then the item is a precondition to check before any dialog recipe runs against the instrument.
 
+### 26.2 Tools → Define TGC, mapped at last — and the overlay convention it exposed
+
+§22.4 recorded the TGC editing surface as *the Tools menu, which this repository has never mapped* and left
+the `Auto`/`Uniform` box's identification unproven because settling it "is a press". The operator's hands
+mapped the surface; two reads settled the identification without any press at all.
+
+**The surface.** `Tools → Define TGC` opens a small-to-medium **overlay window** — not a modal dialog:
+
+| element | what it is |
+|---|---|
+| the mode dropdown | `{Uniform, Slope, Auto, Custom}` — the same four words, in the same order, as the instrument's own `_TGC_MODE` (`io/dop/bdd.py`) and as words 23–25 of the matrix's TGC row |
+| two checkboxes | `Profile and Tgc` / `Echo and Tgc`, mutually exclusive: they choose **which pair the monitor paints** — the left plot is `Velocity` (profiles) or `Echo`, the right plot is always `Tgc` vs depth |
+| `[Recompute]` | centre; materialises the selected mode's curve (enabled in the auto run) |
+| `[Cancel]` / `[Accept]` | right; `Accept` is what commits the mode |
+
+**The overlay convention — the durable half of this, and it generalises beyond TGC.** Most popups in this
+application are:
+
+- **movable and caption-less**, with a small black triangle in the top-left corner: the same caption-less
+  `TSp_*` family the driver already binds by role and geometry (§21.1), so the rule "bind by role and
+  geometry, never by caption or control id" is what makes them addressable at all;
+- **non-blocking**: the overlay does not capture the mouse outside its own area, so the screen underneath
+  stays live and a stray press can still land on it — a press hazard, not a convenience;
+- **hiding what it replaces**: while `Define TGC` is up, **the recording strip is not shown**, and the monitor
+  splits into the two side-by-side plots the checkbox selects. Both A and B below were taken with the overlay
+  closed: single plot, strip present, which is also what the frames show.
+
+Two consequences, one for the gate and one for the operator:
+
+- **An overlay-up screen is its own layout state.** It is not a variant of the measurement screen — the strip
+  is *absent* while an overlay is up, which makes **the strip's absence the cheapest detector of an overlay
+  being up**, cheaper than enumerating overlay classes. §24.3's shape check already refuses such a screen: its
+  strip clause fires. But a refusal reading "no recording strip panel resolved" sends the operator to look at
+  the strip, when the honest sentence is "an overlay is up". The **clause order** in `layout_shape_reasons`
+  (strip → status band → popup → dialogs → column today) should therefore raise the overlay clause first, or
+  the strip clause should say what else is on the screen. Recorded as a follow-up, not changed blind: it wants
+  a read taken with the overlay open (`Tools → Define TGC` left up, nothing pressed, `Cancel` to restore).
+- **The side-by-side monitor is a display state, not a layout change.** It is *caused by* the overlay and goes
+  away with `Cancel`/`Accept`, so no comparable read may be taken while it is up, and the operator's own
+  report is what establishes it.
+
+**§22.4's open question is closed, and it closed without a press.** The `TComboBox` at `[434,182,498,203]` —
+hidden in every mode (`visible: false` on the panel, the button and the combo) — reads **`Uniform`** before the
+change and **`Auto`** after it, in lockstep with the mode the application was set to and with the `Tgc [dB]`
+row's appearance. The operator's reading of it (the **mode/distribution indicator**, not the TGC control) is
+now supported by measurement rather than by inference — and, more usefully, **the TGC mode is readable from a
+plain tree read without pressing anything**, which is exactly what a pre-run record needs in order to state
+the mode its values were measured under.
+
+**The `Tgc [dB]` row is on screen exactly when the TGC mode is `Uniform`, and it costs two controls.**
+
+```text
+A  instrument, mode Uniform   44 visible   Tgc row present: TSp_Value_Button [10,325,105,349] + cell '20'   indicator Uniform
+B  instrument, mode Auto      42 visible   Tgc row absent                                                     indicator Auto
+   simulation baseline, Auto   43 visible   Tgc row absent,                                        +1 menubar button
+```
+
+So the arithmetic of §23.1's `43 → 44` closes completely, and the earlier account was wrong in composition as
+well as in attribution: `base` is **42** on the instrument, the `Tgc [dB]` row adds **2** visible controls
+(not one), and the simulation's `43` is `42 + 1` — the one menubar button the instrument does not paint. §26's
+Correction 1 measured the right delta from the fixtures and stopped one step short of the cause: the row is
+not a mode-independent extra, it is a *setting*-dependent one.
+
+**That makes D6 required, not prudent.** Two runs on this instrument, in this mode, minutes apart, differing
+only in the TGC mode read `44` and `42` — so `visible_controls` in `CompilationIdentity` would have refused a
+legitimate resume of the same instrument, and removing it from the identity (§24.5, D6) is now backed by a
+measurement rather than by an argument. It also strengthens D4 from the other side: a total visible count is
+not a fact about a clean screen when a single *setting* moves it by two.
+
+**§26.1's menubar inference was wrong, and the correction is instructive.** The frames render the real-mode
+bar as `File Preferences Parameters Compute Cursors Filters Tools Channels Display … Help` — **`UDV mode` is
+never painted**, and it is the name that goes unassigned, not `Display`. §26.1 inferred which name was missing
+from its *position* in `MENU_ORDER`, which cannot answer the question: the tree carries no text for those
+buttons at all (`text: ''` on every one of them), so position is the only thing it offers and the rendered
+label is the only oracle. The hazard §26.1 described is unchanged and sharper for being read correctly: in
+real mode `menu["UDV mode"]` names the button painted *Display*, `menu["Display"]` names the one painted
+*Help*, and `menu["Help"]` names nothing, while `menu["Parameters"]` (index 2) stays correct — which is
+precisely why the dialog gesture works on the instrument today. The recommendation stands as written: bind that
+item by rect, not by list index.
+
+**One more reason the screenshot path matters.** The parameter column's **labels** — `Channel`,
+`US Frequency [kHz]`, `PRF [Hz]`, `Nb of gates`, `Resolution [m/s]`, `Velocity scale factor`,
+`Emissions/profile`, `Doppler angle`, `Tgc [dB]`, `Sensitivity`, `Emitting power` — are *painted*, and absent
+from the tree as control text: that is the same gap §26's Correction 3 records, where `main_geometry.py`
+stores `role=None` for every row while the simulation fixture carries seven resolved names. The probe's own
+frames are the oracle for them (the repo already saves a full frame plus three region crops per read), which is
+what makes the sibling repository's screenshot scripts worth revisiting for this one specific job: reading the
+painted labels and the menubar. The known failure mode there was bad crops — and the probe's crops are
+deliberately *regions* ("where the repository says a control is"), not tight control shots, so a labels job
+would want a column-wide crop rather than per-control ones.
+
