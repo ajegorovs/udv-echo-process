@@ -4,6 +4,11 @@ The automation is only as useful as the ability to start it somewhere else. This
 of that: what the deliverable repository must carry, the staged way to find out what a new
 machine does differently, and how to get most of that answer before the machine exists.
 
+> **Authority (frozen 2026-09-18).** This file is the skill's copy of the bring-up craft. The
+> repository's bring-up path is `docs/dop3000/live-bringup.md` and its refactor verification
+> procedure is `docs/dop3000/device-verification.md`; the surface/binding model those stages
+> exercise is `docs/dop3000/acquisition-ui-model.md`.
+
 ## What the deliverable repository must carry
 
 Reconnaissance and the runnable path want different homes. The probes that produced the

@@ -4,6 +4,11 @@ Hard-won rules from driving a 32-bit Delphi/VCL instrument app (UDOP 6.07.4) thr
 parameter sweeps. Most generalise to any posted-message UI automation; the specifics
 are marked.
 
+> **Authority (frozen 2026-09-18).** The repository's current model of these surfaces is
+> `docs/dop3000/acquisition-ui-model.md`; its mechanism rules are `docs/dop3000/udop-automation.md`.
+> This file is the skill's prose copy of the measured lessons — where the two disagree, the
+> repository documents decide, and the fix belongs there.
+
 ## Driving the UI
 
 - **The menu bar opens on a real cursor hover; the entry takes a posted held press.** The parameters
