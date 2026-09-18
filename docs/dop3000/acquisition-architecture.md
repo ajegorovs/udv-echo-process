@@ -71,7 +71,7 @@ layout gate) as the refactor base`), branch `refactor/acquire-foundation`:
 
 | module | lines | bytes | what it is |
 |---|---|---|---|
-| `acquire/driver.py` | 34 | 2,220 | the compatibility name of the facade, **re-measured at Patch 4's tip** (every other row here is the freeze-commit count): `udop/session.py` publishes itself under this name, so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are the facade's own objects — not copies |
+| `acquire/driver.py` | 1,756 | 89,992 | **the facade module**, **re-measured at this tip** (every other row here is the freeze-commit count): `class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` plus the facade's own methods (the transport, the cursor, the enumeration and the resolve, the class's state, the read-only surface and the protocol surface), its own `COMBO_ORDER`/`_same_directory`, and every name it re-exports — so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are this module's own objects. `acquire/udop/session.py` (41 lines) is its compatibility name |
 | `acquire/campaign.py` | 1,836 | 94,417 | definitions, planning, compilation/reconciliation, resume identity, manifest IO, execution orchestration |
 | `acquire/runner.py` | 1,151 | 60,144 | `SweepRunner` — per-point orchestration, logging, verification call sites |
 | `acquire/actuator.py` | 694 | 30,715 | the pure `Actuator` protocol, the ported binding tables (`STRIP_BUTTON_ORDER`, `PARAM_COLUMN_ORDER`, `DIALOG_FIELD_ORDER`, …), `StripView`, `ParamRole` (`actuator.py:115`), `ScreenFingerprint` (`actuator.py:435`), `PreflightReport` (`actuator.py:490`) |
@@ -90,7 +90,7 @@ committed PNGs), `tests/data/udop-measurement-screen-tree*.json` and
 14 `tests/test_acquire_*.py` modules.
 
 Every row of that table except `acquire/driver.py` is the **freeze-commit measurement**, not a live
-one — that one row is re-measured at Patch 4's tip, below. The history since the freeze: Patch 2
+one — that one row is re-measured at this tip, below. The history since the freeze: Patch 2
 moved the pure half of `driver.py` (the normalized observation, the surface classification, the
 shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/`, and then
 its widget slice moved the three remaining pure interpreters after it — the recording strip, the
@@ -99,15 +99,22 @@ its widget slice moved the three remaining pure interpreters after it — the re
 (`messages.py`), the cursor, the clip and the foreground precondition (`cursor.py`), and the
 enumeration with its visibility rule (`tree.py`). Patch 4 moved the **state-changing live
 workflows** out of the class into `acquire/udop/` — the `Parameters` interaction
-(`parameters.py`, 1,001 lines), the strip lifecycle and the record/stop/store cycle
-(`recording.py`, 440), the Store dialog (`store.py`, 236) and the facade that composes them
-(`session.py`, 1,739) — and left `acquire/driver.py` as the *compatibility name* of that facade
-rather than a re-export shell: `driver.py` publishes `udop/session.py` under its own name, because
-a copy of a name is not the name a patch rebinds (this repository's fakes script the window layer
-by patching `driver._gui` / `driver._user32` / `driver._post`). So the `driver.py` row above is 34
-lines of shim while every caller still resolves (`driver.screen_mode`,
+(`parameters.py`, 1,003 lines), the strip lifecycle and the record/stop/store cycle
+(`recording.py`, 443) and the Store dialog (`store.py`, 237) — as three mixin classes, one per
+surface, and composed them into the one live class. Where the facade's own code sits was got wrong
+once and then corrected: Patch 4 first left `acquire/driver.py` as a 34-line shim that published
+`udop/session.py` under its own name (`sys.modules[__name__] = session`), which made
+`driver.__name__` another file's name and pointed every traceback at code the reader was not
+looking at. The module-graph correction moved the facade **back into `acquire/driver.py`** — one
+module, read and imported as one, with its own `__name__`, its own `__file__` and its own traceback
+lines — and left `udop/session.py` (41 lines) as its *documented compatibility name*, re-exporting
+the facade's published surface name for name, so `from …udop.session import Win32Actuator` is the
+same class object `driver.Win32Actuator` is. That is what the `driver.py` row above measures: the
+facade itself, with every caller still resolving (`driver.screen_mode`,
 `driver.layout_shape_reasons`, `driver.dialog_value_fields`, `driver._strip_row`,
-`driver.PARAMETERS_MENU`, `driver._send`, `driver._CursorPoint`, `driver._click_hold`, …). Line
+`driver.PARAMETERS_MENU`, `driver._send`, `driver._CursorPoint`, `driver._click_hold`, …) and every
+fake still binding — `driver._gui` / `driver._user32` / `driver._post` are that module's own
+globals, not a copy of them. Line
 and byte references in this document therefore name **symbols**, not offsets: the only line
 numbers it still states are §7's freeze-commit citations into `acquire/verify.py` and
 `acquire/log.py`, which Patch 3 did not touch.
@@ -156,17 +163,20 @@ every path in this section as a **plan**, and check the tree before relying on o
 **How Patch 4 composes it, and why that shape.** One live class out of three per-surface pieces plus
 a facade. `udop/{parameters,recording,store}.py` each define their surface's methods on a plain
 class — `ParametersSurface`, `RecordingSurface`, `StoreSurface`: no `__init__`, no state, no
-platform import — and `udop/session.py` defines `Win32Actuator` as
+platform import — and `acquire/driver.py` defines `Win32Actuator` as
 `class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` with the facade's own
 methods under them (the transport, the cursor, the enumeration and the resolve, the class's state,
-the read-only surface and the protocol surface). The three pieces' method sets are **disjoint**, so
-the base order changes no resolution, and every moved body reaches its collaborators through `self`
-— which is what keeps a subclass that overrides a private
+the read-only surface and the protocol surface). The facade is that module and nothing else is:
+`udop/session.py` is its **compatibility name** — a documented re-export of the facade's published
+surface, name for name, not a second definition — so `from …udop.session import Win32Actuator` and
+`from …driver import Win32Actuator` are the same class object and no caller moves. The three
+pieces' method sets are **disjoint**, so the base order changes no resolution, and every moved body
+reaches its collaborators through `self` — which is what keeps a subclass that overrides a private
 (`tests/test_acquire_driver.py`'s `FakeDriver`) overriding exactly the method it always did, and
 what keeps the flat class's method set (96 names) intact. `tests/test_acquire_udop.py` pins the
 composition (the MRO, the disjointness, every method's `__module__`), the published surface and the
-package's import hygiene over the ASTs. Sizes at this tip: `parameters.py` 1,001 lines,
-`recording.py` 440, `store.py` 236, `session.py` 1,739, `__init__.py` 36.
+package's import hygiene over the ASTs. Sizes at this tip: `parameters.py` 1,003 lines,
+`recording.py` 443, `store.py` 237, `driver.py` 1,756, `session.py` 41, `__init__.py` 38.
 
 Rules the target layout pins:
 
@@ -191,10 +201,14 @@ Rules the target layout pins:
 - **A `StripBinding` that carries executable button roles exists only for known-safe
   strip states** — ambiguity has no binding, not a default one.
 - **Compatibility first:** `from udv_echo_process.acquire.driver import Win32Actuator`
-  keeps working; the `Actuator`/`SweepActuator` method names, the CLI behaviour and the
-  campaign JSON do not change; implementations move behind compatibility imports rather
-  than every call site changing at once. `udop/session.py` may re-export the existing
-  `Win32Actuator` interface while the rest of the repository stays still. Patch 3 measured
+  keeps working — and `acquire/driver.py` is where the facade's code lives, so the name resolves to
+  the class itself rather than to a copy of it; the `Actuator`/`SweepActuator` method names, the CLI
+  behaviour and the campaign JSON do not change; implementations move behind compatibility imports
+  rather than every call site changing at once. `udop/session.py` is the compatibility name: it
+  re-exports the existing `Win32Actuator` interface — the same class object, never a second
+  definition — while the rest of the repository stays still, and the graph is a DAG: the facade
+  imports the surfaces, the surfaces never import it back, and the one edge to the facade is that
+  re-export. Patch 3 measured
   what that costs: every module-level name and every `Win32Actuator` attribute the flat module
   published at `50625b5` still resolves at its tip (121 module names, 96 class attributes), with
   two exceptions — `NUMERIC_WRITE_RECIPE` and `lru_cache`, both *incidental imports* that lived

@@ -15,15 +15,17 @@ V2/V3/V4), and the cloud-only validation contract
 
 **It is a mixin**: the bodies are the ones ``Win32Actuator`` had, they reach their collaborators
 through ``self`` (the cursor, the transport, the surface resolution and the overlay detection are
-the facade's or the recording surface's), and ``udop/session.py`` composes this piece into the
-one live class.
+the facade's or the recording surface's), and ``acquire/driver.py`` composes this piece into the
+one live class (``udop/session.py`` is that facade's compatibility name).
 
 The timing knobs this surface's loops read — how long the dialog is given to fill, how long one
 popup entry's press is given to produce a dialog, how long the application is given to replace
 the dialog after a channel write, and the popup's own wait and poll cadence — moved here with
 the loops: a constant lives with the code that reads it, which is the rule Patch 3 followed when
 it left them in the flat module (its loops were there then). ``_POLL_S``, the package's poll
-cadence, is the recording surface's and is imported from it.
+cadence, is the recording surface's and is imported from it. A test that shortens one of these
+waits patches **this module** — the module that runs the loop and reads its own binding, never
+the facade's re-exported copy of the value.
 """
 
 from __future__ import annotations

@@ -8,22 +8,27 @@ this module pins is the *composition* the move produced and the boundary it draw
 
 * ``Win32Actuator`` is one class whose methods are the surface modules' — the Parameters
   interaction in ``parameters.py``, the strip lifecycle in ``recording.py``, the Store dialog in
-  ``store.py`` and the facade's own reads in ``session.py``. A method that drifted to another
-  surface, or a name two surfaces both claim, fails here by name.
-* ``acquire.driver`` **is** ``udop.session`` — the same module object, so ``driver._gui``,
-  ``driver._user32`` and ``driver._post`` (the names this repository's fakes script the window
-  layer with) are the objects the facade's own bodies read. A re-export shell would pass a copy.
+  ``store.py`` — and the facade's own reads, which live in ``acquire/driver.py``. A method that
+  drifted to another surface, or a name two surfaces both claim, fails here by name.
+* ``acquire.driver`` **is the facade module**: ``acquire/driver.py`` defines the class, so
+  ``driver._gui``, ``driver._user32`` and ``driver._post`` (the names this repository's fakes
+  script the window layer with) are the objects the facade's own bodies read — natively, not
+  through ``sys.modules`` surgery. ``udop/session.py`` is the *compatibility name* of that facade:
+  a documented re-export, so ``driver.Win32Actuator is session.Win32Actuator`` and every name the
+  facade publishes resolves from both.
 * every name the flat module published still resolves from ``driver``, ``driver.__all__`` is
   truthful, and the re-exported names are the *same objects* their surface defines.
 * no module in the package imports ``campaign``/``runner``/``verify``/``plan``/``log``, none reaches
-  the platform (``ctypes.windll``/``win32gui``/``win32con``) and none imports the facade back — the
-  graph is a DAG, checked by walking the ASTs.
+  the platform (``ctypes.windll``/``win32gui``/``win32con``) outside the facade's one named read,
+  and the only edge back to the facade is the compatibility name — the graph is a DAG, checked by
+  walking the ASTs.
 
 The workflow timings the moved loops read (``DIALOG_FILL_TIMEOUT_S``, ``_ENTRY_DIALOG_TIMEOUT_S``,
 ``_MENU_TIMEOUT_S``, ``_MENU_POLL_S``, ``_OVERLAY_SETTLE_S``, ``_POLL_S``) are *re-exported* from
-``driver`` and are read by the surface that owns the loop, so a patch on ``driver`` resolves but no
-longer shortens that loop: patching ``udop.parameters`` / ``udop.recording`` is what does —
-``test_every_name_the_flat_module_published_still_resolves`` states the identity of those names.
+``driver`` and are read by the surface that owns the loop, so a patch that has to *bite* is a patch
+on ``udop.parameters`` / ``udop.recording`` — never on the facade's copy of the value.
+``test_every_name_the_flat_module_published_still_resolves`` states the identity of those names,
+and ``tests/test_acquire_driver.py`` / ``tests/test_acquire_dialog.py`` prove the patch targets.
 """
 
 from __future__ import annotations
@@ -100,8 +105,9 @@ STORE_METHODS = (
     "_store_until_file",
 )
 #: The facade's own: the transport, the cursor, the enumeration, the resolve, the class's state,
-#: the read-only surface and the protocol surface.
-SESSION_METHODS = (
+#: the read-only surface and the protocol surface. Defined in ``acquire/driver.py`` — the module
+#: ``acquire.driver`` *is*.
+FACADE_METHODS = (
     "__init__",
     "_note",
     "_send",
@@ -151,7 +157,7 @@ SURFACES = {
     parameters: PARAMETERS_METHODS,
     recording: RECORDING_METHODS,
     store: STORE_METHODS,
-    session: SESSION_METHODS,
+    driver: FACADE_METHODS,
 }
 
 #: The names the flat module published that no method of the facade reads any more — the workflow
@@ -173,6 +179,24 @@ RE_EXPORTED = {
     "udv_echo_process.acquire.udop.recording": ("_OVERLAY_SETTLE_S", "_POLL_S"),
 }
 
+#: The workflow timing knobs and the module that **owns** each one: the surface whose loop reads
+#: it, so the module a test must patch for the patch to bite. ``_POLL_S`` is defined once, in
+#: ``recording.py``, and read by loops in all three surfaces (a view wait in ``recording``, the
+#: dialog table's fill in ``parameters``, the wait for the stored file in ``store``): the
+#: definition is not duplicated, and a test that shortens one of those loops patches the module
+#: that runs *that* loop. ``_OVERLAY_SETTLE_S`` has a second reader, the facade's own
+#: ``preflight``, which imported the value — the one knob whose second binding is named rather
+#: than papered over (``docs/dop3000/acquisition-architecture.md`` §5).
+WORKFLOW_KNOBS = {
+    "DIALOG_FILL_TIMEOUT_S": parameters,
+    "_ENTRY_DIALOG_TIMEOUT_S": parameters,
+    "_DIALOG_REPLACE_S": parameters,
+    "_MENU_TIMEOUT_S": parameters,
+    "_MENU_POLL_S": parameters,
+    "_OVERLAY_SETTLE_S": recording,
+    "_POLL_S": recording,
+}
+
 PLATFORM_NAMES = {"windll", "win32gui", "win32con"}
 ALLOWED_PACKAGES = {"actuator", "config", "snapshot", "ui", "win32", "udop"}
 FORBIDDEN_PACKAGES = {"campaign", "runner", "verify", "plan", "log"}
@@ -181,6 +205,16 @@ FORBIDDEN_PACKAGES = {"campaign", "runner", "verify", "plan", "log"}
 def package_files() -> Iterator[Path]:
     here = Path(udop.__file__).parent
     yield from sorted(here.glob("*.py"))
+
+
+def admitted_files() -> Iterator[Path]:
+    """The facade first, then the package: the files this layer's boundary is asserted over.
+
+    ``acquire/driver.py`` is where the facade's code lives, so a boundary check that walked only
+    ``udop/*.py`` would silently stop covering the class it is about.
+    """
+    yield Path(driver.__file__)
+    yield from package_files()
 
 
 def imported_modules(path: Path) -> set[str]:
@@ -244,19 +278,57 @@ def test_the_surface_pieces_carry_no_state_of_their_own() -> None:
 # ------------------------------------------------------------------ the compatibility name
 
 
-def test_acquire_driver_is_the_facade_module_itself() -> None:
-    """``driver`` is not a copy of the facade: it *is* the module the bodies read globals from.
+def test_the_facade_is_its_own_module_and_session_only_re_exports_it() -> None:
+    """The boring graph: ``driver`` is ``acquire/driver.py``; ``udop.session`` is a name for it.
 
-    That is what keeps ``monkeypatch.setattr(driver, "_gui", ...)`` — how every fake in this
-    repository scripts the window layer — biting at the same place it always did: a re-export shell
-    would hand a caller a copy of every name the class reads.
+    Patch 4 had this the other way round — ``acquire/driver.py`` published ``udop.session`` under
+    its own name with ``sys.modules[__name__] = session`` — so ``import
+    udv_echo_process.acquire.driver`` handed back a module whose ``__name__`` and ``__file__`` were
+    another file's, and every traceback pointed at code the reader was not looking at. The module a
+    patch has to reach is the module whose own globals the bodies read, and that is this one.
     """
-    assert driver is session
-    assert vars(driver) is vars(session)
+    assert driver is not session
+    assert driver.__name__ == "udv_echo_process.acquire.driver"
+    assert Path(driver.__file__).name == "driver.py"
+    assert session.__name__ == "udv_echo_process.acquire.udop.session"
+    assert Path(session.__file__).name == "session.py"
+    # The compatibility name hands back the facade's own objects, not copies of them.
     assert driver.Win32Actuator is session.Win32Actuator
+    assert driver.AcquisitionError is session.AcquisitionError
     assert driver._gui is session._gui
     assert driver._post is session._post
     assert driver._user32 is session._user32
+    assert session.__all__ == driver.__all__
+    # ...and the class the bodies belong to is the facade module's: this is what makes
+    # ``monkeypatch.setattr(driver, "_gui", ...)`` — how every fake in this repository scripts the
+    # window layer — reach the body it was written for.
+    assert driver.Win32Actuator.__module__ == driver.__name__
+
+
+def test_nothing_in_the_layer_replaces_itself_in_sys_modules() -> None:
+    """No runtime module surgery: the file *is* the module a reader opens and a traceback names."""
+    for path in admitted_files():
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        touched = [
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute) and node.attr == "modules"
+        ]
+        assert touched == [], f"{path.name} reaches into sys.modules"
+
+
+def test_every_workflow_knob_is_the_owning_surface_s_own_object() -> None:
+    """One binding per reader, and it is the surface's that runs the loop.
+
+    A knob the facade re-exports is the surface's *object*, never a second copy of its value — and
+    a test that has to shorten the loop it feeds patches that surface
+    (``tests/test_acquire_driver.py``'s ``test_the_popup_wait_is_shortened_on_the_surface_that_
+    owns_the_loop`` and ``tests/test_acquire_dialog.py``'s
+    ``test_the_dialog_fill_cadence_is_read_from_the_module_that_owns_the_loop``).
+    """
+    for name, owner in WORKFLOW_KNOBS.items():
+        assert getattr(driver, name) is getattr(owner, name), f"{name} is a copy"
+        assert getattr(session, name) is getattr(owner, name), f"session.{name} is a copy"
 
 
 def test_the_failure_class_is_the_packages_one_class() -> None:
@@ -296,22 +368,27 @@ def test_the_class_satisfies_the_protocol_it_always_did() -> None:
 def test_the_udop_package_imports_no_campaign_policy_and_no_platform() -> None:
     """The boundary: this layer combines observations with actions, and nothing else.
 
-    A udop module that imported the campaign, a runner or the verification would drag the run's
-    policy into the workflow; one that reached ``win32gui`` or ``win32con`` would move the Windows
-    boundary out of ``acquire/win32``, where it lives (resolved *inside* the calls, so this package
-    still imports on a host with no ``pywin32``). The one platform read the package does make is
-    ``session.screen_fingerprint``'s ``ctypes.windll.user32`` pair — read-only diagnostics of a
-    screen the facade has already resolved, named in
+    A surface that imported the campaign, a runner or the verification would drag the run's policy
+    into the workflow; one that reached ``win32gui`` or ``win32con`` would move the Windows boundary
+    out of ``acquire/win32``, where it lives (resolved *inside* the calls, so this layer still
+    imports on a host with no ``pywin32``). The one platform read the layer does make is the
+    facade's ``Win32Actuator.screen_fingerprint`` — its ``ctypes.windll.user32`` pair, read-only
+    diagnostics of a screen the facade has already resolved, named in
     ``docs/dop3000/acquisition-architecture.md`` §5 — and it is asserted to be the *only* one.
+
+    The one import edge back to the facade is ``udop/session.py``'s: the compatibility name
+    re-exports ``acquire.driver``, and no surface (and not the package) may import it.
     """
-    for path in package_files():
+    for path in admitted_files():
         for name in sorted(imported_modules(path)):
             if not name.startswith("udv_echo_process.acquire"):
+                continue
+            if name == driver.__name__:
+                assert path.name == "session.py", f"{path.name}: {name}"
                 continue
             package = name.split(".")[2]
             assert package not in FORBIDDEN_PACKAGES, f"{path.name}: {name}"
             assert package in ALLOWED_PACKAGES, f"{path.name}: {name}"
-            assert name != "udv_echo_process.acquire.driver", f"{path.name}: {name}"
         assert not (windll_users(path) - {"screen_fingerprint"}), (
             f"{path.name}: {sorted(windll_users(path))}"
         )
@@ -344,10 +421,22 @@ def test_the_package_imports_do_not_reach_the_platform_at_import_time() -> None:
 
 def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
     """No cycles: the facade imports the surfaces, the surfaces never import it back."""
+    wanted = (udop.__name__, driver.__name__)
+
+    def layer_imports(path: Path) -> set[str]:
+        """Every import of ``path`` that lands inside this layer (the package or the facade)."""
+        return {name for name in imported_modules(path) if name.startswith(wanted)}
+
     edges: dict[str, set[str]] = {}
     for path in package_files():
         module = f"{udop.__name__}.{path.stem}" if path.stem != "__init__" else udop.__name__
-        edges[module] = {name for name in imported_modules(path) if name.startswith(udop.__name__)}
+        edges[module] = {name for name in layer_imports(path) if name.startswith(udop.__name__)}
+    # The facade is at the root of that graph and outside the package: walk its AST too, or the
+    # direction these assertions are about would be asserted of a node nobody collected. Its only
+    # edge back is ``udop/session.py``'s — the compatibility name — and that edge is collected
+    # with the facade as its target.
+    edges[driver.__name__] = layer_imports(Path(driver.__file__))
+    edges[f"{udop.__name__}.session"] = layer_imports(Path(session.__file__))
     for module, targets in edges.items():
         assert module not in targets, f"{module} imports itself"
     # A topological order exists, which is what "no cycle" means.
@@ -360,15 +449,20 @@ def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
             resolved.add(module)
             del pending[module]
     assert resolved == set(edges)
-    # ...and the direction is the documented one: the facade imports every surface, the package
-    # itself imports none of them, and the only edges between surfaces are the two cadence
-    # constants the Parameters and Store loops read from the recording surface.
-    assert edges[f"{udop.__name__}.session"] >= {
+    # ...and the direction is the documented one: the facade imports every surface, the
+    # compatibility name imports the facade and nothing else, the package itself imports none of
+    # them, no surface imports the facade back, and the only edges between surfaces are the two
+    # cadence constants the Parameters and Store loops read from the recording surface.
+    surfaces = {
         f"{udop.__name__}.parameters",
         f"{udop.__name__}.recording",
         f"{udop.__name__}.store",
     }
+    assert edges[driver.__name__] >= surfaces
+    assert edges[f"{udop.__name__}.session"] == {driver.__name__}
     assert edges[udop.__name__] == set()
+    for surface in surfaces:
+        assert driver.__name__ not in edges[surface], f"{surface} imports the facade back"
     assert edges[f"{udop.__name__}.parameters"] <= {udop.__name__, f"{udop.__name__}.recording"}
     assert edges[f"{udop.__name__}.store"] <= {udop.__name__, f"{udop.__name__}.recording"}
     assert edges[f"{udop.__name__}.recording"] <= {udop.__name__}

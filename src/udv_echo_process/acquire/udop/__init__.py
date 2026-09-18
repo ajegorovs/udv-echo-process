@@ -10,9 +10,11 @@ Patch 4 splits the live workflows out of the flat ``acquire/driver.py`` by surfa
   the overlay answering and recovery, and the record/stop/store cycle;
 - ``store.py`` — the Store dialog: the name, the working directory, the accept and the stored
   file;
-- ``session.py`` — the facade: the one live class this package publishes
-  (:class:`~udv_echo_process.acquire.udop.session.Win32Actuator`), composed out of one piece per
-  surface. ``acquire.driver`` is that same module, so no caller moves.
+- ``session.py`` — the compatibility name of the facade: it re-exports the one live class this
+  layer publishes (:class:`~udv_echo_process.acquire.driver.Win32Actuator`) from
+  :mod:`udv_echo_process.acquire.driver`, which is where the class and its own methods live. No
+  caller moves: ``acquire.driver`` is the module the callers and the fakes already import, so the
+  facade's code is there and ``udop.session`` is the name it is still reachable by.
 
 **No workflow is proven here.** Every moved gesture stays *device-pending*
 (``docs/dop3000/device-verification.md``): a workflow that was paid for with a live slot is moved,

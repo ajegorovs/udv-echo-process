@@ -13,9 +13,10 @@ contract (``docs/dop3000/acquisition-architecture.md`` §8) forbids claiming oth
 
 **It is a mixin**: the bodies are the ones ``Win32Actuator`` had, they reach their collaborators
 through ``self`` (the overlay detector and the warning answer are the recording surface's, the
-transport is the facade's), and ``udop/session.py`` composes this piece into the one live class.
-The poll cadence (:data:`...recording._POLL_S`) is the recording surface's, imported here rather
-than repeated.
+transport is the facade's), and ``acquire/driver.py`` composes this piece into the one live class
+(``udop/session.py`` is that facade's compatibility name). The poll cadence
+(:data:`...recording._POLL_S`) is the recording surface's, imported here rather than repeated — so
+a test that shortens the wait for the stored file patches **this** module's binding of it.
 """
 
 from __future__ import annotations

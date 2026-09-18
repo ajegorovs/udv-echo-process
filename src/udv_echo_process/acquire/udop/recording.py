@@ -14,15 +14,18 @@ claiming that it is.
 
 **It is a mixin.** The bodies are the ones ``Win32Actuator`` had, they reach their collaborators
 through ``self`` (a press re-resolves the strip panel through the facade, a store cycle is the
-Store surface's, an overlay press is the Parameters surface's), and ``udop/session.py`` composes
-this piece into the one live class. ``self._resolve``, ``self._click_hold`` and
+Store surface's, an overlay press is the Parameters surface's), and ``acquire/driver.py`` composes
+this piece into the one live class (``udop/session.py`` is that facade's compatibility name).
+``self._resolve``, ``self._click_hold`` and
 ``self.ensure_channel`` therefore resolve on the composed instance exactly as they resolved on
 the flat class — which is what keeps every subclass that overrides a private
 (``tests/test_acquire_driver.py``'s ``FakeDriver``) overriding the same method.
 
 ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` live here, with the loops that read them: this is the
 surface that answers overlays. The two other surfaces that poll at the same cadence import them
-from here rather than holding a second copy of the number.
+from here rather than holding a second copy of the number — so the value a test patches is **this
+module's**, and ``_OVERLAY_SETTLE_S``'s one other reader, the facade's ``preflight``, holds the
+copy it imported (named in ``docs/dop3000/acquisition-architecture.md`` §5).
 """
 
 from __future__ import annotations
