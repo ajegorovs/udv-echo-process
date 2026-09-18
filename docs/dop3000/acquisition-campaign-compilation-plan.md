@@ -3211,3 +3211,28 @@ unaffected by it.
 value as the two sidebar combos' own edits. Three occurrences now, on three different surfaces, which is worth
 one experiment of its own before the writer slice touches any of them.
 
+### 26.4 The restore, verified — and two remainders it caught
+
+**The frame is back, and it was measured rather than assumed.** Read E, taken after the operator restored the
+parameters: the column reads `4000 / 600 / 50 / 1.850 / 1.00 / 20 / 0` — the definition's frame, all five of
+the assisted compromise's quantities back at their manual values — with **44 visible controls**, the strip
+present, and the mode `Uniform`. Nothing else in the column moved.
+
+Two remainders, both worth more than the confirmation:
+
+- **The `Tgc [dB]` cell reads `40`, not read A's `20`, and the operator did not touch it during the restore.**
+  So the uniform start settled at `40` somewhere across the auto pass and the assisted toggle and stayed
+  there. It is consistent with the archive's own reading of that cell — §18.6's dialog row `(0,3) = 40` — which
+  makes **`20`** the value needing an explanation, not `40`. Recorded as a discrepancy to settle before any
+  automation writes a TGC value: a knob whose value depends on which mode was visited is not a knob a
+  definition may assume.
+- **The tree grew from 202 rows to 447 within one session, with the visible count unchanged at 44.** The
+  operator's tour of the menus and overlays built ~245 controls, none of them visible (§23.2's pattern
+  continued). A tree read is a session artifact; the visible projection is what the gate may speak about.
+
+**Decision (operator): this work will not run in assisted mode.** The frame stays hand-set, so assisted mode
+is a *hazard to detect* rather than a mode to operate in — which is also what §18.4's power × TGC coupling
+argues, and what makes the frame values part of the per-point identity rather than a convenience. The
+screenshots of `Preferences → assisted` in both states stay useful as the record of what the toggle does to the
+frame; they are not a mode this work will use.
+
