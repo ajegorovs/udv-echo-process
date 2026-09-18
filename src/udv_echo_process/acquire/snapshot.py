@@ -293,17 +293,19 @@ class CompilationIdentity(ValueModel):
     ``is_foreground`` and ``layout_note`` (true only of a session: a restart or a drag must not
     read as a different instrument), ``overlay`` (a modal being up is a precondition failure the
     compiler refuses on, not a property of the instrument), every ``reason`` (see
-    :class:`Provenance`), and the store slider's **maximum** — the strip's *structure* is in, its
-    slider's range is not, because that range is the selected block's profile count: a property
-    of the data in the application's buffer, and of how far the run has already got, not of the
-    layout.
+    :class:`Provenance`), and everything that is a property of **the data in the application's
+    buffer rather than of the instrument**: the store slider's ``maximum`` — the strip's
+    *structure* is in, its slider's range is not, because that range is the selected block's
+    profile count — and the strip's top-row **button count**, which is 3 or 4 depending on
+    whether a leftover block is held (``actuator.STRIP_BUTTON_ORDER`` documents both rows, and
+    ``classify_strip_view`` puts both in the same ``READY`` view).
 
-    The strip's button count is the one part of this projection whose stability is **not** yet
-    measured: this application's ready row gains ``Do store`` once its block holds data, so a
-    restart with an empty buffer may show a shorter row than a running session
-    (``actuator.STRIP_BUTTON_ORDER`` holds both rows). It is kept — a false mismatch costs one
-    re-run, while a false match is a silent skip, which is the direction this repository always
-    refuses — and it is listed as something the fixture set (W1) has to settle rather than assume.
+    What the count classifies *into* stays in, and it is the half the driving needs: the view.
+    A press is bound to a control's position in the live row, and the driver resolves that row at
+    press time from the count it has *just* read (:func:`~udv_echo_process.acquire.actuator.
+    press_index`), so a run's presses never depend on this projection carrying the count — while
+    a *view* the run did not bind against (``RECORDING``, ``STORE``, an unrecognised screen) is a
+    screen whose presses would land elsewhere, and that is what belongs in the comparison.
     """
 
     channel: Provenance
@@ -317,11 +319,10 @@ class CompilationIdentity(ValueModel):
     class_name: str
     panels: int = Field(ge=0)
     visible_controls: int = Field(ge=0)
-    #: The view the strip was in, and the button row it showed: a press is bound to a button's
-    #: **position in that row** (:func:`~udv_echo_process.acquire.actuator.press_index`), so a
-    #: view the run did not bind against is a screen whose presses would land elsewhere.
+    #: The view the strip was in: a press is bound to a button's **position in that row**
+    #: (:func:`~udv_echo_process.acquire.actuator.press_index`), so a view the run did not bind
+    #: against is a screen whose presses would land elsewhere.
     strip_view: StripView
-    strip_button_count: int = Field(ge=0)
     strip_has_slider: bool
 
     @classmethod
@@ -345,7 +346,6 @@ class CompilationIdentity(ValueModel):
             panels=fingerprint.panels,
             visible_controls=fingerprint.visible_controls,
             strip_view=strip.view,
-            strip_button_count=strip.button_count,
             strip_has_slider=strip.has_slider,
         )
 

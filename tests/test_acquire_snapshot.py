@@ -247,6 +247,23 @@ def test_the_store_sliders_maximum_is_not_the_layout() -> None:
     assert digest(idle) == digest(holding)
 
 
+def test_a_leftover_block_in_the_buffer_is_not_a_different_instrument() -> None:
+    """The ready row's 3 vs 4 buttons is buffer state — ``STRIP_BUTTON_ORDER`` holds both rows.
+
+    This application's ready row gains ``Do store`` once its block holds data, so a restart with
+    an empty buffer and a run resuming while holding a block differ by exactly this — and both
+    are ``READY``, the view a press is bound against. A comparison that included the count would
+    call the same instrument two, on a difference that is the *run's own progress*.
+    """
+    empty = snapshot(fingerprint=fingerprint(strip=StripState(button_count=3)))
+    holding = snapshot(fingerprint=fingerprint(strip=StripState(button_count=4)))
+
+    assert empty.fingerprint.strip.button_count == 3
+    assert holding.fingerprint.strip.button_count == 4
+    assert empty != holding
+    assert digest(empty) == digest(holding)
+
+
 @pytest.mark.parametrize("name", FIXED_FACT_FIELDS)
 def test_every_fixed_fact_moves_the_identity_by_value_and_by_provenance(
     name: str,
@@ -279,8 +296,8 @@ def test_every_fixed_fact_moves_the_identity_by_value_and_by_provenance(
         ("another panel count", {"fingerprint": fingerprint(panels=3)}),
         ("another control count", {"fingerprint": fingerprint(visible_controls=21)}),
         (
-            "the strip's row gained a button",
-            {"fingerprint": fingerprint(strip=StripState(button_count=4))},
+            "the strip is recording rather than ready",
+            {"fingerprint": fingerprint(strip=StripState(button_count=1))},
         ),
         (
             "the strip is in its store view",
@@ -307,7 +324,6 @@ def test_the_identity_holds_the_table_and_nothing_of_a_session() -> None:
         "panels",
         "visible_controls",
         "strip_view",
-        "strip_button_count",
         "strip_has_slider",
     }
     reading = snapshot()
@@ -316,7 +332,6 @@ def test_the_identity_holds_the_table_and_nothing_of_a_session() -> None:
     assert identity.visible_controls == CLEAN_CONTROLS
     assert identity.panels == CLEAN_PANELS
     assert identity.strip_view is StripView.READY
-    assert identity.strip_button_count == 3
     assert not identity.strip_has_slider
     for volatile in (
         "hwnd",
@@ -328,6 +343,7 @@ def test_the_identity_holds_the_table_and_nothing_of_a_session() -> None:
         "layout_note",
         "overlay",
         "slider_max",
+        "strip_button_count",
     ):
         assert volatile not in CompilationIdentity.model_fields, volatile
 
