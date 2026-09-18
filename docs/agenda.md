@@ -218,8 +218,13 @@ with their commits, and the six decisions in §5 are still open).
 [PR #4](https://github.com/ajegorovs/udv-echo-process/pull/4) (draft, based on #3's branch)
 is the plan's **slice P1 = W2**: `acquire/snapshot.py` — an instrument reading whose every fact
 carries its source, and the identity a resume compares — the additive
-`SweepActuator.instrument_snapshot()`, and the fakes' answer. It changes no recording path, so
-nothing in a campaign behaves differently yet; the plan's §12 records what the slice decided.
+`SweepActuator.instrument_snapshot(*, routed_channel)`, and the fakes' answer. It changes no
+recording path, so nothing in a campaign behaves differently yet; the plan's §12 records what the
+slice decided.
+Its first review approved the direction and returned three changes to the identity and the
+channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
+out of the identity, and routing as its own source that only the router can claim — all landed,
+one commit each, and §12 of the plan carries them.
 Next is **P3 = W3** (`compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
 refusals), which P1 is the input to.
 

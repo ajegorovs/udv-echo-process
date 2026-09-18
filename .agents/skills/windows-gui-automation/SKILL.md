@@ -419,10 +419,19 @@ unrecognised prompt is one you must not answer blind.
   and everything that is the *run's own data* — the store slider's maximum is the selected
   block's profile count, so an identity carrying it moves as the buffer fills. An overlay being
   up, and a minimised window, are **preconditions that refuse** rather than properties of the
-  instrument. Where a part of the projection is not yet measured (this application's ready row
-  gains `Do store` once its block holds data, so its button count varies with the buffer), keep
-  it if the failure direction is safe — a false mismatch costs a re-run, a false match is a
-  silent skip — and record the fixture that will settle it.
+  instrument. Exclude *all* of the state that changes with the run's own data, not only the
+  obvious part: this application's ready row is 3 buttons or 4 depending on whether a leftover
+  block is held, and the store slider's maximum is the selected block's profile count — so a count
+  in the projection is a property of how far the run has got, not of the instrument. Where the
+  count classifies into a *view* that a press is bound against, the view is what belongs in the
+  projection, and the binding itself is resolved live at press time. Exclude a fact's explanatory
+  `reason` for the same class of reason: it is written to be rewritten, so hashing it turns a
+  documentation improvement into "a different instrument" and re-runs a finished job — put the
+  value and the *source* in the projection and leave the prose in the reading. And when a value
+  rests on another step's verification rather than on the reading's own, give it its own source
+  name (a channel the router selected and read back is neither "the caller declared it" nor "this
+  reading read it") and make the caller **hand the proof over as a required argument**, so that no
+  call can imply a verification that never ran.
 - **Read a per-channel state without pressing, and never read a mode out of an absence.** The
   channel itself costs a menubar hover (the dialog is the only place it lives), but the channel's
   *mode* does not: the sidebar parameter column exists only for a manual channel, so the
