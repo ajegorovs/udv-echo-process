@@ -675,6 +675,42 @@ def test_a_dialog_that_survives_the_close_is_reported_by_its_rect_and_never_pres
     assert set(fake.presses) == {fake.cancel_handle(DIALOG_HWND)}
 
 
+def test_a_close_that_could_not_press_anything_does_not_report_a_press():
+    """L5: the cleanup note is written from what the close **did**, never from what it meant to do.
+
+    ``_close_parameters_dialog`` swallows every ``AcquisitionError`` into a note — including the
+    ``0 buttons in its bottom band`` refusal, i.e. a close where *nothing was pressed at all* — so
+    a report that reads "its left (Cancel) button was pressed and the dialog did not go away"
+    asserts a gesture the driver may never have made, in the one diagnostic an operator acts on.
+    It also names the panel ``'Operating parameters'`` although it closed whatever panel
+    ``_dialog_panels()`` returned fullest: with the structural dialog predicate that can be a panel
+    that is not the parameters dialog at all. The note says which of the two happened, and names
+    the panel by the rect and the child classes the resolve actually states.
+    """
+
+    class NoBottomBand(FakeDialogDriver):
+        """The measured dialog with **no** ``TSp_Button`` in its own children: no pair to press."""
+
+        def _children_of(self, parent: int, roles: dict) -> list[dict]:
+            kids = super()._children_of(parent, roles)
+            return [k for k in kids if k["cls"] != "TSp_Button"]
+
+    fake = NoBottomBand()
+    reading = fake.read_dialog_parameters()
+
+    assert reading.readable()  # the read stands; it is the close that could not be made
+    assert fake.open_panel is not None  # the dialog is still up
+    assert fake.presses == [], "the fixture is wrong: a close with no band pressed something"
+    warning = next(note for note in fake.notes if "is still open" in note)
+    assert "Cancel) button was pressed" not in warning, warning  # the press it never made
+    assert "could not be pressed" in warning, warning
+    assert "'Operating parameters'" not in warning, warning  # not a panel this close identified
+    assert "(655, 364)" in warning, warning  # named by its own rect ...
+    assert "TSp_Value_Button" in warning, warning  # ... and the classes its resolve states
+    assert "operator" in warning and "restart" in warning, warning
+    assert "never guesses a surface" in warning, warning
+
+
 # ------------------------------------------------------------------ the snapshot's side
 
 

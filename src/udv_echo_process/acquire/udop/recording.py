@@ -31,7 +31,7 @@ copy it imported (named in ``docs/dop3000/acquisition-architecture.md`` §5).
 from __future__ import annotations
 
 import time
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import (
@@ -60,6 +60,35 @@ from udv_echo_process.acquire.ui.strip import (
 #: The settle after an accepted overlay answer, and the cadence the polling loops below
 #: run at. The held press's own settle travels with the gesture, in ``win32/messages.py``.
 _OVERLAY_SETTLE_S, _POLL_S = 0.8, 0.4
+
+
+def dialog_up_clause(roles: Mapping) -> str | None:
+    """Why no press and no menubar gesture may be taken while an application dialog is up.
+
+    The resolver decides a dialog **structurally** and publishes the union on the map
+    (``value_dialogs`` | ``browse_dialogs``). Every panel that union names is a modal the
+    application's own posted clicks ignore (docs/16 §8), and the predicates the runtime checks used
+    to see one with — ``_find_overlay``'s rows (the values dialog is in its ``known`` set) and
+    ``open_popup`` (which excludes dialogs) — no longer answer for it. So this clause is read where
+    an action would be taken, not only where a reading is interpreted: a panel the dialog reader
+    would call a dialog must not be one the press path cannot see.
+
+    ``None`` when the map states no dialog. The panel is named by its own rect, never by a caption:
+    these widgets are caption-less and the identity of the panel ``_dialog_panels`` returns is the
+    panel that happens to be up, not necessarily the ``Operating parameters`` one.
+    """
+    up = set(roles.get("value_dialogs") or ()) | set(roles.get("browse_dialogs") or ())
+    if not up:
+        return None
+    panel = next((p for p in roles.get("panels") or () if p["hwnd"] in up), None)
+    if panel is None:
+        return None
+    rect = tuple(panel["rect"])
+    return (
+        f"an application dialog is up at {rect[:2]} (rect {rect}): this step would act behind a "
+        "modal in an application whose posted clicks ignore modality (docs/16 §8) — clear the "
+        "dialog from the UI first, this driver never WM_CLOSEs a dialog and never presses into one"
+    )
 
 
 class RecordingSurface:
@@ -188,6 +217,14 @@ class RecordingSurface:
                 "a menu popup is open; the strip binding would be unreliable — close it from "
                 "the UI, this driver never WM_CLOSEs a popup"
             )
+        # An application **dialog** is a guard of its own, and not the same check: ``open_popup``
+        # excludes dialogs (the measured ``Operating parameters`` panel must not be read as an
+        # open menu), so without this clause a leftover dialog would leave ``press`` free to post
+        # a held press behind a modal (docs/16 §8 — this application's posted clicks ignore
+        # modality). ``_settle_press`` reads the same clause; this one is the press path's own.
+        clause = dialog_up_clause(roles)
+        if clause is not None:
+            raise AcquisitionError(clause)
         if roles["strip_panel"] is None:
             raise AcquisitionError("no recording strip panel found")
         state = self._state_of(roles)
@@ -250,10 +287,20 @@ class RecordingSurface:
         return self._peek_overlay()
 
     def _settle_press(self) -> None:
-        """Answer every overlay before a press; refuse if one needs the caller."""
+        """Answer every overlay before a press; refuse if one needs the caller.
+
+        And refuse when an application **dialog** is up: it is not an overlay ``_find_overlay``
+        answers (the values dialog is in its ``known`` set), and a press behind a modal is exactly
+        what this guard exists to stop (docs/16 §8). The clause reads the resolver's own union,
+        because that is the only statement of "a dialog is up" on the map (:func:`dialog_up_clause`).
+        """
         for _ in range(4):
-            found = self._find_overlay()
+            roles = self._resolve()
+            found = self._find_overlay(roles)
             if found is None:
+                clause = dialog_up_clause(roles)
+                if clause is not None:
+                    raise AcquisitionError(clause)
                 return
             kind, panel, kids = found
             if kind is OverlayKind.STORE_DIALOG:

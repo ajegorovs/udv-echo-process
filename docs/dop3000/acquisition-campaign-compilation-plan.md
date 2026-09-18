@@ -2794,7 +2794,11 @@ the screen before that classification ran would refuse the assisted mode for bei
   at the client's bottom — found by **shape, never by index**;
 - the strip's row length maps into `STRIP_BUTTON_ORDER` — §21.3 item 3's silent case ("a different button
   panel in the plot's middle band") is what this catches;
-- nothing is over it: `open_popup` false, `_find_overlay(roles)` none, `_dialog_panels` empty;
+- nothing is over it: `open_popup` false, `_find_overlay(roles)` none, and the resolver's
+  `value_dialogs | browse_dialogs` union empty. That union is an independent precondition of both a
+  strip press and the real-cursor menubar hover: `open_popup` excludes dialogs and `_find_overlay`
+  treats value dialogs as known panels. `_dialog_panels()` is the fresh post-action read used by
+  `_close_any_dialog`; it is not a substitute for this pre-action refusal;
 - the process mode is stated (24.4), because "a measurement screen of some mode" is not enough to record
   against.
 

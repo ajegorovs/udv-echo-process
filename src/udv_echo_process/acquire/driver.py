@@ -689,9 +689,10 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         #: What the application actually did on the last popup-entry press: the gesture
         #: used, whether the overlay was **visible**, whether the popup closed, any panel
         #: that was not up before (its rect and its top-level child classes) and the dialog
-        #: that was found (:meth:`_observe_entry_attempt`). Diagnostics only, never a
-        #: binding — the next live run must be told what the application did, not merely
-        #: that a step failed.
+        #: classes (:meth:`_observe_entry_attempt`). This is a per-attempt record: the
+        #: Parameters gesture clears it before each hover, so every rect and outcome belongs
+        #: to the attempt being diagnosed. Diagnostics only, never a binding — the next live
+        #: run must be told what the application did, not merely that a step failed.
         self.last_entry_attempt: dict | None = None
         self.warnings: list[str] = []
 

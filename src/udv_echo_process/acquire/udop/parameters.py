@@ -31,7 +31,7 @@ the facade's re-exported copy of the value.
 from __future__ import annotations
 
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from udv_echo_process.acquire.actuator import (
     DIALOG_FIELD_ORDER,
@@ -47,7 +47,7 @@ from udv_echo_process.acquire.snapshot import (
     DialogParameters,
 )
 from udv_echo_process.acquire.udop import AcquisitionError
-from udv_echo_process.acquire.udop.recording import _POLL_S
+from udv_echo_process.acquire.udop.recording import _POLL_S, dialog_up_clause
 from udv_echo_process.acquire.ui.dialog import (
     _is_dialog_panel,
     dialog_channel_text,
@@ -146,6 +146,35 @@ def _descendants(roles: Mapping, root: int) -> list[dict]:
     return out
 
 
+def parameters_overlay(panels: Mapping[int, dict], visible: Callable[[int], bool]) -> dict | None:
+    """The ``Parameters`` popup a panel map states, by the reference's own recorded rectangle.
+
+    ``recon/41_burst_sampling_volume.py`` read the live popup at ``left == 169`` with ``h > 120``,
+    visible, and that predicate is asked here so that the two questions which need it — "is the
+    popup up yet?" (:meth:`ParametersSurface._poll_parameters_overlay`) and "did this attempt leave
+    it up?" (:meth:`ParametersSurface._open_parameters_dialog`) — cannot answer differently about
+    whether *this* menu is on screen.
+
+    It is asked instead of ``roles["open_popup"]`` for the second question because the two are not
+    the same statement: ``open_popup`` is "a panel besides the menu bar, the status bar and the
+    strip hosts buttons", which the delta's own record states for the ``Define TGC`` overlay and
+    which is true of every measured warning box (392x132, 397x135, 353x155, docs/16 §8). Naming the
+    menu from it is a false surface, and the remedy that travels with a stranded menu (a restart)
+    is the wrong one for a warning the operator clears with ``Continue``.
+    """
+    found = sorted(
+        (
+            panel
+            for panel in panels.values()
+            if panel["left"] == _OVERLAY_LEFT
+            and panel["h"] > _OVERLAY_MIN_H
+            and visible(panel["hwnd"])
+        ),
+        key=lambda panel: panel["top"],
+    )
+    return found[0] if found else None
+
+
 class ParametersSurface:
     """The ``Parameters`` interaction of :class:`~udv_echo_process.acquire.udop.session.Win32Actuator`.
 
@@ -218,12 +247,28 @@ class ParametersSurface:
                 "is deliberately no posted fallback — allow_real_input=False, so nothing "
                 "was moved on this unattended or locked desktop"
             )
+        # **This attempt's record starts empty.** ``last_entry_attempt`` is written only by
+        # :meth:`_observe_entry_attempt` — i.e. only once an entry has been pressed — so a failure
+        # that happens *before* the press (a hover that opens nothing, a popup the poll will not
+        # accept, a popup that holds no entries) would otherwise report the record of an **earlier**
+        # attempt as this one's observation: an entry and a rect this attempt never saw, on a screen
+        # that has since changed. Cleared here, where the attempt begins.
+        self.last_entry_attempt = None
         roles = self._resolve()
         if roles["open_popup"]:
             raise AcquisitionError(
                 "a menu popup is already open; the entry press would be unreliable — "
                 "close it from the UI, this driver never WM_CLOSEs a popup"
             )
+        # A leftover application **dialog** refuses this step too, and it has to be checked here:
+        # a hover with a modal up reads, moves and parks the operator's real cursor on a menubar
+        # behind it and then times out with "the popup did not appear" — a worse diagnosis than
+        # the refusal, on a desktop where the state is not the one the attempt assumes. The
+        # clause is the resolver's own union, read through ``udop.recording``, so this path and
+        # the strip press cannot disagree about what "a dialog is up" means.
+        dialog = dialog_up_clause(roles)
+        if dialog is not None:
+            raise AcquisitionError(dialog)
         menu = (roles.get("menu") or {}).get(PARAMETERS_MENU)
         if menu is None:
             # The anchor is proven where it is *resolved* and nowhere else: ``_resolve`` publishes
@@ -294,7 +339,7 @@ class ParametersSurface:
             # The menu has been used (or the attempt is over, hover or press): the
             # operator's cursor goes back, so no path leaves it parked on the menubar.
             self._restore_cursor(saved)
-            # **And a popup this attempt left up is reported, never "closed".** Nothing this
+            # And a popup this attempt left up is reported, never "closed". Nothing this
             # driver sends dismisses a hover-opened popup: the cursor restore above does not, and
             # neither does ``ESC``, a click outside or a posted ``WM_CANCELMODE`` (plan §9.3) —
             # while ``WM_CLOSE`` to the popup panel **wedges** the application's modal menu loop,
@@ -311,27 +356,34 @@ class ParametersSurface:
             except Exception:  # noqa: BLE001 - a diagnostic may not mask what it diagnoses
                 still_up = {}
             if still_up.get("open_popup"):
-                attempt = self.last_entry_attempt or {}
-                rect = (
-                    attempt.get("overlay_rect")
-                    if attempt.get("overlay_visible_after")
-                    else None
-                )
-                seen = (
-                    f" at {tuple(rect)[:2]} (rect {tuple(rect)}), where this attempt last saw it "
-                    "visible"
-                    if rect is not None
-                    else " (this attempt recorded no rect for it)"
-                )
-                self._note(
-                    f"a {PARAMETERS_MENU!r} popup is still open{seen}: the attempt failed with it "
-                    "up, and putting the operator's cursor back does not dismiss it — this driver "
-                    "never WM_CLOSEs a popup (that wedges the application's modal menu loop until "
-                    "it is restarted, after which no menu opens by any means) and presses nothing "
-                    "into an open menu to recover, so the application's state is unverified. An "
-                    "operator has to clear the popup, or the application has to be restarted, "
-                    "before this point is retried"
-                )
+                # **And the popup is the reference's own, not every panel that hosts buttons.**
+                # ``open_popup`` is true for the ``Define TGC`` overlay and for every measured
+                # warning box (392/397/353 px, docs/16 §8) while zero dialog panels resolved, so a
+                # note written from it alone would name a stranded ``Parameters`` menu — and hand
+                # the operator a restart — for a warning they clear with ``Continue``. The panel
+                # is therefore the one :func:`parameters_overlay` finds on this fresh map, by the
+                # rectangle ``recon/41`` recorded; and when that panel is not up, the panel that
+                # is gets named for what it is: not this menu.
+                overlay = parameters_overlay(self._panel_map(still_up), self._is_visible)
+                if overlay is not None:
+                    rect = tuple(overlay["rect"])
+                    self._note(
+                        f"a {PARAMETERS_MENU!r} popup is still open at {rect[:2]} "
+                        f"(rect {rect}): the attempt failed with it up, and putting the operator's "
+                        "cursor back does not dismiss it — this driver never WM_CLOSEs a popup "
+                        "(that wedges the application's modal menu loop until it is restarted, "
+                        "after which no menu opens by any means) and presses nothing into an open "
+                        "menu to recover, so the application's state is unverified. An operator "
+                        "has to clear the popup, or the application has to be restarted, before "
+                        "this point is retried"
+                    )
+                else:
+                    self._note(
+                        "a panel other than the measurement layout is up (the resolver reports an "
+                        f"open popup): it is not the {PARAMETERS_MENU!r} popup this attempt used, "
+                        "so this driver names no other surface and presses nothing into one — "
+                        "read the screen before retrying"
+                    )
 
     def _assert_assisted_unchanged(self, sidebar_before: bool) -> None:
         """Refuse when this interaction switched the assisted mode **on** by itself.
@@ -365,18 +417,30 @@ class ParametersSurface:
             "Preference menu, so an operator has to clear it before the point can be made"
         )
 
-    def _close_parameters_dialog(self, panel: dict) -> None:
+    def _close_parameters_dialog(self, panel: dict) -> bool:
         """Close the dialog with its LEFT button (``Cancel``), never a window close.
 
         The app confines the cursor to its dialogs, so an open one traps the operator
         (docs/16 §6); a panel whose bottom row cannot be resolved is noted instead of
         raising, so a failed point is never masked by a failed cleanup.
+
+        Returns whether the press was **made**: ``False`` means the band holding the Cancel/Accept
+        pair did not resolve and *nothing was pressed at all*. A caller that reports the outcome
+        must say which of the two happened — "the Cancel was pressed and the dialog stayed" and
+        "there was no Cancel to press" are different findings, and the panel is named by its own
+        rect because the identity ``_dialog_panels`` returns is whatever was up, never necessarily
+        the ``Operating parameters`` dialog (review L5).
         """
         try:
             kids = self._children_of(panel["hwnd"], self._resolve())
             self._dialog_button(panel, kids, DialogControl.SAFE)
         except AcquisitionError as exc:
-            self._note(f"the {PARAMETERS_ENTRY!r} dialog could not be closed: {exc}")
+            self._note(
+                f"the dialog at {panel['rect'][:2]} (rect {tuple(panel['rect'])}) could not be "
+                f"closed: {exc}"
+            )
+            return False
+        return True
 
     def ensure_channel(self) -> int:
         """Make the application measure on the configured channel, and prove it took.
@@ -636,14 +700,20 @@ class ParametersSurface:
         And it **ends by asking the screen whether the dialog is gone**, because the close it
         calls never raises: a caller that took the attempt for the outcome would report a clean
         finish with a modal still up. A dialog that survives every attempt is named by its own
-        rect, together with the remedy — nothing else on it is pressed and ``WM_CLOSE`` is never
-        sent, this driver having no surface it is entitled to guess at.
+        rect and the child classes the resolve states, together with the remedy — nothing else on
+        it is pressed and ``WM_CLOSE`` is never sent, this driver having no surface it is entitled
+        to guess at. **And the report is written from what the closes did**: each one says whether
+        it pressed the Cancel end at all (:meth:`_close_parameters_dialog`), so a band that never
+        resolved is reported as "nothing could be pressed", never as a press that did not take
+        (review L5) — the panel ``_dialog_panels`` returned may not be the ``Operating
+        parameters`` dialog, so no caption is claimed for it either.
         """
+        pressed = False
         for _attempt in range(2):
             found = self._dialog_panels()
             if not found:
                 return
-            self._close_parameters_dialog(found[0])
+            pressed = self._close_parameters_dialog(found[0]) or pressed
         # **Whether the dialog is gone is asked of the screen, never assumed from the presses.**
         # ``_close_parameters_dialog`` notes a band it cannot resolve instead of raising (a failed
         # cleanup must never mask the failure it is cleaning up after), so two attempts that both
@@ -656,14 +726,23 @@ class ParametersSurface:
         remaining = self._dialog_panels()
         if not remaining:
             return
-        rect = tuple(remaining[0]["rect"])
+        panel = remaining[0]
+        rect = tuple(panel["rect"])
+        classes = sorted(
+            {k["cls"] for k in self._children_of(panel["hwnd"], self._resolve())}
+        )
+        outcome = (
+            "its left (Cancel) button was pressed and the dialog did not go away"
+            if pressed
+            else "its left (Cancel) button could not be pressed at all (the bottom band that "
+            "holds the Cancel/Accept pair did not resolve), so nothing was pressed on it"
+        )
         self._note(
-            f"the {PARAMETERS_ENTRY!r} dialog is still open at {rect[:2]} (rect {rect}) after "
-            "both close attempts: its left (Cancel) button was pressed and the dialog did not go "
-            "away, and nothing else on it is pressed — this driver never guesses a surface. An "
-            "open dialog confines the cursor to its own rectangle and blocks the application, so "
-            "an operator has to close it from the UI, or the application has to be restarted, "
-            "before this point is retried"
+            f"a dialog is still open at {rect[:2]} (rect {rect}; direct child classes {classes}) "
+            f"after both close attempts: {outcome}, and nothing else on it is pressed — this "
+            "driver never guesses a surface. An open dialog confines the cursor to its own "
+            "rectangle and blocks the application, so an operator has to close it from the UI, or "
+            "the application has to be restarted, before this point is retried"
         )
 
     def _panel_map(self, roles: Mapping | None = None) -> dict[int, dict]:
@@ -703,19 +782,12 @@ class ParametersSurface:
             # application painted for this menu is the visible one at `left == 169` whose
             # height exceeds 120 (live: `(169, 55, 401, 250)`). Heeding it first is what the
             # handoff asks for — the appearance diff below is this driver's addition, and an
-            # addition should never outrank the proven rule.
-            recorded = sorted(
-                (
-                    p
-                    for p in panels.values()
-                    if p["left"] == _OVERLAY_LEFT
-                    and p["h"] > _OVERLAY_MIN_H
-                    and self._is_visible(p["hwnd"])
-                ),
-                key=lambda p: p["top"],
-            )
-            if recorded:
-                return recorded[0]
+            # addition should never outrank the proven rule. The rule itself is
+            # :func:`parameters_overlay`'s, asked there too by the stranded-popup report, so
+            # "this menu is up" has one spelling.
+            recorded = parameters_overlay(panels, self._is_visible)
+            if recorded is not None:
+                return recorded
             # Fallback for an overlay this application paints somewhere else (a different
             # theme or scale): the panel that appeared on the hover, when exactly one did.
             fresh = [

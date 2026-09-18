@@ -328,9 +328,13 @@ never restated** here. The surface and binding invariants have one authoritative
 2. **A refusal is a first-class outcome.** An unrecognised surface, an unproven anchor, an
    ambiguous strip state and a dial-reading disagreement all end the workflow with a named
    reason. Never guess a recovery, never promote an absence to an observation.
-3. **Surface before target.** Classify the top-level surface and any active overlay before
-   resolving a press target. An overlay can otherwise be selected as a candidate strip
-   panel and the diagnosis that follows blames the wrong thing (ledger B06).
+3. **Surface before target.** Classify the top-level surface and every active overlay or
+   dialog before resolving a press target. The dialog union is an independent precondition:
+   `open_popup` deliberately excludes dialogs, and `_find_overlay` treats value dialogs as
+   known panels, so both strip presses and the real-cursor menubar hover refuse explicitly
+   when `value_dialogs | browse_dialogs` is non-empty. Without these checks a dialog or
+   overlay can be selected as a candidate strip panel, or a gesture can act behind a modal,
+   while the diagnosis blames the wrong surface (ledger B06).
 4. **Counts are evidence, not gates.** Visible-control totals move with the channel's TGC
    mode and differ between the simulation and the instrument; they belong in diagnostics
    and in the record, and never in resume identity or a cleanliness verdict.

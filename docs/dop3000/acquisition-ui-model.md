@@ -267,7 +267,7 @@ assertion is not available yet.
 | B17 | the dialog's channel attribution can differ from the routed channel | facts attached to the wrong channel | compare the dialog channel to the routed channel before accepting dialog facts | previously identified; verify current behaviour on device |
 | B18 | multiple parameter frames appeared across assisted/manual/tour operations | session state drifts far from the declared frame | compile against a live snapshot immediately before the campaign | live-supported |
 | B19 | the Store dialog (and other modal panels) clip the cursor | real-input recovery can fail | drive by messages and always close in a `finally`; state is unverified if the close fails | live-proven |
-| B20 | a popup cannot be safely dismissed programmatically | a recovery gesture wedges the application | abort and require an operator restart; never `WM_CLOSE` | live-proven |
+| B20 | a popup cannot be safely dismissed programmatically | a recovery gesture wedges the application | abort and require an operator restart; never `WM_CLOSE`. `open_popup` means only that a non-layout button panel is up, not that it is the `Parameters` popup: the stranded-menu report uses the measured menu rectangle, and otherwise names only an unknown panel and presses nothing | live-proven |
 
 ## 7. Priority before any real acquisition after the refactor
 
