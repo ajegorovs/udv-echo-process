@@ -3244,10 +3244,11 @@ non-blocking one leaves the rest of the screen live. Read off the crop names:
 
 - **blocking** — `Measure sound speed`, `Default parameters`, `Save parameters`, `Operating parameters`: each
   carries the `-blocking` suffix the convention is built on.
-- **unclassified, and they need the operator's word rather than a convention** — `Record settings` and
+- **unclassified at the time of writing, and now answered** — `Record settings` and
   `External trigger settings`. Neither filename carries the suffix, and **`Record settings` was listed as
-  blocking here on no authority at all** (this section's first draft inferred it); the crop set records the
-  uncertainty in its cells instead, which is the right way round.
+  blocking here on no authority at all** (this section's first draft inferred it). The operator has since
+  classified `Record settings` as blocking and left `External trigger settings` unclassified; **§26.7 replaces
+  this whole list anyway**, because the convention it was built on turned out to be unreliable.
 - **non-blocking** — `Define TGC` (measured in §26.3: the monitor stayed live and the mouse was free; only the
   strip was hidden), `Preferences`, `Recall parameters`, `Acquire raw data`, `Search artifacts`, `Update files`.
 
@@ -3307,13 +3308,15 @@ Reading it produced four things the plan did not have:
    (`Operating parameters`, `Default parameters`, `Save parameters`, `Recall parameters`,
    `Tigger parameters` — the application's own spelling of the last). "Caption-less" has to be read as
    "carries no `WM_GETTEXT` text", and the crop, not the tree, is the oracle for the words.
-4. **A filename that does not match its content — and a surface this record did not know existed.**
-   `overlay-search-artifacts.png` carries a small overlay captioned **`Sweep PRF`** with `Range`
-   (`Fine` / `Medium` / `Large`) and `Sweeping` (`Fast` / `Medium` / `slow`) plus `Start` / `Exit`, not the
-   `Search artefacts` surface, which has no crop at all. **If the application has a PRF sweep of its own, that
-   is a matrix-relevant fact**: either it makes a PRF axis cheap to run, or it collides with a driver-driven
-   sweep that assumes it alone is moving the PRF. Open question for the operator, and recorded as a surface
-   with no proper coverage either way.
+4. **A filename that looked like a mismatch and is not one — corrected in §26.7.**
+   `overlay-search-artifacts.png` carries a small overlay captioned **`Sweep PRF`**, and this pass read that as
+   a filename/content mismatch. The operator's answer is that `Tools → Search artefacts` **opens** that
+   overlay: the crop is the right surface, and the two names are both the application's own — the menu entry
+   says what it is *for*, the window caption says what it *does*. Which also settles the question the
+   mismatch raised: **the application has a PRF sweep of its own** (`Range` `{Fine, Medium, Large}`,
+   `Sweeping` `{Fast, Medium, slow}`, `Start`/`Exit`), and that is a matrix input rather than a curiosity —
+   either the PRF axis uses the application's own search, or the sweep must state why it moves PRF by driver
+   instead. Recorded in §26.7 with the rest of the menu map.
 
 Two cross-checks came back clean and are recorded so nobody re-raises them. The far-right 30 px menubar button
 is the `Help` **icon** of §22.3's own table — which is why a `Help` dropdown exists while the instrument paints
@@ -3321,4 +3324,54 @@ nine *entry* buttons, `UDV mode` being the missing entry as §26.3 says. And the
 `Pause` / `Record` / `Clear and restart` with no slider. One contrast worth keeping: the bottom-bar crop reads
 `CH: 1`, agreeing with the column's channel 1, where the archive's machine read `CH: 10` with the column
 writing 1 (§D2's attribution hazard) — so this is an agreement here, not a rule.
+
+### 26.7 The menu map, and two of my own claims corrected
+
+The operator walked every menu of the real instrument and reported what each entry does. That is a structural
+map of the application the record did not have, and it corrects §26.5 and §26.6 in the two places below.
+
+| menu | what it is |
+|---|---|
+| `File` | `Get data file` and `Update files` spawn **blocking** overlays; `Compare profiles` **replaces the whole screen** and is blocking too |
+| `Preferences` | `Assisted mode is enabled/disabled` is a **toggle button**, not an overlay; `Record options` and `Options` spawn blocking overlays |
+| `Parameters` | **every** entry spawns a blocking overlay |
+| `Compute` | no overlays at all: each entry is a button switching which curve the monitor plots |
+| `Cursors` | `Show cursors` is a toggle, and showing them **expands the submenu** with `Add a cursor on curve` plus a colour-selector button |
+| `Filters` | togglable entries; with either filter on, the submenu **gains** `Define filtering parameters`, which spawns a blocking `Filters parameters` overlay |
+| `Tools` | `Define TGC`, `Search artefacts`, `Acquire raw data` are **non-blocking**; `Measure sound speed` and `Measure US field` are **blocking**, and `Measure US field` also changes the plot |
+| `Channels` | buttons, dropdowns, edits and checkboxes only — no overlay at all |
+| `Display` | buttons only |
+
+**Correction A — a `-blocking` suffix is not evidence, and the operator says so themselves.** Their first pass
+inferred "non-blocking" for every overlay that left the mouse free; **the Alt-Tab trick was what freed it**, so
+that inference was confounded by the very hole §26.5 records. The measured answer: **most overlays are
+blocking**, every `Parameters` entry is blocking, and the non-blocking set is small — `Define TGC`,
+`Search artefacts`, `Acquire raw data` — while the two `Preferences` items are not overlays at all. §26.5's list
+is superseded by that, and the crop index's `blocking` column records the operator's per-surface answer instead
+of the naming convention. `External trigger settings` remains unclassified.
+
+**Correction B — `Search artefacts` *is* the `Sweep PRF` overlay.** §26.6 read that crop as a filename/content
+mismatch. It is not: the entry opens that overlay, so the crop is the right surface, and the two names are both
+the application's own — the menu entry says what the thing is *for*, the window caption says what it *does*.
+The matrix consequence stands and is now an input rather than a question: **the application has a PRF search of
+its own** (`Range` `{Fine, Medium, Large}`, `Sweeping` `{Fast, Medium, slow}`, `Start`/`Exit`), so the PRF axis
+either uses the application's search or the sweep has to say why it moves PRF by driver instead.
+
+**Two hazards the map adds**, both in the class §21.3 exists for:
+
+- **Dropdown contents are state-dependent.** `Cursors` gains `Add a cursor on curve` only while cursors are
+  shown; `Filters` gains `Define filtering parameters` only while a filter is on. A press bound by an entry's
+  *index* in a dropdown is therefore a press against a list that may have grown or shrunk since the read — the
+  same failure as a strip re-resolved against a moved panel, one level up.
+- **`Measure US field` and `Compare profiles` replace the whole screen** rather than overlaying it, so a read
+  taken while either is up is a read of a *different surface*, not of the measurement screen with something on
+  top of it. Neither has a crop, and both are named in the index's gap list.
+
+**Two matrix leads in the map, which are worth more than the taxonomy.** `Compute` is a *display* menu: each
+entry switches which curve the monitor plots — `Profile`, `Echo`, `Energy`, `Profile and echo`,
+`Profile and Time-Space`, `Profile and V(t)`, `Profile and gate spectrum`, plus the histogram and
+`Profile and flow rate` variants in its second column. So §11.1 item 5's "dynamic target" is not only a matter
+of the phantom: the monitor's *field* is selectable, and the operator's matrix should say which field the
+analysis reads. `Cursors` is the other half of that — `Add a cursor on curve` with a colour selector is a
+measurement aid drawn on the monitor, i.e. a readout surface this work has never used.
 
