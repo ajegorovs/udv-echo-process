@@ -68,7 +68,12 @@ from udv_echo_process.acquire.ui.dialog import (
     _contains,
     _is_dialog_panel,
 )
-from udv_echo_process.acquire.ui.menu import MENU_ORDER, _inside
+from udv_echo_process.acquire.ui.menu import (
+    MEASURED_BAR,
+    MENU_ORDER,
+    _inside,
+    anchor_clause,
+)
 from udv_echo_process.acquire.ui.model import (
     ParameterPanelState,
     ScreenObservation,
@@ -552,12 +557,14 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     that named it would send the operator looking for a strip that is not there (ledger B06).
 
     Then the common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the
-    client's top and a status band reaches the client's bottom; the strip panel resolves with a row
-    whose length maps into :data:`STRIP_BUTTON_ORDER` (:func:`…ui.strip.strip_clauses` — the silent
-    case §21.3 item 3 names, *a different button panel in the plot's middle band*); and nothing is
-    over it — no menu popup and no dialog panel (both of which the surface group has already
-    named). The manual shape: that column resolves with its seven :data:`PARAM_COLUMN_ORDER`
-    roles.
+    client's top **with a provable** ``Parameters`` anchor (:func:`…ui.menu.anchor_clause` — an
+    unprovable anchor is a refusal *before* the one real-cursor gesture, ledger B03) and a status
+    band reaches the client's bottom; the strip panel resolves with a row whose length maps into
+    :data:`STRIP_BUTTON_ORDER` (:func:`…ui.strip.strip_clauses` — the silent case §21.3 item 3
+    names, *a different button panel in the plot's middle band*, and the ambiguous four-button
+    no-slider row of ledger B10, which is refused rather than gated on); and nothing is over it —
+    no menu popup and no dialog panel (both of which the surface group has already named). The
+    manual shape: that column resolves with its seven :data:`PARAM_COLUMN_ORDER` roles.
 
     **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
     the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
@@ -583,11 +590,15 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
             f"the window class is {class_name!r} where this measurement screen is {MAIN_CLASS!r}"
         )
 
+    # The menubar, then the `Parameters` anchor: the band has to resolve, and the *anchor* has to
+    # be provable — never an index into a name list, which silently renames every later role when
+    # a variant omits an entry (ledger B03). Both clauses come from `ui/menu.py`, which owns the
+    # bar's vocabulary and the one binding this driver has.
     menu_band = observation.menu.band
     if not _menubar_resolved(observation):
         reasons.append(
-            f"the menubar band did not resolve: {len(observation.menu.buttons)} of "
-            f"{len(MENU_ORDER)} menubar button(s) were found"
+            f"the menubar band did not resolve: {len(observation.menu.buttons)} of the "
+            f"measured bar's {len(MEASURED_BAR)} entries were found"
             + (" and no panel hosts them" if menu_band is None else "")
         )
     elif _client_top(menu_band, observation) > margin:
@@ -596,6 +607,10 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
             f"{client_h} px client, so it is not the band at the client's top that a "
             "measurement screen paints"
         )
+    anchor = anchor_clause(observation)
+    if anchor is not None:
+        reasons.append(anchor)
+
     # The strip's own clauses, whole: the row a press is bound to, and the ambiguous row that has
     # no binding at all — ``ui/strip.py`` answers both, so the gate never reads a row itself and
     # never gates on one the crops contradict (ledger B10).

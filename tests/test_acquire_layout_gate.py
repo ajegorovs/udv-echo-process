@@ -137,6 +137,14 @@ def manual_screen(
     # bands, the row and the plot that its shape is judged by.
     while len(raw) < max(controls, 1):
         raw.append(_widget(700 + len(raw), "TSp_Label", 10, oy + 400, 120, 18))
+    # The measured bar, not a bar of one: the `Parameters` anchor is proven by its **relative
+    # location** in a bar whose painted length is one of the two measured ones (UI-WINDOW-01's ten
+    # entries, or `MENU_ORDER`'s eleven names), so a one-button menubar is a screen on which the
+    # anchor cannot be claimed at all and the gate refuses it (ledger B03).
+    menu = {
+        name: _button(300 + index, 40 + 180 * index, oy)
+        for index, name in enumerate(driver.MEASURED_BAR)
+    }
     roles: dict = {
         "window": 0,
         "class_name": _CLASS,
@@ -145,7 +153,7 @@ def manual_screen(
         "raw": raw,
         "panels": sorted(panels, key=lambda p: p["top"]),
         "parent_of": {w["hwnd"]: 0 for w in raw},
-        "menu": {"Parameters": _button(200, 0, oy)},
+        "menu": menu,
         "menu_band": menu_band,
         "plot": plot_control,
         "open_popup": popup,
@@ -191,6 +199,14 @@ def assisted_screen(*, controls: int = 21) -> dict:
     raw = [menu_band, strip, status, plot_control, *row]
     while len(raw) < controls:
         raw.append(_widget(700 + len(raw), "TSp_Label", 10, oy + 300, 120, 18))
+    # The measured bar, not a bar of one: the `Parameters` anchor is proven by its **relative
+    # location** in a bar whose painted length is one of the two measured ones (UI-WINDOW-01's ten
+    # entries, or `MENU_ORDER`'s eleven names), so a one-button menubar is a screen on which the
+    # anchor cannot be claimed at all and the gate refuses it (ledger B03).
+    menu = {
+        name: _button(300 + index, 40 + 180 * index, oy)
+        for index, name in enumerate(driver.MEASURED_BAR)
+    }
     roles: dict = {
         "window": 0,
         "class_name": _CLASS,
@@ -199,7 +215,7 @@ def assisted_screen(*, controls: int = 21) -> dict:
         "raw": raw,
         "panels": [menu_band, strip, status],
         "parent_of": {w["hwnd"]: 0 for w in raw},
-        "menu": {"Parameters": _button(200, 0, oy)},
+        "menu": menu,
         "menu_band": menu_band,
         "plot": plot_control,
         "open_popup": False,

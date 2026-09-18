@@ -172,10 +172,11 @@ def test_the_tgc_rows_presence_moves_the_count_and_nothing_a_run_is_gated_on() -
 def menubar_of(count: int) -> dict[str, dict]:
     """The menubar map the resolver would hand over for a variant painting ``count`` buttons.
 
-    ``_resolve`` binds the apparent menubar buttons to the names in :data:`driver.MENU_ORDER`
-    **by position**, so this is that map for a variant whose bar is not the measured one — the
-    case B03 names: an index is not a semantic identity, and the name it produces may belong to
-    another control.
+    What it models is a resolver that still binds the apparent menubar buttons to the names in
+    :data:`driver.MENU_ORDER` **by position** — the index map B03 is about — for a variant whose
+    bar is not the measured one. An index is not a semantic identity: the bar's painted length is
+    not one this anchor was measured against, the entries carry no tree text, and the name the
+    index produces may belong to another control, so the anchor it claims cannot be proven.
     """
     buttons = [
         _widget(200 + index, "TSp_Button", 60 + 140 * index, ORIGIN[1] + 2, 120, 20)
@@ -185,12 +186,6 @@ def menubar_of(count: int) -> dict[str, dict]:
 
 
 # B03: UI-WINDOW-01 / menu-bar-no-udv.png — the variants' menubars differ.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B03: a variant's menubar is still bound to MENU_ORDER by index, so a bar that is "
-    "not the measured one is accepted as proof of the Parameters anchor — PATCH-2 resolves a "
-    "verified anchor and refuses an unprovable one",
-)
 def test_a_menubar_that_is_not_the_measured_one_does_not_prove_the_parameters_anchor() -> None:
     """B03: the anchor has to be *verified*, and a painted-set difference is what breaks it.
 

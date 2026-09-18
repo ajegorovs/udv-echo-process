@@ -235,6 +235,7 @@ from udv_echo_process.acquire.ui.layout import (
     layout_refusal,
     layout_shape_reasons,
     normalized_path,
+    observation_of,
     panel_mode,
     parameter_panel_absent_clause,
     process_mode_clause,
@@ -247,10 +248,13 @@ from udv_echo_process.acquire.ui.layout import (
 # Patch 2's widget slice, imported under the names this module published so that ``driver._inside``,
 # ``driver._entry_buttons``, ``driver._strip_row`` and ``driver.PARAMETERS_MENU`` keep resolving.
 from udv_echo_process.acquire.ui.menu import (
+    MEASURED_BAR,
     MENU_ORDER,
     PARAMETERS_ENTRY,
     PARAMETERS_MENU,
     _inside,
+    anchor_button,
+    anchor_clause,
 )
 from udv_echo_process.acquire.ui.menu import (
     PARAMETERS_POPUP_LEFT as _OVERLAY_LEFT,
@@ -284,6 +288,7 @@ __all__ = [
     "EXPECTED_CONTROL_COUNT",
     "EXPECTED_PANEL_COUNT",
     "MAIN_CLASS",
+    "MEASURED_BAR",
     "MENU_ORDER",
     "MODE_ASSISTED",
     "MODE_MANUAL",
@@ -308,6 +313,8 @@ __all__ = [
     "_observation_text",
     "_point_in_rect",
     "_strip_row",
+    "anchor_button",
+    "anchor_clause",
     "channel_items",
     "channel_mismatch",
     "dialog_channel_text",
@@ -1310,15 +1317,27 @@ class Win32Actuator:
             for i in range(len(panels))
         )
 
-        # --- menu bar --------------------------------------------------------------------
-        roles["menu"] = {}
+        # --- the `Parameters` anchor, and nothing else ------------------------------------
+        # The bar is carried as **evidence** — every button of the band, left -> right — and the
+        # one binding this driver publishes is the anchor the pure signature proves
+        # (:func:`…ui.menu.anchor_button`). No name is assigned by position: the variants do not
+        # paint the same bar and the entries carry no tree text, so an index map silently renames
+        # every later role when one entry is absent (ledger B03). A bar the signature cannot
+        # prove publishes **no** anchor at all, which is what makes the menubar hover unreachable
+        # rather than mis-aimed.
         ordered_menu = sorted(
             (b for b in buttons if index_of.get(parent_of(b["hwnd"])) == menu_idx),
             key=lambda b: b["left"],
         )
-        for i, k in enumerate(ordered_menu):
-            if i < len(MENU_ORDER):
-                roles["menu"][MENU_ORDER[i]] = k
+        roles["menu_buttons"] = ordered_menu
+        roles["menu"] = {}
+        anchor = anchor_button(observation_of(roles))
+        if anchor is not None and anchor.hwnd is not None:
+            roles["menu"] = {
+                PARAMETERS_MENU: next(
+                    b for b in ordered_menu if b["hwnd"] == anchor.hwnd
+                )
+            }
 
         # --- the left parameter column ----------------------------------------------------
         # The column is the tall panel whose *client-relative* left is 0 (`left == 0` in the
@@ -2009,7 +2028,17 @@ class Win32Actuator:
             )
         menu = (roles.get("menu") or {}).get(PARAMETERS_MENU)
         if menu is None:
-            raise AcquisitionError(f"no {PARAMETERS_MENU!r} button in the menubar")
+            # The anchor is proven where it is *resolved* and nowhere else: ``_resolve`` publishes
+            # no binding for a bar the signature cannot show, so this method has nothing to hover
+            # (ledger B03, and the anchor rule itself is ``ui/menu.py``'s
+            # :func:`…ui.menu.anchor_clause`). Naming the pure clause here is not a second rule —
+            # it is the diagnosis, and it is produced *before* the cursor is read, moved and
+            # parked on a menubar button.
+            clause = anchor_clause(observation_of(roles))
+            raise AcquisitionError(
+                f"no {PARAMETERS_MENU!r} button in the menubar"
+                + (f": {clause}" if clause else "")
+            )
         # The hover's precondition, asserted before the cursor is moved: this application
         # ignores a hover while it is inactive, so a window in front turns the one gesture
         # that opens this menu into a no-op that reads like a broken gesture (measured

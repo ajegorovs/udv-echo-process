@@ -10,8 +10,9 @@ already-resolved tree.
 - the menubar's **measured bar** and the vocabulary that names it (:data:`MENU_ORDER`,
   :data:`MEASURED_BAR`) — the eleven names the reference resolver carried and the ten entries
   ``UI-WINDOW-01`` paints, left → right;
-- the menubar's own vocabulary and popup signature the resolver's menubar step is written
-  against (the ``Parameters`` *name* and the popup's geometry);
+- the ``Parameters`` **anchor**: its relative-location signature (:func:`anchor_button`) and the
+  refusal that replaces it when the signature cannot be shown (:func:`anchor_clause`) — ledger
+  B03;
 - the ``Parameters`` popup's own signature (:data:`PARAMETERS_POPUP_LEFT`,
   :data:`PARAMETERS_POPUP_MIN_H` — the panel geometry ``recon/41_burst_sampling_volume.py`` read
   live at ``(169, 55, 401, 250)``) and the order its entries are pressed in
@@ -29,15 +30,41 @@ already-resolved tree.
   enumerate windows and send messages: Patch 3's business);
 - every dialog fact and the channel comparison are :mod:`udv_echo_process.acquire.ui.dialog`'s.
 
-**The menubar's binding is the resolver's, unchanged, and it is pinned by ledger B03.** An
-index map is not an identity — the application's variants do not paint the same bar and the
-entries carry no tree text, so one absent entry silently renames every later role — and
-``tests/test_acquire_ui_counterexamples.py`` carries that as a strict xfail until the anchor's
-structural signature lands. What this module owns today is the bar's vocabulary
-(:data:`MENU_ORDER`), the popup's own geometry and the entry order the gesture reads it with; the
-anchor rule and the refusal it needs are **target** (ledger B03,
-``docs/dop3000/device-verification.md`` V3), and no claim is made that any of it behaves on the
-device.
+**There is deliberately no name → button map here.** An index map is not an identity: the
+application's variants do not paint the same bar, the entries carry no tree text
+(``WM_GETTEXT`` answers ``""`` for every ``TSp_*`` widget), so one absent entry silently renames
+every later role. ``Parameters`` therefore has exactly one binding, and it is published only when
+the signature below can be shown on the tree at hand — otherwise the run refuses *before* any
+cursor movement (architecture invariant 6, ledger B03).
+
+**The signature, and why each clause is there** (UI-WINDOW-01: "`File` `Preferences` `Parameters`
+`Compute` `Cursors` `Filters` `Tools` `Channels` `Display`, and then `Help` alone at the band's
+right end — so the bar carries ten entries"):
+
+1. the band resolved and hosts buttons — no band, no anchor;
+2. the bar's painted length is one of the two measured ones (:data:`MEASURED_BAR_LENGTHS`: the ten
+   entries ``UI-WINDOW-01`` paints, or the eleven names :data:`MENU_ORDER` carries, which include
+   ``UDV mode`` — the entry ``UI-MENU-01``'s own frame shows this build does not paint). A bar of
+   any other length is a painted set the anchor was never measured against, and there is no tree
+   text to fall back on;
+3. the anchor's **relative location**: it is the third button of the bar, and the two buttons to
+   its left are the measured predecessors (:data:`ANCHOR_PREFIX`). Its position — never an index
+   into a name list — is what identifies it;
+4. the bindings the resolver published, read left → right, follow :data:`MENU_ORDER`'s own order,
+   which is the consistency a *producer* of named rows has to show.
+
+The count in clause 2 is **not** the visible-control total that architecture invariant 4 forbids
+as a gate: it is the bar's own painted entry count, which is exactly the evidence B03 rests on
+(an omitted or added entry is what renames the later roles). It is still not a cleanliness or
+resume fact — nothing in the identity carries it — and the clause names what it read, so a bar
+the vocabulary does not cover is a refusal an operator can act on rather than a silent rename.
+
+What confirms the anchor *after* the hover is the chain the gesture owns: the popup's signature
+(:data:`PARAMETERS_POPUP_LEFT`/:data:`PARAMETERS_POPUP_MIN_H`), its entry order
+(:func:`entry_buttons`), and the dialog that the topmost entry opens holding the channel combo
+(``driver._channel_combo`` → :mod:`udv_echo_process.acquire.ui.dialog`). **No claim is made that
+any of this behaves on the device** — ``docs/dop3000/device-verification.md`` (V3) is what settles
+it, and it stays *device-pending*.
 """
 
 from __future__ import annotations
@@ -47,12 +74,19 @@ from collections.abc import Mapping, Sequence
 from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode
 
 __all__ = [
+    "ANCHOR_ORDINAL",
+    "ANCHOR_PREFIX",
+    "MEASURED_BAR",
+    "MEASURED_BAR_LENGTHS",
     "MENU_ORDER",
     "PARAMETERS_ENTRY",
     "PARAMETERS_MENU",
     "PARAMETERS_POPUP_LEFT",
     "PARAMETERS_POPUP_MIN_H",
+    "anchor_button",
+    "anchor_clause",
     "entry_buttons",
+    "menubar_buttons",
     "observation_text",
 ]
 
@@ -74,10 +108,41 @@ MENU_ORDER: tuple[str, ...] = (
     "Help",
 )
 
+#: The bar ``UI-WINDOW-01`` paints, left → right, quoted from
+#: ``docs/dop3000/ui-element-index.md``: ``File`` ``Preferences`` ``Parameters`` ``Compute``
+#: ``Cursors`` ``Filters`` ``Tools`` ``Channels`` ``Display`` and then ``Help`` alone at the
+#: band's right end — ten entries, and no entry reading ``UDV mode`` anywhere in the bar
+#: (``UI-MENU-01``, the cut crop of the same band).
+MEASURED_BAR: tuple[str, ...] = (
+    "File",
+    "Preferences",
+    "Parameters",
+    "Compute",
+    "Cursors",
+    "Filters",
+    "Tools",
+    "Channels",
+    "Display",
+    "Help",
+)
+
+#: The painted lengths this anchor was measured against — the instrument's own ten
+#: (:data:`MEASURED_BAR`, ``UI-WINDOW-01``) and the resolver vocabulary's eleven
+#: (:data:`MENU_ORDER`, which carries ``UDV mode``). A bar of any other length is refused: see the
+#: module docstring's clause 2.
+MEASURED_BAR_LENGTHS: tuple[int, ...] = (len(MEASURED_BAR), len(MENU_ORDER))
+
 #: The menubar button, and the popup entry the channel lives behind — names used in messages only:
 #: this application's widgets carry no captions, so nothing here matches a control against them.
 PARAMETERS_MENU = "Parameters"
 PARAMETERS_ENTRY = "Operating parameters"
+
+#: The measurement channel's own menu entry: the anchor is the button at this **relative
+#: location** in the bar (``File``, ``Preferences``, then ``Parameters``).
+ANCHOR_ORDINAL = MENU_ORDER.index(PARAMETERS_MENU)
+#: The entries that must sit to the anchor's left, in this order, for its location to be the
+#: measured one.
+ANCHOR_PREFIX: tuple[str, ...] = MENU_ORDER[:ANCHOR_ORDINAL]
 
 #: The popup overlay's own geometry, as read live off the open menu: a caption-less ``TSp_Panel``
 #: at ``(169, 55, 401, 250)`` — 195 px tall — with its entries at screen tops 61, 95, 130, 165 and
@@ -114,6 +179,66 @@ def menubar_buttons(observation: ScreenObservation) -> tuple[UiNode, ...]:
     bar it states, so the rule is the same for a captured tree and a synthesised one.
     """
     return tuple(sorted(observation.menu.buttons, key=_left_of))
+
+
+def anchor_clause(observation: ScreenObservation) -> str | None:
+    """Why the ``Parameters`` anchor cannot be proven on this tree; ``None`` when it can.
+
+    Every branch names what was read, because the clause lands in a run record read by someone
+    with no instrument in front of them and it is what an operator has to act on. A refusal here
+    is what stops the one real-cursor gesture this driver has: the hover that opens the popup
+    (``Win32Actuator._hover_centre``) is never reached, so nothing is moved on the operator's
+    desktop and no menu is opened (ledger B03, architecture invariant 6).
+    """
+    band = observation.menu.band
+    bar = menubar_buttons(observation)
+    if not bar:
+        return (
+            "no 'Parameters' button in the menubar: the band hosts no button on this tree "
+            f"({len(bar)} of the measured bar's {len(MEASURED_BAR)} entries were found), so which "
+            "button means 'Parameters' is unstated and nothing is hovered"
+        )
+    if band is None:
+        return (
+            "no 'Parameters' button in the menubar: the band's buttons resolved with no menubar "
+            "band panel behind them, so the bar they belong to is not the measured one (the "
+            "anchor is read by its location inside that band) and nothing is hovered"
+        )
+    if len(bar) not in MEASURED_BAR_LENGTHS:
+        return (
+            "the menubar is not the bar this anchor was measured against: it paints "
+            f"{len(bar)} button(s) where the measured bar paints {len(MEASURED_BAR)} "
+            f"(UI-WINDOW-01) or {len(MENU_ORDER)} (the resolver's vocabulary, which also carries "
+            "'UDV mode'). The entries carry no tree text, so a painted set of another length "
+            "renames every later role — a variant that omits one entry shifts the rest — and the "
+            "third button cannot be proven to be 'Parameters'. The 'Parameters' anchor is refused "
+            "before any cursor movement, and the bar has to be read live before an acquisition is "
+            "run against it (ledger B03, device verification V3)"
+        )
+    bound = sorted(observation.menu.named, key=lambda pair: _left_of(pair[1]))
+    preceding = tuple(name for name, _node in bound[:ANCHOR_ORDINAL])
+    if preceding != ANCHOR_PREFIX:
+        return (
+            f"the 'Parameters' anchor is not at its measured location: the bar's buttons were "
+            f"bound {list(preceding)} to the left of it where the measured bar carries "
+            f"{list(ANCHOR_PREFIX)}, so the third button is not shown to be 'Parameters' on this "
+            "tree and nothing is hovered (ledger B03)"
+        )
+    return None
+
+
+def anchor_button(observation: ScreenObservation) -> UiNode | None:
+    """The bar's ``Parameters`` button when the anchor is **proven**, and ``None`` when it is not.
+
+    The one place the anchor is resolved: the third button of the bar, published only after
+    :func:`anchor_clause` has found nothing to refuse on. A caller that gets ``None`` has no
+    binding and must refuse by name rather than try a location — that is the whole difference
+    between an anchor and an index (ledger B03).
+    """
+    if anchor_clause(observation) is not None:
+        return None
+    bar = menubar_buttons(observation)
+    return bar[ANCHOR_ORDINAL] if len(bar) > ANCHOR_ORDINAL else None
 
 
 def entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
