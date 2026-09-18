@@ -199,6 +199,14 @@ control-tree snapshot per screen state is committed as a JSON fixture (`tests/da
 each newly readable fact has a named read path whose docstring says which screen it comes
 from and which surface it belongs to.
 
+**One fixture the identity projection now needs** (found while landing P1, W2's residue): the
+ready row's **button count** is in the `CompilationIdentity`, and this application gains
+`Do store` on that row once its block holds data (`actuator.STRIP_BUTTON_ORDER` holds both
+rows). Capture the ready screen **with and without a leftover block** on the same channel and
+compare the two identities: if they differ, the count comes out of the identity and only the
+strip's view and slider stay in it — a true layout change moves the view, and the count is
+then a property of the buffer rather than of the layout.
+
 **Risk.** Needs the live machine and the interactive session (`tools/live/README.md`). If
 the machine is unavailable, this item waits and W2–W4 proceed with the three unreadable
 facts explicitly marked unreadable — which is the honest state either way.
@@ -527,11 +535,12 @@ its tests are the ones that must show the recipe is untouched (criterion 5).
   pieces this plan must leave for it are the compiled plan's policy, the snapshot on the
   record, and the per-fact `read`/`declared` provenance.
 - **Migrating the record's existing provenance fields onto `InstrumentFact`** —
-  `block_cap_profiles`, `covariates_enforced`, `covariates_advisory`, `SizeSignature`. W5
-  introduces the type and uses it for what it adds; reshaping fields the analysis already
-  reads is a log-schema change, and it belongs with Phase 7, where the certificate decides
-  what the record must carry. Deciding it here would grow this slice into a restructuring no
-  consumer has asked for yet. (Round 1 endorsed the mechanism, not a migration.)
+  `block_cap_profiles`, `covariates_enforced`, `covariates_advisory`, `SizeSignature`. P1
+  introduces the type (the two models cannot be typed against a type that does not exist) and
+  uses it for the reading it adds; reshaping fields the analysis already reads is a log-schema
+  change, and it belongs with Phase 7, where the certificate decides what the record must
+  carry. Deciding it here would grow this slice into a restructuring no consumer has asked for
+  yet. (Round 1 endorsed the mechanism, not a migration.)
 - Phase 8's log-schema versioning beyond the resume fingerprint; Phase 9's
   hardware-in-the-loop gate beyond the fixtures W1 captures.
 - Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
@@ -580,8 +589,10 @@ git fetch origin && git switch feat/acquisition-campaign-compilation
 #   docs/dop3000/acquisition-review-and-verdict.md
 #   src/udv_echo_process/acquire/campaign.py      (run_campaign:640, plan_campaign:522)
 #   src/udv_echo_process/acquire/actuator.py      (ParamRole:107, Actuator:398)
+#   src/udv_echo_process/acquire/snapshot.py      (the reading and the identity — §12)
 #   src/udv_echo_process/acquire/runner.py        (SweepActuator:180)
 #   tests/test_acquire_campaign.py                (the campaign-level behaviour to keep)
+#   tests/test_acquire_snapshot.py                (the reading's own contract, and §12's)
 
 uv run --no-sync --extra dev ruff check src tests
 uv run --no-sync --extra dev pytest -q
@@ -590,3 +601,51 @@ uv run --no-sync --extra dev pytest -q
 The measured facts a fresh session would otherwise re-derive are at the end of
 `docs/dop3000/acquisition-review-and-verdict.md` §8 and in the committed fixtures; the
 live-run evidence is in the gitignored `outputs/live/*.jsonl`.
+
+## 12. P1 (W2) as landed
+
+Slice P1 is implemented and green; the plan above is unchanged, and this is what it turned
+into, so a later session does not have to re-derive it.
+
+| where | what |
+|---|---|
+| `acquire/snapshot.py` | `FactSource`, `InstrumentFact` (+ `unreadable()` / `declared()`), `InstrumentSnapshot`, `CompilationIdentity` (+ `from_snapshot`), `identity_digest`, `FIXED_FACT_FIELDS` |
+| `acquire/actuator.py` | `ChannelMode` — the mode vocabulary, moved out of `driver.py` (`MODE_*` are now its values, the same strings as before) |
+| `acquire/driver.py` | `screen_mode(roles)`, `Win32Actuator.instrument_snapshot()`, `_channel_fact()`, `_column_fact()` |
+| `acquire/runner.py` | `SweepActuator.instrument_snapshot()` — additive; `Actuator` gained nothing |
+| tests | `tests/test_acquire_snapshot.py` (the reading's contract), a mode section in `tests/test_acquire_driver.py`, the fakes' stub + default reading in `tests/test_acquire_runner.py`, the port-surface case in `tests/test_acquire_actuator.py` |
+
+Five things W3 should know before it compiles, each a decision this slice made rather than an
+accident of the code:
+
+1. **The channel is `declared`, not read.** Reading it means opening `Operating parameters` —
+   a menubar hover with the operator's real cursor, which is the routing step's gesture
+   (`ensure_channel`), and on an assisted channel there is no combo to read at all. The
+   snapshot presses nothing; the routing step's own read-back is what proves the channel, and
+   §4 already puts that step before this one. W3 must therefore treat a declared channel as
+   *proven by the router* rather than as unproven, and say so on the record.
+2. **The mode is read, and is `None` rather than a guess.** A resolved sidebar parameter column
+   is `manual`; a measurement screen with no column is `assisted`; a dialog, a popup or an
+   unrecognised layout gives `None`, which the caller carries. `mode=None` is not "assisted":
+   nothing may compile a mode out of an absent column on a screen that is not the measurement
+   screen. (Same class of mistake as the minimised window, one surface over.)
+3. **Two facts are read, four are not.** `prf_us` and `emissions_per_profile` come off the
+   column; the burst length, sound speed, first gate and block cap are `unreadable` with their
+   reasons until W1 finds read paths. W3's policy has to be written against that state: a fact
+   that is `unreadable` is never silently skipped, and criterion 4 is what the policy is for.
+4. **The identity is the strip's structure without its slider's range.** `strip_view`,
+   `strip_button_count`, `strip_has_slider` are in; `slider_max` is out, because that range is
+   the selected block's profile count — the run's own data, not the layout. The **button
+   count** is the residue: this application's ready row gains `Do store` once its block holds
+   data, so a restart with an empty buffer may show a shorter row than a running session. It is
+   kept (a false mismatch costs a re-run, a false match is a silent skip) and W1 now owes the
+   fixture that settles it — see W1's "One fixture the identity projection now needs".
+5. **`identity_digest` hashes provenance as well as values.** A fact that moved from `read` to
+   `unreadable` between two runs is a weaker claim about the same instrument, so the two
+   identities differ and the resume re-runs rather than comparing against evidence it no
+   longer has. `campaign_fingerprint`'s recipe (canonical JSON, SHA-256) is reused deliberately.
+
+Resume compatibility, which §4's step 6 needs: an identity is comparable only against another
+identity. Every manifest that predates this slice carries a definition fingerprint and no
+identity at all, which is §3's criterion 6 and W4's fail-closed default — unchanged by landing
+P1, and P1 records nothing yet, so no job has one.
