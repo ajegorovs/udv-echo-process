@@ -1265,6 +1265,128 @@ def test_the_cli_plan_exits_two_for_a_point_the_application_would_clamp(
     assert "'too-deep'" in capsys.readouterr().err
 
 
+def test_the_cli_compile_prints_the_plan_and_records_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``compile`` reconciles a definition against the fake's reading and writes nothing.
+
+    The verb is ``campaign``'s steps 3-5 and stops there: it drives the instrument (so unlike
+    ``plan`` it needs the application running), and it is the *reviewing* half of the run path
+    — no store, no log, no manifest — because nothing in this path names one. The store
+    directory is asserted empty rather than the absence of one file: a compile that recorded
+    anything at all would be a different verb.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(["compile", "--definition", str(job.definition_path)])
+
+    assert exit_info.value.code == 0
+    out = capsys.readouterr().out
+    assert "test-single-channel" in out
+    assert "k1" in out and "k2" in out
+    # Steps 3-5, each once: the routing read, the dialog read, the reading.
+    assert job.fake.channel_checks == 1 and job.fake.dialog_checks == 1
+    assert job.fake.snapshot_checks == 1
+    assert job.fake.stored == []
+    assert stored_names(job.directory) == []
+    assert list(job.directory.iterdir()) == []  # nothing at all, not merely no point
+    assert not job.log_path.exists()
+    assert not campaign.manifest_path_for(job.log_path).exists()
+
+
+def test_the_cli_compile_exits_two_and_names_the_fact_it_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """An instrument that disagrees is exit 2, in the compile's own words, and writes nothing.
+
+    The refusal is the compile's, unwrapped: it already names the fact and both sides, which
+    is the whole value of the verb — an operator reads which declaration the instrument
+    contradicts. A refused compile spends no recording, so the directory is still empty.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    job.fake.scripted_snapshot = snapshot_with(
+        sound_speed_ms=InstrumentFact(value="1500", source=FactSource.READ)
+    )
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(["compile", "--definition", str(job.definition_path), "--json"])
+
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""  # a refusal is not a report
+    assert "udv-acquire: " in captured.err
+    assert "sound_speed_ms" in captured.err and "1500" in captured.err
+    assert job.fake.snapshot_checks == 1  # the reading happened; the compile is what refused
+    assert job.fake.stored == []
+    assert stored_names(job.directory) == []
+    assert not job.log_path.exists()
+    assert not campaign.manifest_path_for(job.log_path).exists()
+
+
+def test_the_cli_compile_json_is_one_document_with_the_unproven_facts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """One parseable document on stdout, carrying the identity, the unproven facts and the
+    advisories.
+
+    ``unproven`` and ``advisories`` are properties of the compiled plan rather than fields, so
+    they have to be stated for the machine to see them — and they are the two things an
+    operator acts on: which facts nothing on the instrument could state (the declaration
+    stands unverified), and which disagreements the plan proceeds despite.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(["compile", "--definition", str(job.definition_path), "--json"])
+
+    assert exit_info.value.code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["job"] == "test-single-channel"
+    assert payload["channel"] == 1
+    assert payload["definition_fingerprint"] == campaign.campaign_fingerprint(job.definition)
+    # The identity is §3.3's projection: each fact as its value and where it came from.
+    assert payload["identity"]["channel"]["value"] == "1"
+    assert payload["identity"]["channel"]["source"] == FactSource.ROUTED.value
+    assert payload["unproven"] == ["max_profiles_per_block"]
+    assert payload["advisories"] == []
+    assert [point["label"] for point in payload["points"]] == ["k1", "k2"]
+    # The note about the routing step goes to stderr, so stdout is the document alone.
+    assert "note:" in captured.err
+    assert "routed channel 1" in captured.err
+
+
+def test_the_cli_compile_hands_the_channel_flag_to_the_actuator(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--channel`` is the actuator's, exactly as it is for the other live verbs.
+
+    ``None`` is the default and means the ``UDV_CHANNEL`` setting, so the flag arriving at all
+    is what this pins: the verb routes the channel the operator named, and the note it leaves
+    says which one that turned out to be.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    seen: list[int | None] = []
+
+    def spy(channel: int | None = None, notes: list[str] | None = None) -> FakeActuator:
+        seen.append(channel)
+        return job.fake
+
+    monkeypatch.setattr(live, "live_actuator", spy)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(["compile", "--definition", str(job.definition_path), "--channel", "1"])
+
+    assert exit_info.value.code == 0
+    assert seen == [1]
+    assert job.fake.channel_checks == 1
+    assert "note:" in capsys.readouterr().out  # the routed channel is on the record
+
+
 def test_the_cli_campaign_runs_a_definition_through_the_live_actuator(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1355,6 +1477,96 @@ def test_the_cli_campaign_resume_says_how_many_it_skipped(
     assert "resume: 2 of 2" in captured.err
 
 
+def test_the_cli_campaign_no_snapshot_flag_reaches_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--no-snapshot`` reaches ``run_campaign``: no reading, and the manifest says so.
+
+    The flag's consequence is a *mark*, so the manifest is the only place it can be checked:
+    ``declared_only`` says the points were recorded with no instrument evidence behind them,
+    and ``compilation_identity`` is ``None`` because there is no reading to project. The fake
+    is the proof that nothing was read — and the manifest on disk carries the same mark, so
+    the record and not only the report states it.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(
+            [
+                "campaign",
+                "--definition",
+                str(job.definition_path),
+                "--store-dir",
+                str(job.directory),
+                "--no-snapshot",
+                "--json",
+            ]
+        )
+
+    assert exit_info.value.code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["declared_only"] is True
+    assert payload["compilation_identity"] is None
+    assert payload["skipped_without_evidence"] == []
+    assert [row["ok"] for row in payload["outcomes"]] == [True, True]
+    assert job.fake.snapshot_checks == 0 and job.fake.dialog_checks == 0
+    assert job.fake.channel_checks == 1  # only the runner's own once-per-run guard
+    assert len(stored_names(job.directory)) == 2  # the points still ran
+    assert "no-snapshot" in captured.err
+
+    written = campaign.read_manifest(
+        campaign.manifest_path_for(job.directory / campaign.DEFAULT_LOG_NAME)
+    )
+    assert written.declared_only is True and written.compilation_identity is None
+
+
+def test_the_cli_campaign_resume_declaration_only_flag_reaches_the_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--resume-declaration-only`` reaches ``run_campaign``: the unproven skip is marked.
+
+    Against a manifest that carries no identity the library's own rule is to fail closed, and
+    that refusal is asserted first — so exit 0 afterwards can only be the flag arriving. Every
+    point the resumed run skipped is then marked as decided without instrument evidence, which
+    is what the flag buys and the price of it: the record does not read like a proven resume.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+    first = run_job(job)
+    campaign.write_manifest(campaign.manifest_path_for(job.log_path), legacy_manifest(first))
+    argv = [
+        "campaign",
+        "--definition",
+        str(job.definition_path),
+        "--store-dir",
+        str(job.directory),
+        "--log",
+        str(job.log_path),
+        "--resume",
+    ]
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(argv)
+
+    assert exit_info.value.code == 2  # refused until the operator says so on purpose
+    assert "compilation identity" in capsys.readouterr().err
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main([*argv, "--resume-declaration-only", "--json"])
+
+    assert exit_info.value.code == 0
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+    assert payload["skipped"] == ["c1-k1", "c1-k2"]
+    assert payload["skipped_without_evidence"] == ["c1-k1", "c1-k2"]
+    assert payload["outcomes"] == []
+    assert payload["declared_only"] is False  # a reading *was* taken; the identity is unproven
+    assert len(stored_names(job.directory)) == 2  # nothing was run again
+    assert "declaration" in captured.err
+
+
 def test_the_cli_report_reads_a_synthetic_log_without_an_instrument(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -1415,7 +1627,7 @@ def test_the_cli_needs_a_definition_for_plan_and_a_log_for_report(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """The required arguments are the usage surface: nothing to review, nothing to report."""
-    for argv in (["plan"], ["report"], ["campaign"]):
+    for argv in (["plan"], ["compile"], ["report"], ["campaign"]):
         with pytest.raises(SystemExit) as exit_info:
             acquire_main(argv)
         assert exit_info.value.code == 2
