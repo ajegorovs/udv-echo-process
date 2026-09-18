@@ -1051,16 +1051,20 @@ because that experiment cannot be expressed yet: see 17.1.
 |---|---|
 | the container | **exists** — a batch is a campaign whose points carry their own parameter sets; the definition format, the compile, the per-point loop, the log and the manifest are all in place |
 | writing the seven column parameters | **exists** — `ParamRole` covers us frequency, PRF, gates, resolution, velocity-scale factor, emissions/profile and Doppler angle, and the port already has `write_parameter(role, value)` with `apply_point(parameters)` in the runner |
-| writing the three dialog-only facts | **missing** — burst, sound speed and first gate are read by position (W1) but have no writer, so a batch that varies them cannot be applied at all |
-| declaring per-point recording parameters | **missing** — the fixed facts are campaign-level, so a point cannot state its own burst / sound speed / first gate, and the compiled identity records one value for the whole campaign |
+| writing the parameter the batch will actually vary — **burst** | **missing** — burst is read by position out of the Operating-parameters dialog (W1) but has no writer, so a batch that varies it cannot be applied at all |
+| writing sound speed | **not wanted, and not a gap** — sound speed is a property of the medium, not a recording parameter. No batch parametrizes it. It stays a *fixed fact*, read and verified before a recording as W4 does now |
+| writing first gate | **read-only for now** — same dialog, same mechanism as burst; a writer for burst gives one for this too (a combo on the same panel), so it is a small follow-on when a study needs it rather than part of this slice |
+| declaring per-point recording parameters | **missing** — the fixed facts are campaign-level, so a point cannot state its own burst, and the compiled identity records one value for the whole campaign |
 | verifying per point | **partly** — reading and comparing exist, but once per campaign, before the first point; a batch that sets a parameter per point has to read it back *after* setting it, on that point |
 | surviving a batch | **exists, and matters far more now** — resume proves the identity before skipping, so a batch that dies at point 27 of 40 is resumable; but a batch needs a stopping rule and a per-point record of which parameter set produced which file, or forty recordings become forty unattributable files |
 
 ### 17.2 The slice, in order
 
-1. **Writers for the three dialog-only facts** — the mirror of W1's read: locate the field by position (the
-   anchors are already frozen for reading), write it, then read it back. A write that does not read back as
-   written refuses that point, exactly as a disagreement does today.
+1. **A writer for burst** — the mirror of W1's read: locate the field by position (its anchors are already
+   frozen for reading), write it, then read it back. A write that does not read back as written refuses that
+   point, exactly as a disagreement does today. One trap is already measured and must be handled: the burst
+   combo steps **past** a value — one step up from `4` landed on `6` — so the writer must select by reading
+   the options back, never by counting steps.
 2. **Per-point recording parameters** — a point may carry its own values for the facts that have writers; an
    absent value keeps the campaign default. The compiled identity then has to be *per point* (that point's
    values and their sources), because that is what makes two files from one batch distinguishable afterwards.
@@ -1070,13 +1074,14 @@ because that experiment cannot be expressed yet: see 17.1.
    stranded popup is a restart, so running on past a failure would mean recording into an unverified
    application), and record per point: the parameter set, its sources, the stored file, the outcome.
 
-**Acceptance for the slice.** A batch of at least three parameter sets differing in one dialog-only fact runs
-to completion in one unattended pass; every point's own values are read back and verified before its
+**Acceptance for the slice.** A batch of at least three parameter sets differing in **burst** (the one
+parameter the operator named, and the one that has no writer) runs to completion in one unattended pass; every point's own values are read back and verified before its
 recording; every stored file is attributable to its parameter set from the log and manifest alone; and a
 deliberately wrong declaration of one point's value refuses **that point** and stops the batch with the
 earlier points intact and resumable.
 
-**Still out of scope:** writing any parameter the instrument cannot read back; the batch generator; the
+**Still out of scope:** writing any parameter the instrument cannot read back; **parametrizing sound speed**
+(a property of the medium, not a setting: it is verified as a fixed fact, never swept); the batch generator; the
 analysis; and any new vocabulary — the facts and roles already exist, so this slice gives three of them a
 writer and moves an existing check inside the loop.
 
