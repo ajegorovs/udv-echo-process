@@ -105,18 +105,23 @@ dialog) and `dialog-full.png` (the frame it was cut from).
 
 Anything that becomes a *capability* belongs in the package, where a fake can drive it. That is
 the rule the ported scripts broke: they worked on the instrument and could not be tested, so
-nothing caught them drifting. Logs, screenshots and job records land in `outputs/live/`; stored
-`.BDD` files land wherever the application is configured to write.
+nothing caught them drifting. Logs, screenshots and job records land in `outputs/live/`, and the
+application's own Store directory is `outputs/live/store/` (git-ignored, beside them) — it used to
+be inside the retired reconnaissance archive, which is why that folder kept growing after the port.
+The driver asserts that directory rather than assuming it, so a run whose `--store-dir` disagrees
+with the application refuses instead of scattering files.
 
 ## Where the rest lives
 
 `docs/dop3000/` carries the durable findings — the parameter-sweep matrix, the automation
 reference, the acquisition handoff, and the manual corpus. The **reconnaissance archive** (the
-numbered probes `01..63`, their raw outputs and captures, the first end-to-end evidence) is a
-separate repository that is deliberately not a dependency of this one: the code here cites it
-by number where a rule was measured (`recon/41` for the menubar gesture, `recon/19` for the
-strip) so the origin stays traceable, and `docs/dop3000/udop-automation.md` plus
-`docs/dop3000/handoff-dop3010-acquisition.md` carry the substance of those measurements.
+numbered probes `01..63`, their raw outputs and captures, the first end-to-end evidence) was a
+separate repository that was deliberately not a dependency of this one; the code here cites it by
+number where a rule was measured (`recon/41` for the menubar gesture, `recon/19` for the strip) so
+the origin stays traceable. **It was retired on 2026-09-18** and is now a frozen zip
+(`~/Repos/_archive/dop-control-20260918.zip`); what it held, what was lifted into this repository,
+what was never ported, and how the Store directory moved off it are in
+[`../../docs/dop3000/recon-archive-retirement.md`](../../docs/dop3000/recon-archive-retirement.md).
 
 Bring-up order for a machine that is not the one these measurements were taken on:
 [`docs/dop3000/live-bringup.md`](../../docs/dop3000/live-bringup.md).

@@ -333,7 +333,9 @@ tools/ui/                            — the inspection crops: crop_index.py (th
                                        (composite + glyph bitmaps), README
 docs/                                — agenda, the landed rework plan, hardening plan,
                                        integration plan/log, dev-handoff.md (read this
-                                       first on a machine that cannot reach the instrument)
+                                       first on a machine that cannot reach the instrument),
+                                       dop3000/ (the instrument's docs and the retirement
+                                       register for the recon archive)
 ```
 
 **Three pipelines coexist by design.** The `.ADD` path (`parser.py` → `viz.py`/`run_all.py`/
@@ -372,7 +374,16 @@ outputs/
   <experiment>/<stem>/
     heatmap.png                       — per-channel heatmaps
     profiles.png                      — mean ± std gate profiles
+  live/                               — everything the instrument path writes
+    task-<probe>.log                  — the dispatcher's log for each dispatched probe
+    *.png, *.json                     — captures and probe reports (git-ignored)
+    store/                            — the application's own Store directory
 ```
+
+The instrument's Store directory is `outputs/live/store/`: the driver asserts it against
+`--store-dir`/`UDV_STORE_DIR` and refuses a point whose setting disagrees, rather than scattering
+files. It used to live inside the reconnaissance archive, which was retired on 2026-09-18 (see
+[`docs/dop3000/recon-archive-retirement.md`](docs/dop3000/recon-archive-retirement.md)).
 
 ## Adding a backend module
 

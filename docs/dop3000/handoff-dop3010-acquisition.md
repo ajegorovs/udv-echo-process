@@ -18,13 +18,19 @@ next. Written for a fresh session starting in this repository.
   to this work: `tests/test_storage_npy.py` (~35) and
   `test_io_bdd_artifacts.py::test_canonical_depth_ids_round_trip_through_storage` —
   `PermissionError` from `storage/npy.py::_fsync_dir` (`os.open` on a directory).
-- Campaign repo (not git): `C:\Repos\dop-control` — `recon/` holds the probes that are
-  the source of truth for the application's behaviour, `docs/16-record-strip-automation.md`
-  the verified UI rule set, `recon/out/` the captures and JSONL logs.
+- **Retired 2026-09-18** — Campaign repo (was `~/Repos/dop-control`, never a git repo): its
+  `recon/` held the probes that are the source of truth for the application's behaviour,
+  `docs/16-record-strip-automation.md` the verified UI rule set, `recon/out/` the captures and
+  JSONL logs. It is now **`~/Repos/_archive/dop-control-20260918.zip`** (498 files, integrity
+  verified); the tooling moved to `tools/live/` and `acquire/`, and the findings to
+  `docs/dop3000/`. Both the store directory it was doubling as and what was never ported are
+  recorded in [`recon-archive-retirement.md`](recon-archive-retirement.md).
 
 ## 2. The immediate task — port the menu interaction VERBATIM — **PORTED (2026-09-17)**
 
-Source of truth: `C:\Repos\dop-control\recon\41_burst_sampling_volume.py`,
+Source of truth: `recon/41_burst_sampling_volume.py` **in the retired archive**
+(`~/Repos/_archive/dop-control-20260918.zip`; see
+[`recon-archive-retirement.md`](recon-archive-retirement.md)),
 `open_operating_parameters()` (lines 109–135), plus `udop_roles.py` (`click_hold`,
 `resolve`, `children`, `combo_state`, `text_of`). This code opened the menu, selected
 `Operating parameters`, read the dialog, changed a combo, and accepted — repeatedly.
@@ -333,7 +339,18 @@ Two live runs settled the channel path, and both changed what the driver may ass
 
 ```
 cd C:/Repos/udv-echo-process
-uv run --with pywin32 python C:/Repos/dop-control/recon/45_live_sweep_runner.py
+UDV_STORE_DIR=<the app's working directory> \
+  ./tools/live/dispatch.sh -m udv_echo_process.cli acquire sweep --seconds 12 --rungs 1,2
+```
+
+**The command above is the current route** (`tools/live/README.md` lists them all, and the app's
+Store directory is now `outputs/live/store/` — see
+[`recon-archive-retirement.md`](recon-archive-retirement.md)). The original form of this section
+ran a probe from the retired archive:
+
+```
+cd C:/Repos/udv-echo-process
+uv run --with pywin32 python ./dop-control/recon/45_live_sweep_runner.py   # archived
 ```
 
 Preconditions: UDOP 6.07.4 simulator (`TMain_Scr`) in the `ready/3` view, **no popup
@@ -369,9 +386,13 @@ The task is created once, with the caller's own principal so it lands in session
 no password:
 
 ```
-schtasks /create /tn hermes_gui_probe /tr "C:\Repos\dop-control\recon\task_run.cmd" \
+schtasks /create /tn hermes_gui_probe /tr "\"<clone>\.venv\Scripts\pythonw.exe\" \"<clone>\tools\live\task_run.py\"" \
          /sc once /st 23:59 /ru INTERACTIVE /it /f
 ```
+
+(The action was originally the archive's `recon/task_run.cmd`; it is
+`tools/live/task_run.py` since the port — same rules, and `tools/live/README.md` carries the
+current form of this command. The archive is `~/Repos/_archive/dop-control-20260918.zip`.)
 
 The task starts **`pythonw.exe`, not a `.cmd`** — a `.cmd` action gives the task a *console
 window* on the interactive desktop, in front of the application, and that alone breaks the
