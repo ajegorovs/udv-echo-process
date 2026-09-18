@@ -946,3 +946,77 @@ fixed settings, refuses a deliberate mismatch before recording, and ran the exis
 campaign unchanged. **The acquisition architecture stops growing here** — what comes next is the
 parameter-sensitivity experiment this was all built for.
 
+## 16. Closing W4 — the one change request, one live defect, then the experiment
+
+### 16.1 The dialog-channel attribution check (the review of #7's single request)
+
+**Why.** The dialog's own channel field is already read (`DialogParameters.channel`, W1) and the routed
+channel is already to hand (`ensure_channel()`), so a dialog stating channel 2 while the run routed
+channel 1 would attach channel 2's burst, sound speed and first gate to a channel-1 snapshot. That is the
+wrong-channel trap in the one place the system cannot see it (§14), and it is a known hole, cheap to
+close, so it does not cross the stop boundary.
+
+**Where.** `Win32Actuator.instrument_snapshot` (driver.py) — the single point where both values meet, so
+every caller is covered (the run path, `acquire compile`, and whatever comes later) without touching the
+snapshot model. The reviewer asked for no broader model change and none is needed.
+
+**Rules.** Compare only when a channel was routed (`routed_channel is not None`) *and* the reading is a
+successful one (empty `reason`, non-empty `channel`). A *refused* reading must keep its own reason for
+`_refuse_failed_reads` to report: replacing a precise reader diagnostic with a vaguer attribution error
+would be a worse record.
+
+**Refusal.** The driver's `AcquisitionError`, naming both channels, before any fact is attributed — which
+is why 16.2 comes with it.
+
+**Evidence.** Red before green, in `tests/test_acquire_dialog.py` with the measured dialog fixture:
+`FakeDialogDriver(channel="2")` against `routed_channel=1` refuses with both channels named and attributes
+nothing; the mirror case (`channel="2"`, `routed_channel=2`) is accepted; a *refused* reading still reports
+the reader's own reason rather than the attribution error. Live: the same `acquire compile` on the machine
+(whose dialog is on channel 1) must still be accepted — and, because the mismatch cannot be staged on a
+one-channel instrument without disturbing it, the fake cases are the evidence for the refusal itself.
+
+**Not done:** no `InstrumentSnapshot` field, no new port method, no policy table, no second inventory.
+
+### 16.2 The CLI error path (found by the live run, narrow)
+
+The first live `acquire compile` on a non-foreground application printed a **traceback** and exited 1.
+`AcquisitionError` is not a `ValueError`, so the acquire handlers' `except (ValueError, OSError)` never
+sees the driver's own refusals — the foreground precondition, a dialog that will not open, a control that
+is not there. Fix at the CLI boundary (catch the driver's error in the acquire handlers and report it as
+one `udv-acquire: <message>` line with the documented exit code), *not* by re-parenting the exception:
+that hierarchy is what lets callers tell a refused point from a broken instrument.
+
+**Evidence.** One case per affected verb driving a driver refusal through `acquire_main`, plus the live
+re-run of `acquire compile` with the application *not* in front — one line, exit 2, no traceback.
+
+### 16.3 Then the milestone closes
+
+With 16.1 and 16.2 green: merge #7, and the plan branch (#3) behind it. §9.1 governs from there — the
+acquisition architecture re-opens on evidence only (a real campaign failed, ambiguous evidence, or a
+downstream analysis that cannot establish an essential acquisition condition).
+
+### 16.4 The experiment — the reason all of this exists
+
+This is not a slice. It needs the operator's scientific input before any code, and the questions to settle
+are, in order:
+
+1. **Which knob, and what hypothesis?** One parameter with a physically expected effect and a measurable
+   signature. The ladder already varies resolution/gates; the burst, the sound speed and the first gate are
+   the other knobs — and all three are now *checkable before* a run, which is what W4 bought.
+2. **What is the response quantity?** That decides the analysis, and therefore whether the stored `.BDD`
+   files carry enough. The decode path yields gates, depth, sound speed, PRF, emissions and burst, and
+   `ProfileTiming` yields profile count, span, the effective interval, the at-cap/wrap distinction and the
+   retained fraction. Anything outside that set is a decoder question, not an acquisition question — and
+   it has to be answered *before* the campaign runs, not after the recordings are spent.
+3. **Repeats and variance.** A sensitivity claim needs the instrument's own spread at one fixed setting, so
+   the design needs repeats rather than one sample per setting; the existing six-point file is a frame, not
+   a design.
+4. **The predicted-timing caveat (W6).** The 52-vs-150 emissions disagreement the review raised is
+   experimentally relevant, not architectural: if any part of the experiment depends on *predicted* profile
+   timing, the period law must first be fed the instrument's own emissions (W6). Narrow, motivated by the
+   experiment, and not a reopening.
+5. **Where the results live, reproducibly.** A stored point now ties to the instrument state that produced
+   it through the manifest's compiled identity (§3.2), so the analysis can cite the acquisition condition
+   instead of re-deriving it.
+
+

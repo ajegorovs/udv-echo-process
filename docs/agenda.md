@@ -263,6 +263,17 @@ the routed channel, stays open until that field survives into `InstrumentSnapsho
 
 **The review's milestone is met, live (plan §15.1).** `acquire compile` accepted the machine's own configuration (five facts read and agreeing, the cap declared-not-verified, nothing written); a deliberately wrong declaration *and* a deliberately wrong instrument each refused with exit 2, the fact named with both sides, nothing stored; the existing six-point campaign ran unchanged — 6/6 ok, six `.BDD` files, a manifest carrying the compiled identity — and `--resume` skipped 6/6 only after proving that identity. Per §9.1 the acquisition architecture **stops growing here**: the next work is the parameter-sensitivity experiment, and re-opening the architecture needs evidence (a real campaign failed, ambiguous evidence, or a downstream analysis that cannot establish an essential condition).
 
+**PR #7's review came back with one change request and one defect the live run exposed** (both planned in
+§16). The request: compare the dialog's own channel field against the routed channel before attributing its
+three facts to that channel's snapshot — the wrong-channel trap in the one place the system cannot see it,
+cheap to close, so it closes before W4 is called complete. The defect: a driver refusal (`AcquisitionError`
+is not a `ValueError`) reaches the operator as a **traceback** with exit 1 rather than one
+`udv-acquire: <message>` line — measured live, the first `acquire compile` refusing on a non-foreground
+application. Everything else in the review was approval: the read policy, the resume split, the two
+duplicate calls as preflight redundancy rather than recipe drift, and the assessment that #7 is a closure
+PR rather than an expansion. §16.4 is the experiment that follows — a scientific plan needing the
+operator's input, with the W6 predicted-timing caveat flagged as experimentally relevant.
+
 
 Binding outcomes:
 
