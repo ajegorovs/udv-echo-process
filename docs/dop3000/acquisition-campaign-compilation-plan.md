@@ -1031,3 +1031,55 @@ are, in order:
    instead of re-deriving it.
 
 
+## 17. The next slice: launching a batch of recording parameters
+
+**Why this reopens the architecture, on the record.** §9.1 stops the acquisition architecture from growing
+until evidence says otherwise. The operator's own statement of the need is that evidence: what exists today
+is a campaign that *repeats* one recorded configuration — the fixed facts are campaign-level constants,
+verified once before the first point — and the next thing needed is a **batch of recording parameter sets**,
+several configurations acquired in one pass. That is not a refinement of the milestone; it is the next
+capability. It is written down here so that reopening is a decision with a reason rather than drift.
+
+**Out of scope on purpose.** How the batch is *produced* — a matrix, a design of experiments, a generator —
+is another matter and stays out. This slice is about *launching* a batch the operator has already written
+down, and it does not touch the acquisition recipe itself. It also comes **before** §16.4's experiment,
+because that experiment cannot be expressed yet: see 17.1.
+
+### 17.1 What exists, measured against that need
+
+| piece | state |
+|---|---|
+| the container | **exists** — a batch is a campaign whose points carry their own parameter sets; the definition format, the compile, the per-point loop, the log and the manifest are all in place |
+| writing the seven column parameters | **exists** — `ParamRole` covers us frequency, PRF, gates, resolution, velocity-scale factor, emissions/profile and Doppler angle, and the port already has `write_parameter(role, value)` with `apply_point(parameters)` in the runner |
+| writing the three dialog-only facts | **missing** — burst, sound speed and first gate are read by position (W1) but have no writer, so a batch that varies them cannot be applied at all |
+| declaring per-point recording parameters | **missing** — the fixed facts are campaign-level, so a point cannot state its own burst / sound speed / first gate, and the compiled identity records one value for the whole campaign |
+| verifying per point | **partly** — reading and comparing exist, but once per campaign, before the first point; a batch that sets a parameter per point has to read it back *after* setting it, on that point |
+| surviving a batch | **exists, and matters far more now** — resume proves the identity before skipping, so a batch that dies at point 27 of 40 is resumable; but a batch needs a stopping rule and a per-point record of which parameter set produced which file, or forty recordings become forty unattributable files |
+
+### 17.2 The slice, in order
+
+1. **Writers for the three dialog-only facts** — the mirror of W1's read: locate the field by position (the
+   anchors are already frozen for reading), write it, then read it back. A write that does not read back as
+   written refuses that point, exactly as a disagreement does today.
+2. **Per-point recording parameters** — a point may carry its own values for the facts that have writers; an
+   absent value keeps the campaign default. The compiled identity then has to be *per point* (that point's
+   values and their sources), because that is what makes two files from one batch distinguishable afterwards.
+3. **Per-point verify-then-record** — set, read back, compare, record. The campaign-level check stays as the
+   pre-flight, so an invalid definition or a wrong instrument still costs zero points.
+4. **A stopping rule and a batch record** — stop at the first refusal (the operator's recovery policy after a
+   stranded popup is a restart, so running on past a failure would mean recording into an unverified
+   application), and record per point: the parameter set, its sources, the stored file, the outcome.
+
+**Acceptance for the slice.** A batch of at least three parameter sets differing in one dialog-only fact runs
+to completion in one unattended pass; every point's own values are read back and verified before its
+recording; every stored file is attributable to its parameter set from the log and manifest alone; and a
+deliberately wrong declaration of one point's value refuses **that point** and stops the batch with the
+earlier points intact and resumable.
+
+**Still out of scope:** writing any parameter the instrument cannot read back; the batch generator; the
+analysis; and any new vocabulary — the facts and roles already exist, so this slice gives three of them a
+writer and moves an existing check inside the loop.
+
+**Order.** §16.1 and §16.2 come first. A batch multiplies the channel-attribution risk — every point's facts
+have to belong to the routed channel — and a traceback per point is unusable in an unattended run, which is
+exactly what those two close.
