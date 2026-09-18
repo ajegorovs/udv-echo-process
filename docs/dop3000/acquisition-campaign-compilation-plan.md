@@ -3567,3 +3567,57 @@ wanted; the honest answer is that neither justifies a deliberate action today.
   value is a detection signature for a run, which the read path supplies when a point is genuinely rejected —
   and provoking one on purpose means a write of exactly the class this work refuses to make for a photograph.
 
+### 26.12 The sidebar is a preference — and that breaks the absent-column inference
+
+**The incident.** While capturing the power↔TGC warning crop the operator lost the left parameter column: it
+appeared at startup, then vanished; a restart did not help; only the simulation build still showed it. The state
+was **measured before it was fixed** (read F): **20 visible controls in 3 panels** against the healthy
+**44 in 4**, with the sidebar panel `[0,55,190,1016]` **absent from the tree entirely** — not hidden, not moved,
+never built — while the menubar band (ten buttons), the strip (`3` buttons, view `ready`, still resolvable) and
+the status band were all intact. So the application was healthy except that it never created the column, which
+is why restarting changed nothing.
+
+**Cause and fix are both mundane, which is the point.** The `Preferences` dialog read in §26.8 carries
+`Show fast access parameters panel (not available in assisted mode)`; it had been **unticked**, evidently in
+passing while that dialog was being cropped. Ticking it again brought the column back — measured (read G):
+**44 visible in 4 panels**, the column's ten rows back at `4000 / 600 / 50 / 1.850 / 1.00 / 20 / 0`, and the
+`Tgc [dB]` row at `40`. **Assisted mode was off throughout**, so that preference's parenthetical is not the
+mechanism: the preference alone is.
+
+**The application's own artifacts, now in the record.** Its error log says nothing about the incident — the
+entries around it are `Err code = 0 In Allocate_memory at line 103`, which is the *startup* line that also
+appears at every other launch — so this was a configuration outcome, not a fault. The configuration sits beside
+the executable as two 315 088-byte files, `UDOP3010_43_6074_CFG.BIN` (md5 `8fc61be6…`) and `UDOPCFG_6074.BIN`
+(md5 `c1e99b00…`), written in the minute after the operator's restart; the first is named after the window
+caption, which is why the simulation build is unaffected. Both were copied to `*.before-sidebar-loss` *before*
+anything was changed, so the broken state is preserved for a byte-diff against a regenerated config. And
+"simulation" is not a mode of this executable at all: it is a **different binary**, `DEMO\Udop_Demo.exe`
+(2013, 2 MB) against the real `Udop607_4.exe` (16.7 MB).
+
+**The finding: the absent column is not evidence of the assisted channel.** §12.2 and §24.3 treat a screen with
+no parameter column as *the assisted shape*, `screen_mode()` reads that absence as `ChannelMode.ASSISTED`, and
+the implementation follows the plan — its own test
+(`test_an_assisted_screen_passes_and_is_classified_from_its_absent_column`) encodes it, with an assisted screen
+measured at **21** visible controls in 3 panels against a healthy **44 in 4**. Today produced the counter-example
+the plan did not have: **a real-mode screen, assisted mode OFF, no column at all** — 20 visible controls in 3
+panels, structurally indistinguishable from assisted, and **not** assisted. The column is a **display
+preference, not a mode**, so "no column ⇒ assisted" is **unsound**: it cannot separate an assisted channel from
+a parameter panel somebody switched off.
+
+Three consequences, in order of weight:
+
+- **The shape check accepts today's screen.** The column clause fires only when a column exists but is
+  incomplete, so a no-column screen passes as the assisted shape and a run would proceed with nothing to write
+  parameter values to. It is harmless today only because the writer does not exist yet — and a gate whose job is
+  to refuse *before* that is not allowed to rely on that.
+- **The repair is a declaration, not an inference** — D3's own principle. The run should state the *channel*
+  mode as it states the process mode; a panel-less screen is accepted only when `assisted` was declared, and
+  otherwise refused with a clause that **names the `Show fast access parameters panel` preference**, because
+  that sentence is what actually explains the screen.
+- **`screen_mode()`'s assisted classification is in question beyond this slice**, since anything keying a
+  decision on the absent column inherits the flaw. Worth settling before a writer is built on top of it.
+
+Recorded here rather than fixed in place: PR #8's review is live, and this moves a *mode fact* rather than a
+clause order, so it goes to the reviewer as a finding first (a comment on the pull request, so it travels with
+the code).
+
