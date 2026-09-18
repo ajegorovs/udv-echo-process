@@ -1101,3 +1101,69 @@ writer and moves an existing check inside the loop.
 **Order.** §16.1 and §16.2 come first. A batch multiplies the channel-attribution risk — every point's facts
 have to belong to the routed channel — and a traceback per point is unusable in an unattended run, which is
 exactly what those two close.
+
+
+## 18. Turning every knob — the write coverage, measured against the matrix's fifteen
+
+The operator's requirement, stated: before a sweep is worth designing, the tool must be able to *turn every
+knob* the matrix can name. This section is the coverage inventory, and it is deliberately keyed to the
+matrix's own list (`parameter-sweep-matrix.md`, the control-surface note) rather than to any new vocabulary.
+
+**Three mechanisms exist, and between them every knob has a home.**
+
+| mechanism | state |
+|---|---|
+| the parameter **column** on the measurement screen | **read *and* written** — `write_parameter(role, value)` over `ParamRole`, with the measured write-order rule (resolution before gates, because this channel has auto-resolution set: 805 gates requested → 474 accepted in the wrong order, 805 in this one) |
+| the `Operating parameters` dialog's **positional value table** | **read only** — three columns of caption-less value buttons with their own edits; 15 value fields, of which 10 are bound: the three dialog-only facts `(0,1) burst`, `(1,1) first gate`, `(2,4) sound speed`, and the seven anchors that make those bindings safe to trust. The mechanisms to *write* one already exist and are private: `_combo_select(hwnd, index)` and `_set_text_commit(hwnd, text)`, both taking the field's own hwnd |
+| `Record settings` | **neither read nor written.** No path has been exercised to this dialog. It holds the one thing the operator named — `Do not keep in a block more profiles than` — and its in-force value on this machine is what truncates a long point |
+
+### 18.1 The fifteen, and where each one stands
+
+| # | knob | mechanism | read | written |
+|---|---|---|---|---|
+| 1 | US emitting frequency | column | yes | **yes** |
+| 2 | burst length | dialog `(0,1)` | yes | **no** — the slice's first writer |
+| 3 | emitting power | not identified | no | no |
+| 4 | TGC / amplification | not identified | no | no |
+| 5 | PRF | column | yes | **yes** |
+| 6 | first-gate depth | dialog `(1,1)` | yes | **no** — same mechanism as burst, one combo over |
+| 7 | number of gates | column | yes | **yes** |
+| 8 | resolution | column | yes | **yes** |
+| 9 | sampling volume | not identified | no | no |
+| 10 | emissions per profile | column | yes | **yes** |
+| 11 | Doppler angle | column | yes | **yes** |
+| 12 | sensitivity | not identified | no | no |
+| 13 | velocity scale factor | column | yes | **yes** |
+| 14 | sound speed | dialog `(2,4)` | yes | **no** — and per the matrix's group S it is never swept |
+| 15 | number of skipped profiles | not identified | no | no |
+
+Five are written today, three more are read and need only the write half of a mechanism that already exists,
+and **five are unaccounted for — which is exactly the count of dialog value fields not yet bound** (15 fields
+minus the 10 above). The likely mapping is emitting power, TGC, sampling volume, sensitivity and skipped
+profiles, and 15 says at least one of them is in this dialog. **That mapping is a hypothesis to confirm by
+reading, not an assumption to code against**: the identification method is the one the matrix itself used —
+change one knob by hand, re-open the dialog, and see which field moved.
+
+### 18.2 The work, in order
+
+1. **Identify the five unbound dialog fields** — read the table, vary a knob by hand, read it again, and pin
+   each field to a knob the way the three dialog-only facts were pinned (with the measured tree committed as
+   a fixture, so a re-layout refuses rather than mis-reads).
+2. **Give the dialog knobs a writer**, starting with burst: position the field from the same frozen anchors,
+   write, then **read back** and refuse if the field does not state what was written — the mirror of W1, and
+   the same discipline the column already uses. Measured trap, already paid for: the burst combo steps *past*
+   a value (one step up from `4` landed on `6`), so selection must be by value read back from the options,
+   never by counting steps.
+3. **Decide the cap's status**, because it is the one knob with no path: whether a batch needs the value
+   *before* a point (so a long point cannot silently lose its first seconds to the wrap), or whether the
+   after-the-fact evidence already in the record — `block_at_cap` / `block_wrapped` on a stored point — is
+   enough. If it must be read before, the work is a proven open/close path for `Record settings`, which is
+   where the caption-less popup hazard of §9.3 lives; if after-the-fact is enough, this is a sentence in the
+   operator notes rather than code.
+4. **Then, and only then, the batch** (§17): a batch is only as good as the number of knobs it can set, and
+   per-point declaration needs a writer to declare *with*.
+
+**Acceptance for the knob work.** Every knob the sweep matrix names is either written by the tool or
+explicitly recorded as unreachable with the reason; every dialog-written knob is read back and verified on the
+point that used it; and a wrong write (a value the combo does not offer, a field that is not there) refuses
+the point rather than proceeding.
