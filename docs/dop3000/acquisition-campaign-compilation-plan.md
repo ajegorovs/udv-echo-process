@@ -25,7 +25,10 @@ CampaignDefinition                (what the experiment wants)
         v  static validation        plan_campaign() — pure, unchanged
         |
         v  UDOP session snapshot    read the instrument: layout, channel, mode, settings
-InstrumentSnapshot                (what the DOP3010 actually is, right now)
+InstrumentSnapshot                (what the DOP3010 actually is, right now — evidence)
+        |
+        v  identity                 the stable projection of that reading, and only it
+CompilationIdentity               (what a resume may compare; volatile UI facts excluded)
         |
         v  compile                  reconcile the two, or refuse
 ExecutableCampaign                (per-point expectations + fixed configuration + policy)
@@ -81,7 +84,13 @@ The facts that gap leaves:
   (`runner.py:303`). `screen_fingerprint()` (`driver.py:2245`) and `preflight()`
   (`driver.py:2315`) are **driver-only** and called directly by `live.py` — which is why
   the run record cannot carry a `ScreenFingerprint` today. `ScreenFingerprint` already
-  says it "belongs in the job log beside the point it preceded" (`actuator.py:306`).
+  says it "belongs in the job log beside the point it preceded" (`actuator.py:306`) — but it
+  is **evidence, not identity**: of its twelve fields (`class_name`, `hwnd`, `rect`,
+  `maximized`, `screen`, `panels`, `visible_controls`, `strip`, `overlay`, `layout_note`,
+  `cursor`, `is_foreground`), six are session-volatile (`hwnd`, `rect`, `maximized`,
+  `screen`, `cursor`, `is_foreground`), and an HWND changes on every UDOP restart. Hashed as
+  it stands, a restarted but identically configured instrument would read as a different
+  instrument (W2).
 - **The channel mode is known to the driver but not to the campaign.** Assisted-mode
   channels show 21 controls in 3 panels against the clean 43 in 4
   (`ScreenFingerprint`'s docstring), the driver records which mode a channel's dialog
@@ -102,9 +111,13 @@ Checkable, and each becomes a test:
 2. A run record can answer, offline: which channel and mode were active, which fixed facts
    were **read from the instrument**, which were only declared, and what the compiled plan
    asked for.
-3. The compiled plan is deterministic and hashable: the same definition against the same
-   snapshot gives the same fingerprint, and a different snapshot gives a different one —
-   so a resume can tell the two apart instead of silently continuing.
+3. The compiled plan is deterministic and hashable **on a stable projection of the
+   snapshot, not on the raw reading**: two snapshots that differ only in session-volatile
+   diagnostics — a new `hwnd` after a restart, the cursor, `is_foreground`, window geometry
+   — compile to the **same** identity, while a change to any fact that campaign
+   compatibility depends on (channel, mode, PRF, emissions, burst, sound speed, first gate,
+   the cap and its provenance, the layout signature) compiles to a **different** one. A
+   resume must be able to tell a configuration change from a restart.
 4. Nothing in the acquisition path claims an instrument fact that was not read: an unread
    fact is `None` or explicitly `declared`, never presented as verified.
 5. **No recipe changes.** With the instrument in its expected configuration, the stored
@@ -139,32 +152,59 @@ from.
 the machine is unavailable, this item waits and W2–W4 proceed with the three unreadable
 facts explicitly marked unreadable — which is the honest state either way.
 
-### W2 — `InstrumentSnapshot`, and a port method that returns it
+### W2 — `InstrumentSnapshot` (evidence) and `CompilationIdentity` (what a resume compares)
 
-**What.** A frozen `ValueModel` describing what the instrument *is*: the
-`ScreenFingerprint`, the channel, the mode (`manual`/`assisted`, from the panel/control
-counts and the flag the driver already records at `driver.py:2103`), every fixed fact that
-*is* readable with its value, and — as named fields, not omissions — the facts that could
-not be read. Then one additive method on `SweepActuator`:
+**What.** Two models, because two different questions are asked of the same reading.
+
+*Evidence* — what the instrument is, kept whole, for diagnosis and for the record:
 
 ```python
 def instrument_snapshot(self) -> InstrumentSnapshot:
-    """Read the instrument's current state, pressing nothing that changes it."""
+    """Read the instrument's current state, pressing nothing that changes it.
+
+    Read-only with respect to the configuration: it writes no parameter, accepts no
+    dialog and selects no channel. Routing to the requested channel is a separate step
+    that happens before it (W4), and is recorded as such.
+    """
 ```
 
-`SweepActor` already has the precedent for a composed call (`try_record_and_store`,
-`runner.py:198`), and `Win32Actuator` already computes every piece (it builds the
-fingerprint at `driver.py:2245`, reads the parameter column for the read-back, and knows
-the mode). The method must be **additive**: no existing protocol method changes signature,
-so every existing fake keeps working with one added stub.
+`InstrumentSnapshot` carries the `ScreenFingerprint` **as it is** — all twelve fields,
+including the volatile six — because a fingerprint that has been trimmed is no longer the
+diagnostic it exists to be. Plus the channel, the mode (`manual`/`assisted`), and every
+fixed fact that was readable, each with its value *and* its provenance, and — as named
+fields, not omissions — the facts that were not readable.
 
-**Where.** New `src/udv_echo_process/acquire/snapshot.py` (model + the reconciliation-free
-reading helpers); one method on `SweepActuator` (`runner.py:180`) and its implementation
-in `driver.py`; the port docstring says which facts are read and which are not.
+`CompilationIdentity` is that same reading **projected onto the facts campaign compatibility
+depends on**, and nothing else: no `hwnd`, no window geometry, no cursor, no foreground
+state, no free-text layout note, no transient modal state.
 
-**Done when.** A fake port returns a snapshot and the model round-trips through JSON; a
-snapshot captured from the real machine parses as a committed fixture; and a test asserts
-that a fact that was not read appears as unread rather than as a value (criterion 4).
+| in the identity | why |
+|---|---|
+| channel, mode | a channel's mode is not a detail: an assisted channel has its own parameter surface entirely |
+| every fixed fact with its provenance (PRF, emissions, burst, sound speed, first gate, the cap) | this is what "did we run the experiment we think we did" means |
+| the layout signature: `class_name` + `panels` + `visible_controls` + `strip` | a changed layout means the reads themselves are suspect |
+| the application's identity, where a read for it exists | a different build is a different instrument |
+
+**`overlay` is deliberately not in the identity**: a modal being up is a precondition
+failure — refuse (W3) — not a property of the instrument's configuration.
+
+Then one additive method on `SweepActuator`. It has the precedent for a composed call
+(`try_record_and_store`, `runner.py:198`), and `Win32Actuator` already computes every piece:
+`screen_fingerprint()` (`driver.py:2245`), the parameter column read that `ensure_channel`
+performs, and the mode. `live.status()` and `live.select_channel()` (`live.py:64`, `:69`)
+are the same composition at the live layer, running today — so the new part is the port
+boundary and the models, not the gesture. It must be **additive**: no existing protocol
+method changes signature, so every existing fake keeps working with one added stub.
+
+**Where.** New `src/udv_echo_process/acquire/snapshot.py` (both models, the projection, the
+reading helpers); one method on `SweepActuator` (`runner.py:180`) and its implementation in
+`driver.py`; the port docstring says which facts are read and which are not.
+
+**Done when.** A fake port returns a snapshot and both models round-trip through JSON; a
+snapshot captured from the real machine parses as a committed fixture; a test asserts that a
+fact that was not read appears as unread rather than as a value (criterion 4); and the
+criterion-3 test passes in **both** directions — volatile-only differences compile to the
+same identity, and every fact in the table above changes it.
 
 ### W3 — `compile_campaign(definition, snapshot) -> ExecutableCampaign`
 
@@ -192,8 +232,8 @@ carrying the fact and both values, matching how a foreign channel is refused tod
 **Done when.** One test per case: PRF mismatch (refuse), emissions mismatch (record both,
 proceed, advisory), burst mismatch (refuse), assisted-mode channel against a manual
 campaign (refuse), an unreadable fact (marked declared, proceed), and the happy path
-(nothing changes). Plus the criterion-3 test: same inputs, same fingerprint; different
-snapshot, different fingerprint.
+(nothing changes). Plus the criterion-3 test: volatile-only differences compile to the same
+`CompilationIdentity`; every compatibility fact changes it.
 
 ### W4 — Wire the snapshot into the campaign run, the manifest and the resume
 
@@ -291,11 +331,24 @@ distinction is preserved rather than collapsed.
   the review listed — manual-ready, assisted-ready, recording, store view, store dialog,
   manual parameters, assisted parameters, warning — committed under `tests/data/` as they
   are captured. Binding and mode tests then run without Windows.
+- **The identity test, both directions** (criterion 3). Take a snapshot captured from a real
+  session, then perturb only `hwnd`, `rect`, `maximized`, `screen`, `cursor` and
+  `is_foreground`: the `CompilationIdentity` must be unchanged. Then vary each fact in W2's
+  table: each must change it. This is the test that keeps a restart from reading as a
+  different instrument, and it is the reason the two models exist.
+- **A deliberately negative hardware case** (criterion 1, the central promise, proved on the
+  real application rather than only in fakes): set one fixed parameter deliberately wrong by
+  hand, run `compile` (or the dry run), and verify that the campaign **refuses, names the
+  fact, starts no recording and leaves no file** in the store directory; then restore the
+  parameter and verify the same compile succeeds. This belongs in the acceptance sequence
+  below, not only in the unit suite.
 - **Red before green**, per repo convention: the failing assertion's real output goes in
   the commit body.
 - **The live acceptance sequence** (manual, on the machine owning the screen, dispatched
   through `tools/live/`): status → snapshot → preflight → one short stored point →
-  canonical decode → certificate → clean READY. This is the gate that the fake cannot be.
+  canonical decode → certificate → clean READY, **plus the negative case above**: one fixed
+  parameter wrong on purpose, a refusal with no file, then the parameter restored and the
+  same compile accepted. This is the gate that the fake cannot be.
 - **Gate numbers in the PR body as a comparison**: `pytest -q` on the branch against
   `master` at `abf2ead` (**1568 passed, 22 skipped, 0 failed**).
 
