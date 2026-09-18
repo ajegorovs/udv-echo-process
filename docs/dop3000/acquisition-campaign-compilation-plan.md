@@ -1898,3 +1898,144 @@ Writing the dialog's channel combo makes the application **replace the dialog** 
 (`Emitting power`, `Sensitivity` — column combo and dialog cell): §18.7's open item 6. Until it is measured, the
 writer writes the dialog cell and reads the column back as a cross-check, and the disagreement is recorded on
 the point rather than averaged away.
+
+## 20. Why the volume moves the gate — what the manual accounts for
+
+Reading job only: `docs/dop3000/manual-reference/` searched end to end (front matter, all 22 chapters, index),
+nothing live run, nothing outside this file touched. The index carries no entry for a derived first gate (its
+"overlapping", "sampling volumes", "ringing", "spatial filter" entries point at the chapters cited below), so
+the search went through the parameter chapters and the two specification tables.
+
+**The short answer: the corpus names exactly one length that joins the burst, the sampling volume and the first
+gate — the emitted burst's own longitudinal extent — and says nothing at all about the first gate being
+re-derived when the sampling volume changes.** Where our measurement is sharpest (§18.11's state-dependence)
+the manual is silent, so that stays ours alone.
+
+### 20.1 The one length the corpus does give
+
+Three statements in the corpus are the same statement at three levels of detail:
+
+| where | the corpus's words (abridged) | the length it names |
+|---|---|---|
+| ch. 21, source PDF page 119 (DOP3000); ch. 22, page 123 (DOP3010) | "Position of the first gate … movable by step of 1 mm but **not earlier than the end of the emitted burst**"; without the opened package, "fixed. Echo sampled after the end of the emitted burst" | the burst's extent, `c·τ_burst/2` |
+| ch. 8.4, page 47 | "The longitudinal size of the sampling volumes, or their thickness, is defined by the burst length and/or the bandwidth of the electronic receiving unit"; "**If the duration of the emitted burst is longer than the value associated to the bandwidth, the longitudinal dimension of the sampling volume is determined by the burst length**" | the same |
+| ch. 14, pages 100–101 | "The duration of the impulse determines the depth resolution by determining the longitudinal size of the sample volume"; `Res = c·τ_e/2` "corresponds to the maximum attainable resolution for this type of emission" | the same |
+
+With `τ_burst = N/f_e` that length is `floor_mm = 1000·c·N/(2·f_e)`, and at this machine's `c = 1460`,
+`f_e = 4000` it is **numerically the floor we measured** (§18.10):
+
+| burst `N` | `1000·c·N/(2·f_e)` | what §18.10 measured |
+|---|---|---|
+| 2 | `0.365` | — |
+| 4 | `0.730` | `floor(4) ∈ (0.584, 0.730]` |
+| 6 | `1.095` | `1.095` (hand-measured) |
+| 8 | `1.460` | `1.460` (runs 21/22) |
+| 32 | `5.840` | — |
+
+So the sampling-volume combo's floor and the first gate's hard floor are **one length — the end of the emitted
+burst** — and the corpus states both halves of that identity in its own words: the specification tables as a
+gate rule (21 p. 119 / 22 p. 123), ch. 8.4 as a thickness rule (p. 47). The receive-delay framing is there too:
+ch. 2.1, page 13 — "the delay between the emission and reception determines the distance between the transducer
+and the sample volume" — and ch. 1.2, page 8, `P = c·T_d/2`.
+
+**This is what the refusal's wording is about.** The corpus writes no warning and describes no modal, but it
+writes the *reason the message names the burst*: when the burst is the longer of the two contributors it **is**
+the thickness (8.4, p. 47), so a request below `1000·c·N/(2·f_e)` asks for a thickness this emission is not
+making, and the only knob that changes that is the burst. `max(remembered, floor)` (§18.10) is the
+application's implementation of that sentence; `The burst length should be reduced`, `Continue` reverting the
+field, and the modal being raised on the select's own notification are the application's behaviour, and nothing
+in the corpus describes any of them.
+
+### 20.2 (a)–(f), with the citation each one carries
+
+| § | what the corpus says | where | verdict |
+|---|---|---|---|
+| **(a)** volume/burst ↔ dead zone ↔ first usable gate | The gates near the transducer are unusable because "the burst duration and the ringing of the ceramic do not allow any measurement in these gates due to saturation of the electronic receiver … This saturation is normal and can not be avoided"; "The position of the first measurable gate depends on the emitting frequency, **the burst length**, the emitting power, the amplification level and the ultrasonic probe connected to the instrument. Its minimum value is around 3 millimeters." Also the depths at which measurements are impossible "depend on the emitted burst emitted (frequency, burst length) and on the transducer", and near the probe "the ringing effect of the piezo ceramic avoid any measurement. This is normal." | ch. 8.3, pp. 46–47; ch. 8.11, p. 53; ch. 4.5, p. 26; ch. 21 p. 119 / ch. 22 p. 123 | **partially** — the burst constrains the gate and the *hard* floor is the burst's own length (20.1), but the sampling volume / receiver bandwidth is **not** on 8.3's dependency list, and no chapter makes the first gate a function of the volume |
+| **(b)** why a volume shorter than the burst is refused | The burst dominates the thickness when it is the longer of the two (8.4 above), and the emitted pulse's duration *is* the attainable depth resolution (`Res = c·τ_e/2`) | ch. 8.4, p. 47; ch. 14, pp. 100–101 | **partially** — the corpus explains why a sub-burst thickness would be meaningless and why the burst is the knob to reduce; it never describes an instrument refusing a value, reverting a field, or warning |
+| **(c)** gate pitch, gate geometry, index → mm | The corpus contains the equation: `Depth_i[mm] = Par[19]·[(Par[9] + (Par[10]+1)(i−1))/(2·Par[29]) − Par[46]/2·10⁶]`, with word identities on the same chapter's parameter table — `9 Indice first gate`, `10 Resolution (n+1)*0.166ns`, `19 Sound speed in m/s`, `29 0:acquisition rate 6 MHz, 1: 12 or 40 MHz`, `46 hardware Internal delay in ns` — and the pitch in the spec tables as "distance between the center of each sampling volume … selectable between 0.166 and 20 μs" | ch. 10.9, pp. 75–76; ch. 10.7 table, p. 70; ch. 21 p. 120 / ch. 22 p. 123 | **explains** — this *is* the matrix's **C4**: it is not a reconstruction, it is the manual's equation. Two wobbles: word 10's unit is printed "ns" on p. 70 where the spec tables print µs (the µs reading is the one the dialog's `0.122` at `c = 1460` reproduces), and the depth convention is the *beginning* of the volume (5.1 p. 31; 10.6 p. 67) while the pitch is centre-to-centre (8.4 p. 47; 21 p. 120; 22 p. 123) |
+| **(d)** first gate automatically adjusted or clamped when another parameter changes | **Not stated.** The corpus names the quantities it derives and the first gate is not among them: the gate *count* — "The user has the choice to let the instrument select automatically the number of gates in order to cover the selected depth or to fixe it"; the assisted-mode compromise over "the PRF, the number of emissions per profile, the velocity scale, and the requested acquisition rate"; the TGC. The gate itself is a user gesture: "can be changed by clicking on the depth axis and moving the mouse left or right"; "defined by means of a cursor placed inside the velocity profile"; "Select the position of the first gate" | ch. 8.5, p. 48; ch. 8.8, p. 50; ch. 8.11, p. 52; ch. 8.3, p. 47; ch. 5.8, p. 36; ch. 12.5, p. 88 | **silent** — the corpus contradicts nothing here, it simply has no rule: **our measurement is the only authority** |
+| **(e)** "Sampling volumes overlapped" | "It may often appear that the selected resolution implies an overlapping of the sample volume. This is the case when **the resolution is lower than the thickness of the sampling volume**. This always appears for all resolution below 0.64 mm." And: "The thickness of the sampling volume is displayed in the 'Operating parameters' window. **If the sampling volumes overlapped each other an indication is displayed**." Consequence the corpus draws: display resolution ≠ acoustic resolution, the volume borders are soft ("increase and decrease 'slowly' due to the finite bandwidth of the receiver"), and in the inverse regime there are "non measured spaced" between volumes | ch. 8.4, pp. 47–48 | **explains** — the green note is the corpus's own *indication*, in the corpus's own window, for exactly the regime this machine is in (pitch `0.122` < thickness `0.876`). What the corpus does **not** draw is a *penalty*: it never says overlapped gates must not be treated as independent samples — that consequence is ours |
+| **(f)** auto TGC / amplification ↔ emitting power | Four ways to define the amplification, the third being "based on the information issued from the assisted mode. The TGC is automatically defined in order to establish some kind of optimum amplification curve"; and the two are documented compensations on the energy axis — "It is generally better to increase the amplification (TGC) in state of increasing the emitting power", and its note: if the amplification must be reduced, "decrease the emitting power … reduces the intensity of the received echoes and any undesirable effects, such as the ringing inside the transducer". The mode is a stored parameter: `23 Tgc Mode (0:uniform, 1:slope, 2:auto, 3 custom)` | ch. 8.11, p. 52; ch. 8.10, pp. 51–52; ch. 10.7 table, p. 70 | **partially** — the corpus documents that an automatic TGC mode exists, that it is computed from the assisted-mode information, and that power and gain compensate each other, which makes §18.4's modal plausible; it does **not** state that changing the emitting power rewrites the TGC mode and the amplification. That claim is the application's. **`word 23` is the oracle §18.4 wanted** (the TGC *mode* itself, better than the assisted flag) |
+
+### 20.3 The six live observations, item by item
+
+| # | observation | the corpus's account | verdict |
+|---|---|---|---|
+| 1 | setting the sampling volume moves `First gate depth` | the floor only (20.1); the corpus's own depth model of the window has **no volume term at all** (ch. 10.9, pp. 75–76) | **partially** — the floor's *value* is explained, the derivation is not |
+| 2 | the burst constrains the volume; a burst change raises but never lowers an operator's value | 8.4 p. 47 plus the specification tables — i.e. `max(remembered, burst length)` | **explains** |
+| 3 | a below-floor request is refused with "The burst length should be reduced" | the *reason for the wording* (20.1); no refusal, revert or modal anywhere | **partially** |
+| 4 | `Sampling volumes overlapped` under the volume field | 8.4, pp. 47–48, verbatim the corpus's own indication | **explains** |
+| 5 | emitting power raises the TGC-in-auto modal | 8.10–8.11, pp. 51–52, plus `word 23` | **partially** |
+| 6 | the dialog shows a stale gate until reopened | nothing: the corpus says the thickness "is displayed in the 'Operating parameters' window" (8.4, p. 48) and specifies no refresh behaviour for any field | **silent** |
+
+**Two by-products worth keeping.** First, the dialog's two neighbouring cells are now manual-backed rather than
+label-guessed: `Sampling volume` is the *thickness* (the bandwidth/filter ladder — 8.4 p. 47, spec tables
+p. 120/p. 123, `word 27` on p. 70: "Bandwidth definition (from 50 kHz (0) to 300 kHz(5), step 50 kHz)"), and
+`Resolution` is the *pitch* — 8.4 (p. 47) is emphatic that the resolution is "the distance between the center
+of adjacent sampling volumes and **NOT** the thickness of the sampling volume". Second, the instrument's
+six-entry volume tail is **neither** of the corpus's two lists: the tail at `c = 1460` is
+`0.584 / 0.730 / 0.876 / 1.168 / 1.752 / 3.650`, i.e. `0.600 / 0.750 / 0.900 / 1.200 / 1.800 / 3.750` at
+`c = 1500` (a scaling the archive's independently measured `index 3 = 0.900 mm at c = 1500` corroborates,
+§18.7/§18.10), where ch. 8.4 prints "from about 0.64 mm to 3.19 mm in water" and ch. 21 p. 120 / ch. 22 p. 123
+print `3.9 / 2.9 / 1.3 / 1.1 / 0.8 / 0.7 mm (c=1500 m/s …)`. So the matrix's open item 4 can be closed **in the
+negative** — neither manual list is this instrument's ladder; read the combo — and since word 27's own
+definition says the six entries are bandwidths, the disagreement is in the corpus's mm conversion, not in which
+knob it is.
+
+### 20.4 What this means for the writer and for the sweep
+
+**The pair is co-set *and* read back, and the corpus is why.** The burst's length is simultaneously the
+volume's floor and the gate's hard floor (20.1), so a write that changes the burst moves the gate's floor
+(`0.365 → 0.730 → 1.095 → 1.460` for bursts `2/4/6/8`) — there co-setting is a *manual rule*, not prudence. A
+write that changes the volume moves the first gate by a derivation the corpus does not contain, and by a
+state-dependent one at that (§18.11, §20.3 item 1) — so the value that lands must be **read back** and never
+predicted. Concretely:
+
+- **Writer.** A point whose swept knob is `Sampling volume` or `Burst length` must either write
+  `First gate depth` explicitly — the writer has no `DialogField.FIRST_GATE_MM` yet, which §18.10's closing note
+  already flagged — or record the instrument's chosen value as the point's own fact. §19.1's rung 2 and §18.10's
+  writer rule 3 (the full-table diff) already supply the read-back half; **the co-set half is new**, and for the
+  burst it is mandatory.
+- **Matrix.** Axis **9** (`Sampling volume`) must not live in group **A** alone — it belongs to **W** as well —
+  and axis **2** (`Burst length`) must carry axis **6** (`First gate depth`). The honest form of that is:
+  `(2 burst, 9 sampling volume, 6 first gate)` are one geometry triple joined at the burst's own length, and
+  `floor_mm = 1000·c·N/(2·f_e)` is worth naming as a relation beside C6/C10 — it is the one closed form in this
+  area that the manual and the instrument agree on, and it says *when* the triple is tied (a volume request
+  below it) as well as what the floor is. Practically: Tier-1's axis 2 (`2 / 4 / 8 / 16 / 32 cycles`) walks that
+  floor from `0.365` to `5.840` mm, so either re-site the first gate per level or start every level's window
+  above the largest floor — otherwise the levels are not measuring the same fluid.
+- Because the instrument can state a first gate the definition did not ask for, the sweep's dead-zone metric
+  stays **data-derived** (the first gate with non-zero values, matrix §6.4) and never the dialog's statement.
+
+### 20.5 What remains unexplained
+
+- **The volume → first gate derivation itself.** No volume term exists in the corpus's depth equation
+  (ch. 10.9, pp. 75–76). Ordering §18.10's recorded pairs by volume, the first gate falls monotonically
+  (`0.730→8`, `0.876→7`, `1.168→7`, `1.752→5`, `3.650→1`) with no constant slope (−6.9, 0.0, −3.4, −2.1
+  gate-mm per volume-mm between successive pairs) — arithmetic on *our* five pairs, not a corpus claim.
+- **The state-dependence** (§18.11: `1.752` gave `5` from `1.168`/gate `7` but `1` from `0.876`/gate `2`).
+  Nothing in the corpus makes a derived value depend on the value it replaced. Two candidate mechanisms, both
+  weak and both recorded here as candidates only:
+  - the depth axis measures the **beginning** of a sampling volume (ch. 5.1, p. 31; ch. 10.6, p. 67 — "the
+    distance from the surface of the transducer to the beginning of the sampling volume") while the pitch is
+    centre-to-centre (8.4 p. 47; 21 p. 120; 22 p. 123), so a derivation that held the **centre** fixed would
+    move the field by half the thickness change. That predicts the sign we always see — volume up ⇒ the field
+    does not deepen, volume down ⇒ it does not shallow, true of all eight recorded pairs — but the magnitude
+    fits only four of them (within 0.6 mm) and misses three by 1.6–4.8 mm. A candidate, not the law;
+  - the assisted mode, which does derive ultrasonic parameters (ch. 4.2, p. 22; ch. 8.8, p. 50) — but its
+    documented outputs are the PRF, the emissions per profile, the velocity scale and the acquisition rate, not
+    the first gate, and nothing in §18/§19 records whether this machine is in it (`word 1` is the oracle,
+    §18.7's open item 7).
+- **The refusal's semantics** (raised on the select's own notification, `Continue` dropping the request and
+  leaving the *previous* value) — no modal and no revert is described anywhere in the corpus.
+- **The `1 mm` the field never goes below** in our pairs: ch. 8.3's "minimum value is around 3 millimeters" is
+  the nearest number the corpus has, and it is *above* values the dialog accepted here (baseline `2`, and `1`
+  after the round trip) — so 8.3's minimum is a practical floor, not an enforced one; the enforced floor is the
+  burst's (ch. 21 p. 119 / ch. 22 p. 123).
+
+**No statement in the corpus contradicts a measurement of ours.** The two sharpest tensions are both cases of
+the corpus's numbers being looser than the instrument's: 8.3's "around 3 millimeters" against first gates of
+`1` and `2` mm that the dialog accepted, and the corpus's two sampling-volume mm lists against the six entries
+the instrument actually offers (20.3). The one *internal* contradiction found is the corpus's own: word 10's
+unit ("ns", p. 70) against the specification tables' µs, and 8.4's `0.64–3.19 mm` against 21/22's
+`0.7–3.9 mm` — the matrix's open items 4 and its C11 note, now with a measurement on the instrument's side.
