@@ -55,6 +55,7 @@ from udv_echo_process.acquire.actuator import (
     press_index,
 )
 from udv_echo_process.acquire.config import ParameterSet
+from udv_echo_process.acquire.snapshot import FactSource
 
 #: The simulated clock the fake advances on every strip poll. A point's duration
 #: is therefore measured in *observations*, exactly like the live loop's.
@@ -3056,3 +3057,38 @@ def test_an_absent_column_is_not_evidence_of_a_mode(key: str, value: object) -> 
     name the mode instead of the screen.
     """
     assert driver.screen_mode(role_map(params={}, param_rows=[], **{key: value})) is None
+
+
+# --------------------------------- a channel only the router may claim to have established
+
+
+def test_a_reading_that_routed_nothing_carries_no_channel() -> None:
+    """``instrument_snapshot`` is public and composable: it can be called with no routing at all.
+
+    Nothing in the reading's own evidence establishes a channel — reading it costs the menubar
+    hover the routing step pays, and on an assisted channel there is no combo to read — so a
+    caller that hands over nothing gets ``unreadable`` rather than the configured number. The
+    difference matters: the run's record has to say whether a channel was *established* or merely
+    *aimed at*, and the earlier shape of this method said "verified by ensure_channel" even when
+    ``ensure_channel`` had never run.
+    """
+    unrouted = driver.Win32Actuator(channel=1)._channel_fact(None)
+
+    assert unrouted.source is FactSource.UNREADABLE
+    assert unrouted.value is None
+    assert "no channel was established" in (unrouted.reason or "")
+
+
+def test_the_routed_channel_rests_on_the_routers_own_read_back() -> None:
+    """Handed the channel the router verified, the reading carries it — as ``routed``, not read.
+
+    ``ensure_channel`` selects the channel in the application and reads the application's own
+    confirmation back, so the value is stronger than a caller's claim and is *not* this reading's
+    own answer: it is one step removed from ``read``, and it says which step it came from.
+    """
+    routed_fact = driver.Win32Actuator(channel=1)._channel_fact(1)
+
+    assert routed_fact.source is FactSource.ROUTED
+    assert routed_fact.value == "1"
+    assert not routed_fact.is_read
+    assert "ensure_channel" in (routed_fact.reason or "")

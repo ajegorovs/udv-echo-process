@@ -42,6 +42,7 @@ from udv_echo_process.acquire.snapshot import (
     Provenance,
     declared,
     identity_digest,
+    routed,
     unreadable,
 )
 
@@ -290,6 +291,10 @@ def test_every_fixed_fact_moves_the_identity_by_value_and_by_provenance(
     [
         ("another channel", {"channel": declared("4", reason="configured")}),
         ("the channel read rather than declared", {"channel": read("1")}),
+        (
+            "the channel routed rather than declared",
+            {"channel": routed("1", reason="the routing step verified it")},
+        ),
         ("an assisted channel", {"mode": read(ChannelMode.ASSISTED.value)}),
         ("no mode could be read", {"mode": unreadable("a dialog is up")}),
         ("a different window class", {"fingerprint": fingerprint(class_name="TOther")}),
@@ -418,3 +423,46 @@ def test_the_identity_cannot_carry_prose_at_all() -> None:
         "value": "1",
         "source": "declared",
     }
+
+
+# ---------------------------------------- a channel only the router may claim to have routed
+
+
+def test_a_routed_channel_is_its_own_provenance() -> None:
+    """The routing step read the application's own answer back; a caller's claim is not that.
+
+    ``DECLARED`` means nothing of the application's stands behind the value, which is what a
+    campaign's own statement about the instrument is. A channel that was routed is stronger than
+    that (``ensure_channel`` selects it, and the application's own dialog answers for it) and
+    weaker than a read by *this* reading, which asked nothing. The two must not share a name: the
+    whole point of carrying a source is that a later reader can tell what was established.
+    """
+    fact = routed("1", reason="the routing step (ensure_channel) verified it")
+
+    assert fact.source is FactSource.ROUTED
+    assert fact.value == "1"
+    assert not fact.is_read
+    assert fact.provenance() == Provenance(value="1", source=FactSource.ROUTED)
+    assert fact.provenance() != Provenance(value="1", source=FactSource.DECLARED)
+
+
+@pytest.mark.parametrize("source", [FactSource.READ, FactSource.ROUTED, FactSource.DECLARED])
+def test_a_fact_that_rests_on_something_must_carry_its_value(source: FactSource) -> None:
+    """One value/source rule for the three sources that claim a value, evidence and all."""
+    with pytest.raises(ValidationError):
+        InstrumentFact(source=source)
+    with pytest.raises(ValidationError):
+        Provenance(source=source)
+
+
+def test_only_an_unreadable_fact_has_no_value() -> None:
+    """``unreadable`` is the one state with nothing to carry — and it is a valid projection.
+
+    The projection has no reason to require a reason: an explanation is diagnostic text, so a
+    ``Provenance`` is complete with the value absent and the source saying why it is absent.
+    """
+    with pytest.raises(ValidationError):
+        Provenance(source=FactSource.UNREADABLE, value="1")
+
+    assert Provenance(source=FactSource.UNREADABLE).value is None
+    assert routed("1").is_read is False

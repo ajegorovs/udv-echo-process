@@ -200,12 +200,18 @@ class SweepActuator(Actuator, Protocol):
         """Verify the measurement channel from the dialog and return it."""
         ...
 
-    def instrument_snapshot(self) -> InstrumentSnapshot:
+    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
         """Read the instrument's current state, pressing nothing that changes it.
 
         Read-only with respect to the configuration: it writes no parameter, accepts no
         dialog and selects no channel. Routing to the requested channel is a separate step
-        that happens before it, and is recorded as such.
+        that happens *before* it, and this call hands over what that step established — the
+        channel :meth:`ensure_channel` selected and read back, or ``None`` when nothing
+        routed one, which the reading then carries as ``unreadable`` rather than as a claim.
+
+        It is required and keyword-only so that no caller can have a channel taken for
+        granted on its behalf: an implementation may not imply a verification it did not
+        perform, and a default here would let a cycle forget to say what it established.
 
         The reading is the *evidence*: which channel and mode are active, which fixed facts
         the instrument itself states and which nothing can read yet

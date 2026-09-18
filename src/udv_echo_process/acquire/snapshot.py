@@ -63,6 +63,7 @@ __all__ = [
     "Provenance",
     "declared",
     "identity_digest",
+    "routed",
     "unreadable",
 ]
 
@@ -86,14 +87,21 @@ FIXED_FACT_FIELDS: tuple[str, ...] = (
 class FactSource(str, Enum):
     """Where a fixed fact's value came from — stated, never implied.
 
-    Three states, because there are three different things a fact can be, and telling them
-    apart is what keeps a number from being read as proof:
+    Four states, because a fact can rest on four different things, and telling them apart is
+    what keeps a number from being read as more proof than it is. They run from what the
+    application itself answered to what nothing could answer:
 
     ``READ``
-        The application's own surface produced the value: the parameter column's text, or the
-        structure of the screen it built. A *mode* is such a value — this application states it
-        by which panel it builds for the channel, and never by a caption (every widget here is
-        caption-less), so the structure is the statement.
+        The application's own surface produced the value, for *this* reading: the parameter
+        column's text, or the structure of the screen it built. A *mode* is such a value — this
+        application states it by which panel it builds for the channel, and never by a caption
+        (every widget here is caption-less), so the structure is the statement.
+    ``ROUTED``
+        The application answered, but to the **routing** step rather than to this reading:
+        ``ensure_channel`` selects the channel and reads the application's own confirmation back
+        (:meth:`~udv_echo_process.acquire.driver.Win32Actuator.ensure_channel`), and hands that
+        value over here. Stronger than a claim and weaker than a read of its own, so it shares a
+        name with neither — a caller that established no channel gets ``unreadable``, never this.
     ``DECLARED``
         A caller's claim, with nothing of the application's behind it: what the run *intends*.
         A campaign's own statement about the instrument — "it is at 169 µs" — is the standing
@@ -105,6 +113,7 @@ class FactSource(str, Enum):
     """
 
     READ = "read"
+    ROUTED = "routed"
     DECLARED = "declared"
     UNREADABLE = "unreadable"
 
@@ -137,6 +146,12 @@ class InstrumentFact(ValueModel):
                 raise ValueError(
                     "a read fact carries no reason: there is nothing to explain about the "
                     "application's own answer, and a reason here would read as doubt about it"
+                )
+        elif self.source is FactSource.ROUTED:
+            if self.value is None:
+                raise ValueError(
+                    "a routed fact must carry the value the routing step read back: with no "
+                    "value there is nothing it established, and the fact is unreadable"
                 )
         elif self.source is FactSource.DECLARED:
             if self.value is None:
@@ -182,6 +197,17 @@ def declared(value: str, reason: str | None = None) -> InstrumentFact:
     return InstrumentFact(value=value, source=FactSource.DECLARED, reason=reason)
 
 
+def routed(value: str, reason: str | None = None) -> InstrumentFact:
+    """A fact the *routing* step established and handed over — not this reading's own answer.
+
+    The distinction is the whole point: :func:`declared` is a caller's intention, ``read`` is
+    this reading's own answer, and a routed value is the application's answer to *another* step.
+    A reading that pressed nothing can carry it only because the caller said so, and the source
+    is what makes that visible to whoever reads the record later.
+    """
+    return InstrumentFact(value=value, source=FactSource.ROUTED, reason=reason)
+
+
 class Provenance(ValueModel):
     """A fact as compatibility reads it: the value and the source, with the prose left out.
 
@@ -205,8 +231,8 @@ class Provenance(ValueModel):
         """The value/source combinations that are a fact, and no others.
 
         The same rule :class:`InstrumentFact` enforces, minus everything about ``reason``: only
-        an ``unreadable`` fact has no value, and a ``read`` or ``declared`` one without a value
-        is a fact nobody established.
+        an ``unreadable`` fact has no value, and a ``read``, ``routed`` or ``declared`` one
+        without a value is a fact nobody established.
         """
         if self.source is FactSource.UNREADABLE:
             if self.value is not None:
@@ -237,10 +263,12 @@ class InstrumentSnapshot(ValueModel):
     """
 
     fingerprint: ScreenFingerprint
-    #: The channel the run is aimed at. ``declared`` unless a read produced it: reading it means
-    #: opening ``Operating parameters`` with the operator's real cursor, which is the *routing*
-    #: step's gesture (:meth:`~udv_echo_process.acquire.driver.Win32Actuator.ensure_channel`),
-    #: and this snapshot deliberately presses nothing.
+    #: The channel the run is aimed at, carried on the authority of whoever established it:
+    #: ``routed`` when the caller handed over the channel ``ensure_channel`` verified, and
+    #: ``unreadable`` when nothing did. Never ``read`` — reading it means opening ``Operating
+    #: parameters`` with the operator's real cursor, which is the *routing* step's gesture
+    #: (:meth:`~udv_echo_process.acquire.driver.Win32Actuator.ensure_channel`), and this reading
+    #: deliberately presses nothing, so it cannot claim a verification it did not perform.
     channel: InstrumentFact
     #: Which of the two parameter surfaces the application built for that channel
     #: (:class:`~udv_echo_process.acquire.actuator.ChannelMode`).

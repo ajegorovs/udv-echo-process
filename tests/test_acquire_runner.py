@@ -92,7 +92,7 @@ from udv_echo_process.acquire.snapshot import (
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
-    declared,
+    routed,
     unreadable,
 )
 
@@ -237,16 +237,28 @@ UNREADABLE_DIALOG_ONLY = (
 )
 
 
-def expected_snapshot() -> InstrumentSnapshot:
+def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
 
     The PRF and the emissions per profile are this module's measured constants, so the reading
-    agrees with the points these tests plan; the mode is manual; and the channel is the run's
-    own, **declared** rather than read, because the routing step is what proves it. The four
-    facts nothing can read yet are carried unreadable with their reasons rather than as
-    numbers, which is the honest state on this machine and the reason a reading cannot
-    disagree with a definition about a fact nobody read.
+    agrees with the points these tests plan; the mode is manual; and the channel is **the one the
+    caller says it routed** — ``routed_channel`` is handed straight through, so a cycle that
+    routed and passed its verified channel over gets a ``routed`` fact, and a cycle that passed
+    nothing gets ``unreadable`` rather than a claim nobody could have made. The four facts
+    nothing can read yet are carried unreadable with their reasons rather than as numbers, which
+    is the honest state on this machine and the reason a reading cannot disagree with a
+    definition about a fact nobody read.
     """
+    channel = (
+        routed(
+            str(routed_channel),
+            reason="the routing step (ensure_channel) verified it before this reading",
+        )
+        if routed_channel is not None
+        else unreadable(
+            "no channel was established for this reading: nothing has routed or verified one"
+        )
+    )
     return InstrumentSnapshot(
         fingerprint=ScreenFingerprint(
             class_name="TMain_Scr",
@@ -258,7 +270,7 @@ def expected_snapshot() -> InstrumentSnapshot:
             visible_controls=CLEAN_CONTROLS,
             strip=StripState(button_count=3),
         ),
-        channel=declared("1", reason="the configured channel, routed before this reading"),
+        channel=channel,
         mode=InstrumentFact(value=ChannelMode.MANUAL.value, source=FactSource.READ),
         prf_us=InstrumentFact(value=str(PRF_US), source=FactSource.READ),
         emissions_per_profile=InstrumentFact(
@@ -374,20 +386,22 @@ class FakeActuator:
         self.channel_checks += 1
         return 1
 
-    def instrument_snapshot(self) -> InstrumentSnapshot:
+    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
         """The instrument reading: the scripted one, else the expected configuration.
 
         Counted rather than appended to ``calls``, for the same reason the channel read is:
         it is once per run, while ``calls`` is the per-point sequence.
 
-        The default is the reading a run on a *correctly configured* instrument gets
-        (:func:`expected_snapshot`) — the campaign's own declarations, marked as the kinds of
-        claim they are — so a test that is not about the compile keeps its old subject.
+        ``routed_channel`` is passed straight through to :func:`expected_snapshot`, so the fake's
+        answer depends on what the caller claims exactly as the driver's does — a cycle that
+        forgets to hand over the channel it routed cannot get a ``routed`` fact out of this fake.
+        The default is the reading a run on a *correctly configured* instrument gets, so a test
+        that is not about the compile keeps its old subject.
         """
         self.snapshot_checks += 1
         if self.scripted_snapshot is not None:
             return self.scripted_snapshot
-        return expected_snapshot()
+        return expected_snapshot(routed_channel)
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole | str, str]:
         """The point's window, written in the committed order, and its read-back.
@@ -2012,7 +2026,7 @@ def test_the_fake_answers_the_reading_a_run_expects(tmp_path: Path) -> None:
     """
     fake = FakeActuator(tmp_path)
 
-    reading = fake.instrument_snapshot()
+    reading = fake.instrument_snapshot(routed_channel=1)
 
     assert fake.snapshot_checks == 1
     assert reading.read_facts() == ("prf_us", "emissions_per_profile")
@@ -2033,5 +2047,24 @@ def test_a_scripted_reading_replaces_the_default(tmp_path: Path) -> None:
     unproven = expected_snapshot()
     fake.scripted_snapshot = unproven
 
-    assert fake.instrument_snapshot() is unproven
+    assert fake.instrument_snapshot(routed_channel=1) is unproven
     assert fake.snapshot_checks == 1
+
+
+def test_the_fake_carries_the_channel_the_caller_says_it_routed(tmp_path: Path) -> None:
+    """The fake answers what the driver answers: handed a verified channel, it says ``routed``.
+
+    A cycle that routed and passed its channel over gets one kind of fact; a cycle that passed
+    nothing gets ``unreadable`` and not a claim. That difference is what the compile has to be
+    able to see, so the fake has to be able to produce both.
+    """
+    fake = FakeActuator(tmp_path)
+
+    routed_reading = fake.instrument_snapshot(routed_channel=1)
+    unrouted_reading = fake.instrument_snapshot(routed_channel=None)
+
+    assert routed_reading.channel.source is FactSource.ROUTED
+    assert routed_reading.channel.value == "1"
+    assert unrouted_reading.channel.source is FactSource.UNREADABLE
+    assert unrouted_reading.channel.value is None
+    assert routed_reading != unrouted_reading

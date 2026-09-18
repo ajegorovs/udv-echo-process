@@ -169,7 +169,7 @@ from udv_echo_process.acquire.snapshot import (
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
-    declared,
+    routed,
     unreadable,
 )
 
@@ -2337,7 +2337,7 @@ class Win32Actuator:
             is_foreground=foreground,
         )
 
-    def instrument_snapshot(self) -> InstrumentSnapshot:
+    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
         """Read the instrument's current state, pressing nothing that changes it.
 
         Read-only with respect to the configuration — it writes no parameter, accepts no dialog
@@ -2345,9 +2345,15 @@ class Win32Actuator:
         screen fingerprint and the parameter column are read off the resolved control tree (the
         same reads :meth:`screen_fingerprint` and :meth:`read_parameter` make), and the menubar
         hover that *reading the channel* would cost is deliberately not paid
-        (:meth:`_channel_fact`): routing to the requested channel is a separate step that happens
-        before this one, and it is recorded as such. An instrument somebody else is using is
-        therefore safe to read this way.
+        (:meth:`_channel_fact`). An instrument somebody else is using is therefore safe to read
+        this way.
+
+        The channel is the one fact this reading cannot establish for itself, so it is not asked
+        for — it is **handed over**: ``routed_channel`` is the channel :meth:`ensure_channel`
+        selected and read back, or ``None`` when no routing step established one. It is required
+        and keyword-only on purpose: this method is public and composable, and a default would let
+        a caller leave a verification implied that never happened, which is the one thing a
+        reading must never do.
 
         Two of the six fixed facts come off the column and are recorded as ``read``; the four
         that live in the ``Operating parameters`` dialog or in a ``Preference`` are carried as
@@ -2371,7 +2377,7 @@ class Win32Actuator:
         mode = screen_mode(roles)
         return InstrumentSnapshot(
             fingerprint=fingerprint,
-            channel=self._channel_fact(),
+            channel=self._channel_fact(routed_channel),
             mode=(
                 unreadable(
                     "no mode could be read from this screen: a dialog, a menu popup or a layout "
@@ -2393,8 +2399,8 @@ class Win32Actuator:
             ),
         )
 
-    def _channel_fact(self) -> InstrumentFact:
-        """The channel the run is aimed at — ``declared``, because this read did not ask.
+    def _channel_fact(self, routed_channel: int | None) -> InstrumentFact:
+        """The channel, on the authority the caller hands over — never this reading's own.
 
         Reading the channel means opening ``Operating parameters``: a menubar hover with the
         operator's real cursor, which is the *routing* step's own gesture and by design happens
@@ -2402,13 +2408,25 @@ class Win32Actuator:
         did not keep and leaves the dialog's read-back in the run log). Paying for a second
         dialog here would buy a number the run already holds — and on a channel in assisted mode
         it would buy nothing at all: that panel carries no channel combo to read.
+
+        So the value can only come from the caller, and the caller has to say *what it
+        established*: a verified channel is ``routed`` (the application's own dialog answered for
+        it, to that step), and nothing established is ``unreadable`` with the reason. That is what
+        stops a standalone call to :meth:`instrument_snapshot` from implying a verification that
+        never ran.
         """
-        return declared(
-            str(self._channel_setting.channel),
+        if routed_channel is None:
+            return unreadable(
+                "no channel was established for this reading: the channel cannot be read off the "
+                "measurement screen without the menubar hover this snapshot does not pay, and "
+                "nothing has routed or verified one (ensure_channel) before it"
+            )
+        return routed(
+            str(routed_channel),
             reason=(
-                "the configured channel — the routing step (ensure_channel) selects and verifies "
-                "it against the dialog before this reading, and does not take on an unverified "
-                "one; this snapshot asks the application for no channel of its own"
+                "the channel the routing step (ensure_channel) selected in the application and "
+                "read back from its own dialog before this reading; this snapshot asked the "
+                "application for no channel of its own"
             ),
         )
 

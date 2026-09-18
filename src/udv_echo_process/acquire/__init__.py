@@ -102,6 +102,7 @@ from udv_echo_process.acquire.snapshot import (
     Provenance,
     declared,
     identity_digest,
+    routed,
     unreadable,
 )
 
@@ -173,6 +174,7 @@ __all__ = [
     "profiles_for_duration",
     "read_entries",
     "resolution_for_rung",
+    "routed",
     "rung_mm",
     "strip_controls",
     "sweep_id_for",
