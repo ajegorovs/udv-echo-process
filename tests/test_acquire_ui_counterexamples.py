@@ -238,6 +238,117 @@ def test_an_anchor_that_did_not_resolve_refuses_before_the_menubar_is_hovered() 
     assert screen.warnings and "could not be opened" in screen.warnings[0], screen.warnings
 
 
+#: The instrument's own bar, read off ``tests/data/udop-measurement-screen-tree-instrument.json``
+#: (probe ``tools/live/probes/main_geometry.py``, 2026-09-18): ten ``TSp_Button`` rows at the
+#: client's top, widths 50, 90, 70, 70, 60, 50, 50, 70, 70 and 30, with ``Help`` alone at the
+#: band's right end. Quoted as **offsets from the bar's first button**, because a button's absolute
+#: screen left moves with the window while the bar's own shape does not; in that frame the third
+#: entry sits at absolute left 169, which is the popup's own measured left
+#: (``ui.menu.PARAMETERS_POPUP_LEFT``) — the menu opens under this very button.
+INSTRUMENT_BAR: tuple[tuple[int, int], ...] = (
+    (0, 50),
+    (55, 90),
+    (161, 70),
+    (250, 70),
+    (326, 60),
+    (398, 50),
+    (458, 50),
+    (518, 70),
+    (598, 70),
+    (1842, 30),
+)
+
+
+def instrument_bar(drop: int | None = None) -> list[dict]:
+    """The measured bar as resolver rows, optionally with one entry of it **absent**."""
+    entries = [entry for index, entry in enumerate(INSTRUMENT_BAR) if index != drop]
+    return [
+        _widget(500 + index, "TSp_Button", ORIGIN[0] + off, ORIGIN[1] + 2, w, 25)
+        for index, (off, w) in enumerate(entries)
+    ]
+
+
+# B03: the live tree (V0, 2026-09-18) — the resolver publishes the bar and no name at all.
+def test_the_instruments_own_bar_proves_the_anchor_without_a_single_name() -> None:
+    """B03: on a device the anchor is proven by its **position**, because no name exists to read.
+
+    This is the shape ``Win32Actuator._resolve`` builds on every run: ``menu_buttons`` carries the
+    bar as evidence and ``menu`` is **empty**, because the anchor is the only thing that ever puts
+    a row there — publishing it is the *result* of this check, not evidence for it. A clause that
+    read ``named`` unconditionally therefore read its own output and refused the instrument's own
+    clean measurement screen (measured 2026-09-18: every live ``acquire status`` reported the
+    anchor clause as its only shape reason, with nothing hovered). The name half of clause 3 is a
+    claim only a fixture makes, and it is still asked of one — this test is the other half.
+    """
+    roles = manual_screen()
+    roles["menu_buttons"] = instrument_bar()
+    roles["menu"] = {}
+    observation = driver.observation_of(roles)
+
+    assert driver.anchor_clause(observation) is None
+    assert driver.layout_shape_reasons(roles) == ()
+
+    anchor = driver.anchor_button(observation)
+    assert anchor is not None, "the instrument's own bar did not prove the anchor"
+    assert anchor.rect is not None
+    # The third entry of the measured bar — the one the popup opens under.
+    assert anchor.rect.left == ORIGIN[0] + 161
+
+    # ...and the gate has to agree with itself on the *second* read, which is the one ``_resolve``
+    # takes after it has published the anchor it just proved. That sequence is what refused on the
+    # instrument: the binding it publishes is the anchor alone, never its predecessors' names.
+    roles["menu"] = {
+        driver.PARAMETERS_MENU: roles["menu_buttons"][
+            driver.MENU_ORDER.index(driver.PARAMETERS_MENU)
+        ]
+    }
+    assert driver.layout_shape_reasons(roles) == ()
+
+
+# B03: a binding that contradicts the bar refuses — the bar is believed, the index map is not.
+def test_a_binding_that_names_another_button_parameters_is_refused() -> None:
+    """B03: the one direction a name *can* be checked in — agreement with the bar it came from.
+
+    A map that binds ``Parameters`` to the sixth entry is exactly the ``MENU_ORDER[i]`` mistake in
+    its most damaging form: it aims the real-cursor hover at a control nobody measured. The bar is
+    the evidence and the map is the claim, so the claim is what gets refused.
+    """
+    roles = manual_screen()
+    bar = instrument_bar()
+    roles["menu_buttons"] = bar
+    roles["menu"] = {driver.PARAMETERS_MENU: bar[5]}
+    observation = driver.observation_of(roles)
+
+    clause = driver.anchor_clause(observation)
+    assert clause is not None, "a binding that names the wrong button proved the anchor"
+    assert "not the third entry" in clause, clause
+    assert driver.anchor_button(observation) is None
+
+
+# B03: a bar with an entry absent is a bar whose later roles moved, and it refuses.
+def test_a_bar_with_an_entry_absent_does_not_prove_the_anchor_by_position() -> None:
+    """B03: position alone is not a licence to hover — the painted **length** is the evidence.
+
+    With one entry absent, every later button has shifted and the third button is no longer the
+    one the popup opens under, so the run refuses instead of hovering a control nobody measured.
+    Honest limit, and the reason the chain after the hover exists: a bar that *loses* one entry
+    and *gains* another has the same length and is indistinguishable here. That case is caught
+    after the hover — the popup's signature, the topmost entry, and the dialog that entry opens
+    holding the channel combo (``Win32Actuator._open_parameters_dialog``) — never before it.
+    """
+    roles = manual_screen()
+    roles["menu_buttons"] = instrument_bar(drop=2)
+    # `Parameters` itself is the entry dropped: nine entries, every later button shifted.
+    roles["menu"] = {}
+    observation = driver.observation_of(roles)
+
+    clause = driver.anchor_clause(observation)
+    assert clause is not None, "a bar missing an entry proved the anchor"
+    assert "menubar" in clause, clause
+    assert clause in driver.layout_shape_reasons(roles)
+    assert driver.anchor_button(observation) is None
+
+
 # --------------------------------------------- B09: the combo states the value, the edit does not
 
 

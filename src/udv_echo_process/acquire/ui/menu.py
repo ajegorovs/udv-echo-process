@@ -47,11 +47,22 @@ right end — so the bar carries ten entries"):
    ``UDV mode`` — the entry ``UI-MENU-01``'s own frame shows this build does not paint). A bar of
    any other length is a painted set the anchor was never measured against, and there is no tree
    text to fall back on;
-3. the anchor's **relative location**: it is the third button of the bar, and the two buttons to
-   its left are the measured predecessors (:data:`ANCHOR_PREFIX`). Its position — never an index
-   into a name list — is what identifies it;
-4. the bindings the resolver published, read left → right, follow :data:`MENU_ORDER`'s own order,
-   which is the consistency a *producer* of named rows has to show.
+3. the anchor's **relative location**: it is the third button of the bar. Its position, never an
+   index into a name list, is what identifies it. What a *name* can additionally be held to is
+   agreement with the bar it was read from — clause 4 — because no tree on this application can
+   state a predecessor's name at all: ``Win32Actuator._resolve`` publishes ``roles["menu"] = {}``
+   and fills it with the **anchor** once this function has proven one, so the anchor is the only
+   entry a live tree ever names. A clause that read a binding as the list of the anchor's
+   predecessors therefore read this function's own output and refused the application's own clean
+   measurement screen — the first V0 reading after the refactor, on the instrument, 2026-09-18
+   (``docs/dop3000/device-verification.md``). The identity a device confirms is settled *after*
+   the hover, never by a name: the popup's measured signature, its topmost entry, and the dialog
+   that entry opens holding the channel combo (``Win32Actuator._open_parameters_dialog``), any of
+   which fails the point by name;
+4. what a binding a tree *does* publish is held to: its names follow :data:`MENU_ORDER`'s own
+   left → right order, and the entry it binds to ``Parameters`` **is** the third button of the
+   bar. A binding that contradicts the bar is refused like any other unproven anchor — the check
+   runs in the safe direction (the bar is believed, the map is not).
 
 The count in clause 2 is **not** the visible-control total that architecture invariant 4 forbids
 as a gate: it is the bar's own painted entry count, which is exactly the evidence B03 rests on
@@ -215,15 +226,43 @@ def anchor_clause(observation: ScreenObservation) -> str | None:
             "before any cursor movement, and the bar has to be read live before an acquisition is "
             "run against it (ledger B03, device verification V3)"
         )
-    bound = sorted(observation.menu.named, key=lambda pair: _left_of(pair[1]))
-    preceding = tuple(name for name, _node in bound[:ANCHOR_ORDINAL])
-    if preceding != ANCHOR_PREFIX:
+    if len(bar) <= ANCHOR_ORDINAL:
         return (
-            f"the 'Parameters' anchor is not at its measured location: the bar's buttons were "
-            f"bound {list(preceding)} to the left of it where the measured bar carries "
-            f"{list(ANCHOR_PREFIX)}, so the third button is not shown to be 'Parameters' on this "
-            "tree and nothing is hovered (ledger B03)"
+            f"no 'Parameters' button in the menubar: the band paints {len(bar)} button(s), so "
+            "there is no third entry where the measured bar keeps 'Parameters' and nothing is "
+            "hovered (ledger B03)"
         )
+    # The position half is the proof on a live tree; the name half is a claim only a tree that
+    # states names at all makes — and the claim it can actually make is agreement with the bar it
+    # was read from. ``_resolve`` publishes ``roles["menu"] = {}`` and fills it with the *anchor*
+    # once this function has proven one, so reading a binding as a list of the anchor's
+    # predecessors demanded names no tree states: that read its own output and refused the
+    # instrument's own clean measurement screen (V0, 2026-09-18). What is checked instead is what
+    # a name can be held to — the vocabulary's own left → right order, and the anchor being the
+    # third entry of the bar (module docstring, clause 3).
+    bound = sorted(observation.menu.named, key=lambda pair: _left_of(pair[1]))
+    if bound:
+        order = [name for name, _node in bound]
+        known = [name for name in MENU_ORDER if name in set(order)]
+        if order != known:
+            return (
+                "the menubar's bound entries do not follow the vocabulary's own order: the tree "
+                f"bound {order} where the bar reads {list(MENU_ORDER)} from left to right, so the "
+                "binding is not the measured bar's and the third button is not shown to be "
+                "'Parameters' on this tree; nothing is hovered (ledger B03)"
+            )
+        anchor_node = observation.menu.node_for(PARAMETERS_MENU)
+        if (
+            anchor_node is not None
+            and anchor_node.hwnd is not None
+            and anchor_node.hwnd != bar[ANCHOR_ORDINAL].hwnd
+        ):
+            return (
+                "the tree binds 'Parameters' to a button that is not the third entry of the bar: "
+                f"it bound it to the entry at left {_left_of(anchor_node)} where the measured bar "
+                "keeps it third ('File', 'Preferences', 'Parameters'), so the third button is not "
+                "shown to be 'Parameters' and nothing is hovered (ledger B03)"
+            )
     return None
 
 
