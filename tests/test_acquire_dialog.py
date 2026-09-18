@@ -14,6 +14,13 @@ Handles are synthesized here on purpose. The fixture carries the geometry and th
 control stated; it carries no handle, because handles are volatile — control ids change on every
 launch (43/43 classes at the same positions, 1/43 ids in common) — and a binding that depended on
 one would be testing the launch instead of the layout.
+
+The two timing knobs these reads use are patched where their loop reads them —
+``udop_parameters.DIALOG_FILL_TIMEOUT_S`` and ``udop_parameters._POLL_S``, both owned by
+``acquire/udop/parameters.py``. Patching ``driver`` instead resolves and changes nothing: the
+facade re-exports their values, and the fill loop resolves the names in its own module
+(``test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs`` is the test that fails if
+that regresses).
 """
 
 from __future__ import annotations
@@ -34,6 +41,7 @@ from udv_echo_process.acquire.actuator import (
     ScreenFingerprint,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, FactSource
+from udv_echo_process.acquire.udop import parameters as udop_parameters
 
 FIXTURE = Path(__file__).parent / "data" / "udop-parameters-dialog-tree.json"
 DIALOG_HWND = 395058
@@ -354,7 +362,7 @@ def test_a_dialog_with_no_value_table_at_all_is_a_refusal_and_not_a_crash():
 
 def test_a_dialog_that_has_not_filled_is_unreadable_rather_than_read(monkeypatch):
     """The first open on a freshly started application states nothing (measured); it is not a value."""
-    monkeypatch.setattr(driver, "DIALOG_FILL_TIMEOUT_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "DIALOG_FILL_TIMEOUT_S", 0.0)
     reading = FakeDialogDriver(fill_after=10**6).read_dialog_parameters()
 
     assert isinstance(reading, DialogParameters)
@@ -365,13 +373,61 @@ def test_a_dialog_that_has_not_filled_is_unreadable_rather_than_read(monkeypatch
 
 def test_the_read_waits_for_a_table_that_fills_after_the_dialog_appears(monkeypatch):
     """The table that fills a moment late is a read, not a refusal: the poll is the difference."""
-    monkeypatch.setattr(driver, "_POLL_S", 0.01)
+    monkeypatch.setattr(udop_parameters, "_POLL_S", 0.01)
     reading = FakeDialogDriver(fill_after=2).read_dialog_parameters()
 
     assert reading.readable()
     assert reading.value(DialogField.SOUND_SPEED_MS.value) == str(SOUND_SPEED)
     assert reading.value(DialogField.FIRST_GATE_MM.value) == str(FIRST_GATE)
     assert reading.value(DialogField.BURST_LENGTH.value) == str(BURST)
+
+
+class RecordingClock:
+    """A stand-in for the surface module's ``time``: it records what the fill loop waited for.
+
+    ``monkeypatch.setattr(udop_parameters, "time", clock)`` replaces the *module's own* reference to
+    the ``time`` module, so the loop under test reports every ``sleep`` it takes with the value it
+    was given and its deadline arithmetic runs on this clock instead of on the wall clock. What the
+    patch target did is then an assertion, not a stopwatch reading.
+    """
+
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs(monkeypatch):
+    """Both knobs are read by ``udop/parameters.py``'s own loop; the facade's copies reach nothing.
+
+    ``_poll_dialog_fields`` sleeps ``_POLL_S`` between reads and gives up on
+    ``DIALOG_FILL_TIMEOUT_S``, both resolved in its own module. The facade re-exports their *values*,
+    so the ``monkeypatch.setattr(driver, ...)`` these cases used to make resolved and then left the
+    loop on the defaults — 0.4 s per poll and a 2.0 s wait. On the recorded clock the difference is
+    an assertion: the patched cadence, twice, for a table that fills on the third read; and no sleep
+    at all for a wait of 0.0 s, where the default would have polled five times.
+    """
+    cadence = RecordingClock()
+    monkeypatch.setattr(udop_parameters, "_POLL_S", 0.017)
+    monkeypatch.setattr(udop_parameters, "time", cadence)
+    reading = FakeDialogDriver(fill_after=2).read_dialog_parameters()
+
+    assert reading.readable()
+    assert cadence.sleeps == [0.017, 0.017]  # the patched cadence, per unbuilt read
+
+    wait = RecordingClock()
+    monkeypatch.setattr(udop_parameters, "DIALOG_FILL_TIMEOUT_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "time", wait)
+    unreadable = FakeDialogDriver(fill_after=10**6).read_dialog_parameters()
+
+    assert not unreadable.readable()
+    assert wait.sleeps == []  # a 0 s wait: the first read is the last one
 
 
 def test_a_table_that_is_not_the_measured_shape_is_refused_rather_than_read():

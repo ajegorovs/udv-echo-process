@@ -157,7 +157,7 @@ every path in this section as a **plan**, and check the tree before relying on o
 | `acquire/win32/messages.py` — `SendMessageTimeoutW`, posted held click, text commit, combo read/select (`_send`, `_post`, `_click_hold`, `_set_text_commit`, `_combo_select`, `_combo_index`, `_combo_items`, `_get_text`, `_control_id`) | Win32 mechanics | **landed by Patch 3** |
 | `acquire/win32/cursor.py` — foreground checks, real cursor move/restore, `ClipCursor` (`_gui`/`_user32`, `_CursorPoint`/`_ClipRect`, `_clip_rect`, `_release_clip`, `_cursor_position`, `_restore_cursor`, `_move_real_cursor`, `_foreground_window`, `_thread_of`, `_activate_window`, `_require_foreground`, `_hover_centre`) | Win32 mechanics | **landed by Patch 3** |
 | `acquire/win32/tree.py` — enumerate the main window, visibility, normalize into `ui/model` nodes (`_visible_children`, `_is_visible`, `_hidden_panels`, `_main_hwnd`, `_children_of`, `_descendants_of`, `ui_nodes`) | Win32 mechanics | **landed by Patch 3** |
-| `acquire/udop/parameters.py`, `recording.py`, `store.py`, `session.py` | UDOP workflows (the only layer that combines observations with actions) | **landed by Patch 4** |
+| `acquire/udop/parameters.py`, `recording.py`, `store.py` — and `session.py`, the facade's compatibility name (the facade's own code is `acquire/driver.py`) | UDOP workflows (the only layer that combines observations with actions) | **landed by Patch 4** |
 | `acquire/campaign/{models,planning,compile,resume,run}.py` | campaign decomposition | **target — after device verification** |
 
 **How Patch 4 composes it, and why that shape.** One live class out of three per-surface pieces plus
@@ -215,20 +215,34 @@ Rules the target layout pins:
   in `driver.py` only to feed the commit recipe's assertion and the two lazy handles. Nothing in
   `src/`, `tests/` or `tools/` referenced either through the driver; the recipe name is
   `acquire/actuator.py`'s and is re-exported by `acquire`. **Patch 4 measured it once more, over
-  the whole class:** all 96 methods and all 3 module-level functions of the flat module are
-  AST-identical at the tip (0 removed, 0 added, 0 changed — decorators and docstrings included),
-  all 170 module-level bindings the flat module published at Patch 3's tip still resolve from
+  the whole class**, and the module-graph correction re-measured it over the moved code: all 96
+  methods and all 3 module-level functions of the flat module are
+  AST-identical at this tip (0 removed, 0 added, 0 changed — decorators and docstrings included),
+  all 173 module-level bindings the flat module published at Patch 3's tip still resolve from
   `driver` with none lost, and the 96 class attributes are unchanged (MRO:
-  `Win32Actuator → ParametersSurface → RecordingSurface → StoreSurface → object`). One thing is
-  *not* preserved, and it is recorded here rather than rounded off: a **value patch** on the
-  workflow timings that moved with their loops (`DIALOG_FILL_TIMEOUT_S`, `_ENTRY_DIALOG_TIMEOUT_S`,
-  `_MENU_TIMEOUT_S`, `_MENU_POLL_S`, `_OVERLAY_SETTLE_S`, `_POLL_S`). `monkeypatch.setattr(driver,
-  "_MENU_POLL_S", 0.0)` still resolves — the name is re-exported — but the loop that reads that
-  cadence reads `udop/parameters.py`'s own binding, so the four tests that patch it take their
-  measured timeouts instead of a shortened one: the suite stays green and is ~35 s slower at this
-  tip (112 s vs 77 s). A module-level copy cannot follow a later rebinding, and a call-time
-  reference from the surface back to the facade would be an import cycle, so the knob lives with
-  the loop and the patch target for it is the module that reads it.
+  `Win32Actuator → ParametersSurface → RecordingSurface → StoreSurface → object`). The one thing
+  Patch 4 recorded as a caveat is corrected here instead: a **value patch** on the workflow timings
+  that moved with their loops (`DIALOG_FILL_TIMEOUT_S`, `_ENTRY_DIALOG_TIMEOUT_S`,
+  `_DIALOG_REPLACE_S`, `_MENU_TIMEOUT_S`, `_MENU_POLL_S`, `_OVERLAY_SETTLE_S`, `_POLL_S`).
+  `monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)` resolves — the name is re-exported — but the
+  loop that reads that cadence resolves it in `udop/parameters.py`'s own globals, so the patch that
+  *bites* is the one on the module that runs the loop. The 18 test sites that patch these knobs are
+  therefore repointed, all of them to `udop/parameters.py` — the surface that owns the dialog fill,
+  the popup's wait and poll cadence, the entry-dialog wait and the dialog replacement. `_POLL_S` is
+  the one knob read by three surfaces: defined once, in `udop/recording.py`, and read by the view
+  waits there, by the dialog fill in `udop/parameters.py` and by the wait for the stored file in
+  `udop/store.py`, so the definition is not duplicated and its one repointed test site is the loop
+  that test was written for (the dialog fill). `_OVERLAY_SETTLE_S` has one second reader, the
+  facade's own `preflight`, which holds the copy it imported; that is named here rather than
+  rounded off. A module-level copy cannot follow a later rebinding, and a call-time reference from
+  the surface back to the facade would be an import cycle, so the knob lives with the loop and the
+  patch target for it is the module that reads it. The suite is back to ~70 s from 112 s, and two
+  tests assert the loop's own cadence and deadline off a recorded clock
+  (`tests/test_acquire_driver.py`'s
+  `test_the_popup_wait_is_shortened_on_the_surface_that_owns_the_loop`,
+  `tests/test_acquire_dialog.py`'s
+  `test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs`) so it fails if a knob stops
+  biting again.
 
 ## 6. Phase plan, and which patch lands what
 

@@ -18,6 +18,16 @@ button on a warning, the refusal to start from a recording. Pinning those on a
 recorded call sequence keeps the assertions valid for ``Win32Actuator``, whose
 calls cannot be observed without a running DOP3010 (docs/16, ``udop-automation.md``
 §§3-8).
+
+Two patch targets, and the difference is load-bearing. The **window layer** is
+patched on the facade (``driver._gui`` / ``driver._user32`` / ``driver._post``):
+those are ``acquire/driver.py``'s own globals, and the class bodies read them. The
+**workflow timing knobs** are patched on the surface module whose loop reads them
+(``udop_parameters._MENU_POLL_S``, ``udop_parameters._ENTRY_DIALOG_TIMEOUT_S``, …):
+the facade only re-exports their *values*, so a patch there resolves but no longer
+shortens the loop it was written for — the suite stays green and takes ~35 s longer.
+``test_the_popup_wait_is_shortened_on_the_surface_that_owns_the_loop`` is the test
+that fails if that regresses.
 """
 
 from __future__ import annotations
@@ -57,6 +67,7 @@ from udv_echo_process.acquire.actuator import (
 )
 from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.acquire.snapshot import FactSource
+from udv_echo_process.acquire.udop import parameters as udop_parameters
 
 #: The simulated clock the fake advances on every strip poll. A point's duration
 #: is therefore measured in *observations*, exactly like the live loop's.
@@ -1738,8 +1749,8 @@ def test_a_pre_created_hidden_overlay_is_refused_and_named(
     live run did. The overlay poll only ever returns a **visible** panel, and the entry
     press refuses one that is not, naming the panel instead of pressing into it.
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_MENU_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_MENU_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1)
     app.menu_open = True  # the panel is in the tree...
     app.popup_hidden = True  # ...and is not on screen
@@ -2018,8 +2029,8 @@ def test_a_wrong_dialog_is_closed_with_its_left_button_and_no_lower_entry_is_pre
     while the popup is up — measured live 2026-09-17: the stored `assisted Mode` word read 0 in
     every file up to 19:01 and 1 by 21:26, in a window whose only presses were this driver's.
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, wrong_entry_attempts=1)
     actuator = fake_driver(app, channel=6)
 
@@ -2047,8 +2058,8 @@ def test_a_popup_whose_topmost_entry_never_opens_the_operating_dialog_fails_by_n
     not happen: the second selects the assisted mode, and the third and fourth open save and
     recall dialogs. The bound that used to keep the walk finite is gone with the walk.
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, wrong_entry_attempts=99)
     actuator = fake_driver(app, channel=2)
 
@@ -2090,8 +2101,8 @@ def test_an_entry_press_that_opens_nothing_is_reported_and_no_lower_entry_is_pre
     of "no dialog followed", which is what left the live run unable to say what had happened.
     What it must not do is press the next entry down.
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, entry_presses_ignored=True)
     actuator = fake_driver(app, channel=1)
 
@@ -2126,7 +2137,7 @@ def test_a_menu_interaction_that_switches_the_assisted_mode_on_is_refused(
     happened and who has to clear it (the mode's own toggle is the application's Preference
     menu, which this driver deliberately never drives).
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
     app = FakeUdopWindow(channel=1)
     actuator = fake_driver(app, channel=1)
     state = {"assisted": False}
@@ -2170,8 +2181,8 @@ def test_the_entry_press_is_not_gated_by_allow_real_input(
     takes it (this is exactly why the gesture is the posted press: it is the one step of
     the cycle that costs the operator's desktop nothing).
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1)
     app.menu_open = True
     actuator = fake_driver(app, channel=1, allow_real_input=False)
@@ -2630,11 +2641,64 @@ def test_allow_real_input_false_refuses_the_menubar_and_moves_nothing() -> None:
     assert actuator.last_hover_screen is None
 
 
+class RecordingClock:
+    """A stand-in for a surface module's ``time``: it records what a loop waited for.
+
+    ``monkeypatch.setattr(udop_parameters, "time", clock)`` replaces the surface's own reference to
+    the ``time`` module — not the global one — so the loop under test reports every ``sleep`` it
+    takes with the value it was given, and its deadline arithmetic runs on the clock's own
+    monotonic reading instead of on the wall clock. That is what makes a patch target an
+    *observable* rather than a stopwatch measurement.
+    """
+
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_the_popup_wait_is_shortened_on_the_surface_that_owns_the_loop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A workflow knob is patched where its loop reads it — ``udop/parameters.py``, not the facade.
+
+    ``_MENU_TIMEOUT_S`` and ``_MENU_POLL_S`` are read by ``_poll_parameters_overlay``, which
+    resolves them in ``udop/parameters.py``'s own globals. The facade re-exports their *values*, so
+    the ``monkeypatch.setattr(driver, ...)`` these cases used to make resolved and then did nothing:
+    a hover that opens nothing was waited out for the application's own 8 s, and the suite took
+    ~35 s longer while staying green. This asserts what the loop *did* — the cadence it slept and
+    the deadline it gave up on — off the patched clock, so it fails the moment those patches stop
+    biting: the loop would sleep the default 0.5 s and the message would say "within 8 s".
+    """
+    clock = RecordingClock()
+    monkeypatch.setattr(udop_parameters, "time", clock)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.25)
+    monkeypatch.setattr(udop_parameters, "_MENU_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1, menu_hover_ignored=True)
+    actuator = fake_driver(app, channel=1)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    # The wait it gave up on is the patched one, and it is the patched one in the message the
+    # operator reads.
+    assert "did not appear within 0 s" in str(excinfo.value)
+    assert clock.sleeps == [0.25]  # one poll at the patched cadence, then the patched deadline
+    assert app.dialog_open is False
+    assert not [event for event in app.events if event[:2] == ("click", "popup-entry")]
+
+
 def test_the_popup_is_polled_for_and_never_assumed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Entries that appear a few resolutions after the hover are still opened."""
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
     app = FakeUdopWindow(channel=1, menu_open_delay=3)
     actuator = fake_driver(app, channel=2)
     assert actuator.ensure_channel() == 2
@@ -2656,8 +2720,8 @@ def test_a_hover_that_opens_nothing_fails_the_point_naming_the_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The bounded failure: nothing opened, nothing pressed, and the cursor put back."""
-    monkeypatch.setattr(driver, "_MENU_TIMEOUT_S", 0.05)
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_MENU_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
     app = FakeUdopWindow(channel=1, menu_hover_ignored=True)
     actuator = fake_driver(app, channel=1)
     with pytest.raises(driver.AcquisitionError) as excinfo:
@@ -2716,8 +2780,8 @@ def test_an_entry_press_that_opens_nothing_records_what_the_application_did(
     the absence of any new panel — instead of only as "no dialog followed", which is what
     left the live run unable to say what the application had done.
     """
-    monkeypatch.setattr(driver, "_MENU_POLL_S", 0.0)
-    monkeypatch.setattr(driver, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
     app = FakeUdopWindow(channel=1, entry_presses_ignored=True)
     app.menu_open = True
     actuator = fake_driver(app, channel=1)
