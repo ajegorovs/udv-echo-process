@@ -99,6 +99,7 @@ from udv_echo_process.acquire.actuator import (
     Actuator,
     OverlayKind,
     ParamRole,
+    ProcessMode,
     StripControl,
     StripState,
     StripView,
@@ -189,7 +190,9 @@ class SweepActuator(Actuator, Protocol):
     ``instrument_snapshot`` and ``read_dialog_parameters`` are **additive**: neither has a
     caller in this module's own cycle, and no existing primitive changed to make room for
     them, so an implementation that satisfied the port before still does — it gains two
-    methods.
+    methods. ``process_mode_note`` is additive in the same way and is the third: adding it to the
+    *sweep* port rather than to the primitive :class:`Actuator` is what keeps a pre-slice
+    implementation valid (``tests/test_acquire_runner.py`` pins the two sets apart).
     """
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole, str]:
@@ -253,12 +256,38 @@ class SweepActuator(Actuator, Protocol):
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
         """Record, stop, store as ``name``; ``(True, path)`` or ``(False, reason)``.
 
+        ``expected_mode`` is the process this run was measured against, and it is required and
+        keyword-only here too (plan §24.4): this is the call a point's own cycle reaches, so it is
+        the last place the expectation could go missing. The implementation refuses before its
+        first press when the caption states the other process.
+
         ``verify_channel=False`` skips the dialog read for a point whose run has already
         verified the channel once (:meth:`SweepRunner._verify_channel_once`).
+        """
+        ...
+
+    # DEVIATION: §24.4 calls this "the runner's per-point gate" and requires the expectation
+    # keyword-only; it does not say where the caption is read. It is read here, through the
+    # **sweep** port, because the primitive `Actuator` may not grow (a test pins its method set,
+    # and an implementation that satisfied it before this slice still does) — so advancing the
+    # sweep port by one composed call is the seam this repository already uses for
+    # `instrument_snapshot`/`read_dialog_parameters`.
+    def process_mode_note(self, expected: ProcessMode) -> str | None:
+        """A note when the screen's stated process mode is not ``expected``; ``None`` when it is.
+
+        The runner's per-point gate (plan §24.4), and the reason it is *here* rather than in
+        :class:`Actuator`: the caption is the one fact that cannot be checked structurally, and
+        the run has to refuse a point **before** it writes a parameter — not at the record call,
+        which is three writes and a dialog later. A change of process mid-run would otherwise be
+        discovered after the window the run cared about had already been applied.
+
+        ``None`` means the caption states the declared mode; anything else is a clause naming what
+        it said, and a caption that states nothing is a refusal rather than a default.
         """
         ...
 
@@ -340,6 +369,7 @@ class SweepRunner:
         log_path: Path | None = None,
         *,
         channel: int | None = None,
+        expected_mode: ProcessMode,
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
@@ -353,12 +383,19 @@ class SweepRunner:
         of the wrong channel's block once "disproved" a write that had worked
         (docs/16 §12, the channel trap) — so the runner names it on every decode
         instead of letting the reader guess between channels.
+
+        ``expected_mode`` is the process this run was measured against, and it is **required and
+        keyword-only** (plan §24.4): no cycle may leave the expectation implied, so a runner
+        cannot be built without one. It is checked against the caption at the top of every point
+        (:meth:`_execute`, before a parameter is written) and handed to the per-point record call
+        as well, and a campaign persists both halves on its manifest.
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
         self._log_path = None if log_path is None else Path(log_path)
+        self._expected_mode = expected_mode
         self._channel_setting = (
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
@@ -539,6 +576,21 @@ class SweepRunner:
             return self._fail(
                 attempt, f"not the measurement layout: {note}", abort=True
             )
+        # The mode rung, here rather than only at the record call: the process this run was
+        # measured against is the one fact that cannot be checked structurally, and it is
+        # checked *before* this point writes anything. A run that turns out to be in front of
+        # another process stops with nothing applied.
+        try:
+            mode_note = self._actuator.process_mode_note(self._expected_mode)
+        except Exception as exc:  # noqa: BLE001 - an unread mode is not the declared one
+            mode_note = f"the process mode could not be read ({type(exc).__name__}: {exc})"
+        if mode_note is not None:
+            return self._fail(
+                attempt,
+                f"not the process mode this run was measured against "
+                f"({self._expected_mode.value!r}): {mode_note}",
+                abort=True,
+            )
         overlay = self._overlay_guard()
         if overlay is not None:
             return self._fail(attempt, overlay, abort=True)
@@ -598,6 +650,7 @@ class SweepRunner:
                 attempt.name,
                 duration_s,
                 self._directory,
+                expected_mode=self._expected_mode,
                 verify_channel=False,  # verified once per run, below and before the first
             )
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards

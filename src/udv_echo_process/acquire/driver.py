@@ -146,8 +146,10 @@ from udv_echo_process.acquire.actuator import (
     NUMERIC_WRITE_RECIPE,
     PARAM_COLUMN_ORDER,
     PRESS_HOLD_MS,
+    PROCESS_MODE_PREFIXES,
     STARTABLE_VIEWS,
     STORE_TIMEOUT_S,
+    STRIP_BUTTON_ORDER,
     VIEW_TIMEOUT_S,
     Actuator,
     ChannelMode,
@@ -156,6 +158,7 @@ from udv_echo_process.acquire.actuator import (
     OverlayKind,
     ParamRole,
     PreflightReport,
+    ProcessMode,
     ScreenFingerprint,
     StripControl,
     StripState,
@@ -163,6 +166,7 @@ from udv_echo_process.acquire.actuator import (
     classify_strip_view,
     ordered_writes,
     overlay_answer,
+    process_mode,
 )
 from udv_echo_process.acquire.config import (
     MAX_CHANNEL,
@@ -179,7 +183,16 @@ from udv_echo_process.acquire.snapshot import (
     unreadable,
 )
 
-__all__ = ["AcquisitionError", "Win32Actuator", "channel_items", "same_directory"]
+__all__ = [
+    "AcquisitionError",
+    "Win32Actuator",
+    "channel_items",
+    "layout_evidence",
+    "layout_refusal",
+    "layout_shape_reasons",
+    "process_mode_clause",
+    "same_directory",
+]
 
 MAIN_CLASS = "TMain_Scr"
 #: The menu bar's buttons, left -> right (``recon/udop_roles.py``).
@@ -198,8 +211,12 @@ MENU_ORDER: tuple[str, ...] = (
 )
 #: The left column's combo boxes, top -> bottom.
 COMBO_ORDER: tuple[str, ...] = ("Sensitivity", "Emitting power")
-#: The clean measurement screen's fingerprint (two independent launches); anything else
-#: means a popup, a dialog or a simulator screen is up.
+#: The clean measurement screen's fingerprint **on the reference install, as evidence** — two
+#: independent launches. It is no longer a gate (plan §24.5, D4): the instrument's own clean
+#: screen states 44 in 4, because its parameter column paints one more row, so the two numbers
+#: separate two legitimate layouts rather than a clean screen from an unclean one. What this
+#: pair is for now is the comparison a reader makes in :func:`layout_evidence` and in the run's
+#: record — a drift worth seeing, never a reason to stop a run.
 EXPECTED_CONTROL_COUNT = 43
 EXPECTED_PANEL_COUNT = 4
 
@@ -794,6 +811,268 @@ def _strip_row(panel: dict, kids: Sequence[dict]) -> list[dict]:
         ),
         key=lambda k: k["left"],
     )
+
+
+# ------------------------------------------------------------------------ the layout gate
+
+#: How much of the client's height a band may occupy and still count as sitting at the client's
+#: own top or bottom edge. A **margin, not a coordinate** — the measured menubar is ~25 px of a
+#: 1027 px client and the status bar owns the last ~25 px, and nothing binds to either number:
+#: the clauses below only ask whether the band the resolver found is painted where a measurement
+#: screen paints it. The same argument as :data:`DIALOG_COLUMN_GAP`.
+_BAND_MARGIN_FRACTION = 0.15
+
+
+def _client_top(panel: Mapping, roles: Mapping) -> int:
+    """The panel's top relative to the client's top (the origin :meth:`_resolve` read)."""
+    origin = roles.get("origin") or (0, 0)
+    return int(panel["top"]) - int(origin[1])
+
+
+def _client_bottom(panel: Mapping, roles: Mapping) -> int:
+    """The panel's bottom relative to the client's top."""
+    return _client_top(panel, roles) + int(panel["h"])
+
+
+def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
+    """Every clause of the shape check this resolved tree fails — empty when it passes.
+
+    The gate's structural half (plan §24.3): **one common core plus two accepted shapes, as
+    alternatives** — never "require four panels, then special-case three". The assisted screen
+    has no sidebar parameter column *at all*, and that absence is what :func:`screen_mode` reads
+    as :attr:`ChannelMode.ASSISTED`; a predicate that demanded a column would refuse the assisted
+    mode for being the assisted mode, before that classification could run.
+
+    The common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the client's
+    top and a status band reaches the client's bottom; the strip panel resolves with a row whose
+    length maps into :data:`STRIP_BUTTON_ORDER` (the silent case §21.3 item 3 names: *a different
+    button panel in the plot's middle band*); and nothing is over it — no menu popup and no
+    dialog panel. The two accepted shapes: **manual** (that column resolves with its seven
+    :data:`PARAM_COLUMN_ORDER` roles) or **assisted** (no column anywhere on the screen).
+
+    **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
+    the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
+
+    Pure over an already-resolved role map (:meth:`Win32Actuator._resolve`), so it runs on a
+    captured tree on a host with no application at all as well as on a live one — and nothing
+    here reads the window, presses anything or opens anything.
+    """
+    # DEVIATION: the plan lists `_find_overlay(roles)` among the asserted resolvers, but that
+    # finder walks parent handles through `win32gui` and cannot be called from a pure function
+    # over a resolved tree. The popup and dialog clauses therefore come from the tree's own
+    # resolved sets (`open_popup`, `_dialog_panels`' two halves), and the driver's own note adds
+    # the `_find_overlay` clause on top (`layout_refusal`, whose `overlay=` is that result).
+    reasons: list[str] = []
+    panels = list(roles.get("panels") or ())
+    client = roles.get("client") or (0, 0)
+    client_h = int(client[1]) if len(client) > 1 else 0
+    margin = max(1, int(client_h * _BAND_MARGIN_FRACTION))
+
+    class_name = roles.get("class_name")
+    if class_name != MAIN_CLASS:
+        reasons.append(
+            f"the window class is {class_name!r} where this measurement screen is {MAIN_CLASS!r}"
+        )
+
+    menu = roles.get("menu") or {}
+    menu_band = roles.get("menu_band")
+    if menu_band is None or not menu:
+        reasons.append(
+            f"the menubar band did not resolve: {len(menu)} of {len(MENU_ORDER)} menubar "
+            "button(s) were found"
+            + (" and no panel hosts them" if menu_band is None else "")
+        )
+    elif _client_top(menu_band, roles) > margin:
+        reasons.append(
+            f"the menubar band is painted {_client_top(menu_band, roles)} px down a "
+            f"{client_h} px client, so it is not the band at the client's top that a "
+            "measurement screen paints"
+        )
+
+    strip = roles.get("strip_panel")
+    row = list(roles.get("strip_row") or ())
+    view = None
+    if roles.get("state") is not None:
+        try:
+            view = StripView(str(roles["state"]))
+        except ValueError:
+            view = None
+    if strip is None:
+        reasons.append(
+            "no recording strip panel resolved: no short button-hosting panel sits in the "
+            "plot's 0.30-0.70 band, so which buttons mean pause, record and stop is unstated"
+        )
+    elif roles.get("plot") is None:
+        reasons.append(
+            "the plot band did not resolve, so the strip's own rule (the button panel in the "
+            "middle of the plot) could not be applied to the panel that was found"
+        )
+    elif view is None or (view, len(row)) not in STRIP_BUTTON_ORDER:
+        reasons.append(
+            f"the strip's row holds {len(row)} button(s) in view {roles.get('state')!r}, which "
+            "is no row in STRIP_BUTTON_ORDER: a different button panel sits in the plot's "
+            "middle band, and a press would be bound to the wrong position"
+        )
+
+    # A band **below the strip** that reaches the client's bottom — the status bar, found by shape
+    # rather than by its index in the panel list. A sidebar column that runs the height of the
+    # window does not answer this: it starts above the strip, and the band being asked for is the
+    # one under everything.
+    status_bands = [
+        panel
+        for panel in panels
+        if panel is not menu_band
+        and panel is not strip
+        and (strip is None or int(panel["top"]) >= _client_bottom(strip, roles))
+        and _client_bottom(panel, roles) >= client_h - margin
+    ]
+    if not status_bands:
+        reasons.append(
+            f"no status band reaches the client's bottom: the {len(panels)} panel(s) at this "
+            f"level end at "
+            f"{max((_client_bottom(panel, roles) for panel in panels), default=0)} px of a "
+            f"{client_h} px client"
+        )
+
+    if roles.get("open_popup"):
+        reasons.append(
+            "a menu popup is open: the parameter roles below it would bind to the popup's own "
+            "controls (a popup is never dismissed by WM_CLOSE here)"
+        )
+
+    dialogs = sorted(
+        (roles.get("value_dialogs") or set()) | (roles.get("browse_dialogs") or set())
+    )
+    if dialogs:
+        doors = [
+            (panel["rect"], panel["cls"])
+            for panel in panels
+            if panel["hwnd"] in set(dialogs)
+        ]
+        reasons.append(
+            f"a dialog is up: {len(dialogs)} panel(s) of this screen are application dialogs "
+            f"and not the measurement layout ({doors}), so nothing below them is the surface "
+            "these roles were bound to"
+        )
+
+    params = roles.get("params") or {}
+    rows = roles.get("param_rows") or []
+    column = roles.get("left_panel")
+    # The manual shape: the column must resolve **with its roles** — a column that resolves
+    # without them is the case §24.3 names as neither shape. No column at all is the *assisted*
+    # shape, and it is accepted as it stands (the same absence `screen_mode` reads as
+    # ChannelMode.ASSISTED), which is why the two shapes are alternatives and not a rule.
+    if (params or rows or column is not None) and (
+        len(params) < len(PARAM_COLUMN_ORDER) or column is None
+    ):
+        reasons.append(
+            f"the sidebar parameter column resolved at "
+            f"{None if column is None else column['rect']} with {len(params)} of the "
+            f"{len(PARAM_COLUMN_ORDER)} roles ({[role.value for role in PARAM_COLUMN_ORDER]}) "
+            f"and {len(rows)} row(s): that is neither accepted shape, and a point's writes "
+            "would land on the wrong fields"
+        )
+    return tuple(reasons)
+
+
+def layout_evidence(roles: Mapping) -> str:
+    """What this tree is, as one sentence: the counts, the panels, the strip's view, the shapes.
+
+    The evidence half of the gate (plan §24.5, D4). A total count is **not** a gate: ``43`` and
+    ``44`` separate the reference install's clean layout from the instrument's, not a clean
+    screen from an unclean one, so the numbers are carried here, into the reading
+    (``ScreenFingerprint.layout_evidence``) and into the run's record, where a reader comparing
+    two sessions can see a drift — while nothing a run does is stopped by one.
+
+    Pure, like the shape check it accompanies: the same tree answers both.
+    """
+    panels = list(roles.get("panels") or ())
+    row = list(roles.get("strip_row") or ())
+    params = roles.get("params") or {}
+    dialogs = len((roles.get("value_dialogs") or set()) | (roles.get("browse_dialogs") or set()))
+    return (
+        f"{roles.get('class_name')}: {len(roles.get('raw') or ())} visible controls in "
+        f"{len(panels)} panels (the reference install's clean screen reads "
+        f"{EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}); the strip's row holds "
+        f"{len(row)} button(s) in view {roles.get('state')!r}; the parameter column resolved "
+        f"with {len(params)} of {len(PARAM_COLUMN_ORDER)} role(s); "
+        f"{'a menu popup is open' if roles.get('open_popup') else 'no menu popup'}; "
+        f"{dialogs} dialog panel(s)"
+    )
+
+
+def process_mode_clause(caption: str, expected: ProcessMode) -> str | None:
+    """One clause when ``caption`` does not state ``expected``; ``None`` when it does.
+
+    The mode rung (plan §24.4), and the one thing that cannot be checked structurally: the
+    caption is the only surface that states which process is on the screen. ``None`` from
+    :func:`…actuator.process_mode` is a **refusal, not a default** — an empty caption states
+    nothing, and a caption outside the fixed vocabulary is a version this driver was not
+    measured against — on the same argument as ``routed_channel`` (§12.1).
+
+    Pure over the string that was read, so the clause a live refusal shows is the clause the
+    tests pin, and the caption names itself in it (D5).
+    """
+    stated = process_mode(caption)
+    if stated is expected:
+        return None
+    if not caption.strip():
+        return (
+            "nothing stated the mode: the top-level window's caption is empty, so which process "
+            f"this screen is in is unstated where this run was measured against "
+            f"{expected.value!r}"
+        )
+    if stated is None:
+        names = [prefix for _mode, prefix in PROCESS_MODE_PREFIXES]
+        return (
+            f"the caption {caption!r} states no process mode this driver knows ({names}), where "
+            f"this run was measured against {expected.value!r}"
+        )
+    return (
+        f"the process mode is {stated.value!r} where this run was measured against "
+        f"{expected.value!r} (the caption read {caption!r})"
+    )
+
+
+def layout_refusal(
+    roles: Mapping,
+    *,
+    overlay: OverlayKind | None = None,
+    caption: str = "",
+    expected_mode: ProcessMode | None = None,
+) -> str | None:
+    """The refusal for one resolved tree — one clause per reason, or ``None`` when it passes.
+
+    The composition ``Win32Actuator.layout_note`` answers with, written as a pure function so
+    the whole gate is testable on a captured tree: the shape clauses
+    (:func:`layout_shape_reasons`), the overlay ``_find_overlay`` found for this same tree, and —
+    when a run states one — the mode clause (:func:`process_mode_clause`). **Separate clauses,
+    each naming what was read** (plan §24.5, D5): a single "unclean layout" sentence is what made
+    yesterday's refusal look like a layout drift when it was a mode the run was not measured
+    against.
+
+    ``expected_mode=None`` is the diagnostic reading (``acquire status``, the probe path): the
+    shape is still checked and the mode is not — a diagnostic that refused would be useless, and
+    the *stated* mode is reported as a fact instead.
+    """
+    # DEVIATION: §24.3 lists "the process mode is stated" as the last clause of the common core,
+    # but the same section heads the shape check *mode-independent* and gives it a signature over
+    # an already-resolved tree (``layout_shape_reasons(roles)``) — and the caption is a separate
+    # read that the tree does not carry. So the mode is a clause of *this* composition, added only
+    # when a run states an expectation, and the pure shape check stays mode-independent.
+    parts = list(layout_shape_reasons(roles))
+    if overlay is not None:
+        parts.append(
+            f"an overlay is up ({overlay.value!r}): it is not the measurement layout, and "
+            "nothing under it resolves to the widgets these roles were bound to"
+        )
+    if expected_mode is not None:
+        clause = process_mode_clause(caption, expected_mode)
+        if clause is not None:
+            parts.append(clause)
+    if not parts:
+        return None
+    return "; ".join(parts) + f" — the screen reads: {layout_evidence(roles)}"
 
 
 def channel_items() -> tuple[str, ...]:
@@ -1424,6 +1703,10 @@ class Win32Actuator:
             "client": (cw, ch),
             "origin": (ox, oy),
             "raw": kids,
+            # The class the window reports. Checked by the shape gate rather than assumed from
+            # the class `_main_hwnd` filtered on, so a captured tree can be asked the same
+            # question (plan §24.3's first clause).
+            "class_name": win32gui.GetClassName(win),
             # The resolved tree, so "nested inside X" is a property of the snapshot
             # rather than another enumeration of the window.
             "parent_of": {k["hwnd"]: parent_of(k["hwnd"]) for k in kids},
@@ -1452,6 +1735,10 @@ class Win32Actuator:
         plot = next((k for k in kids if k["cls"] == "TDop_Plot"), None)
         menu_idx = 0 if panels else None
         status_idx = (len(panels) - 1) if len(panels) > 1 else None
+        #: The band the resolver found the menubar in, exposed to the shape gate so the clause
+        #: "the menubar band resolves at the client's top" is asked of the same panel the
+        #: resolver chose, rather than of an index the gate would have to re-derive (plan §24.2).
+        roles["menu_band"] = panels[menu_idx] if menu_idx is not None else None
 
         # --- panels that are dialogs, not the measurement layout ------------------------
         # A dialog is a panel owning a real edit plus a TSp_Browse button, wherever the
@@ -1587,20 +1874,12 @@ class Win32Actuator:
         roles["state"] = classify_strip_view(
             len(row), any(k["cls"] == "TSp_Sliding_Bar" for k in strip_kids)
         ).value
-        roles["layout_expected"] = (
-            len(kids) == EXPECTED_CONTROL_COUNT and len(panels) == EXPECTED_PANEL_COUNT
-        )
-        if not roles["layout_expected"]:
-            absent = (
-                "; the sidebar parameter column is absent, which is what an **assisted-mode** "
-                "channel looks like (there is nothing for a parameter write to target)"
-                if not roles.get("params")
-                else ""
-            )
-            roles["layout_note"] = (
-                f"{len(kids)} visible controls in {len(panels)} panels; the clean measurement "
-                f"screen has {EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}{absent}"
-            )
+        # The gate and its evidence, both pure over this tree (plan §24.3, §24.5 D4). The shape
+        # decides and the counts do not: 43 and 44 are two legitimate layouts, so the totals are
+        # carried in `layout_evidence` — into the reading, the note and the record — where a
+        # reader compares them, instead of being a number a run is stopped by.
+        roles["layout_shape_reasons"] = layout_shape_reasons(roles)
+        roles["layout_evidence"] = layout_evidence(roles)
         self.last_roles = roles
         return roles
 
@@ -2435,15 +2714,29 @@ class Win32Actuator:
 
     # ------------------------------------------------------------- the read-only surface
 
+    def window_caption(self) -> str:
+        """The top-level window's caption, read with ``WM_GETTEXT`` — nothing is pressed.
+
+        The one surface that states **which process** is on the screen (:class:`ProcessMode`):
+        the simulator's own name or the measurement application's, and every widget inside the
+        window is caption-less, so nothing structural answers the same question (plan §22.1).
+        Read rather than interpreted: the vocabulary is applied by
+        :func:`~udv_echo_process.acquire.actuator.process_mode`, and the string itself is carried
+        into the reading so a refusal can name it.
+        """
+        return self._get_text(self._main_hwnd())
+
     def screen_fingerprint(self) -> ScreenFingerprint:
         """What the screen is right now, without pressing anything.
 
         The first thing to read on an instrument nobody here can see
-        (``docs/dop3000/live-bringup.md`` §3, stage 1): the counts say whether this is the clean
-        measurement layout, the strip view says which of the three buttons means what, and the
-        overlay says whether a modal is up while it should not be. Nothing is pressed, no dialog
-        is opened and nothing is written, so it is safe to take on an instrument someone else is
-        using — which is the whole reason it exists as a supported call.
+        (``docs/dop3000/live-bringup.md`` §3, stage 1): the counts are **evidence** (the reference
+        install reads 43 in 4, the instrument 44 in 4, and both are clean — plan §24.5 D4), the
+        shape verdict and the stated process mode are the *verdict*, the strip view says which of
+        the three buttons means what, and the overlay says whether a modal is up while it should
+        not be. Nothing is pressed, no dialog is opened and nothing is written, so it is safe to
+        take on an instrument someone else is using — which is the whole reason it exists as a
+        supported call.
 
         A screen that cannot be resolved at all *does* raise, from :meth:`_resolve`: no window
         is an answer the caller has to see. An unreadable cursor does not — it comes back
@@ -2463,6 +2756,10 @@ class Win32Actuator:
             foreground = self._foreground_window() == hwnd
         except Exception:  # noqa: BLE001 - the foreground is a precondition of presses, not of reading
             foreground = False
+        # Read, not inferred: which process is in front is stated by the caption alone, and the
+        # shape verdict and the counts come off the tree that was already resolved above (plan
+        # §24.4, §24.5 D4 — a diagnostic reports the mode, it never refuses on it).
+        caption = self.window_caption()
         return ScreenFingerprint(
             class_name=self._class_name,
             hwnd=hwnd,
@@ -2480,6 +2777,10 @@ class Win32Actuator:
             # a reader needs to know is whether a modal is up that the next step would trip on.
             overlay=self.peek_overlay(),
             layout_note=self.layout_note(),
+            caption=caption,
+            process_mode=process_mode(caption),
+            layout_shape_reasons=tuple(roles["layout_shape_reasons"]),
+            layout_evidence=str(roles["layout_evidence"]),
             cursor=cursor,
             is_foreground=foreground,
         )
@@ -2723,6 +3024,12 @@ class Win32Actuator:
         honest state today, and the fact that changes here is a fact about the *driver*: a read
         path that reconnaissance finds later becomes a read, without the models changing.
 
+        The **process mode** is a third kind, and it belongs to this reading rather than to a
+        hand-over: the caption costs no gesture at all, so this method reads it itself
+        (:meth:`_process_mode_fact`) and carries it as a ``read`` fact — or as ``unreadable`` with
+        the caption in the reason when the window states none this driver knows. It is what a
+        resume compares instead of a count (plan §24.5, D2/D6).
+
         A screen that cannot be resolved at all raises, from :meth:`_resolve` — the same answer
         :meth:`screen_fingerprint` gives, for the same reason: no window is a fact the caller has
         to see.
@@ -2743,6 +3050,11 @@ class Win32Actuator:
         return InstrumentSnapshot(
             fingerprint=fingerprint,
             channel=self._channel_fact(routed_channel),
+            # The process mode comes off the caption, which costs no gesture at all — so unlike
+            # the channel and the dialog facts it is *read* here rather than handed over, and a
+            # caption that states nothing makes it `unreadable` with the caption in the reason
+            # (plan §24.4: nothing may imply this verification).
+            process_mode=self._process_mode_fact(),
             mode=(
                 unreadable(
                     "no mode could be read from this screen: a dialog, a menu popup or a layout "
@@ -2763,6 +3075,25 @@ class Win32Actuator:
                 "reads the Preference surface"
             ),
         )
+
+    def _process_mode_fact(self) -> InstrumentFact:
+        """Which process the caption states, as a fact of this reading — or why it states none.
+
+        A ``read`` fact when the caption matches the fixed vocabulary
+        (:func:`~udv_echo_process.acquire.actuator.process_mode`), and ``unreadable`` with the
+        caption *in the reason* otherwise: an empty caption and a caption this driver was not
+        measured against are two states a compile must refuse on by name, and neither may be
+        defaulted into a mode (plan §24.4).
+        """
+        caption = self.window_caption()
+        stated = process_mode(caption)
+        if stated is None:
+            names = [prefix for _mode, prefix in PROCESS_MODE_PREFIXES]
+            return unreadable(
+                "nothing stated the mode: the top-level window's caption is "
+                f"{caption!r}, which names none of {names}"
+            )
+        return InstrumentFact(value=stated.value, source=FactSource.READ)
 
     def _require_same_channel(
         self, routed_channel: int | None, dialog_parameters: DialogParameters | None
@@ -2964,29 +3295,42 @@ class Win32Actuator:
         finally:
             self._note_sink = sink
 
-    def layout_note(self) -> str | None:
-        """``None`` only on the clean measurement layout; a summary note otherwise.
+    def layout_note(self, *, expected_mode: ProcessMode | None = None) -> str | None:
+        """``None`` only on an accepted measurement shape; a refusal note otherwise.
 
-        A popup, a dialog or a simulator-only screen means parameter roles may resolve to
-        the wrong widgets, so a run must refuse to start. The note names what was
-        resolved — window class, panel count, the strip's view and button row, any
-        overlay — so the refusal is diagnosable from the log alone.
+        A popup, a dialog panel or a screen satisfying neither accepted shape means parameter
+        roles may resolve to the wrong widgets, so a run must refuse to start. The note states
+        **one clause per reason** (shape clause, overlay, and the mode when one was expected) and
+        then the evidence — the counts, the panels and the strip's view — so the refusal is
+        diagnosable from the log alone (plan §24.5, D5).
+
+        ``expected_mode`` is the declaration a *record* path makes: when it is given, the
+        window's caption is read and checked against it, and a mismatch or an unreadable caption is
+        a clause of its own naming the caption it saw. ``None`` is the diagnostic reading
+        (``acquire status``, the probes): the shape is still checked, the mode is only reported —
+        a diagnostic that refused would be useless.
         """
         roles = self._resolve()
-        if roles["layout_expected"]:
-            return None
-        state = self._state_of(roles)
         overlay = self._find_overlay(roles)
-        note = (
-            f"{self._class_name}: {len(roles['raw'])} visible controls in "
-            f"{len(roles['panels'])} panels (the clean measurement screen has "
-            f"{EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}); strip view "
-            f"{state.view.value} with {state.button_count} button(s); "
-            f"overlay {overlay[0].value if overlay else 'none'}"
+        caption = self.window_caption() if expected_mode is not None else ""
+        return layout_refusal(
+            roles,
+            overlay=None if overlay is None else overlay[0],
+            caption=caption,
+            expected_mode=expected_mode,
         )
-        if roles["open_popup"]:
-            note += "; a menu popup is open (never dismissed by WM_CLOSE here)"
-        return note
+
+    def process_mode_note(self, expected: ProcessMode) -> str | None:
+        """A note when the screen's stated process mode is not ``expected``; ``None`` when it is.
+
+        The runner's per-point gate (plan §24.4): the runner's own layout check answers *which
+        shape*, and this answers *which process* — the one thing that cannot be checked
+        structurally, because only the caption states it. It is a **composed** call on the sweep
+        port rather than a new primitive, so an implementation that satisfied the primitive
+        ``Actuator`` before this slice still does, and the run refuses a point measured against
+        the other mode **before** it writes a parameter, not after.
+        """
+        return process_mode_clause(self.window_caption(), expected)
 
     def read_parameter(self, role: ParamRole | str) -> str:
         """The parameter column's current field text for ``role``.
@@ -3231,6 +3575,7 @@ class Win32Actuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
         verify_channel: bool = True,
     ) -> Path:
@@ -3241,13 +3586,21 @@ class Win32Actuator:
         seen. Any failure dismisses overlays, leaves the application not recording, and
         raises :class:`AcquisitionError` — a point that failed is never returned as if it
         had been stored.
+
+        ``expected_mode`` is the process this run was measured against, and it is **required and
+        keyword-only** so no cycle can leave the expectation implied (plan §24.4). The screen's
+        caption is checked against it — and the layout's shape, which is mode-independent —
+        before anything is pressed: a run measured in simulation refuses to record against the
+        instrument, and vice versa, naming the caption it saw rather than calling the screen
+        unclean.
         """
+        # DEVIATION: §24.4 names this method `record(*, expected_mode)`; the port's name is
+        # `record_and_store` and is kept, because the runner, the live verbs and every fake call it
+        # by that name and this slice changes no caller's vocabulary for a rename's sake.
         try:
-            note = self.layout_note()
+            note = self.layout_note(expected_mode=expected_mode)
             if note is not None:
-                raise AcquisitionError(
-                    f"refusing to start on an unclean layout: {note}"
-                )
+                raise AcquisitionError(f"refusing to start: {note}")
             state = self.strip_state()
             if state.view is StripView.STORE:
                 self.press(
@@ -3312,18 +3665,23 @@ class Win32Actuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
         verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
         """``record_and_store`` with the failure in the return value instead of a raise.
 
-        ``(True, path)`` or ``(False, reason)`` — the shape a sweep loop logs per point.
+        ``(True, path)`` or ``(False, reason)`` — the shape a sweep loop logs per point. The
+        expectation is required here too, and passed straight through: the per-point gate a
+        runner's loop reaches is this one, and a default would put the expectation back where
+        §24.4 refuses to have it.
         """
         try:
             return True, self.record_and_store(
                 name,
                 duration_s,
                 directory,
+                expected_mode=expected_mode,
                 timeout_s=timeout_s,
                 verify_channel=verify_channel,
             )

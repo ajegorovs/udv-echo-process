@@ -23,7 +23,11 @@ from __future__ import annotations
 from collections.abc import Sequence
 from pathlib import Path
 
-from udv_echo_process.acquire.actuator import PreflightReport, ScreenFingerprint
+from udv_echo_process.acquire.actuator import (
+    PreflightReport,
+    ProcessMode,
+    ScreenFingerprint,
+)
 from udv_echo_process.acquire.config import RecordSettings
 from udv_echo_process.acquire.driver import Win32Actuator
 from udv_echo_process.acquire.plan import SweepDefinition
@@ -62,7 +66,13 @@ def live_actuator(channel: int | None = None, notes: list[str] | None = None) ->
 
 
 def status(channel: int | None = None, notes: list[str] | None = None) -> ScreenFingerprint:
-    """Read the screen: layout fingerprint, strip view, overlay, cursor. Presses nothing."""
+    """Read the screen: layout fingerprint, strip view, process mode, cursor. Presses nothing.
+
+    A **diagnostic**, and it therefore refuses nothing (plan §24.4): the mode is *reported* —
+    ``process_mode``, the shape verdict and the counts are all fields of the fingerprint — so the
+    question "which process is in front of me?" is answered on either mode with exit code 0. What
+    refuses on a mismatch is the record path, which declares an expectation first.
+    """
     return live_actuator(channel, notes).screen_fingerprint()
 
 
@@ -97,14 +107,22 @@ def point(
     store_dir: Path,
     channel: int | None = None,
     notes: list[str] | None = None,
+    *,
+    expected_mode: ProcessMode,
 ) -> tuple[bool, Path | str]:
     """One stored point: ``(True, path)`` or ``(False, reason)``.
 
     The channel is verified before the recording is spent, and the store dialog's working
     directory is asserted against ``store_dir``: a mismatch refuses the point rather than
     scattering files into whatever directory the application remembered.
+
+    ``expected_mode`` is required and keyword-only (plan §24.4): this command records, so it is a
+    record path, and the process it was measured against is declared by the caller — never taken
+    from whatever happens to be running. The caption is checked against it before the first press.
     """
-    return live_actuator(channel, notes).try_record_and_store(name, seconds, store_dir)
+    return live_actuator(channel, notes).try_record_and_store(
+        name, seconds, store_dir, expected_mode=expected_mode
+    )
 
 
 def sweep(
@@ -113,6 +131,7 @@ def sweep(
     rungs: Sequence[int],
     channel: int | None = None,
     *,
+    expected_mode: ProcessMode,
     name_prefix: str = "sweep",
     log_path: Path | None = None,
     notes: list[str] | None = None,
@@ -125,6 +144,10 @@ def sweep(
     would silently clamp is refused before a recording is spent. ``measurement`` takes the
     instrument's own values (:data:`DEFAULT_MEASUREMENT`) — pass the ones this instrument
     reports.
+
+    ``expected_mode`` is required and keyword-only (plan §24.4) and goes to the runner's own
+    construction, so every point of the sweep refuses before it writes anything if the process in
+    front is not the one the sweep was measured against.
     """
     values = {**DEFAULT_MEASUREMENT, **measurement}
     actuator = live_actuator(channel, notes)
@@ -136,6 +159,7 @@ def sweep(
         signature=None,
         log_path=log_path,
         channel=channel,
+        expected_mode=expected_mode,
     )
     definition = SweepDefinition(
         duration_s=seconds,

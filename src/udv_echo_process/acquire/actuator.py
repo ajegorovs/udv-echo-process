@@ -56,6 +56,7 @@ __all__ = [
     "PARAMETER_WRITE_ORDER",
     "PARAM_COLUMN_ORDER",
     "PRESS_HOLD_MS",
+    "PROCESS_MODE_PREFIXES",
     "STARTABLE_VIEWS",
     "STORE_TIMEOUT_S",
     "STRIP_BUTTON_ORDER",
@@ -66,6 +67,7 @@ __all__ = [
     "DialogField",
     "OverlayKind",
     "ParamRole",
+    "ProcessMode",
     "StripControl",
     "StripState",
     "StripView",
@@ -73,6 +75,7 @@ __all__ = [
     "ordered_writes",
     "overlay_answer",
     "press_index",
+    "process_mode",
     "strip_controls",
 ]
 
@@ -214,6 +217,52 @@ class ChannelMode(str, Enum):
 
     MANUAL = "manual"
     ASSISTED = "assisted"
+
+
+class ProcessMode(str, Enum):
+    """Which **process** is on the screen — the axis :class:`ChannelMode` is not.
+
+    Two modes, and they are a different question from the channel's: ``ChannelMode`` is read
+    from *which panel the application builds* for a channel, while this one is the instance
+    itself — the simulator or the measurement application running against the instrument — and
+    **only the top-level window's caption states it** (measured 2026-09-18: the simulator's
+    caption is ``UDOP Simul`` and the instrument's is ``UDOP DOP3010.43``, while the panels,
+    the strip and the plot are the same surfaces in both). Nothing structural can tell them
+    apart: the two clean layouts were measured at 43 and 44 visible controls, which is a
+    difference *caused by* the mode's own panel, not a discriminator of it.
+
+    So a run declares which process it was measured against and this is what the caption is
+    matched against (:func:`process_mode`); the two never imply one another.
+    """
+
+    SIMULATION = "simulation"
+    INSTRUMENT = "instrument"
+
+
+#: The caption **prefix** that states each process mode, in match order — a fixed vocabulary
+#: of two, extended when a third instance is measured. Prefix-matched because the caption
+#: carries the software version: the instrument's own caption was ``UDOP DOP3010.43`` and the
+#: ``.43`` moves with the release while the name does not (plan §22.1).
+PROCESS_MODE_PREFIXES: tuple[tuple[ProcessMode, str], ...] = (
+    (ProcessMode.SIMULATION, "UDOP Simul"),
+    (ProcessMode.INSTRUMENT, "UDOP DOP3010"),
+)
+
+
+def process_mode(caption: str) -> ProcessMode | None:
+    """Which process the caption states, or ``None`` when it states none this driver knows.
+
+    Pure, and deliberately the *only* place the caption vocabulary is applied, so the read
+    (``driver.Win32Actuator.window_caption``) and every fake can be judged against one rule.
+    ``None`` is a **refusal**, not a default: an empty caption is a window that states nothing,
+    and a caption outside this vocabulary is a version this driver was not measured against —
+    the same argument as ``routed_channel`` (plan §12.1): nothing may imply a verification.
+    """
+    text = caption.strip().casefold()
+    for mode, prefix in PROCESS_MODE_PREFIXES:
+        if text.startswith(prefix.casefold()):
+            return mode
+    return None
 
 
 class StripControl(str, Enum):
@@ -387,11 +436,14 @@ class ScreenFingerprint(ValueModel):
     """What the application's screen is, read-only, as one record.
 
     The first thing to read on a machine that is not the one the measurements came from
-    (``docs/dop3000/live-bringup.md`` §4). The counts say whether this is the clean
-    measurement layout — 43 visible controls in 4 panels on the reference install, and 21 in 3
-    for an **assisted-mode** channel, which is by design and not a fault — the strip view says
-    which of the three buttons means what, and the overlay says whether a modal is up while it
-    should not be; the geometry is there so a screen that does not match can be described.
+    (``docs/dop3000/live-bringup.md`` §4). The counts are **evidence, not a verdict**: the
+    reference install's clean manual screen is 43 visible controls in 4 panels and the
+    instrument's own is 44 in 4, and an **assisted-mode** channel is 3 panels, so a count
+    decides nothing on its own — the shape verdict and the stated process mode do
+    (``layout_shape_reasons``, ``process_mode``), and the counts are here so a drift between
+    two sessions is visible to a reader. The strip view says which of the three buttons means
+    what, and the overlay says whether a modal is up while it should not be; the geometry is
+    there so a screen that does not match can be described.
 
     JSON-serialisable on purpose: a fingerprint belongs in the job log beside the point it
     preceded.
@@ -407,6 +459,28 @@ class ScreenFingerprint(ValueModel):
     strip: StripState
     overlay: OverlayKind | None = None
     layout_note: str | None = None
+    #: The top-level window's caption as it was read (``WM_GETTEXT``): the one surface that
+    #: states which process is on the screen. Kept as read — the vocabulary is applied by
+    #: :func:`process_mode`, and a refusal names this string rather than a parsed value.
+    caption: str = ""
+    #: Which process the caption states, or ``None`` when it states none this driver knows —
+    #: which is a refusal on the record paths and never a default (:func:`process_mode`).
+    process_mode: ProcessMode | None = None
+    #: The clauses of ``driver.layout_shape_reasons`` that failed for this screen; empty means
+    #: it is one of the two accepted shapes with nothing over it. This is the verdict, where the
+    #: counts above are the evidence (:data:`driver.EXPECTED_CONTROL_COUNT` is a reference
+    #: reading of one install, never a gate).
+    layout_shape_reasons: tuple[str, ...] = ()
+    #: The counts, the panels and the strip's view as one sentence — carried on a **passing**
+    #: screen too, because ``layout_note``'s contract is to be ``None`` there and the number a
+    #: reader compares across sessions still has to live somewhere.
+    #:
+    # DEVIATION: §24.6's row says "each count appears in the note", and §24.3 keeps
+    # ``layout_note()`` ``None`` whenever the shape passes — so a *passing* screen has no note to
+    # put the count in. The count therefore rides here on the reading as well (and the refusal
+    # note ends with this same sentence), which is what D4 asks for in words: "it stays in the
+    # reading, in the note and in the record".
+    layout_evidence: str = ""
     #: ``None`` when this session cannot read the cursor at all (the agent's own shell runs
     #: in a service session: ``GetCursorPos`` fails there with error 1459).
     cursor: tuple[int, int] | None = None
@@ -494,12 +568,20 @@ class Actuator(Protocol):
     """
 
     def layout_note(self) -> str | None:
-        """A note when the screen is *not* the clean measurement layout.
+        """A note when the screen is not one of the accepted measurement shapes.
 
-        ``None`` means the clean measurement screen (43 visible controls in 4
-        panels on the tested instance; dialogs and popups change the count).
-        A note — a popup, a dialog, a simulator-only screen — means parameter
-        roles may resolve to the wrong widgets, so a run must refuse to start.
+        ``None`` means *a measurement screen of some mode with nothing over it* — the structural
+        clauses of ``driver.layout_shape_reasons`` (the window class, the menubar and status
+        bands, a strip whose row length maps into :data:`STRIP_BUTTON_ORDER`, no popup and no
+        dialog panel, plus one of the two accepted shapes: a resolved sidebar parameter column
+        with its seven roles, or no parameter column at all). **No total count is a gate** (plan
+        §24.5, D4): 43 and 44 are two legitimate layouts, so the counts are carried as evidence in
+        the note and refused on by nothing here.
+
+        A note — a popup, a dialog panel, a screen satisfying neither shape — means parameter
+        roles may resolve to the wrong widgets, so a run must refuse to start. ``None`` says
+        nothing about *which* mode the screen is: that is the caption's statement and is checked
+        against a declared expectation (``record_and_store(*, expected_mode)``).
         """
         ...
 
@@ -583,9 +665,16 @@ class Actuator(Protocol):
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
     ) -> Path:
         """The composed cycle: record ``duration_s``, stop, store as ``name``.
+
+        ``expected_mode`` is **required and keyword-only** so no cycle can leave the expectation
+        implied (plan §24.4): the process this run was measured against is a declaration the
+        caller makes, and the screen's own caption is checked against it before the first press.
+        A screen whose caption states the other process — or states none at all — refuses here,
+        naming the caption, rather than recording data the run cannot claim.
 
         The contract, all of it measured:
 
