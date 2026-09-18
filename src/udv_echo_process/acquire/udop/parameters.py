@@ -702,18 +702,31 @@ class ParametersSurface:
         finish with a modal still up. A dialog that survives every attempt is named by its own
         rect and the child classes the resolve states, together with the remedy — nothing else on
         it is pressed and ``WM_CLOSE`` is never sent, this driver having no surface it is entitled
-        to guess at. **And the report is written from what the closes did**: each one says whether
-        it pressed the Cancel end at all (:meth:`_close_parameters_dialog`), so a band that never
-        resolved is reported as "nothing could be pressed", never as a press that did not take
-        (review L5) — the panel ``_dialog_panels`` returned may not be the ``Operating
-        parameters`` dialog, so no caption is claimed for it either.
+        to guess at. **And the report is written from what the closes did to the panel that is
+        still up**: each one says whether it pressed the Cancel end at all
+        (:meth:`_close_parameters_dialog`), so a band that never resolved is reported as "nothing
+        could be pressed", never as a press that did not take — and the press is recorded
+        **against the panel it was made on**, because the two attempts need not resolve the same
+        panel (this application hands over to a fresh dialog on a channel write, measured
+        2026-09-17): a press that reached the panel that was up is not a press on the one that
+        replaced it (review L5, cross-panel). The panel ``_dialog_panels`` returned may not be the
+        ``Operating parameters`` dialog, so no caption is claimed for it either.
         """
-        pressed = False
+        # Whether a close pressed this panel's Cancel end, **by the panel it was pressed on**. One
+        # boolean accumulated across both attempts would be read as the *survivor's* outcome, and
+        # the survivor can be a panel neither attempt pressed on (review L5, cross-panel).
+        pressed_on: dict[int, bool] = {}
         for _attempt in range(2):
             found = self._dialog_panels()
             if not found:
                 return
-            pressed = self._close_parameters_dialog(found[0]) or pressed
+            panel = found[0]
+            # Keyed and accumulated per panel: a press made on one panel says nothing about
+            # another, and a panel pressed on in an earlier attempt and again later is still
+            # reported as pressed — "was pressed and did not go away" is true of it either way.
+            pressed_on[panel["hwnd"]] = (
+                self._close_parameters_dialog(panel) or pressed_on.get(panel["hwnd"], False)
+            )
         # **Whether the dialog is gone is asked of the screen, never assumed from the presses.**
         # ``_close_parameters_dialog`` notes a band it cannot resolve instead of raising (a failed
         # cleanup must never mask the failure it is cleaning up after), so two attempts that both
@@ -731,9 +744,11 @@ class ParametersSurface:
         classes = sorted(
             {k["cls"] for k in self._children_of(panel["hwnd"], self._resolve())}
         )
+        # The survivor's own record, never another panel's: what the closes did *to this panel* is
+        # what may be reported about it, and a panel no attempt pressed on gets the second branch.
         outcome = (
             "its left (Cancel) button was pressed and the dialog did not go away"
-            if pressed
+            if pressed_on.get(panel["hwnd"], False)
             else "its left (Cancel) button could not be pressed at all (the bottom band that "
             "holds the Cancel/Accept pair did not resolve), so nothing was pressed on it"
         )

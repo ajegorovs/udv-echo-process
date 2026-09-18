@@ -711,6 +711,80 @@ def test_a_close_that_could_not_press_anything_does_not_report_a_press():
     assert "never guesses a surface" in warning, warning
 
 
+class HandedOverOnTheClosePress(FakeDialogDriver):
+    """A close whose press the application answers by putting **another** panel up.
+
+    The second of the live states a close has to survive (measured 2026-09-17, on a channel write):
+    the panel the close resolved is taken away and a *different* panel is up — here the narrower
+    one :data:`REPLACEMENT_HWND` names — so the second attempt is resolved against a panel the
+    first attempt's press never touched. The panel handed over to holds no bottom pair of its own
+    (no ``TSp_Button`` among its children), which is the band the driver's own rule cannot resolve:
+    nothing on it is pressable, and the note has to say that about *it*.
+
+    What is scripted is the hand-over and the band that does not resolve; what is under test is the
+    attribution, which does not depend on why the second panel has no pair to press.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        #: Whether the hand-over has happened (set once, where the fake scripts it).
+        self.handed_over = False
+
+    def _children_of(self, parent: int, roles: dict) -> list[dict]:
+        """The panel handed over to has no ``TSp_Button``: its band is not resolvable at all."""
+        kids = super()._children_of(parent, roles)
+        if parent == REPLACEMENT_HWND:
+            return [k for k in kids if k["cls"] != "TSp_Button"]
+        return kids
+
+    def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
+        """The press that took the first panel down is answered by a fresh panel in its place."""
+        super()._click_hold(hwnd, hold_ms)
+        if hwnd == self.cancel_handle(DIALOG_HWND) and self.open_panel is None:
+            self.handed_over = True
+            self.open_panel = self.panel(REPLACEMENT_HWND)
+
+
+def test_a_press_on_one_panel_is_never_reported_as_a_press_on_the_panel_that_replaced_it():
+    """L5, cross-panel: the note's outcome is the **remaining** panel's own, never another's.
+
+    Both close attempts run, and the application can put a different dialog up between them — it
+    does exactly that on a channel write (measured 2026-09-17): the first attempt's press reaches
+    the panel that was up, and by the second attempt that panel is gone and another is up. One
+    boolean accumulated across the two attempts and then read as the survivor's outcome says "its
+    left (Cancel) button was pressed and the dialog did not go away" about a panel **whose band
+    never resolved** — a gesture that was never made on it, asserted in the one diagnostic an
+    operator acts on. The report says what was done *to the panel that is still up*: nothing could
+    be pressed on it, named by its own rect and the classes its resolve states.
+    """
+    fake = HandedOverOnTheClosePress()
+
+    reading = fake.read_dialog_parameters()
+
+    assert reading.readable()  # the read stands; it is the close that is under test
+    # The first attempt pressed the panel that was up, by its own Cancel ... and only that one.
+    assert fake.closed_panels == [DIALOG_HWND], fake.closed_panels
+    assert fake.presses == [fake.cancel_handle(DIALOG_HWND)], fake.presses
+    # ... the hand-over happened, and the panel that is still up is the one nothing was pressed on.
+    assert fake.handed_over and fake.open_panel is not None
+    assert fake.open_panel["hwnd"] == REPLACEMENT_HWND, fake.open_panel
+    # The fixture's own premise, asserted: the panel that is up *is* a dialog by the driver's rule
+    # and *has* no pair in its band — otherwise this case is not about the panel it names.
+    kids = fake._children_of(fake.open_panel["hwnd"], fake._resolve())
+    assert driver._is_dialog_panel(fake.open_panel, kids), "the remaining panel is no dialog"
+    assert driver._bottom_row(fake.open_panel, kids) == [], "the remaining panel has a pair to press"
+
+    warning = next(note for note in fake.notes if "is still open" in note)
+    assert "Cancel) button was pressed" not in warning, warning  # the press it never made
+    assert "could not be pressed" in warning, warning
+    assert "(713, 364)" in warning, warning  # the panel that is up, by its own rect ...
+    assert "(655, 364)" not in warning, warning  # ... never the panel the press did reach
+    assert "TSp_Value_Button" in warning, warning  # and the classes its resolve states
+    assert "TSp_Button" not in warning, warning  # no button this panel does not hold
+    assert "operator" in warning and "restart" in warning, warning
+    assert "never guesses a surface" in warning, warning
+
+
 # ------------------------------------------------------------------ the snapshot's side
 
 
