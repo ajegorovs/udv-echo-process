@@ -274,9 +274,9 @@ it starts.
 dialog → safe close) and all of V1, V3-V8. A popup this application opens cannot be closed
 programmatically (ledger B20), so a gesture that went wrong would strand the application with
 nobody at the console, and V4's four-button state has to be reached by hand. `acquire status`
-does not exercise a gesture at all, which is precisely why V0 could be run unattended and V2
-cannot. (The next subsection is what happened when the gesture was attempted against this
-refactor.)
+does not exercise a gesture at all, which is precisely why V0 could be run unattended and the
+gesture half of V2 cannot. (The next subsection is what happened when the gesture was attempted
+against this refactor.)
 
 ### 2026-09-19 — the V2 gesture, and the defects standing between it and a completed run
 
@@ -286,44 +286,57 @@ the installation the V0 reading above came from. Revision under test: branch
 `f194d77`, `b9ecb29`, `7de790c` past the refactor the V0 session read). The gesture runs through
 the read-only probe, because no in-repo command is both read-only and gesture-performing:
 `acquire status` presses nothing, while `acquire compile` and `select_channel` route first and
-therefore **write** the channel. Two commands, in this order, both pinned at `7de790c`:
+therefore **write** the channel. Three commands, in this order, all pinned at `7de790c` — a status
+reading to bracket each side of the gesture:
 
 ```bash
 PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status
 PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status
 ```
 
 **Evidence.** `outputs/live/task-w1_fixed_facts.py.log` — the probe's JSON, run
 `19/09/2026 01:04:33`, `=== exit=0 ===` — and `outputs/live/task-udv_echo_process.cli.log` — the
-post-run status, `01:06:07`, `exit=0`. `outputs/` is git-ignored, so the readings are quoted here
-rather than committed; both commands can be re-run and compared against this page.
+**post**-run status, `01:06:07`, `exit=0` — the second of the two status readings, the first being
+the session's opening one (`01:04:24`, same fields). The dispatcher writes every run to
+`outputs/live/task-<slug>.log` after `rm -f`ing that path, and both status runs carry the same
+slug, so the post-run file **replaced** the pre-run one on disk: the pre-run text is quoted here
+from the reading taken while it stood, and the pre-gesture screen reading that still survives on
+disk is the probe's own `snapshot.fingerprint` (`01:04:33`), which states the same sixteen screen
+fields. `outputs/` is git-ignored, so the readings are quoted here rather than committed; all
+three commands can be re-run and compared against this page.
 
 | what the run reported | the reading |
 |---|---|
 | popup at start / the bar | `popup_open_at_start: false`; the menubar resolves to exactly `["Parameters"]` |
+| the screen's own mode | `manual`, `source: read`, off the probe's **pre-gesture snapshot** (`screen_mode(roles)`, `driver.py:1378`) — the status dump has no channel-mode field; the post-run screen reads the same shape that snapshot did (44 visible controls in 4 panels, the fast-access panel `present_complete`) |
 | the surface the gesture opened | the `Operating parameters` dialog: `TSp_Panel` at `(655, 364, 1282, 748)`, 627x384, 21 direct children — 15 `TSp_Value_Button`, 5 `TSp_Button`, 1 `TComboBox`, classes `{TComboBox, TSp_Button, TSp_Value_Button}` — i.e. the measured dialog the committed fixture `tests/data/udop-parameters-dialog-tree.json` carries |
 | the dialog's channel | `'1'` (`dialog_reading.channel`), the channel this run is configured for (`UDV_CHANNEL` unset → `DEFAULT_CHANNEL = 1`); this run wrote no channel |
 | the three dialog-only facts | `burst_length 4`, `first_gate_mm 1`, `sound_speed_ms 1480`, all `source: read`, through `read_dialog_parameters` — the reader the campaign's own compile step hands to the snapshot (`campaign.py:1320`) — and in the same run's snapshot taken *without* the reading handed over, all three `unreadable` with the reason |
-| the close | `dialog_closed: true`, by the dialog's own left (`Cancel`) button, and asked of the screen afterwards rather than assumed |
+| the close | three closes, each by the dialog's own left (`Cancel`) button: the step-4 dump, the step-5 diagnostic open, and `read_dialog_parameters` itself. The key the dump records, `dialog_closed: true`, is **not** a screen check and cannot be one: the probe sets it whenever its own `_close_parameters_dialog` returns (`w1_fixed_facts.py:294-299`), and that helper *notes* a bottom row it cannot resolve instead of raising (`parameters.py:368-376`), so the key is `true` even for a close that pressed a dead handle. The close that **is** asked of the screen is the read route's: `read_dialog_parameters` closes through `_close_any_dialog` (`parameters.py:544-554`, `626-664`), which re-resolves the panel, presses its safe end and then asks the screen again, reporting — by a note naming the surviving dialog's rect, not by a key — a dialog it could not take down; and what the screen itself said after the run is the post-run status's `0 dialog panel(s)` |
 | error keys | none: no `popup_error`, `resolve_error`, `dialog_error`, `dialog_close_error` or `read_path_error` — and no popup reported stranded |
 | the framed facts | `prf_us 600` and `emissions_per_profile 20`, read off the parameter column before the dialog work and the same after it; `max_profiles_per_block` still `unreadable` — a Preference, not a parameter, so V5's cap stays **unproven** |
-| post-run `acquire status` | **byte-identical** to the pre-run one: 44 visible controls in 4 panels, strip `ready` / 3 buttons / no slider, `overlay: None`, `layout_note: None`, `layout_shape_reasons: []`, `process_mode: instrument`, mode `manual`, `layout_evidence` naming the fast-access panel `present_complete`, no menu popup, 0 dialog panels |
+| post-run `acquire status` | **identical field for field** to the pre-run one (the two texts differ only in their `running` header line, `01:04:24` vs `01:06:07`) and to the probe's pre-gesture `snapshot.fingerprint`: 44 visible controls in 4 panels, strip `ready` / 3 buttons / no slider, `overlay: None`, `layout_note: None`, `layout_shape_reasons: []`, `process_mode: instrument`, `layout_evidence` naming the fast-access panel `present_complete`, no menu popup, 0 dialog panels |
 
 **V2 passes, both the precondition and the read-only gesture halves, on the instrument.** The
 popup opens off the real-cursor hover on the anchor the V0 session proved positionally; the entry
 taken is the topmost one, proved by its outcome and not by its highlight — the surface that
 appeared is the `Operating parameters` dialog, where a lower entry (`Default parameters`)
-selects the assisted mode, and the screen
-after the run still reads `manual` with the fast-access panel complete; the dialog's own channel
-agrees with the run's; the close is the dialog's safe end and the screen is clean afterwards; and
+selects the assisted mode, while the post-run screen reads the same manual shape the pre-gesture
+snapshot recorded (`mode: manual`, `source: read`; 44 visible controls in 4 panels, the fast-access
+panel complete — the status dump states no channel-mode field of its own); the dialog's own channel
+agrees with the run's; the close is the dialog's safe end, and the close whose screen the read
+route asks is answered by the post-run status's `0 dialog panel(s)`; and
 the run's only presses are the topmost entry and the dialog's left button — no lower entry, and
 nothing on the dialog's own field row — so nothing on the instrument changed: the pre- and
 post-run status readings are identical field for field. The gesture is also not a one-off: the
 probe's read half opens and closes the dialog three times in that one run (the dialog dump, the
 reader's own diagnostic, and the accepted reading), and all three came out the same.
-**B03/B04 (the anchor and the entry order) and B20's popup behaviour are what this settles** — the
+**B03/B04 (the anchor and the entry order) are what this settles** — the
 ledger rows those blind spots live in are promoted per §After the session, with this record named
-as their evidence. V1, V3-V8 stay device-pending, V4's four-button role map and V5's block cap
+as their evidence. **B20's popup behaviour is not promoted by it**: the session attempted no
+dismissal and no `WM_CLOSE`, no key reports one, and that ledger row stands as it was — the
+blind spot is the reason the operator has to stand by a gesture that hovers at all. V1, V3-V8 stay device-pending, V4's four-button role map and V5's block cap
 included; the popup's own entry inventory (`--popup`, five caption-less entries, measured
 2026-09-18) was not re-run, because that reconnaissance leaves the application in a state only the
 operator can clear, and the *write* half of the gesture — `ensure_channel`, which presses the
@@ -391,6 +404,11 @@ this page's items at all.
 - That the read half of V2 passing means its write half works: the routing route
   (`ensure_channel`) presses the dialog's **accept** end and writes the channel before it reads,
   and this session never ran it.
+- That the probe's `dialog_closed: true` is a screen check. It is set by a close helper that
+  *notes* a bottom row it cannot resolve and returns instead of raising, so it cannot fail;
+  the close that asks the screen is the read route's `_close_any_dialog`, which reports a dialog
+  it could not take down by naming its rect, and the screen reading this session has is the
+  post-run status's `0 dialog panel(s)`.
 - That a reported stranded popup is a repaired one. What `f194d77` added is a truthful report
   with the remedy; nothing this driver sends dismisses a popup, so the operator still clears it
   or restarts the application.
