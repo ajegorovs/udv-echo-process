@@ -986,14 +986,25 @@ is not there. Fix at the CLI boundary (catch the driver's error in the acquire h
 one `udv-acquire: <message>` line with the documented exit code), *not* by re-parenting the exception:
 that hierarchy is what lets callers tell a refused point from a broken instrument.
 
+**Exit code.** `2`, decided rather than inherited: every other refusal in the acquire surface returns 2
+(the compile's own refusals, argparse's usage errors), and a driver refusal is a refusal — the run did not
+happen and nothing was written — not a crash and not a partly completed job. The current traceback exits 1
+only because nothing caught it.
+
 **Evidence.** One case per affected verb driving a driver refusal through `acquire_main`, plus the live
 re-run of `acquire compile` with the application *not* in front — one line, exit 2, no traceback.
 
 ### 16.3 Then the milestone closes
 
-With 16.1 and 16.2 green: merge #7, and the plan branch (#3) behind it. §9.1 governs from there — the
-acquisition architecture re-opens on evidence only (a real campaign failed, ambiguous evidence, or a
-downstream analysis that cannot establish an essential acquisition condition).
+With 16.1 and 16.2 green, the sequence is: commit both to `feat/acquire-w4-integration` and post the green
+evidence as a comment on #7 (the review asked for no second pass — "once that channel attribution check is
+in and green" is their condition); merge #7 into the plan branch; then mark PR **#3** ready and merge the
+plan branch to master — #3 is still a **draft**, and it is the only route the plan document has to master.
+#4, #5 and #6 are already MERGED on GitHub, so no housekeeping remains for them. The working branches are
+then deleted locally and on the remote, and the next work starts from a clean master.
+
+§9.1 governs from there — the acquisition architecture re-opens on evidence only (a real campaign failed,
+ambiguous evidence, or a downstream analysis that cannot establish an essential acquisition condition).
 
 ### 16.4 The experiment — the reason all of this exists
 
