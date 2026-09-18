@@ -73,7 +73,14 @@ slots. `SetForegroundWindow` returns 0 from a background process (the foreground
 attach to the current foreground thread, set foreground, detach, then confirm with
 `GetForegroundWindow() == target` rather than trusting the return value:
 `AttachThreadInput(GetWindowThreadProcessId(GetForegroundWindow(), None),
-GetWindowThreadProcessId(target, None), True)` -> `SetForegroundWindow(target)` -> detach. An inactive
+GetWindowThreadProcessId(target, None), True)` -> `SetForegroundWindow(target)` -> detach. **Treat the
+foreground request as a precondition the operator satisfies, not as a driver failure:** Windows refuses
+a foreground request from anything but the user (measured: `SetForegroundWindow(hwnd)` returned 0 three
+times from an interactive session), a probe dispatched into a *separate* session cannot take it at all,
+and a console window opened by the launcher is the usual thief — so put the guard **before** the first
+hover, where a refusal has opened nothing and stranded nothing, and the remedy is for the operator to
+click the window or Alt+Tab to it and re-run the **same** command (`docs/dop3000/live-bringup.md` §4,
+plan §15.1). An inactive
 window ignores hover and gives its first click to activation, which is indistinguishable from a surface
 that does not answer input at all. Message-based control is also bitness-agnostic, which matters because
 `pywinauto` warns loudly when a 64-bit interpreter drives a 32-bit target.
@@ -100,7 +107,11 @@ clicks**, which performs the action *and* consumes the popup: that is the whole 
 setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
 button again, clicking the plot, and `ESC` (posted or real) all leave it on screen, and opening a
 different menu merely replaces it. So menus are the one place that should not be in a per-point loop. **If a popup is open when a run resumes, stop and raise the failure;
-do not try to close it.** `WM_CLOSE` to a popup panel destroys the popup window while the app is
+do not try to close it.** **The policy for one that has already stranded the application is the
+operator's restart:** abort the run, mark the application's state unverified, and require the operator —
+no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
+it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
+failed; plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
 still inside its modal menu loop, and from then on *no* menu opens by any means — posted clicks,
 real clicks, real `ESC`, a click outside, `Alt` — until the app is restarted; the rest of the app
 keeps working, so a liveness check will not catch it. Dialog panels are different: they own a
@@ -116,7 +127,10 @@ word and the control id in the low word — the selection alone updates the cont
 parameter changes only when its change handler runs. A list-style combo has **no inner edit**, so
 text-based tricks have no target; an edit-style one has both, and setting only the text leaves
 `ItemIndex` stale. Verify the write like any other: read the index back *and* check a coupled
-observable (the app's own painted value, or a readout it recomputes). When a `TSp_Value_Button`-style
+observable (the app's own painted value, or a readout it recomputes). **Select a combo's item by value, never by counting steps or keystrokes:** a combo can step *past* a
+value (measured: one step up from burst length `4` landed on `6`), so read the options back, take the
+index whose text states the value you mean, and then read the field back to confirm what it now states.
+When a `TSp_Value_Button`-style
 wrapper and its inner combo report the **same control id they are one widget** — put one entry in the
 map, not two.
 
@@ -159,6 +173,20 @@ but it is not what makes the driver correct — `control_id` plus a run-time rec
 Record a **control-count fingerprint** alongside the geometry one and assert it in the same
 pre-flight: it is the cheapest detector for "a menu popup or a dialog is open, so this is not the
 screen you mapped". When it fires, report what is extra and stop, rather than resolving roles against it.
+
+**5b. Read the instrument's own fixed facts before the first recording, and refuse a disagreement
+before anything is stored.** A plan may rest only on facts read off *this* instrument: read them from
+the surfaces that state them (the measurement screen, the dialogs) before the first point, refuse the
+run when a fact disagrees with the definition — naming **every** fact that disagreed, in one message,
+because the comparison is cheap and the instrument is in front of the operator — and carry the reading
+into the run's manifest as a projection of each fact's **value and its source** (`read` / `routed` /
+`declared` / `unreadable`), so a stored file can be attributed to the state that produced it. Two rules
+make the gate mean something. **A fact that has a reader and whose read failed refuses the run**,
+instead of falling back to the declared value: "this instrument cannot state it" and "this attempt
+failed" are different claims, and demoting the second is knowingly proceeding past a check that exists.
+And the declaration is never overwritten by the reading, so the record keeps both and a disagreeing
+fact is visible after the fact. `docs/dop3000/acquisition-campaign-compilation-plan.md` §9.2, §13,
+§15; stage 5b of `docs/dop3000/live-bringup.md` is the live acceptance of it.
 
 **6. Measure a discretised knob's domain instead of trusting the number you typed.** Numeric
 fields snap to a ladder and clamp silently. Scan a range, read each value back, and design around
@@ -443,8 +471,11 @@ unrecognised prompt is one you must not answer blind.
 
 - **A dialog can be a child panel of the main window, not a window.** A settings/options dialog
   that never appears in a top-level window enumeration can still be on screen and fully drivable
-  (measured: a "Record settings" dialog was a `TSp_Panel` inside the main window, owning real
-  `TEdit` fields with Browse buttons — and its fields take `WM_SETTEXT` like any other edit). Dump
+  (measured: a settings dialog was a `TSp_Panel` inside the main window, owning real `TEdit` fields
+  with Browse buttons — and its fields take `WM_SETTEXT` like any other edit; **name which surface it
+  was**: this application's *Store* dialog is that shape and its path is exercised, while its `Record
+  settings` surface — the one holding the block cap — has never been opened here, and evidence about
+  one surface is not evidence about the other). Dump
   the **child tree** before concluding that a dialog, or a feature behind it, does not exist, and
   identify such a panel structurally (directly owns an edit plus a browse button) rather than by
   position. A press that seems to do nothing is often exactly this: an `EnumWindows`-based "did a
@@ -494,7 +525,14 @@ unrecognised prompt is one you must not answer blind.
   Blocks carry meaning only where the unit of work is a *repeat* — rolling/multiplexed multi-channel
   acquisition, each roll contributing N blocks, where the store's block selector is exactly the right
   handle. A single-channel parameter sweep needs no block management at all.
-  **Treat the cap as an input you were told, not as a law you measured, and never let it refuse the
+  **The cap lives in a storage surface of its own, not in the store path you exercise.** Measured: this
+  application commits a recording through its *Store* dialog (geometry known, path exercised) while
+  `Do not keep in a block more profiles than` sits in `Record settings` — a different surface that this
+  automation has never read or written — so "the settings dialog" is ambiguous and a plan that depends on
+  the cap depends on a value nothing here has established. The cap is **not a planning limit** (the UI
+  accepted a million) while the value *in force* does truncate a long point's start (plan §18;
+  `docs/dop3000/udop-automation.md` §7, §12.4). **Treat the cap as an input you were told, not as a law
+  you measured, and never let it refuse the
   project's own operating point.** Measured: the production point length stores less than it asks for
   (12 s asked, ~8.4 s kept — the last ~257 profiles), and that recording *is* the deliverable, so a plan
   guard that refuses it makes the goal unrunnable while proving nothing. State the consequence instead —
@@ -659,6 +697,15 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   cap) per point, so the plan says what will be stored before a single slot is spent. Measured on six
   permutations: one verification dialog for the whole job, ~17 s per 12 s point, and a re-run with nothing
   to do finishing in seconds.
+- **Report a refusal as one line with the documented exit code — never re-parent an exception to make a
+  handler catch it.** Measured: the pre-run verb against a non-foreground application printed a full
+  traceback and exited 1, because the driver's refusal type is not a `ValueError` while the CLI's handlers
+  caught only `(ValueError, OSError)`. A refusal is still a refusal — the run did not happen and nothing
+  was written — so catch the driver's own error at the **CLI boundary**, print one `<prog>: <message>`
+  line and exit with the code the interface documents for a refusal (2 here, distinct from 1, a refused
+  item, and from a crash). Do not re-parent the exception class to make an `except` match instead: the
+  hierarchy is what lets a caller tell a *refused point* from a *broken instrument*, and blurring it buys
+  one caught case at the price of that distinction (plan §16.2).
 - **A moved script is verified by running it, not by compiling it.** `py_compile` passes on a
   `NameError` that only fires at runtime — a path rewrite that used `Path` before the module's own
   import compiled clean and died in the dispatched session. After porting, run each script once in its
@@ -804,7 +851,15 @@ re-laid-out dialog (another software package installed, a field built or not bui
 *different* value in the same `(column, row)` while still reading exactly like a value, and a pre-run
 check would then hand the run a plausible wrong fact. Refuse as **uncheckable** (nothing states the
 anchor on both surfaces) separately from **disagreement** (the two surfaces state different text):
-they are different faults, and a run record has to be able to tell which one happened.
+they are different faults, and a run record has to be able to tell which one happened. Gate the
+**shape** before the anchors: a positionally-read surface is read only when it builds the measured shape
+(here: three columns of value fields in a `4 / 6 / 5` row-per-column layout), and one that does not is
+refused unread. A field's identity on such a surface *is* its `(column, row)` — never a control id (ids
+change on every launch) and never a caption (these carry none) — so the shape is the only thing saying
+the position you are about to believe is the position it was measured at. Pin all of it to a committed
+capture of the measured tree (`tests/data/udop-parameters-dialog-tree.json`) so a re-layout refuses
+rather than mis-reads: `DIALOG_FIELD_ORDER` / `DIALOG_ANCHORS` / `DIALOG_COLUMN_ROWS` in
+`src/udv_echo_process/acquire/actuator.py` are the binding as data (plan §14).
 
 **A freshly started application builds its value table empty the first time a dialog is opened, and
 states it on the next open.** Measured: the first open after a restart read 2 stating controls where

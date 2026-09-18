@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, live
+from udv_echo_process.acquire import campaign, driver, live
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.io import load
@@ -229,7 +229,8 @@ def _campaign_plan(args: argparse.Namespace, as_json: bool) -> int:
     try:
         definition = campaign.load_campaign(Path(args.definition))
         points = campaign.plan_campaign(definition)
-    except (ValueError, OSError) as exc:  # CampaignError is a ValueError
+    # CampaignError is a ValueError; a driver refusal is named here because it is not (§16.2).
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -276,6 +277,59 @@ def _campaign_plan(args: argparse.Namespace, as_json: bool) -> int:
     return 0
 
 
+def _campaign_compile(args: argparse.Namespace, notes: list[str], as_json: bool) -> int:
+    """``compile``: one live reading, reconciled against the definition, and stop there.
+
+    The run path's steps 3-5 and nothing after them: route the channel, take one reading of
+    the instrument, compile the campaign against it, and print what came out. It is the only
+    way to see the *compiled* plan — the static ``plan`` cannot know what the instrument
+    states — and it is what an operator checks before spending a job's recordings, which is
+    why it must record nothing: ``compile_campaign`` takes no actuator, so nothing on this
+    path can store, and no store directory, log or manifest is named here.
+
+    Unlike ``plan`` it drives the instrument, and step 3 is a *write* whenever the dialog is
+    not already on the channel — so the note names the channel that it routed. Exit 0 when the
+    definition and the instrument agree, 2 when the file or the compile refuses, with the
+    refusal's own words on stderr: it already names the fact or the state that stopped the
+    job, and re-wrapping it would give one cause two diagnoses.
+    """
+    try:
+        definition = campaign.load_campaign(Path(args.definition))
+        actuator = live.live_actuator(args.channel, notes)
+        # (3) the routing step, whose own return is the evidence the reading needs — the
+        # reading cannot read the channel itself. Worth a note, because this is the one of
+        # the three steps that can change the instrument.
+        routed = actuator.ensure_channel()
+        notes.append(
+            f"compile: routed channel {routed} (step 3 writes the channel only when the "
+            "dialog is not already on it)"
+        )
+        # (4) one reading, handed what the routing step established and what the dialog
+        # reader read. (5) reconciled, or refused by name.
+        snapshot = actuator.instrument_snapshot(
+            routed_channel=routed,
+            dialog_parameters=actuator.read_dialog_parameters(),
+        )
+        compiled = campaign.compile_campaign(definition, snapshot)
+    # CampaignError is a ValueError; a driver refusal is named here because it is not (§16.2).
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        # One document, like `plan`'s, plus the two things the compile states as properties
+        # rather than fields: the facts nothing on the instrument could state, and the
+        # disagreements the run would proceed despite.
+        payload = compiled.model_dump(mode="json")
+        payload["unproven"] = list(compiled.unproven)
+        payload["advisories"] = list(compiled.advisories)
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
+
+    _acquire_report(compiled, as_json)
+    return 0
+
+
 def _campaign_run(
     args: argparse.Namespace, notes: list[str], as_json: bool
 ) -> int:
@@ -302,11 +356,15 @@ def _campaign_run(
             store_dir=directory,
             log_path=log_path,
             resume=args.resume,
+            no_snapshot=args.no_snapshot,
+            resume_declaration_only=args.resume_declaration_only,
             channel=channel,
             definition_path=Path(args.definition),
             notes=notes,
         )
-    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+    # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
+    # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -341,7 +399,9 @@ def _campaign_report(args: argparse.Namespace, as_json: bool) -> int:
     try:
         records = point_records(read_entries(log_path))
         manifest = campaign.read_manifest_if_present(campaign.manifest_path_for(log_path))
-    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+    # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
+    # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -425,14 +485,21 @@ def acquire_main(argv: list[str] | None = None) -> None:
     These commands drive the *running* application, so they only work from the session that owns
     its screen (``tools/live/README.md``); everything they report is a model from
     :mod:`udv_echo_process.acquire.actuator`, and ``--json`` prints it for a machine. Exit codes:
-    0 ok, 1 a refused point or a failed verification, 2 usage or configuration.
+    0 ok, 1 a refused point or a failed verification, 2 usage, configuration, or a refusal from
+    the driver itself (the foreground precondition, a dialog that will not open, a control that
+    is not there) — reported as one ``udv-acquire:`` line and never as a traceback, because the
+    run did not happen and nothing was written.
 
     ``plan`` and ``report`` are the campaign layer's two halves that touch no instrument at all:
     ``plan`` validates a definition and prints the points it would run, ``report`` reads a job
     log (and the manifest beside it) and prints how the job went. Both work on a machine whose
     application is not running — including one that has no application — which is what makes a
-    campaign reviewable before anything is recorded. Only ``campaign`` drives the instrument,
-    through the same live actuator the other subcommands use.
+    campaign reviewable before anything is recorded. ``compile`` adds one live reading to what
+    ``plan`` does and reconciles the definition against it, so it drives the instrument — the
+    routing step writes the channel when the dialog differs — but still records nothing: no
+    store, no log, no manifest, which is what makes a compiled plan checkable before a job is
+    spent. Only ``campaign`` records: it compiles, then runs the points through the same live
+    actuator the other subcommands use.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -510,6 +577,17 @@ def acquire_main(argv: list[str] | None = None) -> None:
     plan_parser.add_argument("--definition", required=True)
     plan_parser.add_argument("--json", action="store_true")
 
+    compile_parser = subcommands.add_parser(
+        "compile",
+        help=(
+            "add one live reading to a definition and print the reconciled plan "
+            "(touches the instrument; records nothing)"
+        ),
+    )
+    compile_parser.add_argument("--definition", required=True)
+    channel_argument(compile_parser)
+    compile_parser.add_argument("--json", action="store_true")
+
     campaign_parser = subcommands.add_parser(
         "campaign", help="run a campaign definition, one JSONL entry per point"
     )
@@ -522,6 +600,22 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "--resume",
         action="store_true",
         help="skip the points the log already holds as ok, and say how many",
+    )
+    campaign_parser.add_argument(
+        "--no-snapshot",
+        action="store_true",
+        help=(
+            "take no instrument reading and compile nothing: the manifest, and every point "
+            "from it, are marked 'declared only'"
+        ),
+    )
+    campaign_parser.add_argument(
+        "--resume-declaration-only",
+        action="store_true",
+        help=(
+            "let a resume proceed without a proven compilation identity, marking every point "
+            "it skipped that way as decided without instrument evidence"
+        ),
     )
     channel_argument(campaign_parser)
     campaign_parser.add_argument("--json", action="store_true")
@@ -543,6 +637,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
             _acquire_report(live.status(args.channel, notes), as_json)
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
+        elif args.command == "compile":
+            code = _campaign_compile(args, notes, as_json)
         elif args.command == "campaign":
             code = _campaign_run(args, notes, as_json)
         elif args.command == "report":
@@ -594,6 +690,13 @@ def acquire_main(argv: list[str] | None = None) -> None:
         else:  # decode
             measured = args.channel if args.channel is not None else ChannelSetting().channel
             _acquire_report(live.decode(Path(args.path), measured), as_json)
+    except driver.AcquisitionError as exc:
+        # The live verbs drive the instrument through the same driver and have no handler of
+        # their own, so a refusal from one of them arrives here (§16.2). The answer is the one
+        # the campaign handlers give above — the driver's own words on one line, exit 2 —
+        # because a refused step is a refusal (nothing ran, nothing was written), not a crash.
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        code = 2
     finally:
         for note in notes:
             print(f"note: {note}", file=note_stream)

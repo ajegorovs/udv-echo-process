@@ -58,13 +58,12 @@ RUNG_2_MM = 0.243333
 GATES_K1 = 797
 GATES_K2 = 399
 
-#: The four facts nothing on this machine can read yet (``driver.instrument_snapshot``).
-UNREADABLE_FACTS = (
-    "burst_length",
-    "sound_speed_ms",
-    "first_gate_mm",
-    "max_profiles_per_block",
-)
+#: The one fact nothing on this machine can read: the block cap is an application Preference whose
+#: surface reconnaissance could not reach safely (W1, plan §14). The three dialog-only facts were in
+#: this tuple until W1 gave them a read path, and that is exactly the distinction the compile now
+#: enforces — a fact nothing can read is carried `unproven`, while a fact that *has* a reader and
+#: produced no value refuses the campaign (plan §9.2).
+UNREADABLE_FACTS = ("max_profiles_per_block",)
 
 
 def read(value: str) -> InstrumentFact:
@@ -304,6 +303,37 @@ def test_a_campaign_that_declares_nothing_for_a_fact_checks_nothing() -> None:
 
 # --------------------------------------------------------------- screens and channels that are
 # --------------------------------------------------------------- not the measurement screen
+
+
+@pytest.mark.parametrize("name", ("burst_length", "sound_speed_ms", "first_gate_mm"))
+def test_a_fact_with_a_supported_reader_that_did_not_read_refuses(name: str) -> None:
+    """A reader that exists and produced nothing is a *failed read*, not an absent capability.
+
+    All three are dialog-only facts with a supported read path since W1, so a reading that does not
+    carry one of them is the instrument's check having been attempted and failed — and proceeding
+    would mean knowingly running a campaign when the check that exists was not performed. The
+    refusal has to name the fact and carry the reader's own reason, because that reason is what the
+    operator acts on.
+    """
+    reason = "the 'Operating parameters' dialog could not be checked against the measurement screen"
+    message = refusal(snapshot=reading(**{name: unreadable(reason)}))
+
+    assert name in message
+    assert reason in message
+
+
+def test_a_fact_with_no_reader_at_all_is_still_only_unproven() -> None:
+    """The cap has no reader in this driver, so it is carried declared — not a failed read.
+
+    This is the other half of the same rule: the two states must not be collapsed in either
+    direction. Refusing on the cap would make every campaign unrunnable on a fact nothing can read;
+    accepting a failed read would let a campaign run on the declaration alone.
+    """
+    compiled = campaign.compile_campaign(definition(), reading(max_profiles_per_block=unreadable(
+        "the block cap is an application Preference, not a measurement parameter"
+    )))
+
+    assert compiled.unproven == ("max_profiles_per_block",)
 
 
 def test_an_assisted_channel_refuses() -> None:

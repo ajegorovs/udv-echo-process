@@ -65,6 +65,7 @@ from udv_echo_process.acquire.actuator import (
     VIEW_TIMEOUT_S,
     Actuator,
     ChannelMode,
+    DialogField,
     OverlayKind,
     ParamRole,
     ScreenFingerprint,
@@ -89,6 +90,7 @@ from udv_echo_process.acquire.plan import (
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import (
+    DialogParameters,
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
@@ -229,25 +231,22 @@ def _block_for(path: Path | None, *, fake: FakeActuator | None = None) -> Script
 CLEAN_PANELS = 4
 CLEAN_CONTROLS = 43
 
-#: Why the three facts that live in a dialog cannot be read off the measurement screen. The
-#: fake states them the way the driver does, because a reason is part of the fact.
-UNREADABLE_DIALOG_ONLY = (
-    "{name!r} has no parameter-column field: it is set in the 'Operating parameters' dialog "
-    "only, so nothing on the measurement screen states it"
-)
-
 
 def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
 
-    The PRF and the emissions per profile are this module's measured constants, so the reading
-    agrees with the points these tests plan; the mode is manual; and the channel is **the one the
-    caller says it routed** — ``routed_channel`` is handed straight through, so a cycle that
+    The PRF, the emissions per profile **and the three dialog-only facts** are this module's measured
+    constants, so the reading agrees with the points these tests plan and the compile reconciles it
+    instead of refusing on a read that never happened; the mode is manual; and the channel is **the
+    one the caller says it routed** — ``routed_channel`` is handed straight through, so a cycle that
     routed and passed its verified channel over gets a ``routed`` fact, and a cycle that passed
-    nothing gets ``unreadable`` rather than a claim nobody could have made. The four facts
-    nothing can read yet are carried unreadable with their reasons rather than as numbers, which
-    is the honest state on this machine and the reason a reading cannot disagree with a
-    definition about a fact nobody read.
+    nothing gets ``unreadable`` rather than a claim nobody could have made.
+
+    The block cap is the one fact that stays unreadable, and now it is the *only* one: an application
+    Preference whose surface reconnaissance could not open safely (W1, plan §14), so no reader here
+    reaches it. Since W1 the three dialog facts have a reader, which is why they are stated rather
+    than merely declared — a reading without them is a failed read, and the compile refuses it
+    (plan §9.2).
     """
     channel = (
         routed(
@@ -276,9 +275,9 @@ def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
         emissions_per_profile=InstrumentFact(
             value=str(EMISSIONS_PER_PROFILE), source=FactSource.READ
         ),
-        burst_length=unreadable(UNREADABLE_DIALOG_ONLY.format(name="burst_length")),
-        sound_speed_ms=unreadable(UNREADABLE_DIALOG_ONLY.format(name="sound_speed_ms")),
-        first_gate_mm=unreadable(UNREADABLE_DIALOG_ONLY.format(name="first_gate_mm")),
+        burst_length=InstrumentFact(value=str(BURST_LENGTH), source=FactSource.READ),
+        sound_speed_ms=InstrumentFact(value=str(int(SOUND_SPEED_MS)), source=FactSource.READ),
+        first_gate_mm=InstrumentFact(value=str(int(FIRST_GATE_MM)), source=FactSource.READ),
         max_profiles_per_block=unreadable(
             "the block cap is an application Preference, not a measurement parameter"
         ),
@@ -322,6 +321,14 @@ class FakeActuator:
         #: is what a run on a correctly configured instrument reads.
         self.snapshot_checks = 0
         self.scripted_snapshot: InstrumentSnapshot | None = None
+        #: The ``routed_channel`` and the dialog reading each snapshot was handed, in order —
+        #: the campaign path hands its own routing step's answer and the dialog reading over,
+        #: and a fake that accepted them silently could not tell a hand-over from a default.
+        self.snapshot_routed_channels: list[int | None] = []
+        self.snapshot_dialogs: list[DialogParameters | None] = []
+        #: How often the run read the ``Operating parameters`` dialog, and each reading it got.
+        self.dialog_checks = 0
+        self.dialog_readings: list[DialogParameters] = []
         self.parameters: dict[str, str] = {}
         self.timeouts: list[float] = []
         self.gates_readback: str | None = None
@@ -386,19 +393,61 @@ class FakeActuator:
         self.channel_checks += 1
         return 1
 
-    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
+    def read_dialog_parameters(self) -> DialogParameters:
+        """The ``Operating parameters`` dialog read: the three facts it states, as text.
+
+        The same three values :func:`expected_snapshot` states — this module's measured
+        constants — read the way the driver reads them, and for the same reason the port has
+        the method at all: the campaign path reads the dialog as a step of its own and hands
+        the result to ``instrument_snapshot``, which deliberately does not open the dialog.
+        Counted rather than appended to ``calls`` (once per run, like the channel read), with
+        the readings kept because a case has to be able to say which one was handed over.
+
+        ``channel`` is the dialog's own channel field and ``reason`` is empty: the dialog
+        stated every field, which is what ``DialogParameters.readable()`` means.
+        """
+        self.dialog_checks += 1
+        reading = DialogParameters(
+            channel="1",
+            fields=(
+                (DialogField.BURST_LENGTH.value, str(BURST_LENGTH)),
+                (DialogField.FIRST_GATE_MM.value, str(int(FIRST_GATE_MM))),
+                (DialogField.SOUND_SPEED_MS.value, str(int(SOUND_SPEED_MS))),
+            ),
+        )
+        self.dialog_readings.append(reading)
+        return reading
+
+    def instrument_snapshot(
+        self,
+        *,
+        routed_channel: int | None,
+        dialog_parameters: DialogParameters | None = None,
+    ) -> InstrumentSnapshot:
         """The instrument reading: the scripted one, else the expected configuration.
 
-        Counted rather than appended to ``calls``, for the same reason the channel read is:
-        it is once per run, while ``calls`` is the per-point sequence.
+        Counted, and *also* marked in ``calls``: the reading is once per run and the ordering
+        assertions are about the per-run steps as much as the per-point ones — the plan's run
+        path compiles the campaign from this reading *before* the first point is stored, and
+        ``calls`` is where that order is observable.
 
         ``routed_channel`` is passed straight through to :func:`expected_snapshot`, so the fake's
         answer depends on what the caller claims exactly as the driver's does — a cycle that
         forgets to hand over the channel it routed cannot get a ``routed`` fact out of this fake.
         The default is the reading a run on a *correctly configured* instrument gets, so a test
         that is not about the compile keeps its old subject.
+
+        ``dialog_parameters`` is accepted because the port declares it (the driver states the
+        three dialog-only facts from what the caller read) and recorded rather than used: this
+        fake's default reading already states those three constants as ``read`` facts, so a
+        case that *is* about the hand-over asserts on what was passed
+        (:attr:`snapshot_dialogs`) and one that is not sees the expected configuration either
+        way.
         """
         self.snapshot_checks += 1
+        self.snapshot_routed_channels.append(routed_channel)
+        self.snapshot_dialogs.append(dialog_parameters)
+        self.calls.append(("instrument_snapshot", routed_channel))
         if self.scripted_snapshot is not None:
             return self.scripted_snapshot
         return expected_snapshot(routed_channel)
@@ -2000,18 +2049,31 @@ def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
 def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
     """The primitives gained nothing: the reading is a *composed* call, so fakes survive.
 
-    The plan's criterion 5 rests on this: one added method on ``SweepActuator``, no existing
+    The plan's criterion 5 rests on this: two added methods on ``SweepActuator``, no existing
     signature changed, so every implementation that satisfied the port before still does — it
-    gains one method, and a fake that does not answer it is still a valid ``Actuator``.
+    gains those methods, and a fake that does not answer them is still a valid ``Actuator``.
+
+    The second addition, ``read_dialog_parameters``, is **deliberate and belongs to the
+    campaign path**: ``instrument_snapshot`` states the sound speed, the first gate and the
+    burst length only from what a caller hands it (``dialog_parameters=``) and never opens the
+    dialog itself (the reading presses nothing, and that dialog is a modal the operator watches
+    open and close), so the read is a step of its own on the port a campaign drives. The
+    primitive ``Actuator`` port stays untouched — which is what keeps this a widening of the
+    sweep port rather than a change to the surface every implementation answers.
     """
     primitives = {name for name in dir(Actuator) if not name.startswith("_")}
     sweep = {name for name in dir(runner_module.SweepActuator) if not name.startswith("_")}
 
     assert "instrument_snapshot" not in primitives
+    assert "read_dialog_parameters" not in primitives, (
+        "the dialog read is the sweep port's, not a primitive: the driver has the method, but "
+        "no existing implementation of the primitive ``Actuator`` is required to gain it"
+    )
     assert sweep - primitives == {
         "apply_point",
         "ensure_channel",
         "instrument_snapshot",
+        "read_dialog_parameters",
         "try_record_and_store",
     }
 
@@ -2019,25 +2081,29 @@ def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
 def test_the_fake_answers_the_reading_a_run_expects(tmp_path: Path) -> None:
     """The fake's default is the expected configuration: it cannot disagree with a definition.
 
-    The two facts the measurement screen states are the module's own measured constants, and
-    the four with no read path are unreadable — no value for a compile to compare, which is
-    exactly the state the next slice has to handle *and* the state that keeps these cases
-    about the runner.
+    Its five readable facts are this module's own measured constants — including the three that come
+    out of the ``Operating parameters`` dialog, which have had a supported read path since W1 — so a
+    compile reconciles the reading instead of refusing a read that never happened. The block cap is
+    the one fact nothing here reads: an application Preference no reader in this driver reaches,
+    which is the honest state of this machine and the reason a reading cannot disagree with a
+    definition about it.
     """
     fake = FakeActuator(tmp_path)
 
     reading = fake.instrument_snapshot(routed_channel=1)
 
     assert fake.snapshot_checks == 1
-    assert reading.read_facts() == ("prf_us", "emissions_per_profile")
-    assert reading.fact("prf_us").value == str(PRF_US)
-    assert reading.fact("emissions_per_profile").value == str(EMISSIONS_PER_PROFILE)
-    assert reading.unreadable_facts() == (
+    assert reading.read_facts() == (
+        "prf_us",
+        "emissions_per_profile",
         "burst_length",
         "sound_speed_ms",
         "first_gate_mm",
-        "max_profiles_per_block",
     )
+    assert reading.fact("prf_us").value == str(PRF_US)
+    assert reading.fact("burst_length").value == str(BURST_LENGTH)
+    assert reading.fact("sound_speed_ms").value == str(int(SOUND_SPEED_MS))
+    assert reading.unreadable_facts() == ("max_profiles_per_block",)
     assert reading.fingerprint.visible_controls == CLEAN_CONTROLS
 
 

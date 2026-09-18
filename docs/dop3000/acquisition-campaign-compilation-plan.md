@@ -552,6 +552,51 @@ its tests are the ones that must show the recipe is untouched (criterion 5).
 - Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
   under `tools/live/probes/`.
 
+### 9.1 The stop condition — binding, from the review of the batch
+
+Once a campaign can route the target channel, snapshot enough fixed settings, refuse a deliberate
+mismatch before recording, and then run the existing six-point campaign **unchanged**, *stop
+expanding the acquisition architecture* and use it for a real parameter-sensitivity experiment.
+This is W4's exit criterion, adopted verbatim from the review.
+
+After that point the acquisition architecture is re-opened by **evidence**, not by an abstraction
+that could be improved: a real campaign failed; a real campaign produced ambiguous evidence; or a
+downstream analysis cannot establish an essential acquisition condition.
+
+### 9.2 Read paths, once a fact has one — W4's one policy change
+
+Reconnaissance (W1, §14) gave the burst length, the sound speed and the first gate a supported read
+path, which splits what `unreadable` can mean:
+
+| state | consequence in a normal campaign |
+|---|---|
+| read, and it agrees with the declaration | proceed |
+| read, and it disagrees | refuse, per the fact's own acceptance (§13) |
+| **a supported read path exists, and this attempt failed** | **refuse before recording** |
+| genuinely unsupported (the block cap) | carry as declared, marked unproven |
+
+Before W1 the third row did not exist: "this driver cannot establish the fact" and "this attempt
+failed" were the same statement, so a campaign could proceed on a fact nobody had read. They are now
+different claims about the instrument and they get different consequences — demoting a supported
+read back to `declared` would mean knowingly proceeding when the check that exists was not
+performed. The inventory of which facts have a supported read path is declared where the readers
+live; the refusal is the campaign's.
+
+### 9.3 A stranded popup — what recovery is allowed
+
+Measured (W1, §14): Escape closes nothing in this application, a cursor move does not dismiss a
+hover-opened popup, and a posted `WM_CANCELMODE` does not either; the only clean exit is a press.
+
+- **Commissioning and testing** (the live acceptance sequence below): abort the test, **never press
+  an unknown popup entry** (the second entry selects the assisted mode), restart the application,
+  verify the configuration, restart the sequence. Documented operator recovery, not a program.
+- **An unattended campaign**: abort the campaign, mark the application state unverified, require the
+  operator. No automatic restart, no speculative menu press, no silent continuation.
+
+Both rest on the principle the rest of this plan already follows: do not invent a Win32 gesture the
+live application has not demonstrated. If a stranded popup becomes a recurring operational problem,
+*that* is the evidence a recovery primitive would be budgeted against.
+
 ## 10. Review round 1 — what changed in this document
 
 The plan was reviewed before any implementation. The direction was approved — including all
@@ -811,3 +856,346 @@ warning, per the covariate table) then decides. (b) The reading carries the dial
 field; comparing it against the routed channel is a refusal W4 owns, not this slice — a dialog
 showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
 place.
+
+## 15. W4 as landed — the snapshot and the compile reach the run, the manifest and the CLI
+
+Slice P4 is implemented on `feat/acquire-w4-integration` (cut from this branch's tip after the three
+earlier slices merged), in four commits:
+
+| commit | what |
+|---|---|
+| `00ff9c9` | the decisions, as decisions: §9.1's stop condition, §9.2's read-path table, §9.3's recovery rule |
+| `a356d68` | the one policy change: `SUPPORTED_READ_FACTS` + `_refuse_failed_reads` |
+| `b2743f4` | §4's order in `run_campaign`, the resume identity, the manifest's three new fields |
+| `accc682` | the `compile` verb and the two flags |
+
+**The order is literal** (`run_campaign`): the static plan (so an unplannable file costs nothing, not
+even a dialog) → `ensure_channel()` (routing, not a scientific setting; `SweepRunner` now keeps that
+call's return and exposes `routed_channel` instead of discarding it) → `instrument_snapshot(routed_channel=…,
+dialog_parameters=read_dialog_parameters())`, once per run → `compile_campaign`, whose `CampaignError`
+propagates untouched (§13.2) → the resume identity, validated before the todo/skipped sets exist → the
+existing per-point cycle, over the **compiled** points. `SweepActuator` gains
+`read_dialog_parameters()`: the snapshot will not open that dialog by design, so a caller that wants
+the three dialog facts has to have paid for the step. The primitive `Actuator` still has no dialog
+reader, which the dialog tests pin.
+
+**Two behaviour changes are disclosed rather than hidden** (both deliberate, both in the commit body):
+a compiled campaign opens the channel dialog **twice** — step 3, then the runner's own pre-record
+guard, which is idempotent (it writes only when the channel differs) — and `plan_campaign` runs twice,
+once as step 2 and once inside the compile, where it is pure and the duplicate keeps the step-2
+refusal free of any gesture.
+
+**The resume is fail-closed, and the flag that bypasses it says so on the record.** A manifest whose
+definition fingerprint differs refuses and is *not* bypassable; a manifest with no compilation
+identity (every manifest written before this slice), or no manifest while the log holds successful
+records, refuses; a different identity refuses naming the fact that moved, with both sides.
+`--resume-declaration-only` turns those identity refusals into a proceed and records the authorisation
+in `skipped_without_evidence`. `--no-snapshot` takes no reading, compiles nothing and marks the
+manifest `declared_only`. `JobManifest.compilation_identity` carries the §3.3 stable projection, never
+the raw snapshot: the volatile half (hwnd, cursor, `is_foreground`, geometry) is not compatibility
+evidence, which is the distinction §3.3 exists to draw.
+
+**The live rehearsal stops at a precondition, and that is worth recording.** `acquire compile` against
+the running application refused with the driver's own foreground guard — "the `TMain_Scr` window is
+not the foreground window, so its menubar cannot be hovered: the foreground window is
+`Windows.UI.CoreWindow`" — before any hover, so nothing was opened and nothing was stranded. The verb
+therefore needs the application in front, which the operator's sequence has to say out loud (a console
+window opened by the launcher is the usual thief). The good case is otherwise available as-is: this
+machine reads exactly what `examples/campaign-single-channel.json` declares.
+
+**Still open, and named as W4's own obligation in §14:** the reading carries the dialog's own channel
+field, and comparing it against the routed channel is *not* implemented yet — the dialog's channel
+does not survive into `InstrumentSnapshot`, so neither the compile nor the run can see it. A dialog
+showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
+place (§14, "The channel trap in the one place this system cannot see"), and it stays open until the
+reading carries that field and something refuses on it. It cannot fire in the planned experiment,
+which runs one channel with the dialog on that channel, so it does not hold the experiment back.
+
+### 15.1 The live acceptance run, on the real application
+
+Dispatched through `tools/live/` against UDOP in simulation mode, the application foreground (the
+first attempt refused at the driver's own foreground guard, before any hover, with nothing opened and
+nothing stranded — that guard is the reason the operator sequence now states the precondition).
+
+1. **The good case** — `acquire compile --definition examples/campaign-single-channel.json` → exit 0,
+   channel `1` **routed**, mode `manual` **read**, and `prf_us 212`, `emissions_per_profile 150`,
+   `burst_length 4`, `sound_speed_ms 1460`, `first_gate_mm 2` all **read** and all agreeing with the
+   declaration. `max_profiles_per_block` is carried `unreadable` with its reason and marked `agreed:
+   None`, so the record says "declared, not verified" instead of pretending. Nothing was recorded —
+   the verb has no store path and `compile_campaign` takes no actuator.
+2. **A deliberate mismatch, definition side** — a copy declaring `burst_length 5` against an
+   instrument reading `4` refused with exit 2: "the instrument disagrees with the campaign before the
+   first recording, so nothing was stored and the application is untouched: burst_length: the campaign
+   declares 5, the instrument states '4'".
+3. **A deliberate mismatch, instrument side** (the operator moved the burst one step in the dialog,
+   which the combo took to `6`) — the unmodified definition refused the same way, naming `4` against
+   `6`. Both directions of criterion 1 proved on the application, not in a fake.
+4. **The six-point campaign, unchanged** — `acquire campaign --definition
+   examples/campaign-single-channel.json --store-dir <the application's own Record settings directory>
+   --log outputs/live/w4-acceptance.jsonl` → `6/6 point(s) ok`, six `.BDD` files stamped
+   `20260918T113607` in the application's capture directory, six log entries all `ok`, and a manifest
+   carrying `compilation_identity` with `channel ('1','routed')`, `burst ('4','read')`, `sound speed
+   ('1460','read')`, `first gate ('2','read')` and the cap `(None,'unreadable')` — plus
+   `declared_only: false`, `skipped: []`, `skipped_without_evidence: []`.
+5. **The resume** — the same command with `--resume` → `0/6 point(s) ok; 6 skipped as already
+   recorded`, exit 0. The identity was proved **before** any point left the todo set: this is §4's
+   step 6 doing its job on a real manifest, and it is the check that did not exist before this slice.
+
+With that, §9.1's stop condition is satisfied: the campaign routes the target channel, snapshots the
+fixed settings, refuses a deliberate mismatch before recording, and ran the existing six-point
+campaign unchanged. **The acquisition architecture stops growing here** — what comes next is the
+parameter-sensitivity experiment this was all built for.
+
+## 16. Closing W4 — the one change request, one live defect, then the experiment
+
+### 16.1 The dialog-channel attribution check (the review of #7's single request)
+
+**Why.** The dialog's own channel field is already read (`DialogParameters.channel`, W1) and the routed
+channel is already to hand (`ensure_channel()`), so a dialog stating channel 2 while the run routed
+channel 1 would attach channel 2's burst, sound speed and first gate to a channel-1 snapshot. That is the
+wrong-channel trap in the one place the system cannot see it (§14), and it is a known hole, cheap to
+close, so it does not cross the stop boundary.
+
+**Where.** `Win32Actuator.instrument_snapshot` (driver.py) — the single point where both values meet, so
+every caller is covered (the run path, `acquire compile`, and whatever comes later) without touching the
+snapshot model. The reviewer asked for no broader model change and none is needed.
+
+**Rules.** Compare only when a channel was routed (`routed_channel is not None`) *and* the reading is a
+successful one (empty `reason`, non-empty `channel`). A *refused* reading must keep its own reason for
+`_refuse_failed_reads` to report: replacing a precise reader diagnostic with a vaguer attribution error
+would be a worse record.
+
+**Refusal.** The driver's `AcquisitionError`, naming both channels, before any fact is attributed — which
+is why 16.2 comes with it.
+
+**Evidence.** Red before green, in `tests/test_acquire_dialog.py` with the measured dialog fixture:
+`FakeDialogDriver(channel="2")` against `routed_channel=1` refuses with both channels named and attributes
+nothing; the mirror case (`channel="2"`, `routed_channel=2`) is accepted; a *refused* reading still reports
+the reader's own reason rather than the attribution error. Live: the same `acquire compile` on the machine
+(whose dialog is on channel 1) must still be accepted — and, because the mismatch cannot be staged on a
+one-channel instrument without disturbing it, the fake cases are the evidence for the refusal itself.
+
+**Not done:** no `InstrumentSnapshot` field, no new port method, no policy table, no second inventory.
+
+### 16.2 The CLI error path (found by the live run, narrow)
+
+The first live `acquire compile` on a non-foreground application printed a **traceback** and exited 1.
+`AcquisitionError` is not a `ValueError`, so the acquire handlers' `except (ValueError, OSError)` never
+sees the driver's own refusals — the foreground precondition, a dialog that will not open, a control that
+is not there. Fix at the CLI boundary (catch the driver's error in the acquire handlers and report it as
+one `udv-acquire: <message>` line with the documented exit code), *not* by re-parenting the exception:
+that hierarchy is what lets callers tell a refused point from a broken instrument.
+
+**Exit code.** `2`, decided rather than inherited: every other refusal in the acquire surface returns 2
+(the compile's own refusals, argparse's usage errors), and a driver refusal is a refusal — the run did not
+happen and nothing was written — not a crash and not a partly completed job. The current traceback exits 1
+only because nothing caught it.
+
+**Evidence.** One case per affected verb driving a driver refusal through `acquire_main`, plus the live
+re-run of `acquire compile` with the application *not* in front — one line, exit 2, no traceback.
+
+### 16.3 Then the milestone closes
+
+With 16.1 and 16.2 green, the sequence is: commit both to `feat/acquire-w4-integration` and post the green
+evidence as a comment on #7 (the review asked for no second pass — "once that channel attribution check is
+in and green" is their condition); merge #7 into the plan branch; then mark PR **#3** ready and merge the
+plan branch to master — #3 is still a **draft**, and it is the only route the plan document has to master.
+#4, #5 and #6 are already MERGED on GitHub, so no housekeeping remains for them. The working branches are
+then deleted locally and on the remote, and the next work starts from a clean master.
+
+§9.1 governs from there — the acquisition architecture re-opens on evidence only (a real campaign failed,
+ambiguous evidence, or a downstream analysis that cannot establish an essential acquisition condition).
+
+### 16.4 The experiment — the reason all of this exists
+
+This is not a slice. It needs the operator's scientific input before any code, and the questions to settle
+are, in order:
+
+1. **Which knob, and what hypothesis?** One parameter with a physically expected effect and a measurable
+   signature. The ladder already varies resolution/gates; the burst, the sound speed and the first gate are
+   the other knobs — and all three are now *checkable before* a run, which is what W4 bought.
+2. **What is the response quantity?** That decides the analysis, and therefore whether the stored `.BDD`
+   files carry enough. The decode path yields gates, depth, sound speed, PRF, emissions and burst, and
+   `ProfileTiming` yields profile count, span, the effective interval, the at-cap/wrap distinction and the
+   retained fraction. Anything outside that set is a decoder question, not an acquisition question — and
+   it has to be answered *before* the campaign runs, not after the recordings are spent.
+3. **Repeats and variance.** A sensitivity claim needs the instrument's own spread at one fixed setting, so
+   the design needs repeats rather than one sample per setting; the existing six-point file is a frame, not
+   a design.
+4. **The predicted-timing caveat (W6).** The 52-vs-150 emissions disagreement the review raised is
+   experimentally relevant, not architectural: if any part of the experiment depends on *predicted* profile
+   timing, the period law must first be fed the instrument's own emissions (W6). Narrow, motivated by the
+   experiment, and not a reopening.
+5. **Where the results live, reproducibly.** A stored point now ties to the instrument state that produced
+   it through the manifest's compiled identity (§3.2), so the analysis can cite the acquisition condition
+   instead of re-deriving it.
+
+
+### 16.5 §16 as landed
+
+Both items are in, on `feat/acquire-w4-integration`, each red-first and each with its evidence in the commit
+body.
+
+- **16.1** — `Win32Actuator.instrument_snapshot` now refuses a dialog reading that states a channel the run
+  did not route, as the method's **first statement** (before the screen is read), through the private
+  `_require_same_channel`. The two values are compared only when a channel was routed *and* the reading
+  succeeded, so a refused reading keeps the reader's own reason — the campaign turns that into its refusal,
+  and a vaguer attribution error would replace a precise diagnostic. The driver's existing `AcquisitionError`
+  names both channels. No snapshot field, no port method, no policy table. Red first: `DID NOT RAISE
+  AcquisitionError`, 1 failed / 24 passed. The two arms that must **not** refuse (the mirror case and the
+  refused reading) cannot be red before the fix, so they were proved to have teeth by mutating the check one
+  guard at a time. `FakeDialogDriver` gained a *stated* `screen_fingerprint` (never read), which is how
+  "refused before anything was read" is asserted.
+- **16.2** — `driver.AcquisitionError` now reaches the operator as one `udv-acquire: <message>` line with exit
+  code 2 from **every** acquire verb. The spec named the handlers; measuring showed `status`, `channel` and
+  `preflight` leaking identically with no handler of their own, so `acquire_main`'s dispatch catches it too
+  — fixing only the handlers would have left the defect half-closed. The exception hierarchy is untouched.
+  Red first: five verbs escaping as tracebacks; green after: 84 passed in those two modules.
+- **Gates at the head:** `ruff check src tests` clean; `pytest -q` **1701 passed, 22 skipped** (baseline
+  1693).
+- **Live, on the machine:** the acceptance `acquire compile` re-run against the unmodified example returned
+  **exit 0** — channel 1 routed, manual read, PRF 212 / emissions 150 / burst 4 / sound speed 1460 / first
+  gate 2 all read and agreeing, the cap still `unreadable` with its reason, the wrap note on every point,
+  nothing written. The new guard does not over-refuse on the real instrument. (The non-foreground refusal was
+  proved through `acquire_main` in the tests rather than staged live, because the application was in front.)
+- **Found and named rather than quietly fixed:**
+  `tests/test_acquire_live.py::test_a_fingerprint_reads_the_screen_without_pressing_anything` is not
+  hermetic — it passes only where a real `TMain_Scr` window is running. The new fake override should make it
+  cheap to fix.
+
+## 17. The next slice: launching a batch of recording parameters
+
+**Why this reopens the architecture, on the record.** §9.1 stops the acquisition architecture from growing
+until evidence says otherwise. The operator's own statement of the need is that evidence: what exists today
+is a campaign that *repeats* one recorded configuration — the fixed facts are campaign-level constants,
+verified once before the first point — and the next thing needed is a **batch of recording parameter sets**,
+several configurations acquired in one pass. That is not a refinement of the milestone; it is the next
+capability. It is written down here so that reopening is a decision with a reason rather than drift.
+
+**This slice has its own planning document, and it is not this one.** The batch's *design* — which
+parameters are worth sweeping, which are tied to each other, and which must never be swept — is
+[`parameter-sweep-matrix.md`](parameter-sweep-matrix.md), which is planning only ("no code change yet": its
+status line). §17 is the code side of that document and nothing more. Two of its conclusions are already
+load-bearing here:
+
+- **burst is sweep axis 2** (2 / 4 / 8 / 16 / 32 cycles, observable "first valid gate", tied to PRF through
+  `τ_burst = N/f_e ≪ T_prf` and paired with sampling volume through the acoustic-resolution rule) — so burst
+  is the knob this slice gives a writer;
+- **sound speed is in group S, the frozen scales** (with Doppler angle and velocity scale factor): "pure
+  multipliers on the recorded mm and mm/s — sweeping a multiplier measures the multiplier, not the flow".
+  So it is *never* swept, and the writer this slice builds must not be pointed at it.
+
+**Out of scope on purpose.** How the batch is *produced* — the matrix, a design of experiments, a generator —
+is another matter and stays out. This slice is about *launching* a batch the operator has already written
+down, and it does not touch the acquisition recipe itself. It also comes **before** §16.4's experiment,
+because that experiment cannot be expressed yet: see 17.1.
+
+### 17.1 What exists, measured against that need
+
+| piece | state |
+|---|---|
+| the container | **exists** — a batch is a campaign whose points carry their own parameter sets; the definition format, the compile, the per-point loop, the log and the manifest are all in place |
+| writing the seven column parameters | **exists** — `ParamRole` covers us frequency, PRF, gates, resolution, velocity-scale factor, emissions/profile and Doppler angle, and the port already has `write_parameter(role, value)` with `apply_point(parameters)` in the runner |
+| writing the parameter the batch will actually vary — **burst** | **missing** — burst is read by position out of the Operating-parameters dialog (W1) but has no writer, so a batch that varies it cannot be applied at all |
+| writing sound speed | **not wanted, and not a gap** — sound speed is a property of the medium, not a recording parameter. No batch parametrizes it. It stays a *fixed fact*, read and verified before a recording as W4 does now |
+| writing first gate | **read-only for now** — same dialog, same mechanism as burst; a writer for burst gives one for this too (a combo on the same panel), so it is a small follow-on when a study needs it rather than part of this slice |
+| declaring per-point recording parameters | **missing** — the fixed facts are campaign-level, so a point cannot state its own burst, and the compiled identity records one value for the whole campaign |
+| verifying per point | **partly** — reading and comparing exist, but once per campaign, before the first point; a batch that sets a parameter per point has to read it back *after* setting it, on that point |
+| surviving a batch | **exists, and matters far more now** — resume proves the identity before skipping, so a batch that dies at point 27 of 40 is resumable; but a batch needs a stopping rule and a per-point record of which parameter set produced which file, or forty recordings become forty unattributable files |
+
+### 17.2 The slice, in order
+
+1. **A writer for burst** — the mirror of W1's read: locate the field by position (its anchors are already
+   frozen for reading), write it, then read it back. A write that does not read back as written refuses that
+   point, exactly as a disagreement does today. One trap is already measured and must be handled: the burst
+   combo steps **past** a value — one step up from `4` landed on `6` — so the writer must select by reading
+   the options back, never by counting steps.
+2. **Per-point recording parameters** — a point may carry its own values for the facts that have writers; an
+   absent value keeps the campaign default. The compiled identity then has to be *per point* (that point's
+   values and their sources), because that is what makes two files from one batch distinguishable afterwards.
+3. **Per-point verify-then-record** — set, read back, compare, record. The campaign-level check stays as the
+   pre-flight, so an invalid definition or a wrong instrument still costs zero points.
+4. **A stopping rule and a batch record** — stop at the first refusal (the operator's recovery policy after a
+   stranded popup is a restart, so running on past a failure would mean recording into an unverified
+   application), and record per point: the parameter set, its sources, the stored file, the outcome.
+
+**Acceptance for the slice.** A batch of at least three parameter sets differing in **burst** (the one
+parameter the operator named, and the one that has no writer) runs to completion in one unattended pass; every point's own values are read back and verified before its
+recording; every stored file is attributable to its parameter set from the log and manifest alone; and a
+deliberately wrong declaration of one point's value refuses **that point** and stops the batch with the
+earlier points intact and resumable.
+
+**Still out of scope:** writing any parameter the instrument cannot read back; **parametrizing sound speed**
+(a property of the medium, not a setting: it is verified as a fixed fact, never swept); the batch generator; the
+analysis; and any new vocabulary — the facts and roles already exist, so this slice gives three of them a
+writer and moves an existing check inside the loop.
+
+**Order.** §16.1 and §16.2 come first. A batch multiplies the channel-attribution risk — every point's facts
+have to belong to the routed channel — and a traceback per point is unusable in an unattended run, which is
+exactly what those two close.
+
+
+## 18. Turning every knob — the write coverage, measured against the matrix's fifteen
+
+The operator's requirement, stated: before a sweep is worth designing, the tool must be able to *turn every
+knob* the matrix can name. This section is the coverage inventory, and it is deliberately keyed to the
+matrix's own list (`parameter-sweep-matrix.md`, the control-surface note) rather than to any new vocabulary.
+
+**Three mechanisms exist, and between them every knob has a home.**
+
+| mechanism | state |
+|---|---|
+| the parameter **column** on the measurement screen | **read *and* written** — `write_parameter(role, value)` over `ParamRole`, with the measured write-order rule (resolution before gates, because this channel has auto-resolution set: 805 gates requested → 474 accepted in the wrong order, 805 in this one) |
+| the `Operating parameters` dialog's **positional value table** | **read only** — three columns of caption-less value buttons with their own edits; 15 value fields, of which 10 are bound: the three dialog-only facts `(0,1) burst`, `(1,1) first gate`, `(2,4) sound speed`, and the seven anchors that make those bindings safe to trust. The mechanisms to *write* one already exist and are private: `_combo_select(hwnd, index)` and `_set_text_commit(hwnd, text)`, both taking the field's own hwnd |
+| `Record settings` | **neither read nor written.** No path has been exercised to this dialog. It holds the one thing the operator named — `Do not keep in a block more profiles than` — and its in-force value on this machine is what truncates a long point |
+
+### 18.1 The fifteen, and where each one stands
+
+| # | knob | mechanism | read | written |
+|---|---|---|---|---|
+| 1 | US emitting frequency | column | yes | **yes** |
+| 2 | burst length | dialog `(0,1)` | yes | **no** — the slice's first writer |
+| 3 | emitting power | not identified | no | no |
+| 4 | TGC / amplification | not identified | no | no |
+| 5 | PRF | column | yes | **yes** |
+| 6 | first-gate depth | dialog `(1,1)` | yes | **no** — same mechanism as burst, one combo over |
+| 7 | number of gates | column | yes | **yes** |
+| 8 | resolution | column | yes | **yes** |
+| 9 | sampling volume | not identified | no | no |
+| 10 | emissions per profile | column | yes | **yes** |
+| 11 | Doppler angle | column | yes | **yes** |
+| 12 | sensitivity | not identified | no | no |
+| 13 | velocity scale factor | column | yes | **yes** |
+| 14 | sound speed | dialog `(2,4)` | yes | **no** — and per the matrix's group S it is never swept |
+| 15 | number of skipped profiles | not identified | no | no |
+
+Five are written today, three more are read and need only the write half of a mechanism that already exists,
+and **five are unaccounted for — which is exactly the count of dialog value fields not yet bound** (15 fields
+minus the 10 above). The likely mapping is emitting power, TGC, sampling volume, sensitivity and skipped
+profiles, and 15 says at least one of them is in this dialog. **That mapping is a hypothesis to confirm by
+reading, not an assumption to code against**: the identification method is the one the matrix itself used —
+change one knob by hand, re-open the dialog, and see which field moved.
+
+### 18.2 The work, in order
+
+1. **Identify the five unbound dialog fields** — read the table, vary a knob by hand, read it again, and pin
+   each field to a knob the way the three dialog-only facts were pinned (with the measured tree committed as
+   a fixture, so a re-layout refuses rather than mis-reads).
+2. **Give the dialog knobs a writer**, starting with burst: position the field from the same frozen anchors,
+   write, then **read back** and refuse if the field does not state what was written — the mirror of W1, and
+   the same discipline the column already uses. Measured trap, already paid for: the burst combo steps *past*
+   a value (one step up from `4` landed on `6`), so selection must be by value read back from the options,
+   never by counting steps.
+3. **Decide the cap's status**, because it is the one knob with no path: whether a batch needs the value
+   *before* a point (so a long point cannot silently lose its first seconds to the wrap), or whether the
+   after-the-fact evidence already in the record — `block_at_cap` / `block_wrapped` on a stored point — is
+   enough. If it must be read before, the work is a proven open/close path for `Record settings`, which is
+   where the caption-less popup hazard of §9.3 lives; if after-the-fact is enough, this is a sentence in the
+   operator notes rather than code.
+4. **Then, and only then, the batch** (§17): a batch is only as good as the number of knobs it can set, and
+   per-point declaration needs a writer to declare *with*.
+
+**Acceptance for the knob work.** Every knob the sweep matrix names is either written by the tool or
+explicitly recorded as unreachable with the reason; every dialog-written knob is read back and verified on the
+point that used it; and a wrong write (a value the combo does not offer, a field that is not there) refuses
+the point rather than proceeding.

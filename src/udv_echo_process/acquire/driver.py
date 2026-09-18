@@ -2709,6 +2709,13 @@ class Win32Actuator:
         per fact would let a caller leave a verification implied that never happened, which is the
         one thing a reading must never do.
 
+        There is one more thing the two handed-over values give this reading, and it is not a
+        fact: they meet nowhere else, which is why the one check that compares them lives here.
+        The dialog-only facts belong to the channel the *dialog* states, while the recording
+        lands on the channel the run routed, so a dialog on another channel would attach that
+        channel's burst, sound speed and first gate to this reading — invisibly, since every
+        value is a plausible number (:meth:`_require_same_channel`, plan §16.1).
+
         Two of the six fixed facts come off the column and are recorded as ``read``; three more are
         recorded as ``read`` when the dialog reading was handed over and the values came out of it;
         the block cap is carried as ``unreadable`` with its reason, because it is an application
@@ -2727,6 +2734,9 @@ class Win32Actuator:
         :meth:`screen_fingerprint`), and anything that moved on screen between the two reads is
         a state the compile refuses on rather than one this recording can hide.
         """
+        # Nothing is read, and no fact is attributed, until the dialog's own channel is known
+        # to be the one this reading is for — the two values meet only here (plan §16.1).
+        self._require_same_channel(routed_channel, dialog_parameters)
         fingerprint = self.screen_fingerprint()
         roles = self._resolve()
         mode = screen_mode(roles)
@@ -2752,6 +2762,41 @@ class Win32Actuator:
                 "profiles than\"), not a measurement parameter, and nothing in this driver "
                 "reads the Preference surface"
             ),
+        )
+
+    def _require_same_channel(
+        self, routed_channel: int | None, dialog_parameters: DialogParameters | None
+    ) -> None:
+        """Refuse a dialog reading that describes a channel this reading was not routed to.
+
+        The dialog-only facts are read *for the channel the dialog states* and the point is stored
+        on the channel the run routed. The two values meet only here, so this is the one place the
+        mismatch can be caught before anything is attributed — and the one place it would otherwise
+        be invisible: a channel-2 burst, sound speed and first gate attached to a channel-1 reading
+        read as channel 1's parameters, in the record and in everything downstream of it (the
+        wrong-channel trap, plan §14).
+
+        What is **not** compared matters as much as what is. Nothing is compared when nothing was
+        routed — there is no second channel to disagree with — and nothing is compared against a
+        *refused* reading: a dialog that could not be opened, or stated no channel, already carries
+        the reason it establishes nothing, and the campaign turns that reason into its own refusal.
+        Raising here instead would replace a precise reader diagnostic with a vaguer error this
+        method cannot substantiate, because a reading that failed established no channel's facts
+        (plan §16.1).
+        """
+        if routed_channel is None:
+            return
+        if dialog_parameters is None or dialog_parameters.reason:
+            return
+        stated = dialog_parameters.channel.strip()
+        if not stated or stated == str(routed_channel):
+            return
+        raise AcquisitionError(
+            f"the {PARAMETERS_ENTRY!r} dialog states channel {stated} while this reading was "
+            f"routed to channel {routed_channel}: the burst length, the sound speed and the first "
+            f"gate it states are channel {stated}'s parameters, and attributing them to a "
+            f"channel-{routed_channel} reading would record them as that channel's own — nothing "
+            "after this reading can tell the two apart, so it is refused rather than attributed"
         )
 
     def _channel_fact(self, routed_channel: int | None) -> InstrumentFact:

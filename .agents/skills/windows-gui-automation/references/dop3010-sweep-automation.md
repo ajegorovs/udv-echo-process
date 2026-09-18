@@ -22,6 +22,10 @@ are marked.
   (`custom-menus-clipcursor-and-real-input.md`).
 - **Bind by role + geometry (class name + rect), never by control id or caption.** These
   widgets (`TSp_*`) carry no captions, so captions cannot be used to identify them.
+- **A combo can step *past* a value — select by value, never by counting steps.** Measured: one step up
+  from burst length `4` landed on `6`, so a writer that presses the arrow n times writes a value nobody
+  asked for. Read the options back, select the index whose text states the value, and read the field back
+  to confirm what it now states (plan §18.2).
 - **Find a combo by its item list, not by its nesting.** Burst length and sampling volume are nested
   inside `TSp_Value_Button` children, but the measurement channel is the dialog's **header** field — a
   direct child of the panel (`Operating parameters for channel [n ▼]`, measured at `(1083, 373)`, items
@@ -34,8 +38,10 @@ are marked.
   `(655, 364)` with seven `TSp_Value_Button` fields. Answer an unidentified dialog with its **leftmost**
   bottom button (`Cancel`/`No`); the rightmost is `Accept`/`Do store`.
 - **Write order matters where the app has auto-flags.** With automatic resolution/gate-count
-  selection active, writing the gate count first gets silently clamped (805 -> 474). Write
-  the resolution first, then the gate count, then verify.
+  selection active, writing the gate count first gets silently clamped (805 -> 474); resolution *then*
+  gates took the full 805. Write the resolution first, then the gate count, then verify — the order is
+  part of the recipe, not an implementation detail, so pin it as data (`PARAMETER_WRITE_ORDER` in
+  `acquire/actuator.py`; `udop-automation.md` §3).
 - **Verify against the artifact, never against the control's text.** A control can read back
   what you wrote while the application keeps something else; re-open a dialog to re-read it,
   and treat the stored file as the authority for what a point actually was.
@@ -54,6 +60,41 @@ are marked.
   built (the assisted one carries a slider the others do not), record it on the run, refuse by naming
   the mode rather than the missing field, and never leave the mode yourself — its toggle is the
   application's Preference menu, which the automation deliberately does not drive.
+
+## Reading the instrument's own fixed facts (the pre-run check)
+
+The `Operating parameters` dialog's value table is caption-less, so a field's identity is its
+**(column, row)** — never a control id (ids change on every launch) and never a caption (there are none).
+Measured: three columns of `TSp_Value_Button` widgets, 15 value fields in a `4 / 6 / 5` rows-per-column
+shape, the columns being the x bands of the value edits' left edges (786 / 987 / 1187 px in a `627x384`
+dialog at `655,364`). A row's value is the **combo** when the row offers one and the `TSp_Edit` beside it
+otherwise: at `burst = 4` that row states a combo `'4'` *and* an edit `'89'`, and the 89 is the
+sampling-volume read-out, not the parameter.
+
+- **Gate the shape, then the anchors.** A reading that does not build the measured `4 / 6 / 5` shape is
+  refused unread, and seven of the dialog's fields are facts the measurement screen also states — all
+  seven must read the same text on both surfaces before a dialog-only fact is believed. Refuse
+  *uncheckable* (nothing states the anchor on both surfaces) separately from *disagreement*. The binding
+  is pinned to a committed capture of the measured tree (`tests/data/udop-parameters-dialog-tree.json`)
+  and as data in `DIALOG_FIELD_ORDER` / `DIALOG_ANCHORS` / `DIALOG_COLUMN_ROWS` (`acquire/actuator.py`),
+  so a re-layout refuses rather than putting a different value at the same position (plan §14).
+- **Five of the six fixed facts are read live; the sixth has no path.** `prf_us '212'`,
+  `emissions_per_profile '150'`, `burst_length '4'`, `sound_speed_ms '1460'`, `first_gate_mm '2'` read
+  from the dialog; `max_profiles_per_block` stays `unreadable` with its reason, because the cap is an
+  application Preference and the surface holding it has no established path. Nothing invents a read for
+  it — the compile carries it as unproven (plan §14, §18).
+- **The cap, and the surface it lives on, are not the store path.** The **Store** dialog commits a
+  recording and its geometry is known and exercised; `Do not keep in a block more profiles than` lives in
+  **`Record settings`**, which this automation has never read or written — no path to it has been
+  exercised. The cap is **not a planning limit** (the UI accepted 1,000,000) but the value *in force*
+  does truncate a long point's start, so a plan resting on the cap rests on a value nothing here has
+  established. Name which surface a note means (`udop-automation.md` §7, §12.4; plan §18).
+- **A supported read that failed is a refusal, not a fall back to the declaration** (plan §9.2). And the
+  reader polls for the **filled** table: a freshly started application builds it empty on the first open
+  (measured 2 stating controls, then 22) and reports which of the two states it saw, because an empty
+  field is not a value.
+
+---
 
 ## Reading a stored point (DOP3010 `.BDD`)
 

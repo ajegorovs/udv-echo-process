@@ -249,9 +249,46 @@ change the review asked for is W4's: a campaign must refuse when a fact with a *
 read path could not be read, keeping "supported but this attempt failed" distinct from
 "genuinely unsupported" (the cap stays unproven).
 
+**P4 = W4 is implemented** on `feat/acquire-w4-integration` (cut from that merged tip), in four
+commits — `00ff9c9` (the decisions: §9.1's stop condition, §9.2's read-path table, §9.3's recovery
+rule), `a356d68` (a fact with a supported reader that did not read refuses), `b2743f4` (§4's order in
+`run_campaign`, the resume identity proof, the manifest's three new fields), `accc682` (`acquire
+compile` and the two flags). §15 records what each settled, and discloses the two behaviour changes
+on purpose: a compiled run opens the channel dialog twice (step 3, then the runner's own idempotent
+guard) and `plan_campaign` runs twice (pure, and it keeps step 2 gesture-free). Two things are **not**
+finished: the live rehearsal still needs the operator — the first attempt stopped at the driver's own
+foreground guard *before* any hover (nothing opened, nothing stranded), so UDOP has to be in front
+and `acquire compile` re-run — and §14's own obligation, comparing the dialog's channel field against
+the routed channel, stays open until that field survives into `InstrumentSnapshot` — it cannot fire in the planned experiment, which runs one channel with the dialog on that channel.
+
+**The review's milestone is met, live (plan §15.1).** `acquire compile` accepted the machine's own configuration (five facts read and agreeing, the cap declared-not-verified, nothing written); a deliberately wrong declaration *and* a deliberately wrong instrument each refused with exit 2, the fact named with both sides, nothing stored; the existing six-point campaign ran unchanged — 6/6 ok, six `.BDD` files, a manifest carrying the compiled identity — and `--resume` skipped 6/6 only after proving that identity. Per §9.1 the acquisition architecture **stops growing here**: the next work is the parameter-sensitivity experiment, and re-opening the architecture needs evidence (a real campaign failed, ambiguous evidence, or a downstream analysis that cannot establish an essential condition).
+
+**PR #7's review came back with one change request and one defect the live run exposed** (both planned in
+§16). The request: compare the dialog's own channel field against the routed channel before attributing its
+three facts to that channel's snapshot — the wrong-channel trap in the one place the system cannot see it,
+cheap to close, so it closes before W4 is called complete. The defect: a driver refusal (`AcquisitionError`
+is not a `ValueError`) reaches the operator as a **traceback** with exit 1 rather than one
+`udv-acquire: <message>` line — measured live, the first `acquire compile` refusing on a non-foreground
+application. Everything else in the review was approval: the read policy, the resume split, the two
+duplicate calls as preflight redundancy rather than recipe drift, and the assessment that #7 is a closure
+PR rather than an expansion. §16.4 is the experiment that follows — a scientific plan needing the
+operator's input, with the W6 predicted-timing caveat flagged as experimentally relevant.
+
 
 Binding outcomes:
 
+- **The acquisition stop condition** (from the review of the batch, now recorded in the plan's
+  §9.1 and binding): once a campaign routes the target channel, snapshots the fixed settings, and
+  refuses a deliberate mismatch *before* recording — and the existing six-point campaign still runs
+  **unchanged** through the compiled path — the acquisition architecture **stops growing** and the
+  work moves to a real parameter-sensitivity experiment. After that it re-opens only on evidence (a
+  real campaign failed, produced ambiguous evidence, or a downstream analysis cannot establish an
+  essential acquisition condition), never because another abstraction looks improvable. The one
+  policy change the review asked for while getting there is §9.2: a fact with a *supported* read
+  path that failed to read **refuses** a normal campaign, keeping "supported but this attempt
+  failed" distinct from "genuinely unsupported" (the block cap stays unproven). §9.3 records what
+  recovery is allowed from a stranded popup: operator restart while commissioning, abort plus
+  "state unverified" for an unattended campaign — no automatic recovery, no speculative press.
 - **First slice — acquisition correctness baseline** (no Win32 reorganization):
   the channel now reaches `verify_stored_point` (it verified channel 1 while the
   decode read the run's channel) with a channel-2 regression case; verification is

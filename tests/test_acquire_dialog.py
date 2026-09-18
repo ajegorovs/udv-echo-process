@@ -21,6 +21,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from udv_echo_process.acquire import actuator as actuator_module
 from udv_echo_process.acquire import driver
 from udv_echo_process.acquire.actuator import (
@@ -29,6 +31,7 @@ from udv_echo_process.acquire.actuator import (
     DIALOG_FIELD_ORDER,
     DialogField,
     ParamRole,
+    ScreenFingerprint,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, FactSource
 
@@ -111,6 +114,10 @@ class FakeDialogDriver(driver.Win32Actuator):
         self.open_raises = open_raises
         self.reads = 0
         self.closed = 0
+        #: How often the reading's *screen* half was asked for. Kept because a reading that
+        #: refuses on the dialog's channel refuses before it reads the screen at all, and that
+        #: is observable here and nowhere else.
+        self.screen_reads = 0
         self.notes: list[str] = []
 
     # ------------------------------------------------------------------ the window layer
@@ -182,6 +189,28 @@ class FakeDialogDriver(driver.Win32Actuator):
 
     def _note(self, message: str) -> None:
         self.notes.append(message)
+
+    def screen_fingerprint(self) -> ScreenFingerprint:
+        """The reading's **screen** half, stated rather than read — and counted.
+
+        ``instrument_snapshot`` reads the screen and then the dialog-only facts, and the second
+        is this module's subject: the screen's own resolution walk belongs to the window-tree
+        fake (``test_acquire_driver.FakeUdopWindow``), and a second window model here would be a
+        copy of it that could drift. What the cases below need from this half is that it *is*
+        there — and that a reading refused on the dialog's channel never asked for it, which is
+        why the count is kept.
+        """
+        self.screen_reads += 1
+        return ScreenFingerprint(
+            class_name="TMain_Scr",
+            hwnd=DIALOG_HWND,
+            rect=(-8, -8, 1928, 1058),
+            maximized=True,
+            screen=(1920, 1080),
+            panels=4,
+            visible_controls=43,  # the clean measurement screen's own counts, measured
+            strip={"button_count": 3, "has_slider": False, "slider_max": None},
+        )
 
 
 # ------------------------------------------------------------------ the measured binding
@@ -450,3 +479,77 @@ def test_the_port_grew_no_primitive_for_the_dialog_read():
     """The reader is composed from the port's existing pieces, like every other read here."""
     assert not hasattr(actuator_module.Actuator, "read_dialog_parameters")
     assert not hasattr(actuator_module.Actuator, "instrument_snapshot")
+
+
+# ------------------- the dialog's channel, against the channel the run routed (plan §16.1)
+
+
+def test_a_dialog_stating_another_channel_refuses_the_reading_before_anything_is_read():
+    """The wrong-channel trap, closed where the two channels meet and nowhere else.
+
+    The dialog-only facts belong to the channel the *dialog* shows; the recording lands on the
+    channel the run routed. Attributing channel 2's burst, sound speed and first gate to a
+    channel-1 reading is invisible downstream — every value is a plausible number — so the
+    mismatch is refused here, naming both channels, and it is refused *before the screen is
+    read*: a reading that stops here attributes nothing at all (``screen_reads`` stays zero),
+    which is what makes the refusal a refusal rather than a reading with a footnote.
+    """
+    fake = FakeDialogDriver(channel="2")
+    reading = fake.read_dialog_parameters()
+    assert reading.channel == "2"
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        fake.instrument_snapshot(routed_channel=1, dialog_parameters=reading)
+
+    message = str(excinfo.value)
+    assert "channel 2" in message, message
+    assert "channel 1" in message, message
+    assert fake.screen_reads == 0  # nothing was read, so nothing was attributed
+
+
+def test_a_dialog_on_the_routed_channel_is_accepted_and_the_facts_carry_that_channel():
+    """The mirror case, and the one the live instrument is in: agreement is never refused.
+
+    The measured dialog is on the channel the run routed, so a check that refused this would
+    refuse every real run — the three dialog-only facts have to come back as *reads*, and the
+    channel the reading carries is the routed one, which is the channel the dialog itself
+    stated. Both halves are asserted together because that is the whole claim: the dialog's
+    channel and the run's are the same one, and the facts belong to it.
+    """
+    fake = FakeDialogDriver(channel="2")
+    reading = fake.read_dialog_parameters()
+
+    snapshot = fake.instrument_snapshot(routed_channel=2, dialog_parameters=reading)
+
+    assert snapshot.channel.value == "2"
+    assert snapshot.channel.source is FactSource.ROUTED
+    assert snapshot.burst_length.value == str(BURST)
+    assert snapshot.sound_speed_ms.value == str(SOUND_SPEED)
+    assert snapshot.first_gate_mm.value == str(FIRST_GATE)
+    assert fake.closed == 1  # and the dialog was closed behind the read
+
+
+def test_a_refused_reading_keeps_the_readers_own_reason_not_an_attribution_error():
+    """A refused read is carried with the diagnostic the reader wrote, never re-cast as a mismatch.
+
+    This reading states channel 2 *and* refuses — its PRF anchor disagrees with the screen — so
+    both refusals are available and only one of them may be reported. The campaign turns an
+    unreadable fact into its own refusal in the reader's own words (``_refuse_failed_reads``),
+    and a vaguer "these are another channel's parameters" would replace a precise diagnostic with
+    one this reading cannot substantiate: it never established the facts at all. So the reading
+    stands, no value is claimed, and the reason that travels with each fact is the reader's.
+    """
+    rows = measured_controls()
+    prf = text_of(rows, "TSp_Edit", "212")
+    fake = FakeDialogDriver(rows, channel="2", dialog_overrides={prf: "999"})
+    reading = fake.read_dialog_parameters()
+    assert reading.channel == "2"
+    assert not reading.readable()
+
+    snapshot = fake.instrument_snapshot(routed_channel=1, dialog_parameters=reading)
+
+    assert snapshot.channel.value == "1"  # the routed channel still stands
+    for fact in (snapshot.burst_length, snapshot.sound_speed_ms, snapshot.first_gate_mm):
+        assert fact.source is FactSource.UNREADABLE
+        assert fact.value is None
+        assert "disagrees with the measurement screen" in (fact.reason or "")
