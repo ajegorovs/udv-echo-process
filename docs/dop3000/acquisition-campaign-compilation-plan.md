@@ -3236,3 +3236,39 @@ argues, and what makes the frame values part of the per-point identity rather th
 screenshots of `Preferences → assisted` in both states stay useful as the record of what the toggle does to the
 frame; they are not a mode this work will use.
 
+### 26.5 Blocking overlays, and a hole in the block
+
+The operator's taxonomy, which the crop set encodes in its filenames: **a blocking overlay captures the cursor
+inside its own window or widget**, so nothing else in the application can be reached while it is up; a
+non-blocking one leaves the rest of the screen live. Read off the crop names:
+
+- **blocking** — `Record settings`, `Measure sound speed`, `Default parameters`, `Save parameters`,
+  `Operating parameters`; `External trigger settings` is the one filename that is not marked either way.
+- **non-blocking** — `Define TGC` (measured in §26.3: the monitor stayed live and the mouse was free; only the
+  strip was hidden), `Preferences`, `Recall parameters`, `Acquire raw data`, `Search artifacts`, `Update files`.
+
+**Why a gate has to care, and it is not a nicety.** With a blocking overlay up, a press cannot land where it
+was aimed: the cursor is clamped inside the overlay, so a press meant for a column row or a strip button can
+land **inside the overlay** — on `Accept`, say. That is "a plausible wrong press is worse than refusing" in its
+purest form, and it means the overlay's *presence* must stop a press before the cursor moves; the capture
+cannot be relied on to stop it afterwards. §24.3's refusal already fires on such a screen (read D measured it
+in §26.3, clause-order defect recorded there); this is a second, independent reason it has to.
+
+**And the block has a hole.** The operator found that **Alt-Tabbing away from the application and back releases
+the capture**: the cursor moves freely again, other menus open, and more than one overlay can be up at once.
+Two consequences:
+
+- **It is not a guard.** A leaked modality means the application cannot be trusted to prevent a press on a
+  screen it has "blocked", so the gate has to be the thing that refuses — which is what §24 exists for. It also
+  means "the mouse is captured, so nothing can happen" may never appear in a safety argument here.
+- **It is a UI state this record did not have**: several overlays at once. The read path reports that as one or
+  more extra control-hosting panels, so it will be visible; it wants its own read before any writer assumes at
+  most one overlay is up.
+
+**Why the block exists — an interpretation, not a finding.** A frame- or acquisition-affecting dialog that let
+the operator keep editing the instrument underneath would leave the dialog's values and the instrument's state
+free to diverge; that is the same argument this project adopted for its own gate, and the reason `Accept` is
+what commits. On that reading the Alt-Tab hole is not a design choice but a leak in one. The manual corpus
+documents neither the block nor the leak, so this is recorded as interpretation and must not be cited as
+spec.
+
