@@ -1318,6 +1318,129 @@ Plus one control *above* the value table that the table does not contain: a comb
 cell, but only the operator can confirm that the cell at (0,2) says "emitting power" beside its `Medium` and
 that the `40` at (0,3) is the TGC — the two assignments this table infers from value shape rather than label.
 
+### 18.7 What the recon archive already established
+
+The private instrument-side archive (`C:\Repos\dop-control`, read-only, another repository) worked this
+surface for a day before this plan did, and it already answers three of §18's open items. Its documents are
+claims, its captures and logs are evidence; both are named below. **Most of it has already landed in this
+repository** as `docs/dop3000/udop-automation.md` §§2, 3, 6, 9 — the write recipes, the write order and the
+word map — which §18.1–§18.8 above never cite. Read that file rather than re-derive a recipe from the manual.
+
+Sources: `docs/13-dialogs-operating-and-trigger.md` (the painted dialog), `docs/14-input-methods.md` (what input
+commits), `docs/15-labelled-fixture.md` (a word map from a labelled recording), `docs/16-record-strip-automation.md`
+§§12–14 (write order, the burst coupling, the record cycle), `docs/10-stable-binding.md`, `docs/03-ui-control-map.md`,
+`docs/06-open-questions.md`, `docs/07-landing-in-udv-echo-process.md`; probes `recon/04`, `05`, `11`–`15`, `23`,
+`24`, `40`–`41`, `50`–`63`; captures, JSON and logs in `recon/out/`.
+
+**The labels, from a second and independent capture.** `recon/out/dialogs/operating-panel.png` (2026-09-17
+14:21) renders the dialog with its painted labels; read again for this digest it is §18.6's grid, cell for cell,
+and it agrees row for row with §18.8's vision pass — including the two assignments §18.6 could only infer from
+value shape: **(0,2) is `Emitting power` beside its `Medium`, (0,3) is `Tgc [dB]` beside its `40`**. Column order
+left → `US Frequency` / `Burst length` / `Emitting power` / `Tgc [dB]`, middle → `PRF` / `First gate depth` /
+`Nb of gates` / `Resolution` / `Sampling volume` / `Number of skipped profiles`, right → `Emissions/profile` /
+`Doppler angle` / `Sensitivity` / `Velocity scale factor` / `Sound speed`. The same capture shows the header's own
+channel combo (`for channel [10 ▼]`), the green painted note `Sampling volumes overlapped`, a **greyed**
+`[ ] Apply skip profile` beside the count at `0`, and the two crossed indicators the band also carries. Two
+independent readings of the same labels now exist, which is why the label question can be closed.
+
+**The dialog's geometry is this machine's geometry. Three sessions, identical rectangles.** The archive's panel
+is `(655, 364, 1282, 748)` with the skipped-profiles edit `(989, 661, 1059, 677)` inside its cell
+`(808, 653, 1067, 685)` and the enable button `(1077, 660, 1204, 680)`; the committed
+`tests/data/udop-parameters-dialog-tree.json` and §18.3 carry exactly the same three rects. The *ids* in the same
+dumps are fresh on every launch — `docs/10` measured **1 of 43** control ids surviving a relaunch (the inner edit
+of a combo), everything else a per-instance handle. **Positions are reusable; ids are not**; that is why §18.6's
+cell grid is the right binding and a stored id is not.
+
+**The fifteen, and what the archive established about writing each.** Confidence vocabulary: *measured* — a log,
+capture or stored file backs it; *operator-reported*; *mechanism-level* — the recipe is measured on a sibling
+control of the same class, this field never exercised; *documented only* — nothing was ever written.
+
+| # | knob | archive's painted label · class · where | what the archive established about WRITING it | confidence |
+|---|---|---|---|---|
+| 1 | US emitting frequency | `US Frequency [kHz]` · edit · column | text recipe (`WM_SETTEXT` + `WM_COMMAND(EN_CHANGE)` + `WM_KEYDOWN`/`WM_KEYUP VK_RETURN`), then read back; this field itself never written | mechanism-level |
+| 2 | burst length | `Burst length 4 ▼` · **combo** · dialog (0,1), **no column field** | **dialog-only write**; combo recipe (`CB_SETCURSEL` + `CBN_SELCHANGE`, no Enter) then `Accept`; **coupled** — writing burst re-selects the sampling volume by itself (up: raises it; down: selects the minimum entry); never select by counting steps | dialog-only + coupling are **operator-reported** (`docs/16` §13): `recon/41`, written to confirm it, has **no output in `recon/out/`** |
+| 3 | emitting power | `Emitting power Medium ▼` · combo · dialog (0,2) **and** the column (`Emitting power`, items `Low`/`Medium`/`High`, `sel=1`) | the column combo's identity and item list are measured (`recon/15`, `recon/out/combo/combo-probe-20260917-142827.json`); write = combo recipe + `Accept` | identity + options measured; write mechanism-level |
+| 4 | TGC / amplification | `Tgc [dB] 40` · edit · dialog (0,3) | text recipe; read-back target `word 42` (`probable`; `40` also appears in word 96) | documented only |
+| 5 | PRF | `PRF [us]` · edit · column | text recipe; `word 5` tracks it exactly in both labelled files | measured (in file) |
+| 6 | first-gate depth | `First gate depth [mm] 2` · **edit** (no ▼) · dialog (1,1) | text recipe; `word 9` is a gate **index** (`31` at 2 mm → `57` at 5 mm, the two labelled fixtures); written with the structure pair (see the order rule) | word identity measured; write unexercised |
+| 7 | number of gates | `Nb of gates` · edit · column (+ dialog cell (1,2)) | **the archive's best-measured write.** `WM_SETTEXT` + `EN_CHANGE` + `VK_RETURN` commits; `WM_CHAR` Enter does **not** (requested `50`, the dialog kept reporting `100`/`Depth 27 mm` under `WM_CHAR` and `50`/`Depth 14 mm` under `VK_RETURN` — `recon/23`, captures `recon/out/commit/verify-200-*.png`). And the column write lands in **channel 1** while the status bar read `CH: 10` | measured, twice, against the app's derived `Depth` and the stored file |
+| 8 | resolution | `Resolution [mm]` · edit · column | text recipe; the app **snaps** to its ladder rung and shows 3 decimals (`0.121667` → `0.122` — the app's rounding, not a failure); achieved rung from `word 10`: `resolution_mm = (word10 + 1) · c / 12000` | measured (file) |
+| 9 | sampling volume | `Sampling volume [mm] 0.900 ▼` · combo · dialog (1,4) | **not ours to choose**: write burst, read the volume back; `word 27` is the **index** (`3` = 0.900 mm at `c = 1500`); the option list is physics-driven (`c`, `f_e`, burst) so never hard-code an mm value; a volume below the burst's floor raises `Warning — The burst length should be reduced [Continue]` = a rejection, not a crash | index↔mm pair measured at `c = 1500` only; the option list was **never dumped**; coupling operator-reported |
+| 10 | emissions per profile | `Emissions/profile` · edit · column | the archive's *first* measured write: written, then verified through the derived status-bar `Time between profile` (24.9 → 44.8 ms for 200 µs × 200), then restored (24.7 ms) | measured, with the archive's own caveat: simulation build (`docs/03` §4, `docs/06` item 4) |
+| 11 | Doppler angle | `Doppler angle 0` · edit · column | text recipe; `word 20` moves with it (`0` → `7` in the diff) | word measured; write unexercised |
+| 12 | sensitivity | `Sensitivity medium ▼` · combo · dialog (2,2) **and** the column | **write measured**: `CB_SETCURSEL(0)` + `CBN_SELCHANGE` → the application read `sel=0 item='very high'`, **no Enter needed**; restore `sel=2 item='medium'`. Trap: writing it *back* set the control while the app kept painting the old value — `CB_GETCURSEL` reports the control's belief, not the model's. Column options measured: `very high, high, medium, low, very low` (`sel=2`) | recipe + options measured; `word 18` (`8` = medium, `12` = low) is **ambiguous with TGC** (`docs/15` §3) |
+| 13 | velocity scale factor | `Velocity scale factor 1.00` · edit · column | text recipe; `word 15` (`3141`/`3142` both = 1.00). On the archive's machine the factor printed `1.00` beside the derived `Velocity scale 468.7 mm/s` — the factor is the input, the mm/s readout is derived | word measured; write unexercised |
+| 14 | sound speed | `Sound speed [m/s] 1500` · edit · dialog (2,4) | text recipe; `word 19` verified; the dialog "confirms the resolution ladder law `rung = c/12000` independently of the snapping experiment" | word measured; write unexercised; never swept (matrix group S) |
+| 15 | number of skipped profiles | `Number of skipped profiles 0` + greyed `[ ] Apply skip profile` · edit + `TSp_Button` · dialog (1,5), enable at `(1077, 660, 1204, 680)` | `word 84` confirmed by label; **no write**: the archive has nothing on the enable's own enabling condition | identity measured both sides; write unexercised |
+
+**Bindings worth reusing, with the archive's own paths.**
+
+- `recon/udop_roles.py::resolve()` — roles → live handles from *class + position inside the client area*;
+  `click_hold` = posted `WM_LBUTTONDOWN` / ~180 ms / `WM_LBUTTONUP`. Re-resolve at attach; ids are per-launch
+  (`docs/10`).
+- **The dialog's open gesture**: `recon/41_burst_sampling_volume.py::open_operating_parameters` (lines 109–135) —
+  `SetCursorPos(204, 40)` onto `Parameters` plus one short real `mouse_event` move (the overlay opens on hover
+  *only*), then a **held posted press** on the entry whose screen `top` is smallest. Entry tops `[61, 95, 130,
+  165, 205]`; entry 0 is `Operating parameters`, entry 1 at `(190, 95)` is `Default parameters` — pressing it by
+  enumeration order is what raised a modal panel (`docs/16` §13a). Ported already (`handoff-dop3010-acquisition.md` §2).
+- **Close/commit**: sort the dialog's bottom-band `TSp_Button`s by `left` → `row[-2]` = `Cancel`, `row[-1]` =
+  `Accept`. The band holds **four** buttons: `(663, 712)` and `(862, 712)` are the wide *indicators*, the pair is
+  narrow (`Cancel (1091, 703)`, `Accept (1183, 702)`) — never press the leftmost (`task-52`, `task-54` logs).
+- **The channel combo is the dialog's header** (`(1083, 373)`, items `1`…`10`), and **writing it replaces the
+  dialog**: measured `(655, 364) → (713, 364)`, "every handle taken before the write is dead"
+  (`recon/out/menu-probe-20260917-213139.json`). Read it for §16.1's attribution; treat a channel *change* as a
+  re-open, not a same-dialog write.
+- Read-back oracles, in order of strength: the dialog's derived `Depth` (`first gate + gates × resolution`) and
+  `Velocity scale`; then the stored file's words — `2` depth, `5` PRF, `8` burst, `9` first-gate index, `10` rung
+  index, `13` gates, `14` emissions, `15` scale factor, `18` sensitivity, `19` sound speed, `20` Doppler angle,
+  `27` sampling-volume index, `42` TGC, `84` skipped. **Name the channel in every read**: the column wrote
+  channel 1 while the status bar said `CH: 10`.
+- The trigger dialog's painted values land in the file too (`Pre Trigger 0` → word 35, `and record 10` → 48,
+  `Repeat the sequence 1 times` → 49; capture `recon/out/dialogs/tigger-panel.png`) — the same painted-value →
+  file-word chain, on the axis `docs/16` puts out of scope for the sweep.
+
+**Where the archive and today's measurements disagree — ruled, not averaged.**
+
+| # | disagreement | ruling |
+|---|---|---|
+| D1 | `docs/10` orders combos "by top → sensitivity, emitting power"; today's cells put the four dialog combos in different columns | **Both are right, scoped differently, and the rule is what travels.** `docs/10` describes the *column's* two combos (both at `x ≈ 12`, rows 352 and 377). The dialog holds five, and ordered by `top` they are channel `373`, burst `488`, sensitivity `522`, power `526`, sampling volume `600` — so the column's ordering must **not** be used to bind the dialog's combos; the dialog's are bound to *cells* (§18.6). What to reuse from `docs/10` is its measurement (ids die per launch, 1 of 43 survives) and its rule (resolve by role at attach time), not its list. |
+| D2 | the archive's dialog prints `Sound speed 1500`, `Sampling volume 0.900`, `Nb of gates 100`, `Resolution 0.250`, PRF `200`, emissions `100`, scale factor `1.00`, channel `10`; today's prints `1460 / 0.876 / 797 / 0.122 / 212 / 150 / 3.168 / 1` | **Same dialog, different channel and medium configuration** — the archive's own record explains it: the operator changed `c` to 1460 m/s and the *column* edits channel 1, while the archived point was configured on channel 10 (`docs/16` §§12, 12a; `docs/15` §1). Consequence for the bindings: bind cells by `(col,row)` **geometry**, never by value; the sampling volume must be selected by its painted mm value and **not by index** (index `3` = `0.900` at `c = 1500`; the index↔mm pair was only ever pinned at `c = 1500`); the resolution ladder follows `c` (0.125 rung at 1500 vs 0.1217 at 1460). |
+| D3 | the archive contradicts itself: `docs/14` §1's matrix row says sidebar numeric fields **do not commit**, while `docs/14` §5 and `docs/16` §12a say they do | **§12a supersedes** — the "disproof" had decoded the wrong channel's block. The stale row is why every rule here reads "verify against the app's model or the file, never a control's text". |
+| D4 | the archive's provenance: `docs/03` says the captured instance had **no instrument attached** (simulation mode) and `docs/06` item 4 / `docs/15` §4 leave "does the instrument accept a message-written parameter" **open**, while this repo's `udop-automation.md` header calls its rules "verified on a live DOP3010" | **Neither is wrong, and the distinction still matters.** Same executable choosing its mode at runtime (`docs/03`), so the recipes transfer; but the archive never closed the rig-acceptance question, so today's live session is what closes it (or the item stays open — it is not closed by the archive). |
+| D5 | inside §18: §18.1 lists first-gate depth as "same mechanism as burst, one combo over" | **Wrong, and §18.6 supersedes it**: first gate is an **edit** (no ▼ in the archive's capture; a `TSp_Edit` reading `2` in today's tree). Also §18.1's "five are unaccounted for" was already answered before the live pass — the archive had identified power, sensitivity, sampling volume and TGC by their painted labels and by option lists; the live pass's genuine addition is the **class per cell** and the skip-profile enable. |
+
+**Stale in the archive, so do not port it.** `docs/07`'s proposed `acquire/` tree (`control_map.py`, `watch.py`,
+`health.py`, `plan.py`) is not what landed here — reference it for the reasoning, never for the module list.
+`docs/03`/`docs/06` item 1's `recon/control-map.json` bindings are one-process-lifetime only (`docs/10`) and were
+built in simulation mode; `docs/06` items 3, 5 and 9–12 (auto-record filenames, archive-by-content policy, the
+`Record settings` questions) are still open here as well. The archive's `recon/15` combo probe also needs one
+correction: the **first `TComboBox` inside the dialog is the channel selector** (`sel=9` = `10`), not sensitivity
+(`docs/14` §5) — the same trap today's tree warns about.
+
+**What each side has that the other does not.**
+
+| | archive | today's §18 |
+|---|---|---|
+| has | painted labels (the capture), measured option lists for the column's power/sensitivity combos, the measured commit recipes for both classes, the burst ↔ sampling-volume coupling and its rejection warning, the write-order rule with its 474-vs-805 evidence, the word map (i.e. write-verification targets for the fifteen knobs), the four-button band + indicator hazard, the dialog-rebuild-on-channel-write hazard, the trigger dialog ↔ words 35/48/49 cross-check, the derived `Depth`/`Velocity scale` read-backs | the TGC-auto × power coupling and its modal warning (§18.4), `Apply skip profile` as a control with an inert value (§18.3), the class-per-cell table and a committed dialog tree (§18.6), `Record settings`'s cap as the one knob with no path, and the code: `write_parameter(role, value)` over `ParamRole`, `_combo_select` / `_set_text_commit`, the `(0,1)`-cell insight, the "one step up from burst `4` landed on `6`" measurement, §16.1's channel-attribution check, the vision pass (§18.8) |
+
+**What genuinely still needs measuring live** (each is one probe run; none needs a recording except where noted).
+
+1. Whether each dialog-cell **edit** write commits *and survives `Accept`* — `Tgc` (0,3), first gate (1,1),
+   sound speed (2,4). Only `Number of skipped profiles` is operator-measured today.
+2. The dialog's **combo option lists** (burst, power, sampling volume) by `CB_GETCOUNT`/`CB_GETLBTEXT`, and whether
+   the strings are identical to the column's for the two knobs that exist twice (`Medium`, `medium`).
+3. The accepted `(burst, sampling volume)` pairs at `c = 1460`, `f_e = 4000`, and what the
+   `burst length should be reduced` warning does to the pending burst — rejected, or applied anyway.
+4. `Apply skip profile`'s own enabling condition (greyed at `0` in the archive's capture) and the count → enable
+   order.
+5. Whether a `Tgc [dB]` write sticks while TGC is in auto, whether it raises the TGC modal, and `word 42` as the
+   oracle (§18.4's open question).
+6. Which surface is authoritative for the two knobs that exist twice — the column combo or the dialog cell. The
+   archive wrote only the column; §18.2's writer plans only the dialog.
+7. `word 1` = `assisted Mode` (`recon/58`, `recon/59`, the manual's table) as a **readable** form of the state
+   §18.4 wants captured before a power change — one stored file per channel settles it.
+8. `word 18` vs `word 42` (one recording that moves only sensitivity — `docs/15` §3's own cheapest experiment).
+
 ### 18.8 The labels, read off the pixels — and which source to trust for what
 
 Screenshot-plus-vision — the route the earlier prototyping used and dropped when vision detoured through a
@@ -1372,3 +1495,48 @@ is not trustworthy (and, being a non-run, it also never touched the application)
 explicitly recorded as unreachable with the reason; every dialog-written knob is read back and verified on the
 point that used it; and a wrong write (a value the combo does not offer, a field that is not there) refuses
 the point rather than proceeding.
+
+## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
+
+The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
+the writer rather than merely adding a field. They are decided here so the slice is built against them; the
+citations are §18.7. Nothing above is rewritten by this section.
+
+**19.1 The commit gesture for a dialog knob is `Accept`, and a write is a transaction — not a field poke.**
+Write the field with its own recipe (edit: `WM_SETTEXT` + `WM_COMMAND(EN_CHANGE)` + `WM_KEYDOWN`/`WM_KEYUP
+VK_RETURN`; combo: `CB_SETCURSEL` + `CBN_SELCHANGE`, no Enter), then press the bottom band's **rightmost** button
+(`Accept` = `row[-1]`; `Cancel` = `row[-2]` — the band has four buttons and the leftmost pair are indicators).
+`Cancel` discards, which is the archive's own read-only gesture and this repo's W1 read path: **a write must
+never be verified with a `Cancel`.** So the verify step has three rungs, in this order — (1) the field states
+what was written, read from the application's own model, not the control (§18.5); (2) *after* `Accept`, the
+dialog's derived readouts (`Depth`, `Velocity scale`) and a re-opened dialog agree; (3) the stored `.BDD`'s word
+states it for the channel that measured (§16.1). Rung 3 is the one that counts, and a point that fails any rung
+is refused rather than recorded.
+
+**19.2 Burst is a coupled write and its companion is derived, so the four combos are not one writer.**
+Writing `Burst length` re-selects the `Sampling volume`; the volume's list is physics-driven (`c`, `f_e`, burst)
+and a request below the burst's floor is **rejected** with a modal warning. Therefore: burst is a *source* knob,
+sampling volume a *derived* one, and the point's declaration must carry the pair actually accepted (read back
+from the combo — oracles: words `8` and `27`). A rejection is an outcome to record, not a retry: if the warning
+appears, the requested volume was not applied, so read the volume back and record what the instrument chose — or
+refuse the point when the volume was itself the swept value and must be exact. Order follows the existing
+structure rule: write the determining knob first (burst, before the volume is read; resolution and first gate,
+before the gate count).
+
+**19.3 A knob can be two controls, and the enable is part of the knob.**
+`Number of skipped profiles` + `Apply skip profile` is the first instance (§18.3): with the flag unticked the
+value is inert, so the point's declaration for that knob is the pair, the reader carries both, and the writer
+sets both. The order (count, then enable) is **unmeasured** — the archive's capture shows the enable greyed at
+count `0`, which would make that order mandatory rather than merely sensible — so the probe in §18.7's list
+settles it before the writer hard-codes a sequence. Until then the writer sets the count, attempts the enable,
+and reads both back.
+
+**19.4 The channel combo is read, never written in place.**
+Writing the dialog's channel combo makes the application **replace the dialog** (measured `(655, 364) → (713,
+364)`, every prior handle dead), so a channel change is a re-open, not a same-dialog write: read the combo for
+§16.1's attribution, and never press `Accept` on a handle taken before a rebuild.
+
+**Not decided here, deliberately.** Which surface is authoritative for the two knobs that exist twice
+(`Emitting power`, `Sensitivity` — column combo and dialog cell): §18.7's open item 6. Until it is measured, the
+writer writes the dialog cell and reads the column back as a cross-check, and the disagreement is recorded on
+the point rather than averaged away.
