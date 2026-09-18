@@ -3005,3 +3005,38 @@ dialog-only facts (sound speed, TGC curve, first gate, burst) are absent because
 surface — an expected non-overlap, not a disagreement. Handles, cursor, screen-capture statistics, absolute
 paths and the whole tree are dropped for the same reason the simulation fixture drops them.
 
+### 26.1 The menubar binding — the question Correction 1 raised, answered and narrowed
+
+Correction 1 asked whether any flow presses a menubar button. The answer is **no press, but a hover**, and
+the hover is load-bearing: `driver.py:2223` takes `roles["menu"][PARAMETERS_MENU]` and `driver.py:2239`
+hovers that button to open the Parameters popup — which is the gesture §23's dialog read and every dialog
+write recipe depend on. So the question was the right one, and narrowing it produced a finding.
+
+The binding is **positional over visible buttons**: `ordered_menu` is the band's hosted buttons sorted by
+`left`, and `MENU_ORDER[i]` names the i-th of them (`driver.py:1527–1533`). `MENU_ORDER` holds eleven names,
+and the two modes do not paint the same number of buttons:
+
+```text
+simulation     11 buttons, lefts 8 63 169 258 334 406 466 526 606 696 1850   -> File … Help, all named
+instrument     10 buttons, lefts 8 63 169 258 334 406 466 526 606      1850   -> Help unnamed, and
+                                                                                'Display' now names the
+                                                                                far-right 30 px control
+```
+
+The absent one is simulation's `[696,28,766,53]` — index 9, *Display* — and because it is the second-to-last
+in the order, every name after it shifts onto its neighbour while `Parameters` (index 2) keeps its own
+button. **That is why the dialog gesture still worked in real-experiment mode** in §23: not because the mapping
+is safe, but because this particular button went missing *after* the one name anything looks up.
+
+The hazard is the mechanism, not today's symptom. One absent or extra button anywhere **before** index 2
+silently renames every subsequent item, and the single lookup that exists would hover a *different* menubar
+item and open a *different* menu — a state change, and precisely the class of silent wrong binding §21.3 was
+written about. Nine of the buttons sit at identical rects in both modes (`8, 63, 169, 258, 334, 406, 466, 526,
+606`), so geometry is a stable identifier here where the list index is not.
+
+Recommendation, deliberately not implemented (it belongs to whichever slice next touches the gesture, which
+is now the dialog/writer work and not §24): identify the Parameters item by its rect against the reference
+layout instead of by its position in a visible list, and let `layout_evidence` state how many of
+`MENU_ORDER`'s eleven names resolved — evidence, not a gate, for the same reason D4 gives about the visible
+count. Until then the item is a precondition to check before any dialog recipe runs against the instrument.
+
