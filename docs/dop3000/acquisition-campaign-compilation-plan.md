@@ -3131,3 +3131,83 @@ painted labels and the menubar. The known failure mode there was bad crops — a
 deliberately *regions* ("where the repository says a control is"), not tight control shots, so a labels job
 would want a column-wide crop rather than per-control ones.
 
+### 26.3 The experiment's conclusion, and what the overlay read found in the gate
+
+**The three reads.** Prediction first, then the measurement: the `Tgc [dB]` row is on screen exactly when the
+mode is `Uniform`, it costs two visible controls, and the count is therefore a *setting*, not a fact about a
+clean screen.
+
+| read | mode | visible | `Tgc [dB]` row | the hidden `Mode` box | frame (`PRF / gates / res / vel / emissions`) |
+|---|---|---|---|---|---|
+| A | Uniform | 44 | present, `20` | `Uniform` | `600 / 50 / 1.850 / 1.00 / 20` |
+| B | Auto | 42 | absent | `Auto` | `600 / 50 / 1.850 / 1.00 / 20` |
+| C | Uniform again | 44 | present, `40` | `Uniform` | `296 / 726 / 0.123 / 0.49 / 150` |
+
+So `base` is 42, the row adds 2, and the simulation's 43 is `base + 1` menubar button. **D6 is required**: two
+runs on this instrument, in this mode, minutes apart, differing only in TGC mode, read 44 and 42 — the identity
+as it stood would have refused a legitimate resume.
+
+**Two changes in C that the TGC mode did *not* cause, both attributed by the operator rather than inferred.**
+The frame moved (`600/50/1.850/1.00/20 → 296/726/0.123/0.49/150`) because the operator **triggered assisted
+mode** while capturing menu screenshots — those five are the assisted-mode compromise's own quantities, so the
+record must not credit TGC with them. And the uniform start moved `20 → 40` while the overlay's `Start [dB]`
+box already read `40` when it was opened, so that change happened during either the `Auto`+`Recompute` step or
+the assisted toggle: **unattributed, and both remain candidates.** The consequence for the eventual TGC axis is
+the part worth keeping: a TGC mode change is **not value-neutral** — it can leave a different stored uniform
+start behind — so a per-point TGC covariate has to be written *and read back*, and the mode belongs in the
+per-point identity, which is what §22.4 already argued from the other end.
+
+**The overlay, mapped structurally** (read D, `Define TGC` up, `Uniform` selected, nothing pressed):
+
+```text
+TSp_Panel                                     [400,168,850,288]     the overlay itself, 6 children
+  Mode    TSp_Value_Button [429,177,544,209] -> TComboBox [434,182,498,203] + Edit [437,185,478,200]
+  Start   TSp_Value_Button [558,177,653,205] -> TSp_Edit '40' [564,183,594,199]        (Uniform only)
+  the two checkboxes  TSp_Button [406,214,521,234] 'Profile and Tgc'
+                      TSp_Button [408,238,516,263] 'Echo and Tgc'
+  [Cancel] TSp_Button [710,257,770,277]     [Accept] TSp_Button [778,256,838,276]
+  (no Recompute under Uniform — the crops and the tree agree)
+```
+
+and the monitor is **two plots** while it is up — `TDop_Plot [200,65,1045,1006]` and
+`[1065,65,1910,1006]` where the measurement screen has the single `[200,65,1910,1006]` — which is the
+operator's side-by-side observation, structurally confirmed. The real strip's four buttons and its panel are
+gone from the visible set for as long as the overlay is up.
+
+**§22.4's "indicator" is explained, and §26.2's reading of it was one step short.** The hidden box at
+`[434,182,498,203]` is not a painted indicator on the measurement screen: it is **the overlay's own `Mode`
+combo**, hidden whenever the overlay is closed and visible — at the same rect, with the same inner `Edit` — in
+read D. Its text mirrors the stored mode, which is why A said `Uniform` and B said `Auto`, and it is why the
+mode is readable from a plain read without pressing anything. §22.4's conjecture (a *mode/distribution
+indicator for the current TGC*) is replaced by the simpler truth: it is the control the mode is set with,
+sitting hidden. §22.4 did notice one symptom of this without the cause — that the panel "is present in both
+modes at the same rect with the same two-control shape, and hidden in both".
+
+**And the read found a defect in the new gate's clause set, with the evidence.** With the overlay up:
+
+- the strip resolver returns **the overlay's panel** as the strip: `strip.panel_rect [400,168,850,288]`,
+  `panel_id 3477050`, `view 'unknown'`, `button_count 0`;
+- so the gate's *first* clause reads *"the strip's row holds 0 button(s) in view 'unknown', which is no row in
+  `STRIP_BUTTON_ORDER`: a different button panel sits in the plot's middle band, and a press would be bound to
+  the wrong position"* — a **misdiagnosis**: the strip is not wrong, it is hidden behind an overlay, and the
+  sentence sends the operator to inspect a strip that is fine;
+- the *second* clause is the accurate one — *"a menu popup is open: the parameter roles below it would bind to
+  the popup's own controls (a popup is never dismissed by `WM_CLOSE` here)"* — because the overlay hosts
+  controls and is not one of the three known bands, so `open_popup` is true while `0 dialog panel(s)` resolved.
+
+The screen is **refused** either way, which is the safety property holding: nothing may press against a screen
+with an overlay up, and the recording path cannot bind a press without a strip. What needs fixing is the
+sentence, not the decision: raise the popup/overlay clause **ahead of** the strip clause, and let the strip
+clause name the rect it resolved and say an overlay may be up. **Recommendation: land that as a follow-up
+commit after round 2's review of PR #8 rather than moving the target under the reviewer mid-read** — it is a
+two-clause reordering with its own test row, and it belongs with D5's rule that each clause names what was read.
+
+**One clarification §26's Correction 3 needed.** Read D's evidence sentence reports *"the parameter column
+resolved with 7 of 7 role(s)"* — so the **driver's resolver has the roles**; it is only the **probe's JSON**
+that serialises `role=None` for every row. The fixture gap is a probe change and nothing else, and the gate is
+unaffected by it.
+
+**A third `89`.** The overlay's `Mode` combo hosts `TSp_Edit '89' [437,185,497,201]` — the same unexplained
+value as the two sidebar combos' own edits. Three occurrences now, on three different surfaces, which is worth
+one experiment of its own before the writer slice touches any of them.
+
