@@ -42,6 +42,7 @@ from udv_echo_process.acquire.actuator import (
     STRIP_BUTTON_ORDER,
     VIEW_TIMEOUT_S,
     Actuator,
+    ChannelMode,
     DialogControl,
     OverlayKind,
     ParamRole,
@@ -54,6 +55,7 @@ from udv_echo_process.acquire.actuator import (
     press_index,
 )
 from udv_echo_process.acquire.config import ParameterSet
+from udv_echo_process.acquire.snapshot import FactSource
 
 #: The simulated clock the fake advances on every strip poll. A point's duration
 #: is therefore measured in *observations*, exactly like the live loop's.
@@ -2990,3 +2992,103 @@ def test_a_strip_press_is_a_posted_held_press_and_takes_no_cursor(monkeypatch) -
 
 
 
+
+
+# ------------------------------- the mode of the channel, read off the measurement screen
+
+
+def role_map(**overrides: object) -> dict:
+    """A resolved role map in the shape ``Win32Actuator._resolve`` returns.
+
+    Only the keys :func:`driver.screen_mode` reads are populated, and they are spelled the way
+    the resolver spells them — a test that invented its own names would pin itself instead of
+    the driver. The rest of the map is deliberately absent: the function has to answer from
+    *this* evidence and from nothing else, which is also why it takes the map rather than
+    resolving one.
+    """
+    roles: dict[str, object] = {
+        "params": {
+            role: {"edit": {"hwnd": 100 + index}}
+            for index, role in enumerate(PARAM_COLUMN_ORDER)
+        },
+        "open_popup": False,
+        "value_dialogs": set(),
+        "browse_dialogs": set(),
+        "strip_panel": {"hwnd": 77},
+    }
+    roles.update(overrides)
+    return roles
+
+
+def test_a_resolved_parameter_column_is_a_channel_in_manual_mode() -> None:
+    """The sidebar exists only for a manual channel, so its presence is the statement."""
+    assert driver.screen_mode(role_map()) is ChannelMode.MANUAL
+
+
+def test_the_measurement_screen_without_a_column_is_an_assisted_channel() -> None:
+    """The reading the driver's own missing-field failure already names.
+
+    Measured live 2026-09-17: a manual channel's clean screen is 43 visible controls in 4
+    panels, an assisted channel's 21 in 3 — the sidebar parameter column is the difference,
+    and this reads it without opening anything.
+    """
+    assert driver.screen_mode(role_map(params={}, param_rows=[])) is ChannelMode.ASSISTED
+
+
+def test_a_resolved_column_outlives_a_popup() -> None:
+    """Positive evidence is positive: only the *absence* of the column is ambiguous."""
+    assert driver.screen_mode(role_map(open_popup=True)) is ChannelMode.MANUAL
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("open_popup", True),
+        ("value_dialogs", {4102}),
+        ("browse_dialogs", {4103}),
+        ("strip_panel", None),
+    ],
+)
+def test_an_absent_column_is_not_evidence_of_a_mode(key: str, value: object) -> None:
+    """A popup, a dialog or an unrecognised screen: no mode is read, and the caller carries it.
+
+    Guessing ``assisted`` here is the failure this refusal exists for — a manual channel behind
+    a dialog would be read as a channel whose parameter surface is gone, and the refusal would
+    name the mode instead of the screen.
+    """
+    assert driver.screen_mode(role_map(params={}, param_rows=[], **{key: value})) is None
+
+
+# --------------------------------- a channel only the router may claim to have established
+
+
+def test_a_reading_that_routed_nothing_carries_no_channel() -> None:
+    """``instrument_snapshot`` is public and composable: it can be called with no routing at all.
+
+    Nothing in the reading's own evidence establishes a channel — reading it costs the menubar
+    hover the routing step pays, and on an assisted channel there is no combo to read — so a
+    caller that hands over nothing gets ``unreadable`` rather than the configured number. The
+    difference matters: the run's record has to say whether a channel was *established* or merely
+    *aimed at*, and the earlier shape of this method said "verified by ensure_channel" even when
+    ``ensure_channel`` had never run.
+    """
+    unrouted = driver.Win32Actuator(channel=1)._channel_fact(None)
+
+    assert unrouted.source is FactSource.UNREADABLE
+    assert unrouted.value is None
+    assert "no channel was established" in (unrouted.reason or "")
+
+
+def test_the_routed_channel_rests_on_the_routers_own_read_back() -> None:
+    """Handed the channel the router verified, the reading carries it — as ``routed``, not read.
+
+    ``ensure_channel`` selects the channel in the application and reads the application's own
+    confirmation back, so the value is stronger than a caller's claim and is *not* this reading's
+    own answer: it is one step removed from ``read``, and it says which step it came from.
+    """
+    routed_fact = driver.Win32Actuator(channel=1)._channel_fact(1)
+
+    assert routed_fact.source is FactSource.ROUTED
+    assert routed_fact.value == "1"
+    assert not routed_fact.is_read
+    assert "ensure_channel" in (routed_fact.reason or "")

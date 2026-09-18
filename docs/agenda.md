@@ -207,14 +207,26 @@ recorded in that PR's body and in
 [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md)
 §7a–§7b.
 
-**The next slice is planned, not started:**
+**The next slice is planned, and its first implementation slice is in review:**
 [PR #3](https://github.com/ajegorovs/udv-echo-process/pull/3) (draft) carries
 [`dop3000/acquisition-campaign-compilation-plan.md`](dop3000/acquisition-campaign-compilation-plan.md)
 — read the instrument's state, compile the campaign against it, and refuse before the
 first recording when the two disagree; plus the cap-provenance and period-law items the
 review of the first slice carried forward. It has been reviewed once: the direction was
 approved and the four document-level changes it asked for are in (§10 of the plan lists them
-with their commits, and the six decisions in §5 are still open). No code is written yet.
+with their commits, and the six decisions in §5 are still open).
+[PR #4](https://github.com/ajegorovs/udv-echo-process/pull/4) (draft, based on #3's branch)
+is the plan's **slice P1 = W2**: `acquire/snapshot.py` — an instrument reading whose every fact
+carries its source, and the identity a resume compares — the additive
+`SweepActuator.instrument_snapshot(*, routed_channel)`, and the fakes' answer. It changes no
+recording path, so nothing in a campaign behaves differently yet; the plan's §12 records what the
+slice decided.
+Its first review approved the direction and returned three changes to the identity and the
+channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
+out of the identity, and routing as its own source that only the router can claim — all landed,
+one commit each, and §12 of the plan carries them.
+Next is **P3 = W3** (`compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
+refusals), which P1 is the input to.
 
 Binding outcomes:
 

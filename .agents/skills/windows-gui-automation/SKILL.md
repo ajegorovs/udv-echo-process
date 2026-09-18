@@ -410,6 +410,36 @@ unrecognised prompt is one you must not answer blind.
 - **A capture session's mode is a variable of the map.** Mark mode- or licence-dependent
   bindings `required: false` and re-check them on the target instance; a control that exists only
   in the demo build must not silently become a skipped step in a live run.
+- **A whole-state reading is two objects, not one: the evidence, and the identity anything
+  compares.** Keep the full fingerprint for diagnosis — geometry, `hwnd`, cursor, foreground,
+  because that is how a screen that does not match gets *described* — and derive a separate
+  projection for "is this the same instrument as last time". The projection must exclude
+  everything a **restart** changes (a new `hwnd`, a drag, maximising, another screen: keying on
+  those makes a restart read as a different instrument, and the resume re-runs a finished job)
+  and everything that is the *run's own data* — the store slider's maximum is the selected
+  block's profile count, so an identity carrying it moves as the buffer fills. An overlay being
+  up, and a minimised window, are **preconditions that refuse** rather than properties of the
+  instrument. Exclude *all* of the state that changes with the run's own data, not only the
+  obvious part: this application's ready row is 3 buttons or 4 depending on whether a leftover
+  block is held, and the store slider's maximum is the selected block's profile count — so a count
+  in the projection is a property of how far the run has got, not of the instrument. Where the
+  count classifies into a *view* that a press is bound against, the view is what belongs in the
+  projection, and the binding itself is resolved live at press time. Exclude a fact's explanatory
+  `reason` for the same class of reason: it is written to be rewritten, so hashing it turns a
+  documentation improvement into "a different instrument" and re-runs a finished job — put the
+  value and the *source* in the projection and leave the prose in the reading. And when a value
+  rests on another step's verification rather than on the reading's own, give it its own source
+  name (a channel the router selected and read back is neither "the caller declared it" nor "this
+  reading read it") and make the caller **hand the proof over as a required argument**, so that no
+  call can imply a verification that never ran.
+- **Read a per-channel state without pressing, and never read a mode out of an absence.** The
+  channel itself costs a menubar hover (the dialog is the only place it lives), but the channel's
+  *mode* does not: the sidebar parameter column exists only for a manual channel, so the
+  measurement screen states the mode for free. The half that matters is the other direction —
+  when the column is missing, that fact is only evidence of a mode if the screen is actually the
+  measurement screen; with a dialog or a popup up, return "not read" and let the caller carry it,
+  or a manual channel behind a dialog is refused *naming the mode* instead of the screen. Same
+  rule as the one that stops a filtered probe's empty result from being evidence.
 
 - **A dialog can be a child panel of the main window, not a window.** A settings/options dialog
   that never appears in a top-level window enumeration can still be on screen and fully drivable

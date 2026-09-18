@@ -456,3 +456,30 @@ def test_the_fake_answers_overlays_and_reports_what_they_were() -> None:
     actuator.overlays.append(OverlayKind.WARNING)
     assert actuator.answer_overlay() is OverlayKind.WARNING
     assert actuator.answer_overlay() is None
+
+
+# ------------------------------------------------- the port grew no primitive for this slice
+
+
+def test_the_port_gained_no_primitive_for_the_instrument_reading() -> None:
+    """Criterion 5's seam, asserted rather than asserted about: the primitives are untouched.
+
+    The instrument reading arrives as one **composed** call on the layer above
+    (``SweepActuator.instrument_snapshot``, ``runner.py``), which is what keeps every existing
+    fake working — an implementation that satisfied this Protocol before still does. Written as
+    a set, so widening a primitive has to be argued for in a diff instead of happening by
+    accident.
+    """
+    assert {name for name in dir(Actuator) if not name.startswith("_")} == {
+        "answer_overlay",
+        "commit_store",
+        "layout_note",
+        "press",
+        "read_parameter",
+        "record_and_store",
+        "set_store_name",
+        "strip_state",
+        "wait_for_stored_file",
+        "wait_for_view",
+        "write_parameter",
+    }

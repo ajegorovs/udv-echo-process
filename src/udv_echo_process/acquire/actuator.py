@@ -58,6 +58,7 @@ __all__ = [
     "STRIP_BUTTON_ORDER",
     "VIEW_TIMEOUT_S",
     "Actuator",
+    "ChannelMode",
     "DialogControl",
     "OverlayKind",
     "ParamRole",
@@ -134,6 +135,24 @@ PARAM_COLUMN_ORDER: tuple[ParamRole, ...] = (
 #: value the final request it sees. Measured: 805 gates requested → 474 accepted
 #: in the wrong order, 805 accepted in this one (docs/16 §14).
 PARAMETER_WRITE_ORDER: tuple[ParamRole, ...] = (ParamRole.RESOLUTION, ParamRole.GATES)
+
+
+class ChannelMode(str, Enum):
+    """The two ways this application's parameters panel can present a channel.
+
+    The app states the mode by **which panel it builds for that channel** (measured live
+    2026-09-17): a channel in ``ASSISTED`` mode gets the "Assisted mode parameters for channel N"
+    panel — 511x384, the ``Shorter acquisition time / Best quality`` slider, derived
+    resolution/gate read-outs, and **no sidebar parameter column at all** — while a channel in
+    ``MANUAL`` mode gets the "Operating parameters" panel, 627x384, the value table and the two
+    indicator buttons, with the sidebar present. Read from that structure rather than inferred
+    from a caption: every one of these widgets is caption-less. It is also why
+    :data:`DIALOG_ONLY_PARAMETERS` exists — the same channel shows its fixed parameters in the
+    dialog and nothing in the column.
+    """
+
+    MANUAL = "manual"
+    ASSISTED = "assisted"
 
 
 class StripControl(str, Enum):
