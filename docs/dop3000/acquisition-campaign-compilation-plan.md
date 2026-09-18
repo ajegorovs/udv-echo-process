@@ -3558,11 +3558,17 @@ when a block is held. Therefore:
 **The two warning modals are deferred, deliberately, with their triggers recorded.** The operator asked what was
 wanted; the honest answer is that neither justifies a deliberate action today.
 
-- The **power ↔ TGC modal** (§18.4) appears when `Emitting power` is changed while the TGC is in `auto`. Its
-  text is already in this record as a quotation; a crop would upgrade it to evidence. But reaching it means
-  putting the instrument back into TGC `auto`, and §26.4 showed that path can leave the stored uniform start
-  changed (`20 → 40`) — a real cost for a screenshot, in a mode the operator has ruled out as a working mode. It
-  will raise itself the first time the matrix gives power an axis, and that is the moment to crop it.
+- **The power ↔ TGC modal — no longer deferred; cropped, and the deferral superseded.** The operator reached it
+  after all (switching the TGC to `auto` and changing `Emitting power`), and the crop is `UI-OVERLAY-23`: a
+  caption-less panel whose own caption is `Warning`, reading *"The TGC is in auto mode. Changing the emitting
+  power / will modify the TGC mode and amplification"* — a statement, not a question — with two buttons,
+  **`Cancel`** and **`Continue`**. The cost of the capture was real (the TGC went back through `auto`, the path
+  §26.4 measured as able to rewrite the stored uniform start), and it bought the one fact a writer needs:
+  **`Continue` proceeds and modifies the TGC mode and the amplification.** So a writer that changes emitting
+  power while the TGC is in `auto` must answer this modal with **`Cancel`**, and if it means to change power it
+  has to state the TGC mode afterwards rather than inherit whatever the warning did. Without the crop that
+  sentence would have been unknown, and the default — press the affirmative button — would silently have
+  rewritten the amplification.
 - The **sampling-volume rejection** (§18.11) is caption-less, so a crop would capture a *shape*, not words. Its
   value is a detection signature for a run, which the read path supplies when a point is genuinely rejected —
   and provoking one on purpose means a write of exactly the class this work refuses to make for a photograph.
@@ -3620,4 +3626,45 @@ Three consequences, in order of weight:
 Recorded here rather than fixed in place: PR #8's review is live, and this moves a *mode fact* rather than a
 clause order, so it goes to the reviewer as a finding first (a comment on the pull request, so it travels with
 the code).
+
+### 26.13 The compare picker leaked the experiment's data tree — and `what moves` may already exist
+
+The crop of the `Compare profiles` source picker (`UI-OVERLAY-21`) is deliberately unmapped as a *domain*, but
+its pixels carry something this record needs, and it is not about comparison.
+
+**The operator's own data tree, in the dialog's own words:**
+
+```text
+Drive  c:
+tree   …\Desktop\experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len
+files  12.BDD (selected), 2.BDD, 4.BDD, 6.BDD, 8.BDD, 14.BDD, 16.BDD, 18.BDD, 20.BDD, 24.BDD, 28.BDD,
+       32.BDD
+```
+
+and its per-file header, which the picker paints in full: `UDOP version = 6.07.4`, `File size = 67336`,
+`Date and time = 9.16.2026 18:32:02`, `Nb profiles = 521`, `Multiplexer disabled`, `Channel : 1`,
+`Emitting frequency = 4.0 MHz`, `Velocity range = 154.1 mm/s`, `Depth range = 101 mm`,
+`Data type : velocity`.
+
+**Why this matters more than the widget.** §11.1 item 5 and §26.9 have both landed on the same missing thing —
+a **dynamic target** — and the operator's own directory says they already have one: a **mixer**, under a folder
+called **`sensitivity-analysis`**, organised by **emitting frequency** (`4MHz`), by **RPM** (`0500RPM`), by run
+(`001`) and by **burst length**. So the axes the matrix is supposed to choose may already be named in the
+operator's file system, and the file names (`2, 4, 6, 8, 12, 14 … 32`) look like a burst-length series. **This is
+a question to the operator, not a conclusion:** if that tree is the experiment this work is for, then "what
+moves" is a mixer at a stated RPM and the matrix's first line is already answered — which would also explain
+why the monitor looked flat (§26.9) when nothing on the bench was turning.
+
+**Two capabilities the same crop proves, both about the *analysis* rather than the comparison:**
+
+- **Stored files are self-describing.** Every `.BDD` carries its channel, emitting frequency, velocity range,
+  depth range, profile count and type in its own header, and the application paints them without any
+  post-processing. An experiment's result therefore has an application-side index as well as whatever the
+  manifest records — useful as a cross-check on what the store actually produced.
+- **The application can average over a profile range and scale the result** — `Compute mean from` `1` `To` `521`
+  `profile`, `from block` `1` `To block` `1`, `and multiply by` `1.000`, `using channel` `1`,
+  `on the curve` = `Coded velocity`, with `Reject zero values`. That is, structurally, "mean velocity over a
+  window, per channel, on a named curve", which is close to the shape of a sensitivity readout. It stays
+  **unmapped by the operator's decision** (their post-processing is the analysis of record), and is recorded
+  here only so that nobody later mistakes the decision for ignorance.
 
