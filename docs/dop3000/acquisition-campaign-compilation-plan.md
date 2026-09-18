@@ -593,7 +593,8 @@ git fetch origin && git switch feat/acquisition-campaign-compilation
 
 # read, in this order: this plan  →  the decision record's §6/§7a/§7b
 #   docs/dop3000/acquisition-review-and-verdict.md
-#   src/udv_echo_process/acquire/campaign.py      (run_campaign:640, plan_campaign:522)
+#   src/udv_echo_process/acquire/campaign.py      (run_campaign:640, plan_campaign:522,
+#                                                  compile_campaign — §13)
 #   src/udv_echo_process/acquire/actuator.py      (ParamRole:107, Actuator:398)
 #   src/udv_echo_process/acquire/snapshot.py      (the reading and the identity — §12)
 #   src/udv_echo_process/acquire/runner.py        (SweepActuator:180)
@@ -602,6 +603,7 @@ git fetch origin && git switch feat/acquisition-campaign-compilation
 #   src/udv_echo_process/acquire/driver.py        (the dialog read path — §14)
 #   tests/test_acquire_dialog.py                  (the binding, the checks, §14's evidence)
 #   tests/data/udop-parameters-dialog-tree.json   (the measured dialog the binding is pinned to)
+#   tests/test_acquire_compile.py                 (the compile's contract, and §13's)
 
 uv run --no-sync --extra dev ruff check src tests
 uv run --no-sync --extra dev pytest -q
@@ -688,6 +690,56 @@ that had to keep moving is pinned in exchange — the identity still changes wit
 with each fact's source, with a channel that is *routed* rather than *declared*, and with a strip
 view the run did not bind against.
 
+## 13. P3 (W3) as landed
+
+Slice P3 is implemented and green, in its own pull request on top of P1's branch (§8: it can land
+alone). It changes **no recording path** — nothing in a run calls it until P4 wires it in — so
+criterion 5 still holds trivially rather than by testing.
+
+| where | what |
+|---|---|
+| `acquire/campaign.py` | `Acceptance`, `COVARIATE_ACCEPTANCE`, `FactCheck`, `ExecutableCampaign`, `compile_campaign`, and the rules it applies (`_refuse_unusable_screen`, `_routed_channel`, `_declared_fixed_fact`, `_check_fact`, `_refuse_disagreements`) |
+| tests | `tests/test_acquire_compile.py` — one case per rule in W3's "Done when" list, plus the policy table and the identity the compiled plan carries |
+
+Five things W4 has to know before it wires this into the run, each a decision this slice made:
+
+1. **The acceptance policy is the verifier's own table, not a second opinion.**
+   `COVARIATE_ACCEPTANCE` is *derived* from `verify.ADVISORY_COVARIATES`: the three enforced
+   covariates (sound speed, PRF, burst) refuse, the emissions per profile warns, and the first gate
+   and the block cap refuse for reasons of their own: the first gate moves the *spatial* window
+   (`first_gate + gates × resolution`), and the cap decides the *retention* semantics a campaign was
+   compiled under — how much of the requested window can be kept, whether the block wraps, and what
+   `retained_fraction` means. **Not** "the planner refuses those windows": `plan_campaign`
+   deliberately does the opposite for the cap, planning the window and attaching a note that the
+   block wraps and covers only its last `cap × period` seconds (pinned by
+   `tests/test_acquire_campaign.py`), because the near-term goal is a 10–15 s recording the
+   instrument honours. The cap refusal cannot fire while the active cap is unreadable (W1, §14) —
+   the fact is carried unproven — and it is about the *instrument* disagreeing with the definition,
+   which is a different question from whether the plan is runnable. W6
+   moves the emissions row and nothing else. The comparison keeps the verifier's tolerance
+   (`PRF_TOLERANCE_US`; the app stores integer microseconds) and is exact elsewhere — a pre-run
+   check stricter than the post-run one would refuse jobs that would have passed with a recording
+   already spent.
+2. **A refusal names every fact that disagreed**, in one message, because the comparison is cheap
+   and the instrument is in front of the operator. W4 must not catch and re-wrap it: the message
+   *is* the operator's instruction.
+3. **The order is: the definition's own laws, then the screen, then the channel, then the facts.**
+   An unplannable file is refused for *that* reason and not for a screen state the next poll would
+   change. A test asserts the ordering, not just the messages.
+4. **The channel comes from the router, through the snapshot.** W4 calls
+   `instrument_snapshot(*, routed_channel=<what ensure_channel returned>)`, and the compile refuses
+   anything that is not `routed` — so a cycle that forgets to hand it over fails closed instead of
+   recording under an assumed channel.
+5. **What the run carries forward**: `ExecutableCampaign.advisories` (the disagreements it proceeds
+   despite) onto every record, `unproven` (the facts no surface could state) onto the manifest, and
+   `identity` + `definition_fingerprint` together as the resume's comparison — the pair is what
+   makes a compiled plan auditable after the fact, and criterion 2's "which channel and mode were
+   active" is answered by the identity.
+
+Deliberately **not** owned by the compile: the strip's view. Starting a point cycle from a
+recording view is refused by the runner with its own message *before* anything is stored, so a
+second refusal here would give one cause two diagnoses. The view is still in the compiled plan's
+identity, which is where a resume needs it.
 ## 14. W1 as landed — the dialog's three facts, read by position and checked against the screen
 
 Reconnaissance ran on the live machine (the application in simulation mode, restarted before the

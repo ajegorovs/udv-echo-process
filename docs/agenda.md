@@ -225,10 +225,12 @@ Its first review approved the direction and returned three changes to the identi
 channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
 out of the identity, and routing as its own source that only the router can claim — all landed,
 one commit each, and §12 of the plan carries them.
-[PR #5](https://github.com/ajegorovs/udv-echo-process/pull/5) (draft, based on #4's branch) is the
-plan's **slice P3 = W3**: `compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
-refusals, reusing the verifier's own enforced/advisory table rather than declaring a second
-vocabulary. §13 records what it settled.
+[PR #5](https://github.com/ajegorovs/udv-echo-process/pull/5) (draft, based on #4's branch) is
+**slice P3 = W3**: `compile_campaign(definition, snapshot)` — reconcile the definition against the
+reading, or refuse before the first recording, with a per-fact `refuse`/`warn`/`accept` policy
+derived from the stored-file verifier's own table. It is the step the review of #3 asked for by
+name, and it also changes no recording path; the plan's §13 records what it decided.
+
 **Slice P2 = W1 (the live reconnaissance) is landed** on `feat/acquire-w1-recon` (stacked on #4's
 head): the sound speed, the first gate and the burst length now have a supported read path, verified
 against the running application — five of the six fixed facts are read from the instrument, and the
@@ -238,8 +240,15 @@ the three checks that stand between a positional binding and a value, and two fa
 application that any future gesture has to respect: **Escape closes nothing**, and a hover-opened
 popup cannot be dismissed programmatically, so a failed gesture can strand the application until it
 is restarted.
-Next is **P4 = W4**: snapshot and compile wired into `run_campaign`, the manifest, the resume and the
-`compile` verb — the first slice that changes how a campaign behaves.
+
+**All three slices are merged into the plan branch** (#4, #5, #6), and the review of the
+batch is answered: two corrections landed — `686d4f4` (the cap and the first gate refuse for
+their own reasons, not because the planner refuses those windows) and `0ba86ec` (the
+choice-over-read-out invariant, with the guard that shows it bites) — and the one policy
+change the review asked for is W4's: a campaign must refuse when a fact with a *supported*
+read path could not be read, keeping "supported but this attempt failed" distinct from
+"genuinely unsupported" (the cap stays unproven).
+
 
 Binding outcomes:
 
