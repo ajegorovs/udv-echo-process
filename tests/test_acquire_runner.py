@@ -65,6 +65,7 @@ from udv_echo_process.acquire.actuator import (
     VIEW_TIMEOUT_S,
     Actuator,
     ChannelMode,
+    DialogField,
     OverlayKind,
     ParamRole,
     ScreenFingerprint,
@@ -89,6 +90,7 @@ from udv_echo_process.acquire.plan import (
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import (
+    DialogParameters,
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
@@ -319,6 +321,14 @@ class FakeActuator:
         #: is what a run on a correctly configured instrument reads.
         self.snapshot_checks = 0
         self.scripted_snapshot: InstrumentSnapshot | None = None
+        #: The ``routed_channel`` and the dialog reading each snapshot was handed, in order —
+        #: the campaign path hands its own routing step's answer and the dialog reading over,
+        #: and a fake that accepted them silently could not tell a hand-over from a default.
+        self.snapshot_routed_channels: list[int | None] = []
+        self.snapshot_dialogs: list[DialogParameters | None] = []
+        #: How often the run read the ``Operating parameters`` dialog, and each reading it got.
+        self.dialog_checks = 0
+        self.dialog_readings: list[DialogParameters] = []
         self.parameters: dict[str, str] = {}
         self.timeouts: list[float] = []
         self.gates_readback: str | None = None
@@ -383,19 +393,61 @@ class FakeActuator:
         self.channel_checks += 1
         return 1
 
-    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
+    def read_dialog_parameters(self) -> DialogParameters:
+        """The ``Operating parameters`` dialog read: the three facts it states, as text.
+
+        The same three values :func:`expected_snapshot` states — this module's measured
+        constants — read the way the driver reads them, and for the same reason the port has
+        the method at all: the campaign path reads the dialog as a step of its own and hands
+        the result to ``instrument_snapshot``, which deliberately does not open the dialog.
+        Counted rather than appended to ``calls`` (once per run, like the channel read), with
+        the readings kept because a case has to be able to say which one was handed over.
+
+        ``channel`` is the dialog's own channel field and ``reason`` is empty: the dialog
+        stated every field, which is what ``DialogParameters.readable()`` means.
+        """
+        self.dialog_checks += 1
+        reading = DialogParameters(
+            channel="1",
+            fields=(
+                (DialogField.BURST_LENGTH.value, str(BURST_LENGTH)),
+                (DialogField.FIRST_GATE_MM.value, str(int(FIRST_GATE_MM))),
+                (DialogField.SOUND_SPEED_MS.value, str(int(SOUND_SPEED_MS))),
+            ),
+        )
+        self.dialog_readings.append(reading)
+        return reading
+
+    def instrument_snapshot(
+        self,
+        *,
+        routed_channel: int | None,
+        dialog_parameters: DialogParameters | None = None,
+    ) -> InstrumentSnapshot:
         """The instrument reading: the scripted one, else the expected configuration.
 
-        Counted rather than appended to ``calls``, for the same reason the channel read is:
-        it is once per run, while ``calls`` is the per-point sequence.
+        Counted, and *also* marked in ``calls``: the reading is once per run and the ordering
+        assertions are about the per-run steps as much as the per-point ones — the plan's run
+        path compiles the campaign from this reading *before* the first point is stored, and
+        ``calls`` is where that order is observable.
 
         ``routed_channel`` is passed straight through to :func:`expected_snapshot`, so the fake's
         answer depends on what the caller claims exactly as the driver's does — a cycle that
         forgets to hand over the channel it routed cannot get a ``routed`` fact out of this fake.
         The default is the reading a run on a *correctly configured* instrument gets, so a test
         that is not about the compile keeps its old subject.
+
+        ``dialog_parameters`` is accepted because the port declares it (the driver states the
+        three dialog-only facts from what the caller read) and recorded rather than used: this
+        fake's default reading already states those three constants as ``read`` facts, so a
+        case that *is* about the hand-over asserts on what was passed
+        (:attr:`snapshot_dialogs`) and one that is not sees the expected configuration either
+        way.
         """
         self.snapshot_checks += 1
+        self.snapshot_routed_channels.append(routed_channel)
+        self.snapshot_dialogs.append(dialog_parameters)
+        self.calls.append(("instrument_snapshot", routed_channel))
         if self.scripted_snapshot is not None:
             return self.scripted_snapshot
         return expected_snapshot(routed_channel)
@@ -1997,18 +2049,31 @@ def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
 def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
     """The primitives gained nothing: the reading is a *composed* call, so fakes survive.
 
-    The plan's criterion 5 rests on this: one added method on ``SweepActuator``, no existing
+    The plan's criterion 5 rests on this: two added methods on ``SweepActuator``, no existing
     signature changed, so every implementation that satisfied the port before still does — it
-    gains one method, and a fake that does not answer it is still a valid ``Actuator``.
+    gains those methods, and a fake that does not answer them is still a valid ``Actuator``.
+
+    The second addition, ``read_dialog_parameters``, is **deliberate and belongs to the
+    campaign path**: ``instrument_snapshot`` states the sound speed, the first gate and the
+    burst length only from what a caller hands it (``dialog_parameters=``) and never opens the
+    dialog itself (the reading presses nothing, and that dialog is a modal the operator watches
+    open and close), so the read is a step of its own on the port a campaign drives. The
+    primitive ``Actuator`` port stays untouched — which is what keeps this a widening of the
+    sweep port rather than a change to the surface every implementation answers.
     """
     primitives = {name for name in dir(Actuator) if not name.startswith("_")}
     sweep = {name for name in dir(runner_module.SweepActuator) if not name.startswith("_")}
 
     assert "instrument_snapshot" not in primitives
+    assert "read_dialog_parameters" not in primitives, (
+        "the dialog read is the sweep port's, not a primitive: the driver has the method, but "
+        "no existing implementation of the primitive ``Actuator`` is required to gain it"
+    )
     assert sweep - primitives == {
         "apply_point",
         "ensure_channel",
         "instrument_snapshot",
+        "read_dialog_parameters",
         "try_record_and_store",
     }
 

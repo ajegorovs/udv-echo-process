@@ -36,10 +36,13 @@ from test_acquire_runner import (
     EMISSIONS_PER_PROFILE,
     PRF_US,
     SOUND_SPEED_MS,
+    STORE_CALLS,
     TINY_SIZE,
     FakeActuator,
     ScriptedVerifier,
     definition_for,
+    expected_snapshot,
+    index_of,
     make_runner,
     patch_reader,
     patch_verifier,
@@ -47,6 +50,7 @@ from test_acquire_runner import (
 )
 
 from udv_echo_process.acquire import campaign, live
+from udv_echo_process.acquire.actuator import ChannelMode
 from udv_echo_process.acquire.config import ParameterSet, RecordSettings
 from udv_echo_process.acquire.log import (
     PointStatus,
@@ -56,6 +60,11 @@ from udv_echo_process.acquire.log import (
     read_entries,
 )
 from udv_echo_process.acquire.plan import SweepPoint, plan_sweep
+from udv_echo_process.acquire.snapshot import (
+    FactSource,
+    InstrumentFact,
+    InstrumentSnapshot,
+)
 from udv_echo_process.cli import acquire_main
 
 # --------------------------------------------------------------- the fixture campaign
@@ -745,8 +754,12 @@ def test_a_run_writes_the_manifest_beside_its_log(
         f"c1-k1-{records[0].sweep_id}.BDD",
         f"c1-k2-{records[0].sweep_id}.BDD",
     ]
-    # The channel dialog was opened once for the run, not once per point.
-    assert job.fake.channel_checks == 1
+    # The channel dialog was opened twice for the campaign run, and that is the run path's
+    # own shape: once by the routing step (step 3, whose return the reading carries as its
+    # ``routed`` fact) and once by the runner's itself-once guard before the first recording.
+    # Each gesture is a dialog the operator watches, so the count is pinned rather than left
+    # to drift into "one per point".
+    assert job.fake.channel_checks == 2
     assert job.fake.verify_channel_flags == [False, False]
 
 
@@ -803,7 +816,16 @@ def test_an_identity_that_does_not_end_in_its_stamp_is_not_a_skip(
 def test_resume_skips_exactly_the_points_the_log_holds_as_ok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The load-bearing case: an interrupted job resumes, and re-records only what is missing."""
+    """The load-bearing case: an interrupted job resumes, and re-records only what is missing.
+
+    The resume no longer trusts the log on its own, and that is **one of the seams this slice
+    adds deliberately**: before any point leaves the todo set, the previous manifest has to
+    carry a compilation identity that matches the one this run compiles against the instrument
+    (step 6 of the run path). A log alone says what was recorded and nothing about *what was
+    measured on*, so a resume keyed on it could skip a point of a job that was run against a
+    different instrument. Here the two identities match — the same fake, the same reading —
+    so the skip this cache-case is about still happens.
+    """
     job = campaign_job(tmp_path, monkeypatch)
     # The second point comes back far off the signature — a truncated store, the other
     # shape of the containment guard (docs/16 §15b): 128 B where the 12 s window at 399
@@ -831,6 +853,12 @@ def test_resume_skips_exactly_the_points_the_log_holds_as_ok(
     assert len(campaign.plan_campaign(job.definition)) == 2
     assert second.planned == 2  # the manifest still describes the whole job
     assert second.fingerprint == first.fingerprint
+    # ...and the skip rested on an identity both runs agree about (step 6 of the run path):
+    # the previous manifest carries one and this run compiled the same one. A skip on an
+    # identity nothing proved is what `skipped_without_evidence` marks, and this is not it.
+    assert first.compilation_identity is not None
+    assert second.compilation_identity == first.compilation_identity
+    assert second.skipped_without_evidence == ()
 
 
 def test_a_campaign_run_aborts_on_an_unverified_state(
@@ -856,6 +884,311 @@ def test_no_store_directory_is_refused_by_the_library(tmp_path: Path, monkeypatc
 
     with pytest.raises(campaign.CampaignError, match="no store directory"):
         campaign.run_campaign(job.definition, job.fake, store_dir=None, log_path=job.log_path)
+
+
+# ------------------------------- 7b. the run path: route, read, compile — then the resume
+#
+# The plan's §4 step order, implemented literally: load (1), statically plan (2), establish the
+# channel (3), take the reading (4), compile (5), validate the resume identity (6), compute the
+# todo/skipped sets (7), run the compiled points (8). These cases pin the three seams the run
+# path carries — the compile happens *before* the first recording is spent, the manifest keeps
+# the compiled identity, and a resume is refused until that identity is proven — because each
+# of them costs a recording, or a wrongly-skipped point, if it is missing.
+
+
+def snapshot_with(**facts: InstrumentFact) -> InstrumentSnapshot:
+    """The fake's expected reading with one or more of its facts replaced.
+
+    The fake hands a scripted reading back verbatim, so this is how a case changes what the
+    instrument *states* between two runs without a second fake: the same fake, a different
+    reading — which is the shape of a rig somebody re-configured between the two runs.
+    """
+    return expected_snapshot(1).model_copy(update=facts)
+
+
+def legacy_manifest(manifest: campaign.JobManifest) -> campaign.JobManifest:
+    """``manifest`` as every manifest written *before* this slice states it — with no identity.
+
+    Built by dropping the fields this slice added, which is the point of the case that uses
+    it: the reader has to keep accepting those manifests, which is why every new field has a
+    default (a required one would make every pre-existing manifest raise on read).
+    """
+    payload = manifest.model_dump()
+    for field in ("compilation_identity", "declared_only", "skipped_without_evidence"):
+        payload.pop(field, None)
+    return campaign.JobManifest.model_validate(payload)
+
+
+def test_a_run_routes_reads_and_compiles_once_before_the_first_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Steps 3-5 happen once, in that order, and strictly before the first point is stored.
+
+    The order is the whole safety argument: the routing step establishes the channel the
+    reading then carries as a ``routed`` fact, the reading states the fixed facts, and the
+    compile reconciles the two against the definition — all *before* the runner is built, so
+    a job that cannot be compiled costs no recording. The channel dialog is opened twice for
+    a campaign run and that is deliberate: once as the routing step (whose own return is
+    handed to the reading) and once as the runner's own once-per-run guard, which is the
+    runner's guard and not the campaign's business to skip.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+
+    manifest = run_job(job)
+
+    assert job.fake.channel_checks == 2  # the routing step, then the runner's own guard
+    assert job.fake.snapshot_checks == 1  # one reading, taken once for the whole job
+    assert job.fake.dialog_checks == 1  # the dialog-only facts read as their own step
+    assert job.fake.snapshot_dialogs == job.fake.dialog_readings, (
+        "the reading was handed the dialog reading the routing step made: the snapshot "
+        "deliberately does not open the dialog itself, so the campaign path reads it and "
+        "hands it over"
+    )
+
+    read_at = index_of(job.fake.calls, lambda call: call[0] == "instrument_snapshot")
+    stored_at = index_of(job.fake.calls, lambda call: call[0] in STORE_CALLS)
+    assert read_at is not None and stored_at is not None, job.fake.calls
+    assert read_at < stored_at, "the reading was taken after the first point was stored"
+    # ...and it carried the channel the routing step verified, not a claim nobody made.
+    assert job.fake.calls[read_at] == ("instrument_snapshot", 1)
+    assert manifest.ok_count == 2
+
+
+def test_a_compile_refusal_stops_the_run_before_anything_is_spent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reading the compile refuses raises — with no recording, no ``.BDD``, no manifest.
+
+    The refusal is not wrapped: ``compile_campaign``'s own message names the state or the
+    fact that stopped the job, and re-raising it here would give one cause two diagnoses.
+    Nothing about the *run* exists afterwards, and that is the point of compiling first: a
+    manifest written for a refused job would claim a run that never happened.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    job.fake.scripted_snapshot = snapshot_with(
+        sound_speed_ms=InstrumentFact(value="1500", source=FactSource.READ)
+    )
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job)
+
+    message = str(excinfo.value)
+    assert "sound_speed_ms" in message and "1500" in message, message
+    assert job.fake.snapshot_checks == 1  # the reading happened; the compile is what refused
+    assert job.fake.stored == []
+    assert stored_names(job.directory) == []
+    assert not job.log_path.exists()
+    assert not campaign.manifest_path_for(job.log_path).exists()
+
+
+def test_the_manifest_carries_the_compiled_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The manifest keeps the §3.3 projection — each fact as value+source, not the reading.
+
+    The identity is what a resume compares, so it is what the manifest has to carry: the
+    channel and its mode, every fixed fact with its provenance, and the layout signature.
+    Deliberately **not** the raw ``InstrumentSnapshot``: its volatile half (``hwnd``, the
+    rect, the cursor, ``is_foreground``, the geometry) is a property of a session rather than
+    of the instrument, so it is evidence for a diagnosis and not compatibility evidence —
+    §3.3 exists to keep it out of the identity, and a manifest that stored the reading would
+    undo that.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+
+    manifest = run_job(job)
+
+    identity = manifest.compilation_identity
+    assert identity is not None, "the manifest dropped the identity the run compiled"
+    assert identity.channel.value == "1" and identity.channel.source is FactSource.ROUTED
+    assert identity.mode.value == ChannelMode.MANUAL.value
+    assert identity.prf_us.value == str(PRF_US)
+    assert identity.emissions_per_profile.value == str(EMISSIONS_PER_PROFILE)
+    assert identity.sound_speed_ms.value == str(int(SOUND_SPEED_MS))
+    assert identity.first_gate_mm.value == str(int(FIRST_GATE_MM))
+    assert not manifest.declared_only
+    assert manifest.skipped_without_evidence == ()
+    # It survives the round trip a report reads it back through...
+    assert campaign.read_manifest(campaign.manifest_path_for(job.log_path)) == manifest
+    # ...and the volatile half of a reading is not in it, by construction.
+    fields = set(type(identity).model_fields)
+    assert not fields & {"fingerprint", "hwnd", "rect", "cursor", "is_foreground", "layout_note"}
+
+
+def test_a_resume_against_a_legacy_manifest_refuses_until_told_to_proceed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A manifest with no identity proves nothing — fail closed, or say so on purpose.
+
+    Every manifest written before this slice carries no ``compilation_identity``, so nothing
+    says the previous run measured on *this* instrument; a resume that skipped on it would
+    leave points out of the todo set on an unproven identity. ``resume_declaration_only`` is
+    the operator's explicit way to proceed on the declaration alone — and then every skipped
+    point is marked in the manifest as skipped without evidence, so the record does not read
+    like a proven resume.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    first = run_job(job)
+    assert first.ok_count == 2
+    campaign.write_manifest(
+        campaign.manifest_path_for(job.log_path), legacy_manifest(first)
+    )
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+
+    message = str(excinfo.value)
+    assert "compilation identity" in message and "resume-declaration-only" in message, message
+
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, resume_declaration_only=True, notes=notes)
+
+    assert resumed.planned == 2
+    assert resumed.skipped == ("c1-k1", "c1-k2")
+    assert resumed.skipped_without_evidence == ("c1-k1", "c1-k2")
+    assert resumed.outcomes == ()  # nothing ran: every point was skipped
+    assert not resumed.declared_only  # a reading *was* taken; only the identity is unproven
+    assert any("declaration" in note for note in notes), notes
+    # No new point was stored and the log was not appended to by this run.
+    assert len(stored_names(job.directory)) == 2
+    assert [record.key for record in point_records(read_entries(job.log_path))] == [1, 2]
+
+
+def test_a_resume_against_a_changed_definition_refuses_even_when_told_to_proceed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The definition's own change is not an identity question, so nothing bypasses it.
+
+    A one-second-longer window moves the definition's fingerprint while leaving the reading —
+    and therefore the identity — exactly where it was, which is the case the asymmetry exists
+    for: the recorded points belong to a job this definition never asked for, and
+    ``resume_declaration_only`` is about *instrument evidence*, not about which job this is.
+    Nothing runs and nothing is stored; the manifest is the first run's.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    first = run_job(job)
+    changed = campaign.load_campaign(
+        campaign_file(
+            tmp_path, campaign_payload(duration_s=CAMPAIGN_DURATION_S + 1.0), "changed.json"
+        )
+    )
+    assert campaign.campaign_fingerprint(changed) != first.fingerprint
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        campaign.run_campaign(
+            changed,
+            job.fake,
+            store_dir=job.directory,
+            log_path=job.log_path,
+            resume=True,
+            resume_declaration_only=True,
+        )
+
+    message = str(excinfo.value)
+    assert "different job" in message, message
+    assert "does not bypass" in message, message
+    assert len(stored_names(job.directory)) == 2
+    assert campaign.read_manifest(campaign.manifest_path_for(job.log_path)) == first
+
+
+def test_a_resume_with_a_recording_log_and_no_manifest_refuses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The log alone is not an identity: records with no manifest say nothing about the rig."""
+    job = campaign_job(tmp_path, monkeypatch)
+    run_job(job)
+    campaign.manifest_path_for(job.log_path).unlink()  # the manifest is gone; the log is not
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+
+    message = str(excinfo.value)
+    assert "no manifest" in message, message
+    assert campaign.recorded_points(job.log_path) == {"c1-k1", "c1-k2"}
+
+    # ...and a log with nothing recorded in it has nothing to prove: the resume runs the job.
+    empty = campaign_job(tmp_path / "empty", monkeypatch)
+    whole = run_job(empty, resume=True)
+
+    assert whole.points_skipped == 0 and whole.ok_count == 2
+
+
+def test_a_resume_against_a_changed_fact_refuses_naming_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fact that moved between the two runs is named with both sides, not summarised.
+
+    The comparison is fact by fact through the identity's provenance, because the operator's
+    next question is *which* fact moved and what it moved between — "a different instrument"
+    alone would send them to the window geometry, which is deliberately not in the identity.
+    The fact used here is the emissions per profile: a disagreement about it *warns* at
+    compile time (``verify.ADVISORY_COVARIATES``) instead of refusing, which makes it exactly
+    the case where the identity comparison is the only thing that can stop a resume.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    run_job(job)
+
+    job.fake.scripted_snapshot = snapshot_with(
+        emissions_per_profile=InstrumentFact(value="60", source=FactSource.READ)
+    )
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+
+    message = str(excinfo.value)
+    assert "emissions_per_profile" in message, message
+    assert "'52'" in message and "'60'" in message, message  # both sides, as they were stated
+    # Nothing ran on the unproven identity: the two stored points are the first run's.
+    assert len(stored_names(job.directory)) == 2
+
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, resume_declaration_only=True, notes=notes)
+
+    assert resumed.skipped_without_evidence == ("c1-k1", "c1-k2")
+    assert resumed.outcomes == ()
+
+
+def test_a_run_without_a_snapshot_is_marked_declared_only(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``no_snapshot`` skips the reading and the compile, and the manifest says nothing was read.
+
+    The flag exists for the operator who wants the points recorded with no instrument evidence
+    — during bring-up, or where the dialog reads are not trusted yet. What it must never do is
+    leave a manifest that reads like a compiled job: ``declared_only`` states that nothing was
+    read, and ``compilation_identity`` stays ``None`` because there is no reading to project.
+    The points that run are the static plan's, which is the same list the compile would have
+    built its identity around — nothing about the points themselves changes.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+
+    manifest = run_job(job, no_snapshot=True)
+
+    assert manifest.declared_only is True
+    assert manifest.compilation_identity is None
+    # Not one instrument read: neither the routing step's reading nor the dialog's.
+    assert job.fake.snapshot_checks == 0 and job.fake.dialog_checks == 0
+    assert manifest.ok_count == 2
+    assert [row.label for row in manifest.outcomes] == ["k1", "k2"]
+    assert manifest.fingerprint == campaign.campaign_fingerprint(job.definition)
+    assert campaign.read_manifest(campaign.manifest_path_for(job.log_path)) == manifest
+
+    # A resume under it can never prove an identity — this run has no reading of its own to
+    # compare the previous job with — so it fails closed, and proceeds only when told to.
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True, no_snapshot=True)
+    assert "takes no instrument reading" in str(excinfo.value)
+
+    notes: list[str] = []
+    resumed = run_job(
+        job, resume=True, no_snapshot=True, resume_declaration_only=True, notes=notes
+    )
+
+    assert resumed.declared_only is True
+    assert resumed.skipped_without_evidence == ("c1-k1", "c1-k2")
+    assert resumed.outcomes == ()
+    assert len(stored_names(job.directory)) == 2  # nothing was run again
+    assert any("no-snapshot" in note for note in notes), notes
 
 
 # ------------------------------------------------------------------- 8. the CLI
