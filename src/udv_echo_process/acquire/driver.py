@@ -626,6 +626,17 @@ def dialog_value_fields(
     every one of these widgets is caption-less (measured through ``WM_GETTEXT`` as well as
     ``GetWindowText``, 2026-09-18) and control ids change on every launch.
 
+    **When a row offers a choice, the choice is the row's value — and the edit beside it is never a
+    fallback for it.** The two controls state *different physical quantities*: measured, at the
+    burst row the combo states ``4`` while the ``TSp_Edit`` inside the same row states ``89``, the
+    sampling volume at 1460 m/s (the corpus' own number for the campaign's declared burst). A reader
+    that fell back to the edit on an attempt where the choice could not be read would hand a pre-run
+    check a different measurement under the parameter's name with nothing in the reading to say so —
+    and it would say it confidently: measured against this tree with the choice blanked, the fallback
+    answers ``TSp_Edit '89'`` for the burst, and :meth:`DialogParameters.readable` comes back
+    ``True`` because all three facts are "present". So a choice that states nothing leaves the row
+    stating nothing: the fact built from it is unreadable and the reading does not claim it.
+
     Only controls **inside** a value button count, which is what keeps the channel field out of
     the table: the dialog's header combo sits above every button (measured ``top`` 373 against the
     table's 443), and reading it as a field would put the channel in the middle of the parameter

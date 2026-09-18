@@ -240,6 +240,44 @@ def test_a_row_that_offers_a_choice_reads_the_choice_not_the_read_out_beside_it(
         assert burst["value"] == str(BURST)
 
 
+def test_a_row_whose_choice_states_nothing_is_unreadable_rather_than_the_read_out_beside_it():
+    """The choice *is* the row's value; the edit beside it is a different quantity, never a fallback.
+
+    Measured: in the burst row the combo states ``4`` while the ``TSp_Edit`` inside the same row
+    states ``89`` — the sampling volume at 1460 m/s. A reader that fell back to the edit on an
+    attempt where the choice could not be read would hand a pre-run check a *different measurement*
+    under the burst parameter's name, and nothing in the reading would say so. So the row comes back
+    stating nothing, still the choice, and the fact built from it is unreadable.
+    """
+    layout = measured_controls()
+    combo = text_of(layout, "TComboBox", str(BURST))
+    fields = driver.dialog_value_fields(layout, read_text_for(layout, {combo: ""}))
+    burst = next(field for field in fields if (field["column"], field["row"]) == (0, 1))
+
+    assert burst["cls"] == "TComboBox", "the row is still the choice, not the read-out beside it"
+    assert burst["value"] == ""
+
+
+def test_a_choice_that_states_nothing_leaves_the_reading_a_fact_short_and_never_borrows_the_neighbour():
+    """A blank choice costs the reading *that* fact, and never hands it the read-out beside it.
+
+    The burst is dialog-only, so a blank choice is not an anchor disagreement — the read stands and
+    simply does not carry the burst, which is what :meth:`DialogParameters.readable` reports (``False``
+    with no reason, measured) while the sound speed and the first gate it did establish stay readable.
+    Both wrong answers are named here: borrowing the neighbour (the assertion above — ``89`` is the
+    sampling volume, a different measurement) and *claiming* the fact. One fact short is exactly the
+    state a campaign must refuse on rather than run through, and that rule is the campaign's.
+    """
+    layout = measured_controls()
+    combo = text_of(layout, "TComboBox", str(BURST))
+    reading = FakeDialogDriver(dialog_overrides={combo: ""}).read_dialog_parameters()
+
+    assert reading.value(DialogField.BURST_LENGTH.value) is None
+    assert not reading.readable(), "one fact short is not a reading of all three"
+    assert reading.value(DialogField.SOUND_SPEED_MS.value) == str(SOUND_SPEED)
+    assert reading.value(DialogField.FIRST_GATE_MM.value) == str(FIRST_GATE)
+
+
 def test_the_read_walks_into_the_value_buttons_where_the_values_actually_are():
     """The values live inside the value buttons, so a read over the panel's *children* sees none.
 
