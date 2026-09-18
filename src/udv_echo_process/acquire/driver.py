@@ -146,14 +146,18 @@ Every one of those names is imported back at the top of this file, so ``driver.s
 the rest keep resolving for every caller and every test written against the flat module
 (``docs/dop3000/acquisition-architecture.md`` §5, "compatibility first").
 
-What stays here is what composes a *reading* or a *gesture* out of those mechanics: the resolve
-and the state machine, the surface/overlay/dialog identification, the channel verification, the
-store cycle and the read-only surface. Each moved body is called with this module's **own**
+What stays here is what composes a *reading* or a *gesture* out of those mechanics, and this
+commit of Patch 4 has just taken the first workflow out of it: the recording surface — the strip
+lifecycle and the record/stop/store cycle — is ``acquire/udop/recording.py``'s now, moved
+verbatim and composed back into this class as :class:`RecordingSurface`. The Store dialog and the
+``Parameters`` interaction follow in the next commits of the slice, and ``udop/session.py`` is
+the facade they will all be composed by. Each moved body reaches its collaborators through
+``self``, so it is called with this module's **own**
 transport names (``_gui``, ``_user32``, ``_post``, and this module's ``_send``) passed in
 explicitly, which is what keeps every fake in this repository — each of which scripts the window
 layer by patching ``driver._gui`` / ``driver._user32`` / ``driver._post`` — biting at the same
-place it always did. The live-proven gestures are **byte-identical** to the ones the live
-sessions proved: this refactor moves code and corrects interpretation rules, never a workflow.
+place it always did. The moved workflows are **device-pending**: a move is not a verification
+(``docs/dop3000/device-verification.md``, V2/V4/V5/V6).
 The two corrections this slice makes are *decisions*, and both refuse earlier than the code they
 replace: an unprovable ``Parameters`` anchor publishes no binding at all (so the menubar hover is
 unreachable rather than mis-aimed), and an ambiguous strip row refuses before the held press is
@@ -207,6 +211,19 @@ from udv_echo_process.acquire.snapshot import (
     InstrumentSnapshot,
     routed,
     unreadable,
+)
+
+# The workflow surfaces Patch 4 splits out of this class. ``recording.py`` is the strip lifecycle
+# (moved by the first commit of the slice) and is composed into :class:`Win32Actuator` below;
+# ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` are its own cadences, re-exported here under the names
+# this module published. ``AcquisitionError`` is the ``udop`` package's one failure class now
+# (``acquire/udop/__init__.py``, so no surface has to import a sibling to raise it), so it is
+# imported here rather than defined below.
+from udv_echo_process.acquire.udop import AcquisitionError
+from udv_echo_process.acquire.udop.recording import (
+    _OVERLAY_SETTLE_S,
+    _POLL_S,
+    RecordingSurface,
 )
 
 # The pure half of this module, moved to ``acquire/ui`` by Patch 2 and imported back here on
@@ -367,15 +384,6 @@ from udv_echo_process.acquire.win32.tree import (
 )
 
 __all__ = [
-    # The module's published surface — private names included — listed rather than left
-    # implicit: what this file re-exports for every caller and every test written against the
-    # flat module (``docs/dop3000/acquisition-architecture.md`` §5, *compatibility first*).
-    # The pure half moved to ``acquire/ui/`` in Patch 2 and the Win32 mechanics to
-    # ``acquire/win32/`` in Patch 3; these are the names that travelled, so ``driver.screen_mode``,
-    # ``driver._strip_row``, ``driver.PARAMETERS_MENU``, ``driver._send``, ``driver._CursorPoint``,
-    # ``driver.WM_LBUTTONDOWN`` and the rest keep resolving exactly as they did when they were
-    # defined here. Sorted, not grouped: ruff owns the order (RUF022), the import block above
-    # owns which module each name came from.
     "CBN_SELCHANGE",
     "CB_GETCOUNT",
     "CB_GETCURSEL",
@@ -398,6 +406,7 @@ __all__ = [
     "PARAMETERS_MENU",
     "SEND_TIMEOUT_MS",
     "SMTO_ABORTIFHUNG",
+    "STARTABLE_VIEWS",
     "VK_RETURN",
     "WM_COMMAND",
     "WM_GETTEXT",
@@ -422,11 +431,14 @@ __all__ = [
     "_HOVER_MOVE_DY",
     "_HOVER_OPEN_S",
     "_HOVER_SETTLE_S",
+    "_OVERLAY_SETTLE_S",
+    "_POLL_S",
     "_TEXT_COMMIT_SETTLE_S",
     "_TEXT_SETTLE_S",
     "_VK_RETURN_DOWN_LPARAM",
     "_VK_RETURN_UP_LPARAM",
     "AcquisitionError",
+    "StripState",
     "Win32Actuator",
     "_ClipRect",
     "_CursorPoint",
@@ -482,6 +494,7 @@ __all__ = [
     "layout_refusal",
     "layout_shape_reasons",
     "normalized_path",
+    "overlay_answer",
     "panel_mode",
     "process_mode_clause",
     "same_directory",
@@ -547,13 +560,19 @@ _MENU_TIMEOUT_S, _MENU_POLL_S = 8.0, 0.5
 #: It is not a cursor move and not a click, and there is no second gesture: a re-derived
 #: alternative is what three fix cycles went into.
 GESTURE_POSTED_PRESS = "posted held press"
-#: The settle after an accepted overlay answer, and the cadence the polling loops below
-#: run at. The held press's own settle travels with the gesture, in ``win32/messages.py``.
-_OVERLAY_SETTLE_S, _POLL_S = 0.8, 0.4
+# ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` — the settle after an accepted overlay answer and the
+# cadence the polling loops run at — were defined here too. They are
+# ``acquire/udop/recording.py``'s as of Patch 4, moved there with the loops that read them (this
+# is the surface that answers overlays), and are imported at the top of this file under these same
+# names, so ``driver._OVERLAY_SETTLE_S`` and ``driver._POLL_S`` keep resolving.
 
 
-class AcquisitionError(RuntimeError):
-    """The cycle could not be completed; nothing was stored under this point's name."""
+# ``AcquisitionError`` was defined here. It is the ``udop`` package's as of Patch 4 — the one
+# failure class the four workflow surfaces share, defined in ``acquire/udop/__init__.py`` so that
+# no surface has to import a sibling to raise it — and it is imported at the top of this file
+# under the same name, so ``driver.AcquisitionError`` is the class it always was (and
+# ``acquire.win32._acquisition_error()``, which resolves it from the facade inside the raise,
+# resolves it unchanged).
 
 
 # ``_CursorPoint``, ``_ClipRect``, ``_gui`` and ``_user32`` were defined here: the two
@@ -564,7 +583,6 @@ class AcquisitionError(RuntimeError):
 # and are still the names a caller or a test replaces when it scripts the window layer.
 
 
-
 # ``_send`` and ``_post`` were defined here: the bounded ``SendMessageTimeoutW`` and
 # the posted-message pair every gesture in this file is built from. They are
 # ``acquire/win32/messages.py``'s as of Patch 3, imported at the top of this file under
@@ -572,13 +590,11 @@ class AcquisitionError(RuntimeError):
 # still the name a caller or a test replaces to watch what is posted.
 
 
-
 # ``_visible_children``, ``_is_visible`` and ``_hidden_panels`` were defined here: the
 # enumeration with a real area, the single visibility question and the walk that
 # *names* what the filter left out (a pre-created panel is evidence, never a target).
 # They are ``acquire/win32/tree.py``'s as of Patch 3, imported at the top of this file
 # under these same names.
-
 
 
 # ``dialog_value_fields``, ``_dialog_only_reason``, ``_dialog_fact``, ``_strip_row`` and
@@ -636,7 +652,7 @@ def _same_directory(reported: str, expected: Path) -> bool:
     return normalized_path(reported) == normalized_path(str(expected))
 
 
-class Win32Actuator:
+class Win32Actuator(RecordingSurface):
     """The live :class:`Actuator`: UDOP driven over posted Win32 messages.
 
     Bindings are re-resolved from scratch on every call — the strip panel is draggable
@@ -707,16 +723,13 @@ class Win32Actuator:
         """Bounded send; see :func:`~udv_echo_process.acquire.win32.messages._send`."""
         return _send(hwnd, msg, wp, lp, timeout_ms, user32=_user32)
 
-
     def _get_text(self, hwnd: int) -> str:
         """The control's own text (``WM_GETTEXT``, bounded)."""
         return _get_text(hwnd, send=self._send)
 
-
     def _control_id(self, hwnd: int) -> int:
         """The id only as the field *inside* ``WM_COMMAND`` — never as an identity."""
         return _control_id(hwnd, gui=_gui)
-
 
     def _set_text_commit(self, hwnd: int, text: str, parent: int | None = None) -> None:
         """Write ``text`` and **commit** it: the recipe in ``NUMERIC_WRITE_RECIPE``.
@@ -731,7 +744,6 @@ class Win32Actuator:
         """
         _set_text_commit(hwnd, text, parent, send=self._send, post=_post, gui=_gui)
 
-
     def _combo_select(self, hwnd: int, index: int, parent: int | None = None) -> None:
         """Select a combo entry: ``CB_SETCURSEL`` + ``CBN_SELCHANGE``, **no Enter**.
 
@@ -741,7 +753,6 @@ class Win32Actuator:
         :func:`~udv_echo_process.acquire.win32.messages._combo_select`.
         """
         _combo_select(hwnd, index, parent, send=self._send, post=_post, gui=_gui)
-
 
     def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
         """Press and **hold** a control: down, ``hold_ms``, up.
@@ -756,7 +767,6 @@ class Win32Actuator:
         """
         self.last_press_screen = _click_hold(hwnd, hold_ms, post=_post, gui=_gui)
 
-
     def _clip_rect(self) -> tuple[int, int, int, int] | None:
         """The rectangle the cursor is currently confined to, or ``None`` for no clip.
 
@@ -768,7 +778,6 @@ class Win32Actuator:
         """
         return _clip_rect(user32=_user32)
 
-
     def _release_clip(self) -> bool:
         """``ClipCursor(NULL)``: drop the application's own confinement of the cursor.
 
@@ -779,7 +788,6 @@ class Win32Actuator:
         """
         return _release_clip(user32=_user32)
 
-
     def _cursor_position(self) -> tuple[int, int]:
         """The operator's cursor position, in screen coordinates.
 
@@ -789,7 +797,6 @@ class Win32Actuator:
         :func:`~udv_echo_process.acquire.win32.cursor._cursor_position`.
         """
         return _cursor_position(user32=_user32)
-
 
     def _restore_cursor(self, position: tuple[int, int]) -> None:
         """Put the operator's cursor back where :meth:`_cursor_position` found it.
@@ -810,7 +817,6 @@ class Win32Actuator:
             read_position=self._cursor_position,
             user32=_user32,
         )
-
 
     def _move_real_cursor(
         self, point: tuple[int, int], *, what: str, why: str
@@ -835,7 +841,6 @@ class Win32Actuator:
             user32=_user32,
         )
 
-
     def _foreground_window(self) -> int:
         """The foreground window's handle — the menubar hover's **precondition**.
 
@@ -844,7 +849,6 @@ class Win32Actuator:
         tree (measured live 2026-09-17: `recon/53`).
         """
         return _foreground_window(user32=_user32)
-
 
     @staticmethod
     def _thread_of(hwnd: int) -> int:
@@ -858,7 +862,6 @@ class Win32Actuator:
         """
         return _thread_of(hwnd, user32=_user32)
 
-
     def _activate_window(self, hwnd: int) -> None:
         """Ask Windows to make ``hwnd`` the foreground window.
 
@@ -869,7 +872,6 @@ class Win32Actuator:
         :func:`~udv_echo_process.acquire.win32.cursor._activate_window`.
         """
         _activate_window(hwnd, user32=_user32)
-
 
     def _require_foreground(self, hwnd: int) -> None:
         """Assert the application is the **foreground** window before hovering it.
@@ -890,7 +892,6 @@ class Win32Actuator:
             activate=self._activate_window,
             gui=_gui,
         )
-
 
     def _hover_centre(self, hwnd: int) -> tuple[int, int]:
         """Hover ``hwnd`` with the **real** cursor; return the screen point hovered.
@@ -920,19 +921,16 @@ class Win32Actuator:
         self.last_hover_screen = point
         return point
 
-
     # ------------------------------------------------------------------ binding
 
     def _main_hwnd(self) -> int:
         """Handle of the visible main window (largest if several exist)."""
         return _main_hwnd(self._class_name, gui=_gui)
 
-
     @staticmethod
     def _children_of(parent: int, roles: dict) -> list[dict]:
         """The already-enumerated children whose parent is ``parent``."""
         return _children_of(parent, roles, gui=_gui)
-
 
     def _param_rows(
         self, left_panel: dict | None, kids: Sequence[dict], children_of
@@ -1193,74 +1191,6 @@ class Win32Actuator:
         self.last_roles = roles
         return roles
 
-    def _state_of(self, roles: dict) -> StripState:
-        """The strip state implied by an already-resolved role map.
-
-        Both facts come off the map itself, and that is the point: the row's length, and the
-        slider's presence — which is what :meth:`_resolve` read off the strip panel's own live
-        children (``ui/strip.py``'s :func:`…ui.strip.has_slider`) and carried here as
-        ``roles["strip_slider"]``. A map that states neither is read from the *view* it classified,
-        and ``STORE`` **is** the slider's view (:func:`…actuator.classify_strip_view`), so a state
-        can be read from a captured or synthesised tree with no window behind it at all — which is
-        what makes this read testable off the instrument.
-
-        The state itself is built by ``ui/strip.py`` (:func:`…ui.strip.strip_state_of`), including
-        ``slider_max``, which is deliberately left unset: the reference never read the slider's
-        range, and guessing is worse than ``None``.
-        """
-        if "strip_slider" in roles:
-            slider = bool(roles["strip_slider"])
-        else:
-            slider = roles.get("state") == StripView.STORE.value
-        return strip_state_of(
-            button_count=len(roles["strip_row"]),
-            has_slider=slider,
-            slider_max=None,
-        )
-
-    def _find_overlay(self, roles: dict | None = None):
-        """Find an overlay panel: not a known layout panel, owning its own dialog row.
-
-        Returns ``(kind, panel, kids)`` or ``None``. A warning is a panel with a bottom
-        button pair; the Store dialog is the panel owning a ``TSp_Browse`` and edits but
-        none of the values dialog's ``TSp_Value_Button`` children. The app reuses one
-        geometry for all its warnings, so structure is the only discriminator
-        (docs/16 §8, §12b).
-        """
-        roles = roles if roles is not None else self._resolve()
-        known: set[int] = set()
-        for key in ("menu", "combos"):
-            known.update(k["hwnd"] for k in (roles.get(key) or {}).values())
-        known.update(
-            row["edit"]["hwnd"]
-            for row in (roles.get("param_rows") or [])
-            if row.get("edit")
-        )
-        known.update(roles["value_dialogs"])
-        if roles.get("left_panel") is not None:
-            known.add(roles["left_panel"]["hwnd"])
-        if roles.get("strip_panel") is not None:
-            known.add(roles["strip_panel"]["hwnd"])
-        if roles.get("panels"):
-            known.add(roles["panels"][0]["hwnd"])  # the menu bar's own panel
-            known.add(roles["panels"][-1]["hwnd"])  # the status bar's
-        for panel in roles["panels"]:
-            if panel["hwnd"] in known:
-                continue
-            kids = self._children_of(panel["hwnd"], roles)
-            if any(k["cls"] == "TSp_Browse" for k in kids) and any(
-                k["cls"] in ("TEdit", "TSp_Edit") for k in kids
-            ):
-                return (OverlayKind.STORE_DIALOG, panel, kids)
-            if _bottom_row(panel, kids) and panel["w"] > 250 and panel["h"] > 90:
-                return (OverlayKind.WARNING, panel, kids)
-        return None
-
-    def _peek_overlay(self) -> OverlayKind | None:
-        """Which overlay is up, without answering it."""
-        found = self._find_overlay()
-        return None if found is None else found[0]
-
     def _require_store_dialog(self) -> tuple[dict, list[dict]]:
         """The Store dialog panel and its children, or a failure."""
         found = self._find_overlay()
@@ -1315,7 +1245,6 @@ class Win32Actuator:
         """
         return _combo_index(hwnd, send=self._send)
 
-
     def _combo_items(self, hwnd: int) -> tuple[str, ...]:
         """Every item the combo holds, in order (``CB_GETCOUNT`` + ``CB_GETLBTEXT``).
 
@@ -1324,7 +1253,6 @@ class Win32Actuator:
         :func:`~udv_echo_process.acquire.win32.messages._combo_items`.
         """
         return _combo_items(hwnd, send=self._send)
-
 
     def _channel_combo(self, panel: dict, roles: Mapping | None = None) -> tuple[dict, int]:
         """The channel combo inside ``panel``: ``(combo, its parent's hwnd)``.
@@ -1499,11 +1427,9 @@ class Win32Actuator:
         """
         return _is_visible(hwnd, gui=_gui)
 
-
     def _hidden_panels(self) -> list[dict]:
         """The panels present in the tree but **not visible** (diagnostics, never targets)."""
         return _hidden_panels(self._resolve()["window"], gui=_gui)
-
 
     def _dialog_panels(self, roles: Mapping | None = None) -> list[dict]:
         """The panels that are modal dialogs, fullest first — the reference's rule.
@@ -2180,7 +2106,6 @@ class Win32Actuator:
         """
         return _descendants_of(hwnd, gui=_gui)
 
-
     def _poll_dialog_fields(self, panel: dict) -> list[dict[str, object]]:
         """The dialog's value table, re-read until it states something or the wait runs out.
 
@@ -2452,27 +2377,6 @@ class Win32Actuator:
             )
         return InstrumentFact(value=text, source=FactSource.READ)
 
-    def hold_recording(self, duration_s: float) -> None:
-        """Wait out a point's duration, watching the view and the overlays.
-
-        The public name for what the cycle itself uses, because a caller that drives the strip
-        by hand — a preflight, a probe — needs the *same* hold and not a ``time.sleep``: a
-        monotonic deadline measured from the **confirmed** recording view, a warning answered
-        instead of slept through (a modal stalls the application's own timers), and a recording
-        that stopped by itself raised rather than ignored.
-        """
-        self._hold_recording(duration_s)
-
-    def wait_for_view_guarded(
-        self, want: Iterable[StripView], timeout_s: float
-    ) -> StripState:
-        """Poll for a view while answering the overlays that would otherwise wedge the app."""
-        return self._wait_for_view_guarded(want, timeout_s)
-
-    def peek_overlay(self) -> OverlayKind | None:
-        """Which overlay is up, if any — read-only, and it presses nothing."""
-        return self._peek_overlay()
-
     def preflight(
         self,
         duration_s: float = 2.0,
@@ -2678,95 +2582,6 @@ class Win32Actuator:
         win32gui, _ = _gui()
         self._combo_select(combo["hwnd"], index, win32gui.GetParent(combo["hwnd"]))
 
-    def strip_state(self) -> StripState:
-        """The strip's current structure, freshly resolved."""
-        return self._state_of(self._resolve())
-
-    def wait_for_view(
-        self, views: Iterable[StripView | str], *, timeout_s: float = VIEW_TIMEOUT_S
-    ) -> StripState:
-        """Poll until the strip reaches one of ``views``; return the last state seen.
-
-        Overlays are *not* answered here — this is the protocol's read-only wait, and the
-        caller decides whether a wedged view is a failure. The cycle uses the
-        overlay-watching variant (:meth:`_wait_for_view_guarded`).
-        """
-        wanted = {v if isinstance(v, StripView) else StripView(v) for v in views}
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        state = self.strip_state()
-        while state.view not in wanted and time.monotonic() < deadline:
-            time.sleep(_POLL_S - 0.05)
-            state = self.strip_state()
-        return state
-
-    def press(self, control: StripControl) -> None:
-        """Press one strip button of the *current* view, **held**, by position.
-
-        A posted held press is exactly what this strip answers — measured live 2026-09-17 by
-        A/B on the same button: the held posted press started the recording and the Stop press
-        reached the store view, while a *real* click (``SetCursorPos`` + ``mouse_event`` down/up,
-        the recipe `recon/19_store_cycle_real.py` uses) changed **nothing** on any of the three
-        buttons of the row. `docs/16 §1` already had the sharper statement of the rule — an
-        *instant* down/up in the same millisecond is ignored — which is what `recon/19` meant by
-        "the strip ignores posted messages". So the hold is the whole gesture, and no cursor is
-        taken here: the menubar hover stays the only real-input step.
-
-        The overlay guard runs **first** (posted clicks ignore modality, docs/16 §8), then the
-        strip is re-resolved — its rect and its children change with the view — and the index
-        comes from :func:`…actuator.press_index`, never from a width.
-
-        The row is checked for a **binding** before the index is asked for: the ambiguous
-        four-button row with no slider has none, and it refuses by name rather than pressing
-        something the crops disagree about (:func:`…ui.strip.press_refusal`, ledger B10). Nothing
-        is posted and nothing is recorded on that path.
-        """
-        self._settle_press()
-        roles = self._resolve()
-        if roles["open_popup"]:
-            raise AcquisitionError(
-                "a menu popup is open; the strip binding would be unreliable — close it from "
-                "the UI, this driver never WM_CLOSEs a popup"
-            )
-        if roles["strip_panel"] is None:
-            raise AcquisitionError("no recording strip panel found")
-        state = self._state_of(roles)
-        # The ambiguous row is refused by name **before** the press, not by a missing index: it
-        # holds four buttons and no slider, the repository's own crops disagree about which of
-        # them is which, and a press here would post a real held message on the operator's
-        # instrument under a role nobody has verified (ledger B10). Nothing is posted and
-        # nothing is recorded; the clause is ``ui/strip.py``'s own wording.
-        refusal = strip_press_refusal(state)
-        if refusal is not None:
-            raise AcquisitionError(refusal)
-        index = state.index_of(
-            control
-        )  # raises with the known row when the press is impossible
-        self._click_hold(roles["strip_row"][index]["hwnd"])
-        self.last_roles = self._resolve()  # the panel morphed: never reuse the old row
-
-    def answer_overlay(self) -> OverlayKind | None:
-        """Answer an overlay if one is up, and say what it was.
-
-        Warnings are answered with the LEFT button (:func:`…actuator.overlay_answer`), so an
-        existing file is never silently replaced. The Store dialog is returned **untouched**
-        — it is not an overlay to dismiss, it is where the name is set. Nothing is ever
-        ``WM_CLOSE``\\ d: an unanswered overlay traps the operator's cursor in the app, and
-        a closed one can lose the step the caller is mid-way through.
-        """
-        answered: OverlayKind | None = None
-        for _ in range(4):
-            found = self._find_overlay()
-            if found is None:
-                return answered
-            kind, panel, kids = found
-            answer = overlay_answer(kind)
-            if answer is None:
-                return kind  # the Store dialog: the caller owns its fields and commit
-            self._dialog_button(panel, kids, answer)
-            answered = kind
-            time.sleep(_OVERLAY_SETTLE_S)
-        return answered
-
     def set_store_name(self, name: str) -> None:
         """Write the Store dialog's file-name field with the commit recipe.
 
@@ -2852,125 +2667,6 @@ class Win32Actuator:
             f"no new file appeared in {directory} within {timeout_s:.0f} s of Do store"
         )
 
-    def record_and_store(
-        self,
-        name: str,
-        duration_s: float,
-        directory: Path,
-        *,
-        expected_mode: ProcessMode,
-        timeout_s: float = STORE_TIMEOUT_S,
-        verify_channel: bool = True,
-    ) -> Path:
-        """Record ``duration_s``, stop, store as ``name``; return the stored path.
-
-        Never a blind sleep: the recording view is polled and overlays are watched for
-        throughout, because a modal warning raised mid-recording wedges the app and must be
-        seen. Any failure dismisses overlays, leaves the application not recording, and
-        raises :class:`AcquisitionError` — a point that failed is never returned as if it
-        had been stored.
-
-        ``expected_mode`` is the process this run was measured against, and it is **required and
-        keyword-only** so no cycle can leave the expectation implied (plan §24.4). The screen's
-        caption is checked against it — and the layout's shape, which is mode-independent —
-        before anything is pressed: a run measured in simulation refuses to record against the
-        instrument, and vice versa, naming the caption it saw rather than calling the screen
-        unclean.
-        """
-        # DEVIATION: §24.4 names this method `record(*, expected_mode)`; the port's name is
-        # `record_and_store` and is kept, because the runner, the live verbs and every fake call it
-        # by that name and this slice changes no caller's vocabulary for a rename's sake.
-        try:
-            note = self.layout_note(expected_mode=expected_mode)
-            if note is not None:
-                raise AcquisitionError(f"refusing to start: {note}")
-            state = self.strip_state()
-            if state.view is StripView.STORE:
-                self.press(
-                    StripControl.NEW_ACQUISITION
-                )  # dismiss the leftover block view
-                self._note("cleared the leftover block view")
-                state = self.wait_for_view((StripView.READY,), timeout_s=VIEW_TIMEOUT_S)
-            if state.view not in STARTABLE_VIEWS or state.view is not StripView.READY:
-                raise AcquisitionError(
-                    f"the cycle must start from the ready view, not {state.view.value!r}"
-                )
-            # The channel is a precondition of the point, verified from the dialog
-            # before a recording is spent: another channel's block decodes as a valid
-            # point that is not this point (docs/16 §12).
-            if verify_channel:
-                self._note("verifying the channel from the parameters dialog")
-                self.ensure_channel()
-                self._note("the channel is verified; pressing Record")
-            else:
-                self._note("the channel was verified once for this run; pressing Record")
-            self.press(StripControl.RECORD)
-            state = self._wait_for_view_guarded((StripView.RECORDING,), VIEW_TIMEOUT_S)
-            if state.view is not StripView.RECORDING:
-                raise AcquisitionError(
-                    f"the Record press did not start a recording (view {state.view.value!r})"
-                )
-            self._note(f"recording confirmed; holding {duration_s:.1f} s")
-            self._hold_recording(duration_s)
-            self._note(f"the {duration_s:.1f} s hold is over; pressing Stop")
-            self.press(StripControl.STOP)
-            state = self._wait_for_view_guarded((StripView.STORE,), VIEW_TIMEOUT_S)
-            if state.view is not StripView.STORE:
-                raise AcquisitionError(
-                    f"Stop did not reach the store view ({state.view.value!r})"
-                )
-            self.press(StripControl.DO_STORE)
-            self._await_store_dialog(VIEW_TIMEOUT_S)
-            # Where the store will land is asserted before anything is named or
-            # committed: the caller watches this directory, not the one the dialog
-            # happened to remember (docs/16 §12b).
-            self.assert_working_directory(directory)
-            known = self._names_in(directory)
-            self._note(f"the Store dialog is up; naming the file {name!r}")
-            self.set_store_name(name)
-            self.commit_store()
-            stored = self._store_until_file(name, directory, known, timeout_s)
-            # The size is the runner's to log (`file_size_bytes`); a note must not touch the
-            # filesystem, because a sweep may be faked against an actuator with no disk behind
-            # it and a note that raises would turn a stored point into a failed one.
-            self._note(f"stored {stored.name}")
-            return stored
-        except AcquisitionError as exc:
-            self._recover()
-            raise AcquisitionError(f"{name}: {exc}") from exc
-        except Exception as exc:
-            self._recover()
-            raise AcquisitionError(f"{name}: unexpected failure: {exc!r}") from exc
-
-    def try_record_and_store(
-        self,
-        name: str,
-        duration_s: float,
-        directory: Path,
-        *,
-        expected_mode: ProcessMode,
-        timeout_s: float = STORE_TIMEOUT_S,
-        verify_channel: bool = True,
-    ) -> tuple[bool, Path | str]:
-        """``record_and_store`` with the failure in the return value instead of a raise.
-
-        ``(True, path)`` or ``(False, reason)`` — the shape a sweep loop logs per point. The
-        expectation is required here too, and passed straight through: the per-point gate a
-        runner's loop reaches is this one, and a default would put the expectation back where
-        §24.4 refuses to have it.
-        """
-        try:
-            return True, self.record_and_store(
-                name,
-                duration_s,
-                directory,
-                expected_mode=expected_mode,
-                timeout_s=timeout_s,
-                verify_channel=verify_channel,
-            )
-        except AcquisitionError as exc:
-            return False, str(exc)
-
     # ------------------------------------------------------------------ cycle internals
 
     def _as_role(self, role: ParamRole | str) -> ParamRole:
@@ -2993,62 +2689,6 @@ class Win32Actuator:
             raise AcquisitionError(
                 f"unknown parameter role {key!r}; known roles are {[r.value for r in ParamRole]}"
             ) from None
-
-    def _settle_press(self) -> None:
-        """Answer every overlay before a press; refuse if one needs the caller."""
-        for _ in range(4):
-            found = self._find_overlay()
-            if found is None:
-                return
-            kind, panel, kids = found
-            if kind is OverlayKind.STORE_DIALOG:
-                raise AcquisitionError(
-                    "the Store dialog is up; no press is safe until it is handled"
-                )
-            self._dialog_button(panel, kids, overlay_answer(kind) or DialogControl.SAFE)
-            self._note(f"answered a {kind.value} before pressing")
-            time.sleep(_OVERLAY_SETTLE_S)
-
-    def _wait_for_view_guarded(
-        self, want: Iterable[StripView], timeout_s: float
-    ) -> StripState:
-        """Poll for ``want`` while watching for overlays.
-
-        A warning raised mid-step is answered with its safe button and recorded; the poll
-        keeps running, so a modal warning can never turn the wait into a hang.
-        """
-        wanted = set(want)
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        state = self.strip_state()
-        while state.view not in wanted and time.monotonic() < deadline:
-            kind = self._peek_overlay()
-            if kind is OverlayKind.WARNING:
-                self._note("answered a warning while waiting for a view change")
-                self.answer_overlay()
-            elif kind is OverlayKind.STORE_DIALOG:
-                return state  # reported, not waited through
-            time.sleep(_POLL_S - 0.05)
-            state = self.strip_state()
-        return state
-
-    def _hold_recording(self, duration_s: float) -> None:
-        """Wait out the point's duration, watching the view and the overlays."""
-        deadline = time.monotonic() + max(0.0, duration_s)
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return
-            time.sleep(min(0.5, remaining))
-            if self._peek_overlay() is OverlayKind.WARNING:
-                # Seen, not slept through: a modal warning stalls the app's own timers.
-                self._note("answered a warning raised during recording")
-                self.answer_overlay()
-            state = self.strip_state()
-            if state.view is not StripView.RECORDING:
-                raise AcquisitionError(
-                    f"the recording stopped on its own (view {state.view.value!r}) after "
-                    f"{duration_s - max(0.0, deadline - time.monotonic()):.1f} s"
-                )
 
     def _await_store_dialog(self, timeout_s: float) -> tuple[dict, list[dict]]:
         """Wait for the Store dialog, answering warnings that come up first."""
@@ -3149,25 +2789,6 @@ class Win32Actuator:
         raise AcquisitionError(
             f"no file appeared in {directory} within {timeout_s:.0f} s of Do store"
         )
-
-    def _recover(self) -> None:
-        """Leave the application safe after a failure, then let the caller report it.
-
-        Overlays are answered (never closed), and a recording left running is stopped: a
-        leftover recording would otherwise be stored under the next point's name.
-        """
-        try:
-            for _ in range(4):
-                kind = self._peek_overlay()
-                if kind is None or kind is OverlayKind.STORE_DIALOG:
-                    break
-                self.answer_overlay()
-            if self.strip_state().view is StripView.RECORDING:
-                self._note("a recording was left running; pressing Stop")
-                self.press(StripControl.STOP)
-        except Exception as exc:  # noqa: BLE001 - recovery must never mask the failure
-            self._note(f"recovery was incomplete: {exc!r}")
-
 
 #: Import-time conformance check: this class must satisfy every Actuator method. Derived
 #: from the Protocol itself, so it keeps holding if the Protocol grows.
