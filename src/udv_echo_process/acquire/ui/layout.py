@@ -52,6 +52,8 @@ from udv_echo_process.acquire.actuator import (
 from udv_echo_process.acquire.ui.model import (
     ParameterPanelState,
     ScreenObservation,
+    SurfaceKind,
+    UiNode,
 )
 
 __all__ = [
@@ -62,6 +64,7 @@ __all__ = [
     "MENU_ORDER",
     "MODE_ASSISTED",
     "MODE_MANUAL",
+    "classify_surface",
     "layout_evidence",
     "layout_refusal",
     "layout_shape_reasons",
@@ -72,6 +75,8 @@ __all__ = [
     "process_mode_clause",
     "same_directory",
     "screen_mode",
+    "surface_clauses",
+    "surface_kind",
 ]
 
 MAIN_CLASS = "TMain_Scr"
@@ -238,6 +243,228 @@ def normalized_path(text: str) -> str:
     return cleaned.casefold()
 
 
+#: The plot's middle band, as a fraction of its height: the strip floats inside the monitor and
+#: the resolver scores a **strip candidate** by the centre of its button row falling in here
+#: (``_resolve``'s own ``0.30 <= frac <= 0.70``). The surface classifier applies the *same*
+#: rule to every panel rather than to the winner, which is what makes a second button panel in
+#: this band visible as an overlay instead of being silently accepted (ledger B06).
+_STRIP_BAND = (0.30, 0.70)
+
+
+def _same_node(one: UiNode, other: UiNode | None) -> bool:
+    """True when two projected rows are the same control — by handle, else by identity.
+
+    A handle is only an action reference, but *within one observation* it is the one key that
+    survives a re-projection of the same row, so it is what identity comparisons use here; two
+    rect-less rows of a partial fixture are compared by object identity.
+    """
+    if other is None:
+        return False
+    if one is other:
+        return True
+    return one.hwnd is not None and one.hwnd == other.hwnd
+
+
+def _top_of(panel: UiNode) -> int:
+    """A panel's screen top, or ``0`` when the projection carries no rect for it."""
+    return 0 if panel.rect is None else panel.rect.top
+
+
+def _bottom_of(panel: UiNode) -> int:
+    """A panel's screen bottom, or ``0`` when the projection carries no rect for it."""
+    return 0 if panel.rect is None else panel.rect.bottom
+
+
+def _rect_text(panel: UiNode) -> str:
+    """A panel's rect as the refusal clauses render it (the tuple form the driver prints)."""
+    return "None" if panel.rect is None else str(panel.rect.as_tuple())
+
+
+def _client_height(observation: ScreenObservation) -> int:
+    """The client's height, as the resolver read it (``0`` when the tree states none)."""
+    client = observation.client or (0, 0)
+    return int(client[1]) if len(client) > 1 else 0
+
+
+def _band_margin(observation: ScreenObservation) -> int:
+    """The top/bottom band margin for this client — a fraction, never a coordinate."""
+    return max(1, int(_client_height(observation) * _BAND_MARGIN_FRACTION))
+
+
+def _client_top(panel: UiNode, observation: ScreenObservation) -> int:
+    """The panel's top relative to the client's top (the origin :meth:`_resolve` read).
+
+    Takes the projected panel and the observation rather than the raw role map, because that is
+    what the clauses hold once the tree has been normalized (``observation_of``) — the arithmetic
+    is the one the flat module did.
+    """
+    return _top_of(panel) - int(observation.origin[1])
+
+
+def _client_bottom(panel: UiNode, observation: ScreenObservation) -> int:
+    """The panel's bottom relative to the client's top."""
+    return _client_top(panel, observation) + (
+        0 if panel.rect is None else panel.rect.height
+    )
+
+
+def _menubar_resolved(observation: ScreenObservation) -> bool:
+    """True when the menubar band resolved *and* hosts at least one button."""
+    return observation.menu.band is not None and bool(observation.menu.buttons)
+
+
+def _status_bands(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """The panels that reach the client's bottom and sit below the strip — the status band.
+
+    A band **below the strip** that reaches the client's bottom, found by shape rather than by
+    its index in the panel list. A sidebar column that runs the height of the window does not
+    answer this: it starts above the strip, and the band being asked for is the one under
+    everything.
+    """
+    client_h = _client_height(observation)
+    margin = _band_margin(observation)
+    strip = observation.strip.panel
+    return tuple(
+        panel
+        for panel in observation.panels
+        if not _same_node(panel, observation.menu.band)
+        and not _same_node(panel, strip)
+        and (strip is None or _top_of(panel) >= _client_bottom(strip, observation))
+        and _client_bottom(panel, observation) >= client_h - margin
+    )
+
+
+def _overlay_candidates(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """Panels **besides the resolved strip** that host a button row inside the plot's band.
+
+    The resolver scores a strip candidate by the *centre of its button row* falling in the plot's
+    0.30-0.70 band and takes the panel hosting the most buttons, so a button panel sitting in that
+    band's middle wins the vote — which is the live incident B06 records, where an open
+    ``Define TGC`` panel (``UI-OVERLAY-01``..``UI-OVERLAY-04``, 453x123, caption-less, movable)
+    was bound as the strip and the run then diagnosed *its* button row, calling it a known
+    ``ready`` row of ``Pause / Record / Clear and restart``.
+
+    This is that same rule applied to every panel rather than to the winner: a panel inside the
+    plot, hosting its own ``TSp_Button`` row whose centre falls in the same band, while the strip
+    was bound somewhere else — two candidates where a measurement screen has exactly one. The
+    candidate is reported, never pressed: the finding is that the panel the resolver bound may be
+    an overlay's button panel rather than the recording strip, and that is a refusal.
+    """
+    strip, plot = observation.strip.panel, observation.plot
+    if strip is None or plot is None or plot.rect is None:
+        return ()
+    band_low, band_high = _STRIP_BAND
+    candidates: list[UiNode] = []
+    for panel in observation.panels:
+        if (
+            _same_node(panel, strip)
+            or _same_node(panel, observation.menu.band)
+            or any(_same_node(panel, dialog) for dialog in observation.dialogs)
+        ):
+            continue
+        if panel.rect is None or not plot.rect.holds_centre_of(panel.rect):
+            continue
+        buttons = observation.tree.inside(panel, cls="TSp_Button")
+        centres = [button.rect.centre for button in buttons if button.rect is not None]
+        if not centres:
+            continue
+        centre_y = sum(y for _x, y in centres) / len(centres)
+        fraction = (centre_y - plot.rect.top) / max(1, plot.rect.height)
+        if band_low <= fraction <= band_high:
+            candidates.append(panel)
+    return tuple(candidates)
+
+
+def surface_kind(observation: ScreenObservation) -> SurfaceKind:
+    """Which of the :class:`SurfaceKind` surfaces this observation is.
+
+    **Decided before any press target is resolved** (architecture invariant 3, ledger B06): the
+    resolver's own vote can hand an overlay over as the strip candidate, and a diagnosis that
+    then starts from the button row blames the strip for a surface problem — the run refused, but
+    for the wrong reason, which costs a live slot. The order of the tests is the order of the
+    evidence's strength:
+
+    1. a window class that is not the measurement screen's — nothing else about the tree is
+       trustworthy, so ``UNKNOWN``;
+    2. an application dialog panel is up — ``DIALOG``;
+    3. the menubar's own popup is open — ``POPUP`` (it is the strip resolver's decoy);
+    4. a second button panel sits in the plot's middle band — ``OVERLAY`` (B06);
+    5. the measurement anchors all resolved — ``MEASUREMENT``;
+    6. otherwise ``UNKNOWN``: the refusal state, which has no binding and no mode.
+
+    A kind is **not** a press permission: ``MEASUREMENT`` says the surface is the measurement
+    screen, and the gate's other clauses (the parameter panel's state, the strip view, the
+    process mode) still stand between it and any action.
+    """
+    if observation.class_name is not None and observation.class_name != MAIN_CLASS:
+        return SurfaceKind.UNKNOWN
+    if observation.dialogs:
+        return SurfaceKind.DIALOG
+    if observation.popup_open:
+        return SurfaceKind.POPUP
+    if _overlay_candidates(observation):
+        return SurfaceKind.OVERLAY
+    if (
+        not _menubar_resolved(observation)
+        or observation.plot is None
+        or not _status_bands(observation)
+    ):
+        return SurfaceKind.UNKNOWN
+    return SurfaceKind.MEASUREMENT
+
+
+def classify_surface(roles: Mapping) -> SurfaceKind:
+    """The :class:`SurfaceKind` of a resolved role map — the front door for a caller with a tree.
+
+    The same projection :func:`layout_shape_reasons` makes, exposed on its own so a caller (a
+    diagnostic, a probe, a preflight) can name the surface without reading the gate's clauses.
+    """
+    return surface_kind(observation_of(roles))
+
+
+def surface_clauses(observation: ScreenObservation) -> tuple[str, ...]:
+    """One clause per **active non-measurement surface**, first among the gate's clauses.
+
+    This is what "classify before you diagnose" means in the gate: the clauses here are built
+    from the *surface* the resolver's tree shows, and they come before the strip row, the
+    parameter column and the bands — because the row a wrong-surface screen would diagnose is a
+    symptom of the surface being wrong (ledger B06). Every clause names the evidence it rests on
+    and where it was read, so the refusal is diagnosable from the log alone (plan §24.5 D5).
+
+    ``UNKNOWN`` contributes nothing: it is the absence of a classification, and the structural
+    clauses of :func:`layout_shape_reasons` (the window class, the menubar band, the plot, the
+    status band) already state exactly what was missing.
+    """
+    clauses: list[str] = []
+    for panel in _overlay_candidates(observation):
+        strip = observation.strip.panel
+        clauses.append(
+            "an overlay is over the measurement screen: "
+            f"{_rect_text(panel)} hosts its own button row inside the plot's 0.30-0.70 band "
+            "besides the panel the resolver bound as the strip "
+            f"({_rect_text(strip) if strip is not None else 'none'}), so that binding may be an "
+            "overlay's button panel rather than the recording strip — the strip's own rule (the "
+            "button panel in the middle of the plot) is ambiguous on this tree and nothing may "
+            "be pressed out of it"
+        )
+    if observation.dialogs:
+        doors = [
+            (panel.rect.as_tuple() if panel.rect else None, panel.cls)
+            for panel in observation.dialogs
+        ]
+        clauses.append(
+            f"a dialog is up: {len(observation.dialogs)} panel(s) of this screen are application "
+            f"dialogs and not the measurement layout ({doors}), so nothing below them is the "
+            "surface these roles were bound to"
+        )
+    if observation.popup_open:
+        clauses.append(
+            "a menu popup is open: the parameter roles below it would bind to the popup's own "
+            "controls (a popup is never dismissed by WM_CLOSE here)"
+        )
+    return tuple(clauses)
+
+
 # ------------------------------------------------------------------- the channel mode reading
 
 
@@ -306,17 +533,6 @@ def parameter_panel_absent_clause(separator: str = "") -> str:
     return separator + _ABSENT_PANEL_REASON
 
 
-def _client_top(panel: Mapping, roles: Mapping) -> int:
-    """The panel's top relative to the client's top (the origin :meth:`_resolve` read)."""
-    origin = roles.get("origin") or (0, 0)
-    return int(panel["top"]) - int(origin[1])
-
-
-def _client_bottom(panel: Mapping, roles: Mapping) -> int:
-    """The panel's bottom relative to the client's top."""
-    return _client_top(panel, roles) + int(panel["h"])
-
-
 def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     """Every clause of the shape check this resolved tree fails — empty when it passes.
 
@@ -326,12 +542,17 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     the application's own ``Preferences`` option while the channel stays manual, so its absence
     is refused with a clause that names both readings and claims neither.
 
-    The common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the client's
-    top and a status band reaches the client's bottom; the strip panel resolves with a row whose
-    length maps into :data:`STRIP_BUTTON_ORDER` (the silent case §21.3 item 3 names: *a different
-    button panel in the plot's middle band*); and nothing is over it — no menu popup and no
-    dialog panel. The manual shape: that column resolves with its seven
-    :data:`PARAM_COLUMN_ORDER` roles.
+    The clauses come in two groups. The **surface group first** (:func:`surface_clauses`): which
+    surface is this, before any strip row or parameter column is diagnosed — because the row a
+    wrong-surface screen would diagnose is a *symptom* of the surface being wrong, and a refusal
+    that named it would send the operator looking for a strip that is not there (ledger B06).
+
+    Then the common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the
+    client's top and a status band reaches the client's bottom; the strip panel resolves with a
+    row whose length maps into :data:`STRIP_BUTTON_ORDER` (the silent case §21.3 item 3 names:
+    *a different button panel in the plot's middle band*); and nothing is over it — no menu popup
+    and no dialog panel (both of which the surface group has already named). The manual shape:
+    that column resolves with its seven :data:`PARAM_COLUMN_ORDER` roles.
 
     **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
     the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
@@ -345,39 +566,38 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     # over a resolved tree. The popup and dialog clauses therefore come from the tree's own
     # resolved sets (`open_popup`, `_dialog_panels`' two halves), and the driver's own note adds
     # the `_find_overlay` clause on top (`layout_refusal`, whose `overlay=` is that result).
-    reasons: list[str] = []
-    panels = list(roles.get("panels") or ())
-    client = roles.get("client") or (0, 0)
-    client_h = int(client[1]) if len(client) > 1 else 0
-    margin = max(1, int(client_h * _BAND_MARGIN_FRACTION))
+    observation = observation_of(roles)
+    reasons: list[str] = list(surface_clauses(observation))
+    panels = list(observation.panels)
+    client_h = _client_height(observation)
+    margin = _band_margin(observation)
 
-    class_name = roles.get("class_name")
+    class_name = observation.class_name
     if class_name != MAIN_CLASS:
         reasons.append(
             f"the window class is {class_name!r} where this measurement screen is {MAIN_CLASS!r}"
         )
 
-    menu = roles.get("menu") or {}
-    menu_band = roles.get("menu_band")
-    if menu_band is None or not menu:
+    menu_band = observation.menu.band
+    if not _menubar_resolved(observation):
         reasons.append(
-            f"the menubar band did not resolve: {len(menu)} of {len(MENU_ORDER)} menubar "
-            "button(s) were found"
+            f"the menubar band did not resolve: {len(observation.menu.buttons)} of "
+            f"{len(MENU_ORDER)} menubar button(s) were found"
             + (" and no panel hosts them" if menu_band is None else "")
         )
-    elif _client_top(menu_band, roles) > margin:
+    elif _client_top(menu_band, observation) > margin:
         reasons.append(
-            f"the menubar band is painted {_client_top(menu_band, roles)} px down a "
+            f"the menubar band is painted {_client_top(menu_band, observation)} px down a "
             f"{client_h} px client, so it is not the band at the client's top that a "
             "measurement screen paints"
         )
 
-    strip = roles.get("strip_panel")
-    row = list(roles.get("strip_row") or ())
+    strip = observation.strip.panel
+    row = list(observation.strip.row)
     view = None
-    if roles.get("state") is not None:
+    if observation.strip.state_reading is not None:
         try:
-            view = StripView(str(roles["state"]))
+            view = StripView(observation.strip.state_reading)
         except ValueError:
             view = None
     if strip is None:
@@ -385,72 +605,40 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
             "no recording strip panel resolved: no short button-hosting panel sits in the "
             "plot's 0.30-0.70 band, so which buttons mean pause, record and stop is unstated"
         )
-    elif roles.get("plot") is None:
+    elif observation.plot is None:
         reasons.append(
             "the plot band did not resolve, so the strip's own rule (the button panel in the "
             "middle of the plot) could not be applied to the panel that was found"
         )
     elif view is None or (view, len(row)) not in STRIP_BUTTON_ORDER:
         reasons.append(
-            f"the strip's row holds {len(row)} button(s) in view {roles.get('state')!r}, which "
-            "is no row in STRIP_BUTTON_ORDER: a different button panel sits in the plot's "
-            "middle band, and a press would be bound to the wrong position"
+            f"the strip's row holds {len(row)} button(s) in view "
+            f"{observation.strip.state_reading!r}, which is no row in STRIP_BUTTON_ORDER: a "
+            "different button panel sits in the plot's middle band, and a press would be bound "
+            "to the wrong position"
         )
 
-    # A band **below the strip** that reaches the client's bottom — the status bar, found by shape
-    # rather than by its index in the panel list. A sidebar column that runs the height of the
-    # window does not answer this: it starts above the strip, and the band being asked for is the
-    # one under everything.
-    status_bands = [
-        panel
-        for panel in panels
-        if panel is not menu_band
-        and panel is not strip
-        and (strip is None or int(panel["top"]) >= _client_bottom(strip, roles))
-        and _client_bottom(panel, roles) >= client_h - margin
-    ]
-    if not status_bands:
+    if not _status_bands(observation):
         reasons.append(
             f"no status band reaches the client's bottom: the {len(panels)} panel(s) at this "
             f"level end at "
-            f"{max((_client_bottom(panel, roles) for panel in panels), default=0)} px of a "
+            f"{max((_client_bottom(panel, observation) for panel in panels), default=0)} px of a "
             f"{client_h} px client"
-        )
-
-    if roles.get("open_popup"):
-        reasons.append(
-            "a menu popup is open: the parameter roles below it would bind to the popup's own "
-            "controls (a popup is never dismissed by WM_CLOSE here)"
-        )
-
-    dialogs = sorted(
-        (roles.get("value_dialogs") or set()) | (roles.get("browse_dialogs") or set())
-    )
-    if dialogs:
-        doors = [
-            (panel["rect"], panel["cls"])
-            for panel in panels
-            if panel["hwnd"] in set(dialogs)
-        ]
-        reasons.append(
-            f"a dialog is up: {len(dialogs)} panel(s) of this screen are application dialogs "
-            f"and not the measurement layout ({doors}), so nothing below them is the surface "
-            "these roles were bound to"
         )
 
     params = roles.get("params") or {}
     rows = roles.get("param_rows") or []
     column = roles.get("left_panel")
-    panel = observation_of(roles).parameter_panel
+    panel = observation.parameter_panel
     # The manual shape is the **only** shape this experiment measures on. A column that resolved
     # *without* its roles is the case §24.3 names as neither shape — a binding that would write
     # the wrong fields. A screen with no column at all was the accepted *assisted* shape before
     # ledger B01 and is now a clause of its own: the panel may have been hidden by the
     # application's own `Preferences` option while the channel stayed manual, so the refusal
     # names both readings of the absence and claims neither. The clause belongs to the
-    # *measurement screen* — the common core above is what establishes that this tree is one —
-    # because naming the missing column on a surface that is not a measurement screen at all is
-    # exactly the misdiagnosis ledger B08 records.
+    # *measurement screen* — asserted here through the surface classification rather than through
+    # a private conjunction of anchors — because naming the missing column on a surface that is
+    # not a measurement screen at all is exactly the misdiagnosis ledger B08 records.
     if panel is ParameterPanelState.INCOMPLETE:
         reasons.append(
             f"the sidebar parameter column resolved at "
@@ -460,11 +648,7 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
             "would land on the wrong fields"
         )
     elif panel is ParameterPanelState.ABSENT and (
-        class_name == MAIN_CLASS
-        and menu_band is not None
-        and menu
-        and roles.get("plot") is not None
-        and status_bands
+        surface_kind(observation) is SurfaceKind.MEASUREMENT
     ):
         reasons.append(
             parameter_panel_absent_clause()

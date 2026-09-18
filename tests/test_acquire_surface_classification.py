@@ -79,12 +79,6 @@ def screen_with_overlay(*, bound_row: bool = True) -> dict:
 
 
 # B06: UI-OVERLAY-01..04 (ui-crops/overlay-define-tgc-uniform.png) as the candidate.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B06: the shape gate still accepts a screen whose strip candidate is an active "
-    "overlay panel (its 3 buttons classify as a `ready` row) — PATCH-2 classifies the surface "
-    "first and refuses",
-)
 def test_an_overlay_in_the_plot_band_is_never_accepted_as_the_strip() -> None:
     """B06, the dangerous half: an overlay's buttons can be read as the strip's own row.
 
@@ -105,11 +99,6 @@ def test_an_overlay_in_the_plot_band_is_never_accepted_as_the_strip() -> None:
 
 
 # B06: the live symptom — a 0-button strip diagnosis where an overlay is the finding.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B06: the refusal still diagnoses a strip row instead of naming the active "
-    "non-measurement surface — PATCH-2 puts the surface clause first",
-)
 def test_the_active_surface_is_named_before_the_strip_row_is_diagnosed() -> None:
     """B06, the live symptom: a refusal that is right for the wrong reason.
 
