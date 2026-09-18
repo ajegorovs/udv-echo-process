@@ -666,16 +666,17 @@ press would hit. §22 measures the two modes against each other.
 6. **Housekeeping:** `tools/live/README.md` is stale; the `udv-live-gui-probe` skill wants review; two
    caption-less buttons below the strip and the `89` edits in the dialog are unexplained.
 
-**Update — 2026-09-18 15:03–15:06, on the instrument: step 1 is done, step 2 is blocked by one thing
-(§23).** The strip's rect is reproducible, not one moment (`[343,414,695,454]`, three reads over 14
-minutes, nothing moved, §23.1); the instrument's *own* dialog cells are read (§23.3 — the same rects and
+**Update — 2026-09-18 15:03–15:11, in real-experiment mode: step 1 is done, step 2 is blocked by one thing
+(§23).** The strip's rect is reproducible, not one moment (`[343,414,695,454]`, four reads over 22
+minutes, nothing moved it, §23.1); the mode's *own* dialog cells are read (§23.3 — the same rects and
 classes as simulation, so the writer's bindings transfer unchanged, with `600 / 50 / 20 / 1480 / 1 … 1.776`
-as the values to declare); and §11.1's item 1(d) is proved in both directions on the instrument — the
+as the values to declare); and §11.1's item 1(d) is proved in both directions on the live application — the
 shipped example refuses naming three facts, a definition carrying this frame compiles (§23.4). The
-blocker: `EXPECTED_CONTROL_COUNT = 43` is a **simulation** number, the instrument states **44** in 4, and
-both recording paths hard-fail on the note (§23.5) — every read runs on the instrument, the first press
-does not. Fix it as §22.1's caption mode statement plus a structural layout gate, **not** as a second
-magic number.
+blocker: `EXPECTED_CONTROL_COUNT = 43` is a **simulation** number, this mode states **44** in 4, and both
+recording paths hard-fail on the note (§23.5) — every read runs, the first press does not. Fix it as
+§22.1's caption mode statement plus a structural layout gate, **not** as a second magic number. §23 also
+records what the mode switch was: a **restart** of this machine's application, nothing being measured
+(`hwnd 594454` → `591592`), so item 2's acceptance run is runnable here once the gate is fixed.
 
 **Live-state caveats a fresh session must not trip over.**
 
@@ -2488,13 +2489,13 @@ is worth recording even though its name cannot yet be read.
   is stable; nothing here says a future session's rect will be that one, and the driver does not need it
   to be (it resolved the row structurally in both modes).
 
-## 23. The instrument's own cells, read — and the one gate that refuses it
+## 23. The application's own cells in real-experiment mode, and the one gate that refuses it
 
-§11.1's step 1, run against the **instrument** (`UDOP DOP3010.43`, PID 8000, maximised, foreground) on
-2026-09-18 15:03–15:06 — the four commands below, and §22.6's last two open bullets answered. Same
-prohibition as §21.2 and §22: no strip button, no `Do store`, no popup entry below the topmost one, no
-recording, no write. The evidence is the gitignored logs named below; the numbers are transcribed here
-because a reader cannot open them.
+§11.1's step 1, run against the application in **real-experiment mode** (`UDOP DOP3010.43`, maximised,
+foreground) on 2026-09-18 15:03–15:11 — the four commands below, and §22.6's last two open bullets
+answered. Same prohibition as §21.2 and §22: no strip button, no `Do store`, no popup entry below the
+topmost one, no recording, no write. The evidence is the gitignored logs named below; the numbers are
+transcribed here because a reader cannot open them.
 
 ```bash
 PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh main_geometry.py                        # 15:03, twice, presses nothing
@@ -2510,26 +2511,41 @@ reader can regenerate the deltas from the logs rather than take them on trust �
 read from the dispatch log that printed it (which is how the 14:49 instrument read survived being
 overwritten by the 15:03 one).
 
-### 23.1 The strip had not moved — `[343,414,695,454]`, twice, 14 minutes after §22 measured it
+**The mode, and what it is a mode *of*.** Both the previous session's non-simulation read and every read
+here are of **this machine's application**, switched out of simulation into real-experiment mode at the
+end of that session — the operator's own account — with **nothing being measured**. §21.5's and §22.6's
+"the instrument's box is not reachable from here" is about the operator's *report* in §21, which did come
+from the real box; the non-simulation *layout* was measured here, in this mode. Nothing below depends on
+which box it was — a caption, a rect and a count are reads of whatever process is in front — but it
+matters for one thing: §11.1's item 2, the non-simulation acceptance run, is runnable **on this machine in
+this mode**, which is what makes §23.5's blocker expensive rather than academic. The mode switch was a
+**restart**: the simulation session's window is `hwnd 594454` and this one `591592`, so every read below is
+one process and the tree deltas carry no cross-process noise. Throughout this section "the instrument"
+means *the application in this mode* — not a different installation, and not a different machine.
 
-§22.6 asks for a second read; this is three. The two 15:03 reads are 60 s apart, both dispatched, both
-with the operator's cursor parked at `(228, 396)` and nothing touched in between:
+### 23.1 The strip had not moved — `[343,414,695,454]`, four reads, 22 minutes after §22 measured it
+
+§22.6 asks for a second read; this is four, spanning 22 minutes (14:49 → 15:11). The two 15:03 reads are
+60 s apart, both dispatched, both with the operator's cursor parked at `(228, 396)` and nothing touched in
+between:
 
 | read | strip panel | row (`left`→right) | view / buttons / slider | visible controls | tree |
 |---|---|---|---|---|---|
 | 14:49 (§22.2) | `[343,414,695,454]` | as below | `ready` / 3 / none | 44 in 4 | 155 |
 | 15:03 run 1 | `[343,414,695,454]` | `[353,424,432,444]`, `[442,424,527,444]`, `[537,423,675,443]` | `ready` / 3 / none | 44 in 4 | 165 |
 | 15:03 run 2 | identical | identical | identical | 44 in 4 | 165 |
+| 15:11, after the dialog read | `[343,414,695,454]` | identical | `ready` / 3 / none | 44 in 4 | 202 |
 
 Beyond the panel: main window `(-8,-8,1928,1058)` `IsZoomed` true, client `(0,23)`, 96 dpi, caption
-`UDOP DOP3010.43` — identical in all three reads. Of the 155 controls the 14:49 read walked, **none was
-removed and none changed rect**; the row's index meanings are `pause / record / clear_and_restart` in both.
+`UDOP DOP3010.43` — identical in all four reads. Of the 155 controls the 14:49 read walked, **none was
+removed and none changed rect over the two 15:03 reads**; the 15:11 read moved twelve, and §23.2 accounts
+for every one of them. The row's index meanings are `pause / record / clear_and_restart` in all four.
 
 That answers the bullet as far as a read can: the rect the operator left the strip at is *reproducible*
-over 14 minutes of session life, not merely one moment. It is still not a proof about the next drag, and
+over 22 minutes of session life, not merely one moment. It is still not a proof about the next drag, and
 nothing needs it to be — the row is resolved structurally and pressed by index (§21.1).
 
-### 23.2 The tree grew by ten hidden controls, and nothing visible changed
+### 23.2 The tree grew twice, and nothing visible changed
 
 155 → 165 between the two instrument reads, exactly accounted for: **two hidden pre-created popup
 panels** `[466,55,676,275]` (five hidden `TSp_Button` entries) and `[406,55,658,215]` (three), built while
@@ -2541,7 +2557,31 @@ and the reason a tree read is a read of a *moment*: the same process stated 155 
 165 now, with the screen it is driven by byte-identical. Nothing in this repository binds a total, so
 nothing breaks — recorded because a future reader comparing tree sizes across sessions will meet it.
 
-### 23.3 The `Operating parameters` dialog, read on the instrument
+**And the next read moved things.** A fourth read at 15:11 — after §23.3's `dialog_fields` pass and
+nothing else — walks **202**: `+37 / -0 / moved 12` of the 165, all 37 additions hidden, 16 of them
+direct children of the dialog panel `4982684` (the dialog building its own fields the first time it is
+shown, `TSp_Edit` 15 plus `TSp_Value_Button` 11 plus `TSp_Button` 10 plus one panel across the whole
+delta). The twelve that *moved* are the dialog's panel and its own cells, from a pre-show layout to the
+one they then appear at — including the panel itself:
+
+| control | before it was ever shown (15:03) | after the dialog had been opened once (15:11) |
+|---|---|---|
+| the dialog panel `4982684` | `[360,240,987,624]` | `[655,364,1282,748]` |
+| its header combo | `[788,249,833,270]` | `[1083,373,1128,394]` |
+| the burst combo / its edit | `[488,364,566,385]` / `[491,367,546,382]` | `[783,488,861,509]` / `[786,491,841,506]` |
+| the emitting-power combo / its edit | `[488,402,566,423]` / `[491,405,546,420]` | `[783,526,861,547]` / `[786,529,841,544]` |
+| the sensitivity combo | `[889,398,967,419]` | `[1184,522,1262,543]` |
+| the TGC-curve combo | `[689,476,767,497]` | `[984,600,1062,621]` |
+| four `TSp_Value_Button`s | `[415,360,569,392]`, `[567,472,770,504]`, `[402,398,569,430]`, `[825,394,970,426]` | `[710,484,864,516]`, `[862,596,1065,628]`, `[697,522,864,554]`, `[1120,518,1265,550]` |
+
+That is §21.3 item 6 — "a pre-created panel's rect before it is shown is not the rect it will have" —
+measured in real-experiment mode, and *caused* this time by a read this record performed: a reader that
+took the dialog's rect from the tree before opening it would have bound to `[360,240,987,624]`, 295 px up
+and 325 px left of where the dialog then appeared. The visible count (44 in 4), the four visible panels
+and the strip's rect were unchanged across the same interval: everything that moved is inside a panel
+nothing displays.
+
+### 23.3 The `Operating parameters` dialog, read from this mode's side
 
 §22.5's last bullet. `dialog_fields.py` — the driver's own open gesture and the dialog's own **left**
 (`DialogControl.SAFE`) button — opened it in 6 s, walked **42** controls, closed it
@@ -2586,7 +2626,7 @@ Two consequences worth carrying:
 150 → 20 disagreement is recorded and not fatal: the refusal below names three facts and not four, by
 design and not by omission.
 
-### 23.4 The instrument's own frame, reconciled with a definition — both rungs, on the instrument
+### 23.4 This mode's own frame, reconciled with a definition — both rungs, live
 
 §11.1's item 1(d), and the one thing §7's acceptance sequence wanted proved negatively on real hardware.
 The reading states, all five with `source: read`:
@@ -2611,7 +2651,7 @@ one point at the instrument's current frame, `1480 / 1 / 1.850 / 50): it is not 
 ladder worth committing is §11.1's item 5 decision (a better matrix — `1.850 / 50` is *this instrument's
 current frame*, not a ladder).
 
-### 23.5 `EXPECTED_CONTROL_COUNT = 43` is a simulation number, and it refuses the instrument at the first press
+### 23.5 `EXPECTED_CONTROL_COUNT = 43` is a simulation number, and it refuses this mode at the first press
 
 The one blocking finding, and it is not a drift:
 
@@ -2639,9 +2679,9 @@ mode-bound.
 
 - **What makes the `Tgc [dB]` row visible** — unchanged from §22.6, and now the sole unknown behind the
   `+1`. Both instrument reads and the dialog read had TGC `20 dB` painted; nothing here varies it.
-- **The strip's stability over a real session** — §22.6's bullet is answered for a 14-minute window
-  (23.1). A drag by the operator would not be a defect (nothing binds the rect) but would be worth one
-  line in the record if it happens.
+- **The strip's stability over a real session** — §22.6's bullet is answered for a 22-minute window
+  (23.1), which is not the same thing as a session. A drag by the operator would not be a defect
+  (nothing binds the rect) but would be worth one line in the record if it happens.
 - **The six-point non-simulation acceptance run** — blocked by 23.5 only.
 - **The block cap** — still a declaration; §23.4's compile carries `257` on the authority of whoever
   wrote the definition, and nothing on the instrument states one.
