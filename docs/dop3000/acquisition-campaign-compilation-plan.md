@@ -1272,6 +1272,52 @@ consequence that the `(0,1)` binding's comment and the edit at `(0,1)` (which re
 things. Open until the operator reads the dialog's painted labels, which are invisible to every API read in
 this repo.
 
+### 18.6 The dialog, cell by cell — the five unaccounted knobs are accounted for
+
+Drop the edit-only view (18.5): a cell's **value may be held by a combo**, not an edit, so the table has to be
+built from the `TSp_Value_Button` cells and whatever controls sit inside them. Done that way, the whole dialog
+is identified, and every knob in the matrix's fifteen now has a home and a control class:
+
+| cell `(col,row)` | knob | value now | control the value lives in |
+|---|---|---|---|
+| (0,0) | US emitting frequency | `4000` | edit |
+| (0,1) | **burst length** | `4` | **combo** — the operator reads its entries as 2,4,6,…,20,24,28,32 |
+| (0,2) | **emitting power** | `Medium` | **combo** (three levels, as the matrix says) |
+| (0,3) | **TGC / amplification** | `40` | edit |
+| (1,0) | PRF | `212` | edit |
+| (1,1) | first-gate depth | `2` | edit |
+| (1,2) | number of gates | `797` | edit |
+| (1,3) | resolution | `0.122` | edit |
+| (1,4) | **sampling volume** | `0.876` | **combo** (the bandwidth list — read it, never hard-code a mm value) |
+| (1,5) | **number of skipped profiles** | `0` | edit (+ the `TSp_Button` "apply skip profile" enable, 18.3) |
+| (2,0) | emissions per profile | `150` | edit |
+| (2,1) | Doppler angle | `0` | edit |
+| (2,2) | **sensitivity** | `medium` | **combo** |
+| (2,3) | velocity scale factor | `0.68` | edit |
+| (2,4) | sound speed | `1460` | edit |
+
+Plus one control *above* the value table that the table does not contain: a combo stating the **channel**
+(`1` on this machine) — the field the §16.1 attribution check reads.
+
+**Consequences for the writer (18.2), and they are now concrete.**
+
+- **Four of the fifteen are combos** (burst, power, sampling volume, sensitivity), so the dialog writer is two
+  writers, not one: `_combo_select`-style selection by value for those, `_set_text_commit`-style text with its
+  commit keystroke for the rest (18.5). Both private helpers already exist for the measurement screen.
+- **The combo traps apply directly**: select by the value read back from the options, never by counting steps
+  (one step up from burst `4` landed on `6` on this machine, and the operator's own reading shows the entries
+  are not contiguous — 2,4,6,…,20,24,28,32).
+- **`(0,1)`'s binding was right all along** and 18.5's puzzle is resolved: the binding addresses the *cell*, and
+  the value is in the cell's combo, so an edit-only scan could never see the `4`.
+- **A cell can contain more than one child**, so the reader must bind the specific control it means rather than
+  "the first thing inside the cell": several cells also carry a `TSp_Edit` reading `89` that is not the cell's
+  own value. Which of those is the sampling volume's own thickness readout is still open — cheap to settle,
+  but it must be settled before any reader binds by containment alone.
+
+**Still unanswered by eye:** the painted labels. Values and classes now agree well enough to identify every
+cell, but only the operator can confirm that the cell at (0,2) says "emitting power" beside its `Medium` and
+that the `40` at (0,3) is the TGC — the two assignments this table infers from value shape rather than label.
+
 **Harness trap, paid for once.** `./tools/live/dispatch.sh tools/live/probes/<probe>.py` does **not** run the
 probe: the launcher joins its argument onto the probe directory, finds nothing, and returns without writing a
 log — so the dispatcher polls for a line that can never appear. The working form is the bare name:
