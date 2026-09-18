@@ -1026,16 +1026,28 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         roles["menu_band"] = panels[menu_idx] if menu_idx is not None else None
 
         # --- panels that are dialogs, not the measurement layout ------------------------
-        # A dialog is a panel owning a real edit plus a TSp_Browse button, wherever the
-        # operator dragged it. One with TSp_Value_Button children is the values dialog
-        # (`Record settings`); one without them is the Store dialog. Detected structurally,
-        # so the file-exists warning and the store dialog are never confused.
+        # A dialog is identified **structurally**, by the canonical predicate the dialog reader
+        # itself resolves the live dialog with (:func:`…ui.dialog._is_dialog_panel`): a panel
+        # wider than 400 px that is full of controls — at least 15 direct children, or a
+        # ``TSp_Browse`` among them, or input widgets of its own. One holding ``TSp_Value_Button``
+        # children is the values dialog (``Operating parameters``, ``Record settings``); the
+        # browse/store class is the one that carries an edit and a ``TSp_Browse`` and no value
+        # buttons. Detected structurally, so the file-exists warning and the store dialog are
+        # never confused.
+        #
+        # The predicate is the reader's and not a narrower rule of this method's own, because a
+        # dialog the reader would find must not be one this resolver does not know: the measured
+        # ``Operating parameters`` panel (627x384, read live 2026-09-18 —
+        # ``tests/data/udop-parameters-dialog-tree.json``) carries **neither** a direct
+        # ``TEdit``/``TSp_Edit`` **nor** a ``TSp_Browse``, so a rule that asked for that pair left
+        # it outside this union — inside the strip vote, where its five bottom buttons (their row
+        # centre at 0.68 of the plot's height, inside the 0.30-0.70 band) outvoted the recording
+        # strip's three and the run bound a dialog as the strip.
         value_dialogs: set[int] = set()
         browse_dialogs: set[int] = set()
         for p in panels:
             direct = children_of(p["hwnd"])
-            has_edit = any(k["cls"] in ("TEdit", "TSp_Edit") for k in direct)
-            if not (has_edit and any(k["cls"] == "TSp_Browse" for k in direct)):
+            if not _is_dialog_panel(p, direct):
                 continue
             if any(k["cls"] == "TSp_Value_Button" for k in direct):
                 value_dialogs.add(p["hwnd"])
