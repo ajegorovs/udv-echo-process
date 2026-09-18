@@ -125,7 +125,7 @@ from udv_echo_process.acquire.plan import (
     plan_sweep,
     profiles_for_duration,
 )
-from udv_echo_process.acquire.snapshot import InstrumentSnapshot
+from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -200,7 +200,12 @@ class SweepActuator(Actuator, Protocol):
         """Verify the measurement channel from the dialog and return it."""
         ...
 
-    def instrument_snapshot(self, *, routed_channel: int | None) -> InstrumentSnapshot:
+    def instrument_snapshot(
+        self,
+        *,
+        routed_channel: int | None,
+        dialog_parameters: DialogParameters | None = None,
+    ) -> InstrumentSnapshot:
         """Read the instrument's current state, pressing nothing that changes it.
 
         Read-only with respect to the configuration: it writes no parameter, accepts no
@@ -209,9 +214,13 @@ class SweepActuator(Actuator, Protocol):
         channel :meth:`ensure_channel` selected and read back, or ``None`` when nothing
         routed one, which the reading then carries as ``unreadable`` rather than as a claim.
 
-        It is required and keyword-only so that no caller can have a channel taken for
-        granted on its behalf: an implementation may not imply a verification it did not
-        perform, and a default here would let a cycle forget to say what it established.
+        ``dialog_parameters`` is the same kind of hand-over for the three facts only the
+        ``Operating parameters`` dialog states (its reader is ``read_dialog_parameters``):
+        passing what that step read makes them ``read`` facts, and omitting it carries them as
+        ``unreadable`` with the reason. The channel is required and keyword-only so that no
+        caller can have a channel taken for granted on its behalf; this one is optional because
+        a caller that cannot have read the dialog and one that merely did not are different
+        states, and only the second leaves a caller free to say so.
 
         The reading is the *evidence*: which channel and mode are active, which fixed facts
         the instrument itself states and which nothing can read yet

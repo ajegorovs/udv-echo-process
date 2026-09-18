@@ -23,6 +23,9 @@ cite where.
 from __future__ import annotations
 
 from udv_echo_process.acquire.actuator import (
+    DIALOG_ANCHORS,
+    DIALOG_COLUMN_ROWS,
+    DIALOG_FIELD_ORDER,
     DIALOG_ONLY_PARAMETERS,
     NUMERIC_WRITE_RECIPE,
     OVERLAY_ANSWERS,
@@ -36,6 +39,7 @@ from udv_echo_process.acquire.actuator import (
     Actuator,
     ChannelMode,
     DialogControl,
+    DialogField,
     OverlayKind,
     ParamRole,
     StripControl,
@@ -96,6 +100,7 @@ from udv_echo_process.acquire.plan import (
 from udv_echo_process.acquire.snapshot import (
     FIXED_FACT_FIELDS,
     CompilationIdentity,
+    DialogParameters,
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
@@ -110,6 +115,9 @@ __all__ = [
     "CHANNEL_ENV_VAR",
     "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",
+    "DIALOG_ANCHORS",
+    "DIALOG_COLUMN_ROWS",
+    "DIALOG_FIELD_ORDER",
     "DIALOG_ONLY_PARAMETERS",
     "FIXED_FACT_FIELDS",
     "GATE_DRIFT_NOTE",
@@ -132,6 +140,8 @@ __all__ = [
     "CompilationIdentity",
     "DecodedBlock",
     "DialogControl",
+    "DialogField",
+    "DialogParameters",
     "FactSource",
     "InstrumentFact",
     "InstrumentSnapshot",

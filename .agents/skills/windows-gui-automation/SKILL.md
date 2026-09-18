@@ -773,6 +773,55 @@ to a few readable lines.
   still written, read back and the artefact still decoded. Never loosen the production path for a
   probe's sake, or the guard stops meaning anything.
 
+**`GetWindowText` reads nothing from another process — use `WM_GETTEXT` (via the driver's own text
+reader).** A reconnaissance probe that used `GetWindowText` over this application's whole tree saw
+empty captions everywhere and concluded that the pre-created hidden panels state nothing; with
+`WM_GETTEXT` the same panels state `1460`, `2`, `4`, `212`, `150`, `4000`, `797`, `0.122`… — they had been
+stating the instrument's whole parameter set the entire time. The same API also decides *identity*:
+these widgets carry no caption under either reader (measured, including the five menu entries), which
+is why every binding in this driver is structural and positional, never by name.
+
+**A widget's value often lives one level inside it — walk the surface before binding a position.** The
+`Operating parameters` dialog's 21 **direct** children are its 15 `TSp_Value_Button` widgets, its
+header and its bottom buttons, and not one of them states a value: each field's text lives in the
+`TSp_Edit` or `TComboBox` *inside* its value button. A read built on the resolver's own child
+enumeration therefore sees a dialog with no table at all — which is exactly how the first live read
+failed, with a reason that did not yet name the cause. Walk the surface live (child → next → recurse)
+when the values are nested, and report the **count of children by class** in the failure path: that
+count is what turned a refusal into a cause.
+
+**A row that offers a choice states its value in the *combo*, and the control beside it is a derived
+read-out.** At `burst = 4` the row holds a `TComboBox` `'4'`, its inner `'4'`, and a `TSp_Edit`
+`'89'` — and the 89 is the sampling volume the manual says this window displays (0.876 mm at
+1460 m/s), not the burst. Bind the combo when a row has one, and prove the rule survives
+**enumeration order**: controls come back in creation order, so the test has to try both orders or a
+"first control in the row" implementation passes for the wrong reason (it did, on the first pass).
+
+**A field bound by position is evidence only if a second surface confirms the position.** Seven of
+this dialog's fields are facts the measurement screen also states; requiring all seven to read the
+same text on both surfaces is what makes the binding trustworthy rather than habitual — a
+re-laid-out dialog (another software package installed, a field built or not built) would put a
+*different* value in the same `(column, row)` while still reading exactly like a value, and a pre-run
+check would then hand the run a plausible wrong fact. Refuse as **uncheckable** (nothing states the
+anchor on both surfaces) separately from **disagreement** (the two surfaces state different text):
+they are different faults, and a run record has to be able to tell which one happened.
+
+**A freshly started application builds its value table empty the first time a dialog is opened, and
+states it on the next open.** Measured: the first open after a restart read 2 stating controls where
+the second read 22. Poll for the fill with a bounded timeout, and record *which* state was seen — an
+empty field is not a value, and a read that took the first empty answer as the answer would report
+three unreadable facts about an instrument that states them perfectly well. The same is true of the
+pre-created panels: a long-running instance has them populated, a fresh one does not.
+
+**Escape closes nothing here, and a hover-opened popup cannot be dismissed programmatically.** Moving
+the cursor off the menubar does not close it, moving past the last entry does not, and a posted
+`WM_CANCELMODE` does not; the only clean exit is a *press*, which selects an entry and closes the
+popup. So any gesture that hovers or opens a dialog owns its cleanup in a `finally` — a probe run
+during this work crashed between the hover and the restore and left a popup on the operator's desktop
+that nothing but a restart could clear. When a probe has to leave the application as it found it, say
+what it found and what it left in its own output: a state the operator has to fix by hand must never
+be discovered by them.
+
 ## Deliverables shape
 
 Put findings in reading order under `docs/NN-topic.md`, keep the machine-readable control map

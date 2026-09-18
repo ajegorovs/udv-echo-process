@@ -51,12 +51,17 @@ from enum import Enum
 
 from pydantic import Field, model_validator
 
-from udv_echo_process.acquire.actuator import ScreenFingerprint, StripView
+from udv_echo_process.acquire.actuator import (
+    DIALOG_FIELD_ORDER,
+    ScreenFingerprint,
+    StripView,
+)
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "FIXED_FACT_FIELDS",
     "CompilationIdentity",
+    "DialogParameters",
     "FactSource",
     "InstrumentFact",
     "InstrumentSnapshot",
@@ -206,6 +211,46 @@ def routed(value: str, reason: str | None = None) -> InstrumentFact:
     is what makes that visible to whoever reads the record later.
     """
     return InstrumentFact(value=value, source=FactSource.ROUTED, reason=reason)
+
+
+class DialogParameters(ValueModel):
+    """What one open ``Operating parameters`` dialog stated, and what was true if it stated nothing.
+
+    The dialog-only fixed facts are read **while that dialog is up**, for the channel the dialog
+    shows, so they are carried as *one reading* rather than as three loose facts. ``channel`` is
+    the dialog's own channel field, kept for the caller to check against the routed channel: the
+    dialog is the surface that decides whose parameters these are, and reading them for one
+    channel while routing another is the same trap as storing a block on the wrong channel
+    (docs/16 §12) — so the reading states which channel it described rather than letting a caller
+    assume.
+
+    ``reason`` is empty exactly when the facts were read, and says why they were not otherwise:
+    a dialog that was open but stated nothing (measured 2026-09-18: an application that has just
+    started builds its value table empty the first time it is opened, and states it on the
+    second), a dialog whose shape is not the one these bindings were measured against, or a
+    dialog whose anchor fields disagree with the measurement screen. Every one of those is
+    ``unreadable`` — the facts are carried as unread, never as a value and never as a guess.
+    """
+
+    #: The dialog's own channel field, as the application states it.
+    channel: str = ""
+    #: ``(field name, the application's own text)`` for each dialog-only fact that was stated.
+    fields: tuple[tuple[str, str], ...] = ()
+    #: Why nothing was read — empty when the fields above were.
+    reason: str = ""
+
+    def value(self, field: str) -> str | None:
+        """The text this dialog stated for ``field``, or ``None`` when it stated nothing."""
+        for name, text in self.fields:
+            if name == field and text:
+                return text
+        return None
+
+    def readable(self) -> bool:
+        """Whether this reading actually carries a value for every dialog-only fact."""
+        return not self.reason and all(
+            self.value(name) for name, _column, _row in DIALOG_FIELD_ORDER
+        )
 
 
 class Provenance(ValueModel):

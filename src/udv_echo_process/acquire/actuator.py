@@ -47,6 +47,9 @@ from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "DIALOG_ANCHORS",
+    "DIALOG_COLUMN_ROWS",
+    "DIALOG_FIELD_ORDER",
     "DIALOG_ONLY_PARAMETERS",
     "NUMERIC_WRITE_RECIPE",
     "OVERLAY_ANSWERS",
@@ -60,6 +63,7 @@ __all__ = [
     "Actuator",
     "ChannelMode",
     "DialogControl",
+    "DialogField",
     "OverlayKind",
     "ParamRole",
     "StripControl",
@@ -135,6 +139,63 @@ PARAM_COLUMN_ORDER: tuple[ParamRole, ...] = (
 #: value the final request it sees. Measured: 805 gates requested → 474 accepted
 #: in the wrong order, 805 accepted in this one (docs/16 §14).
 PARAMETER_WRITE_ORDER: tuple[ParamRole, ...] = (ParamRole.RESOLUTION, ParamRole.GATES)
+
+
+class DialogField(str, Enum):
+    """A fixed fact that only the ``Operating parameters`` dialog states.
+
+    Three of the six fixed facts are not measurement-screen roles: the sound speed, the first
+    gate and the burst length are stated in the dialog's own value table, which the application
+    builds for the selected channel when the dialog is opened. They are *not* added to
+    :class:`ParamRole`, because that enum is the **column's** vocabulary (its order is the
+    column's identity, and a dialog field placed in it would claim a position the column does
+    not have); a dialog field gets its own vocabulary and its own reader.
+    """
+
+    SOUND_SPEED_MS = "sound_speed_ms"
+    FIRST_GATE_MM = "first_gate_mm"
+    BURST_LENGTH = "burst_length"
+
+
+#: Which value field of the dialog states which dialog-only fact, as
+#: ``(field, column, row)`` — **measured** on the running application 2026-09-18
+#: (``tests/data/udop-parameters-dialog-tree.json``, probe
+#: ``tools/live/probes/w1_fixed_facts.py``).
+#:
+#: The dialog lays its values out as three columns of ``TSp_Value_Button`` widgets, each holding
+#: the value's own ``TSp_Edit``: the columns are the bands of those edits' left edges
+#: (786 / 987 / 1187 px in a 627x384 dialog at 655,364), and within a column a field's identity
+#: is its top-to-bottom position — never an id, never a caption (every one of these widgets is
+#: caption-less, and control ids change on every launch). Read together with
+#: :data:`DIALOG_ANCHORS`, which is what makes a positional binding safe to trust.
+DIALOG_FIELD_ORDER: tuple[tuple[DialogField, int, int], ...] = (
+    (DialogField.BURST_LENGTH, 0, 1),
+    (DialogField.FIRST_GATE_MM, 1, 1),
+    (DialogField.SOUND_SPEED_MS, 2, 4),
+)
+
+#: Where the dialog states facts the measurement screen **also** states, as
+#: ``(role, column, row)`` — the check that turns the positional binding above into evidence.
+#:
+#: A dialog that has been re-laid-out (a different software package installed, another field
+#: built) would put a *different* value in `(column, row)` while still reading like a value, and
+#: a stale binding would then hand the compile a plausible wrong fact — the one failure mode a
+#: pre-run check must not have. So every one of these seven anchors must read the same text the
+#: parameter column reads before any dialog-only fact is believed; the reader refuses otherwise.
+DIALOG_ANCHORS: tuple[tuple[ParamRole, int, int], ...] = (
+    (ParamRole.US_FREQUENCY, 0, 0),
+    (ParamRole.PRF, 1, 0),
+    (ParamRole.GATES, 1, 2),
+    (ParamRole.RESOLUTION, 1, 3),
+    (ParamRole.EMISSIONS_PER_PROFILE, 2, 0),
+    (ParamRole.DOPPLER_ANGLE, 2, 1),
+    (ParamRole.VELOCITY_SCALE_FACTOR, 2, 3),
+)
+
+#: How many value fields each column of the dialog's table holds, left to right (measured).
+#: A dialog that does not build this shape is not the dialog these bindings were measured
+#: against, so nothing in it is read.
+DIALOG_COLUMN_ROWS: tuple[int, ...] = (4, 6, 5)
 
 
 class ChannelMode(str, Enum):

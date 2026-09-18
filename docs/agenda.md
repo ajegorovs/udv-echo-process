@@ -230,9 +230,25 @@ one commit each, and §12 of the plan carries them.
 reading, or refuse before the first recording, with a per-fact `refuse`/`warn`/`accept` policy
 derived from the stored-file verifier's own table. It is the step the review of #3 asked for by
 name, and it also changes no recording path; the plan's §13 records what it decided.
-Next is **P4 = W4**, the first slice that changes how a campaign behaves: it wires the snapshot and
-the compiled plan into `run_campaign`, the manifest and the resume (criterion 5's recipe test, and
-criterion 6's fail-closed default for a pre-Phase-6 manifest).
+
+**Slice P2 = W1 (the live reconnaissance) is landed** on `feat/acquire-w1-recon` (stacked on #4's
+head): the sound speed, the first gate and the burst length now have a supported read path, verified
+against the running application — five of the six fixed facts are read from the instrument, and the
+block cap stays `unreadable` with its reason because the surface that holds it cannot be opened
+safely (the popup's second entry selects the assisted mode). The plan's §14 records the measurement,
+the three checks that stand between a positional binding and a value, and two facts about the
+application that any future gesture has to respect: **Escape closes nothing**, and a hover-opened
+popup cannot be dismissed programmatically, so a failed gesture can strand the application until it
+is restarted.
+
+**All three slices are merged into the plan branch** (#4, #5, #6), and the review of the
+batch is answered: two corrections landed — `686d4f4` (the cap and the first gate refuse for
+their own reasons, not because the planner refuses those windows) and `0ba86ec` (the
+choice-over-read-out invariant, with the guard that shows it bites) — and the one policy
+change the review asked for is W4's: a campaign must refuse when a fact with a *supported*
+read path could not be read, keeping "supported but this attempt failed" distinct from
+"genuinely unsupported" (the cap stays unproven).
+
 
 Binding outcomes:
 
