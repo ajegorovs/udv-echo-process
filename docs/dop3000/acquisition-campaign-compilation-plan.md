@@ -1811,6 +1811,31 @@ same read that refused. This is the third instance of one failure class: the cha
 enable flag with an inert value (§18.3), and now the depth window — each a way a stored file could claim a
 configuration the instrument was not in.
 
+### 18.11 The gate follows a hand-made volume change too — and it is not a function of the volume
+
+The operator's own view was that `First gate depth` never moves when another knob does, and this check existed
+to falsify that rather than assume either way. Measured with the volume changed **by hand** in the dialog
+(`0.876 -> 1.752`, Accept) and nothing else touched:
+
+| | volume | first gate |
+|---|---|---|
+| before | `0.876` | `2` |
+| after | `1.752` | `1` |
+
+Two controls changed in the entire dialog: those two. So the derivation is a property of the **application**,
+not of this repo's write path, and the screen impression was wrong — the value does move on a hand-made change.
+(The earlier hand test that showed nothing probably never committed; worth one clean repeat before drawing a
+lesson from a manual sequence.)
+
+The same experiment exposed something more useful: **the resulting gate is not a function of the volume.**
+Written programmatically earlier, `1.752` produced gate `5` (arriving from `1.168`/gate `7`); changed by hand
+from `0.876`/gate `2`, the same `1.752` produced gate `1`. Same volume, two outcomes — the derivation depends
+on the state it starts from, not on the requested value.
+
+So the window cannot be predicted: a writer must **read it back**, and a point that touches the volume must
+either co-set `First gate depth` explicitly or record what the instrument chose — never what the definition
+expected. This is the strongest case yet for §19.1's rule that no write is believed.
+
 ## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
 
 The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
