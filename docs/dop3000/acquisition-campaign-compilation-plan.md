@@ -130,6 +130,48 @@ Checkable, and each becomes a test:
 Each item states what changes, where, and what makes it done. Ordered so that the
 independent reconnaissance (W1) never blocks the model work (W2–W4).
 
+### The order, which is load-bearing
+
+The steps are not commutative, and the plan has to say so, because the existing system
+already *selects* a channel rather than merely reading one: `ensure_channel`
+(`driver.py:2136`) opens `Operating parameters`, reads the channel, **writes the selection
+if it differs**, accepts the dialog and reads it back from the re-opened one. The driver's
+own contract says it is called before every point (`driver.py:2139`); the runner deliberately
+calls it **once per run** instead (`_verify_channel_once`, `runner.py:323`), because nothing
+inside a run changes the channel and re-opening the same modal once per point proved nothing
+new. That once-per-run call is exactly where the snapshot belongs: after the routing, before
+the first recording, and beside it in the record.
+
+So the supported behaviour when a campaign targets channel 1 and the UI sits on channel 4
+is to **select channel 1**, not to refuse. Establishing the target channel is a *routing*
+action, not a silent change of a scientific setting: it is not the same thing as moving PRF
+or sound speed, and the plan must not conflate them.
+
+```
+1.  load the definition            what the experiment wants
+2.  static plan                    plan_campaign() — pure, touches no instrument
+3.  establish the target channel    routing: ensure_channel() — writes only if it differs
+4.  snapshot                       read that channel's fixed state (W2)
+5.  compile                        reconcile definition against snapshot, or refuse (W3)
+6.  validate the resume identity   against the previous manifest and log (W4)
+7.  determine todo / skipped       only after 1–6 have agreed
+8.  per point                      the existing cycle, unchanged
+```
+
+Steps 3 and 4 are separate on purpose. One combined "read the instrument" step would either
+snapshot whichever channel happened to be open — and an assisted channel is a different
+parameter surface entirely — or leave the plan unable to say whether the channel was *read*
+or *changed*.
+
+The repository already works this way one layer up: `live.select_channel()` (`live.py:69`)
+returns `(verified, actuator.screen_fingerprint())` — the routing action and the read,
+paired in that order, today.
+
+The consequence for W2 is a wording that matters: `instrument_snapshot()` is read-only with
+respect to the **configuration** — it writes no parameter, accepts no dialog, selects no
+channel — but it runs *after* a step that did select one. The record must show both, and a
+channel write at step 3 belongs in the run log beside the snapshot that followed it.
+
 ### W1 — Read the instrument's remaining fixed facts (reconnaissance, independent)
 
 **What.** Establish where a running UDOP shows the sound speed, the first gate and the
@@ -237,15 +279,17 @@ campaign (refuse), an unreadable fact (marked declared, proceed), and the happy 
 
 ### W4 — Wire the snapshot into the campaign run, the manifest and the resume
 
-**What.** `run_campaign` (`campaign.py:640`) takes the snapshot once per run — before the
-first recording, next to where the channel is verified — compiles, and carries the result:
-`JobManifest` gains the snapshot and a compiled fingerprint; `resume` compares *both*
-fingerprints, so a job resumed against a different instrument or a different fixed
-configuration says so instead of quietly continuing (the review's Phase 8 first half). A
-`--plan-only` dry run prints the compiled plan, the reconciliation result and the refusals
-with nothing recorded, which is also how the live acceptance sequence is rehearsed.
-`--no-snapshot` exists for the operator who must run without a snapshot; the manifest and
-every record from such a run are marked `declared only`.
+**What.** `run_campaign` (`campaign.py:640`) implements §4's order literally: the snapshot
+is taken once per run, immediately after `_verify_channel_once` (`runner.py:323`) and before
+the first recording; the compile follows; the resume identity is validated **before** the
+todo/skipped set is computed; and only then does the first point run. It carries the result:
+`JobManifest` gains the snapshot and the compiled identity; `resume` compares both, so a job
+resumed against a different instrument or a different fixed configuration says so instead of
+quietly continuing (the review's Phase 8, first half). A dry run prints the compiled plan,
+the reconciliation result and the refusals with nothing recorded, which is also how the live
+acceptance sequence is rehearsed. `--no-snapshot` exists for the operator who must run
+without a snapshot; the manifest and every record from such a run are marked `declared
+only`.
 
 **Where.** `campaign.py` (`run_campaign`, `JobManifest`, `ManifestPoint`,
 `campaign_fingerprint` usage), `cli.py`'s `acquire_main` (`cli.py:422`) for the flags and
