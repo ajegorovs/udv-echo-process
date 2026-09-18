@@ -87,9 +87,21 @@ to stderr, so stdout stays parseable — and the exit codes are 0 ok, 1 a refuse
 
 ### What is still a probe
 
-`probes/` holds only what measures something no command covers. Today that is one file:
-`move_window.py move|restore` relocates the application window (un-maximising first) so the
-geometry assumptions can be tested, and puts it back.
+`probes/` holds what measures something no command covers. Today that is six files:
+
+| probe | what it measures | writes to the app? |
+|---|---|---|
+| `move_window.py move\|restore` | relocates the application window (un-maximising first) so the geometry assumptions can be tested, then puts it back | moves the window |
+| `main_geometry.py` | the main window's own geometry, whole control tree, and where the strip sits — presses **nothing** | no |
+| `w1_fixed_facts.py` | where the dialog-only fixed facts (sound speed, first gate, burst length) and the block cap are stated on the live application | opens/closes the dialog |
+| `dialog_fields.py` | every control of the `Operating parameters` dialog — the fast read-only half of the identification pass | opens/closes the dialog |
+| `dialog_shot.py` | **the capture half**: one whole-screen frame plus the dialog's own rect cropped from that same frame, lossless PNG, with `image_stats`/`non_blank` and a two-frame stability check | opens/closes the dialog |
+| `dialog_write.py` | writes **one** `Operating parameters` knob, commits it at `Accept`, and reads the round trip back (incl. the below-floor volume refusal modes) | writes one knob |
+
+`dialog_shot.py` is the one to reach for whenever a caption or a value has to be *read* —
+these widgets carry no window text and their labels are paint, so `tools/ui/README.md` (the
+magnify/glyph step) is its companion. Its output lands in `outputs/live/dialog.png` (the
+dialog) and `dialog-full.png` (the frame it was cut from).
 
 Anything that becomes a *capability* belongs in the package, where a fake can drive it. That is
 the rule the ported scripts broke: they worked on the instrument and could not be tested, so

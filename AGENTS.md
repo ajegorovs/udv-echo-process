@@ -59,7 +59,11 @@ in the Wolfram folder" as the roadmap.
 - Runtime deps: numpy, matplotlib, plotly, pydantic. The optional `marimo`
   extra installs `marimo[recommended]>=0.24.0,<0.25` plus
   `marimo-inspect` from git tag `v0.3.0`; enable it only for live notebook/MCP
-  work. Dev extra: pytest. (Marimo plan Phase 1 landed 2026-09-07 — see
+  work. The optional `acquire` extra carries the instrument path: `pywin32`
+  (Windows-only, behind a `sys_platform` marker) and `pillow` (cross-platform —
+  the capture probes and the `tools/ui/` crop tooling both need it, and the crop
+  tooling has to stay installable on a host that can only read committed PNGs).
+  Dev extra: pytest. (Marimo plan Phase 1 landed 2026-09-07 — see
   `docs/marimo-integration-plan.md`.)
 
 ## Common commands
@@ -76,6 +80,10 @@ in the Wolfram folder" as the roadmap.
 | Format (src/tests) | `uv run --extra dev ruff format src tests` |
 | Validate notebooks | `uv run marimo check notebooks` |
 | One-off parse+plot | `uv run python -c "from udv_echo_process import extract, plot_all; plot_all(extract('data/echo/650.ADD'))"` |
+| Check the UI crop index | `uv run --extra acquire python tools/ui/crop_index.py` |
+| Magnify a crop / its glyphs | `uv run --extra acquire python tools/ui/magnify.py composite\|glyphs …` |
+| Drive the instrument (Windows, session 1) | `./tools/live/dispatch.sh -m udv_echo_process.cli acquire status` |
+| Dispatch a one-off probe | `PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh <bare-probe-name>.py` |
 
 Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
 `UV_CACHE_DIR=/tmp/uv-cache` and `MPLCONFIGDIR=/tmp/mpl`.
@@ -129,6 +137,55 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   has no real fixture and is exercised on synthetic topology only.
 - **Ported features**: one module per ported Wolfram feature under
   `udv_echo_process/analysis/`; record it in `references/wolfram/README.md`.
+
+## Driving the instrument (do not re-derive these)
+
+Six facts every session otherwise rediscovers the hard way. The measurements behind them
+— and the pitfalls beside them — are in `.agents/skills/udop-acquisition/`; this list is
+the short form that has to survive a session that reads nothing else.
+
+- **The menu bar opens on a real cursor *hover*; the entry then takes a posted *held*
+  press** (`WM_LBUTTONDOWN`, ~180 ms, `WM_LBUTTONUP`, client coordinates) on its own
+  handle. A posted move, a posted hover and an instant down/up all open nothing.
+- **Every caption is paint.** `WM_GETTEXT` returns `""` for nearly all of these widgets,
+  and `GetWindowText` returns `""` for *everything* owned by another process — so an empty
+  read taken with it is evidence of nothing. To read a label: screenshot, then magnify.
+- **Read digits at x5-x6 with a glyph-level comparison** before believing them; a
+  full-frame capture is downscaled before any reader sees it and `600` reads as `500`.
+  `tools/ui/magnify.py` (magnify the committed crops) is the tool; the crops are the oracle.
+- **A write commits at the dialog's `Accept`** (`row[-1]`); `Cancel` (`row[-2]`)
+  *discards*, so a write "verified" against Cancel proves nothing about what was kept.
+  Read the field back from a **reopened** dialog.
+- **Combos are selected by value text, never by counting steps** (one step up from `4`
+  landed on `6`), and `CB_GETCURSEL` goes stale after a programmatic select — the text is
+  the authority.
+- **The application clips the cursor while its popups are open** (`ClipCursor`), and a
+  clipped `SetCursorPos` is clamped *silently*: read the clip, release it with
+  `ClipCursor(NULL)` when the target lies outside, and name the clip rather than blaming a
+  locked desktop.
+
+Anything that touches the screen must run in the **interactive session** (the agent shell
+is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, log in
+`outputs/live/task-<probe>.log`. See `tools/live/README.md`.
+
+## Vision and the inspection crops
+
+- **45 UI crops are committed** under `docs/dop3000/ui-crops/`, indexed row per crop in
+  `docs/dop3000/ui-element-index.md` (id, file, size, surface, state, what it shows). They
+  are the only oracle for this application's painted captions — the control tree carries no
+  text for the button classes — and they are the first thing to read when a control or a
+  caption has to be identified. **Cite the crop id** (`UI-MENU-05`, `UI-OVERLAY-22`) when a
+  caption is quoted, so the quote stays checkable.
+- **`uv run --extra acquire python tools/ui/crop_index.py`** verifies that the index
+  describes the files it claims to (existence, real pixel size, unique and gapless ids,
+  row count against the prose). Run it in any change that adds, renames or withdraws a
+  crop; `tools/ui/magnify.py` is the composite/glyph tool. See `tools/ui/README.md`.
+- **Taking new crops needs Windows and the instrument's desktop** — `tools/live/probes/
+  dialog_shot.py` (whole screen + the dialog's rect from the *same* frame, with the
+  non-blank/stability guards) through `dispatch.sh`. A clone on Linux, or any machine
+  without the desktop, can read, magnify, check and quote the set but cannot extend it.
+  That boundary is the reason the crops are committed at all; it is written out in
+  [`docs/dev-handoff.md`](docs/dev-handoff.md).
 
 ## Marimo (live notebooks + agent inspection)
 
@@ -225,6 +282,16 @@ src/udv_echo_process/
 │
 ├── io/                              — readers; io/dop/bdd.py returns an ArtifactBundle
 │
+├── acquire/                         — the third pipeline: make the instrument record.
+│   ├── actuator.py                  — the Actuator protocol + the dialog/binding tables
+│   │                                  (DIALOG_FIELD_ORDER, DIALOG_ANCHORS, the roles)
+│   ├── driver.py                    — the Windows half (pywin32; lazily imported)
+│   ├── plan.py  config.py           — the sweep math and its value objects (pure)
+│   ├── campaign.py runner.py        — points, permutations, resume, per-point cycle
+│   ├── verify.py                    — requested vs GUI read-back vs the decoded words
+│   ├── snapshot.py  log.py  live.py — instrument reading, JSONL log, live commands
+│   └── __init__.py                  — the public surface; import-safe off Windows
+│
 ├── parser.py                        — `.ADD` parser (unchanged by the rework)
 │   ├── MeasType (enum)              — ECHO | VELOCITY
 │   ├── ChannelFrame (Pydantic)      — one measurement: channel, block, tbd_ms,
@@ -248,25 +315,44 @@ src/udv_echo_process/
 │                                      RpmResult (Pydantic), mean_sample_interval_s
 │
 ├── run_all.py                       — batch RPM extraction + viz per file
-└── cli.py                           — udv-inspect / udv-viz / udv-run-all
+└── cli.py                           — udv-inspect / udv-viz / udv-run-all / udv-acquire
 
 tests/                               — pytest suite (models, transforms, provenance,
-                                       storage, parser, analysis, surface)
+                                       storage, parser, analysis, acquire, surface)
+tests/data/*.json                    — committed tree fixtures; each names the probe it
+                                       came from, so a measured screen is re-checkable
 references/wolfram/                  — original Wolfram notebooks + porting map
 data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
+examples/                            — a working campaign definition
+                                       (examples/campaign-single-channel.json)
+tools/live/                          — the interactive-session route for anything that must
+                                       touch the screen: dispatch.sh, task_run.py, probes/
+                                       (Windows-only; its README is the entry point)
+tools/ui/                            — the inspection crops: crop_index.py (the checker —
+                                       index vs the 45 committed PNGs), magnify.py
+                                       (composite + glyph bitmaps), README
 docs/                                — agenda, the landed rework plan, hardening plan,
-                                       integration plan/log
+                                       integration plan/log, dev-handoff.md (read this
+                                       first on a machine that cannot reach the instrument)
 ```
 
-Two pipelines coexist by design: the `.ADD` path (`parser.py` → `viz.py`/`run_all.py`/
-`cli.py`/`analysis/rpm.py`) keeps its own entry points, and the `.BDD` path produces
-the artifact model above. Echo RPM now exists on **both** (`rpm_from_echo` /
+**Three pipelines coexist by design.** The `.ADD` path (`parser.py` → `viz.py`/`run_all.py`/
+`cli.py`/`analysis/rpm.py`) keeps its own entry points; the `.BDD` path produces
+the artifact model above; and the acquisition path (`acquire/` + `tools/live/` +
+`tools/ui/`) drives the instrument and hands its stored files to the `.BDD` reader.
+Echo RPM now exists on **both** readable paths (`rpm_from_echo` /
 `rpm_from_channel`, one shared private kernel, numerically identical on the paired
 fixtures) but there is still **no `.ADD` → bundle adapter** — `udv-run-all` stays on
 the `.ADD` path because it also writes legacy heatmaps/profiles with no artifact-model
 counterpart. `ChannelSeries`/`MultiplexedMeasurement` (and the legacy mutable `Model`
 base) were **removed** in Phase 9 — do not reintroduce them or an adapter that
 masquerades as the new domain model.
+
+Only the acquisition pipeline is platform-bound: `acquire/driver.py` is the single module
+allowed to touch `pywin32`, it imports it lazily, and `acquire/__init__.py` stays
+import-safe everywhere — so the whole package (and every command, against the fakes) is
+testable on Linux. `docs/dev-handoff.md` is the entry point for a machine that cannot reach
+the instrument.
 
 The optical/camera modules (`analysis/{mixer,feature_track,image_projection,
 temporal_projection}.py`) and the `udv-project`/`udv-mixvel` CLIs were
@@ -380,11 +466,23 @@ Repo-local skills live in `.agents/skills/` — the cross-client Agent Skills la
 the project's *procedures*, not only its source. Update the copy here whenever a lesson is learned
 in this repository; the whole point is that it travels.
 
-- `windows-gui-automation/` — driving the DOP/UDOP acquisition application through the Win32
-  message layer: reconnaissance and role binding, the record/stop/store cycle, per-channel mode,
-  artefact decoding, the sweep and campaign workflow, and the staged bring-up for a machine that
-  is not the one the measurements were taken on. Read it before changing `tools/live/` or
-  `src/udv_echo_process/acquire/`.
+- `udop-acquisition/` — driving the DOP/UDOP acquisition application through the Win32
+  message layer: reconnaissance and role binding, the record/stop/store cycle, per-channel
+  mode, artefact decoding, the sweep and campaign workflow, the crops/vision route, and the
+  staged bring-up for a machine that is not the one the measurements were taken on. Read it
+  before changing `tools/live/`, `tools/ui/` or `src/udv_echo_process/acquire/`, and before
+  investigating anything the application's own UI has to answer.
+
+**One copy, and it lives here.** This skill is the authoritative one: it travels with a
+clone, and it is where a lesson about *this instrument* belongs. The generic cross-project
+craft is the Hermes skill `windows-gui-automation`, which lives outside the repository and
+is maintained by the agent itself; a lesson about GUI automation in general belongs there.
+The two must not be allowed to fork — and the hazard is directional, because a project-local
+skill **shadows** a profile-global skill of the same name (first-wins name deduplication),
+so a repo copy that falls behind silently *hides* the newer global one for every session
+inside this repository. That is exactly what happened while both were named
+`windows-gui-automation`: two forks, 284 lines of newer material unreachable from here.
+Rename rather than re-introduce a colliding name.
 
 Most agentic harnesses load `.agents/skills/` on their own when the working directory is in the
 repository. **Hermes Agent needs the project trusted once per machine**, from the repository root:
