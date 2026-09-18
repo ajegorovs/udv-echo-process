@@ -291,9 +291,9 @@ the first recording; the compile follows; the resume identity is validated **bef
 todo/skipped set is computed; and only then does the first point run. It carries the result:
 `JobManifest` gains the snapshot and the compiled identity; `resume` compares both, so a job
 resumed against a different instrument or a different fixed configuration says so instead of
-quietly continuing (the review's Phase 8, first half). A dry run prints the compiled plan,
-the reconciliation result and the refusals with nothing recorded, which is also how the live
-acceptance sequence is rehearsed. `--no-snapshot` exists for the operator who must run
+quietly continuing (the review's Phase 8, first half). A **new `compile` verb** prints the
+compiled plan, the reconciliation result and the refusals with nothing recorded, which is
+also how the live acceptance sequence is rehearsed. `--no-snapshot` exists for the operator who must run
 without a snapshot; the manifest and every record from such a run are marked `declared
 only`.
 
@@ -321,12 +321,26 @@ This follows the repository's existing direction rather than inventing a new one
 that a point "whose identity is in doubt" is **re-run rather than skipped**. Phase 6 applies
 the same principle one level up, to the job.
 
+**Naming — three verbs, three meanings.** `acquire plan` already exists, and its help says
+"touches no instrument" (`cli.py:506`); so `--plan-only` on `campaign` would name a live
+operation after an offline one. The distinction the CLI already implies is worth keeping
+explicit:
+
+```
+acquire plan       definition → points                 touches no instrument
+acquire compile    + live snapshot → reconciliation    touches it, records nothing
+acquire campaign   compile, then acquire               the run
+```
+
+`compile` is therefore the new verb, and `campaign` is `compile` + acquisition. Its help
+string joins `plan` and `report` in saying which side of the instrument boundary it is on.
+
 **Where.** `campaign.py` (`run_campaign`, `JobManifest`, `ManifestPoint`,
 `campaign_fingerprint` usage), `cli.py`'s `acquire_main` (`cli.py:422`) for the flags and
-the dry-run verb, and `docs/dop3000/live-bringup.md` for the operator-facing sequence.
+the `compile` verb, and `docs/dop3000/live-bringup.md` for the operator-facing sequence.
 
-**Done when.** A dry run against a deliberately-wrong instrument refuses with the named
-fact and the store directory still empty; a real run writes the snapshot into the
+**Done when.** `acquire compile` against a deliberately-wrong instrument refuses with the
+named fact and the store directory still empty; a real run writes the snapshot into the
 manifest; a resume against a changed snapshot reports the difference; and the end-to-end
 campaign tests pass with the fake's snapshot in place.
 
@@ -435,7 +449,7 @@ single number. This is also what makes Phase 7's certificate possible.
   different instrument, and it is the reason the two models exist.
 - **A deliberately negative hardware case** (criterion 1, the central promise, proved on the
   real application rather than only in fakes): set one fixed parameter deliberately wrong by
-  hand, run `compile` (or the dry run), and verify that the campaign **refuses, names the
+  hand, run `acquire compile`, and verify that the campaign **refuses, names the
   fact, starts no recording and leaves no file** in the store directory; then restore the
   parameter and verify the same compile succeeds. This belongs in the acceptance sequence
   below, not only in the unit suite.
@@ -456,7 +470,7 @@ single number. This is also what makes Phase 7's certificate possible.
 | P1 | W2 — snapshot model, port method, fake stub, docstrings | — | yes (no behaviour change) |
 | P2 | W1 — reconnaissance, `ParamRole` extension, fixtures | the live machine | yes |
 | P3 | W3 — `compile_campaign` + refusals + policy, no run-path change | P1 | yes |
-| P4 | W4 — wire into `run_campaign`, manifest, resume, `--plan-only` | P1, P3 | yes |
+| P4 | W4 — wire into `run_campaign`, manifest, resume, the `compile` verb | P1, P3 | yes |
 | P5 | W5 + W6 — cap provenance, period-law source | P1 | yes |
 
 P1 and P3 change no recording path, so they can land and be reviewed before anything
