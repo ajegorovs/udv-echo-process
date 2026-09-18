@@ -1118,6 +1118,98 @@ def test_a_w4_identity_loads_and_the_resume_refuses_by_name(
     assert any("declaration" in note for note in notes), notes
 
 
+# ------------------- and the same rule for the identity's own UI half, which will grow
+
+
+def identity_ui_fields() -> tuple[str, ...]:
+    """The identity's **non-fact** fields: the layout/UI half a newer manifest may not carry.
+
+    Derived from the model rather than listed, so a field a later UI refactor adds to
+    ``CompilationIdentity`` — a surface kind, a strip kind, whatever the model grows — is covered
+    by the case below the day it is added. That is the whole point of the pin: the failure it
+    describes is *invisible* in the models and only appears when an older file is read.
+    """
+    return tuple(
+        sorted(
+            set(campaign.CompilationIdentity.model_fields)
+            - set(campaign._IDENTITY_FACT_FIELDS)
+        )
+    )
+
+
+def strip_identity_ui_fields(path: Path) -> list[str]:
+    """Remove the identity's non-fact fields from the manifest at ``path``; return their names.
+
+    What a manifest written before those fields existed looks like: a ``compilation_identity``
+    that is complete and valid *for the version that wrote it*, with fields simply absent.
+    """
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    taken: list[str] = []
+    for field in identity_ui_fields():
+        if field in payload["compilation_identity"]:
+            del payload["compilation_identity"][field]
+            taken.append(field)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return taken
+
+
+# legacy manifest: the §24.5 D2 precedent, applied to the identity's own UI half.
+@pytest.mark.xfail(
+    strict=True,
+    reason="the identity's layout fields are still required at parse time, so a manifest written "
+    "before them is reported as `not a job manifest` rather than refused by name — PATCH-2 makes "
+    "them optional at parse time and refuses them at the comparison (the process_mode precedent)",
+)
+def test_a_manifest_written_before_the_identitys_ui_fields_refuses_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A legacy manifest is a **named refusal** — never a parse error, never a silent skip.
+
+    Every field the identity gained after a manifest was written is, to that manifest, simply
+    absent — and the resume comparison is where "absent" has to be expressible. A required field
+    makes ``read_manifest`` report a valid older manifest as *"not a job manifest"*, which is a
+    misdiagnosis of the file rather than a statement about the evidence, and it lands on exactly
+    the person least able to tell the two apart. The model already carries the rule for one field
+    (§24.5 D2, ``process_mode``: optional at parse time, refused by name at the comparison, with
+    ``--resume-declaration-only`` the documented way past it) — this case pins it for the
+    identity's **UI half**, which is the half the upcoming refactor is about. The other failure
+    mode is asserted against the same way: a field tolerated at parse time and then ignored would
+    leave points skipped on evidence the previous job never carried, so the refusal has to name
+    every field it could not compare, and the skips have to be marked as unproven.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    first = run_job(job)
+    assert first.compilation_identity is not None
+    manifest_path = campaign.manifest_path_for(job.log_path)
+
+    dropped = strip_identity_ui_fields(manifest_path)
+    assert dropped, "the identity carries no UI/layout field for this case to remove"
+
+    # (a) It still reads: an older manifest is not a malformed one.
+    loaded = campaign.read_manifest(manifest_path)
+    assert loaded.compilation_identity is not None
+
+    # (b) The resume refuses *by name*, field by field, and not as a parse failure.
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+
+    message = str(excinfo.value)
+    assert "not a job manifest" not in message, message
+    for field in dropped:
+        assert field in message, message
+    assert "resume-declaration-only" in message, message
+
+    # (c) ...and the documented escape still exists, marking the skips as unproven.
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, resume_declaration_only=True, notes=notes)
+
+    assert resumed.skipped == ("c1-k1", "c1-k2")
+    assert resumed.skipped_without_evidence == ("c1-k1", "c1-k2")
+    assert resumed.outcomes == ()
+    assert any("declaration" in note for note in notes), notes
+    assert len(stored_names(job.directory)) == 2  # nothing was run again
+
+
 def test_the_manifest_carries_both_halves_of_the_process_mode(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
