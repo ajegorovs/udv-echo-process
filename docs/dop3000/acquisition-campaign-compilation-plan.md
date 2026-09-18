@@ -1040,7 +1040,20 @@ verified once before the first point — and the next thing needed is a **batch 
 several configurations acquired in one pass. That is not a refinement of the milestone; it is the next
 capability. It is written down here so that reopening is a decision with a reason rather than drift.
 
-**Out of scope on purpose.** How the batch is *produced* — a matrix, a design of experiments, a generator —
+**This slice has its own planning document, and it is not this one.** The batch's *design* — which
+parameters are worth sweeping, which are tied to each other, and which must never be swept — is
+[`parameter-sweep-matrix.md`](parameter-sweep-matrix.md), which is planning only ("no code change yet": its
+status line). §17 is the code side of that document and nothing more. Two of its conclusions are already
+load-bearing here:
+
+- **burst is sweep axis 2** (2 / 4 / 8 / 16 / 32 cycles, observable "first valid gate", tied to PRF through
+  `τ_burst = N/f_e ≪ T_prf` and paired with sampling volume through the acoustic-resolution rule) — so burst
+  is the knob this slice gives a writer;
+- **sound speed is in group S, the frozen scales** (with Doppler angle and velocity scale factor): "pure
+  multipliers on the recorded mm and mm/s — sweeping a multiplier measures the multiplier, not the flow".
+  So it is *never* swept, and the writer this slice builds must not be pointed at it.
+
+**Out of scope on purpose.** How the batch is *produced* — the matrix, a design of experiments, a generator —
 is another matter and stays out. This slice is about *launching* a batch the operator has already written
 down, and it does not touch the acquisition recipe itself. It also comes **before** §16.4's experiment,
 because that experiment cannot be expressed yet: see 17.1.
