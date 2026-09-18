@@ -252,6 +252,18 @@ read path could not be read, keeping "supported but this attempt failed" distinc
 
 Binding outcomes:
 
+- **The acquisition stop condition** (from the review of the batch, now recorded in the plan's
+  §9.1 and binding): once a campaign routes the target channel, snapshots the fixed settings, and
+  refuses a deliberate mismatch *before* recording — and the existing six-point campaign still runs
+  **unchanged** through the compiled path — the acquisition architecture **stops growing** and the
+  work moves to a real parameter-sensitivity experiment. After that it re-opens only on evidence (a
+  real campaign failed, produced ambiguous evidence, or a downstream analysis cannot establish an
+  essential acquisition condition), never because another abstraction looks improvable. The one
+  policy change the review asked for while getting there is §9.2: a fact with a *supported* read
+  path that failed to read **refuses** a normal campaign, keeping "supported but this attempt
+  failed" distinct from "genuinely unsupported" (the block cap stays unproven). §9.3 records what
+  recovery is allowed from a stranded popup: operator restart while commissioning, abort plus
+  "state unverified" for an unattended campaign — no automatic recovery, no speculative press.
 - **First slice — acquisition correctness baseline** (no Win32 reorganization):
   the channel now reaches `verify_stored_point` (it verified channel 1 while the
   decode read the run's channel) with a channel-2 regression case; verification is

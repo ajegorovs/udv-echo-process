@@ -552,6 +552,51 @@ its tests are the ones that must show the recipe is untouched (criterion 5).
 - Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
   under `tools/live/probes/`.
 
+### 9.1 The stop condition — binding, from the review of the batch
+
+Once a campaign can route the target channel, snapshot enough fixed settings, refuse a deliberate
+mismatch before recording, and then run the existing six-point campaign **unchanged**, *stop
+expanding the acquisition architecture* and use it for a real parameter-sensitivity experiment.
+This is W4's exit criterion, adopted verbatim from the review.
+
+After that point the acquisition architecture is re-opened by **evidence**, not by an abstraction
+that could be improved: a real campaign failed; a real campaign produced ambiguous evidence; or a
+downstream analysis cannot establish an essential acquisition condition.
+
+### 9.2 Read paths, once a fact has one — W4's one policy change
+
+Reconnaissance (W1, §14) gave the burst length, the sound speed and the first gate a supported read
+path, which splits what `unreadable` can mean:
+
+| state | consequence in a normal campaign |
+|---|---|
+| read, and it agrees with the declaration | proceed |
+| read, and it disagrees | refuse, per the fact's own acceptance (§13) |
+| **a supported read path exists, and this attempt failed** | **refuse before recording** |
+| genuinely unsupported (the block cap) | carry as declared, marked unproven |
+
+Before W1 the third row did not exist: "this driver cannot establish the fact" and "this attempt
+failed" were the same statement, so a campaign could proceed on a fact nobody had read. They are now
+different claims about the instrument and they get different consequences — demoting a supported
+read back to `declared` would mean knowingly proceeding when the check that exists was not
+performed. The inventory of which facts have a supported read path is declared where the readers
+live; the refusal is the campaign's.
+
+### 9.3 A stranded popup — what recovery is allowed
+
+Measured (W1, §14): Escape closes nothing in this application, a cursor move does not dismiss a
+hover-opened popup, and a posted `WM_CANCELMODE` does not either; the only clean exit is a press.
+
+- **Commissioning and testing** (the live acceptance sequence below): abort the test, **never press
+  an unknown popup entry** (the second entry selects the assisted mode), restart the application,
+  verify the configuration, restart the sequence. Documented operator recovery, not a program.
+- **An unattended campaign**: abort the campaign, mark the application state unverified, require the
+  operator. No automatic restart, no speculative menu press, no silent continuation.
+
+Both rest on the principle the rest of this plan already follows: do not invent a Win32 gesture the
+live application has not demonstrated. If a stranded popup becomes a recurring operational problem,
+*that* is the evidence a recovery primitive would be budgeted against.
+
 ## 10. Review round 1 — what changed in this document
 
 The plan was reviewed before any implementation. The direction was approved — including all
