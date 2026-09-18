@@ -2929,3 +2929,79 @@ written as a discrepancy rather than reconciled (23.3), and the stop-reconnaissa
 reordered items 3–6 now enact — §23 is the last measurement section, and the next thing that touches the
 application is §24's own verification, then the experiment.
 
+## 26. The slice as built, and the three corrections its fixtures produced
+
+§24 is implemented on a branch — `feat/acquire-stated-process-mode-layout-shape`, one commit, 17 files,
++1838/−129, `master` untouched. Independently re-run here: `ruff check src tests` clean, `python -m pytest -q
+tests/` **1737 passed, 22 skipped** against a 1701/22 baseline (all 36 new cases are the §24.6 table plus the
+call sites the widened signatures moved). **Nothing live-verified yet** — §24.7 needs the application, and the
+slice adds nothing that presses a control. The code is written so that even a *regression* cannot press:
+`tests/test_acquire_layout_gate.py` overrides every input primitive, and `_click_hold` raises
+`AssertionError` if the gate ever lets one through.
+
+Five deviations from the plan's letter are worth a reader's attention; the rest are naming and defaults:
+
+1. `_find_overlay(roles)` walks parent handles through `win32gui`, so it cannot live inside a pure function
+   over a resolved tree. The popup and dialog clauses come from the tree's own resolved sets; the overhead
+   clause is added by `layout_refusal(overlay=…)`, where the driver already has that result.
+2. The mode is a clause of the *composition*, not of the shape check, so `layout_shape_reasons` stays
+   mode-independent and an assisted screen can still be classified from its absent column.
+3. The count rides on the reading too (`ScreenFingerprint.layout_evidence`), not only on the refusal note:
+   §24.3 keeps that note `None` whenever the shape passes, and D4 says the count is evidence in the reading,
+   the note *and* the record.
+4. **D6 reaches further than the plan said**: `visible_controls` has to come off the `CompilationIdentity`
+   *model*, not merely out of `_IDENTITY_LAYOUT_FIELDS`, because the digest is the model's canonical dump —
+   leaving the field on the model would still move the digest. Same fix the strip's `button_count` got.
+5. `--expect-mode` is required on `compile` as well as on the recording paths: it records nothing, but
+   §24.7's step 3 is "compile twice, and the declaration that matches the screen exits 0".
+
+**Correction 1 — `43 → 44` is two effects, not the `Tgc [dB]` row alone.** Comparing the two fixtures'
+visible controls as `(cls, text, rect)` multisets (44 and 43, unique in both) shows the instrument read
+*both* gains and loses a control in the same breath:
+
+```text
+gained   TSp_Value_Button  [ 10,325,105,349]      the painted Tgc row's own control
+gained   TSp_Edit  '20'    [ 14,329, 54,345]      its value cell
+lost     TSp_Button        [696, 28,766, 53]      a menubar-band button, present in simulation
+narrowed TSp_Button        [606, 28,686, 53] -> [606, 28,676, 53]   (10 px)
+```
+
+Net `+1`, so §23.1's totals stand and its account of the delta is incomplete. The five parameter cells and
+the five strip buttons that also differ do **not** count as visibility changes: the cells changed *values*
+(`212→600`, `797→50`, `0.122→1.850`, `0.68→1.00`, `150→20`) and every strip button moved with its panel
+(`[448,477,800,517] → [343,414,695,454]`), which §23.1 already records. The caveat that bounds the menubar
+finding is the one the whole comparison carries: the simulation fixture came from a *different process*
+(hwnd `594454`, after a dialog had been opened and cancelled with a column field still selected), so the
+missing menubar button may be session state rather than mode. **New open question, and it is not cosmetic:**
+does any flow press a menubar button? If one does, this needs an answer before the six-point run, because a
+press bound to a menubar position that a mode does not paint is the failure class §21.3 exists to prevent.
+It is a two-second look for the operator — the same menu bar, both modes.
+
+**Correction 2 — the caption is recorded, at `main_window.caption`.** The reads carry no `window` key at
+all, so a `window.caption` lookup returns `None` and makes the read look caption-less. All four reads on
+disk carry it: `UDOP DOP3010.43` for the three real-mode ones, `UDOP Simul` for `sim-baseline`. The mode was
+never unrecorded; the key path was.
+
+**Correction 3 — `main_geometry.py` does not record the parameter column's *roles*.** The simulation fixture
+resolves seven role names because the W1 probe stores `roles['params']`; `main_geometry.py` stores
+`roles['param_rows']` with `role=None`, so the new fixture's `param_column` carries nulls where the
+simulation one carries names. The pair is comparable by key but not by role in that one field — and roles are
+exactly what the manual shape clause checks, which is why §24's tests synthesise their trees inline rather
+than reading this fixture. Follow-up (small, read-only, no press): record the resolved roles as the W1 probe
+does, and regenerate the fixture in the same sitting as §24.7's reads.
+
+**One clarification the implementation forced.** The shape check asserts the parameter column's
+*presence-or-absence*, and asserts no panel count in either shape: `panels` stays in the identity as a fact
+about the screen, and §24.5's D4 is the reason no count is a clause anywhere. §24.3's "four panels" /
+"three panels" therefore describe the two observed layouts rather than gating them — which is also what makes
+43-in-4 and 44-in-4 both acceptable, as the §24.6 row requires.
+
+**§24.9's fixture, delivered.** `tests/data/udop-measurement-screen-tree-instrument.json` is the sanitised
+real-experiment-mode sibling of the simulation fixture: 44 visible controls in 4 panels, strip panel
+`[343,414,695,454]`, `strip_view` `ready`, and a `caption` field (the pair is self-describing about its
+mode). Cross-checked against §23: the strip row's rects, and `PRF 600 / gates 50 / resolution 1.850 /
+velocity scale 1.00 / emissions 20 / angle 0 / Tgc [dB] 20` all agree with 23.1 and 23.3–23.4. §23's
+dialog-only facts (sound speed, TGC curve, first gate, burst) are absent because this is a different
+surface — an expected non-overlap, not a disagreement. Handles, cursor, screen-capture statistics, absolute
+paths and the whole tree are dropped for the same reason the simulation fixture drops them.
+
