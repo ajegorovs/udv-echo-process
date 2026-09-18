@@ -399,6 +399,33 @@ def test_a_column_that_resolves_without_its_roles_fails() -> None:
     assert any("roles" in text for text in reasons), reasons
 
 
+def test_a_rect_less_incomplete_column_refuses_rather_than_raising() -> None:
+    """The gate is **total** over the role maps it is documented to read — even a partial one.
+
+    ``Rect.from_control`` reads a row's rectangle from its ``rect`` **or** from its
+    ``left/top/w/h``, which is the shape a captured or partial role map states, and the one
+    :func:`driver.observation_of`'s projection and ``ui.layout``'s own ``_rect_text`` are written
+    in. The INCOMPLETE clause used to reach into the raw row and index ``column['rect']``, so such
+    a tree raised ``KeyError`` out of a pure shape check instead of returning its refusal.
+
+    Asserted on the clause the gate already builds for this shape: the refusal is the normal one,
+    and it names the geometry the module's own projection reads off the row.
+    """
+    roles = manual_screen(column_roles=3)
+    column = roles["left_panel"]
+    # The row states its geometry as left/top/w/h and carries no rect tuple at all.
+    del column["rect"]
+    assert "rect" not in column
+    assert {"left", "top", "w", "h"} <= set(column)
+
+    reasons = driver.layout_shape_reasons(roles)
+    clause = next(text for text in reasons if "parameter column" in text)
+    assert "neither accepted shape" in clause, clause
+    # (0, 83, 190, 1028) is this row's rect as `Rect.from_control` resolves it from left/top/w/h.
+    assert "(0, 83, 190, 1028)" in clause, clause
+    assert driver.layout_refusal(roles) is not None
+
+
 def test_the_class_and_the_plot_band_are_checked_too() -> None:
     """An unknown window class, and a tree with no plot for the strip's own rule to sit in."""
     other_class = manual_screen()

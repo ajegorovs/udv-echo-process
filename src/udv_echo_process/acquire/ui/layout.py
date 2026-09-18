@@ -242,9 +242,16 @@ def _bottom_of(panel: UiNode) -> int:
     return 0 if panel.rect is None else panel.rect.bottom
 
 
-def _rect_text(panel: UiNode) -> str:
-    """A panel's rect as the refusal clauses render it (the tuple form the driver prints)."""
-    return "None" if panel.rect is None else str(panel.rect.as_tuple())
+def _rect_text(panel: UiNode | None) -> str:
+    """A panel's rect as the refusal clauses render it (the tuple form the driver prints).
+
+    ``UiNode`` is what the clauses hold (the observation's own projection, never the raw row), so
+    this is the one place a rect is turned into text: a projection that carries no rect — or no
+    panel at all — renders as ``"None"``, which is what the clause says about a geometry nobody
+    measured. A row that stated its rectangle as ``left/top/w/h`` renders as the resolved tuple,
+    because that is the rect the projection itself read (``Rect.from_control``).
+    """
+    return "None" if panel is None or panel.rect is None else str(panel.rect.as_tuple())
 
 
 def _client_height(observation: ScreenObservation) -> int:
@@ -626,7 +633,6 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
 
     params = roles.get("params") or {}
     rows = roles.get("param_rows") or []
-    column = roles.get("left_panel")
     panel = observation.parameter_panel
     # The manual shape is the **only** shape this experiment measures on. A column that resolved
     # *without* its roles is the case §24.3 names as neither shape — a binding that would write
@@ -640,7 +646,7 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     if panel is ParameterPanelState.INCOMPLETE:
         reasons.append(
             f"the sidebar parameter column resolved at "
-            f"{None if column is None else column['rect']} with {len(params)} of the "
+            f"{_rect_text(observation.parameter_column)} with {len(params)} of the "
             f"{len(PARAM_COLUMN_ORDER)} roles ({[role.value for role in PARAM_COLUMN_ORDER]}) "
             f"and {len(rows)} row(s): that is neither accepted shape, and a point's writes "
             "would land on the wrong fields"
