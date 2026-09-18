@@ -225,8 +225,14 @@ Its first review approved the direction and returned three changes to the identi
 channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
 out of the identity, and routing as its own source that only the router can claim — all landed,
 one commit each, and §12 of the plan carries them.
-Next is **P3 = W3** (`compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
-refusals), which P1 is the input to.
+[PR #5](https://github.com/ajegorovs/udv-echo-process/pull/5) (draft, based on #4's branch) is
+**slice P3 = W3**: `compile_campaign(definition, snapshot)` — reconcile the definition against the
+reading, or refuse before the first recording, with a per-fact `refuse`/`warn`/`accept` policy
+derived from the stored-file verifier's own table. It is the step the review of #3 asked for by
+name, and it also changes no recording path; the plan's §13 records what it decided.
+Next is **P4 = W4**, the first slice that changes how a campaign behaves: it wires the snapshot and
+the compiled plan into `run_campaign`, the manifest and the resume (criterion 5's recipe test, and
+criterion 6's fail-closed default for a pre-Phase-6 manifest).
 
 Binding outcomes:
 
