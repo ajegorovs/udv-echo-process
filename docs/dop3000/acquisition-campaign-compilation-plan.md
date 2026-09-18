@@ -2039,3 +2039,151 @@ the corpus's numbers being looser than the instrument's: 8.3's "around 3 millime
 the instrument actually offers (20.3). The one *internal* contradiction found is the corpus's own: word 10's
 unit ("ns", p. 70) against the specification tables' µs, and 8.4's `0.64–3.19 mm` against 21/22's
 `0.7–3.9 mm` — the matrix's open items 4 and its C11 note, now with a measurement on the instrument's side.
+
+## 21. The real instrument: same behaviour, different overlay geometry
+
+Two things the operator reports from the measurement box, after §18–§20 were written. Both are
+**operator-reported**: the non-simulation side of both is unmeasured by us (the instrument's box is
+not the box this repository's live tooling runs against), and the one pass this section does carry was
+taken here, in simulation, by the commands in 21.2.
+
+1. **The derivation behaves there as it does in simulation.** Setting the sampling volume moves the
+   dialog's `First gate depth` on the real channel the way §18.10–§18.12 recorded on the simulated one —
+   the same coupling, the same state-dependence, the same stale field until the dialog is reopened. That
+   is the strongest answer available to *is §18 measuring the application or the simulator?*, and it is a
+   report: §18.11's hand-made check was run here, in simulation, and nothing in this repository has ever
+   read a non-simulated instrument.
+2. **The strip has been moved by hand.** The small overlay panel with `[pause] [record] [clear and
+   restart]` — this repository's **strip** (three buttons, no slider, the `READY` view) — sits somewhere
+   else on that machine than it does here. So every absolute screen coordinate derived here is a fact
+   about *this* screen.
+
+### 21.1 The rule the movable strip forces
+
+**An absolute screen coordinate is not a binding.** The strip is a draggable floating panel
+(`docs/dop3000/udop-automation.md` §5 says so, and the operator has now dragged it in a mode we cannot
+see), so any number of the form "the button is at x" is a measurement of one session — and the same
+argument applies to every other surface, because a panel's rect is a property of the *moment it was
+shown* (21.3, item 6). What follows for each surface this repository presses:
+
+| surface | how it must be found | when it is not where the binding expects |
+|---|---|---|
+| the strip and its row | **structurally**: the button panel inside the plot's middle band, its row sorted by `left` and addressed by **index** — `driver._resolve` / `_strip_row` / `press_index`, which is where the code already is | refuse — `_press_strip_button` raises before pressing when no strip panel resolves |
+| the `Parameters` popup | the appearance diff, with `left == 169 and h > 120` **only** as the reference's own first-choice predicate | refuse naming what was seen (`_poll_parameters_overlay` raises rather than pressing into an unnamed panel) |
+| the `Operating parameters` dialog and its table | class + position **inside the panel**: columns from the gaps between value-edit left edges (`_column_bands`, `DIALOG_COLUMN_GAP = 100`), rows from top-to-bottom order, and the shape checked against `DIALOG_COLUMN_ROWS` | refuse: a table of the wrong shape is a check, not a guess |
+| the Store dialog | structurally: the panel owning a `TSp_Browse` and edits; a warning by its bottom button band | refuse (`the Store dialog is not up`) |
+| the main window | by class `TMain_Scr` | refuse: nothing resolves |
+
+The sentence a future run should be held to: **re-measure in the mode you are in, or bind relative to
+the application's own window rect — and when a control is not where the binding expects it, refuse.**
+A plausible wrong press is worse than a refusal, because the parameter column, the strip and the Store
+dialog all *commit* on the press.
+
+### 21.2 What is where — measured 2026-09-18, in simulation mode, by us
+
+**The mode is part of the result.** The instance on the screen during this pass was **`UDOP Simul`** —
+its own caption says so (class `TMain_Scr`, caption `UDOP Simul`, `607_4`, PID 20640, started
+14:36:56). The non-simulation geometry is **not measured here at all**. Four dispatched reads, nothing
+pressed but the topmost popup entry and the dialog's own `Cancel` — never a strip button, and the
+three the ready view holds are exactly the three that must not be pressed:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh main_geometry.py                  # new this record: presses nothing at all
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status --json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_fields.py                  # `Operating parameters` opened through the driver's own gesture
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_shot.py                    # the same two presses, plus the captures
+```
+
+`main_geometry.py` (committed with this record) is the read-only sibling these two needed: they see the
+dialog, and the strip is not in it. Its own JSON is `outputs/live/main-geometry.json`.
+
+| what | where the repository says it is | measured now | verdict |
+|---|---|---|---|
+| main window | class `TMain_Scr` (`MAIN_CLASS`); the clean screen is **43 visible controls in 4 panels** (`EXPECTED_CONTROL_COUNT` / `EXPECTED_PANEL_COUNT`) | `TMain_Scr`, caption `UDOP Simul`, rect `(-8, -8, 1928, 1058)`, client `1920x1027` with client screen-origin `(0, 23)`, `IsZoomed()` **false**, **43** visible controls in **4** panels, `layout_note: None`, no overlay, screen `1920x1080`, 96 dpi | **holds** |
+| the strip panel | `(448, 477) 352x40` (`udop-automation.md` §1) | `[448, 477, 800, 517]` — 352x40, `TSp_Panel` id 4918178, a direct child of the main window | **holds** |
+| the strip's row | `(458,79) (547,85) (642,138)` left→right = `Pause` / `Record` / `Clear and restart` (§5) | `[458,487,537,507]` (79 px), `[547,487,632,507]` (85), `[642,486,780,506]` (138); `button_count: 3`, `has_slider: false`, view `ready`, index meanings `pause / record / clear_and_restart`; the crop shows the three captions | **holds** |
+| the strip in the window's own frame | not stated anywhere | client-relative `[448, 454]` — the screen rect is the client rect plus the client origin `(0, 23)`; the strip's centre is at fraction **0.459** of the plot's height (`TDop_Plot` `[200,65,1910,1006]`), inside the driver's `0.30–0.70` band | new fact |
+| the `Operating parameters` dialog | `(655, 364) 627x384`, 42 controls (§14, §18.9, and the W1 fixture's `HWND_DIALOG`) | `[655, 364, 1282, 748]`, **42** controls; cells identical to §18.9's baseline — burst combo `[783,488,861,509]` = `4`, `(1,1)` first gate `[987,491,1057,507]` = `2`, header combo `[1083,373,1128,394]` = `1`, sound speed `1460`, `Depth = 99 mm`, `Velocity scale = 292.1 mm/s` | **holds** |
+| the dialog's *pixels* | §18.9's baseline crop is `sha256 617e23cf…` | today's dialog crop is **byte-identical** (`sha256 617e23cf29bb2e57ae2e0b48c1f21125b63d87faf7d73fbfb2cfa09dae3a4a8c`) | **holds** |
+| the `Parameters` popup, hidden | pre-created, `IsWindowVisible == False`, `(169, 55, 401, 250)` with its five caption-less entries at screen tops 61/95/130/165/205 (`udop-automation.md` §6; the W1 fixture's `HWND_POPUP` `(169,55,232,195)` and five `HWND_ENTRY_*`) | `TSp_Panel` id 1771552 at `[169, 55, 401, 250]`, hidden, with **five** hidden `TSp_Button` children at `[190,61,365,101]`, `[190,95,348,135]`, `[188,130,336,170]`, `[189,165,344,205]`, `[189,205,345,245]` — the fixture's rects, to the pixel | **holds** |
+| the Store dialog | `(676, 391) 584x330`, its clip `(676,391)-(1260,721)` (`udop-automation.md` §1, §6; `live-bringup.md` §4) | **not measured** — reaching it means pressing `Do store` on the strip | unmeasured |
+| the strip's other views | `98x40` recording, `413x123` store (§5) | **not measured** — both need a strip press | unmeasured |
+| the strip in **non-simulation** mode | nothing asserts it | **not measured, and unknown to us** — the operator says it has been moved there; which rect it now occupies cannot be inferred from anything here | unmeasured |
+
+**Verdict on the simulation layout: no drift.** Every one of the repository's asserted simulation-mode
+coordinates — the strip's rect and its three buttons, the dialog's rect and its 42 controls, the hidden
+popup's rect and its five entries, the main window's counts — was found exactly where the record says,
+and the dialog's pixels match §18.9's baseline byte for byte. That is the finding a comparison against
+the *other* mode wanted to be able to state, and it is worth recording plainly: on this machine, in
+simulation, nothing has moved. The rule in 21.1 is what the *other* mode forces, and it does not depend
+on this one having drifted.
+
+**Two things the capture caught that the numbers cannot.** First, the 14:40:43 frame was taken with the
+application **not** foreground: the strip's rect read `[448,477,800,517]` — geometry is geometry whatever
+is in front — while the pixels at that rect belonged to a console window covering it (kept as
+`main-geometry-*-firstframe.png`). So a screenshot is not evidence about what a press *at a coordinate*
+would hit, and a **posted** press is worse: it reaches the control it names even when something covers it
+(`udop-automation.md` §6). Only a resolved control — handle, class, inside the window it claims — makes a
+press meaningful, which is the mechanical reason the rule above is about resolution and not about
+coordinates. Second, the simulation display repaints: the two-frame stability check read `False` in that
+frame and `False` again in the 14:42 one (`True` in `dialog_shot`'s), so each crop is one moment and
+nothing here leans on a single pixel.
+
+**Pictures**, all lossless PNGs under the gitignored `outputs/live/`: `main-geometry-full.png` (the whole
+1920x1080 screen, application in front, `sha256 75d77f57…`), `main-geometry-strip_measured.png` (the strip's
+measured rect — the three captions are legible) and `main-geometry-strip_asserted.png` (the *asserted* rect,
+cropped as a region), which are **byte-identical** here (`sha256 0602e7b5…`) because the asserted rect and
+the measured rect are the same rectangle; `main-geometry-dialog_asserted.png` and
+`main-geometry-popup_asserted.png` crop the *asserted* rects of the dialog and the popup taken with nothing
+open, so a reader can see what is there instead of being told; and `geo-dialog.png` with
+`geo-dialog-full.png` (`sha256 617e23cf…` / `54576d2a…`) are the dialog's own picture and the full screen
+taken 20 s later with the dialog open at `[655,364,1282,748]`.
+
+### 21.3 The mismatches, and whether each fails loudly or silently
+
+Of everything the repository asserts by screen position, **exactly one thing lives in code**:
+`_OVERLAY_LEFT, _OVERLAY_MIN_H = 169, 120`. Everything else the driver binds is a class plus a position
+*relative to* what it resolved — `left - client_origin == 0 and h > 500` for the parameter column, the
+plot's `0.30–0.70` band for the strip, the >100 px gap between columns for the dialog's table, the last
+70 px of a panel for a dialog's button band. The absolute numbers in `udop-automation.md`,
+`live-bringup.md` and the W1 fixture (`tests/test_acquire_driver.py`'s `MEASURED_RECTS`) are **evidence
+for those rules**, not bindings — which is why a machine that disagrees with them can still be driven,
+and why they have to be re-measured rather than trusted.
+
+| # | mismatch (asserted → measured) | why it matters | failure mode |
+|---|---|---|---|
+| 1 | the popup panel is described as present **from startup**; on a session that has been up four minutes with nothing hovered it is **not in the tree at all**, and after the first hover it is (`[169,55,401,250]`, hidden, with its five entries) | it is a statement about *when* the application builds the panel, not about where it puts it; the trap §6 warns about (an enumeration that ignores visibility finding an open menu that is not painted) cannot fire while the panel does not exist — and can, afterwards | **silent, no consequence**: no binding depends on pre-existence, the predicate requires visibility in any case, and the first hover is the only moment the difference could be observed. Repeatable: run `main_geometry.py` as the first thing after an application start |
+| 2 | `left == 169 and h > 120` — the reference's predicate, heeded **first** — is dead on any machine whose overlay is painted elsewhere (the operator's moved strip is the same class of change) | it is the one absolute coordinate in the code; on a moved overlay the rule simply never fires | **silent, benign** — the poll falls through to the appearance diff (exactly one new visible panel), which is measured to work: the `Operating parameters` dialog opened on this machine four minutes before and again after this read. If the diff is ambiguous (none, or more than one new panel) the refusal is **loud**, naming the hidden panels it saw |
+| 3 | the strip's rect `(448,477) 352x40` and its row — the operator has moved the strip in the other mode | the row is addressed **by index**, so a wrong panel is a press on a wrong control, and there is no coordinate to notice it by | **loud** when the structural rule names no strip (`_press_strip_button` raises `no recording strip panel found` — e.g. a strip dragged above the menubar's own panel, or into a panel the resolver excludes) and **loud** when the row's length has no mapping (`STRIP_BUTTON_ORDER`). **Silent** if a *different* button panel in the plot's middle band becomes the one the rule resolves and holds a legal count: index 1 of that panel is a press on the wrong control. That one case has no guard, and it is the reason 21.1 says *re-measure*, not *trust the resolver* |
+| 4 | the Store dialog's `584x330` and its clip rect | the code binds neither a size nor a position for it | **loud** — a Store dialog that is not shaped that way refuses (`the Store dialog is not up`) rather than pressing a rect; the clip rect is never read at all |
+| 5 | the strip's per-view size (`352x40 → 98x40 → 413x123`) and the buttons' widths | nothing in the code binds a width, and §5 records that widths must never be an identity (`134 vs 138 px`) | **loud for the row's length** (`STRIP_BUTTON_ORDER`), **silent for the widths** — and by design, since the press is by index, so a widened button changes nothing |
+| 6 | a pre-created panel's rect **before it is shown** is not the rect it will have when shown: the dialog panel is the same handle (`1379214`) at `[360,240,987,624]` in the first read (never opened in that session) and at `[655,364,1282,748]` in the second, which is where it then appears live | any reader that took a rect from the tree *before* opening a control would bind to a position the application has not chosen yet — the same class of error as the moved strip, in a control nobody has dragged | **no failure mode today** (the driver opens, then resolves, and never binds a pre-show rect) — recorded because a "read the tree once, then press by coordinate" design would lose the dialog *and* the store dialog to it |
+| 7 | the operating dialog's rect `(655,364)` and its cells — bound by the *gap* between value-edit left edges, not by the `786 / 987 / 1187` the docstrings quote | a dialog the application moves or rebuilds is harmless to a relative binding and fatal to an absolute one | **loud** on a table of the wrong shape (`DIALOG_COLUMN_ROWS` refuses) and **loud** on an anchor that disagrees with the parameter column (§14's seven cross-checked fields). A table of the right shape holding other values is exactly what §19.1's rungs and §18.10's full-table diff are for |
+
+### 21.4 What this does to acceptance
+
+- **§15.1's six-point acceptance holds only for the simulation window it ran against.** "Verified on the
+  real application" there means the simulated instance on this box; it says nothing about the instrument,
+  in the same way §4's folded-in measurements say nothing about a second machine.
+- **A real (non-simulated) acceptance run has to precede any batch that matters**, and it is the same six
+  points: stage 1's inventory first, where `layout_note: None` and the strip's view are the two reads that
+  say the screen is the one the bindings describe. The strip's *position* is deliberately not among them —
+  it is read structurally — so the only thing a hand-moved strip changes is whether the row that resolves
+  is the right row.
+- **What the operator's report does and does not buy.** It buys the derivation: the coupling §18.10
+  measured is the application's and not the simulator's, on the real channel too. It buys nothing
+  geometric, and that is the whole of §21's measurement: simulation only.
+
+### 21.5 Still unmeasured, with the reason
+
+- **the strip's rect, the dialog's rect and the popup's rect in non-simulation mode** — the instrument's
+  box is not reachable from here. Until they are measured, a non-sim run's first read is the inventory,
+  and a refusal there costs a dispatch rather than a recording.
+- **the Store dialog's live geometry** (`584x330`) — opening it needs `Do store`, a strip press this
+  record forbids; the same prohibition leaves the strip's `98x40` and `413x123` views unmeasured.
+- **the popup's rect while it is *shown*** — the popup is opened by a menubar hover and a hover-opened
+  popup cannot be dismissed (Escape closes nothing, a posted `WM_CANCELMODE` does not, §14's own note),
+  so measuring it would strand the operator's application. Its *hidden* rect is measured (21.2) and its
+  *shown* rect is what `_OVERLAY_LEFT` asserts on the strength of the same record.
+- **which of the two popup rules resolved it during this pass** — the same prohibition: the driver notes
+  only the cursor-clip release, and no note names the rule that won.
