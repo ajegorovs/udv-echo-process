@@ -1602,6 +1602,178 @@ and so reported the two cells as missing; no write or read of the instrument was
 dumped tables were correct), and the run was repeated so that every dump in this record comes from
 the committed build.
 
+### 18.10 Sampling volume: what a below-floor write actually does
+
+The round trip §18.9 left open: the volume written **up** the list, a volume written **below the burst's
+floor** and its modal answered, the burst moved to `8` and back to `4`, the volume written back **down**,
+then both restored and diffed against the baseline. `tools/live/probes/dialog_write.py` grew a fourth mode
+for it — `below-floor` (request a volume the floor does not allow, record the modal, answer it, re-read the
+field, `Cancel`, refuse) — and its `write` mode now ends in a `read_back` verdict: the re-opened dialog's own
+statement of both cells against the request, `refused` when they differ. `--burst` became optional so a
+**volume-only** write is expressible, and `compare`'s `load` now resolves relative paths from the repository
+root like `--out` does (the first compare run died with `FileNotFoundError` because it did not).
+
+Every step is one dispatch, each one `open → dump + capture → write → Accept → re-open → dump + capture`, and
+the dialog was never left open between them:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py dump  --out outputs/live/sv-01-baseline.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --volume 3.650 --out outputs/live/sv-02-volume-3650.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py below-floor --volume 0.584 --answer safe     --out outputs/live/sv-03-belowfloor-safe.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py below-floor --volume 0.584 --answer continue --out outputs/live/sv-04-belowfloor-continue.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --burst 8 --out outputs/live/sv-05-burst8.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --burst 4 --out outputs/live/sv-06-burst4.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --burst 4 --volume 1.168 --out outputs/live/sv-07-volume-1168.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py write --burst 4 --volume 0.876 --out outputs/live/sv-08-restored.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py dump  --out outputs/live/sv-09-final.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py compare --baseline outputs/live/sv-01-baseline.json --after outputs/live/sv-08-restored.json --out outputs/live/sv-compare-baseline-restored.json
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py compare --baseline outputs/live/sv-01-baseline.json --after outputs/live/sv-09-final.json    --out outputs/live/sv-compare-baseline-final.json
+```
+
+**The below-floor write, measured twice.** Requesting `0.584` at burst `4` raised the warning **on the
+select's own notification** — not on the `Accept`, which was never reached — and the field, re-read in the
+same dialog after the modal was answered, stated `3.650`: the value that was there **before** the request,
+not the burst-implied one (`0.584 < 0.730 =` the floor at burst `4`). The operator's model is confirmed, and
+`Continue` applies nothing.
+
+| step | dialog's own statement after the previous step | what was requested | the modal | the field, re-read after the answer |
+|---|---|---|---|---|
+| `01` baseline | burst `4`, volume `0.876`, 42 controls at `(655, 364, 1282, 748)` | — | none | — |
+| `02` | burst `4`, volume `0.876`, list `[0.876, 3.650, …]` | volume `3.650` | none | **accepted**: `3.650` (index 1), list `[3.650, 3.650, …]` |
+| `03`+`04` | burst `4`, volume `3.650` | volume `0.584` | `warning` at `(772, 490, 1164, 622)`, one button at `(1070, 587, 1154, 612)` | **`3.650`** — the previous value; the request was dropped, nothing committed (the dialog was left with its `Cancel` both runs) |
+| `05` | burst `4`, volume `3.650` | burst `8` | none | **accepted**: burst `8`, volume **still `3.650`** (index 0), list unchanged |
+| `06` | burst `8`, volume `3.650` | burst `4` | none | **accepted**: burst `4`, volume **still `3.650`** |
+| `07` | burst `4`, volume `3.650` | volume `1.168` (and burst `4`) | none | **accepted**: `1.168` (index 3) |
+| `08` | burst `4`, volume `1.168` | volume `0.876` (and burst `4`) | none | **accepted**: `0.876` (index 0 — the lowest of its two), list identical to `01` |
+
+The one modal's wording, read off the pixels because `WM_GETTEXT` returns **nothing** for its children
+(`words: []`, `panel_text: ""` — the warning is caption-less the way the whole application is), is exactly:
+
+> **Warning**
+> The burst length should be reduced
+> `[Continue]`
+
+and the band holds **one** button, so `--answer safe` (leftmost) and `--answer continue` (rightmost) pressed
+the same handle and both dismissed it — the two captures are byte-identical (`sha256 0ffbe5f8…`), which is
+what makes "which button is `Continue`" a measurement rather than a reading. The warning's subtree holds two
+`TSp_Button` widgets, and the band's one is the painted `Continue`: `_bottom_row`'s rule (the last 70 px of
+the panel) is what picked it.
+
+**`max(remembered, floor)` held at every step.** The requested value is the remembered one; the effective one
+is the larger of it and the floor the burst implies.
+
+| burst | volume in force | wrote | re-opened states | `max(remembered, floor)` | held? |
+|---|---|---|---|---|---|
+| `4` | `0.876` | volume `3.650` | `3.650` | `max(3.650, 0.730) = 3.650` | yes |
+| `4` | `3.650` | volume `0.584` | `3.650` (after `Continue`) | the request is below `0.730` → **rejected** | yes |
+| `8` | `3.650` | burst `8` | volume `3.650` | `max(3.650, 1.460) = 3.650` | yes |
+| `4` | `3.650` | burst `4` | volume `3.650` | `max(3.650, 0.730) = 3.650` | yes |
+| `4` | `3.650` | volume `1.168` | `1.168` | above the floor → accepted, and it is the new remembered value | yes |
+| `4` | `1.168` | volume `0.876` | `0.876` | above the floor → accepted | yes |
+
+The floor itself was bracketed at burst `4` on a seventh run (`below-floor --volume 0.730`, `sv-15`): `0.730`
+is **accepted** (no modal — the mode recorded *"the rejection did not reproduce"* and refused the point
+anyway) where `0.584` is rejected, so `floor(4) ∈ (0.584, 0.730]`, the operator's `0.730` sitting on the
+upper end. The floors at `6` and `8` (`1.095`, `1.460`) stay **hand-measured**: `1.460` is not in the
+volume's list at all, so no `select by value` can ask for it.
+
+**The option lists, as read.** The measured shape is `[the value in force] + a fixed six-entry tail`, and the
+tail did **not** move from burst `4` to burst `8` — the *list* is not burst-derived on this machine, contrary
+to the archive-derived note in §18.7 that it is (the tail is c/f_e-dependent, and slot 0 is state):
+
+| where | items, in the order the control holds them | selected |
+|---|---|---|
+| burst `4`, volume `0.876` (baseline) | `0.876, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 |
+| burst `4`, volume `3.650` | `3.650, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 |
+| **burst `8`**, volume `3.650` | `3.650, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 |
+| burst `4`, volume `1.168` | `1.168, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 |
+| burst `4`, volume `0.876` (restored) | `0.876, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 |
+
+So the held value appears **twice** (slot 0 and its own place in the tail), which is why "select by value"
+must take the **lowest** matching index (§18.9's rule, confirmed three times: `0.876` → index 0 when in
+force, index 4 when not); the burst list is unchanged (`2 … 20, 24, 28, 32`); and the floor value `1.460` is
+**not offered** — the application can state a sampling volume its own combo does not list.
+
+**The coupling nobody asked for: a volume write re-derives the first gate.** Every sampling-volume write in
+this round trip moved the dialog's `First gate depth [mm]` cell `(1, 1)` and the `Depth` the dialog derives
+from it, and **no burst write did**:
+
+| run | volume written | `(1, 1)` first gate | `Depth` |
+|---|---|---|---|
+| `01`/`01b` baseline | — | `2` | `99 mm` |
+| `02` post | `3.650` | **`1`** | `98 mm` |
+| `05`, `06` (burst writes only) | `3.650` | `1` (unmoved) | — |
+| `07` post | `1.168` | **`7`** | `103 mm` |
+| `08` post / `09` | `0.876` | `7` (unmoved) | — |
+| `11` post | `1.752` | **`5`** | — |
+| `12` (30 s later, **nothing dispatched**) | — | `5` (unmoved) | — |
+| `13` post | `0.876` | **`7`** | — |
+| `15` post | `0.730` | **`8`** | — |
+| `16` post | `0.876` | `7` | `104 mm` |
+
+It is the application, it is a function of the volume written (`0.730 → 8`, `0.876 → 7`, `1.168 → 7`,
+`1.752 → 5`, `3.650 → 1` at `c = 1460`, `f_e = 4000`, `797` gates, resolution `0.122`), and it is
+reproducible: `0.876` gave `7` from two different starting first-gate values, `1.752` gave `5`, and an idle
+window with nothing dispatched changed nothing. The law behind those five pairs is **not** derived here. The
+committed `compare` shows the whole cost of it: `sv-01-baseline.json` against `sv-09-final.json` is identical
+**control for control except one** — 42 controls, 15 cells, the same rect, the same burst/volume pair, and
+one row differing:
+
+```json
+"controls_only_in_baseline": [[1, "TSp_Edit", [987, 491, 1057, 507], "2", true]],
+"controls_only_in_after":    [[1, "TSp_Edit", [987, 491, 1057, 507], "7", true]],
+"table_changed": [{"cell": [1, 1], "cls": "TSp_Edit", "baseline": "2", "after": "7"}]
+```
+
+Two consequences, and the second is the reason the writer rule below is worded the way it is:
+
+- **`Cancel` never repair this** — the value is committed by `Accept`, and since it is a function of the
+  volume written, writing the volume back to `0.876` re-derives `7` rather than restoring `2`. The baseline
+  pair `(0.876, 2)` is not reachable with this experiment's vocabulary: the round trip's **own** writes end
+  exactly where they started (`4`/`0.876`, list identical, the restored and final dialog PNGs byte-identical,
+  `sha256 79c5091f…`) while the *configuration* does not, because one cell outside those two knobs was
+  re-derived by the application and putting it back needs a first-gate write, which is not one of the two
+  knobs this probe writes.
+- **`(1, 1)` is not a stray cell: it is a declared fixed fact.** `DialogField.FIRST_GATE_MM` is bound there,
+  `first_gate_mm` is in `FIXED_FACT_FIELDS`/`SUPPORTED_READ_FACTS`, and `plan_campaign` refuses a campaign
+  whose points disagree about it — so a point recorded after a volume write carries the instrument's derived
+  first gate, and what refuses it is the compile's fact check, not the write's own read-back. A *silent*
+  difference in a replaced knob is exactly the failure rung 2 exists for, and the two written cells' read-back
+  said `matches: true` throughout.
+
+**The writer rule, measured.** A dialog write is an `Accept`-committed transaction whose read-back must not be
+limited to the fields it asked for:
+
+1. **No write is believed.** Every dialog write is followed by a read-back of the *effective* value, and any
+   point whose read-back differs from what was requested — or where a modal appeared anywhere on the path —
+   is **refused** rather than recorded. `write` now returns `read_back: {asked, effective, matches, mismatch}`
+   and non-zero on a mismatch; `below-floor` exists to demonstrate that path.
+2. **The read-back is the re-opened dialog and the cell's own text.** `CB_GETCURSEL` is the control's belief
+   and can disagree with the cell: at the start of this run the burst cell stated `4` while its cursel was
+   `3` (whose item is `8`) — with the same handle and byte-identical pixels as the committed baseline, where
+   the same cell read cursel `1` — and after the first write the two agreed again. A reader that believed the
+   index would have recorded burst `8` for a dialog that stated `4`.
+3. **The read-back covers the whole value table, not just the written cells.** `Accept` commits a coupled
+   transaction: §19.2's burst → volume couple is one, and the sampling volume → `First gate depth` couple
+   measured here is another, invisible to any read-back that only asks whether the two requested cells took.
+   The writer compares the full table (and the control walk) before and after, and refuses the point when a
+   cell it did not ask for moved — `compare`'s diff of two dumps is the instrument.
+4. **A modal is a refusal, and it arrives before the commit.** The floor rejection is raised on the select's
+   notification, so a batch can refuse without spending the `Accept`; `Continue` is not a repair (it puts the
+   field back to the previous value and drops the request), and the value the instrument actually holds is
+   then the *remembered* one, which no amount of pressing `Continue` changes.
+
+**Artifacts**, all under the gitignored `outputs/live/`: the per-step dumps and captures
+`sv-01-baseline.*`, `sv-02-volume-3650.*`, `sv-03-belowfloor-safe.*`, `sv-04-belowfloor-continue.*`,
+`sv-05-burst8.*`, `sv-06-burst4.*`, `sv-07-volume-1168.*`, `sv-08-restored.*`, `sv-09-final.*`,
+`sv-10a-state.*`, `sv-11-volume-1752.*`, `sv-12-idle-dump.*`, `sv-13-volume-back.*`, `sv-14-final-dump.*`,
+`sv-15-belowfloor-0730.*`, `sv-16-restore-volume.*`, `sv-17-final.*`; the warning's own pixels as
+`sv-03-belowfloor-safe-modal.png` and `sv-04-belowfloor-continue-modal.png` (byte-identical); the diffs
+`sv-compare-baseline-restored.json`, `sv-compare-baseline-final.json`, `sv-compare-baseline-17final.json`;
+and each run's dispatcher log as `sv-run-*.log` with the probe's own log beside it as `sv-task-*.log`. Each
+step costs 3.6 s (`dump`, `compare`) to 12 s (`write`, `below-floor`, whose modal capture and second read are
+the difference).
+
 ## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
 
 The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
