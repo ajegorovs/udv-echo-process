@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from test_acquire_driver import STORE_THREE, FakeUdopWindow, fake_driver
 
-from udv_echo_process.acquire import live
+from udv_echo_process.acquire import driver, live
 from udv_echo_process.acquire.actuator import (
     PreflightReport,
     ScreenFingerprint,
@@ -36,6 +36,11 @@ class _SpyActuator:
     def screen_fingerprint(self) -> ScreenFingerprint:
         self.calls.append(("screen_fingerprint",))
         return _fingerprint()
+
+    def ensure_channel(self) -> int:
+        """The routing step: ``channel`` verifies the measurement channel through it."""
+        self.calls.append(("ensure_channel",))
+        return 1
 
     def try_record_and_store(
         self, name: str, duration_s: float, directory: Path
@@ -276,6 +281,59 @@ def test_decode_reads_a_stored_file(capsys: pytest.CaptureFixture[str]) -> None:
 
     assert exit_info.value.code == 0
     assert "depth_mm" in capsys.readouterr().out
+
+
+#: A driver refusal in the driver's own words: the foreground precondition, measured live
+#: 2026-09-17. It is the refusal the first live `acquire compile` hit on a non-foreground
+#: application (plan §16.2); these verbs drive the same driver and reach it before anything is
+#: printed, so they answer it the way the campaign verbs do (``test_acquire_campaign``).
+REFUSAL = (
+    "the 'TMain_Scr' window is not the foreground window, so its menubar cannot be hovered"
+)
+
+
+def _refuse(monkeypatch: pytest.MonkeyPatch, method: str) -> None:
+    """Make the actuator's own ``method`` refuse, the way the driver refuses."""
+    spy = _SpyActuator()
+
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise driver.AcquisitionError(REFUSAL)
+
+    monkeypatch.setattr(spy, method, refuse)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: spy)
+
+
+@pytest.mark.parametrize(
+    ("argv", "method"),
+    [
+        (["status"], "screen_fingerprint"),
+        (["channel", "1"], "ensure_channel"),
+        (["preflight", "--seconds", "1"], "preflight"),
+    ],
+)
+def test_a_driver_refusal_is_one_line_and_exit_two(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    method: str,
+) -> None:
+    """A refused step is a refusal, not a crash: one ``udv-acquire:`` line, exit 2, no traceback.
+
+    These three verbs have no handler of their own, so a driver refusal used to leave
+    ``acquire_main`` as an exception — a traceback and exit 1, which says "crash" about a run
+    that never started. The answer has to be the one the campaign verbs give (§16.2): the
+    driver's own words on one line, and exit 2, because every other refusal on this surface
+    returns 2 and this is one.
+    """
+    _refuse(monkeypatch, method)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(argv)
+
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"udv-acquire: {REFUSAL}\n"  # one line: no traceback, no re-wrap
 
 
 # --------------------------------------------------------------------------- module dispatch

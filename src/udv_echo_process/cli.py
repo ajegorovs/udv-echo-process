@@ -18,7 +18,7 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, live
+from udv_echo_process.acquire import campaign, driver, live
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.io import load
@@ -229,7 +229,8 @@ def _campaign_plan(args: argparse.Namespace, as_json: bool) -> int:
     try:
         definition = campaign.load_campaign(Path(args.definition))
         points = campaign.plan_campaign(definition)
-    except (ValueError, OSError) as exc:  # CampaignError is a ValueError
+    # CampaignError is a ValueError; a driver refusal is named here because it is not (§16.2).
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -310,7 +311,8 @@ def _campaign_compile(args: argparse.Namespace, notes: list[str], as_json: bool)
             dialog_parameters=actuator.read_dialog_parameters(),
         )
         compiled = campaign.compile_campaign(definition, snapshot)
-    except (ValueError, OSError) as exc:  # CampaignError is a ValueError
+    # CampaignError is a ValueError; a driver refusal is named here because it is not (§16.2).
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -360,7 +362,9 @@ def _campaign_run(
             definition_path=Path(args.definition),
             notes=notes,
         )
-    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+    # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
+    # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -395,7 +399,9 @@ def _campaign_report(args: argparse.Namespace, as_json: bool) -> int:
     try:
         records = point_records(read_entries(log_path))
         manifest = campaign.read_manifest_if_present(campaign.manifest_path_for(log_path))
-    except (ValueError, OSError) as exc:  # includes campaign.CampaignError
+    # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
+    # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
         print(f"udv-acquire: {exc}", file=sys.stderr)
         return 2
 
@@ -479,7 +485,10 @@ def acquire_main(argv: list[str] | None = None) -> None:
     These commands drive the *running* application, so they only work from the session that owns
     its screen (``tools/live/README.md``); everything they report is a model from
     :mod:`udv_echo_process.acquire.actuator`, and ``--json`` prints it for a machine. Exit codes:
-    0 ok, 1 a refused point or a failed verification, 2 usage or configuration.
+    0 ok, 1 a refused point or a failed verification, 2 usage, configuration, or a refusal from
+    the driver itself (the foreground precondition, a dialog that will not open, a control that
+    is not there) — reported as one ``udv-acquire:`` line and never as a traceback, because the
+    run did not happen and nothing was written.
 
     ``plan`` and ``report`` are the campaign layer's two halves that touch no instrument at all:
     ``plan`` validates a definition and prints the points it would run, ``report`` reads a job
@@ -681,6 +690,13 @@ def acquire_main(argv: list[str] | None = None) -> None:
         else:  # decode
             measured = args.channel if args.channel is not None else ChannelSetting().channel
             _acquire_report(live.decode(Path(args.path), measured), as_json)
+    except driver.AcquisitionError as exc:
+        # The live verbs drive the instrument through the same driver and have no handler of
+        # their own, so a refusal from one of them arrives here (§16.2). The answer is the one
+        # the campaign handlers give above — the driver's own words on one line, exit 2 —
+        # because a refused step is a refusal (nothing ran, nothing was written), not a crash.
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        code = 2
     finally:
         for note in notes:
             print(f"note: {note}", file=note_stream)

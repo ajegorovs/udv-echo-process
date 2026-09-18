@@ -49,7 +49,7 @@ from test_acquire_runner import (
     stored_names,
 )
 
-from udv_echo_process.acquire import campaign, live
+from udv_echo_process.acquire import campaign, driver, live
 from udv_echo_process.acquire.actuator import ChannelMode
 from udv_echo_process.acquire.config import ParameterSet, RecordSettings
 from udv_echo_process.acquire.log import (
@@ -1192,6 +1192,84 @@ def test_a_run_without_a_snapshot_is_marked_declared_only(
 
 
 # ------------------------------------------------------------------- 8. the CLI
+
+
+#: A driver refusal in the driver's own words: the foreground precondition, measured live
+#: 2026-09-17 (the application is not the foreground window, so its menubar — which answers
+#: only real input — cannot be hovered). It is the refusal the first live `acquire compile` hit
+#: on a non-foreground application (plan §16.2), and the campaign's own compile step is where
+#: it arrives: `ensure_channel` is the routing step both verbs run before anything is read.
+REFUSAL = (
+    "the 'TMain_Scr' window is not the foreground window, so its menubar cannot be hovered"
+)
+
+
+def _refuse_routing(job: Job, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The routing step refuses, the way the driver refuses when it cannot reach the menubar."""
+
+    def refuse() -> int:
+        raise driver.AcquisitionError(REFUSAL)
+
+    monkeypatch.setattr(job.fake, "ensure_channel", refuse)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+
+def test_the_cli_compile_reports_a_driver_refusal_in_one_line_and_exits_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The driver's own refusal is a refusal, not a crash: one line, exit 2, no traceback.
+
+    Measured live: the first `acquire compile` against a non-foreground application printed a
+    full traceback and exited 1, because `AcquisitionError` is not a `ValueError` and the
+    handler's `except (ValueError, OSError)` never saw it (plan §16.2). Exit 2 is decided
+    rather than inherited — every other refusal on this surface returns 2, and a driver refusal
+    is one: the run did not happen and nothing was written — and the line is the driver's own
+    words, unwrapped, because they already name what stopped the step.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    _refuse_routing(job, monkeypatch)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(["compile", "--definition", str(job.definition_path)])
+
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"udv-acquire: {REFUSAL}\n"  # one line: no traceback, no re-wrap
+    assert job.fake.stored == []
+
+
+def test_the_cli_campaign_reports_a_driver_refusal_in_one_line_and_exits_two(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """The recording verb answers a driver refusal the same way, and spends nothing on it.
+
+    ``campaign`` runs the same routing step before its first point, so the same refusal reaches
+    the operator — and because it arrives before the runner exists, no point is stored and no
+    log or manifest is written: the two things exit 1 means (a refused point, a partly
+    completed job) are both wrong here, and exit 2 is the honest answer.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    _refuse_routing(job, monkeypatch)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(
+            [
+                "campaign",
+                "--definition",
+                str(job.definition_path),
+                "--store-dir",
+                str(job.directory),
+            ]
+        )
+
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == f"udv-acquire: {REFUSAL}\n"
+    assert stored_names(job.directory) == []
+    assert not job.log_path.exists()
+    assert not campaign.manifest_path_for(job.log_path).exists()
 
 
 def test_the_cli_plan_prints_the_points_and_exits_zero(
