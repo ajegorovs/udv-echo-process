@@ -44,6 +44,7 @@ Capabilities are commands, not scripts, so a clone carries them and a test can d
 | `status` | the read-only inventory as one record: class, handle, rect, maximized, screen, panel and control counts, strip view, overlay, layout note, cursor, foreground | no |
 | `channel <n>` | verify the selector, writing it only when it differs, and report the mode the surface it built implies | only if it differs |
 | `preflight [--seconds n]` | one whole cycle with nothing stored: record, hold, stop, read the store dialog, **cancel** it | presses the surface |
+| `compile <definition>` | the pre-run check: read the instrument's own fixed facts off the dialog and the screen, compare them with the definition, and report each fact's value **and its source** | reads the app only; stores nothing |
 | `point <name> --seconds n` | one stored item | stores a file |
 | `sweep --seconds n --rungs k,k` | the runner's own path, one JSONL record per item | stores files |
 | `decode <file> --channel n` | a stored file's own operation words — the certificate, and it needs no application | no |
@@ -56,6 +57,18 @@ usage or configuration — because a caller polling the log only has the code an
 usage errors (a missing store directory, a missing axis) exit 2, and refuse rather than default:
 the cycle *asserts* the store directory and writes it when it differs, so a guessed path points
 the instrument's output somewhere nobody asked for.
+- **The pre-run check refuses in one message, and the application is left untouched.** A driver refusal
+  is caught at the CLI boundary and printed as one `<prog>: <message>` line — never a traceback, and
+  never by re-parenting the exception class to make an existing `except` match, because the hierarchy is
+  what distinguishes a refused point from a broken instrument. A fact whose reader exists but whose read
+  failed refuses the run rather than falling back to the declared value, a disagreement names both sides,
+  and every fact that disagreed is named in one message, because the comparison is cheap and the
+  instrument is in front of the operator (`docs/dop3000/acquisition-campaign-compilation-plan.md` §9.2,
+  §13, §15).
+- **State the foreground precondition in the operator sequence.** A dispatched command cannot take the
+  foreground away from the user, and every hover-driven step needs the application in front: the guard
+  refuses *before* the hover, so the operator brings the window forward and the same command is re-run,
+  with nothing opened and nothing stranded.
 - `--json` prints the report model and nothing else on stdout: notes go to stderr, or they corrupt
 the machine-readable output.
 - Verify the interface live from the clone, not only in tests: `status` should reproduce the
@@ -75,11 +88,13 @@ stage passed.
 | 3. the cycle, storing nothing | `acquire preflight` | open the store dialog, read its fields, cancel it, end on a clean view. Nothing written |
 | 4. one item | `acquire point <name> --seconds <n>` | the artefact appears in the directory the application is configured to write, and reading it back yields the application's own values, which should agree with its display |
 | 5. a multi-item run | `acquire sweep --seconds <n> --rungs <k,k>` | every item `ok`, and the log carrying one record per item — request, read-back, artefact, decoded values, failure field |
+| 5b. the pre-run check | `acquire compile --definition <file>` | exit 0 with the reading's facts agreeing with the declaration and the facts no surface states marked `unreadable` rather than silently declared, and **nothing written**; then prove the refusal in both directions — a definition with one changed fact exits 2 naming it against the instrument's own value, and a fact changed *in the application* makes the unmodified definition refuse. Restore it and the same check is accepted |
 
 Stage 3 is the operator's own sequence without the risk; stage 4 is the first write to the
 instrument; stage 5 is the loop end to end. A stage-1 failure is configuration; a stage-4
 failure is almost always the target directory or the selector; a stage-5 failure carries its
-reason per item.
+reason per item. Stage 5b is the gate the writing stages sit behind: it costs no slot and
+no stored file, and it is where a wrong declaration is caught before a recording is spent.
 
 ## The measurements folded in from the first machine
 

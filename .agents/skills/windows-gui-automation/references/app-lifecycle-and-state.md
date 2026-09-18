@@ -105,6 +105,13 @@ and the app had to be quit, leaving a windowless leftover process behind — see
   Before designing folder management, look for a settings dialog that owns the output paths and the
   size caps — and look for it in the **child tree**, because such a dialog is often a panel inside the
   main window and will never appear in a top-level window enumeration (`control-id-mapping.md` §8).
+  **A storage surface you have not driven is not a surface you can read or write from.** Two surfaces in
+  one application are easily conflated: measured on this app, the **Store** dialog (geometry known, path
+  exercised, buttons indexed from the right) commits a recording, while the cap — `Do not keep in a block
+  more profiles than` — lives in `Record settings`, a **different** surface the automation has never read
+  or written. So "the settings dialog takes `WM_SETTEXT`" is a claim about one surface and not about
+  both: record which surface a finding belongs to, and where such a field has no exercised path, say the
+  reader is unexplored rather than implying one exists.
   Worth setting deliberately on the target rather than inheriting a default:
 
   - the output/data directory, plus any **second** output location (one dialled-in dialog shipped a
