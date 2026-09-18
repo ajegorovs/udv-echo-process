@@ -681,10 +681,29 @@ class Acceptance(str, Enum):
 
 
 #: The acceptance each fixed fact gets, **derived from the stored-file verifier's own table**
-#: rather than restated: the covariates that verifier enforces refuse here too, the one it only
-#: advises on warns, and the two it checks by another law (the depth a first gate moves, the block
-#: cap a window has to fit) refuse because the planner already refuses a window that breaches
-#: them. Two tables of "which of these matters" would drift apart; one cannot.
+#: rather than restated: the covariates that verifier enforces refuse here too, and the one it only
+#: advises on warns. Two tables of "which of these matters" would drift apart; one cannot.
+#:
+#: The two facts the verifier checks by *another* law are refused for reasons of their own, and the
+#: reasons are the part a reader acts on:
+#:
+#: - **the first gate** moves the *spatial* window — ``first_gate + gates x resolution`` is the law
+#:   this repository verified twice against the application's own arithmetic (docs/16 §12) — so a
+#:   run compiled against one first gate and executed under another samples a different physical
+#:   region than the definition asked for, whatever the stored file's own words happen to say;
+#: - **the block cap** decides the *retention* semantics: how much of the requested temporal window
+#:   can be kept, whether the block wraps, and therefore what ``retained_fraction`` — and any wrap
+#:   inference drawn from it — means. A campaign compiled under one active cap and executed under
+#:   another was compiled for different retention, so a **known** disagreement refuses.
+#:
+#: Neither reason is "the planner refuses those windows", and this is worth stating precisely
+#: because the planner does the opposite: `plan_campaign` deliberately does **not** refuse a window
+#: that breaches the declared cap. It plans it and attaches a note saying the block wraps and covers
+#: only its last ``cap x period`` seconds, because the near-term goal here is a 10-15 s recording the
+#: instrument honours (``tests/test_acquire_campaign.py`` pins that note). The refusal here is about
+#: the *instrument* disagreeing with the definition, which is a different question from whether the
+#: plan is runnable — and today it cannot fire, because the active cap is not readable (W1
+#: reconnaissance, plan §14): the fact is carried unproven rather than compared.
 COVARIATE_ACCEPTANCE: Mapping[str, Acceptance] = {
     name: (Acceptance.WARN if name in ADVISORY_COVARIATES else Acceptance.REFUSE)
     for name in FIXED_FACT_FIELDS

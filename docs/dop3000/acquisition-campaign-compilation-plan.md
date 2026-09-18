@@ -695,7 +695,16 @@ Five things W4 has to know before it wires this into the run, each a decision th
 1. **The acceptance policy is the verifier's own table, not a second opinion.**
    `COVARIATE_ACCEPTANCE` is *derived* from `verify.ADVISORY_COVARIATES`: the three enforced
    covariates (sound speed, PRF, burst) refuse, the emissions per profile warns, and the first gate
-   and the block cap refuse because the planner already refuses a window that breaches them. W6
+   and the block cap refuse for reasons of their own: the first gate moves the *spatial* window
+   (`first_gate + gates × resolution`), and the cap decides the *retention* semantics a campaign was
+   compiled under — how much of the requested window can be kept, whether the block wraps, and what
+   `retained_fraction` means. **Not** "the planner refuses those windows": `plan_campaign`
+   deliberately does the opposite for the cap, planning the window and attaching a note that the
+   block wraps and covers only its last `cap × period` seconds (pinned by
+   `tests/test_acquire_campaign.py`), because the near-term goal is a 10–15 s recording the
+   instrument honours. The cap refusal cannot fire while the active cap is unreadable (W1, §14) —
+   the fact is carried unproven — and it is about the *instrument* disagreeing with the definition,
+   which is a different question from whether the plan is runnable. W6
    moves the emissions row and nothing else. The comparison keeps the verifier's tolerance
    (`PRF_TOLERANCE_US`; the app stores integer microseconds) and is exact elsewhere — a pre-run
    check stricter than the post-run one would refuse jobs that would have passed with a recording
