@@ -124,6 +124,12 @@ Checkable, and each becomes a test:
    files, their names and the log entries are what they were before this slice. No Win32
    gesture is re-derived (verbatim-port rule), and no existing test changes for a reason
    other than the seams this plan adds deliberately.
+6. **A job that predates this slice cannot silently resume.** Every pre-existing manifest
+   carries a definition fingerprint and no compilation identity, so compatibility cannot be
+   demonstrated for any of them; the new resume refuses by default, proceeds only under an
+   explicit declaration-only flag, and marks the decision on the manifest and on every point
+   it skipped that way. No point leaves the todo set on the strength of an unproven
+   identity.
 
 ## 4. Work items
 
@@ -290,6 +296,30 @@ the reconciliation result and the refusals with nothing recorded, which is also 
 acceptance sequence is rehearsed. `--no-snapshot` exists for the operator who must run
 without a snapshot; the manifest and every record from such a run are marked `declared
 only`.
+
+**Legacy logs and manifests — the rule, not an improvisation.** Every manifest written
+before this slice carries `fingerprint` only, and that is `campaign_fingerprint(definition)`
+(`campaign.py:470`): a hash of the *definition*. It can prove that a log answered that
+definition, and it can prove nothing whatever about the instrument — so for a job recorded
+before this slice, compatibility **cannot be demonstrated**, and the absence has to be a
+declared outcome rather than an accident of implementation. The rule:
+
+- **Fail closed.** A resume of a job whose manifest carries no compilation identity refuses,
+  naming the missing identity, and the refusal is the default.
+- **One explicit way through.** `--resume-declaration-only` (the same family as
+  `--no-snapshot`) lets the operator proceed anyway; the manifest and every point that the
+  resume skipped on that basis are marked as having been decided **without instrument
+  evidence**. Silence is not one of the options.
+- **It runs at step 6, before step 7.** Identity is validated *before* the todo/skipped set
+  is computed, so no point can be dropped on the strength of an identity that was never
+  proven. A resume that skipped points and only then discovered the instrument was
+  incompatible would have skipped them for nothing, and the operator would have to reason
+  about which points were valid.
+
+This follows the repository's existing direction rather than inventing a new one:
+`record_identity` (`campaign.py:432`) returns an unrecognised name unchanged *on purpose*, so
+that a point "whose identity is in doubt" is **re-run rather than skipped**. Phase 6 applies
+the same principle one level up, to the job.
 
 **Where.** `campaign.py` (`run_campaign`, `JobManifest`, `ManifestPoint`,
 `campaign_fingerprint` usage), `cli.py`'s `acquire_main` (`cli.py:422`) for the flags and
