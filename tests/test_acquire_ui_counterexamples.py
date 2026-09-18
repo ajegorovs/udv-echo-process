@@ -98,11 +98,6 @@ def test_the_hidden_sidebar_screen_is_the_assisted_shape_panel_for_panel() -> No
 
 
 # B01: UI-OVERLAY-06, ui-crops/menu-preferences-assisted-on.png (the option that hides the panel).
-@pytest.mark.xfail(
-    strict=True,
-    reason="B01: screen_mode still reads ChannelMode.ASSISTED from the absent parameter "
-    "column — PATCH-2 stops inferring a channel mode from absence and refuses instead",
-)
 def test_a_manual_screen_whose_sidebar_is_hidden_is_never_read_as_assisted() -> None:
     """B01: *no sidebar* means *no sidebar*, never *assisted channel*.
 
@@ -120,11 +115,6 @@ def test_a_manual_screen_whose_sidebar_is_hidden_is_never_read_as_assisted() -> 
 
 
 # B01: the recommendation names the Preferences option (UI-OVERLAY-06), not the mode.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B01: the missing-panel refusal still asserts assisted mode as a fact — PATCH-2 "
-    "names the hidden-panel possibility instead",
-)
 def test_the_missing_panel_refusal_does_not_assert_assisted_mode_as_a_fact() -> None:
     """B01: the diagnosis an operator reads must carry **both** readings of the absent panel.
 

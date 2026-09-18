@@ -3054,14 +3054,19 @@ def test_a_resolved_parameter_column_is_a_channel_in_manual_mode() -> None:
     assert driver.screen_mode(role_map()) is ChannelMode.MANUAL
 
 
-def test_the_measurement_screen_without_a_column_is_an_assisted_channel() -> None:
-    """The reading the driver's own missing-field failure already names.
+def test_the_measurement_screen_without_a_column_is_never_read_as_a_mode() -> None:
+    """The reading ledger B01 forbids: absence is not evidence of a channel mode.
 
-    Measured live 2026-09-17: a manual channel's clean screen is 43 visible controls in 4
-    panels, an assisted channel's 21 in 3 — the sidebar parameter column is the difference,
-    and this reads it without opening anything.
+    This test asserted ``ASSISTED`` for a screen with no column. Measured 2026-09-17/18, the
+    application paints that same screen when the manual fast-access panel is switched off in
+    ``Preferences`` (``UI-OVERLAY-06`` is the frame with that checkbox ticked), so the absence
+    states nothing about the mode — and assisted mode is out of scope for this experiment
+    anyway. A mode read here would refuse a sweepable channel with a diagnosis pointing at the
+    channel instead of at the screen.
     """
-    assert driver.screen_mode(role_map(params={}, param_rows=[])) is ChannelMode.ASSISTED
+    assert driver.screen_mode(role_map(params={}, param_rows=[])) is None
+    # The positive evidence still reads, and it is the only positive evidence there is.
+    assert driver.screen_mode(role_map()) is ChannelMode.MANUAL
 
 
 def test_a_resolved_column_outlives_a_popup() -> None:

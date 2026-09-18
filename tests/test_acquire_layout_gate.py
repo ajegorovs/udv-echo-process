@@ -252,19 +252,45 @@ def test_no_count_is_a_gate_at_any_value() -> None:
         assert len(roles["raw"]) == controls, controls
 
 
-def test_an_assisted_screen_passes_and_is_classified_from_its_absent_column() -> None:
-    """Row 2, and round 2's P1: three panels pass, and `screen_mode` still gets to classify them.
+def test_the_assisted_shape_passes_the_common_core_and_is_refused_by_its_absent_column() -> None:
+    """Row 2, and round 2's P1 — **corrected by ledger B01**.
 
-    The assisted screen is refused by *nothing* here — which is the property the plan insists on,
-    because a gate that required a parameter column would reject this screen before
-    :func:`driver.screen_mode` could read the missing column as ``ASSISTED``.
+    The test this replaces asserted that the assisted shape passes the gate *and* that
+    :func:`driver.screen_mode` reads the missing column as ``ASSISTED``. The live incident B01
+    (``UI-OVERLAY-06``, the ``Preferences`` dialog) disproved the second half: the option *Show
+    fast access parameters panel (not available in assisted mode)* takes the column away while
+    the channel stays manual, so the absent column cannot be read as a mode, and a manual
+    acquisition requires the panel **present and complete**.
+
+    What survives is the shape half, asserted here so the refusal cannot be satisfied by refusing
+    the shape: the assisted tree is refused by *nothing structural* — no clause about the window
+    class, the menubar band, the strip, the status band or the plot — and the clause that does
+    refuse it is the parameter panel's own, naming the ``Preferences`` option and the assisted
+    possibility without claiming either. The manual screen is unaffected.
     """
     roles = assisted_screen()
-    assert driver.layout_refusal(roles) is None
-    assert driver.screen_mode(roles) is ChannelMode.ASSISTED
     assert len(roles["panels"]) == 3
-    # The manual shape is the manual screen's, and each is refused by the other's absence.
+
+    # ...the common core passes untouched: the refusal is about the panel, not the shape.
+    structural = [
+        clause
+        for clause in driver.layout_shape_reasons(roles)
+        if "parameter panel" not in clause
+    ]
+    assert structural == [], structural
+
+    # ...and the panel is what refuses it, by name, with both readings of its absence.
+    refusal = driver.layout_refusal(roles)
+    assert refusal is not None
+    assert "fast-access parameter panel is absent" in refusal, refusal
+    assert "Preferences" in refusal and "assisted" in refusal, refusal
+    assert "missing field" not in refusal  # a refusal about the screen, not a broken binding
+
+    # No mode is read out of the absence — the reading ledger B01 forbids.
+    assert driver.screen_mode(roles) is None
+    # The manual shape is the manual screen's, and each is still told apart by its column.
     assert driver.screen_mode(manual_screen()) is ChannelMode.MANUAL
+    assert driver.layout_refusal(manual_screen()) is None
 
 
 # ------------------------------------------------------------------ 24.6, row 3

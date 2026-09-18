@@ -49,7 +49,10 @@ from udv_echo_process.acquire.actuator import (
     StripView,
     process_mode,
 )
-from udv_echo_process.acquire.ui.model import ScreenObservation
+from udv_echo_process.acquire.ui.model import (
+    ParameterPanelState,
+    ScreenObservation,
+)
 
 __all__ = [
     "DIALOG_COLUMN_GAP",
@@ -65,6 +68,7 @@ __all__ = [
     "normalized_path",
     "observation_of",
     "panel_mode",
+    "parameter_panel_absent_clause",
     "process_mode_clause",
     "same_directory",
     "screen_mode",
@@ -252,29 +256,54 @@ def screen_mode(roles: Mapping) -> ChannelMode | None:
     """The mode of the channel **on the measurement screen**, read without pressing anything.
 
     :func:`panel_mode` answers the same question from a parameters *dialog*, which costs the
-    menubar hover the dialog is opened with. The measurement screen answers it too, and for
-    free: the sidebar parameter column exists only for a channel in manual mode (measured live
-    2026-09-17 — a manual channel's clean screen is 43 visible controls in 4 panels, an assisted
-    channel's 21 in 3, the column among the missing), so a resolved column is ``MANUAL`` and a
-    measurement screen with no column at all is ``ASSISTED``. That second reading is the same
-    evidence the driver's own missing-field failure already names
-    (:meth:`Win32Actuator._assisted_mode_clause`).
+    menubar hover the dialog is opened with. The measurement screen can answer it too, and for
+    free: the sidebar parameter column exists only for a channel in manual mode, so a resolved
+    column **is** ``MANUAL`` — positive evidence, and the only positive evidence there is.
 
-    ``None`` when neither can be read — a dialog, a menu popup or an unrecognised layout is up,
-    so the absent column is evidence of *that* and not of a mode. A mode guessed from it would
-    refuse a campaign for the wrong reason, with a diagnosis pointing at the mode instead of at
-    the screen, so the caller is given the ``None`` and has to carry it.
+    **Absence is not evidence of a mode** (ledger B01). The preference *Show fast access
+    parameters panel (not available in assisted mode)* can hide the column while the channel
+    stays manual — quoted from ``UI-OVERLAY-06``, the ``Preferences`` dialog, where that is the
+    ticked checkbox — and the same screen is what an assisted channel paints. A live incident
+    disproved the older reading (this function used to answer ``ASSISTED`` from the missing
+    column alone), and the cost of guessing is a refused campaign whose diagnosis points at the
+    channel's *mode* instead of at the screen's configuration.
+
+    ``None`` therefore means "no mode could be read", whether a dialog or a popup is up, the
+    layout is unrecognised, or the column is simply not there. Assisted mode is out of scope for
+    this experiment, and a manual acquisition requires the panel **present and complete** —
+    which is a refusal about the *screen* and is made by
+    :func:`layout_shape_reasons`, not a mode read here.
     """
-    if roles.get("params"):
+    observation = observation_of(roles)
+    if observation.parameter_roles:
         return ChannelMode.MANUAL
-    if roles.get("open_popup") or roles.get("value_dialogs") or roles.get("browse_dialogs"):
-        return None
-    if roles.get("strip_panel") is None:
-        return None
-    return ChannelMode.ASSISTED
+    return None
 
 
 # ------------------------------------------------------------------------ the layout gate
+
+#: How the absent fast-access panel is explained, in one place, so the gate's clause and the
+#: driver's missing-field failure cannot drift apart — and so the wording an operator reads is
+#: the wording ``docs/dop3000/acquisition-ui-model.md`` §2 quotes.
+_ABSENT_PANEL_REASON = (
+    "the fast-access parameter panel is absent: this automation operates a manual channel and "
+    "requires that panel present and complete; it may be hidden by Preferences ('Show fast "
+    "access parameters panel (not available in assisted mode)') or the channel may be assisted. "
+    "Restore/verify the manual measurement screen before continuing"
+)
+
+
+def parameter_panel_absent_clause(separator: str = "") -> str:
+    """The one wording for an absent fast-access parameter panel (ledger B01).
+
+    ``separator`` is what a caller prepends when the clause continues a sentence — the driver's
+    missing-field failure appends it after the role list — while the gate takes it as a clause of
+    its own. The text is deliberately **both readings at once**: a panel hidden by the
+    application's own ``Preferences`` option and an assisted channel paint the same screen, so a
+    refusal that named only one of them would send the operator to the wrong place (the live
+    incident B01 records). Nothing here claims which of the two it is.
+    """
+    return separator + _ABSENT_PANEL_REASON
 
 
 def _client_top(panel: Mapping, roles: Mapping) -> int:
@@ -291,18 +320,18 @@ def _client_bottom(panel: Mapping, roles: Mapping) -> int:
 def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     """Every clause of the shape check this resolved tree fails — empty when it passes.
 
-    The gate's structural half (plan §24.3): **one common core plus two accepted shapes, as
-    alternatives** — never "require four panels, then special-case three". The assisted screen
-    has no sidebar parameter column *at all*, and that absence is what :func:`screen_mode` reads
-    as :attr:`ChannelMode.ASSISTED`; a predicate that demanded a column would refuse the assisted
-    mode for being the assisted mode, before that classification could run.
+    The gate's structural half (plan §24.3): **one common core plus the manual shape**, the only
+    shape this experiment measures on. A screen with no parameter column used to be the accepted
+    *assisted* shape, and that acceptance is what ledger B01 removed: the column can be hidden by
+    the application's own ``Preferences`` option while the channel stays manual, so its absence
+    is refused with a clause that names both readings and claims neither.
 
     The common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the client's
     top and a status band reaches the client's bottom; the strip panel resolves with a row whose
     length maps into :data:`STRIP_BUTTON_ORDER` (the silent case §21.3 item 3 names: *a different
     button panel in the plot's middle band*); and nothing is over it — no menu popup and no
-    dialog panel. The two accepted shapes: **manual** (that column resolves with its seven
-    :data:`PARAM_COLUMN_ORDER` roles) or **assisted** (no column anywhere on the screen).
+    dialog panel. The manual shape: that column resolves with its seven
+    :data:`PARAM_COLUMN_ORDER` roles.
 
     **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
     the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
@@ -412,19 +441,35 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     params = roles.get("params") or {}
     rows = roles.get("param_rows") or []
     column = roles.get("left_panel")
-    # The manual shape: the column must resolve **with its roles** — a column that resolves
-    # without them is the case §24.3 names as neither shape. No column at all is the *assisted*
-    # shape, and it is accepted as it stands (the same absence `screen_mode` reads as
-    # ChannelMode.ASSISTED), which is why the two shapes are alternatives and not a rule.
-    if (params or rows or column is not None) and (
-        len(params) < len(PARAM_COLUMN_ORDER) or column is None
-    ):
+    panel = observation_of(roles).parameter_panel
+    # The manual shape is the **only** shape this experiment measures on. A column that resolved
+    # *without* its roles is the case §24.3 names as neither shape — a binding that would write
+    # the wrong fields. A screen with no column at all was the accepted *assisted* shape before
+    # ledger B01 and is now a clause of its own: the panel may have been hidden by the
+    # application's own `Preferences` option while the channel stayed manual, so the refusal
+    # names both readings of the absence and claims neither. The clause belongs to the
+    # *measurement screen* — the common core above is what establishes that this tree is one —
+    # because naming the missing column on a surface that is not a measurement screen at all is
+    # exactly the misdiagnosis ledger B08 records.
+    if panel is ParameterPanelState.INCOMPLETE:
         reasons.append(
             f"the sidebar parameter column resolved at "
             f"{None if column is None else column['rect']} with {len(params)} of the "
             f"{len(PARAM_COLUMN_ORDER)} roles ({[role.value for role in PARAM_COLUMN_ORDER]}) "
             f"and {len(rows)} row(s): that is neither accepted shape, and a point's writes "
             "would land on the wrong fields"
+        )
+    elif panel is ParameterPanelState.ABSENT and (
+        class_name == MAIN_CLASS
+        and menu_band is not None
+        and menu
+        and roles.get("plot") is not None
+        and status_bands
+    ):
+        reasons.append(
+            parameter_panel_absent_clause()
+            + f" (this tree resolved {len(params)} of the {len(PARAM_COLUMN_ORDER)} column "
+            f"role(s) and {len(rows)} row(s), with no sidebar column panel)"
         )
     return tuple(reasons)
 
@@ -439,8 +484,10 @@ def layout_evidence(roles: Mapping) -> str:
     two sessions can see a drift — while nothing a run does is stopped by one.
 
     Read off the normalized observation (:func:`observation_of`), so the sentence and the clauses
-    above are answers about the *same* tree: the extraction moved this function and did not
-    change a word of what it says.
+    above are answers about the *same* tree. The **parameter panel's state** is carried here for
+    the same reason the counts are: it is the reading an operator needs beside a refusal, and it
+    is what tells "this channel has no manual panel to write" apart from "the panel was there and
+    the tree was read wrong" (ledger B01).
     """
     observation = observation_of(roles)
     panels = list(observation.panels)
@@ -452,7 +499,8 @@ def layout_evidence(roles: Mapping) -> str:
         f"{len(panels)} panels (the reference install's clean screen reads "
         f"{EXPECTED_CONTROL_COUNT} in {EXPECTED_PANEL_COUNT}); the strip's row holds "
         f"{len(row)} button(s) in view {observation.strip.state_reading!r}; the parameter column "
-        f"resolved with {len(params)} of {len(PARAM_COLUMN_ORDER)} role(s); "
+        f"resolved with {len(params)} of {len(PARAM_COLUMN_ORDER)} role(s); the fast-access "
+        f"panel reads {observation.parameter_panel.value!r}; "
         f"{'a menu popup is open' if observation.popup_open else 'no menu popup'}; "
         f"{dialogs} dialog panel(s)"
     )

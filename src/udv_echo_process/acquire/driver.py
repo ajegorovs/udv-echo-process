@@ -219,6 +219,7 @@ from udv_echo_process.acquire.ui.layout import (
     layout_shape_reasons,
     normalized_path,
     panel_mode,
+    parameter_panel_absent_clause,
     process_mode_clause,
     same_directory,
     screen_mode,
@@ -2795,19 +2796,22 @@ class Win32Actuator:
         """One parameter-column field as a fact, or an unreadable fact saying why not.
 
         Read off the already-resolved role map rather than through :meth:`read_parameter`, which
-        *raises* on a missing row. A column that is absent is not a failed binding here: it is
-        what this application builds for a channel in assisted mode (measured: 43 visible
-        controls in 4 panels became 21 in 3), it is a fact about the instrument, and a snapshot
-        exists to carry facts rather than to fail on them. A field that resolves but reads back
-        empty is unreadable for the same reason a missing one is — an empty control stated
-        nothing, and a value of ``""`` recorded as ``read`` would claim it did.
+        *raises* on a missing row. A column that is absent is not a failed binding here: it is a
+        fact about the *screen* — the application builds it that way for a channel in assisted
+        mode, and a manual channel whose fast-access panel is switched off in ``Preferences``
+        paints the same screen (ledger B01) — and a snapshot exists to carry facts rather than to
+        fail on them. The reason therefore states the absence and both of its causes, never one
+        of them as the cause. A field that resolves but reads back empty is unreadable for the
+        same reason a missing one is — an empty control stated nothing, and a value of ``""``
+        recorded as ``read`` would claim it did.
         """
         row = roles.get("params", {}).get(role)
         if row is None:
             return unreadable(
                 f"the parameter column holds no field for {role.value!r} on this screen: the "
-                "column is absent, which is what this application builds for a channel in "
-                f"{MODE_ASSISTED} mode"
+                "fast-access panel is absent, which is what this application builds for a "
+                f"channel in {MODE_ASSISTED} mode and also what a manual channel paints when "
+                "the panel is switched off in Preferences (so the screen states no mode)"
             )
         text = self._get_text(row["edit"]["hwnd"])
         if not text.strip():
@@ -2965,11 +2969,13 @@ class Win32Actuator:
     def read_parameter(self, role: ParamRole | str) -> str:
         """The parameter column's current field text for ``role``.
 
-        A missing row is not just a missing control: on a channel in **assisted** mode the
-        application removes the entire sidebar parameter column (measured live 2026-09-17: the
-        clean screen is 43 visible controls in 4 panels, an assisted channel 21 in 3), so every
-        role is missing at once and the reason is the channel's mode. The failure says so —
-        otherwise it reads as a broken role binding.
+        A missing row is not just a missing control: a screen with **no** fast-access parameter
+        column has every role missing at once, and the failure says so. What it must not do is
+        name a *mode* as the cause (ledger B01): the application removes the column for a channel
+        in assisted mode, and it also paints the same screen for a manual channel whose panel is
+        switched off in ``Preferences`` — so the failure names both readings
+        (:meth:`_assisted_mode_clause`) and leaves the diagnosis to the operator who can see the
+        checkbox.
         """
         wanted = self._as_role(role)
         row = self._resolve()["params"].get(wanted)
@@ -2982,21 +2988,24 @@ class Win32Actuator:
         return self._get_text(row["edit"]["hwnd"])
 
     def _assisted_mode_clause(self) -> str:
-        """The mode explanation appended to a missing-parameter failure, when it applies.
+        """The explanation appended to a missing-parameter failure, when the panel is absent.
 
-        Empty string on a manual channel — the clause is a diagnosis, so it is only added when
-        the evidence for it is on screen (no sidebar parameter column).
+        Empty string when the panel resolved — the clause is a diagnosis, so it is only added
+        when the evidence for it is on screen (no parameter column).
+
+        **It does not assert a mode** (ledger B01): the absent panel is what this application
+        paints for an assisted channel *and* what a manual channel paints with the fast-access
+        panel switched off in ``Preferences`` (``UI-OVERLAY-06``), and the tree cannot tell the
+        two apart. So the wording offers both readings and names the option that hides the
+        panel; claiming assisted mode as a fact sent the operator to the channel's mode instead
+        of to the checkbox. The wording lives in
+        :func:`~udv_echo_process.acquire.ui.layout.parameter_panel_absent_clause` so the gate's
+        clause and this failure cannot drift apart.
         """
         roles = self._resolve()
         if roles.get("params") or roles.get("param_rows"):
             return ""
-        return (
-            " — and this channel's screen holds no sidebar parameter column at all, which is "
-            "what this application does for a channel in **assisted** mode (its parameters are "
-            "derived in the assisted panel instead, so there is nothing for a sweep to write). "
-            "Select a channel in manual mode, or leave assisted mode in the application's own "
-            "Preference menu, then re-run"
-        )
+        return parameter_panel_absent_clause(" — and ")
 
     def write_parameter(self, role: ParamRole | str, value: str) -> str:
         """Write one column field, commit it, and **return the app's read-back**.
