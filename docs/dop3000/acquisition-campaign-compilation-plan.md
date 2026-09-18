@@ -1223,6 +1223,34 @@ reached the read or write model. Two consequences, and they generalise to every 
   recording this instrument was never configured to make — the channel-mismatch failure in a different
   costume.
 
+### 18.4 Power is coupled to TGC mode — and this machine's TGC is in auto
+
+Moving `Emitting power` from Medium to High raises a modal warning on the application itself:
+
+> The TGC is in auto mode. Changing the emitting power will modify the TGC mode and amplification.
+> Cancel / Continue
+
+Three things follow, and the first is the one that matters for the matrix.
+
+- **A power sweep on this instrument is not a one-knob sweep while TGC is in auto.** Changing power rewrites
+  the TGC mode *and* the amplification, so a recorded amplitude difference across power levels would carry
+  the TGC change with it and the comparison would measure both at once. The operator's own practice is to run
+  manual TGC; the machine is presently in auto (a fresh install's default, or the AI/assisted mode — to be
+  inspected). This is a *design* consequence for `parameter-sweep-matrix.md`, not a code one: a power axis
+  needs TGC mode fixed and recorded first, exactly as the matrix already requires for co-set parameters.
+- **The coupling is itself a fact worth reading.** The warning is the application *telling us* that two more
+  quantities are about to move. A pre-run reading that captured TGC mode and amplification would let a compile
+  refuse a power change made while the machine is in a state the definition does not declare — the same shape
+  as the fixed-fact refusal, one surface further out.
+- **A modal dialog is a hazard for the identification harness.** The driver's guard checks that the main
+  window is foreground; it knows nothing about a modal sitting in front of it, so a probe that opens the
+  parameters dialog by gesture could press into the wrong surface. The rule for the pass: **nothing modal is
+  ever left open while a probe runs** — cancel or commit first, then read.
+
+Recorded here rather than in the code because nothing in this slice should act on it until the matrix says
+which axis it belongs to and the operator has settled the TGC mode question (auto vs manual, and whether the
+assisted mode forces auto).
+
 **Harness trap, paid for once.** `./tools/live/dispatch.sh tools/live/probes/<probe>.py` does **not** run the
 probe: the launcher joins its argument onto the probe directory, finds nothing, and returns without writing a
 log — so the dispatcher polls for a line that can never appear. The working form is the bare name:
