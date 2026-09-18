@@ -94,9 +94,15 @@ moved the pure half of `driver.py` (the normalized observation, the surface clas
 shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/`, and then
 its widget slice moved the three remaining pure interpreters after it — the recording strip, the
 `Operating parameters` dialog and the one menubar binding (`ui/strip.py`, `ui/dialog.py`,
-`ui/menu.py`). `driver.py` re-exports every moved name, so the module is smaller while every
-caller still resolves (`driver.screen_mode`, `driver.layout_shape_reasons`,
-`driver.dialog_value_fields`, `driver._strip_row`, `driver.PARAMETERS_MENU`, …).
+`ui/menu.py`). Patch 3 moved the **Win32 mechanics** into `acquire/win32/` — the message transport
+(`messages.py`), the cursor, the clip and the foreground precondition (`cursor.py`), and the
+enumeration with its visibility rule (`tree.py`). `driver.py` re-exports every moved name, so the
+module is smaller while every caller still resolves (`driver.screen_mode`,
+`driver.layout_shape_reasons`, `driver.dialog_value_fields`, `driver._strip_row`,
+`driver.PARAMETERS_MENU`, `driver._send`, `driver._CursorPoint`, `driver._click_hold`, …). Line
+and byte references in this document therefore name **symbols**, not offsets: the only line
+numbers it still states are §7's freeze-commit citations into `acquire/verify.py` and
+`acquire/log.py`, which Patch 3 did not touch.
 
 Two of those moves carried a **corrected decision** rather than a moved line, and both refuse
 earlier than the code they replace: a menubar whose painted set is not one this anchor was
@@ -120,10 +126,11 @@ semantics currently move faster than campaign abstractions.
 ## 5. Target layout — **status: target** (one line per layer, with the patch that lands it)
 
 None of the modules below existed in the tree at the freeze commit. `ls
-src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4, and
-`acquire/ui/` holds that list's first five entries as of Patch 2 (the layout slice, then the
-widget slice: the strip, the dialog and the menubar anchor). Read every path in this section as
-a **plan**, and check the tree before relying on one.
+src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4; `acquire/ui/`
+holds that list's first five entries as of Patch 2 (the layout slice, then the widget slice: the
+strip, the dialog and the menubar anchor), and `acquire/win32/` holds the three mechanics entries
+below as of Patch 3. Read every path in this section as a **plan**, and check the tree before
+relying on one.
 
 | target module | layer | status |
 |---|---|---|
@@ -132,9 +139,9 @@ a **plan**, and check the tree before relying on one.
 | `acquire/ui/strip.py` — pure strip observation and classification (`strip_row`, `has_slider`, `strip_state_of`, `press_refusal`, `strip_clauses`) | pure interpreter | **landed by Patch 2 (widget slice)** |
 | `acquire/ui/dialog.py` — operating-parameters table binding, widget-aware value extraction (`dialog_value_fields`, `dialog_refusal`, `channel_mismatch`, `_is_dialog_panel`, `bottom_row`) | pure interpreter | **landed by Patch 2 (widget slice)** |
 | `acquire/ui/menu.py` — the `Parameters` anchor and its expected popup, and nothing generic (`anchor_clause`, `anchor_button`, `entry_buttons`, `observation_text`) | pure interpreter | **landed by Patch 2 (widget slice)** |
-| `acquire/win32/messages.py` — `SendMessageTimeoutW`, posted held click, text commit, combo read/select | Win32 mechanics | **target — Patch 3** |
-| `acquire/win32/cursor.py` — foreground checks, real cursor move/restore, `ClipCursor` | Win32 mechanics | **target — Patch 3** |
-| `acquire/win32/tree.py` — enumerate the main window, visibility, normalize into `ui/model` nodes | Win32 mechanics | **target — Patch 3** |
+| `acquire/win32/messages.py` — `SendMessageTimeoutW`, posted held click, text commit, combo read/select (`_send`, `_post`, `_click_hold`, `_set_text_commit`, `_combo_select`, `_combo_index`, `_combo_items`, `_get_text`, `_control_id`) | Win32 mechanics | **landed by Patch 3** |
+| `acquire/win32/cursor.py` — foreground checks, real cursor move/restore, `ClipCursor` (`_gui`/`_user32`, `_CursorPoint`/`_ClipRect`, `_clip_rect`, `_release_clip`, `_cursor_position`, `_restore_cursor`, `_move_real_cursor`, `_foreground_window`, `_thread_of`, `_activate_window`, `_require_foreground`, `_hover_centre`) | Win32 mechanics | **landed by Patch 3** |
+| `acquire/win32/tree.py` — enumerate the main window, visibility, normalize into `ui/model` nodes (`_visible_children`, `_is_visible`, `_hidden_panels`, `_main_hwnd`, `_children_of`, `_descendants_of`, `ui_nodes`) | Win32 mechanics | **landed by Patch 3** |
 | `acquire/udop/parameters.py`, `recording.py`, `store.py`, `session.py` | UDOP workflows (the only layer that combines observations with actions) | **target — Patch 4** |
 | `acquire/campaign/{models,planning,compile,resume,run}.py` | campaign decomposition | **target — after device verification** |
 
@@ -142,14 +149,35 @@ Rules the target layout pins:
 
 - **No HWND is a semantic identity.** A live handle is valid only as an action reference
   for the resolve that produced it; an `hwnd` changes on every application restart.
-- **No DOP experiment policy in `win32/`**, and no `WM_LBUTTONDOWN` knowledge in `ui/`.
+- **No DOP experiment policy in `win32/`**, and no `WM_LBUTTONDOWN` knowledge in `ui/`. The
+  `win32/` package imports no `campaign`/`runner`/`verify`, and its only `acquire/ui` import is
+  `tree.ui_nodes` — the *node type* of a row, not a rule (`tests/test_acquire_win32_tree.py`
+  asserts both, over the AST).
+- **The platform boundary is `acquire/win32/`.** `ctypes.windll`, `win32gui` and `win32con` are
+  touched only inside `win32/cursor._gui`/`_user32` — never at import time — so
+  `import udv_echo_process.acquire` still works on a machine with no Windows and no `pywin32`
+  (`acquire/__init__.py`'s contract, and the child-interpreter test in
+  `tests/test_acquire_win32_messages.py`). Every Win32 call the *mechanics* make goes through those
+  two handles, and every one of them is handed to the caller's own names: `Win32Actuator` passes its
+  `_gui`/`_user32`/`_post`/`_send` and the methods a step is composed of, which is what keeps the
+  repository's fakes (which patch those names on the facade) binding at the same place. The one
+  direct `ctypes.windll.user32` read left outside the package is
+  `Win32Actuator.screen_fingerprint`'s `IsZoomed`/`GetSystemMetrics` pair — a read-only diagnostic
+  of a screen the facade has already resolved, pressing nothing — and it is named here rather than
+  quietly rounded off.
 - **A `StripBinding` that carries executable button roles exists only for known-safe
   strip states** — ambiguity has no binding, not a default one.
 - **Compatibility first:** `from udv_echo_process.acquire.driver import Win32Actuator`
   keeps working; the `Actuator`/`SweepActuator` method names, the CLI behaviour and the
   campaign JSON do not change; implementations move behind compatibility imports rather
   than every call site changing at once. `udop/session.py` may re-export the existing
-  `Win32Actuator` interface while the rest of the repository stays still.
+  `Win32Actuator` interface while the rest of the repository stays still. Patch 3 measured
+  what that costs: every module-level name and every `Win32Actuator` attribute the flat module
+  published at `50625b5` still resolves at its tip (121 module names, 96 class attributes), with
+  two exceptions — `NUMERIC_WRITE_RECIPE` and `lru_cache`, both *incidental imports* that lived
+  in `driver.py` only to feed the commit recipe's assertion and the two lazy handles. Nothing in
+  `src/`, `tests/` or `tools/` referenced either through the driver; the recipe name is
+  `acquire/actuator.py`'s and is re-exported by `acquire`.
 
 ## 6. Phase plan, and which patch lands what
 

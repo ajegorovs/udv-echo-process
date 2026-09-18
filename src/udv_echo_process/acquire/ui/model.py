@@ -2,9 +2,10 @@
 
 Layer 1 of the target layering (``docs/dop3000/acquisition-architecture.md`` §5). An
 interpreter under this package reads *these* types and not a live window: the Win32 enumeration
-(``driver._visible_children``), the visibility rule and the control-id bookkeeping stay in
-:mod:`udv_echo_process.acquire.driver`, and what arrives here is the **normalized projection**
-of that enumeration.
+(``acquire/win32/tree._visible_children`` since Patch 3 — still reachable as
+``driver._visible_children`` through the facade's compatibility import), the visibility rule and
+the control-id bookkeeping stay in the Win32 package, and what arrives here is the **normalized
+projection** of that enumeration.
 
 Three rules are structural, and each of them was paid for live:
 
