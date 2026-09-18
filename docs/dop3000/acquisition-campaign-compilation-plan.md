@@ -526,6 +526,12 @@ its tests are the ones that must show the recipe is untouched (criterion 5).
 - Phase 7 (the per-point acceptance certificate): the next milestone after this one. The
   pieces this plan must leave for it are the compiled plan's policy, the snapshot on the
   record, and the per-fact `read`/`declared` provenance.
+- **Migrating the record's existing provenance fields onto `InstrumentFact`** —
+  `block_cap_profiles`, `covariates_enforced`, `covariates_advisory`, `SizeSignature`. W5
+  introduces the type and uses it for what it adds; reshaping fields the analysis already
+  reads is a log-schema change, and it belongs with Phase 7, where the certificate decides
+  what the record must carry. Deciding it here would grow this slice into a restructuring no
+  consumer has asked for yet. (Round 1 endorsed the mechanism, not a migration.)
 - Phase 8's log-schema versioning beyond the resume fingerprint; Phase 9's
   hardware-in-the-loop gate beyond the fixtures W1 captures.
 - Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
