@@ -514,7 +514,34 @@ its tests are the ones that must show the recipe is untouched (criterion 5).
 - Anything touching `outputs/` (gitignored live evidence) or the reconnaissance probes
   under `tools/live/probes/`.
 
-## 10. Picking this up cold
+## 10. Review round 1 — what changed in this document
+
+The plan was reviewed before any implementation. The direction was approved — including all
+five recommended decisions, and explicitly *not* requiring `InstrumentSession`, the explicit
+state machine, the canonical operation decoder or the `driver.py` decomposition first — with
+four document-level changes requested before coding, and four smaller observations. All eight
+are in this revision, one commit each:
+
+| # | review point | where it now lives | commit |
+|---|---|---|---|
+| 1 | do not compile on the raw `ScreenFingerprint` | §3 criterion 3, W2 — two models, `InstrumentSnapshot` and `CompilationIdentity` | `d85883f` |
+| 2 | make the order explicit: routing before reading | §4 "The order", W2's narrowed docstring, W4 | `f28e4a5` |
+| 3 | define resume against a pre-Phase-6 log | W4 "Legacy logs", criterion 6 | `c7fec27` |
+| 4 | W6 must not overwrite the declaration it explains | W6 — declared / observed / effective | `cb983cd` |
+| 6 | `--plan-only` names a live step after an offline one | W4 "Naming" — `acquire compile` | `f8d72eb` |
+| 7 | W1 must not assume every fact belongs in `ParamRole` | W1 reworded, decision D6 | `95a09bc` |
+| 8 | provenance is a value *and* a source, as a type | W5 — `InstrumentFact` / `FactSource` | `95a09bc` |
+| 10 | prove the refusal on real hardware, negatively | §7 and the acceptance sequence | `d85883f` |
+
+Point 5 (the decisions) was agreed with one qualification — D2's "take the snapshot after
+the intentional target-channel selection" — which is now the order in §4 rather than an
+implementation choice. Point 9 (`uniform_rtol` stays out of acquisition) was already a
+constraint in §6 and is unchanged.
+
+Point 10 landed inside the commit for point 1 rather than its own; the acceptance sequence
+carries it either way, and it is listed here so the record is not silent about it.
+
+## 11. Picking this up cold
 
 ```bash
 cd C:/Repos/udv-echo-process

@@ -212,8 +212,9 @@ recorded in that PR's body and in
 [`dop3000/acquisition-campaign-compilation-plan.md`](dop3000/acquisition-campaign-compilation-plan.md)
 — read the instrument's state, compile the campaign against it, and refuse before the
 first recording when the two disagree; plus the cap-provenance and period-law items the
-review of the first slice carried forward. Five decisions are left open in it (§5), and no
-code is written yet.
+review of the first slice carried forward. It has been reviewed once: the direction was
+approved and the four document-level changes it asked for are in (§10 of the plan lists them
+with their commits, and the six decisions in §5 are still open). No code is written yet.
 
 Binding outcomes:
 
