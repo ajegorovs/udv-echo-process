@@ -2125,6 +2125,49 @@ def test_an_entry_press_that_opens_nothing_is_reported_and_no_lower_entry_is_pre
     assert app.dialog_open is False
 
 
+def test_a_popup_stranded_by_a_failed_attempt_is_reported_and_never_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A popup a failure left up is the operator's to clear — this driver cannot clear it.
+
+    Measured: nothing dismisses this application's hover-opened popup programmatically —
+    ``ESC``, moving the cursor off it, a click outside and a posted ``WM_CANCELMODE`` all leave
+    it on screen (plan §9.3) — and ``WM_CLOSE`` to the popup panel wedges the modal menu loop
+    until the application is restarted, after which no menu opens by any means (ledger B20). So
+    an attempt that failed with the popup still up has left the application in a state this
+    driver can neither clear nor verify, and that is what it says: the popup is named where the
+    attempt last saw it, the application's state is called unverified, and the remedy — an
+    operator clearing it, or a restart — travels with the failure rather than after it.
+    """
+    monkeypatch.setattr(udop_parameters, "_MENU_POLL_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "_ENTRY_DIALOG_TIMEOUT_S", 0.05)
+    app = FakeUdopWindow(channel=1, entry_presses_ignored=True)
+    actuator = fake_driver(app, channel=1)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.ensure_channel()
+
+    # The failure is still the attempt's own: the stranded popup is reported *with* it, never in
+    # place of it, and the reason keeps the record that says what the application did.
+    assert type(excinfo.value) is driver.AcquisitionError
+    reason = str(excinfo.value)
+    assert driver.GESTURE_POSTED_PRESS in reason
+    assert "opened no dialog" in reason
+
+    warning = next(note for note in actuator.warnings if "popup is still open" in note)
+    assert "'Parameters'" in warning  # the popup, named by the menu it belongs to ...
+    assert "(169, 55" in warning  # ... and by the rect the attempt last saw it at
+    assert "unverified" in warning  # what is *not* known about the application
+    assert "operator" in warning and "restart" in warning  # who has to act, and how
+    assert "WM_CLOSE" in warning  # the gesture that is never used, and why it is not
+    # Nothing was closed and nothing else was pressed into the open menu: the popup is still on
+    # the operator's screen, and the run says so instead of claiming a clean one.
+    assert app.menu_open is True
+    assert app.entry_presses == [HWND_ENTRY_OPERATING]
+    assert ("dialog", "none") in app.events
+    assert events_of(app, "cursor")[-1][1] == "restored"  # the cursor still went back
+
+
 def test_a_menu_interaction_that_switches_the_assisted_mode_on_is_refused(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

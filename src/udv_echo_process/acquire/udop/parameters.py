@@ -294,6 +294,44 @@ class ParametersSurface:
             # The menu has been used (or the attempt is over, hover or press): the
             # operator's cursor goes back, so no path leaves it parked on the menubar.
             self._restore_cursor(saved)
+            # **And a popup this attempt left up is reported, never "closed".** Nothing this
+            # driver sends dismisses a hover-opened popup: the cursor restore above does not, and
+            # neither does ``ESC``, a click outside or a posted ``WM_CANCELMODE`` (plan §9.3) —
+            # while ``WM_CLOSE`` to the popup panel **wedges** the application's modal menu loop,
+            # after which no menu opens by any means until it is restarted (ledger B20). A failure
+            # with the popup still up therefore leaves an application this driver can neither
+            # clear nor verify, and the remedy is the operator's: said here, with the popup named,
+            # so that a run is not restarted onto a screen whose state nobody has read.
+            #
+            # Asked of the screen, never of the presses: only a fresh resolve can say whether a
+            # popup is up *now*. The read is guarded because a report may not replace the failure
+            # it is reporting — the exception on its way out is the whole subject of this block.
+            try:
+                still_up = self._resolve()
+            except Exception:  # noqa: BLE001 - a diagnostic may not mask what it diagnoses
+                still_up = {}
+            if still_up.get("open_popup"):
+                attempt = self.last_entry_attempt or {}
+                rect = (
+                    attempt.get("overlay_rect")
+                    if attempt.get("overlay_visible_after")
+                    else None
+                )
+                seen = (
+                    f" at {tuple(rect)[:2]} (rect {tuple(rect)}), where this attempt last saw it "
+                    "visible"
+                    if rect is not None
+                    else " (this attempt recorded no rect for it)"
+                )
+                self._note(
+                    f"a {PARAMETERS_MENU!r} popup is still open{seen}: the attempt failed with it "
+                    "up, and putting the operator's cursor back does not dismiss it — this driver "
+                    "never WM_CLOSEs a popup (that wedges the application's modal menu loop until "
+                    "it is restarted, after which no menu opens by any means) and presses nothing "
+                    "into an open menu to recover, so the application's state is unverified. An "
+                    "operator has to clear the popup, or the application has to be restarted, "
+                    "before this point is retried"
+                )
 
     def _assert_assisted_unchanged(self, sidebar_before: bool) -> None:
         """Refuse when this interaction switched the assisted mode **on** by itself.
