@@ -129,14 +129,23 @@ the live bug. Instead:
 
 **What this module no longer owns.** The *pure* half — the normalized observation, the surface
 classification, the shape gate, the mode reading and the geometry the binding rules are written
-in — moved to :mod:`udv_echo_process.acquire.ui` (``ui/model.py``, ``ui/layout.py``) and is
-imported back at the top of this file, so ``driver.screen_mode``,
-``driver.layout_shape_reasons``, ``driver.layout_refusal``, ``driver.process_mode_clause`` and
-the rest keep resolving for every caller and every test written against the flat module
-(``docs/dop3000/acquisition-architecture.md`` §5, "compatibility first"). What stays here is
-what needs a live window: the transport, the cursor and foreground management, the enumeration
-and the gestures — and those gestures are **byte-identical** to the ones the live sessions
-proved, because this refactor moves code and corrects interpretation rules, never a workflow.
+in — moved to :mod:`udv_echo_process.acquire.ui` (``ui/model.py``, ``ui/layout.py``), and the
+widget interpreters followed in the same patch's widget slice: the recording strip
+(``ui/strip.py``: its row, its state and the ambiguous four-button row of ledger B10), the
+``Operating parameters`` dialog (``ui/dialog.py``: the value table, the widget-aware extraction,
+the dialog-only facts, the three checks and the channel comparison) and the one menubar binding
+this driver has (``ui/menu.py``: the ``Parameters`` anchor, its signature and the popup's own
+order and geometry — ledger B03). Every one of those names is imported back at the top of this
+file, so ``driver.screen_mode``, ``driver.layout_shape_reasons``, ``driver.dialog_value_fields``,
+``driver._strip_row``, ``driver.PARAMETERS_MENU`` and the rest keep resolving for every caller and
+every test written against the flat module (``docs/dop3000/acquisition-architecture.md`` §5,
+"compatibility first"). What stays here is what needs a live window: the transport, the cursor and
+foreground management, the enumeration and the gestures — and those gestures are **byte-identical**
+to the ones the live sessions proved, because this refactor moves code and corrects interpretation
+rules, never a workflow. The two corrections this slice makes are *decisions*, and both refuse
+earlier than the code they replace: an unprovable ``Parameters`` anchor publishes no binding at
+all (so the menubar hover is unreachable rather than mis-aimed), and an ambiguous strip row
+refuses before the held press is posted.
 """
 
 from __future__ import annotations
@@ -195,24 +204,32 @@ from udv_echo_process.acquire.snapshot import (
 # tests that were written against the flat module — ``docs/dop3000/acquisition-architecture.md``
 # §5's *compatibility first* rule. The move changed no caller, and the gesture bodies further
 # down this file are byte-identical to the ones the live sessions proved.
-from udv_echo_process.acquire.ui.layout import (
-    _BAND_MARGIN_FRACTION,
+from udv_echo_process.acquire.ui.dialog import (
     _DIALOG_INPUT_CLASSES,
     _DIALOG_MIN_CHILDREN,
     _DIALOG_MIN_W,
     DIALOG_COLUMN_GAP,
+    _column_bands,
+    _contains,
+    _is_dialog_panel,
+    channel_mismatch,
+    dialog_channel_text,
+    dialog_refusal,
+    dialog_value_fields,
+    text_at,
+)
+from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
+from udv_echo_process.acquire.ui.dialog import dialog_fact as _dialog_fact
+from udv_echo_process.acquire.ui.dialog import dialog_only_reason as _dialog_only_reason
+from udv_echo_process.acquire.ui.layout import (
+    _BAND_MARGIN_FRACTION,
     EXPECTED_CONTROL_COUNT,
     EXPECTED_PANEL_COUNT,
     MAIN_CLASS,
-    MENU_ORDER,
     MODE_ASSISTED,
     MODE_MANUAL,
     _client_bottom,
     _client_top,
-    _column_bands,
-    _contains,
-    _inside,
-    _is_dialog_panel,
     _point_in_rect,
     layout_evidence,
     layout_refusal,
@@ -225,32 +242,75 @@ from udv_echo_process.acquire.ui.layout import (
     screen_mode,
 )
 
+# The menubar's own interpreter — the ``Parameters`` anchor, its refusal, the popup's entry order
+# and signature — and the strip's — the row, the state and the ambiguous-row refusal. Both are
+# Patch 2's widget slice, imported under the names this module published so that ``driver._inside``,
+# ``driver._entry_buttons``, ``driver._strip_row`` and ``driver.PARAMETERS_MENU`` keep resolving.
+from udv_echo_process.acquire.ui.menu import (
+    MENU_ORDER,
+    PARAMETERS_ENTRY,
+    PARAMETERS_MENU,
+    _inside,
+)
+from udv_echo_process.acquire.ui.menu import (
+    PARAMETERS_POPUP_LEFT as _OVERLAY_LEFT,
+)
+from udv_echo_process.acquire.ui.menu import (
+    PARAMETERS_POPUP_MIN_H as _OVERLAY_MIN_H,
+)
+from udv_echo_process.acquire.ui.menu import entry_buttons as _entry_buttons
+from udv_echo_process.acquire.ui.menu import observation_text as _observation_text
+from udv_echo_process.acquire.ui.strip import (
+    has_slider,
+    strip_state_of,
+)
+from udv_echo_process.acquire.ui.strip import (
+    strip_row as _strip_row,
+)
+
 __all__ = [
-    # Moved to ``acquire/ui/layout.py`` by Patch 2 and re-exported here, so a caller or a test
-    # written against the flat module keeps resolving. Listed rather than left implicit: the
-    # names are the module's published surface, private ones included, exactly as they were
-    # before the move (``docs/dop3000/acquisition-architecture.md`` §5).
+    # Moved out of this module by Patch 2 — the pure half into ``acquire/ui/`` — and re-exported
+    # here, so a caller or a test written against the flat module keeps resolving. Listed rather
+    # than left implicit: the names are the module's published surface, private ones included,
+    # exactly as they were before the move (``docs/dop3000/acquisition-architecture.md`` §5).
+    # ``ui/layout.py`` (Patch 2's layout slice), then ``ui/strip.py``, ``ui/dialog.py`` and
+    # ``ui/menu.py`` (this widget slice).
+    "DIALOG_ANCHORS",
     "DIALOG_COLUMN_GAP",
+    "DIALOG_COLUMN_ROWS",
     "EXPECTED_CONTROL_COUNT",
     "EXPECTED_PANEL_COUNT",
     "MAIN_CLASS",
     "MENU_ORDER",
     "MODE_ASSISTED",
     "MODE_MANUAL",
+    "PARAMETERS_ENTRY",
+    "PARAMETERS_MENU",
     "_BAND_MARGIN_FRACTION",
     "_DIALOG_INPUT_CLASSES",
     "_DIALOG_MIN_CHILDREN",
     "_DIALOG_MIN_W",
     "AcquisitionError",
     "Win32Actuator",
+    "_bottom_row",
     "_client_bottom",
     "_client_top",
     "_column_bands",
     "_contains",
+    "_dialog_fact",
+    "_dialog_only_reason",
+    "_entry_buttons",
     "_inside",
     "_is_dialog_panel",
+    "_observation_text",
     "_point_in_rect",
+    "_strip_row",
     "channel_items",
+    "channel_mismatch",
+    "dialog_channel_text",
+    "dialog_refusal",
+    "dialog_value_fields",
+    "has_slider",
     "layout_evidence",
     "layout_refusal",
     "layout_shape_reasons",
@@ -259,6 +319,8 @@ __all__ = [
     "process_mode_clause",
     "same_directory",
     "screen_mode",
+    "strip_state_of",
+    "text_at",
 ]
 
 #: The left column's combo boxes, top -> bottom.
@@ -281,18 +343,13 @@ VK_RETURN, SMTO_ABORTIFHUNG = 0x0D, 0x0002
 #: value comes back through an unsigned ``LRESULT``, so ``CB_ERR`` (-1) arrives as a
 #: huge number. Treating it as "no selection" is the only safe reading.
 _COMBO_NONE_ABOVE = 0xFFFF
-#: The menubar button, and the popup entry the channel lives behind — that entry being a
-#: *name used in messages only*: this application's widgets carry no captions, so nothing
-#: here matches a control against it (see the module docstring).
-PARAMETERS_MENU = "Parameters"
-PARAMETERS_ENTRY = "Operating parameters"
-#: The popup overlay's own geometry, as read live off the open menu: a caption-less
-#: ``TSp_Panel`` at ``(169, 55, 401, 250)`` — 195 px tall — with its entries at screen
-#: tops 61, 95, 130, 165 and 205 (five of them, three of which the older read mistook
-#: for the whole menu). This rect is the **fallback** identity only (the primary one is
-#: the panel that was not visible before the hover), and it is the reference's own
-#: predicate, ``left == 169 and h > 120`` (``recon/41_burst_sampling_volume.py``).
-_OVERLAY_LEFT, _OVERLAY_MIN_H = 169, 120
+# ``PARAMETERS_MENU``, ``PARAMETERS_ENTRY`` and the popup overlay's own geometry
+# (``_OVERLAY_LEFT``/``_OVERLAY_MIN_H``: a caption-less ``TSp_Panel`` at ``(169, 55, 401, 250)``,
+# 195 px tall, which is the reference's own predicate ``left == 169 and h > 120`` from
+# ``recon/41_burst_sampling_volume.py``) are ``acquire/ui/menu.py``'s as of Patch 2's widget
+# slice. They are imported at the top of this file under these same names — the menubar *is*
+# the one surface whose binding that module owns — and the popup's signature is named again in
+# :meth:`Win32Actuator._poll_parameters_overlay`, where it is applied.
 
 
 #: How long the dialog is given to state its values before the read gives up on it. Measured:
@@ -575,159 +632,13 @@ def _hidden_panels(win: int) -> list[dict]:
     return out
 
 
-def _dialog_only_reason(name: str) -> str:
-    """Why a fact that lives in the ``Operating parameters`` dialog has no screen read path.
-
-    ``first_gate_depth``, ``burst_length``, ``sound_speed`` and ``sampling_volume`` have no
-    parameter-column field at all (:data:`DIALOG_ONLY_PARAMETERS`): the column is the surface a
-    *point* writes, and a point never writes these — they are read once per channel, from the
-    dialog. The reason is written out rather than summarised, because it lands in a run record
-    read by someone who has no instrument in front of them.
-    """
-    return (
-        f"{name!r} has no parameter-column field: it is set in the {PARAMETERS_ENTRY!r} "
-        "dialog only, so nothing on the measurement screen states it"
-    )
-
-
-def dialog_value_fields(
-    children: Sequence[Mapping], read_text
-) -> list[dict[str, object]]:
-    """The dialog's value table as ``(column, row)`` fields, with the text each one states.
-
-    A field is one row of that table: the ``TComboBox`` a row offers when it has one — a parameter
-    chosen from a list, which is what the burst length, the sensitivity and the sampling volume
-    are — and otherwise the ``TSp_Edit`` beside it. That rule is *measured* rather than preferred:
-    at ``burst = 4`` the row reads a combo ``'4'`` with an inner ``'4'`` **and** a ``TSp_Edit``
-    ``'89'``, and the ``89`` is the value beside it rather than the parameter (the corpus' sampling
-    volume at 1460 m/s is 0.876 mm, and the campaign declares the ``4``). Rows are the
-    ``TSp_Value_Button`` widgets, and a field's identity is its **position**: the column is the
-    band its left edge falls in — the measured bands are the value edits' lefts, 786 / 987 / 1187 px
-    in a dialog at 655,364 — and inside a column, top to bottom. Never an id, never a caption:
-    every one of these widgets is caption-less (measured through ``WM_GETTEXT`` as well as
-    ``GetWindowText``, 2026-09-18) and control ids change on every launch.
-
-    **When a row offers a choice, the choice is the row's value — and the edit beside it is never a
-    fallback for it.** The two controls state *different physical quantities*: measured, at the
-    burst row the combo states ``4`` while the ``TSp_Edit`` inside the same row states ``89``, the
-    sampling volume at 1460 m/s (the corpus' own number for the campaign's declared burst). A reader
-    that fell back to the edit on an attempt where the choice could not be read would hand a pre-run
-    check a different measurement under the parameter's name with nothing in the reading to say so —
-    and it would say it confidently: measured against this tree with the choice blanked, the fallback
-    answers ``TSp_Edit '89'`` for the burst, and :meth:`DialogParameters.readable` comes back
-    ``True`` because all three facts are "present". So a choice that states nothing leaves the row
-    stating nothing: the fact built from it is unreadable and the reading does not claim it.
-
-    Only controls **inside** a value button count, which is what keeps the channel field out of
-    the table: the dialog's header combo sits above every button (measured ``top`` 373 against the
-    table's 443), and reading it as a field would put the channel in the middle of the parameter
-    order.
-
-    An empty table is answered with an empty list and not an error: a dialog that has not built its
-    value buttons yet is a state this read has to *report* (measured on the running application: the
-    first open after a restart can come back with no table at all), and a crash inside the reader
-    would take the whole snapshot down over a fact that is merely unread.
-    """
-    buttons = sorted(
-        (row for row in children if row.get("cls") == "TSp_Value_Button"),
-        key=lambda row: (row["left"], row["top"]),
-    )
-    fields: list[dict[str, object]] = []
-    for button in buttons:
-        inside = [
-            row
-            for row in children
-            if row.get("cls") in ("TSp_Edit", "TComboBox") and _contains(button, row)
-        ]
-        if not inside:
-            continue
-        combo = next((row for row in inside if row.get("cls") == "TComboBox"), None)
-        field = combo if combo is not None else inside[0]
-        fields.append(
-            {
-                "left": field["left"],
-                "top": button["top"],
-                "cls": field["cls"],
-                "hwnd": field["hwnd"],
-                "value": read_text(field["hwnd"]),
-            }
-        )
-    columns = _column_bands([int(row["left"]) for row in fields])
-    for row, column in zip(fields, columns, strict=True):
-        row["column"] = column
-    ordered: list[dict[str, object]] = []
-    for column in sorted(set(columns)):
-        band = sorted(
-            (row for row in fields if row["column"] == column), key=lambda row: row["top"]
-        )
-        for index, row in enumerate(band):
-            ordered.append({**row, "row": index})
-    return ordered
-
-
-def _dialog_fact(parameters: DialogParameters | None, field: DialogField) -> InstrumentFact:
-    """One dialog-only fact, on the authority of a dialog *read* — or of nothing at all.
-
-    The same rule the channel is held to (:meth:`Win32Actuator._channel_fact`): the reader that
-    opened the dialog is a *step*, and this reading cannot claim what no step established. A
-    snapshot taken without one carries the fact as ``unreadable``, which is a true statement about
-    the run — the alternative, reading the dialog here, would make this method press things, and a
-    reading that presses is no longer something an instrument somebody else is using can be read
-    with.
-    """
-    if parameters is None:
-        return unreadable(
-            f"{_dialog_only_reason(field.value)} — and no read of that dialog was handed to this "
-            "snapshot, so nothing established it (read_dialog_parameters reads it, and a caller "
-            "that wants this fact has to have paid for that step)"
-        )
-    value = parameters.value(field.value)
-    if value is None:
-        return unreadable(
-            parameters.reason
-            or f"the {PARAMETERS_ENTRY!r} dialog stated no {field.value!r}, so there is nothing "
-            "to compare it with"
-        )
-    return InstrumentFact(value=value, source=FactSource.READ, reason=parameters.reason or None)
-
-
-def _bottom_row(panel: dict, kids: Sequence[dict], margin: int = 70) -> list[dict]:
-    """The panel's own bottom button band, left -> right.
-
-    A dialog's button pair is identified by sitting in the panel's last ``margin``
-    pixels — never by title and never by a rect stated in logic (``recon/41``, which
-    used 60 px; the band is a *band*, so it also holds whatever else this application
-    paints low and wide in a dialog, e.g. the operating dialog's two indicator buttons
-    "No emission on Probe In/Out" and "Use US coupling parameters"). The pair is
-    therefore addressed from the **right** (:meth:`…Win32Actuator._dialog_button`), never
-    by taking the leftmost entry as "the first button".
-    """
-    floor = panel["top"] + panel["h"] - margin
-    return sorted(
-        (k for k in kids if k["cls"] == "TSp_Button" and k["top"] > floor),
-        key=lambda k: k["left"],
-    )
-
-
-def _strip_row(panel: dict, kids: Sequence[dict]) -> list[dict]:
-    """The strip's top-row buttons, left -> right.
-
-    Two buttons the panel never paints sit *below* the panel's own rect; requiring a
-    button's centre to lie inside the panel excludes them. Width is never an identity —
-    134 vs 138 px is too close — so the row is sorted by ``left`` and addressed by index
-    (:func:`…actuator.press_index`) (docs/16 §7, §10).
-    """
-    panel_bottom, band = panel["top"] + panel["h"], panel["top"] + 30
-    return sorted(
-        (
-            k
-            for k in kids
-            if k["cls"] == "TSp_Button"
-            and k["top"] < band
-            and (k["top"] + k["h"] // 2) < panel_bottom
-        ),
-        key=lambda k: k["left"],
-    )
+# ``dialog_value_fields``, ``_dialog_only_reason``, ``_dialog_fact``, ``_strip_row`` and
+# ``_bottom_row`` were defined here: the dialog's value table, its two fact rules, the strip's own
+# row and the dialog's bottom button band. They are pure interpreters over an already-resolved tree
+# and moved to ``acquire/ui/dialog.py`` and ``acquire/ui/strip.py`` in Patch 2's widget slice,
+# imported at the top of this file under these same names so ``driver.dialog_value_fields`` and
+# ``driver._strip_row`` keep resolving for every caller and every test written against the flat
+# module (``docs/dop3000/acquisition-architecture.md`` §5, *compatibility first*).
 
 
 # ------------------------------------------------------------------------ the layout gate
@@ -742,55 +653,10 @@ def channel_items() -> tuple[str, ...]:
     return tuple(str(n) for n in range(MIN_CHANNEL, MAX_CHANNEL + 1))
 
 
-def _entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
-    """The overlay's entries: every ``TSp_Button`` lying inside it, **screen order**.
-
-    Geometry is the only identity available: this application's widgets carry no captions
-    (``GetWindowText`` is empty on every ``TSp_*`` widget), so a title can never find an
-    entry — that was the live bug. The entries are the buttons whose centre lies inside
-    the overlay's rect, ordered by screen ``top`` and then ``left``, because enumeration
-    order is *not* screen order: the reference pressed ``Default parameters`` the once it
-    trusted it (``recon/41_burst_sampling_volume.py``, docs/16 §13a). The **first** in
-    this order is ``Operating parameters``.
-    """
-    return sorted(
-        (k for k in kids if k["cls"] == "TSp_Button" and _inside(overlay, k)),
-        key=lambda k: (k["top"], k["left"]),
-    )
-
-
-def _observation_text(observation: Mapping | None) -> str:
-    """What one popup-entry press actually did, as one clause for a failure message.
-
-    The observations recorded by :meth:`Win32Actuator._observe_entry_attempt` are reported
-    verbatim — which gesture was used, whether the overlay was *visible*, whether the
-    popup closed, any panel that appeared that was not up before and its top-level child
-    classes — because "the entry opened no dialog" is not a diagnosis: the live run has to
-    be read back from what the application *did*, and the next run has to be able to say
-    what it saw.
-    """
-    if not observation:
-        return "no popup entry press was attempted, so nothing was observed"
-    fresh = observation["new_panels"]
-    if fresh:
-        appeared = "; ".join(
-            f"a new panel at {p['rect']} with top-level children {list(p['classes'])}"
-            for p in fresh
-        )
-    else:
-        appeared = "no new panel or dialog appeared at all"
-    dialog = observation["dialog"]
-    if dialog is not None:
-        appeared += f"; the dialog found holds {list(dialog['classes'])}"
-    failed = " (the gesture itself failed)" if observation["gesture_failed"] else ""
-    return (
-        f"the {observation['gesture']} on the popup entry at "
-        f"{observation['entry_rect'][:2]} (rect {observation['entry_rect']}){failed} "
-        f"{'left open' if not observation['overlay_closed'] else 'closed'} the popup, "
-        f"whose overlay was "
-        f"{'visible' if observation['overlay_visible'] else 'NOT visible'}, and "
-        f"{appeared}"
-    )
+# ``_entry_buttons`` and ``_observation_text`` were defined here: the popup's entries in screen
+# order and the prose one entry press is reported with. Both are pure, and both are
+# ``acquire/ui/menu.py``'s as of Patch 2's widget slice — imported at the top of this file under
+# these same names, so ``driver._entry_buttons`` keeps resolving.
 
 
 def _descendants(roles: Mapping, root: int) -> list[dict]:
@@ -1502,9 +1368,11 @@ class Win32Actuator:
         strip_kids = children_of(strip_panel["hwnd"]) if strip_panel is not None else []
         row = _strip_row(strip_panel, strip_kids) if strip_panel is not None else []
         roles["strip_row"] = row
-        roles["state"] = classify_strip_view(
-            len(row), any(k["cls"] == "TSp_Sliding_Bar" for k in strip_kids)
-        ).value
+        # The slider's mark is read once, here, and carried on the map: it is one of the two facts
+        # the view is classified from (``ui/strip.py`` :func:`…ui.strip.has_slider`), and a state
+        # read that had to enumerate the panel again could not be taken from a captured tree.
+        roles["strip_slider"] = has_slider(strip_kids)
+        roles["state"] = classify_strip_view(len(row), roles["strip_slider"]).value
         # The gate and its evidence, both pure over this tree (plan §24.3, §24.5 D4). The shape
         # decides and the counts do not: 43 and 44 are two legitimate layouts, so the totals are
         # carried in `layout_evidence` — into the reading, the note and the record — where a
@@ -1514,23 +1382,28 @@ class Win32Actuator:
         self.last_roles = roles
         return roles
 
-    def _has_slider(self, roles: dict, panel: dict | None) -> bool:
-        """True when the strip panel owns a ``TSp_Sliding_Bar`` — the store view's mark."""
-        if panel is None:
-            return False
-        return any(
-            k["cls"] == "TSp_Sliding_Bar"
-            for k in self._children_of(panel["hwnd"], roles)
-        )
-
     def _state_of(self, roles: dict) -> StripState:
-        """The strip state implied by an already-resolved role map."""
-        panel = roles["strip_panel"]
-        # `slider_max` (the selected block's profile count) is deliberately left unset: the
-        # reference never read the slider's range, and guessing is worse than None.
-        return StripState(
+        """The strip state implied by an already-resolved role map.
+
+        Both facts come off the map itself, and that is the point: the row's length, and the
+        slider's presence — which is what :meth:`_resolve` read off the strip panel's own live
+        children (``ui/strip.py``'s :func:`…ui.strip.has_slider`) and carried here as
+        ``roles["strip_slider"]``. A map that states neither is read from the *view* it classified,
+        and ``STORE`` **is** the slider's view (:func:`…actuator.classify_strip_view`), so a state
+        can be read from a captured or synthesised tree with no window behind it at all — which is
+        what makes this read testable off the instrument.
+
+        The state itself is built by ``ui/strip.py`` (:func:`…ui.strip.strip_state_of`), including
+        ``slider_max``, which is deliberately left unset: the reference never read the slider's
+        range, and guessing is worse than ``None``.
+        """
+        if "strip_slider" in roles:
+            slider = bool(roles["strip_slider"])
+        else:
+            slider = roles.get("state") == StripView.STORE.value
+        return strip_state_of(
             button_count=len(roles["strip_row"]),
-            has_slider=self._has_slider(roles, panel),
+            has_slider=slider,
             slider_max=None,
         )
 
@@ -2531,11 +2404,12 @@ class Win32Actuator:
             time.sleep(_POLL_S)
 
     def _text_at(self, fields: Sequence[Mapping], column: int, row: int) -> str:
-        """The text stated at ``(column, row)`` of the dialog's table, or ``\"\"``."""
-        for field in fields:
-            if int(field["column"]) == column and int(field["row"]) == row:
-                return self._get_text(field["hwnd"])
-        return ""
+        """The text stated at ``(column, row)`` of the dialog's table, or ``\"\"``.
+
+        The lookup itself is ``ui/dialog.py``'s (:func:`…ui.dialog.text_at`); the read is this
+        method's, because it is the one that needs a window.
+        """
+        return text_at(fields, column, row, self._get_text)
 
     def _dialog_channel_text(self, kids: Sequence[Mapping], fields: Sequence[Mapping]) -> str:
         """The channel the dialog is showing, read from its header combo.
@@ -2545,17 +2419,11 @@ class Win32Actuator:
         the surface that decides whose parameters are shown: a reading that did not carry it would
         let a compile compare one channel's sound speed against another channel's run, which is the
         channel trap this driver already refuses to make when it stores a block (docs/16 §12).
+
+        Which combo that is, is ``ui/dialog.py``'s rule (:func:`…ui.dialog.dialog_channel_text`);
+        the read itself is this method's.
         """
-        rows = {field["hwnd"] for field in fields}
-        headers = [
-            row
-            for row in kids
-            if row.get("cls") == "TComboBox" and row.get("hwnd") not in rows
-        ]
-        if not headers:
-            return ""
-        top = min(headers, key=lambda row: row["top"])
-        return self._get_text(top["hwnd"])
+        return dialog_channel_text(kids, fields, self._get_text)
 
     def _dialog_refusal(self, fields: Sequence[Mapping], channel: str) -> str:
         """Why no dialog-only fact may be believed, or ``\"\"`` when the reading may be trusted.
@@ -2563,55 +2431,32 @@ class Win32Actuator:
         Every refusal is written out in full rather than summarised: the reason lands in a run
         record read by someone with no instrument in front of them, and "the dialog did not read"
         would leave them unable to tell a stale binding from an application that was busy.
+
+        The three checks themselves — the table filled, the table's shape, and every anchor reading
+        the same text the screen reads — are ``ui/dialog.py``'s
+        (:func:`…ui.dialog.dialog_refusal`); what stays here is the two reads that need a window:
+        the dialog's own text (``self._get_text``) and the measurement screen's
+        (:meth:`_screen_anchor_text`). ``DIALOG_FILL_TIMEOUT_S`` is read here, at call time, so the
+        reason a reading gives always names the wait this run actually performed.
         """
-        if not any(field["value"] for field in fields):
-            built = (
-                "built no value buttons at all"
-                if not fields
-                else "built its value buttons but stated nothing in them"
-            )
-            return (
-                f"the {PARAMETERS_ENTRY!r} dialog {built} within {DIALOG_FILL_TIMEOUT_S:g} s of "
-                "being opened, so there is no table to bind: a freshly started application builds "
-                "this table empty (or not at all) the first time it is opened (measured), and an "
-                "empty field is not a value"
-            )
-        columns = tuple(sorted({int(field["column"]) for field in fields}))
-        counts = tuple(
-            sum(1 for field in fields if int(field["column"]) == column) for column in columns
+        return dialog_refusal(
+            fields,
+            channel,
+            read_text=self._get_text,
+            screen_text=self._screen_anchor_text,
+            timeout_s=DIALOG_FILL_TIMEOUT_S,
         )
-        if counts != DIALOG_COLUMN_ROWS:
-            return (
-                f"the {PARAMETERS_ENTRY!r} dialog built {counts} value fields per column where "
-                f"this driver's bindings were measured against {DIALOG_COLUMN_ROWS}: these fields "
-                "are read by position, so a different shape is not the table they were bound in, "
-                "and nothing in it is read"
-            )
-        if not channel:
-            return (
-                f"the {PARAMETERS_ENTRY!r} dialog stated no channel, so a read of it could not say "
-                "which channel's parameters these are"
-            )
-        roles = self._resolve()
-        for role, column, row in DIALOG_ANCHORS:
-            screen = (roles.get("params") or {}).get(role)
-            dialog_text = self._text_at(fields, column, row)
-            screen_text = "" if screen is None else self._get_text(screen["edit"]["hwnd"])
-            if not dialog_text or not screen_text:
-                return (
-                    f"the {PARAMETERS_ENTRY!r} dialog could not be checked against the screen: "
-                    f"{role.value!r} is the anchor at column {column}, row {row}, and it is not "
-                    "stated on both surfaces, so the positions the dialog-only facts are read at "
-                    "could not be confirmed"
-                )
-            if dialog_text != screen_text:
-                return (
-                    f"the {PARAMETERS_ENTRY!r} dialog disagrees with the measurement screen about "
-                    f"{role.value!r}: the dialog reads {dialog_text!r} where the column reads "
-                    f"{screen_text!r}, so this dialog is not the table these bindings were "
-                    "measured against and nothing in it is read"
-                )
-        return ""
+
+    def _screen_anchor_text(self, role: ParamRole) -> str:
+        """The measurement screen's own text for an anchor role, or ``\"\"`` when it states none.
+
+        The other half of an anchor check: the dialog's value at the same ``(column, row)`` has to
+        be the text the parameter column itself reads for that role, which is what makes a
+        positional binding evidence rather than habit (``ui/dialog.py``'s
+        :func:`…ui.dialog.dialog_refusal`, :data:`…actuator.DIALOG_ANCHORS`).
+        """
+        screen = (self._resolve().get("params") or {}).get(role)
+        return "" if screen is None else self._get_text(screen["edit"]["hwnd"])
 
     def instrument_snapshot(
         self,
@@ -2745,21 +2590,14 @@ class Win32Actuator:
         Raising here instead would replace a precise reader diagnostic with a vaguer error this
         method cannot substantiate, because a reading that failed established no channel's facts
         (plan §16.1).
+
+        The comparison and its wording are ``ui/dialog.py``'s
+        (:func:`…ui.dialog.channel_mismatch`), which returns the refusal instead of raising so the
+        same rule holds for a fake, a fixture and this driver; this method is the raise.
         """
-        if routed_channel is None:
-            return
-        if dialog_parameters is None or dialog_parameters.reason:
-            return
-        stated = dialog_parameters.channel.strip()
-        if not stated or stated == str(routed_channel):
-            return
-        raise AcquisitionError(
-            f"the {PARAMETERS_ENTRY!r} dialog states channel {stated} while this reading was "
-            f"routed to channel {routed_channel}: the burst length, the sound speed and the first "
-            f"gate it states are channel {stated}'s parameters, and attributing them to a "
-            f"channel-{routed_channel} reading would record them as that channel's own — nothing "
-            "after this reading can tell the two apart, so it is refused rather than attributed"
-        )
+        refusal = channel_mismatch(routed_channel, dialog_parameters)
+        if refusal is not None:
+            raise AcquisitionError(refusal)
 
     def _channel_fact(self, routed_channel: int | None) -> InstrumentFact:
         """The channel, on the authority the caller hands over — never this reading's own.
@@ -3083,6 +2921,7 @@ class Win32Actuator:
         The overlay guard runs **first** (posted clicks ignore modality, docs/16 §8), then the
         strip is re-resolved — its rect and its children change with the view — and the index
         comes from :func:`…actuator.press_index`, never from a width.
+
         """
         self._settle_press()
         roles = self._resolve()

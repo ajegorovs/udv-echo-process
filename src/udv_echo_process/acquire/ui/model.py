@@ -258,13 +258,16 @@ class UiTree(ValueModel):
 
 
 class MenuObservation(ValueModel):
-    """The menubar as the resolver saw it: its band, its buttons, and what they were named.
+    """The menubar as the resolver saw it: its band, its buttons, and what it bound.
 
-    ``named`` is the positional binding the resolver made (``MENU_ORDER[i]`` → the *i*-th button
-    by ``left``) and it is **evidence, not an identity**: the application's variants do not paint
-    the same menubar and the entries carry no tree text, so an index map silently renames every
-    later role when one button is absent (ledger B03). It is carried here so a menu interpreter
-    can tell "the anchor did not resolve" from "the bar is not the measured one".
+    ``buttons`` is the **bar itself**, left → right — every button of the band, named or not, which
+    is the evidence the ``Parameters`` anchor's signature is read from. ``named`` is what the
+    resolver was able to *prove*: as of Patch 2's widget slice that is at most the one anchor,
+    because a name assigned by position is not an identity — the application's variants do not
+    paint the same menubar and the entries carry no tree text, so an index map silently renames
+    every later role when one entry is absent (ledger B03). Both are carried so a menu interpreter
+    (:mod:`udv_echo_process.acquire.ui.menu`) can tell "the anchor did not resolve" from "the bar
+    is not the measured one".
     """
 
     band: UiNode | None = None
@@ -360,11 +363,13 @@ class ScreenObservation(ValueModel):
             node for node in (project(panel) for panel in (roles.get("panels") or ())) if node
         )
         menu_rows = roles.get("menu") or {}
+        # The bar is ``menu_buttons`` when the resolver published it — every button of the band,
+        # named or not — and otherwise the rows the resolver did bind, so a tree that states only
+        # a binding (a fixture, a fake) is still read by the same rule as a captured one.
+        menu_bar = roles.get("menu_buttons") or tuple(menu_rows.values())
         menu = MenuObservation(
             band=project(roles.get("menu_band")),
-            buttons=tuple(
-                node for node in (project(row) for row in menu_rows.values()) if node
-            ),
+            buttons=tuple(node for node in (project(row) for row in menu_bar) if node),
             named=tuple(
                 (str(name), node)
                 for name, node in (

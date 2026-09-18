@@ -15,9 +15,9 @@ package can be split without touching a call site.
 |---|---|---|
 | ``ui/model.py`` | normalized observations — ``Rect``, ``UiNode``/``UiTree``, ``SurfaceKind``, ``ParameterPanelState``, the observation records | landed by Patch 2 |
 | ``ui/layout.py`` | the pure surface/layout interpreter moved out of ``driver.py`` | landed by Patch 2 |
-| ``ui/strip.py`` | pure strip observation and classification | target — Patch 2 (next slice) |
-| ``ui/dialog.py`` | the ``Operating parameters`` table binding and widget-aware extraction | target — Patch 2 (next slice) |
-| ``ui/menu.py`` | the ``Parameters`` anchor and its expected popup, and nothing generic | target — Patch 2 (next slice) |
+| ``ui/strip.py`` | pure strip observation and classification | landed by Patch 2 (widget slice) |
+| ``ui/dialog.py`` | the ``Operating parameters`` table binding, the widget-aware extraction and the channel comparison | landed by Patch 2 (widget slice) |
+| ``ui/menu.py`` | the menubar's vocabulary, its popup signature and the entry order its gesture reads | landed by Patch 2 (widget slice) |
 
 Two rules the package exists to enforce, both quoted from the architecture document:
 
@@ -34,4 +34,4 @@ claim it — see ``docs/dop3000/device-verification.md``).
 
 from __future__ import annotations
 
-__all__ = ["layout", "model"]
+__all__ = ["dialog", "layout", "menu", "model", "strip"]

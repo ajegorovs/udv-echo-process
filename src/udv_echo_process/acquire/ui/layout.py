@@ -20,10 +20,17 @@ What the module owns, and why each piece is here rather than in the driver:
   be checked structurally, because only the caption states it;
 - the **channel mode** reading (:func:`screen_mode`), which reads a mode out of the panel that
   resolved and never out of the panel that did not (ledger B01);
-- the pure geometry the binding rules are written in (:func:`_inside`,
-  :func:`_point_in_rect`, :func:`_contains`, :func:`_column_bands`) and the dialog-panel
-  predicate (:func:`_is_dialog_panel`), plus the path comparison a Store-dialog field is held to
-  (:func:`same_directory`, :func:`normalized_path`).
+- the pure geometry this module's own clauses are written in (:func:`_point_in_rect`,
+  :func:`_band_margin`, :func:`_client_top`) and the path comparison a Store-dialog field is held
+  to (:func:`same_directory`, :func:`normalized_path`).
+
+What is *not* here any more, and why: the menubar's vocabulary and the ``Parameters`` anchor
+(:mod:`udv_echo_process.acquire.ui.menu`, Patch 2's widget slice), the dialog's value-table
+geometry and the dialog-panel predicate (:mod:`udv_echo_process.acquire.ui.dialog`) and the
+strip's row, state and clauses (:mod:`udv_echo_process.acquire.ui.strip`). Each of those is
+imported here and re-published, so ``ui.layout``'s callers (the driver among them) keep resolving
+while every rule lives with the surface it is about — the names Patch 2's layout slice published
+from here are this module's compatibility floor, not its property.
 
 The observation the interpreter reads is normalized in
 :mod:`udv_echo_process.acquire.ui.model` — ``Rect``/``UiNode``/``UiTree``, ``SurfaceKind`` and
@@ -42,27 +49,39 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
-from itertools import pairwise
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import (
     PARAM_COLUMN_ORDER,
     PROCESS_MODE_PREFIXES,
-    STRIP_BUTTON_ORDER,
     ChannelMode,
     OverlayKind,
     ProcessMode,
-    StripView,
     process_mode,
 )
+from udv_echo_process.acquire.ui.dialog import (
+    _DIALOG_INPUT_CLASSES,
+    _DIALOG_MIN_CHILDREN,
+    _DIALOG_MIN_W,
+    DIALOG_COLUMN_GAP,
+    _column_bands,
+    _contains,
+    _is_dialog_panel,
+)
+from udv_echo_process.acquire.ui.menu import MENU_ORDER, _inside
 from udv_echo_process.acquire.ui.model import (
     ParameterPanelState,
     ScreenObservation,
     SurfaceKind,
     UiNode,
 )
+from udv_echo_process.acquire.ui.strip import strip_clauses
 
 __all__ = [
+    # The names below are ``ui/dialog.py``'s and ``ui/menu.py``'s as of Patch 2's widget slice,
+    # imported and re-published here because this module published them first (Patch 2's layout
+    # slice) and a caller or a test written against ``ui.layout`` keeps resolving — the same
+    # compatibility rule the whole package is under, one level down.
     "DIALOG_COLUMN_GAP",
     "EXPECTED_CONTROL_COUNT",
     "EXPECTED_PANEL_COUNT",
@@ -70,6 +89,13 @@ __all__ = [
     "MENU_ORDER",
     "MODE_ASSISTED",
     "MODE_MANUAL",
+    "_DIALOG_INPUT_CLASSES",
+    "_DIALOG_MIN_CHILDREN",
+    "_DIALOG_MIN_W",
+    "_column_bands",
+    "_contains",
+    "_inside",
+    "_is_dialog_panel",
     "classify_surface",
     "layout_evidence",
     "layout_refusal",
@@ -86,20 +112,9 @@ __all__ = [
 ]
 
 MAIN_CLASS = "TMain_Scr"
-#: The menu bar's buttons, left -> right (``recon/udop_roles.py``).
-MENU_ORDER: tuple[str, ...] = (
-    "File",
-    "Preferences",
-    "Parameters",
-    "Compute",
-    "Cursors",
-    "Filters",
-    "Tools",
-    "Channels",
-    "UDV mode",
-    "Display",
-    "Help",
-)
+# ``MENU_ORDER`` is ``ui/menu.py``'s as of Patch 2's widget slice — the menubar's vocabulary
+# belongs with the one menubar binding this driver has — and is imported above and re-published
+# here, so ``ui.layout.MENU_ORDER`` and ``driver.MENU_ORDER`` keep resolving.
 #: The clean measurement screen's fingerprint **on the reference install, as evidence** — two
 #: independent launches. It is no longer a gate (plan §24.5, D4): the instrument's own clean
 #: screen states 44 in 4, because its parameter column paints one more row, so the two numbers
@@ -109,23 +124,12 @@ MENU_ORDER: tuple[str, ...] = (
 EXPECTED_CONTROL_COUNT = 43
 EXPECTED_PANEL_COUNT = 4
 
-#: How a **dialog** is identified, from the reference's own predicate
-#: (``recon/41_burst_sampling_volume.py``, ``find_dialog``): a panel that is not part of
-#: the measurement layout, is wider than :data:`_DIALOG_MIN_W`, and is full of controls —
-#: at least :data:`_DIALOG_MIN_CHILDREN` direct children, or holding a ``TSp_Browse``.
-#: The measured operating dialog (627x384, read live) also holds input controls of its
-#: own directly — a header combo and seven ``TSp_Value_Button`` fields — which is the same
-#: kind of structural evidence and is accepted by the same predicate, so a dialog the
-#: reference would have found is never rejected here.
-_DIALOG_MIN_W, _DIALOG_MIN_CHILDREN = 400, 15
-
-#: How wide a gap between two value fields' left edges makes them different **columns** of the
-#: dialog's table. Measured 2026-09-18: fields inside one column sit within 5 px of each other
-#: (786/783/788) while the columns are 200 px apart (786 → 987 → 1187), so anything from ~50 to
-#: ~190 px separates them and the middle of that range is not a magic number but a margin.
-DIALOG_COLUMN_GAP = 100
-#: The classes that make a panel an *input* panel rather than a strip or a warning row.
-_DIALOG_INPUT_CLASSES = ("TEdit", "TSp_Edit", "TComboBox", "TSp_Value_Button")
+# The dialog constants and the dialog-panel predicate above the bands — ``_DIALOG_MIN_W``,
+# ``_DIALOG_MIN_CHILDREN``, ``_DIALOG_INPUT_CLASSES``, ``DIALOG_COLUMN_GAP`` and
+# ``_is_dialog_panel`` — are ``ui/dialog.py``'s as of Patch 2's widget slice: they are the rule
+# by which this application's dialogs and their value table are read, and that is that module's
+# business. They are imported above and re-published here so ``ui.layout``'s callers (the driver
+# among them) keep resolving.
 
 #: How much of the client's height a band may occupy and still count as sitting at the client's
 #: own top or bottom edge. A **margin, not a coordinate** — the measured menubar is ~25 px of a
@@ -155,16 +159,9 @@ def observation_of(roles: Mapping) -> ScreenObservation:
 # ------------------------------------------------------------------------ the moved geometry
 
 
-def _inside(panel: dict | None, k: dict) -> bool:
-    """True when ``k``'s centre lies inside ``panel``'s rect."""
-    if panel is None:
-        return False
-    cx, cy = k["left"] + k["w"] // 2, k["top"] + k["h"] // 2
-    return (
-        panel["left"] <= cx <= panel["left"] + panel["w"]
-        and panel["top"] <= cy <= panel["top"] + panel["h"]
-    )
-
+# ``_inside`` — a control's centre inside a panel's rect — is ``ui/menu.py``'s as of Patch 2's
+# widget slice (the parameter column and the popup's entries are both read with it), imported
+# above and re-published here so ``ui.layout._inside`` keeps resolving.
 
 def _point_in_rect(rect: tuple[int, int, int, int], point: tuple[int, int]) -> bool:
     """True when ``point`` lies inside ``rect`` — both in screen coordinates.
@@ -176,51 +173,10 @@ def _point_in_rect(rect: tuple[int, int, int, int], point: tuple[int, int]) -> b
     return left <= point[0] <= right and top <= point[1] <= bottom
 
 
-def _contains(outer: Mapping, inner: Mapping) -> bool:
-    """True when ``inner``'s rect lies inside ``outer``'s, as the application lays them out."""
-    return (
-        outer["left"] <= inner["left"]
-        and outer["top"] <= inner["top"]
-        and inner["left"] + inner["w"] <= outer["left"] + outer["w"]
-        and inner["top"] + inner["h"] <= outer["top"] + outer["h"]
-    )
-
-
-def _column_bands(lefts: Sequence[int]) -> list[int]:
-    """Column index per left edge, splitting where the gap is wider than :data:`DIALOG_COLUMN_GAP`.
-
-    The bands are derived rather than hard-coded so that the *rule* is evidence — the columns of
-    this table are 200 px apart while fields inside one are within a few px (measured) — and the
-    shape that comes out of it is then checked against :data:`DIALOG_COLUMN_ROWS`.
-    """
-    if not lefts:
-        return []
-    order = sorted(set(lefts))
-    band = {order[0]: 0}
-    for previous, current in pairwise(order):
-        band[current] = band[previous] + (1 if current - previous > DIALOG_COLUMN_GAP else 0)
-    return [band[left] for left in lefts]
-
-
-def _is_dialog_panel(panel: dict, kids: Sequence[dict]) -> bool:
-    """True when ``panel`` is one of this application's modal dialogs.
-
-    The reference's own predicate, kept: a panel is a dialog when it is full of controls —
-    at least :data:`_DIALOG_MIN_CHILDREN` direct children, or a ``TSp_Browse`` among them
-    — and is wider than :data:`_DIALOG_MIN_W` (``recon/41_burst_sampling_volume.py``:
-    ``len(kids) >= 15 or any(k["cls"] == "TSp_Browse" for k in kids)``, then
-    ``dlg["w"] > 400``). The measured operating dialog (627x384) holds a header combo and
-    seven value buttons *directly*, so holding input controls of its own
-    (:data:`_DIALOG_INPUT_CLASSES`) is the same kind of evidence and is accepted here too:
-    a dialog the reference would have found is never rejected by this driver.
-    """
-    if panel["w"] <= _DIALOG_MIN_W:
-        return False
-    if len(kids) >= _DIALOG_MIN_CHILDREN:
-        return True
-    if any(k["cls"] == "TSp_Browse" for k in kids):
-        return True
-    return any(k["cls"] in _DIALOG_INPUT_CLASSES for k in kids)
+# ``_contains``, ``_column_bands`` and ``_is_dialog_panel`` — the dialog's value-table geometry
+# and the predicate that identifies a dialog panel — are ``ui/dialog.py``'s as of Patch 2's widget
+# slice, imported above and re-published here so a caller that read them from this module (the
+# driver's own dialog resolution does) keeps resolving.
 
 
 def same_directory(shown: str, expected: str | Path) -> bool:
@@ -596,11 +552,12 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     that named it would send the operator looking for a strip that is not there (ledger B06).
 
     Then the common core: the window is :data:`MAIN_CLASS`; the menubar band resolves at the
-    client's top and a status band reaches the client's bottom; the strip panel resolves with a
-    row whose length maps into :data:`STRIP_BUTTON_ORDER` (the silent case §21.3 item 3 names:
-    *a different button panel in the plot's middle band*); and nothing is over it — no menu popup
-    and no dialog panel (both of which the surface group has already named). The manual shape:
-    that column resolves with its seven :data:`PARAM_COLUMN_ORDER` roles.
+    client's top and a status band reaches the client's bottom; the strip panel resolves with a row
+    whose length maps into :data:`STRIP_BUTTON_ORDER` (:func:`…ui.strip.strip_clauses` — the silent
+    case §21.3 item 3 names, *a different button panel in the plot's middle band*); and nothing is
+    over it — no menu popup and no dialog panel (both of which the surface group has already
+    named). The manual shape: that column resolves with its seven :data:`PARAM_COLUMN_ORDER`
+    roles.
 
     **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
     the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
@@ -639,32 +596,10 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
             f"{client_h} px client, so it is not the band at the client's top that a "
             "measurement screen paints"
         )
-
-    strip = observation.strip.panel
-    row = list(observation.strip.row)
-    view = None
-    if observation.strip.state_reading is not None:
-        try:
-            view = StripView(observation.strip.state_reading)
-        except ValueError:
-            view = None
-    if strip is None:
-        reasons.append(
-            "no recording strip panel resolved: no short button-hosting panel sits in the "
-            "plot's 0.30-0.70 band, so which buttons mean pause, record and stop is unstated"
-        )
-    elif observation.plot is None:
-        reasons.append(
-            "the plot band did not resolve, so the strip's own rule (the button panel in the "
-            "middle of the plot) could not be applied to the panel that was found"
-        )
-    elif view is None or (view, len(row)) not in STRIP_BUTTON_ORDER:
-        reasons.append(
-            f"the strip's row holds {len(row)} button(s) in view "
-            f"{observation.strip.state_reading!r}, which is no row in STRIP_BUTTON_ORDER: a "
-            "different button panel sits in the plot's middle band, and a press would be bound "
-            "to the wrong position"
-        )
+    # The strip's own clauses, whole: the row a press is bound to, and the ambiguous row that has
+    # no binding at all — ``ui/strip.py`` answers both, so the gate never reads a row itself and
+    # never gates on one the crops contradict (ledger B10).
+    reasons.extend(strip_clauses(observation))
 
     if not _status_bands(observation):
         reasons.append(
