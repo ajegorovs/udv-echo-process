@@ -396,9 +396,13 @@ class CompilationIdentity(ValueModel):
     :class:`Provenance`), and everything that is a property of **the data in the application's
     buffer rather than of the instrument**: the store slider's ``maximum`` — the strip's
     *structure* is in, its slider's range is not, because that range is the selected block's
-    profile count — and the strip's top-row **button count**, which is 3 or 4 depending on
-    whether a leftover block is held (``actuator.STRIP_BUTTON_ORDER`` documents both rows, and
-    ``classify_strip_view`` puts both in the same ``READY`` view).
+    profile count — and the strip's top-row **button count**, which moves with whether a leftover
+    block is held (``actuator.STRIP_BUTTON_ORDER`` documents a row per view, and several views are
+    painted with more than one length). What *is* in is the **view** those buttons classify into:
+    it is what a press is bound against, and ledger B10 is the reason the two are not the same
+    thing — the four-button row **without** a slider is now its own view
+    (``StripView.AMBIGUOUS``, which binds nothing and which a run refuses), so a reading that
+    cannot be pressed from is not confused with one that can.
 
     The **visible-control total is out too** (plan §24.5, D6), and it is the same ruling as the
     strip's button count rather than a new one: once the count is not a cleanliness fact — the

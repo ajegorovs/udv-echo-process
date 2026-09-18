@@ -15,9 +15,9 @@ package can be split without touching a call site.
 |---|---|---|
 | ``ui/model.py`` | normalized observations — ``Rect``, ``UiNode``/``UiTree``, ``SurfaceKind``, ``ParameterPanelState``, the observation records | landed by Patch 2 |
 | ``ui/layout.py`` | the pure surface/layout interpreter moved out of ``driver.py`` | landed by Patch 2 |
-| ``ui/strip.py`` | pure strip observation and classification | landed by Patch 2 (widget slice) |
-| ``ui/dialog.py`` | the ``Operating parameters`` table binding, the widget-aware extraction and the channel comparison | landed by Patch 2 (widget slice) |
-| ``ui/menu.py`` | the menubar's vocabulary, its popup signature and the entry order its gesture reads | landed by Patch 2 (widget slice) |
+| ``ui/strip.py`` | pure strip observation and classification — the row, the state, and the ambiguous four-button row that binds nothing (ledger B10) | landed by Patch 2 (widget slice) |
+| ``ui/dialog.py`` | the ``Operating parameters`` table binding, the widget-aware extraction (a combo's own value, never the edit beside it — ledger B09) and the channel comparison (ledger B17) | landed by Patch 2 (widget slice) |
+| ``ui/menu.py`` | the ``Parameters`` anchor and its expected popup, and nothing generic — no name is assigned to a menubar button by position (ledger B03) | landed by Patch 2 (widget slice) |
 
 Two rules the package exists to enforce, both quoted from the architecture document:
 

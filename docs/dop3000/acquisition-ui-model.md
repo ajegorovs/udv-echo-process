@@ -168,9 +168,18 @@ UI-STRIP-02's grown frame paints `New acquisition` / `Do store` / `Clear and res
 `Remove current block` — so the third slot is demonstrably the same button, while the first
 two are not the same captions. Whether the button at index 1 is one control that relabels,
 or two different buttons, is a question **only a tree read in that exact state can
-answer**, and a tree and a screenshot may not be the same instant. Until then a
-four-button no-slider row is `AMBIGUOUS`, it has **no executable binding**, and nothing may
-be pressed from it. The strip's other views are *live-reported* and were measured in
+answer**, and a tree and a screenshot may not be the same instant.
+
+**That refusal is landed** (Patch 2's widget slice, `acquire/ui/strip.py` + `actuator.py`): a
+row of four buttons and no slider classifies as `StripView.AMBIGUOUS`, `STRIP_BUTTON_ORDER` has
+**no row for it**, `StripState.is_startable` is `False`, `strip_controls` / `press_index` refuse
+it, `Win32Actuator.press` refuses **before** the held press is posted (nothing is pressed and
+nothing is recorded), and `layout_shape_reasons` refuses the row instead of gating a run on it.
+The state itself — which role each of the four buttons has — stays **device-pending**: V4 in
+[`device-verification.md`](device-verification.md) is what resolves it, and the day it does, the
+role map goes into `STRIP_BUTTON_ORDER` and this paragraph changes with it. Nothing in this
+document claims the row behaves on the instrument; the claim is only that no press comes out of
+it until a live tree settles it. The strip's other views are *live-reported* and were measured in
 simulation; the grown panel's rect in UI-STRIP-02 is a fourth measurement (about `594x123`)
 and is not either of the two views the plan records as unmeasured.
 
@@ -215,11 +224,11 @@ and is not either of the two views the plan records as unmeasured.
 
 | binding | how it is made | what may not stand in for it |
 |---|---|---|
-| **`Parameters` anchor** | a structural/relative-location signature for one dedicated anchor, then **verify the popup/dialog that appeared**; if the anchor cannot be proven, refuse *before* the hover | a generic `MENU_ORDER[i]` map. Simulation and instrument builds do not paint the same menubar buttons and tree button text is empty, so an index map silently renames later entries when one is absent — the current item happening to sit at index 2 is accidental safety, not a rule (ledger B03) |
+| **`Parameters` anchor** | a structural/relative-location signature for one dedicated anchor, then **verify the popup/dialog that appeared**; if the anchor cannot be proven, refuse *before* the hover. **Landed** (Patch 2's widget slice, `acquire/ui/menu.py`): the resolver publishes the anchor only when the bar's painted length is one of the two measured ones (ten entries, `UI-WINDOW-01`; or the eleven-name vocabulary `MENU_ORDER` carries) and the anchor is the third button of the bar with `File` and `Preferences` to its left; otherwise **no** binding is published and `Win32Actuator._open_parameters_dialog` refuses, naming the clause, before the cursor is read or moved | a generic `MENU_ORDER[i]` map. Simulation and instrument builds do not paint the same menubar buttons and tree button text is empty, so an index map silently renames later entries when one is absent — the current item happening to sit at index 2 is accidental safety, not a rule (ledger B03). An anchor proved by its index in a name list is that same map |
 | **popup entry** | order by screen `top`, press the entry's own handle with a posted held press; the overlay **and** the entry must report `IsWindowVisible == True` first | the highlighted entry (the application highlights `Default parameters` by itself), a title match, or a real click. A press on an entry closes the popup, so what must be read about the popup is read **before** the gesture |
 | **dialog identity** | structural: a panel that is not the sidebar, wider than 400 px, full of controls (≥15 direct children, or a `TSp_Browse`, or input controls) — and **then** its content (the channel combo) tells the operating dialog from another dialog | requiring the channel combo to decide whether a dialog opened at all; that is stricter than the evidence and rejects a correctly opened dialog |
 | **dialog bottom pair** | the last two `TSp_Button`s of the bottom band sorted by `left` | the band's leftmost button, a width, or a caption |
-| **strip state** | structural classification into `StripKind`; an executable `StripBinding` exists **only** for known-safe states | a count-only verdict. Every three-to-four-button no-slider row classified as `READY` is exactly the unsafe behaviour; the four-button row maps to `AMBIGUOUS` |
+| **strip state** | structural classification into `StripKind`; an executable `StripBinding` exists **only** for known-safe states. **Landed** (Patch 2's widget slice): `classify_strip_view` answers `AMBIGUOUS` for a four-button no-slider row, `STRIP_BUTTON_ORDER` holds no row for it, and the press path refuses before the held press | a count-only verdict. Every three-to-four-button no-slider row classified as `READY` is exactly the unsafe behaviour; the four-button row maps to `AMBIGUOUS` and binds nothing |
 | **parameter field** | widget-type-aware extraction: numeric edits by their own value; combos by selection/text; each field's value read back from the re-opened dialog or from the stored file | a combo's child edit, a control's painted text as proof of what the application kept, or a dialog read before the channel is attributed |
 | **channel** | the dialog's channel combo is compared against the **routed** channel before any of its facts are accepted | assuming the dialog is the one the router selected |
 
@@ -241,14 +250,14 @@ assertion is not available yet.
 |---|---|---|---|---|
 | B01 | the sidebar can be hidden by `Preferences` independently of assisted mode (UI-OVERLAY-06) | a no-column screen is misclassified as assisted | stop inferring channel mode from absence; a manual sweep requires a complete sidebar; refuse with an ambiguity message | cloud-supported by committed live record; device regression pending |
 | B02 | TGC `Uniform`/`Auto` changes the visible-control total (44 vs 42) | false clean-layout/resume mismatch | counts are diagnostic only, never a gate and never in the identity | live-reported, screenshot/docs supported |
-| B03 | menubar buttons differ between app variants and tree captions are empty | an index map silently renames menu roles | dedicated `Parameters` anchor + post-open verification; no generic menu role list | measured/docs supported; device anchor check pending |
+| B03 | menubar buttons differ between app variants and tree captions are empty | an index map silently renames menu roles | dedicated `Parameters` anchor + post-open verification; no generic menu role list — **landed by Patch 2's widget slice**: `acquire/ui/menu.py` publishes the anchor by its relative location in a bar of a measured painted length, and publishes none (refusing before the hover) when it cannot | measured/docs supported; device anchor check pending (V3) |
 | B04 | popup/dropdown contents can be state dependent | entry-by-index can hit the wrong action | each menu surface owns its own binding; the `Parameters` recipe only, not generalised | screenshot/docs supported |
 | B05 | the raw tree grows after first-show surfaces | total tree size, handles and pre-show rects are unstable identities | bind a normalized visible projection; raw rows are diagnostics | fixture/docs supported |
 | B06 | an overlay can be selected as a strip candidate | misleading diagnosis; a wrong press if checks are reordered | classify the active surface before the target resolver; refusal precedes diagnostics | live-reported; offline synthetic regression required |
 | B07 | Alt-Tab can release cursor capture | modality is not a safety boundary | a software gate before every press; expect multiple coexisting surfaces | operator/live-reported |
 | B08 | `Compare profiles` / `Measure US field` replace the client content | "no sidebar/strip" may be another surface, not a mode | explicit `SurfaceKind` including replacement and unknown | screenshots support |
 | B09 | a combo child edit can hold a stale/unpainted `89` | a wrong parameter read reported as a fact | widget-specific extraction; no child-edit fallback | fixture + screenshots support |
-| B10 | the four-button no-slider strip has a contradictory role map (UI-STRIP-01 vs UI-STRIP-02) | a destructive wrong strip press | classify as `AMBIGUOUS`/`UNKNOWN` until the exact device tree is captured; no binding, no press | **CRITICAL device-pending** |
+| B10 | the four-button no-slider strip has a contradictory role map (UI-STRIP-01 vs UI-STRIP-02) | a destructive wrong strip press | classify as `AMBIGUOUS`/`UNKNOWN` until the exact device tree is captured; no binding, no press — **the refusal is landed by Patch 2's widget slice** (`StripView.AMBIGUOUS`, no `STRIP_BUTTON_ORDER` row, the gate refuses, and `press` refuses before the held press); the role map stays open | **CRITICAL device-pending** (the refusal is cloud-verified; the role map is not) |
 | B11 | TGC `Auto` + emitting power raises a `Warning` with side effects (UI-OVERLAY-23) | answering `Continue` rewrites TGC mode and amplification | state the scientific coupling in the matrix and keep an explicit policy; never auto-`Continue` | screenshot supported |
 | B12 | the application's own PRF search actively writes PRF (`Tools > Search artefacts`, UI-OVERLAY-15/20) | campaign state changes outside the sweep | use it only before a run, if at all; re-state and re-read the complete frame afterwards | screenshot/operator supported |
 | B13 | the block cap is painted in `Record settings` (UI-OVERLAY-07) but no production read path exists | false wrap/retention certainty | leave unproven; implement no invented reader | screenshot supported |

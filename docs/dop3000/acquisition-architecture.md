@@ -91,9 +91,21 @@ committed PNGs), `tests/data/udop-measurement-screen-tree*.json` and
 
 The line and byte counts above are the **freeze-commit measurement**, not a live one: Patch 2
 moved the pure half of `driver.py` (the normalized observation, the surface classification, the
-shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/` and
-`driver.py` re-exports every moved name, so the module is smaller while every caller still
-resolves (`driver.screen_mode`, `driver.layout_shape_reasons`, …).
+shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/`, and then
+its widget slice moved the three remaining pure interpreters after it — the recording strip, the
+`Operating parameters` dialog and the one menubar binding (`ui/strip.py`, `ui/dialog.py`,
+`ui/menu.py`). `driver.py` re-exports every moved name, so the module is smaller while every
+caller still resolves (`driver.screen_mode`, `driver.layout_shape_reasons`,
+`driver.dialog_value_fields`, `driver._strip_row`, `driver.PARAMETERS_MENU`, …).
+
+Two of those moves carried a **corrected decision** rather than a moved line, and both refuse
+earlier than the code they replace: a menubar whose painted set is not one this anchor was
+measured against publishes **no** `Parameters` binding at all, so the one real-cursor hover
+cannot be taken against it (ledger B03, `ui/menu.py`), and a four-button strip row without a
+slider classifies as `StripView.AMBIGUOUS`, binds nothing, and refuses before the held press is
+posted (ledger B10, `ui/strip.py`). Neither is a device claim: the four-button role map and the
+anchor's behaviour on the instrument stay *device-pending* (§8), and the refusal is what a
+cloud-only change is allowed to add.
 
 **The diagnosis behind the refactor.** `driver.py` is not merely large: it mixes five
 concerns that have different evidence and different test surfaces — (1) low-level Win32
@@ -109,16 +121,17 @@ semantics currently move faster than campaign abstractions.
 
 None of the modules below existed in the tree at the freeze commit. `ls
 src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4, and
-`acquire/ui/` holds that list's first two entries as of the Patch 2 layout slice. Read every
-path in this section as a **plan**, and check the tree before relying on one.
+`acquire/ui/` holds that list's first five entries as of Patch 2 (the layout slice, then the
+widget slice: the strip, the dialog and the menubar anchor). Read every path in this section as
+a **plan**, and check the tree before relying on one.
 
 | target module | layer | status |
 |---|---|---|
 | `acquire/ui/model.py` — `Rect`, `UiNode`/`UiTree`, `SurfaceKind`, `ParameterPanelState`, `StripObservation`, `MenuObservation`, `DialogObservation` | normalized observations | **landed by Patch 2 (layout slice)** |
 | `acquire/ui/layout.py` — measurement / overlay / dialog / popup / replacement / unknown classification | pure interpreter | **landed by Patch 2 (layout slice)** |
-| `acquire/ui/strip.py` — pure strip observation and classification | pure interpreter | **target — Patch 2** |
-| `acquire/ui/dialog.py` — operating-parameters table binding, widget-aware value extraction | pure interpreter | **target — Patch 2** |
-| `acquire/ui/menu.py` — the `Parameters` anchor and its expected popup, and nothing generic | pure interpreter | **target — Patch 2** |
+| `acquire/ui/strip.py` — pure strip observation and classification (`strip_row`, `has_slider`, `strip_state_of`, `press_refusal`, `strip_clauses`) | pure interpreter | **landed by Patch 2 (widget slice)** |
+| `acquire/ui/dialog.py` — operating-parameters table binding, widget-aware value extraction (`dialog_value_fields`, `dialog_refusal`, `channel_mismatch`, `_is_dialog_panel`, `bottom_row`) | pure interpreter | **landed by Patch 2 (widget slice)** |
+| `acquire/ui/menu.py` — the `Parameters` anchor and its expected popup, and nothing generic (`anchor_clause`, `anchor_button`, `entry_buttons`, `observation_text`) | pure interpreter | **landed by Patch 2 (widget slice)** |
 | `acquire/win32/messages.py` — `SendMessageTimeoutW`, posted held click, text commit, combo read/select | Win32 mechanics | **target — Patch 3** |
 | `acquire/win32/cursor.py` — foreground checks, real cursor move/restore, `ClipCursor` | Win32 mechanics | **target — Patch 3** |
 | `acquire/win32/tree.py` — enumerate the main window, visibility, normalize into `ui/model` nodes | Win32 mechanics | **target — Patch 3** |
@@ -183,7 +196,10 @@ never restated** here. The surface and binding invariants have one authoritative
    keep raw rows as diagnostics; never bind a surface to a pre-show rectangle or to a
    handle taken before a state change.
 6. **A generic menubar index map does not exist.** Only the `Parameters` anchor is
-   exposed, with a structural signature and a post-open content verification.
+   exposed, with a structural signature and a post-open content verification — landed by Patch 2's
+   widget slice as `acquire/ui/menu.py`, which publishes the anchor by its **relative location**
+   in a bar of a measured painted length, and refuses before any cursor movement when it cannot
+   (`anchor_clause`, `anchor_button`; no name is assigned to a button by position).
 7. **The artifact is the authority.** GUI success is not verification: a stored `.BDD`
    decoded **for the requested channel** is what makes a point count
    (`acquire/verify.py:391`, `verify_stored_point`, called with the run's channel at
