@@ -181,20 +181,23 @@ channel write at step 3 belongs in the run log beside the snapshot that followed
 ### W1 — Read the instrument's remaining fixed facts (reconnaissance, independent)
 
 **What.** Establish where a running UDOP shows the sound speed, the first gate and the
-burst length for the selected channel, and extend `ParamRole` (`actuator.py:107`) with the
-roles needed to read them. If any of the three is not readable through the measurement
-screen at all, record that as a fact about the instrument and leave it declared — do not
-invent a read.
+burst length for the selected channel, and **expose a supported read path for each**. The
+plan deliberately does not decide the abstraction before reconnaissance has seen the UI:
+`ParamRole` (`actuator.py:107`) models the measurement screen's *parameter column*, so it is
+extended **only** for facts that actually belong to that surface. A fact that lives inside a
+dialog gets its own reader — whether that becomes a second role model or snapshot-local
+readers is the reconnaissance's answer, not this plan's (D6). A fact that is not readable at
+all is recorded as a fact about the instrument and left declared; do not invent a read.
 
-**Where.** A probe under `tools/live/probes/` (the directory that exists for exactly what
-a supported command does not cover) plus the manual corpus in `docs/dop3000/` for the
+**Where.** A probe under `tools/live/probes/` (the directory that exists for exactly what a
+supported command does not cover) plus the manual corpus in `docs/dop3000/` for the
 semantics. `PARAM_COLUMN_ORDER` (`actuator.py:126`) fixes a field's identity as its
-top-to-bottom position, so a new role must be placed by evidence, not by guess.
+top-to-bottom position, so a *column* role must be placed by evidence, never by guess.
 
 **Done when.** The probe prints all five fixed facts from a running application, one
 control-tree snapshot per screen state is committed as a JSON fixture (`tests/data/`), and
-`ParamRole` carries the new roles with a docstring line each saying which screen they come
-from.
+each newly readable fact has a named read path whose docstring says which screen it comes
+from and which surface it belongs to.
 
 **Risk.** Needs the live machine and the interactive session (`tools/live/README.md`). If
 the machine is unavailable, this item waits and W2–W4 proceed with the three unreadable
@@ -219,8 +222,8 @@ def instrument_snapshot(self) -> InstrumentSnapshot:
 `InstrumentSnapshot` carries the `ScreenFingerprint` **as it is** — all twelve fields,
 including the volatile six — because a fingerprint that has been trimmed is no longer the
 diagnostic it exists to be. Plus the channel, the mode (`manual`/`assisted`), and every
-fixed fact that was readable, each with its value *and* its provenance, and — as named
-fields, not omissions — the facts that were not readable.
+fixed fact that was readable, each as an `InstrumentFact` — value *and* source (W5) — and —
+as named fields, not omissions — the facts that were not readable.
 
 `CompilationIdentity` is that same reading **projected onto the facts campaign compatibility
 depends on**, and nothing else: no `hwnd`, no window geometry, no cursor, no foreground
@@ -350,9 +353,29 @@ campaign tests pass with the fake's snapshot in place.
 currently an inference under that declaration — even `SweepPointRecord.block_wrapped`'s
 `False` branch is conditional (200 stored against a declared 257 could be a block whose
 actual cap was 200, which wrapped). Read or verify the cap from the application where it
-can be, and where it cannot, carry the provenance on the record (`declared` vs `read`) and
-split the vocabulary as the reviewer asked: `block_at_declared_cap` for what is observed
-today, `block_wrapped` reserved for a cap whose provenance is verified.
+can be, and split the vocabulary as the reviewer asked: `block_at_declared_cap` for what is
+observed today, `block_wrapped` reserved for a cap whose provenance is verified.
+
+**A fact is a value *and* its provenance, as a type.** Storing `max_profiles_per_block = 257`
+and keeping the provenance in a separate flag, or in a docstring, is exactly what lets
+downstream code read the presence of a number as proof. One small shared model carries every
+fixed fact:
+
+```python
+class FactSource(StrEnum):           # Enum for fixed sets, per AGENTS.md:106
+    READ = "read"
+    DECLARED = "declared"
+
+class InstrumentFact(ValueModel):
+    value: int | float | str | None
+    source: FactSource
+    detail: str | None = None        # which screen it came from, or why it could not be read
+```
+
+so `value=None, source=DECLARED` and `value=257, source=READ` are different statements that
+cannot be confused, and the same mechanism covers sound speed, first gate and burst length
+if W1 finds them unreadable. Convenience accessors are fine; a bare number in an
+evidence-bearing position is not.
 
 **Where.** `log.py` (`SweepPointRecord`, `block_at_cap` at `log.py:319`, `block_wrapped`
 at `log.py:335`, `block_cap_profiles`), `snapshot.py` (the read, when the app exposes one),
@@ -410,6 +433,7 @@ single number. This is also what makes Phase 7's certificate possible.
 | D3 | No snapshot available | refuse the run; or `--no-snapshot` with the records marked `declared only` | **Both**: refuse by default, allow the explicit flag. Silence is the only unacceptable option (criterion 4). |
 | D4 | Mismatch policy | refuse before the first recording; or record and continue | **Refuse for the settled facts and the channel mode**; record-and-continue only for word 14, whose declaration is known wrong until W6. |
 | D5 | Where the compiled plan lives | a frozen model in `campaign.py` with its own fingerprint; or new fields on the JSON definition | **A separate model.** The definition expresses experimental intent and is authored by a human; the compiled plan is instrument-specific and machine-generated. Merging them would put the instrument into the campaign file. |
+| D6 | Where the read path for a newly discovered fact lives | extend `ParamRole`; a second role model for the dialog surface; snapshot-local readers | **Decide after W1's reconnaissance, not before.** `ParamRole` is the measurement screen's column and a dialog fact must not be forced into it. Default to a snapshot-local reader until a second fact needs the same surface. |
 
 ## 6. Constraints and gates this work is subject to
 
