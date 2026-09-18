@@ -1,5 +1,19 @@
 # Plan — compile campaigns against live instrument state (the review's Phase 6)
 
+> **Historical record (frozen 2026-09-18).** This document is the plan for the Phase-6 slice
+> and the running chronology of the work that followed it. It is retained for its evidence
+> and its reasoning, and it is **no longer the authority for how the acquisition subsystem is
+> organised**: architecture, layering and invariants are
+> [`acquisition-architecture.md`](acquisition-architecture.md); surfaces, widgets, bindings
+> and the blind-spot ledger are [`acquisition-ui-model.md`](acquisition-ui-model.md); and the
+> procedure that retires the device-pending items is
+> [`device-verification.md`](device-verification.md). Read those three before acting on
+> anything below. §11.1 is the live checkpoint **as of the date written** and §26 the live
+> findings of that day; later sections in the same style are history too, and a statement of
+> where the work *stands now* belongs in
+> [`handoff-dop3010-acquisition.md`](handoff-dop3010-acquisition.md) instead. **Nothing below
+> has been altered by the freeze** — this header is the only edit.
+
 **Status: plan only. Nothing in this document is implemented.**
 It is the first commit of the PR that carries it, which is the branch the implementation
 continues on. The slice before it — the acquisition correctness baseline — is merged

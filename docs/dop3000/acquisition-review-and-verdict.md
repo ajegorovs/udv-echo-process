@@ -22,7 +22,13 @@ stays the state-of-the-work handoff and the measurement record;
 [`udop-automation.md`](udop-automation.md) stays the verified UI rule set; the
 actionable backlog lives in [`../agenda.md`](../agenda.md). This file is the
 *decision* record — read it before re-proposing the same review, and before
-splitting `acquire/driver.py`.
+splitting `acquire/driver.py`. Since the 2026-09-18 documentation freeze the
+architecture and its invariants are
+[`acquisition-architecture.md`](acquisition-architecture.md), the surfaces, widgets and
+bindings are [`acquisition-ui-model.md`](acquisition-ui-model.md) and the device
+verification procedure is [`device-verification.md`](device-verification.md); the
+per-phase decisions below stand unchanged, and the phase **order** they imply is
+restated as the patch sequence in `acquisition-architecture.md` §6.
 
 ---
 

@@ -5,6 +5,17 @@ console: the write recipes that actually commit, the order they must be written
 in, the record strip's state machine, the store chain, and the failure modes
 that silently invalidate a point.
 
+> **Authority (added 2026-09-18, documentation freeze).** This document is the single
+> authoritative copy of the **mechanism**: what commits a value, in what order, the strip's
+> state machine, the store chain and the failure modes that invalidate a point. It is *not*
+> the authority for the subsystem's architecture and invariants
+> ([`acquisition-architecture.md`](acquisition-architecture.md)), for surfaces, widgets and
+> bindings ([`acquisition-ui-model.md`](acquisition-ui-model.md)), or for the device
+> verification procedure ([`device-verification.md`](device-verification.md)); where a caption
+> is quoted below, the committed oracle is
+> [`ui-element-index.md`](ui-element-index.md) and the quote carries its crop id. Nothing in
+> the body of this document changed at the freeze — this header is the only edit.
+>
 > **Status:** the rules marked *(measured)* are verified on a live DOP3010
 > running UDOP 6.07.4 (instrument-side control session, 2026-09-17). Statements
 > that are inference rather than measurement are marked *(hypothesis)*; §11

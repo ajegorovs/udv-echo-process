@@ -11,6 +11,16 @@ that is a deliberate edit on the new machine, not a generalization to maintain. 
 happen is the test being unrunnable because a capability lives in a directory that is not
 cloned.
 
+> **Authority (added 2026-09-18, documentation freeze).** This document is the **bring-up
+> path** for a machine that has only this repository: the stages, their pass criteria, and the
+> measurements folded into the code with what to do when they do not hold. It is not the
+> subsystem's architecture ([`acquisition-architecture.md`](acquisition-architecture.md)), not
+> the surface/binding model
+> ([`acquisition-ui-model.md`](acquisition-ui-model.md)), and its stages are not the refactor's
+> device verification procedure ([`device-verification.md`](device-verification.md)) — the two
+> are complementary: this proves the controls answer on a new machine, that one proves the
+> refactor did not change what they do. Nothing in the body changed at the freeze.
+
 ## 1. Prerequisites
 
 - **The application**: UDOP driving a DOP3010 (or its simulator), installed and licensed.
