@@ -7,11 +7,13 @@ produces it: the entry points are the names the refactor keeps re-exporting
 ``Win32Actuator.read_parameter`` / ``read_dialog_parameters`` / ``instrument_snapshot``,
 ``driver.dialog_value_fields``), so a module moving underneath them does not move them.
 
-Where today's behaviour is already the safe one the test is a plain passing test, and it is the
-pin the refactor must not break while it moves code. Where today's behaviour is the unsafe
-reading — inventing a channel mode from absence, binding a menubar by index — the test carries
-``xfail(strict=True)`` with the blind-spot id in its reason, so landing the fix turns it into an
-XPASS and the suite goes red until the marker is removed *with* the fix. Never a silent skip.
+Where the behaviour was already the safe one the test is a plain passing test, and it is the pin
+the refactor must not break while it moves code. Where the behaviour was the unsafe reading —
+inventing a channel mode from absence (B01), binding a menubar by index (B03) — the test was
+carried as ``xfail(strict=True)`` with the blind-spot id in its reason, so landing the fix turned
+it into an XPASS and the suite went red until the marker came off *with* the fix. Both pins are
+green now (Patch 2's layout slice for B01, its widget slice for B03) and **no ``xfail`` is left in
+this module**: it is the plain behaviour contract the refactor has to keep. Never a silent skip.
 
 The blind-spot ids are the committed ledger's (``docs/dop3000/acquisition-ui-model.md`` §6,
 B01…B20) and the verification items that settle them are ``docs/dop3000/device-verification.md``
