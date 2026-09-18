@@ -632,6 +632,54 @@ would have compiled as "the layout differs" and refused for the wrong reason.
 
 ## 11. Picking this up cold
 
+### 11.1 Current state — resume here
+
+**Where the work stands.** Everything is on `master`, pushed, tree clean; the last full run was **1701 passed /
+22 skipped**, `ruff check src tests` clean. §16.5 records W4 landed. §18.3–§18.12 identify all fifteen knobs of
+the `Operating parameters` dialog (painted label, control class, cell, and the option lists read live) and record
+the **write** semantics: burst and sampling volume have been turned *and restored* by this repo's own code; the
+commit gesture is `Accept`; a write must be followed by **reopening the dialog** before it is believed; the option
+lists are unordered and "select by value" means the *lowest matching index*; `CB_GETCURSEL` lies and the text does
+not. §19 is the writer's design. §20 records what the manual does and does not account for — the volume floor is
+the emitted burst's extent, `floor_mm = 1000·c·N/(2·f_e)`, while the gate's derivation is **undocumented** and our
+measurement is the only authority. §21 records that the simulated layout had not drifted, that the strip is a
+**draggable overlay**, that the window tree is built on demand, and that a screenshot is not evidence about what a
+press would hit. §22 measures the two modes against each other.
+
+**What to do next, in order.**
+
+1. **Before anything real runs:** establish whether the hand-dragged strip rect is *stable* (the one geometry
+   unknown a binding depends on); read the dialog's own cells *in non-simulation mode* (today's instrument values
+   came from pre-show controls); add a **mode guard** — the caption (`UDOP Simul` / `UDOP DOP3010.43`) is readable,
+   so a run can refuse when launched in a mode it was not measured against; and reconcile a definition with this
+   instrument's values (`600 / 50 / … / 1.776`, uniform TGC) instead of the example's `212/150/4/1460/2`, which
+   correctly refuses today.
+2. **A real (non-simulation) six-point acceptance run** — it retires the "simulation only" caveat and exercises
+   the third verify rung (the stored `.BDD`'s own word) with almost no new code.
+3. **The writer slice (§19):** a first-gate write path first — it is *required*, not optional, because every
+   sampling-volume write moves the window by a rule we cannot predict — then the five still-unturned knobs
+   (emitting power, TGC/amplification, sensitivity, sound speed, the skip-profile enable), then per-cell control
+   pinning (bind the control a cell *means*; the stray `89` edits are still unexplained).
+4. **The batch (§17):** per-point recording parameters with a per-point identity, then the container.
+5. **The science:** the operator's better sweep matrix, the co-set pairs we measured (burst → volume → gate;
+   power ↔ TGC), a *dynamic* target (the instrument's monitor is flat because nothing moves), and the analysis.
+6. **Housekeeping:** `tools/live/README.md` is stale; the `udv-live-gui-probe` skill wants review; two
+   caption-less buttons below the strip and three `89` edits in the dialog are unexplained.
+
+**Live-state caveats a fresh session must not trip over.**
+
+- The application may be in **either** mode. The caption is the only reliable discriminator, and every geometry
+  measurement is per-mode. The strip's rect in non-simulation is `[343,414,695,454]`; where the repo asserts it,
+  the simulation rect, there is now plain plot.
+- `./tools/live/dispatch.sh <probe>` takes a **bare file name**. A path argument silently does nothing and writes
+  no log — that cost two lost runs.
+- **Nothing presses that changes state:** the strip's three buttons are `pause` / `record` / `clear and restart`,
+  the menu-bar popup's entries below the topmost one select the assisted mode, and no modal may be left open while
+  a probe runs. Read-only probes: `dialog_fields.py`, `dialog_shot.py`, `main_geometry.py`.
+- Live evidence lands in gitignored `outputs/live/`. The external reviewer **cannot see it**, so anything they must
+  judge has to be transcribed into this document, a PR body or a PR comment.
+
+
 ```bash
 cd C:/Repos/udv-echo-process
 git fetch origin && git switch feat/acquisition-campaign-compilation
