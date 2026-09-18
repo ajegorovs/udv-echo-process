@@ -410,6 +410,27 @@ unrecognised prompt is one you must not answer blind.
 - **A capture session's mode is a variable of the map.** Mark mode- or licence-dependent
   bindings `required: false` and re-check them on the target instance; a control that exists only
   in the demo build must not silently become a skipped step in a live run.
+- **A whole-state reading is two objects, not one: the evidence, and the identity anything
+  compares.** Keep the full fingerprint for diagnosis — geometry, `hwnd`, cursor, foreground,
+  because that is how a screen that does not match gets *described* — and derive a separate
+  projection for "is this the same instrument as last time". The projection must exclude
+  everything a **restart** changes (a new `hwnd`, a drag, maximising, another screen: keying on
+  those makes a restart read as a different instrument, and the resume re-runs a finished job)
+  and everything that is the *run's own data* — the store slider's maximum is the selected
+  block's profile count, so an identity carrying it moves as the buffer fills. An overlay being
+  up, and a minimised window, are **preconditions that refuse** rather than properties of the
+  instrument. Where a part of the projection is not yet measured (this application's ready row
+  gains `Do store` once its block holds data, so its button count varies with the buffer), keep
+  it if the failure direction is safe — a false mismatch costs a re-run, a false match is a
+  silent skip — and record the fixture that will settle it.
+- **Read a per-channel state without pressing, and never read a mode out of an absence.** The
+  channel itself costs a menubar hover (the dialog is the only place it lives), but the channel's
+  *mode* does not: the sidebar parameter column exists only for a manual channel, so the
+  measurement screen states the mode for free. The half that matters is the other direction —
+  when the column is missing, that fact is only evidence of a mode if the screen is actually the
+  measurement screen; with a dialog or a popup up, return "not read" and let the caller carry it,
+  or a manual channel behind a dialog is refused *naming the mode* instead of the screen. Same
+  rule as the one that stops a filtered probe's empty result from being evidence.
 
 - **A dialog can be a child panel of the main window, not a window.** A settings/options dialog
   that never appears in a top-level window enumeration can still be on screen and fully drivable
