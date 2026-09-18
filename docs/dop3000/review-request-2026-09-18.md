@@ -1,19 +1,27 @@
 # Review request — the 2026-09-18 documentation-and-instrumentation delta
 
-The work to review is **`master` at `ca8bac8`**, and specifically the **28 commits that never went through
-a pull request**:
+The work under review is the **28 commits ending at `ca8bac8`** — everything on `master` after the last
+merge commit, committed straight to `master` and never carried by a pull request:
 
-```
+```bash
 git clone https://github.com/ajegorovs/udv-echo-process.git
 cd udv-echo-process
-git log --oneline 0f894c2..ca8bac8      # 28 commits
-git diff --stat   0f894c2..ca8bac8      # 6 files, +3593 / -0
+git log  --oneline 0f894c2..ca8bac8     # the work: 28 commits
+git diff --stat   0f894c2..ca8bac8      # the work: 6 files, +3593 / -0
+git log  --oneline 0f894c2..HEAD        # + the bookkeeping: this request, and round 2's amendments
 ```
 
 `0f894c2` is the merge commit of PR #3, which carried PRs #4–#7 with it — everything reachable from that
-commit has been reviewed already. Everything **after** it was committed straight to `master` and has not.
-The range is additive: **no file under `src/` and no test changed**; the five new files are `tools/live/`
-probes and `tools/live/compare_reads.py`, and the rest of the delta is the plan document.
+commit has been reviewed already. **The two anchors are deliberate.** The work ends at `ca8bac8`; the commits
+after it are this file and the documentation that answers the first review (plan §25), so a count taken on
+`..HEAD` moves with each documentation commit and a count taken on `..ca8bac8` does not. Read the range, not
+a number.
+
+The work delta is additive: **no file under `src/` and no test changed** — the plan document, plus five new
+files under `tools/live/` (four probes and `compare_reads.py`).
+
+**Status:** reviewed once, as round 2 on 2026-09-18. Its findings and what changed are the table in plan §25;
+the amendments are the commits after `ca8bac8`.
 
 ## What to review, in two halves
 

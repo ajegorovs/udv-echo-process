@@ -2897,3 +2897,35 @@ manual-44 tree, and one deliberately broken variant for each refusal (a dialog p
 `STRIP_BUTTON_ORDER`). Two files and one test file, and the premise stops being a claim about a session
 that only this machine can see.
 
+## 25. Review round 2 — what changed in this document
+
+Round 2 reviewed the 28 commits ending at `ca8bac8` as a continuation of the acquisition work rather than a
+cold read, and **accepted the direction under §9.1**: it agreed that §23.5 is *evidence* of the kind that
+re-opens the acquisition architecture (a real campaign cannot start in real-experiment mode for a reason
+that is not the instrument's), so §24 is not architecture for its own sake. The completed instrumentation
+delta was accepted with the two qualifications below, and the future ordering was corrected — which is the
+larger of the two changes even though it changes no code.
+
+One finding needed no change, and is recorded here so a later reader does not re-open it: **the emissions
+advisory does not endanger the timing law.** Round 2's condition was "provided the timing work still
+preserves the actual observed value" — W6 already carries exactly that (§4 W6: `declared` /
+`observed` / `effective` projections, each keeping its value *and* provenance, with one test asserting all
+three together, review round 1 point 4 / `cb983cd`). §23.4's "recorded, not fatal" is that same contract
+seen from the pre-run side.
+
+| # | round 2 finding | what changed | commit |
+|---|---|---|---|
+| 1 | **P1** — 24.3 required four panels and then permitted the assisted three-panel shape, so the assisted screen could be refused before `screen_mode()` classified it | 24.3 now states **one common core plus two accepted shapes**, explicitly as alternatives, with the prohibition written down | `c67d8ed` |
+| 2 | **P1** — D2's migration rationale was stale: W4-era manifests already carry `compilation_identity`, so a required `process_mode` would break their parsing | 24.5 D2 rewritten against `campaign.py:434`/`1314`/`1392`; the field is optional at parse time and the **resume refuses explicitly**; a W4-shaped-identity regression test added to 24.6 | `c67d8ed` |
+| 3 | **P2, design** — do not keep the total visible-control count as a load-bearing gate even in simulation | 24.5 D4 reversed: **no count in the gate, in either mode**; counts are evidence in the reading, the note and the record; 24.2, 24.3, 24.6, 24.7 and 24.8 follow it | `c67d8ed` |
+| 4 | **P2** — if the expected mode stays a run setting, it must be persisted so the execution contract is reconstructable offline | 24.5 D3 widened: `expected_process_mode` **and** `observed_process_mode` on the run's record; a test row asserts both | `c67d8ed` |
+| 5 | **Docs** — the request said 28 commits and named `ca8bac8` while its own head was later; 29 commits and the request file itself | the request now anchors on `0f894c2..ca8bac8` for the *work* and names the later commits as bookkeeping, instead of quoting a count that moves | *(this commit)* |
+| 6 | **Anti-drift** — after §24 and the six-point run, decide the sensitivity matrix **before** the writer/batch roadmap; writers are justified by required axes | §11.1's items 3–6 reordered to matrix → gap analysis → only the required writers → run → expand on evidence, with the §9.1 citation that made the old order a contradiction rather than a preference | `c67d8ed` |
+| 7 | **not raised by round 2, and implied by finding 3** — once the count is not a cleanliness fact, `visible_controls` must not move the identity either | new decision **D6**: the count comes out of `_IDENTITY_LAYOUT_FIELDS` (the `strip_button_count` precedent, `a7e9172`); 24.7 step 1 decides *required* vs *prudent* | `c67d8ed` |
+| 8 | **not a finding** — round 2's optional evidence request (a sanitised read per mode) | taken as a work item with its shape and its home, not implemented: 24.9 | `c67d8ed` |
+
+Round 2's other two observations needed no document change: the four-`89`-cells discrepancy is already
+written as a discrepancy rather than reconciled (23.3), and the stop-reconnaissance call is what §11.1's
+reordered items 3–6 now enact — §23 is the last measurement section, and the next thing that touches the
+application is §24's own verification, then the experiment.
+
