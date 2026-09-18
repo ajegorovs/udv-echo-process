@@ -1031,6 +1031,38 @@ are, in order:
    instead of re-deriving it.
 
 
+### 16.5 §16 as landed
+
+Both items are in, on `feat/acquire-w4-integration`, each red-first and each with its evidence in the commit
+body.
+
+- **16.1** — `Win32Actuator.instrument_snapshot` now refuses a dialog reading that states a channel the run
+  did not route, as the method's **first statement** (before the screen is read), through the private
+  `_require_same_channel`. The two values are compared only when a channel was routed *and* the reading
+  succeeded, so a refused reading keeps the reader's own reason — the campaign turns that into its refusal,
+  and a vaguer attribution error would replace a precise diagnostic. The driver's existing `AcquisitionError`
+  names both channels. No snapshot field, no port method, no policy table. Red first: `DID NOT RAISE
+  AcquisitionError`, 1 failed / 24 passed. The two arms that must **not** refuse (the mirror case and the
+  refused reading) cannot be red before the fix, so they were proved to have teeth by mutating the check one
+  guard at a time. `FakeDialogDriver` gained a *stated* `screen_fingerprint` (never read), which is how
+  "refused before anything was read" is asserted.
+- **16.2** — `driver.AcquisitionError` now reaches the operator as one `udv-acquire: <message>` line with exit
+  code 2 from **every** acquire verb. The spec named the handlers; measuring showed `status`, `channel` and
+  `preflight` leaking identically with no handler of their own, so `acquire_main`'s dispatch catches it too
+  — fixing only the handlers would have left the defect half-closed. The exception hierarchy is untouched.
+  Red first: five verbs escaping as tracebacks; green after: 84 passed in those two modules.
+- **Gates at the head:** `ruff check src tests` clean; `pytest -q` **1701 passed, 22 skipped** (baseline
+  1693).
+- **Live, on the machine:** the acceptance `acquire compile` re-run against the unmodified example returned
+  **exit 0** — channel 1 routed, manual read, PRF 212 / emissions 150 / burst 4 / sound speed 1460 / first
+  gate 2 all read and agreeing, the cap still `unreadable` with its reason, the wrap note on every point,
+  nothing written. The new guard does not over-refuse on the real instrument. (The non-foreground refusal was
+  proved through `acquire_main` in the tests rather than staged live, because the application was in front.)
+- **Found and named rather than quietly fixed:**
+  `tests/test_acquire_live.py::test_a_fingerprint_reads_the_screen_without_pressing_anything` is not
+  hermetic — it passes only where a real `TMain_Scr` window is running. The new fake override should make it
+  cheap to fix.
+
 ## 17. The next slice: launching a batch of recording parameters
 
 **Why this reopens the architecture, on the record.** §9.1 stops the acquisition architecture from growing
