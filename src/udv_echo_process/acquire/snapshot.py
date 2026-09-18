@@ -443,13 +443,23 @@ class CompilationIdentity(ValueModel):
     sound_speed_ms: Provenance
     first_gate_mm: Provenance
     max_profiles_per_block: Provenance
-    class_name: str
-    panels: int = Field(ge=0)
+    #: The layout half of the identity — the window class, the panel count and the strip's view.
+    #:
+    #: **Optional at parse time with a default, deliberately** (the ``process_mode`` precedent):
+    #: an identity written before one of these fields existed carries none of them, and a
+    #: *required* field would make ``read_manifest`` report a valid older manifest as *"not a job
+    #: manifest"* (``campaign._explain_validation``) — a misdiagnosis of the file instead of a
+    #: statement about the evidence, landing on exactly the person least able to tell the two
+    #: apart. ``None`` therefore means "this identity was written before the field was recorded",
+    #: and the resume comparison refuses **by name** (``campaign._identity_disagreements``), with
+    #: ``--resume-declaration-only`` the documented way past it.
+    class_name: str | None = None
+    panels: int | None = Field(default=None, ge=0)
     #: The view the strip was in: a press is bound to a button's **position in that row**
     #: (:func:`~udv_echo_process.acquire.actuator.press_index`), so a view the run did not bind
     #: against is a screen whose presses would land elsewhere.
-    strip_view: StripView
-    strip_has_slider: bool
+    strip_view: StripView | None = None
+    strip_has_slider: bool | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: InstrumentSnapshot) -> CompilationIdentity:

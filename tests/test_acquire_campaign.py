@@ -1154,12 +1154,6 @@ def strip_identity_ui_fields(path: Path) -> list[str]:
 
 
 # legacy manifest: the §24.5 D2 precedent, applied to the identity's own UI half.
-@pytest.mark.xfail(
-    strict=True,
-    reason="the identity's layout fields are still required at parse time, so a manifest written "
-    "before them is reported as `not a job manifest` rather than refused by name — PATCH-2 makes "
-    "them optional at parse time and refuses them at the comparison (the process_mode precedent)",
-)
 def test_a_manifest_written_before_the_identitys_ui_fields_refuses_by_name(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
