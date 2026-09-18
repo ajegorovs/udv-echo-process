@@ -146,17 +146,15 @@ Every one of those names is imported back at the top of this file, so ``driver.s
 the rest keep resolving for every caller and every test written against the flat module
 (``docs/dop3000/acquisition-architecture.md`` §5, "compatibility first").
 
-What stays here is what composes a *reading* or a *gesture* out of those mechanics, and this
-commit of Patch 4 has just taken the first workflow out of it: the recording surface — the strip
-lifecycle and the record/stop/store cycle — is ``acquire/udop/recording.py``'s now, moved
-verbatim and composed back into this class as :class:`RecordingSurface`. The Store dialog and the
-``Parameters`` interaction follow in the next commits of the slice, and ``udop/session.py`` is
-the facade they will all be composed by. Each moved body reaches its collaborators through
-``self``, so it is called with this module's **own**
-transport names (``_gui``, ``_user32``, ``_post``, and this module's ``_send``) passed in
-explicitly, which is what keeps every fake in this repository — each of which scripts the window
-layer by patching ``driver._gui`` / ``driver._user32`` / ``driver._post`` — biting at the same
-place it always did. The moved workflows are **device-pending**: a move is not a verification
+What stays here is what composes a *reading* or a *gesture* out of those mechanics, and this slice
+of Patch 4 has taken the workflows out of it: the recording surface — the strip lifecycle and the record/stop/store cycle — is
+``acquire/udop/recording.py``'s and the store surface — the Store dialog, its name, working
+directory, accept and stored file — is ``acquire/udop/store.py``'s, moved verbatim and composed back into this
+class as :class:`RecordingSurface`. The moved bodies reach their collaborators through ``self``, so they
+are still called with this module's **own** transport names (``_gui``, ``_user32``, ``_post``, and this
+module's ``_send``), which is what keeps every fake in this repository — each of which scripts the window
+layer by patching ``driver._gui`` / ``driver._user32`` / ``driver._post`` — biting at the same place it
+always did. The moved workflows are **device-pending**: a move is not a verification
 (``docs/dop3000/device-verification.md``, V2/V4/V5/V6).
 The two corrections this slice makes are *decisions*, and both refuse earlier than the code they
 replace: an unprovable ``Parameters`` anchor publishes no binding at all (so the menubar hover is
@@ -213,18 +211,19 @@ from udv_echo_process.acquire.snapshot import (
     unreadable,
 )
 
-# The workflow surfaces Patch 4 splits out of this class. ``recording.py`` is the strip lifecycle
-# (moved by the first commit of the slice) and is composed into :class:`Win32Actuator` below;
-# ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` are its own cadences, re-exported here under the names
-# this module published. ``AcquisitionError`` is the ``udop`` package's one failure class now
-# (``acquire/udop/__init__.py``, so no surface has to import a sibling to raise it), so it is
-# imported here rather than defined below.
+# The workflow surfaces Patch 4 splits out of this class. ``recording.py`` (the strip lifecycle)
+# and ``store.py`` (the Store dialog) are composed into :class:`Win32Actuator` below;
+# ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` are the recording surface's own cadences, re-exported here
+# under the names this module published. ``AcquisitionError`` is the ``udop`` package's one
+# failure class now (``acquire/udop/__init__.py``, so no surface has to import a sibling to raise
+# it), so it is imported here rather than defined below.
 from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.udop.recording import (
     _OVERLAY_SETTLE_S,
     _POLL_S,
     RecordingSurface,
 )
+from udv_echo_process.acquire.udop.store import StoreSurface
 
 # The pure half of this module, moved to ``acquire/ui`` by Patch 2 and imported back here on
 # purpose: every name below is still reachable as ``driver.<name>`` for the callers and the
@@ -407,6 +406,7 @@ __all__ = [
     "SEND_TIMEOUT_MS",
     "SMTO_ABORTIFHUNG",
     "STARTABLE_VIEWS",
+    "STORE_TIMEOUT_S",
     "VK_RETURN",
     "WM_COMMAND",
     "WM_GETTEXT",
@@ -431,13 +431,13 @@ __all__ = [
     "_HOVER_MOVE_DY",
     "_HOVER_OPEN_S",
     "_HOVER_SETTLE_S",
-    "_OVERLAY_SETTLE_S",
-    "_POLL_S",
     "_TEXT_COMMIT_SETTLE_S",
     "_TEXT_SETTLE_S",
     "_VK_RETURN_DOWN_LPARAM",
     "_VK_RETURN_UP_LPARAM",
     "AcquisitionError",
+    "Iterable",
+    "OverlayKind",
     "StripState",
     "Win32Actuator",
     "_ClipRect",
@@ -561,7 +561,7 @@ _MENU_TIMEOUT_S, _MENU_POLL_S = 8.0, 0.5
 #: alternative is what three fix cycles went into.
 GESTURE_POSTED_PRESS = "posted held press"
 # ``_OVERLAY_SETTLE_S`` and ``_POLL_S`` — the settle after an accepted overlay answer and the
-# cadence the polling loops run at — were defined here too. They are
+# cadence the polling loops run at — were defined here. They are
 # ``acquire/udop/recording.py``'s as of Patch 4, moved there with the loops that read them (this
 # is the surface that answers overlays), and are imported at the top of this file under these same
 # names, so ``driver._OVERLAY_SETTLE_S`` and ``driver._POLL_S`` keep resolving.
@@ -652,7 +652,7 @@ def _same_directory(reported: str, expected: Path) -> bool:
     return normalized_path(reported) == normalized_path(str(expected))
 
 
-class Win32Actuator(RecordingSurface):
+class Win32Actuator(RecordingSurface, StoreSurface):
     """The live :class:`Actuator`: UDOP driven over posted Win32 messages.
 
     Bindings are re-resolved from scratch on every call — the strip panel is draggable
@@ -1190,13 +1190,6 @@ class Win32Actuator(RecordingSurface):
         roles["layout_evidence"] = layout_evidence(roles)
         self.last_roles = roles
         return roles
-
-    def _require_store_dialog(self) -> tuple[dict, list[dict]]:
-        """The Store dialog panel and its children, or a failure."""
-        found = self._find_overlay()
-        if found is None or found[0] is not OverlayKind.STORE_DIALOG:
-            raise AcquisitionError("the Store dialog is not up")
-        return found[1], self._children_of(found[1]["hwnd"], self._resolve())
 
     def _dialog_button(
         self,
@@ -2582,91 +2575,6 @@ class Win32Actuator(RecordingSurface):
         win32gui, _ = _gui()
         self._combo_select(combo["hwnd"], index, win32gui.GetParent(combo["hwnd"]))
 
-    def set_store_name(self, name: str) -> None:
-        """Write the Store dialog's file-name field with the commit recipe.
-
-        The name field is the edit that does *not* hold a path; the path field is
-        recognised by its separator, never by its position.
-        """
-        panel, kids = self._require_store_dialog()
-        self._set_text_commit(
-            self._store_name_field(panel, kids)["hwnd"], name, panel["hwnd"]
-        )
-
-    def assert_working_directory(self, directory: Path) -> str:
-        """Assert the Store dialog's ``Working directory``, and set it when it differs.
-
-        The field decides where the point lands, so it is never assumed: it is read,
-        compared with ``directory`` (the path the caller will watch), written with the
-        numeric/text commit recipe when it differs, and read **back** — because a write
-        that did not commit leaves the application storing somewhere else while the
-        control paints the new value (docs/16 §12a, §12b). Returns the verified text.
-
-        An unresolved mismatch raises :class:`AcquisitionError` **naming both paths**,
-        which fails the point: watching a folder the application is not writing to
-        surfaces only as a false "no file appeared", minutes later, with nothing in it
-        pointing at the real cause.
-        """
-        panel, kids = self._require_store_dialog()
-        path_edit = self._store_edits(panel, kids)[1]
-        if path_edit is None:
-            edits = [
-                self._get_text(k["hwnd"])
-                for k in kids
-                if k["cls"] in ("TEdit", "TSp_Edit")
-            ]
-            raise AcquisitionError(
-                "the Store dialog shows no path-looking field, so its Working directory "
-                f"cannot be asserted against '{directory}' (the dialog's edits are {edits})"
-            )
-        shown = self._get_text(path_edit["hwnd"])
-        if same_directory(shown, directory):
-            return shown
-        self._set_text_commit(path_edit["hwnd"], str(directory), panel["hwnd"])
-        readback = self._get_text(path_edit["hwnd"])
-        if not same_directory(readback, directory):
-            raise AcquisitionError(
-                f"the Store dialog's Working directory is '{readback}' where '{directory}' "
-                f"is expected (it showed '{shown}' before the write): the point would land "
-                "outside the directory the caller watches, so it is refused rather than "
-                "stored and waited for in the wrong folder"
-            )
-        self._note(
-            f"the Store dialog's Working directory was {shown!r}; wrote {readback!r}"
-        )
-        return readback
-
-    def commit_store(self) -> None:
-        """Press the Store dialog's rightmost bottom button (``Do store``)."""
-        panel, kids = self._require_store_dialog()
-        self._dialog_button(panel, kids, DialogControl.CONFIRM)
-
-    def wait_for_stored_file(
-        self,
-        directory: Path,
-        *,
-        known: Iterable[str],
-        timeout_s: float = STORE_TIMEOUT_S,
-    ) -> Path:
-        """Wait for a file that was not in ``directory`` before, and return it.
-
-        The *new name* is detected, never the arrival of any file. An overwrite warning
-        means the name was taken and the store was refused, so this raises instead of
-        returning a path — the caller retries under a fresh name.
-        """
-        path, kind = self._poll_new_file(directory, frozenset(known), timeout_s)
-        if path is not None:
-            return path
-        if kind is OverlayKind.WARNING:
-            self.answer_overlay()
-            raise AcquisitionError(
-                "the Store dialog raised its overwrite warning (the name is taken); answered "
-                "with its safe button — retry under a fresh name"
-            )
-        raise AcquisitionError(
-            f"no new file appeared in {directory} within {timeout_s:.0f} s of Do store"
-        )
-
     # ------------------------------------------------------------------ cycle internals
 
     def _as_role(self, role: ParamRole | str) -> ParamRole:
@@ -2689,106 +2597,6 @@ class Win32Actuator(RecordingSurface):
             raise AcquisitionError(
                 f"unknown parameter role {key!r}; known roles are {[r.value for r in ParamRole]}"
             ) from None
-
-    def _await_store_dialog(self, timeout_s: float) -> tuple[dict, list[dict]]:
-        """Wait for the Store dialog, answering warnings that come up first."""
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        while time.monotonic() < deadline:
-            kind = self._peek_overlay()
-            if kind is OverlayKind.STORE_DIALOG:
-                return self._require_store_dialog()
-            if kind is OverlayKind.WARNING:
-                self._note("answered a warning before the Store dialog appeared")
-                self.answer_overlay()
-            time.sleep(_POLL_S)
-        raise AcquisitionError("the Store dialog did not open after Do store")
-
-    def _store_edits(self, panel: dict, kids: Sequence[dict]) -> tuple[dict, dict | None]:
-        """The Store dialog's ``(name edit, path edit)``, top to bottom.
-
-        The path field is recognised by its **separator** (``:`` or ``\\``), never by
-        its position: which of the two edits is on top is not a fact this driver may
-        assume. ``path`` is ``None`` when neither edit holds a path — a dialog that has
-        never stored anything — which the caller reports rather than guesses around.
-        """
-        edits = sorted(
-            (k for k in kids if k["cls"] in ("TEdit", "TSp_Edit")),
-            key=lambda k: k["top"],
-        )
-        if len(edits) < 2:
-            raise AcquisitionError(
-                "the Store dialog does not show both a path and a name field"
-            )
-
-        def looks_like_a_path(k: dict) -> bool:
-            text = self._get_text(k["hwnd"])
-            return ":" in text or "\\" in text
-
-        path_edit = next((k for k in edits if looks_like_a_path(k)), None)
-        name_edit = next((k for k in edits if k is not path_edit), None)
-        if name_edit is None:
-            raise AcquisitionError("could not identify the Store dialog's name field")
-        return name_edit, path_edit
-
-    def _store_name_field(self, panel: dict, kids: Sequence[dict]) -> dict:
-        """The Store dialog's file-name edit: the one whose text is not a path."""
-        return self._store_edits(panel, kids)[0]
-
-    @staticmethod
-    def _names_in(directory: Path) -> frozenset[str]:
-        """The directory's current entry names (empty when it does not exist yet)."""
-        if not directory.is_dir():
-            return frozenset()
-        return frozenset(p.name for p in directory.glob("*"))
-
-    def _poll_new_file(
-        self, directory: Path, known: frozenset[str], timeout_s: float
-    ) -> tuple[Path | None, OverlayKind | None]:
-        """Poll for a name that was not in ``known``; report a warning instead of waiting."""
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        while True:
-            new = sorted(self._names_in(directory) - known)
-            if new:
-                return directory / new[0], None
-            kind = self._peek_overlay()
-            if kind is OverlayKind.WARNING:
-                return None, kind
-            if time.monotonic() >= deadline:
-                return None, None
-            time.sleep(_POLL_S)
-
-    def _store_until_file(
-        self, name: str, directory: Path, known: frozenset[str], timeout_s: float
-    ) -> Path:
-        """Wait for the file; on the overwrite warning answer ``No`` and retry once.
-
-        The retry is the contract: the warning means the name was taken, and answering it
-        with the LEFT button keeps the existing file — the point is stored again under a
-        suffixed name, never over the old one (docs/16 §12b).
-        """
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        attempt = name
-        retried = False
-        while time.monotonic() < deadline:
-            remaining = min(1.0, max(0.1, deadline - time.monotonic()))
-            path, kind = self._poll_new_file(directory, known, remaining)
-            if path is not None:
-                return path
-            if kind is not OverlayKind.WARNING:
-                continue
-            self.answer_overlay()  # LEFT button = No: never replace an existing file
-            if retried:
-                raise AcquisitionError(
-                    "the store was refused twice by the overwrite warning; the name still collides"
-                )
-            retried = True
-            attempt = f"{name}b"
-            self._note(f"the name {name!r} was taken; retrying as {attempt!r}")
-            self.set_store_name(attempt)
-            self.commit_store()
-        raise AcquisitionError(
-            f"no file appeared in {directory} within {timeout_s:.0f} s of Do store"
-        )
 
 #: Import-time conformance check: this class must satisfy every Actuator method. Derived
 #: from the Protocol itself, so it keeps holding if the Protocol grows.
