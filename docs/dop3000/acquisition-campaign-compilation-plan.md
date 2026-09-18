@@ -3521,3 +3521,49 @@ Time bewteen profile = 22.3 ms [22.3 22.4]` beside an `Exit` button.
 sampling-volume rejection; the single-echo-plot half of `Measure US field`; the two side-by-side plots beside
 `Define TGC`; and the three unpaintable items above.
 
+### 26.11 `Compare profiles` is deliberately unmapped, and the four-button band is the strip's own row
+
+Two answers from the operator. One is a decision that closes an item, the other an identification that closes
+part of another — and both are worth having in the record rather than only in a conversation.
+
+**`Compare profiles` — mapped, then left alone by decision.** The operator cropped it after all: a **complete
+full-screen widget** (**blocking**; whether it *replaces* the screen or overlays it they could not tell, and
+nothing here depends on which), offering to start a new comparison, add curves to the display, load a comparison
+file, and save one, with a `New IQ comparison` action. None of it is needed, because **the comparison this
+experiment wants is done in the operator's own post-processing rather than in the application.** So it is
+recorded as a **deliberately unmapped domain**, which is a different state from a gap: "no crop yet" is a
+to-do, "not our business" is a decision, and the index's gap list now distinguishes them.
+
+**That decision feeds the matrix, and in a useful direction.** If the analysis is post-processing, then the
+experiment's readout requirement is "**get the data out, intact and attributable**" — the store, the manifest and
+the frame values — rather than "get a number out of the application". §26.9's two app-side candidates (the
+cursor info box, `Compute statistics`) consequently drop from *required* to *optional and convenient*, which is
+exactly the kind of thing that shrinks a matrix.
+
+**The "four-button band" is the recording strip's own row in its grown state.** §18.7 (from the recon archive)
+and §11.1 item 5 carry a "four-button band" and "two caption-less buttons below the strip" as unexplained, and
+§26.10 then reported that nothing of the sort is painted in the current state. The operator's answer identifies
+them: the only four-button band they know is the strip's row —
+`[New acquisition] [Do store] [Clear and restart] + [Remove current block]` — which is the row the driver
+already resolves as `button_count 3` in view `ready`, with §21.1 noting that the ready row *gains* `Do store`
+when a block is held. Therefore:
+
+- the **four-button band is not a separate surface**: it is `STRIP_BUTTON_ORDER`'s row at four entries, measured,
+  cropped, and already inside the gate's own strip clause;
+- the **"two caption-less buttons below the strip" remain the outstanding unknown**, and their identification is
+  now in question: either they are this same row seen in a state that paints four entries, or they are a
+  genuinely separate pair. Resolving it wants a **tree read in the state that paints them**, not a photograph —
+  naming controls is what the read does, and §26.10 already showed a camera cannot.
+
+**The two warning modals are deferred, deliberately, with their triggers recorded.** The operator asked what was
+wanted; the honest answer is that neither justifies a deliberate action today.
+
+- The **power ↔ TGC modal** (§18.4) appears when `Emitting power` is changed while the TGC is in `auto`. Its
+  text is already in this record as a quotation; a crop would upgrade it to evidence. But reaching it means
+  putting the instrument back into TGC `auto`, and §26.4 showed that path can leave the stored uniform start
+  changed (`20 → 40`) — a real cost for a screenshot, in a mode the operator has ruled out as a working mode. It
+  will raise itself the first time the matrix gives power an axis, and that is the moment to crop it.
+- The **sampling-volume rejection** (§18.11) is caption-less, so a crop would capture a *shape*, not words. Its
+  value is a detection signature for a run, which the read path supplies when a point is genuinely rejected —
+  and provoking one on purpose means a write of exactly the class this work refuses to make for a photograph.
+
