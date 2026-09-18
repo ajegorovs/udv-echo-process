@@ -71,7 +71,7 @@ layout gate) as the refactor base`), branch `refactor/acquire-foundation`:
 
 | module | lines | bytes | what it is |
 |---|---|---|---|
-| `acquire/driver.py` | 3,899 | 205,996 | `Win32Actuator` — Win32 transport, cursor/foreground/`ClipCursor`, window and tree enumeration, semantic resolution, gestures and the record/store cycle |
+| `acquire/driver.py` | 34 | 2,220 | the compatibility name of the facade, **re-measured at Patch 4's tip** (every other row here is the freeze-commit count): `udop/session.py` publishes itself under this name, so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are the facade's own objects — not copies |
 | `acquire/campaign.py` | 1,836 | 94,417 | definitions, planning, compilation/reconciliation, resume identity, manifest IO, execution orchestration |
 | `acquire/runner.py` | 1,151 | 60,144 | `SweepRunner` — per-point orchestration, logging, verification call sites |
 | `acquire/actuator.py` | 694 | 30,715 | the pure `Actuator` protocol, the ported binding tables (`STRIP_BUTTON_ORDER`, `PARAM_COLUMN_ORDER`, `DIALOG_FIELD_ORDER`, …), `StripView`, `ParamRole` (`actuator.py:115`), `ScreenFingerprint` (`actuator.py:435`), `PreflightReport` (`actuator.py:490`) |
@@ -87,17 +87,25 @@ Related evidence that stays where it is: `tools/live/` (probes and the interacti
 dispatcher), `tools/ui/` (the crop checker and magnifier), `docs/dop3000/ui-crops/` (45
 committed PNGs), `tests/data/udop-measurement-screen-tree*.json` and
 `tests/data/udop-parameters-dialog-tree.json` (committed control-tree fixtures), and the
-13 `tests/test_acquire_*.py` modules.
+14 `tests/test_acquire_*.py` modules.
 
-The line and byte counts above are the **freeze-commit measurement**, not a live one: Patch 2
+Every row of that table except `acquire/driver.py` is the **freeze-commit measurement**, not a live
+one — that one row is re-measured at Patch 4's tip, below. The history since the freeze: Patch 2
 moved the pure half of `driver.py` (the normalized observation, the surface classification, the
 shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/`, and then
 its widget slice moved the three remaining pure interpreters after it — the recording strip, the
 `Operating parameters` dialog and the one menubar binding (`ui/strip.py`, `ui/dialog.py`,
 `ui/menu.py`). Patch 3 moved the **Win32 mechanics** into `acquire/win32/` — the message transport
 (`messages.py`), the cursor, the clip and the foreground precondition (`cursor.py`), and the
-enumeration with its visibility rule (`tree.py`). `driver.py` re-exports every moved name, so the
-module is smaller while every caller still resolves (`driver.screen_mode`,
+enumeration with its visibility rule (`tree.py`). Patch 4 moved the **state-changing live
+workflows** out of the class into `acquire/udop/` — the `Parameters` interaction
+(`parameters.py`, 1,001 lines), the strip lifecycle and the record/stop/store cycle
+(`recording.py`, 440), the Store dialog (`store.py`, 236) and the facade that composes them
+(`session.py`, 1,739) — and left `acquire/driver.py` as the *compatibility name* of that facade
+rather than a re-export shell: `driver.py` publishes `udop/session.py` under its own name, because
+a copy of a name is not the name a patch rebinds (this repository's fakes script the window layer
+by patching `driver._gui` / `driver._user32` / `driver._post`). So the `driver.py` row above is 34
+lines of shim while every caller still resolves (`driver.screen_mode`,
 `driver.layout_shape_reasons`, `driver.dialog_value_fields`, `driver._strip_row`,
 `driver.PARAMETERS_MENU`, `driver._send`, `driver._CursorPoint`, `driver._click_hold`, …). Line
 and byte references in this document therefore name **symbols**, not offsets: the only line
@@ -128,9 +136,9 @@ semantics currently move faster than campaign abstractions.
 None of the modules below existed in the tree at the freeze commit. `ls
 src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4; `acquire/ui/`
 holds that list's first five entries as of Patch 2 (the layout slice, then the widget slice: the
-strip, the dialog and the menubar anchor), and `acquire/win32/` holds the three mechanics entries
-below as of Patch 3. Read every path in this section as a **plan**, and check the tree before
-relying on one.
+strip, the dialog and the menubar anchor), `acquire/win32/` holds the three mechanics entries
+below as of Patch 3, and `acquire/udop/` holds the four workflow entries below as of Patch 4. Read
+every path in this section as a **plan**, and check the tree before relying on one.
 
 | target module | layer | status |
 |---|---|---|
@@ -142,8 +150,23 @@ relying on one.
 | `acquire/win32/messages.py` — `SendMessageTimeoutW`, posted held click, text commit, combo read/select (`_send`, `_post`, `_click_hold`, `_set_text_commit`, `_combo_select`, `_combo_index`, `_combo_items`, `_get_text`, `_control_id`) | Win32 mechanics | **landed by Patch 3** |
 | `acquire/win32/cursor.py` — foreground checks, real cursor move/restore, `ClipCursor` (`_gui`/`_user32`, `_CursorPoint`/`_ClipRect`, `_clip_rect`, `_release_clip`, `_cursor_position`, `_restore_cursor`, `_move_real_cursor`, `_foreground_window`, `_thread_of`, `_activate_window`, `_require_foreground`, `_hover_centre`) | Win32 mechanics | **landed by Patch 3** |
 | `acquire/win32/tree.py` — enumerate the main window, visibility, normalize into `ui/model` nodes (`_visible_children`, `_is_visible`, `_hidden_panels`, `_main_hwnd`, `_children_of`, `_descendants_of`, `ui_nodes`) | Win32 mechanics | **landed by Patch 3** |
-| `acquire/udop/parameters.py`, `recording.py`, `store.py`, `session.py` | UDOP workflows (the only layer that combines observations with actions) | **target — Patch 4** |
+| `acquire/udop/parameters.py`, `recording.py`, `store.py`, `session.py` | UDOP workflows (the only layer that combines observations with actions) | **landed by Patch 4** |
 | `acquire/campaign/{models,planning,compile,resume,run}.py` | campaign decomposition | **target — after device verification** |
+
+**How Patch 4 composes it, and why that shape.** One live class out of three per-surface pieces plus
+a facade. `udop/{parameters,recording,store}.py` each define their surface's methods on a plain
+class — `ParametersSurface`, `RecordingSurface`, `StoreSurface`: no `__init__`, no state, no
+platform import — and `udop/session.py` defines `Win32Actuator` as
+`class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` with the facade's own
+methods under them (the transport, the cursor, the enumeration and the resolve, the class's state,
+the read-only surface and the protocol surface). The three pieces' method sets are **disjoint**, so
+the base order changes no resolution, and every moved body reaches its collaborators through `self`
+— which is what keeps a subclass that overrides a private
+(`tests/test_acquire_driver.py`'s `FakeDriver`) overriding exactly the method it always did, and
+what keeps the flat class's method set (96 names) intact. `tests/test_acquire_udop.py` pins the
+composition (the MRO, the disjointness, every method's `__module__`), the published surface and the
+package's import hygiene over the ASTs. Sizes at this tip: `parameters.py` 1,001 lines,
+`recording.py` 440, `store.py` 236, `session.py` 1,739, `__init__.py` 36.
 
 Rules the target layout pins:
 
@@ -177,7 +200,21 @@ Rules the target layout pins:
   two exceptions — `NUMERIC_WRITE_RECIPE` and `lru_cache`, both *incidental imports* that lived
   in `driver.py` only to feed the commit recipe's assertion and the two lazy handles. Nothing in
   `src/`, `tests/` or `tools/` referenced either through the driver; the recipe name is
-  `acquire/actuator.py`'s and is re-exported by `acquire`.
+  `acquire/actuator.py`'s and is re-exported by `acquire`. **Patch 4 measured it once more, over
+  the whole class:** all 96 methods and all 3 module-level functions of the flat module are
+  AST-identical at the tip (0 removed, 0 added, 0 changed — decorators and docstrings included),
+  all 170 module-level bindings the flat module published at Patch 3's tip still resolve from
+  `driver` with none lost, and the 96 class attributes are unchanged (MRO:
+  `Win32Actuator → ParametersSurface → RecordingSurface → StoreSurface → object`). One thing is
+  *not* preserved, and it is recorded here rather than rounded off: a **value patch** on the
+  workflow timings that moved with their loops (`DIALOG_FILL_TIMEOUT_S`, `_ENTRY_DIALOG_TIMEOUT_S`,
+  `_MENU_TIMEOUT_S`, `_MENU_POLL_S`, `_OVERLAY_SETTLE_S`, `_POLL_S`). `monkeypatch.setattr(driver,
+  "_MENU_POLL_S", 0.0)` still resolves — the name is re-exported — but the loop that reads that
+  cadence reads `udop/parameters.py`'s own binding, so the four tests that patch it take their
+  measured timeouts instead of a shortened one: the suite stays green and is ~35 s slower at this
+  tip (112 s vs 77 s). A module-level copy cannot follow a later rebinding, and a call-time
+  reference from the surface back to the facade would be an import cycle, so the knob lives with
+  the loop and the patch target for it is the module that reads it.
 
 ## 6. Phase plan, and which patch lands what
 
