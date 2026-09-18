@@ -52,11 +52,11 @@ sys.path.insert(0, str(REPO / "src"))
 
 import win32gui
 
-from udv_echo_process.acquire import driver
-
 # The capture half of the same measurement pass: one grab route, one blank-image check, one set of
 # DPI facts — imported rather than copied, so a fix to either lands in both probes at once.
 from dialog_shot import dpi_facts, grab_screen, image_stats
+
+from udv_echo_process.acquire import driver
 
 #: Where the pictures and the JSON go: ``outputs/`` is gitignored, and large binaries belong there.
 OUT = REPO / "outputs" / "live"
