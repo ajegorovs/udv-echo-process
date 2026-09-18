@@ -1836,6 +1836,24 @@ So the window cannot be predicted: a writer must **read it back**, and a point t
 either co-set `First gate depth` explicitly or record what the instrument chose — never what the definition
 expected. This is the strongest case yet for §19.1's rule that no write is believed.
 
+### 18.12 Why the field looked static: the dialog does not refresh the derived value until reopened
+
+The operator's explanation, and it fits every measurement in 18.9–18.11: **setting the sampling volume does not
+update the `First gate depth` field in the open dialog.** The application recomputes the value, but the open
+dialog goes on showing the old one; Accept and reopen and the new value is there. So a hand-made change looked
+like it changed nothing — that reading came from the same open dialog — while every probe reading, taken from a
+freshly opened dialog, saw the gate move.
+
+Two rules follow, and they are one rule seen from both sides:
+
+- **a stale open dialog is not evidence.** A knob's value is only what a *freshly opened* dialog states, so a
+  read-back after a write must reopen — which is §19.1's rung 2, now measured rather than assumed;
+- **§18.11's state-dependence stands.** Both of those reads came from freshly opened dialogs and still
+  disagreed for the same requested volume, so the derivation depends on the state it starts from as well as on
+  the value requested.
+
+The earlier hand test that seemed to show no change was reading a stale field, not failing to commit.
+
 ## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
 
 The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
