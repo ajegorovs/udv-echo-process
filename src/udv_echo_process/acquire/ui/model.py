@@ -1,0 +1,430 @@
+"""Normalized UI observations — the pure input of every interpreter under ``acquire/ui``.
+
+Layer 1 of the target layering (``docs/dop3000/acquisition-architecture.md`` §5). An
+interpreter under this package reads *these* types and not a live window: the Win32 enumeration
+(``driver._visible_children``), the visibility rule and the control-id bookkeeping stay in
+:mod:`udv_echo_process.acquire.driver`, and what arrives here is the **normalized projection**
+of that enumeration.
+
+Three rules are structural, and each of them was paid for live:
+
+1. **No ``HWND`` is a semantic identity.** ``UiNode.hwnd`` is carried as an *action reference*
+   for the resolve that produced it — control ids change on every launch (43/43 classes at the
+   same positions, 1/43 ids in common) and a handle changes with them — so nothing here derives
+   meaning from one. Identity is a role: class + containing panel + order inside it.
+2. **Visibility is part of the projection.** ``_visible_children`` is what the resolver walks,
+   and the ``Parameters`` popup panel is *pre-created* in the tree with ``IsWindowVisible ==
+   False`` and only *shown* on the hover — presence is not visibility, and a rule that accepted
+   presence presses real coordinates into empty screen. ``UiNode.visible`` therefore exists and
+   a node that does not state it is treated as visible only because the enumeration that
+   produced it already filtered.
+3. **Raw rows are diagnostics.** The rect of a surface is a property of the moment it was
+   shown (the strip is draggable: it floats inside the monitor and morphs ``98x40`` →
+   ``352x40`` → ``413x123``), so a captured rect describes a *reading* and never a constant
+   that could be bound to.
+
+:class:`ScreenObservation` is the record the layout interpreter consumes, and
+:meth:`ScreenObservation.from_roles` is the **one place** a resolved role map
+(:meth:`~udv_echo_process.acquire.driver.Win32Actuator._resolve`) is projected onto it —
+written down once so a caller cannot invent a second, differently-typed view of the same tree.
+Everything above it is behaviour: plain functions in :mod:`udv_echo_process.acquire.ui.layout`.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from enum import Enum
+
+from udv_echo_process.acquire.actuator import PARAM_COLUMN_ORDER
+from udv_echo_process.models.base import ValueModel
+
+__all__ = [
+    "DialogObservation",
+    "MenuObservation",
+    "ParameterPanelState",
+    "Rect",
+    "ScreenObservation",
+    "StripObservation",
+    "SurfaceKind",
+    "UiNode",
+    "UiTree",
+    "read_parameter_panel",
+]
+
+
+class SurfaceKind(str, Enum):
+    """Which surface is on the screen — decided **before** any press target is resolved.
+
+    Treating every extra panel as "an overlay" is what produced the wrong diagnosis in ledger
+    B06 and B08, so the kinds are distinct (``docs/dop3000/acquisition-ui-model.md`` §1):
+
+    - ``MEASUREMENT`` — the clean measurement screen: menubar band, parameter column, monitor,
+      recording strip, status bar. The whole predicate, not just "no dialog is up".
+    - ``OVERLAY`` — a panel drawn *over* the measurement surface: the ``Parameters`` popup, the
+      ``Operating parameters`` dialog's siblings, ``Define TGC``, the power↔TGC ``Warning``.
+    - ``DIALOG`` — an application dialog panel (identified structurally: not the sidebar, wider
+      than 400 px, full of controls) whose widgets are not the layout's.
+    - ``POPUP`` — the menubar's own popup panel, which is also the strip resolver's decoy.
+    - ``REPLACEMENT`` — a surface that **replaces the client area**, so "no sidebar / no strip"
+      is not a mode, it is another surface: ``Measure US field`` and ``Compare profiles``.
+    - ``UNKNOWN`` — anything the model cannot classify. It has no binding and no mode, and it
+      is a refusal state rather than a default.
+    """
+
+    MEASUREMENT = "measurement"
+    OVERLAY = "overlay"
+    DIALOG = "dialog"
+    POPUP = "popup"
+    REPLACEMENT = "replacement"
+    UNKNOWN = "unknown"
+
+
+class ParameterPanelState(str, Enum):
+    """The fast-access parameter column: the manual screen's own precondition.
+
+    ``PRESENT_COMPLETE`` is the manual shape (the column resolved with all of its
+    :data:`~udv_echo_process.acquire.actuator.PARAM_COLUMN_ORDER` roles).
+    ``ABSENT`` is a screen with no column panel *and* no rows at all — the state the
+    ``Preferences`` option *Show fast access parameters panel (not available in assisted mode)*
+    produces on a manual channel, and the state an assisted channel produces as well, which is
+    exactly why it is a state and not a mode (ledger B01).
+    ``INCOMPLETE`` is a column that resolved without all of its roles: neither accepted shape,
+    and a point's writes would land on the wrong fields.
+    """
+
+    PRESENT_COMPLETE = "present_complete"
+    ABSENT = "absent"
+    INCOMPLETE = "incomplete"
+
+
+class Rect(ValueModel):
+    """One control's rectangle in screen coordinates, and the geometry the rules ask of it.
+
+    The comparisons here are the ones the driver's own rules were measured with, so a rule
+    cannot drift from the geometry it was written against:
+
+    - :meth:`contains_point` is **edge-inclusive**, like the cursor-clip test: a point on the
+      boundary is inside, which is why a move there is never clamped;
+    - :meth:`contains` is the nesting test (``outer`` wraps ``inner``), which is how a value
+      field is found inside its ``TSp_Value_Button`` row;
+    - :meth:`holds_centre_of` is the test the strip's own rule uses — the **centre** of a
+      button lies inside the panel — and it is deliberately not the same question as
+      :meth:`contains`.
+    """
+
+    left: int
+    top: int
+    right: int
+    bottom: int
+
+    @property
+    def width(self) -> int:
+        """The rectangle's width in pixels."""
+        return self.right - self.left
+
+    @property
+    def height(self) -> int:
+        """The rectangle's height in pixels."""
+        return self.bottom - self.top
+
+    @property
+    def centre(self) -> tuple[int, int]:
+        """The rectangle's centre, as the ``_inside``/cursor rules compute it (integer)."""
+        return (self.left + self.width // 2, self.top + self.height // 2)
+
+    def as_tuple(self) -> tuple[int, int, int, int]:
+        """The ``(left, top, right, bottom)`` tuple the driver's messages render."""
+        return (self.left, self.top, self.right, self.bottom)
+
+    def contains_point(self, point: tuple[int, int]) -> bool:
+        """True when ``point`` lies inside the rectangle — edge-inclusive, in screen space."""
+        return (
+            self.left <= point[0] <= self.right and self.top <= point[1] <= self.bottom
+        )
+
+    def contains(self, other: Rect) -> bool:
+        """True when ``other`` lies inside this rectangle, as the application lays them out."""
+        return (
+            self.left <= other.left
+            and self.top <= other.top
+            and other.right <= self.right
+            and other.bottom <= self.bottom
+        )
+
+    def holds_centre_of(self, other: Rect) -> bool:
+        """True when ``other``'s centre lies inside this rectangle."""
+        return self.contains_point(other.centre)
+
+    @classmethod
+    def from_control(cls, control: Mapping) -> Rect | None:
+        """The rectangle of one resolved row — from its ``rect``, or from ``left/top/w/h``.
+
+        ``None`` when the row states neither: a caller that gets ``None`` has no geometry to
+        reason from and must refuse rather than assume a rect (a panel projected from a partial
+        fixture states no rect at all, and inventing one would bind a press to a rectangle
+        nobody measured).
+        """
+        rect = control.get("rect")
+        if rect is not None:
+            try:
+                left, top, right, bottom = (int(value) for value in rect)
+            except (TypeError, ValueError):
+                return None
+            return cls(left=left, top=top, right=right, bottom=bottom)
+        left, top = control.get("left"), control.get("top")
+        width, height = control.get("w"), control.get("h")
+        if None in (left, top, width, height):
+            return None
+        try:
+            return cls(
+                left=int(left),
+                top=int(top),
+                right=int(left) + int(width),
+                bottom=int(top) + int(height),
+            )
+        except (TypeError, ValueError):
+            return None
+
+
+class UiNode(ValueModel):
+    """One control of the normalized projection: its class, its rect, and its evidence.
+
+    ``cls`` is the *role* half of a control's identity (with its containing panel and its order
+    inside it); ``text`` is what the control states, carried as evidence and never as an
+    identity — every ``TSp_*`` widget in this application is caption-less (``WM_GETTEXT``
+    answers ``""``) and the captions an operator sees are the crops' business (ledger B15).
+    ``hwnd`` and ``control_id`` are action references for the resolve that produced them.
+    """
+
+    cls: str
+    rect: Rect | None = None
+    visible: bool = True
+    text: str = ""
+    hwnd: int | None = None
+    control_id: int | None = None
+
+    @classmethod
+    def from_row(cls, row: Mapping) -> UiNode:
+        """Project one resolved row (``_visible_children``'s own dict) onto a node."""
+        hwnd, control_id = row.get("hwnd"), row.get("id")
+        return cls(
+            cls=str(row.get("cls", "")),
+            rect=Rect.from_control(row),
+            visible=bool(row.get("visible", True)),
+            text=str(row.get("text", "")),
+            hwnd=hwnd if isinstance(hwnd, int) else None,
+            control_id=control_id if isinstance(control_id, int) else None,
+        )
+
+
+class UiTree(ValueModel):
+    """The window's controls as a **normalized visible projection**.
+
+    ``nodes`` is what the enumeration reported as visible with a real area — the same list the
+    resolver binds roles against — and the raw rows beyond it (the pre-created, hidden panels a
+    ``_hidden_panels`` walk finds) stay diagnostics: they are *named* in a refusal and never
+    bound, because a hidden panel's rect is where a press would land on nothing.
+    """
+
+    window: int | None = None
+    nodes: tuple[UiNode, ...] = ()
+
+    def node(self, hwnd: int | None) -> UiNode | None:
+        """The projected node holding ``hwnd``, or ``None`` — a handle is a lookup, not a role."""
+        if hwnd is None:
+            return None
+        return next((node for node in self.nodes if node.hwnd == hwnd), None)
+
+    def visible(self) -> tuple[UiNode, ...]:
+        """The nodes this projection carries as visible."""
+        return tuple(node for node in self.nodes if node.visible)
+
+    def inside(self, panel: UiNode | None, cls: str | None = None) -> tuple[UiNode, ...]:
+        """The nodes whose **centre** lies inside ``panel``, optionally of one class.
+
+        The panel's own rect is what decides, and a panel that states no rect hosts nothing:
+        guessing a rectangle here would put a press on a control nobody measured.
+        """
+        if panel is None or panel.rect is None:
+            return ()
+        return tuple(
+            node
+            for node in self.nodes
+            if node is not panel
+            and node.rect is not None
+            and panel.rect.holds_centre_of(node.rect)
+            and (cls is None or node.cls == cls)
+        )
+
+
+class MenuObservation(ValueModel):
+    """The menubar as the resolver saw it: its band, its buttons, and what they were named.
+
+    ``named`` is the positional binding the resolver made (``MENU_ORDER[i]`` → the *i*-th button
+    by ``left``) and it is **evidence, not an identity**: the application's variants do not paint
+    the same menubar and the entries carry no tree text, so an index map silently renames every
+    later role when one button is absent (ledger B03). It is carried here so a menu interpreter
+    can tell "the anchor did not resolve" from "the bar is not the measured one".
+    """
+
+    band: UiNode | None = None
+    buttons: tuple[UiNode, ...] = ()
+    named: tuple[tuple[str, UiNode], ...] = ()
+
+    def node_for(self, name: str) -> UiNode | None:
+        """The button the resolver bound to ``name``, or ``None`` when it bound none."""
+        return next((node for bound, node in self.named if bound == name), None)
+
+
+class StripObservation(ValueModel):
+    """The recording strip: the panel that hosted the row, the row itself, and its state.
+
+    A press is bound to a button's **position in the current row** (the panel is draggable and
+    morphs), so what matters is which panel the resolver bound, how many buttons its top row
+    holds and whether it carries a slider — never a width (134 vs 138 px is too close an
+    identity) and never a caption.
+    """
+
+    panel: UiNode | None = None
+    row: tuple[UiNode, ...] = ()
+    #: The ``StripView`` **name** the resolver classified, kept as the reading it is: the state
+    #: string a tree carries is evidence about a moment, and re-classifying it here would let a
+    #: second opinion disagree with the row it was read from.
+    state_reading: str | None = None
+    has_slider: bool = False
+
+
+class DialogObservation(ValueModel):
+    """One application dialog panel: the panel, its children, and the channel it states.
+
+    ``channel`` is what the dialog's own channel combo read — the fact a run compares against
+    the channel it routed before any other dialog fact is believed (ledger B17). It is ``None``
+    when the dialog stated none, which is not the same as a dialog that was never read.
+    """
+
+    panel: UiNode
+    children: tuple[UiNode, ...] = ()
+    channel: str | None = None
+
+
+class ScreenObservation(ValueModel):
+    """What the application shows, normalized — the layout interpreter's whole input.
+
+    Built by :meth:`from_roles` from the resolver's own role map, so the observation cannot
+    disagree with the tree a press would be taken against. The fields are the facts the surface
+    predicate is written in (``docs/dop3000/acquisition-ui-model.md`` §2): the window class, the
+    menubar band and its buttons, the plot, the strip candidate, the dialog and popup panels,
+    the parameter column with its roles, and the visible-control total — the last of which is
+    **evidence and never a gate** (plan §24.5 D4: the reference install's clean screen reads 43
+    in 4 and the instrument's own 44 in 4, and both are legitimate layouts).
+    """
+
+    class_name: str | None = None
+    client: tuple[int, int] = (0, 0)
+    origin: tuple[int, int] = (0, 0)
+    tree: UiTree = UiTree()
+    panels: tuple[UiNode, ...] = ()
+    menu: MenuObservation = MenuObservation()
+    plot: UiNode | None = None
+    strip: StripObservation = StripObservation()
+    dialogs: tuple[UiNode, ...] = ()
+    popup_open: bool = False
+    parameter_column: UiNode | None = None
+    parameter_panel: ParameterPanelState = ParameterPanelState.ABSENT
+    parameter_roles: tuple[str, ...] = ()
+    parameter_rows: int = 0
+    control_count: int = 0
+
+    @classmethod
+    def from_roles(cls, roles: Mapping) -> ScreenObservation:
+        """Project a resolved role map onto the observation — the single place it is written.
+
+        Tolerant by construction: a role map captured from a fixture (or from a driver fake)
+        states only the keys its own case needed, and a projection that insisted on all of them
+        would make every partial tree unreadable — including the ones the gate is *supposed* to
+        refuse. A key that is absent projects as "not resolved", which is exactly what the
+        refusal says about it.
+        """
+        nodes = tuple(UiNode.from_row(row) for row in (roles.get("raw") or ()))
+        tree = UiTree(window=roles.get("window"), nodes=nodes)
+        by_hwnd = {node.hwnd: node for node in nodes if node.hwnd is not None}
+
+        def project(row: Mapping | None) -> UiNode | None:
+            """The projected node for one resolved row — the same node the tree carries."""
+            if row is None:
+                return None
+            hwnd = row.get("hwnd")
+            return by_hwnd.get(hwnd) or UiNode.from_row(row)
+
+        panels = tuple(
+            node for node in (project(panel) for panel in (roles.get("panels") or ())) if node
+        )
+        menu_rows = roles.get("menu") or {}
+        menu = MenuObservation(
+            band=project(roles.get("menu_band")),
+            buttons=tuple(
+                node for node in (project(row) for row in menu_rows.values()) if node
+            ),
+            named=tuple(
+                (str(name), node)
+                for name, node in (
+                    (name, project(row)) for name, row in menu_rows.items()
+                )
+                if node is not None
+            ),
+        )
+        strip_panel = project(roles.get("strip_panel"))
+        strip = StripObservation(
+            panel=strip_panel,
+            row=tuple(
+                node for node in (project(row) for row in (roles.get("strip_row") or ())) if node
+            ),
+            state_reading=None if roles.get("state") is None else str(roles["state"]),
+            has_slider=any(
+                node.cls == "TSp_Sliding_Bar" for node in tree.inside(strip_panel)
+            ),
+        )
+        dialog_hwnds = set(roles.get("value_dialogs") or ()) | set(
+            roles.get("browse_dialogs") or ()
+        )
+        column = project(roles.get("left_panel"))
+        params = roles.get("params") or {}
+        rows = roles.get("param_rows") or ()
+        return cls(
+            class_name=roles.get("class_name"),
+            client=tuple(roles.get("client") or (0, 0)),
+            origin=tuple(roles.get("origin") or (0, 0)),
+            tree=tree,
+            panels=panels,
+            menu=menu,
+            plot=project(roles.get("plot")),
+            strip=strip,
+            dialogs=tuple(panel for panel in panels if panel.hwnd in dialog_hwnds),
+            popup_open=bool(roles.get("open_popup")),
+            parameter_column=column,
+            parameter_panel=read_parameter_panel(column, len(params), len(rows)),
+            parameter_roles=tuple(
+                getattr(role, "value", str(role)) for role in params
+            ),
+            parameter_rows=len(rows),
+            control_count=len(nodes),
+        )
+
+
+def read_parameter_panel(
+    column: UiNode | None, roles_resolved: int, rows: int
+) -> ParameterPanelState:
+    """Which of the three states the fast-access parameter panel is in, from the tree alone.
+
+    The rule is a *reading*, never a mode (ledger B01): a screen with no column at all is the
+    state a manual channel reaches with the panel switched off in ``Preferences``, so nothing
+    that reads it may promote it to a channel mode — the caller refuses on the *screen*, naming
+    both possibilities. The distinction between ``ABSENT`` and ``INCOMPLETE`` is the same one
+    plan §24.3 draws: no column anywhere is a screen whose panel is gone, while a column that
+    resolved without its roles is a binding that would write the wrong fields.
+    """
+    if column is None and roles_resolved == 0 and rows == 0:
+        return ParameterPanelState.ABSENT
+    if column is not None and roles_resolved >= len(PARAM_COLUMN_ORDER):
+        return ParameterPanelState.PRESENT_COMPLETE
+    return ParameterPanelState.INCOMPLETE

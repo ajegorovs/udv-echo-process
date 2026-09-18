@@ -68,7 +68,8 @@ produces names the ambiguity:
 The positive form of the manual screen is measured: a channel in assisted mode is **21
 visible controls in 3 panels** with no parameter column, against the clean **43 in 4** on
 the simulation build and **44 in 4** on the instrument (`driver.EXPECTED_CONTROL_COUNT`
-= 43, `driver.EXPECTED_PANEL_COUNT` = 4 at `driver.py:220-221`; the 44/4 instrument reading
+= 43, `driver.EXPECTED_PANEL_COUNT` = 4, re-exported from `acquire/ui/layout.py`, which is
+where the constants live as of Patch 2; the 44/4 instrument reading
 is *live-reported*, [`live-bringup.md`](live-bringup.md) §4). Those totals are **evidence**
 carried in the reading — the shape verdict is what gates a run, never the total.
 

@@ -89,6 +89,12 @@ committed PNGs), `tests/data/udop-measurement-screen-tree*.json` and
 `tests/data/udop-parameters-dialog-tree.json` (committed control-tree fixtures), and the
 13 `tests/test_acquire_*.py` modules.
 
+The line and byte counts above are the **freeze-commit measurement**, not a live one: Patch 2
+moved the pure half of `driver.py` (the normalized observation, the surface classification, the
+shape gate, the mode reading and the geometry the binding rules use) into `acquire/ui/` and
+`driver.py` re-exports every moved name, so the module is smaller while every caller still
+resolves (`driver.screen_mode`, `driver.layout_shape_reasons`, …).
+
 **The diagnosis behind the refactor.** `driver.py` is not merely large: it mixes five
 concerns that have different evidence and different test surfaces — (1) low-level Win32
 transport, (2) cursor / foreground / `ClipCursor` management, (3) live-window enumeration
@@ -101,14 +107,15 @@ semantics currently move faster than campaign abstractions.
 
 ## 5. Target layout — **status: target** (one line per layer, with the patch that lands it)
 
-None of the modules below exist in the tree as of the freeze commit. `ls
-src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4. Read
-every path in this section as a **plan**, and check the tree before relying on one.
+None of the modules below existed in the tree at the freeze commit. `ls
+src/udv_echo_process/acquire/` at `bfbbb10` shows only the flat module list of §4, and
+`acquire/ui/` holds that list's first two entries as of the Patch 2 layout slice. Read every
+path in this section as a **plan**, and check the tree before relying on one.
 
 | target module | layer | status |
 |---|---|---|
-| `acquire/ui/model.py` — `Rect`, `UiNode`/`UiTree`, `SurfaceKind`, `ParameterPanelState`, `StripObservation`, `MenuObservation`, `DialogObservation` | normalized observations | **target — Patch 2** |
-| `acquire/ui/layout.py` — measurement / overlay / dialog / popup / replacement / unknown classification | pure interpreter | **target — Patch 2** |
+| `acquire/ui/model.py` — `Rect`, `UiNode`/`UiTree`, `SurfaceKind`, `ParameterPanelState`, `StripObservation`, `MenuObservation`, `DialogObservation` | normalized observations | **landed by Patch 2 (layout slice)** |
+| `acquire/ui/layout.py` — measurement / overlay / dialog / popup / replacement / unknown classification | pure interpreter | **landed by Patch 2 (layout slice)** |
 | `acquire/ui/strip.py` — pure strip observation and classification | pure interpreter | **target — Patch 2** |
 | `acquire/ui/dialog.py` — operating-parameters table binding, widget-aware value extraction | pure interpreter | **target — Patch 2** |
 | `acquire/ui/menu.py` — the `Parameters` anchor and its expected popup, and nothing generic | pure interpreter | **target — Patch 2** |
