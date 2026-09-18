@@ -2722,7 +2722,7 @@ recorded as the clean screen (§21.2); the same application in real-experiment m
 for looking *more* like the instrument, and §22.6 forbids the obvious repair — writing `44` down as the
 new clean count — while it is unknown what makes that row visible.
 
-### 24.2 The gate is doing three jobs at once, and only one of them needs a total
+### 24.2 The gate is doing three jobs at once, and none of them needs a total
 
 | job the gate is really doing | how it is done today | what it should be |
 |---|---|---|
