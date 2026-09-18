@@ -2195,3 +2195,236 @@ and why they have to be re-measured rather than trusted.
   *shown* rect is what `_OVERLAY_LEFT` asserts on the strength of the same record.
 - **which of the two popup rules resolved it during this pass** — the same prohibition: the driver notes
   only the cursor-clip release, and no note names the rule that won.
+
+## 22. Simulation and non-simulation are two layouts, measured
+
+§21 measured the simulation layout and left the instrument's unmeasured (21.2's last row, 21.5's first
+bullet). Both are measured now, on 2026-09-18: the simulation session (§21.2's read — full frame
+`sha256 75d77f57…`, the frame's own taskbar clock 14:42) and the **measurement box**, captioned
+`UDOP DOP3010.43` (frame `sha256 7a72e38d…`, clock 14:49). Both passes are one dispatched read of the
+probe §21.2 committed, which presses nothing:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh main_geometry.py   # presses nothing, in either mode
+```
+
+`outputs/` is gitignored, so the simulation read — the committed `main-geometry.json` of §21.2 — was
+kept as `outputs/live/sim-baseline/main-geometry.json` when the instrument's run overwrote the path;
+the instrument's is `outputs/live/main-geometry.json`, next to its own crops. Both are 31-top-level-panel,
+one-frame reads with the same `ASSERTED_*` regions (§21.2), and **nothing was pressed in either**: no
+strip button (all three commit), no `Do store`, no popup entry, no dialog. Everything below is a read of
+the live tree, one frame each, and the crops that frame produced.
+
+### 22.1 The mode is in the caption — a readable, checkable fact
+
+The first difference is identity, not geometry: `main_window.caption` is `UDOP Simul` in one read and
+`UDOP DOP3010.43` in the other, and that string is readable in **three** places — `WM_GETTEXT` (the
+driver's own `_get_text`; `main_window.caption` in both JSONs), the window's own title bar, and the
+taskbar button — all three seen in both frames. It is the only discriminator in this pair that is
+*stated* rather than inferred. Everything else about the frame is the same or nearly so: class
+`TMain_Scr`, rect `(-8,-8,1928,1058)`, client `1920x1027` with origin `(0,23)`, 96 dpi, the four visible
+panels, and 28 of the 31 top-level panel rects, identical in both. The visible-control count — 21.2's
+other candidate — differs *because* the layout differs, so it cannot be what a run keys on.
+
+**The rule: a run must refuse when it is launched in a mode it was not measured against.** A run is
+measured against one layout; the caption is the instrumentation's own statement of which instance is on
+the screen; so the acceptance path reads the caption before it resolves anything and refuses on a
+mismatch, exactly as `campaign._check_fact` refuses a fixed fact the instrument renders differently.
+Match the **prefix**, not the whole string: `UDOP DOP3010.43` carries the software version and will move
+with it, while `UDOP Simul` is the simulator's own name. Note that the *mode* the compile already
+carries is a different thing — `_IDENTITY_FACT_FIELDS`' `mode` is the channel's (manual/assisted,
+`screen_mode`, stated by which panels the application builds); simulation-vs-instrument is a fact about
+the **process**, which is why it belongs in the caption and not in the panel shape.
+
+### 22.2 The structural deltas
+
+Verified against both JSONs, control by control. Counts are the whole read; anything not listed is
+identical.
+
+| what | simulation | non-simulation | note |
+|---|---|---|---|
+| caption / `IsZoomed()` | `UDOP Simul` / `false` | `UDOP DOP3010.43` / `true` | the rect is `(-8,-8,1928,1058)` in **both**, so the frames are the same size and `IsZoomed` disagrees with that; recorded, unexplained |
+| the strip panel | `[448,477,800,517]`, 352x40, `TSp_Panel` | `[343,414,695,454]`, 352x40 | moved `(-105,-63)`; client-relative `[448,454]` → `[343,391]` |
+| the strip's shape | 3 buttons, no slider, view `ready`, `pause / record / clear_and_restart`, `button_count 3`, `has_slider false` | identical | the driver resolved it **structurally in both modes** — same meanings, at the new rect. 21.1's rule, confirmed on the instrument rather than on the box it was written on |
+| the strip's pixels | `sha256 0602e7b5…` | **the same** `0602e7b5…` | the instrument's `strip_measured` is byte-identical to the simulation's `strip_measured` *and* to its `strip_asserted`; the same panel, a different place |
+| where the *asserted* strip rect now is | (its own rect) | plain plot: 2 colours, `sha256 627dd06f…` | the crop a reader can check |
+| visible controls / panels / `layout_note` | 43 / 4 / `None` | **44** / 4 / `TMain_Scr: 44 visible controls in 4 panels (the clean measurement screen has 43 in 4); strip view ready with 3 button(s); overlay none` | the driver's own count and the tree's visible rows agree (43, 44); the same four panels, the strip third |
+| tree controls | 193 | 155 | accounted for below |
+| `TSp_Edit` / `TSp_Button` / `TSp_Value_Button` / `TSp_Panel` | 25 / 31 / 41 / 39 | 10 / 20 / 30 / 38 | `TComboBox` 31 and `Edit` 12 are unchanged |
+| the menubar band `[0,23,1920,55]` | 11 buttons: ten entries + one icon | 10: nine entries + the same icon | see 22.3 |
+| the parameter rows the driver resolves | 9 | **10** | the extra one is `Tgc [dB]` (top 325), **after** the seven roles |
+| the dialog panel (`Operating parameters`) | `[655,364,1282,748]`, 42 controls — opened in that session | `[360,240,987,624]`, 11 controls — never opened | not a move: §21.3 item 6's pre-show rect, on the instrument |
+| the `Parameters` popup panel + its five entries | present, hidden | **absent from the tree** | §21.3 item 1: nothing had been hovered in that session |
+| `[673,477,1263,561]`, `[782,499,1024,552]`, `[1128,498,1258,547]` | as listed | `[673,466,1263,550]`, `[782,488,1024,541]`, `[1128,487,1258,536]` | all three **11 px higher**, x unchanged; hidden helper panels, no code binds them |
+| two caption-less `TSp_Button`s below the strip | `[455,530,506,545]`, `[514,530,558,545]`, visible | `[350,467,401,482]`, `[409,467,453,482]`, visible | 13 px below the panel's bottom edge in **both**, moved with it, and painting nothing in either frame — unidentified (22.6) |
+
+**The 38-control difference, accounted for exactly:** **31** the dialog builds when it is first shown
+(the instrument's session never opened it — 42 controls in that panel there, 11 here, the four
+pre-created value buttons plus the header combo), **6** the popup (its panel and five entries, absent
+until the first hover), **1** the menubar entry the instrument does not have: `38 = 31 + 6 + 1`. Neither
+read is "cleaner" than the other; both are the same application having built a different set of
+surfaces — §21's "the tree is not a fixture", seen from the instrument's side.
+
+**The column and the two controls outside it.** Row labels read off the pixels of both frames; values
+agree with the tree's own edit texts wherever both exist.
+
+| # | row (top → bottom) | simulation | non-simulation |
+|---|---|---|---|
+| 1 | `US Frequency [kHz]` | `4000` | `4000` |
+| 2 | `PRF [us]` | `212` | `600` |
+| 3 | `Nb of gates` | `797` | `50` |
+| 4 | `Resolution [mm]` | `0.122` | `1.850` |
+| 5 | `Velocity scale factor` | `0.68` | `1.00` |
+| 6 | `Emissions/profile` | `150` | `20` |
+| 7 | `Doppler angle` | `0` | `0` |
+| 8 | `Tgc [dB]` | **not painted** — no label, no field; the hidden edit behind the slot holds `40` | **painted, `20`** |
+| 9 | `Sensitivity` (combo) | `medium` | `medium` |
+| 10 | `Emitting power` (combo) | `Medium` | `Medium` |
+| — | `Sampling volume [mm]` — the dialog's cell `(1,4)`, value button `[862,596,1065,628]`, combo `[984,600,1062,621]` | `0.876` | `1.776` |
+| — | the mode control `[434,182,498,203]` (`TComboBox` + its `Edit`, inside a `TSp_Value_Button` inside the panel `[400,168,850,288]`) | `Auto` | `Uniform` |
+| — | the monitor (`TDop_Plot` `[200,65,1910,1006]`, the same rect in both) | a noisy trace centred ≈ `+40 mm/s`, between ≈ `+20` and `+60`, y-axis `-250…250` | a **flat line at 0** over the whole depth, y-axis `180…-90` | 
+| — | the bottom band `[0,1016,1920,1050]` (same panel, same one button) | `Profile : 999 · CH: 1 · Block : 1 · Memory : Filling · Time between profile = 36.8 ms [36.5 39.0]` | `Profile : 4035 · CH: 1 · Block : 1 · Memory : Filling · Time between profile = 22.4 ms [22.3 22.4]` |
+
+The two texts that differ *and are readable by that reader* are exactly ten controls in the whole tree:
+the five column fields above, the `Tgc [dB]` slot, the sampling-volume combo with its inner edit, and
+the mode control with its inner edit. Everything else that carries text is the same string or is a
+control the other read had not built.
+
+### 22.3 What the two frames show, seen
+
+- **Window and title bar.** Both are the same window at the same rect, drawn with a white title bar:
+  the application's icon and, after it, the caption — `UDOP Simul` / `UDOP DOP3010.43` — with the
+  minimise/maximise/close cluster at the right. The taskbar button carries the same string in both
+  frames, which is the second place the mode can be read without a probe. The frame's clock reads 14:42
+  and 14:49, i.e. the two reads are minutes apart, and each frame is one moment (`frame_stable: false`
+  in both — the display repaints).
+- **The menubar, which is the operator's report confirmed in substance.** The simulation menubar has
+  **ten** entries: `File · Preferences · Parameters · Compute · Cursors · Filters · Tools · Channels ·
+  UDV mode · Display`. The instrument's has **nine**: the same list **without `UDV mode`**. Read at 3×
+  from both frames, twice, and it agrees with the tree exactly: sim has a tenth `TSp_Button` at
+  `[696,28,766,53]` that the instrument does not, and the ninth slot holds `UDV mode` (80 px) in one and
+  `Display` (70 px) in the other. **A caveat on wording:** the entry present in simulation and absent
+  here is captioned `UDV mode`; no literal `UDV 2D/3D` string is visible anywhere in either frame. The
+  operator's report is therefore confirmed as *an entry present in simulation and absent on the
+  instrument* and not in its wording, and the two names should not be treated as one.
+- **The column.** Read at 5×: ten painted rows on the instrument, nine in simulation, with the `Tgc
+  [dB]` slot empty in simulation — no label, no field, no gap-sized control. The simulation frame's
+  `US Frequency [kHz]` text is also **selected** (a blue selection highlight over `4000`), i.e. that
+  frame was taken with the column in a post-interaction state, not on a pristine screen.
+- **The monitor.** In simulation: a dense noisy red trace centred ≈ `+40 mm/s` on a `-250…250` axis. On
+  the instrument: a **flat red line at 0** spanning the full depth on a `180…-90` axis — the operator's
+  "nothing dynamic is being measured", seen. The plot's own rect is identical in both, so this is signal
+  and scale, not layout.
+- **The strip.** The same three captions, `Pause` / `Record` / `Clear and restart`, same icons, same
+  panel, in the two different places 22.2 gives. Nothing else is painted near it in either frame.
+- **The three `asserted` crops, and what they are not evidence of.** The instrument's strip-asserted
+  region is plain plot (nothing there). The **dialog-asserted** region is plain plot in *both* frames —
+  in simulation because the dialog had been closed before the frame and its rect survives on a hidden
+  window, on the instrument because it had never been opened. So that crop is **not** evidence that the
+  dialog moved, and neither is the panel's rect difference: the two reads caught that panel in different
+  states of the same life (§21.3 item 6). The popup-asserted region on the instrument shows the
+  parameter column's right edge and the plot's left margin with its y-axis labels — no popup, because
+  that session had not built the panel.
+- Two things a look at the pixels added that no number did: the strip is *byte-identical* between the
+  two modes, and the `Tgc [dB]` row is genuinely absent from the simulation column rather than merely
+  hidden behind something.
+
+### 22.4 `Auto` / `Uniform` is a TGC *indicator*, not the TGC control — and it stays unproven
+
+What the reading alone can say about `[434,182,498,203]`: a `TComboBox` with an inner `Edit`, inside a
+`TSp_Value_Button`, inside the top-level panel `[400,168,850,288]` — 450x120, present in **both** modes
+at the same rect with the same two-control shape, and **hidden in both** (`visible: false` on the panel,
+the button and the combo). No label is readable for it anywhere: it is not painted, and the screen at
+its rect is plain plot in both frames (checked). Nothing in this repository carries that rect (grepped
+for the panel, the button and the combo). Only its text differs: `Auto` here, `Uniform` there.
+
+**The operator's reading, which this section adopts:** TGC is controlled from the **Tools menu**, which
+this repository has never mapped; physically a TGC is a **distribution along the measurement line** —
+uniform, a two-point slope, or a custom profile — settable automatically or manually; the control above
+is therefore the **mode/distribution indicator for the current TGC**, not the TGC control itself, whose
+editing surface is that unmapped menu. That is corroborated, and only corroborated, by three things
+already in the record:
+
+| corroboration | where |
+|---|---|
+| the instrument's own `tgc_mode` word carries exactly this vocabulary | `io/dop/bdd.py`: `_TGC_MODE = {0: "uniform", 1: "slope", 2: "auto", 3: "custom"}` |
+| the matrix's TGC row already names the four words, at words 23–25, `-40…+40 dB` | `parameter-sweep-matrix.md` §3 Table 1 row 4: `uniform·slope·custom·auto` |
+| the `Tgc [dB]` row newly visible here is the word map's `word 42`, which was only *probable* | `udop-automation.md` §9, `word 42  Tgc [dB] (40)  probable` — and here is a painted control with that name, holding `20` |
+
+**It is not proven, and it is not provable by reading.** The tests that would settle it — reading the
+Tools menu's own surface, or changing the mode and re-reading — are presses and are not run here. Until
+someone maps that menu, record it as the reading and nothing stronger.
+
+**Scope decision (operator):** TGC beyond the **uniform** choice is **out of scope for now**, to be
+explored later. The consequence is the matrix's, not this section's: a TGC *profile* (slope with its
+start and end words, or a custom curve) is a **depth-shaped** axis, richer than a single amplification
+level, so it is a per-point covariate (C9) that has to be set, read back and recorded per window — which
+is why it waits until it can be. `parameter-sweep-matrix.md` §5 Table 3's Tier 2 already plans the axis
+as `power {low, medium, high} × TGC (uniform, then verify slope vs uniform) × sensitivity {5 levels}`,
+i.e. the same scope, in the matrix's own words.
+
+**The one thing the indicator buys even unproven: the §18.4 hazard becomes checkable.** §18.4 recorded
+that raising `Emitting power` raises a modal — *"The TGC is in auto mode. Changing the emitting power
+will modify the TGC mode and amplification"* — because power rewrites the TGC mode and amplification
+together. A definition that assumes or declares a **uniform** TGC can now refuse when the instrument's
+indicator reads `Auto`, which is exactly the state the simulation instance was in when that modal fired
+and is not the state this instrument is in (`Uniform`). This is not new code and not a new binding: it
+is the same shape as the fixed-fact refusal, one surface further out, and it is the reason the indicator
+is worth recording even though its name cannot yet be read.
+
+### 22.5 What a real (non-simulated) acceptance run must reconcile
+
+- **The layout expectation is a per-mode fact.** `EXPECTED_CONTROL_COUNT = 43` / `EXPECTED_PANEL_COUNT =
+  4` (`driver.py`) is the *simulation* clean screen. The instrument's clean screen reads **44 in 4**, so
+  `layout_expected` is False and `layout_note` is non-`None` on a screen that is in fact clean — and
+  §21.1/§21.4's own rule ("a note means a run must refuse to start") then refuses it. The reconciliation
+  is to carry **both** clean readings, keyed by the mode read from the caption (22.1), and to re-measure
+  when either mode's software changes: a count is a fact about a layout and the layout is a fact about a
+  mode. Note what an acceptance run's first read must be allowed to do: the instrument's session had not
+  opened the dialog, so its tree lacks the 31 controls the dialog builds and its column shows the
+  dialog's pre-show rect. `43` vs `44` and `193` vs `155` are only comparable between sessions that have
+  built the same surfaces, so an inventory has to be compared against an expectation for *that*
+  session's state.
+- **The column's shape moved, and the roles did not.** The instrument's column has **ten** rows to
+  simulation's nine, and the extra row (`Tgc [dB]`) sits **after** the seven `PARAM_COLUMN_ORDER` roles,
+  so `roles["params"]` — which binds `PARAM_COLUMN_ORDER[i]` to the first seven rows by position — maps
+  the same seven fields in both modes. That is a fact about today's row order, not a guarantee: nothing
+  may bind the column's *length*, or assume nine.
+- **The values are the instrument's, and the definition declares the simulator's.** This instrument sits
+  at PRF `600`, emissions/profile `20`, gates `50`, resolution `1.850`, velocity scale factor `1.00`,
+  sampling volume `1.776`, `Tgc [dB]` `20`. `examples/campaign-single-channel.json` declares
+  `prf_us 212`, `emissions_per_profile 150`, `burst_length 4`, `sound_speed_ms 1460`, `first_gate_mm 2`,
+  `gates 797`, `resolution_mm 0.121667` — the *simulation* configuration. `_check_fact` compares the
+  declaration against the instrument's own rendering, so this definition run against this instrument
+  **refuses at the fixed facts** (212 against a read 600; 150 against 20) — by design, and the right
+  outcome: a run whose declared parameters are not the instrument's is a run whose recordings would be
+  mislabelled. The reconciliation is to author the definition for the instrument, or to take the
+  declared values from a snapshot read in the same mode — never to loosen the check.
+- **The volume and the mode indicator are reads of controls in panels the instrument's session had not
+  shown.** `1.776` came from the dialog's cell `(1,4)` and from the hidden helper panel's copy of it,
+  in a session where that dialog was never opened (§21.3 item 6's class of control). Whether a pre-show
+  cell tracks the machine's live value is **unproven**; what is certain is that a hidden field can hold
+  text of its own — the simulation session's hidden `Tgc [dB]` edit holds `40` while the instrument's
+  painted one holds `20`. A real acceptance run reads the dialog **after the driver's own gesture opens
+  it**, and reads nothing from a pre-show rect.
+
+### 22.6 Still unmeasured, with the reason
+
+- **Everything §21.5 lists, unchanged and for the same reasons**: the Store dialog's geometry in either
+  mode, the strip's `98x40` and `413x123` views, and the popup's *shown* rect — each needs a press this
+  record forbids.
+- **Whether `[434,182,498,203]` is the TGC indicator** — reading cannot settle it (22.4); the Tools menu
+  is unmapped and mapping it is a press.
+- **What makes the `Tgc [dB]` row visible** — its visibility is the `+1` that separates 44 from 43, so
+  `44` must not be written down as the instrument's clean count before this is known. It could be a
+  function of the TGC mode (the hypothesis the row pairs with), of the session's history, or of
+  something neither frame shows: the simulation frame was taken *after* a dialog had been opened and
+  cancelled **and** with a column field still selected, so "the row is hidden in simulation" is not yet
+  "the row is hidden because the mode is auto".
+- **The instrument's dialog cells while the dialog is open** — see 22.5, last bullet.
+- **The two caption-less buttons 13 px below the strip** (22.2) — visible in the tree in both modes,
+  painting nothing in either frame; identifying them means pressing them.
+- **Whether the strip stays where the operator put it** — `[343,414,695,454]` is one moment of a
+  hand-dragged overlay on a box this repository does not own (§21.1). A second read would say whether it
+  is stable; nothing here says a future session's rect will be that one, and the driver does not need it
+  to be (it resolved the row structurally in both modes).
