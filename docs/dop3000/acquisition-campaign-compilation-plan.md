@@ -558,6 +558,12 @@ constraint in §6 and is unchanged.
 Point 10 landed inside the commit for point 1 rather than its own; the acceptance sequence
 carries it either way, and it is listed here so the record is not silent about it.
 
+One further change in this revision is **not** from the review and is listed here for the same
+reason: the **minimised-window precondition** (`331db35`). Checking the identity's own layout
+signature against `_visible_children` (`driver.py:420`) showed that `IsWindowVisible` requires
+every ancestor to be visible, so a minimised UDOP reports zero controls in zero panels — which
+would have compiled as "the layout differs" and refused for the wrong reason.
+
 ## 11. Picking this up cold
 
 ```bash
