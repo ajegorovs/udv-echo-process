@@ -204,3 +204,53 @@ Traps that cost a cycle each:
   panels across two independent launches; any other count names what is extra (open popup, dialog,
   simulator-only screen) and can be normalised away before roles are resolved. This turns "the map
   does not match" into "a menu is open".
+
+## 9. Reading a value table by position (and when to distrust the binding)
+
+A dialog that states its values as a label-less grid — one wrapper widget per row with the value
+*inside* it — can be read with no gesture at all, but only by position, and position is the binding
+most likely to return a plausible wrong number. Three things have to be measured before it is worth
+trusting.
+
+**1. The values sit one level inside the row wrappers, so walk the surface.** A dialog's *direct*
+children are its row wrappers, its header and its footer buttons, and not one of them states a
+value. Measured: a 627x384 dialog had 21 direct children — 15 value-buttons, a header combo, footer
+buttons — and every value lived in the edit or combo **inside** its own wrapper. A reader written
+against the resolver's child enumeration therefore found *no table at all*, and its refusal ("stated
+no value") named a state rather than a cause. Walk the surface live (`GW_CHILD` → `GW_HWNDNEXT`,
+recursing) when the values are nested, and make the failure path print the **child count by class** —
+that count is the difference between a diagnosis and a mystery.
+
+**2. A row that offers a choice states its value in the choice control.** Where a row holds a combo
+*and* an edit beside it, the combo's selected value is the parameter and the edit is a **different,
+derived quantity**. Measured: the burst row read combo `4`, inner `4`, and edit `89` — the 89 being
+the sampling volume that window is documented to display (0.876 mm at a 1460 m/s sound speed), not
+the burst. So bind the choice control when the row has one, and **never fall back to its neighbour
+when the choice is unreadable** — the row is then unreadable, because the two controls are different
+physics. Prove the rule survives **enumeration order**: controls come back in creation order, which
+is not the layout's order, so a case that only ever sees the real order lets a "first control in this
+row" implementation pass for the wrong reason (measured — it did, until the case reversed the order).
+
+**3. Confirm every position against a second surface, and keep the two refusals apart.** Choose the
+facts the dialog and another surface *both* state (here seven: emitting frequency, PRF, gate count,
+resolution, emissions per profile, Doppler angle, velocity scale), and require all of them to read the
+same text on both before any positionally-read fact is believed — a re-laid-out dialog puts a
+different value in the same cell while still reading exactly like a value. Then check the table's
+**shape**: the number of fields per column is a measured constant, and a table that no longer builds
+it is not the table the positions were bound in. Two refusals come out of this and they must not be
+merged: **uncheckable** (one surface does not state the anchor at all — an assisted-mode screen has
+no parameter column) versus **disagreement** (both state it, the texts differ). Different faults,
+different fixes, and the run record has to say which happened.
+
+**A fresh instance builds this table empty on the first open.** Measured: the first open after a
+restart read 2 stating controls where the next read 22 — the table is filled once the dialog has been
+up. Poll for the fill with a bounded timeout, then record *which* of the two states was seen: an empty
+field is not a value, and taking the first empty answer as the answer turns three readable settings
+into three "unreadable" ones.
+
+**And the read-failure policy is not the unreadable policy.** Once a setting has a supported read
+path, "this attempt failed" and "nothing in this driver can read it" need different execution
+consequences: a supported read that fails **refuses** the run (fail closed), while a genuinely
+unsupported setting is carried as unproven and does not block it. Keep the table of which facts have
+a read path next to the readers and let the pre-run check consult it — otherwise a failed read
+degrades silently into "declared", which is the check passing without having run.

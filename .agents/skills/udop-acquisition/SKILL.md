@@ -23,7 +23,10 @@ project-local skill of the same name as a profile-global one **shadows** it, so 
 falls behind silently hides the newer global one for every session in this repository. That is how
 this file's two halves drifted apart in the first place. The global copy is also at its own size
 limit (100,831 characters against a 100,000 cap, as of the merge that produced this file), so it
-can no longer be patched at all: a lesson learned here has to land here.)
+can no longer be patched at all: a lesson learned here has to land here. The `references/` files
+were merged from both forks by the same rule — nothing was dropped, and where the two copies stated
+the same fact in different words both statements are kept, so a passage that reads as a repetition
+is usually a preserved duplicate from the other fork rather than an editing error.)
 
 The project-specific half is the acquisition work: the instrument's own screen, its parameter
 dialog, the record/store cycle, the sweep/campaign commands in `src/udv_echo_process/acquire/`, the
