@@ -239,6 +239,20 @@ state, no free-text layout note, no transient modal state.
 **`overlay` is deliberately not in the identity**: a modal being up is a precondition
 failure — refuse (W3) — not a property of the instrument's configuration.
 
+**A third case that is neither: a minimised window.** The counts are read through
+`_visible_children` (`driver.py:420`), which filters on `win32gui.IsWindowVisible` — a Win32
+style flag, and one that requires the window *and every ancestor* to be visible. A minimised
+UDOP therefore reports **zero** visible controls in **zero** panels for its children. Left
+alone, that would compile as an instrument whose layout differs and refuse — or resume — for
+the wrong reason, with the wrong diagnosis. Zero counts are a precondition failure of the
+same kind as a modal overlay: *the application is not showing its measurement screen.*
+
+The same filter is what makes the counts usable in an identity at all: `IsWindowVisible`
+plus a non-empty area of the control's **own** rect (`driver.py:427-429`) depend on neither
+the window's position, its maximised state, the screen nor the foreground. The one residual
+doubt is that area filter — a control the application collapses below 2px would drop out —
+which is why W1 captures the counts restored **and** maximised rather than assuming.
+
 Then one additive method on `SweepActuator`. It has the precedent for a composed call
 (`try_record_and_store`, `runner.py:198`), and `Win32Actuator` already computes every piece:
 `screen_fingerprint()` (`driver.py:2245`), the parameter column read that `ensure_channel`
@@ -470,7 +484,10 @@ single number. This is also what makes Phase 7's certificate possible.
   session, then perturb only `hwnd`, `rect`, `maximized`, `screen`, `cursor` and
   `is_foreground`: the `CompilationIdentity` must be unchanged. Then vary each fact in W2's
   table: each must change it. This is the test that keeps a restart from reading as a
-  different instrument, and it is the reason the two models exist.
+  different instrument, and it is the reason the two models exist. Three cases the fixture
+  set must hold on the same channel: counts with the window **restored**, counts
+  **maximised** (same identity), and the **minimised** window (a precondition refusal,
+  naming the state, not an identity change).
 - **A deliberately negative hardware case** (criterion 1, the central promise, proved on the
   real application rather than only in fakes): set one fixed parameter deliberately wrong by
   hand, run `acquire compile`, and verify that the campaign **refuses, names the
