@@ -1802,6 +1802,15 @@ and each run's dispatcher log as `sv-run-*.log` with the probe's own log beside 
 step costs 3.6 s (`dump`, `compare`) to 12 s (`write`, `below-floor`, whose modal capture and second read are
 the difference).
 
+**The net caught this drift live, and verified the repair.** After the volume round trip the machine's first
+gate sat at `7`. `acquire compile` against the unmodified example refused — `first_gate_mm: the campaign
+declares 2.0, the instrument states '7'`, exit 2, nothing stored — and once the operator set that cell back to
+`2`, the same command returned exit 0 with burst `4`, sound speed `1460` and first gate `2` all read. So a
+depth window that drifted cannot be recorded as though it matched the plan, and the repair is proved by the
+same read that refused. This is the third instance of one failure class: the channel mismatch (§16.1), an
+enable flag with an inert value (§18.3), and now the depth window — each a way a stored file could claim a
+configuration the instrument was not in.
+
 ## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
 
 The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
