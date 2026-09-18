@@ -207,8 +207,88 @@ recorded in that PR's body and in
 [`dop3000/acquisition-review-and-verdict.md`](dop3000/acquisition-review-and-verdict.md)
 §7a–§7b.
 
+**The next slice is planned, and its first implementation slice is in review:**
+[PR #3](https://github.com/ajegorovs/udv-echo-process/pull/3) (draft) carries
+[`dop3000/acquisition-campaign-compilation-plan.md`](dop3000/acquisition-campaign-compilation-plan.md)
+— read the instrument's state, compile the campaign against it, and refuse before the
+first recording when the two disagree; plus the cap-provenance and period-law items the
+review of the first slice carried forward. It has been reviewed once: the direction was
+approved and the four document-level changes it asked for are in (§10 of the plan lists them
+with their commits, and the six decisions in §5 are still open).
+[PR #4](https://github.com/ajegorovs/udv-echo-process/pull/4) (draft, based on #3's branch)
+is the plan's **slice P1 = W2**: `acquire/snapshot.py` — an instrument reading whose every fact
+carries its source, and the identity a resume compares — the additive
+`SweepActuator.instrument_snapshot(*, routed_channel)`, and the fakes' answer. It changes no
+recording path, so nothing in a campaign behaves differently yet; the plan's §12 records what the
+slice decided.
+Its first review approved the direction and returned three changes to the identity and the
+channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
+out of the identity, and routing as its own source that only the router can claim — all landed,
+one commit each, and §12 of the plan carries them.
+[PR #5](https://github.com/ajegorovs/udv-echo-process/pull/5) (draft, based on #4's branch) is
+**slice P3 = W3**: `compile_campaign(definition, snapshot)` — reconcile the definition against the
+reading, or refuse before the first recording, with a per-fact `refuse`/`warn`/`accept` policy
+derived from the stored-file verifier's own table. It is the step the review of #3 asked for by
+name, and it also changes no recording path; the plan's §13 records what it decided.
+
+**Slice P2 = W1 (the live reconnaissance) is landed** on `feat/acquire-w1-recon` (stacked on #4's
+head): the sound speed, the first gate and the burst length now have a supported read path, verified
+against the running application — five of the six fixed facts are read from the instrument, and the
+block cap stays `unreadable` with its reason because the surface that holds it cannot be opened
+safely (the popup's second entry selects the assisted mode). The plan's §14 records the measurement,
+the three checks that stand between a positional binding and a value, and two facts about the
+application that any future gesture has to respect: **Escape closes nothing**, and a hover-opened
+popup cannot be dismissed programmatically, so a failed gesture can strand the application until it
+is restarted.
+
+**All three slices are merged into the plan branch** (#4, #5, #6), and the review of the
+batch is answered: two corrections landed — `686d4f4` (the cap and the first gate refuse for
+their own reasons, not because the planner refuses those windows) and `0ba86ec` (the
+choice-over-read-out invariant, with the guard that shows it bites) — and the one policy
+change the review asked for is W4's: a campaign must refuse when a fact with a *supported*
+read path could not be read, keeping "supported but this attempt failed" distinct from
+"genuinely unsupported" (the cap stays unproven).
+
+**P4 = W4 is implemented** on `feat/acquire-w4-integration` (cut from that merged tip), in four
+commits — `00ff9c9` (the decisions: §9.1's stop condition, §9.2's read-path table, §9.3's recovery
+rule), `a356d68` (a fact with a supported reader that did not read refuses), `b2743f4` (§4's order in
+`run_campaign`, the resume identity proof, the manifest's three new fields), `accc682` (`acquire
+compile` and the two flags). §15 records what each settled, and discloses the two behaviour changes
+on purpose: a compiled run opens the channel dialog twice (step 3, then the runner's own idempotent
+guard) and `plan_campaign` runs twice (pure, and it keeps step 2 gesture-free). Two things are **not**
+finished: the live rehearsal still needs the operator — the first attempt stopped at the driver's own
+foreground guard *before* any hover (nothing opened, nothing stranded), so UDOP has to be in front
+and `acquire compile` re-run — and §14's own obligation, comparing the dialog's channel field against
+the routed channel, stays open until that field survives into `InstrumentSnapshot` — it cannot fire in the planned experiment, which runs one channel with the dialog on that channel.
+
+**The review's milestone is met, live (plan §15.1).** `acquire compile` accepted the machine's own configuration (five facts read and agreeing, the cap declared-not-verified, nothing written); a deliberately wrong declaration *and* a deliberately wrong instrument each refused with exit 2, the fact named with both sides, nothing stored; the existing six-point campaign ran unchanged — 6/6 ok, six `.BDD` files, a manifest carrying the compiled identity — and `--resume` skipped 6/6 only after proving that identity. Per §9.1 the acquisition architecture **stops growing here**: the next work is the parameter-sensitivity experiment, and re-opening the architecture needs evidence (a real campaign failed, ambiguous evidence, or a downstream analysis that cannot establish an essential condition).
+
+**PR #7's review came back with one change request and one defect the live run exposed** (both planned in
+§16). The request: compare the dialog's own channel field against the routed channel before attributing its
+three facts to that channel's snapshot — the wrong-channel trap in the one place the system cannot see it,
+cheap to close, so it closes before W4 is called complete. The defect: a driver refusal (`AcquisitionError`
+is not a `ValueError`) reaches the operator as a **traceback** with exit 1 rather than one
+`udv-acquire: <message>` line — measured live, the first `acquire compile` refusing on a non-foreground
+application. Everything else in the review was approval: the read policy, the resume split, the two
+duplicate calls as preflight redundancy rather than recipe drift, and the assessment that #7 is a closure
+PR rather than an expansion. §16.4 is the experiment that follows — a scientific plan needing the
+operator's input, with the W6 predicted-timing caveat flagged as experimentally relevant.
+
+
 Binding outcomes:
 
+- **The acquisition stop condition** (from the review of the batch, now recorded in the plan's
+  §9.1 and binding): once a campaign routes the target channel, snapshots the fixed settings, and
+  refuses a deliberate mismatch *before* recording — and the existing six-point campaign still runs
+  **unchanged** through the compiled path — the acquisition architecture **stops growing** and the
+  work moves to a real parameter-sensitivity experiment. After that it re-opens only on evidence (a
+  real campaign failed, produced ambiguous evidence, or a downstream analysis cannot establish an
+  essential acquisition condition), never because another abstraction looks improvable. The one
+  policy change the review asked for while getting there is §9.2: a fact with a *supported* read
+  path that failed to read **refuses** a normal campaign, keeping "supported but this attempt
+  failed" distinct from "genuinely unsupported" (the block cap stays unproven). §9.3 records what
+  recovery is allowed from a stranded popup: operator restart while commissioning, abort plus
+  "state unverified" for an unattended campaign — no automatic recovery, no speculative press.
 - **First slice — acquisition correctness baseline** (no Win32 reorganization):
   the channel now reaches `verify_stored_point` (it verified channel 1 while the
   decode read the run's channel) with a channel-2 regression case; verification is

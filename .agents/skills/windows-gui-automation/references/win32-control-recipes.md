@@ -10,6 +10,9 @@ first.
   `WM_COMMAND`/`EN_CHANGE` to the parent edit, then `WM_KEYDOWN` + `WM_KEYUP` with `VK_RETURN`.
   `WM_CHAR` with `\r` does not commit.
 - Combos: `CB_SETCURSEL(index)` + `WM_COMMAND`/`CBN_SELCHANGE` to the parent **commits**; no Enter needed.
+- **Select a combo item by value, never by counting steps or keystrokes.** A combo can step *past* a
+  value (measured: one step up from `4` landed on `6`), so read the items back, take the index whose text
+  states the value you mean, and read the field back to confirm what it now states.
 - **Verify against the app's own derived readout, or against the artifact it produces — never against
   the control's text.** A control happily displays a value the model refused; one app showed `805`
   while its stored file carried `474`.

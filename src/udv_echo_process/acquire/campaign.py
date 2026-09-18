@@ -44,8 +44,20 @@ What the instrument constrains, and why this module is shaped the way it is:
 Nothing here drives an instrument. :func:`load_campaign`, :func:`plan_campaign`,
 :func:`recorded_points`, the manifest readers and writers and the CLI's ``plan`` and
 ``report`` subcommands all work on any host — including one whose application is not
-running — and only :func:`run_campaign` needs an
-:class:`~udv_echo_process.acquire.actuator.Actuator`, which a fake satisfies completely.
+running — and only :func:`run_campaign` needs the runner's *composed* port
+(:class:`~udv_echo_process.acquire.runner.SweepActuator`: the routing step, the instrument
+reading, the dialog read and the record/store cycle), which a fake satisfies completely.
+
+**What a run does, in order** (the plan's §4 step order, implemented literally): load the
+definition, plan it statically, establish the target channel (``ensure_channel`` — routing,
+not a scientific setting: it writes only if the channel differs), take the instrument
+reading, compile the definition against that reading (a
+:class:`~udv_echo_process.acquire.snapshot.CompilationIdentity` and a refusal list), validate
+the resume identity against the previous manifest, compute the todo/skipped sets, then run the
+*compiled* points through the runner's proven per-point cycle. The order is the safety
+argument: steps 3-5 all happen before the runner exists, so a job that cannot be compiled
+costs no recording, and step 6 happens before any point can leave the todo set, so a resume
+cannot skip a point on an identity nothing proved.
 """
 
 from __future__ import annotations
@@ -55,11 +67,12 @@ import json
 import re
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
 
 from pydantic import Field, ValidationError, field_validator
 
-from udv_echo_process.acquire.actuator import Actuator
+from udv_echo_process.acquire.actuator import ChannelMode
 from udv_echo_process.acquire.config import (
     DEFAULT_CHANNEL,
     DEFAULT_MAX_PROFILES_PER_BLOCK,
@@ -86,11 +99,24 @@ from udv_echo_process.acquire.plan import (
 from udv_echo_process.acquire.runner import (
     PERIOD_OVERHEAD_S,
     PointOutcome,
+    SweepActuator,
     SweepRunner,
 )
+from udv_echo_process.acquire.snapshot import (
+    FIXED_FACT_FIELDS,
+    SUPPORTED_READ_FACTS,
+    CompilationIdentity,
+    FactSource,
+    InstrumentFact,
+    InstrumentSnapshot,
+    Provenance,
+    identity_digest,
+)
+from udv_echo_process.acquire.verify import ADVISORY_COVARIATES, PRF_TOLERANCE_US
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "COVARIATE_ACCEPTANCE",
     "DEFAULT_LOG_NAME",
     "HALF_DISPLAY_MM",
     "LABEL_PATTERN",
@@ -98,14 +124,18 @@ __all__ = [
     "MAX_POINT_DURATION_S",
     "MIN_POINT_DURATION_S",
     "RESOLUTION_DISPLAY_MM",
+    "Acceptance",
     "CampaignDefinition",
     "CampaignError",
     "CampaignPoint",
     "CampaignRecordSettings",
+    "ExecutableCampaign",
+    "FactCheck",
     "JobManifest",
     "ManifestPoint",
     "PlannedPoint",
     "campaign_fingerprint",
+    "compile_campaign",
     "load_campaign",
     "manifest_path_for",
     "plan_campaign",
@@ -368,6 +398,11 @@ class JobManifest(ValueModel):
     resume found already recorded, so a report can say why a job looks shorter than its
     plan, and ``log_errors`` carries anything the runner could not append — a run whose
     log is incomplete must not read as a clean one.
+
+    The three fields below ``log_errors`` are the run path's own record, and every one of
+    them has a default: a manifest written before this slice carries none of them, and a
+    manifest that a reader refuses is a job whose log can no longer be read at all, so
+    nothing here is required.
     """
 
     job: str
@@ -382,6 +417,28 @@ class JobManifest(ValueModel):
     log_path: str | None = None
     definition_path: str | None = None
     log_errors: tuple[str, ...] = ()
+    #: The reading this job was compiled against, projected onto what campaign compatibility
+    #: depends on (:class:`~udv_echo_process.acquire.snapshot.CompilationIdentity`: each fixed
+    #: fact as value+source, the channel, the mode, the layout signature) — the resume's
+    #: comparison, and the only thing that says the previous job measured on *this*
+    #: instrument.
+    #:
+    #: **Deliberately the projection and not the raw ``InstrumentSnapshot``.** The reading's
+    #: volatile half — ``hwnd``, the rect, the cursor, ``is_foreground``, the geometry — is a
+    #: property of a *session*: a restart hands out a new handle and a drag moves the window,
+    #: so storing it as compatibility evidence would read a restart as a different instrument
+    #: and re-run finished points. §3.3 exists to keep that half out of the identity, and a
+    #: manifest that kept the whole reading would undo it in the one place a resume reads.
+    #: ``None`` for a ``declared_only`` run (nothing was read) and for every manifest written
+    #: before this slice — both of which a resume refuses on rather than assumes.
+    compilation_identity: CompilationIdentity | None = None
+    #: Set by a ``--no-snapshot`` run: the run record then states that **nothing** was read
+    #: and nothing was compiled, so its points rest on the definition's declaration alone.
+    declared_only: bool = False
+    #: The point identities a resume skipped on the strength of a declaration rather than of a
+    #: proven identity (``--resume-declaration-only``). Named on the record so a job that looks
+    #: finished and a job that was *declared* finished are two different rows to a later reader.
+    skipped_without_evidence: tuple[str, ...] = ()
 
     @property
     def points_skipped(self) -> int:
@@ -411,6 +468,15 @@ class JobManifest(ValueModel):
             parts.append(f"{self.failed_count} failed")
         if self.skipped:
             parts.append(f"{self.points_skipped} skipped as already recorded")
+        if self.skipped_without_evidence:
+            parts.append(
+                f"{len(self.skipped_without_evidence)} of those skipped without instrument "
+                "evidence"
+            )
+        if self.declared_only:
+            parts.append(
+                "declared only: no instrument reading was taken and nothing was compiled"
+            )
         if self.aborted:
             parts.append("the run was cut short: the application's state was not verified")
         if self.log_errors:
@@ -637,9 +703,429 @@ def read_manifest_if_present(path: Path) -> JobManifest | None:
     return read_manifest(source) if source.is_file() else None
 
 
+class Acceptance(str, Enum):
+    """What a disagreement about one fixed fact does to a run — decided here, per fact.
+
+    Each outcome is a **field of the compiled plan** rather than a rule hidden inside a
+    comparison, because the operator has to be able to read, before the first recording, what
+    would have stopped the job and what would not.
+
+    ``REFUSE``
+        The disagreement stops the campaign before anything is recorded. The default, because a
+        definition that contradicts what the instrument states is a thrown-away job: every point
+        would be stored under parameters its own file does not carry.
+    ``WARN``
+        The disagreement is carried onto the compiled plan and the run proceeds. Exactly one fact
+        is here today — the emissions per profile, whose value *in a definition* is derived rather
+        than read (:data:`~udv_echo_process.acquire.verify.ADVISORY_COVARIATES`), so a
+        disagreement is as likely to be the declaration's fault as the instrument's, and W6 is
+        where that ends.
+    ``ACCEPT``
+        Nothing was compared against this fact, so there is nothing for it to stop: the
+        definition declares no value for it, or the instrument could not state one. The
+        declaration stands, and the record is marked as such.
+    """
+
+    REFUSE = "refuse"
+    WARN = "warn"
+    ACCEPT = "accept"
+
+
+#: The acceptance each fixed fact gets, **derived from the stored-file verifier's own table**
+#: rather than restated: the covariates that verifier enforces refuse here too, and the one it only
+#: advises on warns. Two tables of "which of these matters" would drift apart; one cannot.
+#:
+#: The two facts the verifier checks by *another* law are refused for reasons of their own, and the
+#: reasons are the part a reader acts on:
+#:
+#: - **the first gate** moves the *spatial* window — ``first_gate + gates x resolution`` is the law
+#:   this repository verified twice against the application's own arithmetic (docs/16 §12) — so a
+#:   run compiled against one first gate and executed under another samples a different physical
+#:   region than the definition asked for, whatever the stored file's own words happen to say;
+#: - **the block cap** decides the *retention* semantics: how much of the requested temporal window
+#:   can be kept, whether the block wraps, and therefore what ``retained_fraction`` — and any wrap
+#:   inference drawn from it — means. A campaign compiled under one active cap and executed under
+#:   another was compiled for different retention, so a **known** disagreement refuses.
+#:
+#: Neither reason is "the planner refuses those windows", and this is worth stating precisely
+#: because the planner does the opposite: `plan_campaign` deliberately does **not** refuse a window
+#: that breaches the declared cap. It plans it and attaches a note saying the block wraps and covers
+#: only its last ``cap x period`` seconds, because the near-term goal here is a 10-15 s recording the
+#: instrument honours (``tests/test_acquire_campaign.py`` pins that note). The refusal here is about
+#: the *instrument* disagreeing with the definition, which is a different question from whether the
+#: plan is runnable — and today it cannot fire, because the active cap is not readable (W1
+#: reconnaissance, plan §14): the fact is carried unproven rather than compared.
+COVARIATE_ACCEPTANCE: Mapping[str, Acceptance] = {
+    name: (Acceptance.WARN if name in ADVISORY_COVARIATES else Acceptance.REFUSE)
+    for name in FIXED_FACT_FIELDS
+}
+
+
+class FactCheck(ValueModel):
+    """One fixed fact: what the definition declares, what the instrument was found to state, and
+    what a disagreement would do to the run.
+
+    ``agreed`` is deliberately **three**-valued. ``True`` and ``False`` mean the fact was read
+    from the instrument and compared against the declaration; ``None`` means nothing was compared
+    — either the definition declares no value for it (``burst_length`` is optional) or the
+    instrument could not state one. A caller that read ``None`` as ``False`` would refuse a run
+    over a fact nobody disputed; one that read it as ``True`` would call an unread fact verified,
+    which is the claim this whole slice exists to prevent.
+    """
+
+    name: str
+    #: The definition's own value **as text**, for a message that has to show both sides side by
+    #: side — never a parsed measurement. ``None`` when the definition declares nothing.
+    declared: str | None = None
+    #: The reading: the instrument's own text and where it came from, or why it has no value.
+    observed: InstrumentFact
+    #: What a disagreement *would* have done (:data:`COVARIATE_ACCEPTANCE`), not what happened —
+    #: what happened is ``agreed``, and a fact nothing could read has a policy and no dispute.
+    acceptance: Acceptance
+    agreed: bool | None = None
+    #: The sentence a refusal carries and a warning is recorded as: empty when everything agreed,
+    #: never empty when something did not.
+    detail: str | None = None
+
+
+class ExecutableCampaign(ValueModel):
+    """A campaign reconciled with one reading of the instrument — what the run executes.
+
+    Everything needed to audit the job afterwards *without the instrument* is here: the points as
+    the static planner computed them (so a point cannot be recorded under parameters the plan did
+    not predict), the channel the routing step established and this compile accepted, the fact
+    table with each fact's provenance and acceptance, and the reading's
+    :class:`~udv_echo_process.acquire.snapshot.CompilationIdentity` — which is also the answer to
+    "which channel and which mode were active", and the resume's comparison.
+
+    ``definition_fingerprint`` and the identity are carried together because they are the two
+    things this plan was compiled *from*: a compiled plan found later cannot be mistaken for one
+    compiled against a different definition of against a different reading.
+    """
+
+    job: str
+    #: The channel the routing step established in the application and read back.
+    channel: int = Field(ge=MIN_CHANNEL, le=MAX_CHANNEL)
+    definition_fingerprint: str
+    identity: CompilationIdentity
+    facts: tuple[FactCheck, ...]
+    points: tuple[PlannedPoint, ...]
+
+    @property
+    def identity_digest(self) -> str:
+        """The resume's comparison, as one string — computed, never stored twice."""
+        return identity_digest(self.identity)
+
+    @property
+    def advisories(self) -> tuple[str, ...]:
+        """The disagreements the run proceeds despite — recorded rather than swallowed."""
+        return tuple(
+            check.detail
+            for check in self.facts
+            if check.acceptance is Acceptance.WARN
+            and check.agreed is False
+            and check.detail is not None
+        )
+
+    @property
+    def unproven(self) -> tuple[str, ...]:
+        """The fixed facts nothing on the instrument could state, so the declaration stands.
+
+        Named here, on the plan, because "the instrument holds this" and "the campaign says this"
+        are different claims and only the first one is evidence (criterion 4).
+        """
+        return tuple(
+            check.name
+            for check in self.facts
+            if check.observed.source is FactSource.UNREADABLE
+        )
+
+    def fact(self, name: str) -> FactCheck:
+        """The check for ``name`` (:data:`~udv_echo_process.acquire.snapshot.FIXED_FACT_FIELDS`)."""
+        for check in self.facts:
+            if check.name == name:
+                return check
+        raise ValueError(
+            f"no check for {name!r}: this plan reconciled {[c.name for c in self.facts]}"
+        )
+
+
+def compile_campaign(
+    definition: CampaignDefinition, snapshot: InstrumentSnapshot
+) -> ExecutableCampaign:
+    """Reconcile a definition against one reading of the instrument, or refuse before recording.
+
+    This is the step that turns "the campaign intends this" and "the instrument is that" into an
+    explicit plan, or refuses to spend a single recording. The rule, implemented literally:
+
+    - **the definition's own laws come first.** ``plan_campaign`` runs before anything is
+      compared, so an unplannable file is refused for *that* reason and not for a screen state
+      the next poll would change;
+    - **the screen has to be the measurement screen** — no overlay up, a window that is showing
+      its controls, and a readable mode. Each of those is a *precondition*: refusing them names
+      the state that has to change instead of compiling an instrument whose configuration
+      appears to differ;
+    - **the channel has to have been routed**, by the step that selects it in the application and
+      reads its own dialog back (``instrument_snapshot(*, routed_channel)``), and it has to be the
+      campaign's channel. A reading that establishes no channel is not evidence about one;
+    - **every fact the reading produced must agree with the definition**, at the acceptance its
+      fact has in :data:`COVARIATE_ACCEPTANCE`: refusing, or warning and proceeding with the
+      disagreement on the record. A fact nothing could read keeps the definition's declaration and
+      is listed in :attr:`ExecutableCampaign.unproven` — never silently treated as verified.
+
+    It drives nothing: no window is touched, no parameter written, no dialog opened, so it is
+    safe to compile against an instrument somebody else is using, and the whole check runs on a
+    captured snapshot on a host with no application at all.
+
+    What it deliberately does **not** own: the strip's view. Starting a point cycle from a
+    recording view is a precondition the runner refuses with its own message before anything is
+    stored (``runner``'s "a running recording keeps its data"), and a second refusal here would
+    give one cause two diagnoses.
+    """
+    points = plan_campaign(definition)
+    _refuse_unusable_screen(snapshot)
+    channel = _routed_channel(definition, snapshot)
+    checks = tuple(
+        _check_fact(definition, snapshot, name) for name in FIXED_FACT_FIELDS
+    )
+    _refuse_failed_reads(checks)
+    _refuse_disagreements(checks)
+    return ExecutableCampaign(
+        job=definition.job,
+        channel=channel,
+        definition_fingerprint=campaign_fingerprint(definition),
+        identity=CompilationIdentity.from_snapshot(snapshot),
+        facts=checks,
+        points=points,
+    )
+
+
+def _refuse_unusable_screen(snapshot: InstrumentSnapshot) -> None:
+    """Refuse a screen that is not showing the measurement screen — naming the state, not a mode.
+
+    Three states, and every one of them is a **precondition**: a modal is up; the window reports
+    no visible controls in no panels, which is what a minimised window reports (the counts are
+    filtered on ``IsWindowVisible``, which requires the window *and every ancestor* to be visible,
+    ``driver._visible_children``); or no mode could be read at all, which is what a dialog, a menu
+    popup or an unrecognised layout produces. Compiling any of them as "an instrument whose
+    configuration differs" would refuse the run with the wrong diagnosis — and, worse, a
+    *resume* would re-run a finished job for a window somebody minimised.
+    """
+    fingerprint = snapshot.fingerprint
+    if fingerprint.overlay is not None:
+        raise CampaignError(
+            f"the application has an overlay up ({fingerprint.overlay.value!r}): a campaign is "
+            "compiled against the measurement screen, so nothing was stored and nothing is "
+            "stopped. Answer or dismiss it and compile again"
+        )
+    if fingerprint.panels == 0 and fingerprint.visible_controls == 0:
+        raise CampaignError(
+            "the window reports no visible controls in no panels, which is what a minimised "
+            "window reports: the application is not showing its measurement screen, so there is "
+            "nothing to compile against. Restore it and compile again"
+        )
+    mode = snapshot.mode
+    if mode.source is not FactSource.READ:
+        raise CampaignError(
+            f"no channel mode could be read ({mode.reason}): the campaign's points write the "
+            "manual parameter column, and a screen that is not the measurement screen is not "
+            "evidence that the column is there. Nothing was stored — bring the measurement "
+            "screen up and compile again"
+        )
+    if mode.value != ChannelMode.MANUAL.value:
+        raise CampaignError(
+            f"the channel is in {mode.value!r} mode: this campaign writes the manual parameter "
+            "column — the resolution and the gate count — which that panel does not carry "
+            "(measured: an assisted channel's screen is 21 visible controls in 3 panels against "
+            "the manual channel's 43 in 4). Nothing was stored"
+        )
+
+
+def _routed_channel(
+    definition: CampaignDefinition, snapshot: InstrumentSnapshot
+) -> int:
+    """The channel the routing step established, or a refusal carrying the reason it did not.
+
+    The snapshot cannot read the channel itself (that costs the menubar hover the routing step
+    pays), so it carries one only when the caller handed over what ``ensure_channel`` selected and
+    verified. A campaign compiled against anything weaker would record its points under a channel
+    nobody established — the one thing the record must never say.
+    """
+    fact = snapshot.channel
+    if fact.source is not FactSource.ROUTED or fact.value is None:
+        raise CampaignError(
+            "the reading carries no routed channel "
+            f"({fact.reason or 'nothing established one'}): a campaign is compiled only against "
+            "the channel the routing step selected in the application and read back "
+            "(ensure_channel), so the run's record can say which channel it actually used"
+        )
+    try:
+        established = int(fact.value)
+    except ValueError as exc:
+        raise CampaignError(
+            f"the routed channel {fact.value!r} is not a channel number: a snapshot from a "
+            "written record is checked rather than trusted (docs/16)"
+        ) from exc
+    if established != definition.channel:
+        raise CampaignError(
+            f"the routing step established channel {established} but the campaign is aimed at "
+            f"channel {definition.channel}: every point would be stored under another channel's "
+            "window, so nothing was stored"
+        )
+    return established
+
+
+def _declared_fixed_fact(definition: CampaignDefinition, name: str) -> object | None:
+    """The value the definition declares for one fixed fact — the field that has to agree.
+
+    Four of them are the campaign's own shared fields. The two that are the window frame come
+    from the points, which by the time this is called have already been planned: ``plan_campaign``
+    refuses a list whose points disagree on the sound speed or the first gate, so the first
+    point's frame *is* the campaign's.
+    """
+    if name == "sound_speed_ms":
+        return definition.points[0].parameters.sound_speed_ms
+    if name == "first_gate_mm":
+        return definition.points[0].parameters.first_gate_mm
+    return getattr(definition, name)
+
+
+def _check_fact(
+    definition: CampaignDefinition, snapshot: InstrumentSnapshot, name: str
+) -> FactCheck:
+    """Compare one fixed fact: the declaration against the reading, at its own acceptance.
+
+    The comparison is numeric on both sides, because both sides are numbers: the declaration is
+    the campaign's own value and the reading is the application's rendering of the same setting,
+    which it writes with the precision its field shows (169.0 µs for 169). The PRF keeps the
+    verifier's own tolerance (:data:`~udv_echo_process.acquire.verify.PRF_TOLERANCE_US` — the
+    application stores integer microseconds) and every other fact is exact, which is the same law
+    the stored file is checked against after the recording: a pre-run check that were *stricter*
+    would refuse jobs the post-run check would pass, and a looser one would compile a job that is
+    then refused with a recording already spent.
+    """
+    observed = snapshot.fact(name)
+    acceptance = COVARIATE_ACCEPTANCE[name]
+    declared = _declared_fixed_fact(definition, name)
+    if declared is None:
+        return FactCheck(
+            name=name,
+            observed=observed,
+            acceptance=acceptance,
+            detail=(
+                f"{name}: the campaign declares no value for it, so there is nothing to "
+                f"reconcile; the reading is carried as evidence only "
+                f"(the instrument states {observed.value!r})"
+                if observed.value is not None
+                else f"{name}: the campaign declares no value for it and nothing on the "
+                "instrument could state one"
+            ),
+        )
+    declared_text = str(declared)
+    if observed.source is not FactSource.READ or observed.value is None:
+        return FactCheck(
+            name=name,
+            declared=declared_text,
+            observed=observed,
+            acceptance=acceptance,
+            detail=(
+                f"{name}: the definition's {declared_text} stands as a declaration — "
+                f"{observed.reason or 'the instrument stated no value'}"
+            ),
+        )
+    try:
+        found = float(observed.value)
+    except ValueError as exc:
+        raise CampaignError(
+            f"{name}: the instrument states {observed.value!r}, which is not a number to "
+            "reconcile against the declaration: a value that cannot be compared is not agreement"
+        ) from exc
+    tolerance = PRF_TOLERANCE_US if name == "prf_us" else 0.0
+    agreed = abs(float(declared) - found) <= tolerance
+    return FactCheck(
+        name=name,
+        declared=declared_text,
+        observed=observed,
+        acceptance=acceptance,
+        agreed=agreed,
+        detail=(
+            None
+            if agreed
+            else (
+                f"{name}: the campaign declares {declared_text}, the instrument states "
+                f"{observed.value!r}"
+                + (f" (tolerance {tolerance:g})" if tolerance else "")
+            )
+        ),
+    )
+
+
+def _refuse_failed_reads(checks: tuple[FactCheck, ...]) -> None:
+    """Raise when a fact with a supported read path was **not read** — a failed read, not an absence.
+
+    W1 gave the burst length, the sound speed and the first gate a real reader, which splits what a
+    missing value can mean, and the two states must not be collapsed (plan §9.2):
+
+    - nothing on this machine can state the fact (the block cap) — the reading cannot disagree with
+      the definition about it, so it is carried ``declared`` and listed in
+      :attr:`ExecutableCampaign.unproven`;
+    - this driver *can* state it and this attempt did not — the check that exists was performed and
+      failed, so a normal campaign refuses before the first recording rather than proceeding on the
+      declaration alone.
+
+    Refusing on the first case would make every campaign unrunnable on a fact no reader reaches;
+    accepting the second would mean knowingly running when the instrument was not checked. Only
+    facts the definition actually declares are judged: a campaign that declares nothing for a fact
+    reconciles nothing (`_check_fact`), so there is nothing for a failed read to hide.
+
+    This runs *before* :func:`_refuse_disagreements` within the facts step: a fact that was never
+    read cannot be reported as agreeing or disagreeing, and the operator's first question is
+    whether the check ran at all.
+    """
+    failed = [
+        check
+        for check in checks
+        if check.name in SUPPORTED_READ_FACTS
+        and check.declared is not None
+        and check.observed.source is not FactSource.READ
+    ]
+    if not failed:
+        return
+    named = "; ".join(
+        f"{check.name} (the campaign declares {check.declared}, and the reading states no value: "
+        f"{check.observed.reason or 'no reason given'})"
+        for check in failed
+    )
+    raise CampaignError(
+        f"the reading did not establish {named} — each of those facts has a supported read path "
+        "in this driver, so this is a read that failed rather than a fact this machine cannot "
+        "state, and a campaign does not proceed on a declaration it could have checked. No "
+        "recording was spent and the application is untouched"
+    )
+
+
+def _refuse_disagreements(checks: tuple[FactCheck, ...]) -> None:
+    """Raise one refusal naming **every** fact that disagreed — not only the first one found.
+
+    An operator with a campaign to fix should not have to fix it one run at a time: the
+    comparison is cheap and the instrument is in front of them, so the whole list is reported at
+    once. Warnings (:data:`Acceptance.WARN`) are not here — they travel with the plan instead.
+    """
+    refused = [
+        check.detail
+        for check in checks
+        if check.agreed is False and check.acceptance is Acceptance.REFUSE
+    ]
+    if refused:
+        raise CampaignError(
+            "the instrument disagrees with the campaign before the first recording, so nothing "
+            "was stored and the application is untouched: " + "; ".join(refused)
+        )
+
+
 def run_campaign(
     definition: CampaignDefinition,
-    actuator: Actuator,
+    actuator: SweepActuator,
     *,
     store_dir: Path | str | None = None,
     log_path: Path | str | None = None,
@@ -648,16 +1134,44 @@ def run_campaign(
     definition_path: Path | str | None = None,
     notes: list[str] | None = None,
     now: datetime | None = None,
+    no_snapshot: bool = False,
+    resume_declaration_only: bool = False,
 ) -> JobManifest:
     """Run the points that still have to run, write the manifest, and say what happened.
 
-    The plan is validated first, and the per-point work is the **runner's**: ``SweepRunner``
-    resets the block, applies the window, reads it back, records, stops, stores, decodes the
-    stored file, sizes it against the signature and verifies its own words — and appends the
-    log entry, valid or not. None of that cycle is re-implemented here; the seam is
-    ``SweepRunner.run_points``, which takes an explicit sequence of points where ``run``
-    takes a ladder to expand. A campaign's points are explicit and may each carry their own
-    window, so they are handed over as a sequence and not as a definition.
+    The steps, and their order is the safety argument (plan §4):
+
+    1. the definition is loaded by the caller and planned statically here
+       (:func:`plan_campaign`) — every rule the application would enforce *silently* is
+       enforced loudly, and an unplannable file is refused before anything else happens;
+    2. **the channel is established** — ``actuator.ensure_channel()`` opens the dialog,
+       verifies the channel and returns it. This is *routing*, not a scientific setting: it
+       writes only if the channel differs from the requested one, and its own return is what
+       the reading is handed;
+    3. **the instrument is read** — ``instrument_snapshot(routed_channel=<from 2>,
+       dialog_parameters=actuator.read_dialog_parameters())``. The dialog read is a step of
+       its own because the snapshot deliberately does not open that dialog (it presses
+       nothing), and the reading is what the compile is reconciled against;
+    4. **the campaign is compiled** — :func:`compile_campaign`, whose :class:`CampaignError`
+       **propagates untouched**: it already names the state or the fact that stopped the job,
+       and re-wrapping it would give one cause two diagnoses. Nothing is stored before this
+       point, which is the whole reason it exists;
+    5. **the resume's identity is validated** — *before* the todo/skipped sets are computed,
+       so no point can leave the todo set on an identity nothing proved
+       (:func:`_validate_resume`). A previous manifest whose definition fingerprint differs
+       refuses and is not bypassable; a previous manifest with no identity, or a different
+       one, refuses by default;
+    6. the points that still have to run are the **compiled** plan's
+       (:attr:`ExecutableCampaign.points`), and they go through ``SweepRunner.run_points`` —
+       the runner's own cycle, unchanged.
+
+    The per-point work is the **runner's**: ``SweepRunner`` resets the block, applies the
+    window, reads it back, records, stops, stores, decodes the stored file, sizes it against
+    the signature and verifies its own words — and appends the log entry, valid or not. None
+    of that cycle is re-implemented here; the seam is ``SweepRunner.run_points``, which takes
+    an explicit sequence of points where ``run`` takes a ladder to expand. A campaign's points
+    are explicit and may each carry their own window, so they are handed over as a sequence
+    and not as a definition.
 
     ``resume=True`` drops the points the log already holds as *successful*
     (:func:`recorded_points`) and runs the rest in the file's order, saying in the notes
@@ -666,6 +1180,18 @@ def run_campaign(
     dialog's ``file already exists`` warning, which wedges the application when nothing
     answers it (docs/16 §12b).
 
+    ``no_snapshot=True`` skips steps 3 and 4 outright: no reading is taken, nothing is
+    compiled, and the manifest is marked ``declared_only`` because the run's points then rest
+    on the definition's declaration alone. A resume under it can never prove an identity (it
+    has no reading of its own to compare), so it refuses unless ``resume_declaration_only``
+    says so on purpose.
+
+    ``resume_declaration_only=True`` turns each *identity* refusal above into a proceed, and
+    only those: a changed definition is a different job and still refuses, because that flag is
+    about instrument evidence and not about which job this is. What it authorises is recorded —
+    every point it lets a resume skip is listed in the manifest's
+    ``skipped_without_evidence``, so the run does not read like a proven resume.
+
     ``store_dir`` overrides the definition's and ``channel`` the definition's — the
     caller's argument wins, and the CLI takes ``--store-dir``/``UDV_STORE_DIR`` for the
     first. The channel is the one knob: a point recorded on the wrong channel decodes as a
@@ -673,11 +1199,11 @@ def run_campaign(
     the first recording, and the manifest records what it verified.
 
     Raises :class:`CampaignError` when the definition cannot be planned, when no store
-    directory is named, or when the channel is not one the application offers. The runner
-    itself never raises for a bad point: a refused point is an outcome, and the manifest
+    directory is named, when the channel is not one the application offers, when the reading
+    cannot be compiled against the definition, or when a resume's identity is not proven. The
+    runner itself never raises for a bad point: a refused point is an outcome, and the manifest
     is written either way.
     """
-    planned = plan_campaign(definition)
     directory = _store_directory(definition, store_dir)
     log = Path(log_path) if log_path is not None else directory / DEFAULT_LOG_NAME
     effective_channel = definition.channel if channel is None else int(channel)
@@ -687,16 +1213,68 @@ def run_campaign(
             f"({MIN_CHANNEL}..{MAX_CHANNEL})"
         )
 
+    started_at = _local_now(now)
+
+    # (2) the static plan: every rule the application would enforce *silently* is enforced
+    # loudly here, and it is pure Python — so it happens before the first gesture on the
+    # application, which is what makes an unplannable file cost nothing at all (not even a
+    # dialog opening). The compile below plans again as part of its own refusal order
+    # (compile_campaign's docstring: the definition's laws come before the screen is judged);
+    # what a compiled run *executes* is the compiled plan, because that is the audited record.
+    planned = plan_campaign(definition)
+
+    # Steps 3-5: route, read, compile — all of it before the runner exists, so nothing can be
+    # stored for a job that cannot be compiled. Each of the three calls is made once.
+    compiled: ExecutableCampaign | None = None
+    if no_snapshot:
+        # Nothing is read and nothing is compiled, by definition of the flag. The points are
+        # the static plan's — the same list the compile builds its identity around — and the
+        # manifest states that no reading backs them.
+        if notes is not None:
+            notes.append(
+                "no-snapshot: no instrument reading was taken and nothing was compiled; the "
+                "manifest is marked declared-only and no point of this run rests on evidence"
+            )
+    else:
+        # (3) the routing step. Its own return is the *evidence* the compile needs: the
+        # reading cannot read the channel itself.
+        routed = actuator.ensure_channel()
+        # (4) one reading of the instrument, handed what the routing step established and
+        # what the dialog reader read.
+        snapshot = actuator.instrument_snapshot(
+            routed_channel=routed,
+            dialog_parameters=actuator.read_dialog_parameters(),
+        )
+        # (5) compiled, or refused — untouched, because the refusal already names the fact or
+        # the state that stopped the job.
+        compiled = compile_campaign(definition, snapshot)
+        planned = compiled.points
+
+    # (6) the resume's identity, validated *before* the todo/skipped sets are computed: no
+    # point may leave the todo set on an identity nothing proved. The log is read once, here,
+    # because the records are what the identity is validated *about*.
     done = recorded_points(log) if resume else set()
+    unproven_resume = False
+    if resume:
+        unproven_resume = _validate_resume(
+            definition,
+            log,
+            compiled=compiled,
+            recorded=done,
+            declaration_only=resume_declaration_only,
+            notes=notes,
+        )
+
+    # (7) what is left to run, keyed on the identities the log already holds.
     todo = tuple(point for point in planned if point.identity not in done)
     skipped = tuple(point.identity for point in planned if point.identity in done)
+    skipped_without_evidence = skipped if unproven_resume else ()
     if resume and notes is not None:
         notes.append(
             f"resume: {len(skipped)} of {len(planned)} point(s) are already recorded in "
             f"{log.name}; {len(todo)} to run"
         )
 
-    started_at = _local_now(now)
     runner = SweepRunner(
         actuator,
         CampaignRecordSettings(
@@ -733,9 +1311,184 @@ def run_campaign(
         log_path=str(log),
         definition_path=None if definition_path is None else str(definition_path),
         log_errors=tuple(runner.log_errors),
+        compilation_identity=None if compiled is None else compiled.identity,
+        declared_only=no_snapshot,
+        skipped_without_evidence=skipped_without_evidence,
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest
+
+
+def _validate_resume(
+    definition: CampaignDefinition,
+    log: Path,
+    *,
+    compiled: ExecutableCampaign | None,
+    recorded: set[str],
+    declaration_only: bool,
+    notes: list[str] | None,
+) -> bool:
+    """Step 6: prove that this job is the job the log beside it already holds — or refuse.
+
+    The log records *what* was recorded and nothing about *what it was measured on*, so a
+    resume keyed on the log alone can leave a point out of the todo set on the strength of a
+    fact nobody established. The proof is the previous manifest's ``compilation_identity``
+    against the one this run compiled, and the refusals are:
+
+    - **the definition changed** (``fingerprint`` differs) — a different job, so its recorded
+      points are points of a job this definition never asked for. Never bypassable:
+      ``--resume-declaration-only`` is about instrument evidence, not about which job this is;
+    - **there is no previous manifest but the log holds successful records** — nothing carries
+      an identity for them, which is the same gap as a manifest without one;
+    - **the previous manifest carries no identity** — every manifest written before this slice,
+      so a resume has nothing to compare;
+    - **the identity differs** — compared fact by fact
+      (:func:`_identity_disagreements`), so the refusal names *which* fact moved and both
+      sides of the move rather than saying "a different instrument", which would send an
+      operator to the window geometry that is deliberately not part of the identity;
+    - **this run took no reading at all** (``no_snapshot``) — it has no identity of its own, so
+      there is nothing to prove the previous job with.
+
+    ``recorded`` is the identities the log already holds as successful
+    (:func:`recorded_points`), passed in rather than re-read so that one resume reads its log
+    once — and read by the caller *before* this call, because these records are what the
+    identity is being validated about.
+
+    ``declaration_only`` (the run's ``--resume-declaration-only``) turns every one of those
+    *identity* refusals into a proceed and returns ``True``: the caller marks the points it let
+    through as ``skipped_without_evidence``, so the record says the skip rested on a
+    declaration. The definition-changed refusal is raised before that branch — deliberately, it
+    is a different kind of claim.
+
+    Nothing recorded and no manifest is not a refusal: there is nothing to skip, so there is
+    nothing to prove.
+    """
+    fingerprint = campaign_fingerprint(definition)
+    previous = read_manifest_if_present(manifest_path_for(log))
+
+    if previous is not None and previous.fingerprint != fingerprint:
+        raise CampaignError(
+            f"{manifest_path_for(log).name} answers definition fingerprint "
+            f"{previous.fingerprint[:12]}... while this definition's is {fingerprint[:12]}...: "
+            "a changed definition is a different job, so its recorded points belong to a job "
+            "this one never asked for and a resume would silently leave them out. Nothing was "
+            "run. (--resume-declaration-only does not bypass this: that flag is about "
+            "instrument evidence, not about which job this is)"
+        )
+
+    refusal: str | None = None
+    if previous is None:
+        if recorded:
+            refusal = (
+                f"{log.name} already holds {len(recorded)} successful point record(s) and there "
+                "is no manifest beside it: nothing carries the compilation identity those "
+                "records were measured under, so there is nothing a resume can compare against"
+            )
+    elif compiled is None:
+        refusal = (
+            "this run takes no instrument reading (no-snapshot), so it has no compilation "
+            "identity of its own to compare with the previous job's"
+        )
+    elif previous.compilation_identity is None:
+        refusal = (
+            f"the manifest beside {log.name} carries no compilation identity: nothing says the "
+            "previous job measured on this instrument (every manifest written before the "
+            "identity was recorded is in this state), so its recorded points cannot be told "
+            "apart from points measured somewhere else"
+        )
+    else:
+        differences = _identity_disagreements(
+            previous.compilation_identity, compiled.identity
+        )
+        if differences:
+            refusal = (
+                "the manifest beside the log was compiled against a different instrument: "
+                + "; ".join(differences)
+            )
+
+    if refusal is None:
+        return False
+    if not declaration_only:
+        raise CampaignError(
+            f"a resume is refused because the identity of the previous job is not proven: "
+            f"{refusal}. Nothing was run and nothing was stored. Pass "
+            "--resume-declaration-only to proceed on the declaration alone — the points it "
+            "skips are then recorded as skipped without instrument evidence"
+        )
+    if notes is not None:
+        notes.append(
+            f"resume-declaration-only: {refusal}; the points it skips are recorded as skipped "
+            "without instrument evidence, because this run cannot prove them"
+        )
+    return True
+
+
+#: The identity's facts for a resume comparison, in the order a refusal reports them: the two
+#: that say *which* surface the previous job measured on, then the six a definition declares
+#: (:data:`~udv_echo_process.acquire.snapshot.FIXED_FACT_FIELDS`). Spelled out here rather than
+#: read off the model, because the message's order is part of the answer an operator reads.
+_IDENTITY_FACT_FIELDS: tuple[str, ...] = ("channel", "mode", *FIXED_FACT_FIELDS)
+
+#: The identity's layout half: the window class, the panel and control counts, and the strip's
+#: view. Not :class:`Provenance` — nothing declared them, so a disagreement here is the *screen*
+#: having moved (a press is bound to a button's position in a view), never a setting.
+_IDENTITY_LAYOUT_FIELDS: tuple[str, ...] = (
+    "class_name",
+    "panels",
+    "visible_controls",
+    "strip_view",
+    "strip_has_slider",
+)
+
+
+def _identity_disagreements(
+    previous: CompilationIdentity, current: CompilationIdentity
+) -> tuple[str, ...]:
+    """Every field two identities disagree about, each with both sides — never just the first.
+
+    Fact by fact and through each fact's :class:`Provenance`, for two reasons. The operator's
+    next question is *which* fact moved and what it moved between, and a refusal that said only
+    "a different instrument" would send them to the window geometry — which is deliberately not
+    in the identity. And the provenance is half the answer: a fact that moved from ``read`` to
+    ``unreadable`` is a weaker claim about the *same* instrument, which a comparison on values
+    alone would report as a change of instrument.
+
+    Every disagreement is collected rather than raised on the first, the same way
+    :func:`_refuse_disagreements` reports the whole list: the instrument is in front of the
+    operator and one round trip should be enough to see all of it.
+    """
+    differences: list[str] = []
+    for name in _IDENTITY_FACT_FIELDS:
+        was = getattr(previous, name)
+        now = getattr(current, name)
+        if was == now:
+            continue
+        differences.append(
+            f"{name}: the previous job was compiled against {_provenance_text(was)}, this one "
+            f"against {_provenance_text(now)}"
+        )
+    for name in _IDENTITY_LAYOUT_FIELDS:
+        was = getattr(previous, name)
+        now = getattr(current, name)
+        if was == now:
+            continue
+        differences.append(
+            f"{name}: the previous job's screen was {was!r} where this one's is {now!r} (the "
+            "layout a run's presses were bound to, which is not a setting)"
+        )
+    return tuple(differences)
+
+
+def _provenance_text(fact: Provenance) -> str:
+    """One side of a fact comparison: its value and how strong the evidence behind it is.
+
+    ``'1460' (read)`` says the application itself stated it; ``'1460' (declared)`` says it is a
+    campaign's own claim, and ``no value (unreadable)`` says nothing could state it — three
+    different claims that must not read alike in a refusal.
+    """
+    if fact.value is None:
+        return f"no value ({fact.source.value})"
+    return f"{fact.value!r} ({fact.source.value})"
 
 
 def _explain_validation(exc: ValidationError) -> str:

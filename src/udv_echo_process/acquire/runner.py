@@ -125,6 +125,7 @@ from udv_echo_process.acquire.plan import (
     plan_sweep,
     profiles_for_duration,
 )
+from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -178,11 +179,17 @@ ABORT_NOTE = (
 
 
 class SweepActuator(Actuator, Protocol):
-    """The :class:`Actuator` surface plus the two composed calls a sweep needs.
+    """The :class:`Actuator` surface plus the composed calls a sweep needs.
 
-    ``Actuator`` fixes the primitives; the ordered parameter write and the whole
-    record/stop/store cycle are what a sweep calls, and naming them here is what lets
-    this module be written and faked against the actuator interface alone.
+    ``Actuator`` fixes the primitives; the ordered parameter write, the whole
+    record/stop/store cycle, the one reading of the instrument's fixed state and the
+    ``Operating parameters`` dialog read are what a sweep calls, and naming them here is what
+    lets this module be written and faked against the actuator interface alone.
+
+    ``instrument_snapshot`` and ``read_dialog_parameters`` are **additive**: neither has a
+    caller in this module's own cycle, and no existing primitive changed to make room for
+    them, so an implementation that satisfied the port before still does — it gains two
+    methods.
     """
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole, str]:
@@ -191,6 +198,53 @@ class SweepActuator(Actuator, Protocol):
 
     def ensure_channel(self) -> int:
         """Verify the measurement channel from the dialog and return it."""
+        ...
+
+    def read_dialog_parameters(self) -> DialogParameters:
+        """Read the three dialog-only facts off the ``Operating parameters`` dialog.
+
+        The **campaign** path needs this and the sweep path does not: the sound speed, the
+        first gate and the burst length live in that dialog alone, and ``instrument_snapshot``
+        states them only when a caller hands them over (``dialog_parameters=``) — it never
+        opens the dialog itself, deliberately, because reading it means a modal the operator
+        watches open and closed and the reading's own contract is that it presses nothing.
+        So the read is a step of its own, taken *before* the snapshot and handed to it, and a
+        caller that skips it gets those three facts as ``unreadable`` with the reason, which
+        the compile refuses on rather than proceeding on a declaration
+        (``snapshot.SUPPORTED_READ_FACTS``, plan §9.2).
+
+        It is read-only with respect to the configuration — it opens the dialog, reads the
+        table and closes it again — and a dialog that states nothing is a reading with a
+        ``reason``, never a raise and never a guess.
+        """
+        ...
+
+    def instrument_snapshot(
+        self,
+        *,
+        routed_channel: int | None,
+        dialog_parameters: DialogParameters | None = None,
+    ) -> InstrumentSnapshot:
+        """Read the instrument's current state, pressing nothing that changes it.
+
+        Read-only with respect to the configuration: it writes no parameter, accepts no
+        dialog and selects no channel. Routing to the requested channel is a separate step
+        that happens *before* it, and this call hands over what that step established — the
+        channel :meth:`ensure_channel` selected and read back, or ``None`` when nothing
+        routed one, which the reading then carries as ``unreadable`` rather than as a claim.
+
+        ``dialog_parameters`` is the same kind of hand-over for the three facts only the
+        ``Operating parameters`` dialog states (its reader is ``read_dialog_parameters``):
+        passing what that step read makes them ``read`` facts, and omitting it carries them as
+        ``unreadable`` with the reason. The channel is required and keyword-only so that no
+        caller can have a channel taken for granted on its behalf; this one is optional because
+        a caller that cannot have read the dialog and one that merely did not are different
+        states, and only the second leaves a caller free to say so.
+
+        The reading is the *evidence*: which channel and mode are active, which fixed facts
+        the instrument itself states and which nothing can read yet
+        (:mod:`~udv_echo_process.acquire.snapshot`).
+        """
         ...
 
     def try_record_and_store(
@@ -311,6 +365,9 @@ class SweepRunner:
         self._sweep_id = sweep_id_for(datetime.now(tz=UTC).astimezone())
         #: Set once the measurement channel has been read from the dialog for this run.
         self._channel_verified = False
+        #: The channel the routing step established, or ``None`` until one has. Kept rather
+        #: than discarded because it is the *evidence* a campaign's compile is handed.
+        self._routed_channel: int | None = None
         #: Log entries that could not be written. Never silent, never fatal.
         self.log_errors: list[str] = []
         self._used_names: set[str] = set()
@@ -319,6 +376,27 @@ class SweepRunner:
     def channel(self) -> int:
         """The measurement channel every point is decoded on."""
         return self._channel_setting.channel
+
+    @property
+    def routed_channel(self) -> int | None:
+        """The channel the routing step established, or ``None`` until one routed.
+
+        :meth:`~udv_echo_process.acquire.runner.SweepActuator.ensure_channel` returns the
+        channel the application's own dialog confirmed, and that return is exactly what a
+        campaign's reading has to be handed (``instrument_snapshot(*, routed_channel)``)
+        before a compile will accept the channel as established: the reading cannot read the
+        channel itself — doing so costs the menubar gesture the routing step pays — so a caller
+        that routed and threw the value away has nothing the compile can accept, and it refuses
+        with "the reading carries no routed channel" instead of recording points under a
+        channel nobody verified (``campaign._routed_channel``).
+
+        Kept here rather than re-read by the caller so that the channel the dialog was opened
+        for and the channel a compile is told about cannot become two different readings of one
+        dialog. ``None`` until the first routing happened, and the routing happens once per run
+        (:meth:`_verify_channel_once`), so it is also the run's own answer to "which channel did
+        we actually measure on".
+        """
+        return self._routed_channel
 
     def _verify_channel_once(self) -> None:
         """Verify the measurement channel from the dialog, once per run.
@@ -331,10 +409,14 @@ class SweepRunner:
         the channel of every file afterwards, refusing a file that carries no data for the
         channel it is asked for. So the dialog opens once, and a mid-run channel change still
         fails the point that follows it, on its own file.
+
+        The dialog's answer is kept on :attr:`routed_channel` rather than dropped: it is the
+        value a campaign's compile is handed as evidence, and re-reading the dialog for that
+        caller would open the same modal a second time for a value this call already has.
         """
         if self._channel_verified:
             return
-        self._actuator.ensure_channel()
+        self._routed_channel = self._actuator.ensure_channel()
         self._channel_verified = True
 
     def run_point(
