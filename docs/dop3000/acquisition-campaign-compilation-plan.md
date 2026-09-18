@@ -1496,6 +1496,112 @@ explicitly recorded as unreachable with the reason; every dialog-written knob is
 point that used it; and a wrong write (a value the combo does not offer, a field that is not there) refuses
 the point rather than proceeding.
 
+### 18.9 The first dialog write, measured
+
+`tools/live/probes/dialog_write.py` (committed with this record) is the first thing in this
+repository that *changes* the instrument through the dialog. Three modes on the driver's own steps —
+`dump` (inventory + photograph), `write --burst N [--volume V]` (select the cell's combo entry, then
+`Accept`, then re-open and dump), `compare` (diff two dumps control by control and cell by cell).
+It refuses rather than presses: a value the combo does not offer, a cell whose class is not the one
+bound to it, a modal warning, and the header channel combo are all off its path.
+
+**The round trip, measured.** Channel 1, `c = 1460`, `f_e = 4000`, dialog `(655, 364, 1282, 748)`
+with 42 controls — the same geometry as §18.6/§18.8, unchanged by every write below.
+
+| step | what was pressed | what the dialog said |
+|---|---|---|
+| baseline | nothing (closed with its left button, `Cancel`) | burst `4` (index 1), sampling volume `0.876` (index 0), 14 other cells as §18.8 |
+| write | point `(0,1)`'s combo → the entry whose own text is `2` (index 0) | *same dialog, before* `Accept`: burst `2`; **every other cell identical** |
+| commit | the band's rightmost `TSp_Button` `(1183, 702, 1263, 727)` | dialog closed, nothing raised |
+| read back | re-open | burst `2`; **sampling volume still `0.876`, index 0**; all 14 other cells as baseline |
+| restore | `(0,1)` → the entry `4` (index 1), `Accept`, re-open | burst `4`; nothing else moved |
+| proof | one more independent `dump` | 42/42 controls identical to the baseline **in the same order**, every cell identical, and the dialog-rect PNG **byte-identical** (`sha256 617e23cf…`) |
+
+Two controls moved for the burst write and both are the knob's own widgets: the cell's `TComboBox`
+`(783, 488, 861, 509)` and its inner `Edit` `(786, 491, 841, 506)`, each `4` → `2`. Nothing else in
+the dialog changed — no unrequested value, no rebuilt control, no new or missing cell.
+
+**The message sequence that worked** — the archive's combo recipe, unchanged: `CB_SETCURSEL(index)`,
+then a posted `WM_COMMAND` carrying `CBN_SELCHANGE << 16 | control id` and the combo's handle **to
+the combo's parent** (the cell's value button). **No `WM_SETTEXT`, no Enter, no cursor, no
+keystroke.** The `Accept` is the driver's ordinary button press: a posted `WM_LBUTTONDOWN` held
+~180 ms then released on `row[-1]`; the band held four `TSp_Button`s and the two wide indicators were
+never touched. `CB_SETCURSEL` on its own would have set the control's belief and left the model
+alone — the same shape as the archive's column-combo trap — so the notification is what this rests
+on.
+
+**Coupling: measured NOT to move, and the operator rule that did not reproduce.** §19.2 and the
+archive (`docs/16` §13) both predict that writing burst re-selects the sampling volume. At
+`c = 1460`, `f_e = 4000` it did not, in either direction:
+
+| burst | sampling volume before | after the write (same dialog) | after `Accept` + re-open | the volume's option list |
+|---|---|---|---|---|
+| `4 → 2` | `0.876` (index 0) | `0.876` (index 0) | `0.876` (index 0) | unchanged |
+| `2 → 4` | `0.876` (index 0) | `0.876` (index 0) | `0.876` (index 0) | unchanged |
+
+"Reducing burst selects the minimum entry" did **not** reproduce here: the minimum on this list is
+`0.584` and the selection never left `0.876`. The downward direction was run twice (a first run that
+put the state back after an earlier write, and the restore this round trip ends with) with the same
+result, and the accepted pairs are therefore `(4, 0.876 @ index 0)` and `(2, 0.876 @ index 0)`. The
+upward direction beyond `4`, and a burst large enough to move the volume's *list*, stay unmeasured —
+they are the cheap next probe, not a conclusion from this one. `word 8`/`word 27` remain the oracles
+that would name the pair in a stored file; nothing here reads a `.BDD`.
+
+**The option lists, dumped for the first time** (§18.7's open item 2, first half):
+
+| combo | items, in the order the control holds them | selected |
+|---|---|---|
+| burst `(0,1)` | `2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32` | index 1 (`4`) |
+| sampling volume `(1,4)` | `0.876, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584` | index 0 (`0.876`) |
+
+Three rules fall out of those two rows, and each cost nothing here only because the probe was written
+against them:
+
+- the burst list is exactly the operator's reading (§18.6) and is **not contiguous** above `20` — a
+  step-counting writer writes a different burst, and a value-based one is the only safe one;
+- the volume list is **unordered, holds `0.876` twice, and keeps the currently-held value at index
+  0**: "select by value, never by index" is necessary but not sufficient, because a value-based
+  restore of `0.876` matches two entries. Measured rule: match the entry's own text and take the
+  **lowest** matching index — that is the one the application itself leaves selected, at baseline and
+  after both writes;
+- the burst cell holds **two** controls stating the same value (the combo and its inner `Edit`). "The
+  first thing inside the cell" gets one of them by luck; the cell's value is the combo (§18.6).
+
+**The verify rungs of §19.1, as this run could check them.**
+
+| rung | result | what backs it |
+|---|---|---|
+| 1 — the field states what was written | measured on the field; **not obtainable as a model-only read** | the cell's combo read `2` (own text and `CB_GETCURSEL` 0) before `Accept`. Nothing else in the open dialog states the burst, so the *control's belief* is not separable from the model's here — the archive's sensitivity trap (`CB_GETCURSEL` reports the control) is the reason that distinction matters. |
+| 2 — after `Accept`, the re-opened dialog agrees | **passed** | the re-opened dialog read `2` with all 14 other cells identical; and in the other direction the re-opened dialog read `4` with the final dump identical to the baseline (controls in the same order, the dialog PNG byte-identical) |
+| 3 — the stored `.BDD`'s word | **not attempted** | it needs a real recording on the channel, which a dialog round trip is not. `word 8`/`word 27` stay unread for this change. |
+
+**Two consequences for §19, from the same measurement.** The dialog's **derived readouts are not an
+oracle for this knob**: `Depth = 99 mm` and `Velocity scale = 292.1 mm/s` were printed identically
+across burst `4 → 2` (read off the full-resolution crop, §18.8's rule), because neither depends on
+burst. So rung 2's named evidence for a burst write is the re-opened table, not the painted pair.
+And **rungs 1 and 2 are not independent for this dialog**: the only statement a combo's value has
+inside an open `Operating parameters` dialog is the control itself, so rung 1 collapses into rung 2 —
+the writer should treat the re-opened read as the field's own verification rather than claiming two
+rungs, and only a stored file gives a truly second, independent witness.
+
+**No modal appeared anywhere in the run** — not on the burst change and not on the `Accept`, so
+`Warning — The burst length should be reduced` did not reproduce for `4 → 2` (its trigger is a
+*requested volume* below the burst's floor, and nothing here requested a volume). The probe's own
+guard still stands: it dismisses a warning with its leftmost button when the band holds two or more,
+and refuses to press a single-button warning at all, because that one button is `Continue`.
+
+**Artifacts**, all under the gitignored `outputs/live/`: `dialog-write-baseline.json` (also
+`-baseline.png` + `-baseline-full.png`), `dialog-write-burst2.*`, `dialog-write-restored.*`,
+`dialog-write-final.*`, the five `dialog-write-compare-*.json` diffs, and each run's log as
+`run-*.log` (the dispatcher's own log, `task-dialog_write.py.log`, is overwritten per run, so it is
+copied out under a name that says which run it was). `dump` costs 3.6 s, `write` 8.5 s — both
+dispatchable with `PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_write.py <mode> …`. One
+process note: the first
+write run recorded its per-cell summary through a helper that compared an integer to a dictionary
+and so reported the two cells as missing; no write or read of the instrument was affected (the
+dumped tables were correct), and the run was repeated so that every dump in this record comes from
+the committed build.
+
 ## 19. A dialog write is an `Accept`-committed, coupled transaction — four decisions for the writer
 
 The archive establishes four things about writing that §18.1–§18.8 do not state, and each changes the shape of
