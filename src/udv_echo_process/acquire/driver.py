@@ -137,6 +137,8 @@ Patch 2 (``ui/model.py``, ``ui/layout.py``, then the widget interpreters ``ui/st
 - ``win32/cursor.py`` — the foreground check, the real cursor move and restore,
   ``ClipCursor``, and the package's one lazy ``win32gui``/``ctypes.windll`` resolution
   (the handles landed with the transport, in the first commit of this patch);
+- ``win32/tree.py`` — the enumeration of the main window and its children, the visibility
+  rule and the ``acquire/ui/model`` node projection.
 
 Every one of those names is imported back at the top of this file, so ``driver.screen_mode``,
 ``driver.layout_shape_reasons``, ``driver.dialog_value_fields``, ``driver._strip_row``,
@@ -355,6 +357,14 @@ from udv_echo_process.acquire.win32.messages import (
     _send,
     _set_text_commit,
 )
+from udv_echo_process.acquire.win32.tree import (
+    _children_of,
+    _descendants_of,
+    _hidden_panels,
+    _is_visible,
+    _main_hwnd,
+    _visible_children,
+)
 
 __all__ = [
     # The module's published surface — private names included — listed rather than left
@@ -422,6 +432,7 @@ __all__ = [
     "_CursorPoint",
     "_activate_window",
     "_bottom_row",
+    "_children_of",
     "_click_hold",
     "_client_bottom",
     "_client_top",
@@ -433,15 +444,19 @@ __all__ = [
     "_contains",
     "_control_id",
     "_cursor_position",
+    "_descendants_of",
     "_dialog_fact",
     "_dialog_only_reason",
     "_entry_buttons",
     "_foreground_window",
     "_get_text",
     "_gui",
+    "_hidden_panels",
     "_hover_centre",
     "_inside",
     "_is_dialog_panel",
+    "_is_visible",
+    "_main_hwnd",
     "_move_real_cursor",
     "_observation_text",
     "_point_in_rect",
@@ -454,6 +469,7 @@ __all__ = [
     "_strip_row",
     "_thread_of",
     "_user32",
+    "_visible_children",
     "anchor_button",
     "anchor_clause",
     "channel_items",
@@ -557,87 +573,12 @@ class AcquisitionError(RuntimeError):
 
 
 
-def _visible_children(win: int) -> list[dict]:
-    """Every visible descendant with a real area, in screen coordinates."""
-    win32gui, _ = _gui()
-    out: list[dict] = []
+# ``_visible_children``, ``_is_visible`` and ``_hidden_panels`` were defined here: the
+# enumeration with a real area, the single visibility question and the walk that
+# *names* what the filter left out (a pre-created panel is evidence, never a target).
+# They are ``acquire/win32/tree.py``'s as of Patch 3, imported at the top of this file
+# under these same names.
 
-    def cb(h, _lparam):
-        try:
-            if win32gui.IsWindowVisible(h):
-                left, top, right, bottom = win32gui.GetWindowRect(h)
-                if right - left >= 2 and bottom - top >= 2:
-                    out.append(
-                        {
-                            "hwnd": h,
-                            "cls": win32gui.GetClassName(h),
-                            "text": win32gui.GetWindowText(h),
-                            "rect": (left, top, right, bottom),
-                            "left": left,
-                            "top": top,
-                            "w": right - left,
-                            "h": bottom - top,
-                            "id": win32gui.GetDlgCtrlID(h),
-                        }
-                    )
-        except Exception:  # noqa: BLE001, S110
-            pass
-        return True
-
-    win32gui.EnumChildWindows(win, cb, None)
-    return out
-
-
-def _is_visible(hwnd: int) -> bool:
-    """``IsWindowVisible`` for one handle — presence is **not** visibility.
-
-    This application pre-creates the ``Parameters`` popup panel in its control tree and
-    shows it on the hover, so a control can be *present* and reported by an enumeration
-    that ignores visibility while nothing is painted at its rect. Pressing there puts the
-    coordinates into empty screen — which is exactly what a live run did. An unreadable
-    answer is ``False``: only a positive ``True`` is accepted as proof.
-    """
-    win32gui, _ = _gui()
-    try:
-        return bool(win32gui.IsWindowVisible(hwnd))
-    except Exception:  # noqa: BLE001 - an unreadable answer is not a positive one
-        return False
-
-
-def _hidden_panels(win: int) -> list[dict]:
-    """Every ``TSp_Panel`` in the window's tree that is **not** visible, in the tree.
-
-    The companion to :func:`_visible_children`: the same walk without the visibility
-    filter, so a pre-created panel can be *named* in a refusal instead of being mistaken
-    for the open menu (the live failure of the previous fix cycle). Nothing here is ever
-    pressed — a hidden panel is evidence, not a target.
-    """
-    win32gui, _ = _gui()
-    out: list[dict] = []
-
-    def cb(h, _lparam):
-        try:
-            hidden = not win32gui.IsWindowVisible(h)
-            if win32gui.GetClassName(h) == "TSp_Panel" and hidden:
-                left, top, right, bottom = win32gui.GetWindowRect(h)
-                out.append(
-                    {
-                        "hwnd": h,
-                        "cls": "TSp_Panel",
-                        "rect": (left, top, right, bottom),
-                        "left": left,
-                        "top": top,
-                        "w": right - left,
-                        "h": bottom - top,
-                        "id": win32gui.GetDlgCtrlID(h),
-                    }
-                )
-        except Exception:  # noqa: BLE001, S110
-            pass
-        return True
-
-    win32gui.EnumChildWindows(win, cb, None)
-    return out
 
 
 # ``dialog_value_fields``, ``_dialog_only_reason``, ``_dialog_fact``, ``_strip_row`` and
@@ -984,32 +925,14 @@ class Win32Actuator:
 
     def _main_hwnd(self) -> int:
         """Handle of the visible main window (largest if several exist)."""
-        win32gui, _ = _gui()
-        found: list[tuple[int, int]] = []
+        return _main_hwnd(self._class_name, gui=_gui)
 
-        def cb(h, _lparam):
-            try:
-                if win32gui.GetClassName(
-                    h
-                ) == self._class_name and win32gui.IsWindowVisible(h):
-                    left, top, right, bottom = win32gui.GetWindowRect(h)
-                    found.append(((right - left) * (bottom - top), h))
-            except Exception:  # noqa: BLE001, S110
-                pass
-            return True
-
-        win32gui.EnumWindows(cb, None)
-        if not found:
-            raise AcquisitionError(
-                f"no visible {self._class_name} window — is UDOP on its startup screen?"
-            )
-        return max(found)[1]
 
     @staticmethod
     def _children_of(parent: int, roles: dict) -> list[dict]:
         """The already-enumerated children whose parent is ``parent``."""
-        win32gui, _ = _gui()
-        return [k for k in roles["raw"] if win32gui.GetParent(k["hwnd"]) == parent]
+        return _children_of(parent, roles, gui=_gui)
+
 
     def _param_rows(
         self, left_panel: dict | None, kids: Sequence[dict], children_of
@@ -1061,7 +984,7 @@ class Win32Actuator:
         """
         win32gui, _ = _gui()
         win = self._main_hwnd()
-        kids = _visible_children(win)
+        kids = _visible_children(win, gui=_gui)
         _l, _t, cw, ch = win32gui.GetClientRect(
             win
         )  # GetClientRect is always (0,0,w,h)
@@ -1570,13 +1493,17 @@ class Win32Actuator:
         control tree and hidden until then, so "the panel is there" is not "the menu is
         open": a rule that accepts presence presses coordinates into empty screen, which
         is what a live run did. Split out as a method so a fake can script the hidden
-        panel without a window (see :func:`_is_visible`).
+        panel without a window; the read itself is
+        :func:`~udv_echo_process.acquire.win32.tree._is_visible`, where an unreadable
+        answer is ``False``.
         """
-        return _is_visible(hwnd)
+        return _is_visible(hwnd, gui=_gui)
+
 
     def _hidden_panels(self) -> list[dict]:
         """The panels present in the tree but **not visible** (diagnostics, never targets)."""
-        return _hidden_panels(self._resolve()["window"])
+        return _hidden_panels(self._resolve()["window"], gui=_gui)
+
 
     def _dialog_panels(self, roles: Mapping | None = None) -> list[dict]:
         """The panels that are modal dialogs, fullest first — the reference's rule.
@@ -2247,39 +2174,12 @@ class Win32Actuator:
         The resolver's own ``raw`` list stops at the **direct** children of a panel, and this
         dialog states nothing at that level: measured on the running application 2026-09-18, the
         ``Operating parameters`` dialog's 21 direct children are its 15 ``TSp_Value_Button``
-        widgets, its header and its bottom buttons, and *no* control among them carries a value —
-        each field's text lives in the ``TSp_Edit``/``TComboBox`` **inside** its value button. A
-        read built on the resolver's children therefore sees a dialog with no table at all, which
-        is exactly how it failed on the live application the first time, so the table is walked
-        here instead.
-
-        Rows carry what the rest of the driver's rows carry (class, rect, handle); the text is read
-        separately by whoever needs it, through the same ``WM_GETTEXT`` reader as everywhere else.
+        widgets, its header and its bottom buttons, and *no* control among them carries a value.
+        The walk is :func:`~udv_echo_process.acquire.win32.tree._descendants_of`; rows carry what
+        the rest of the driver's rows carry, and the text is read separately by whoever needs it.
         """
-        win32gui, _ = _gui()
-        rows: list[dict] = []
-        stack = [hwnd]
-        while stack:
-            parent = stack.pop()
-            child = win32gui.GetWindow(parent, 5)  # GW_CHILD
-            while child:
-                try:
-                    left, top, right, bottom = win32gui.GetWindowRect(child)
-                    rows.append(
-                        {
-                            "hwnd": child,
-                            "cls": win32gui.GetClassName(child),
-                            "left": left,
-                            "top": top,
-                            "w": right - left,
-                            "h": bottom - top,
-                        }
-                    )
-                    stack.append(child)
-                except win32gui.error:  # a control that died mid-walk is not a failed read
-                    pass
-                child = win32gui.GetWindow(child, 2)  # GW_HWNDNEXT
-        return rows
+        return _descendants_of(hwnd, gui=_gui)
+
 
     def _poll_dialog_fields(self, panel: dict) -> list[dict[str, object]]:
         """The dialog's value table, re-read until it states something or the wait runs out.
