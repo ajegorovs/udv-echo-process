@@ -2932,7 +2932,7 @@ application is §24's own verification, then the experiment.
 ## 26. The slice as built, and the three corrections its fixtures produced
 
 §24 is implemented on a branch — `feat/acquire-stated-process-mode-layout-shape`, one commit, 17 files,
-+1838/−129, `master` untouched. Independently re-run here: `ruff check src tests` clean, `python -m pytest -q
++1838/−129, `master` untouched, and open for review as **PR #8**. Independently re-run here: `ruff check src tests` clean, `python -m pytest -q
 tests/` **1737 passed, 22 skipped** against a 1701/22 baseline (all 36 new cases are the §24.6 table plus the
 call sites the widened signatures moved). **Nothing live-verified yet** — §24.7 needs the application, and the
 slice adds nothing that presses a control. The code is written so that even a *regression* cannot press:
