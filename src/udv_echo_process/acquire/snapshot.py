@@ -60,6 +60,7 @@ from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "FIXED_FACT_FIELDS",
+    "SUPPORTED_READ_FACTS",
     "CompilationIdentity",
     "DialogParameters",
     "FactSource",
@@ -86,6 +87,24 @@ FIXED_FACT_FIELDS: tuple[str, ...] = (
     "sound_speed_ms",
     "first_gate_mm",
     "max_profiles_per_block",
+)
+
+#: The fixed facts **this driver has a supported read path for**, so that a value missing from a
+#: reading means the read *failed* rather than that nothing on this machine can state the fact. Five
+#: of the six: the PRF and the emissions per profile come off the measurement screen's own column,
+#: and the burst length, the sound speed and the first gate out of the ``Operating parameters``
+#: dialog (W1, plan §14 — the dialog's value table, read by position and checked against the screen).
+#: The block cap is deliberately absent: it is an application Preference whose surface reconnaissance
+#: could not open safely, so no reader here reaches it.
+#:
+#: This is a claim about *this* driver and it moves with it: gaining a reader means adding its fact
+#: here, and the compile then refuses a normal campaign whose reading does not carry it (plan §9.2).
+SUPPORTED_READ_FACTS: tuple[str, ...] = (
+    "prf_us",
+    "emissions_per_profile",
+    "burst_length",
+    "sound_speed_ms",
+    "first_gate_mm",
 )
 
 

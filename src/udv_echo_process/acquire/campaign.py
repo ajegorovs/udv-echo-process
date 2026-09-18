@@ -91,6 +91,7 @@ from udv_echo_process.acquire.runner import (
 )
 from udv_echo_process.acquire.snapshot import (
     FIXED_FACT_FIELDS,
+    SUPPORTED_READ_FACTS,
     CompilationIdentity,
     FactSource,
     InstrumentFact,
@@ -837,6 +838,7 @@ def compile_campaign(
     checks = tuple(
         _check_fact(definition, snapshot, name) for name in FIXED_FACT_FIELDS
     )
+    _refuse_failed_reads(checks)
     _refuse_disagreements(checks)
     return ExecutableCampaign(
         job=definition.job,
@@ -1005,6 +1007,50 @@ def _check_fact(
                 + (f" (tolerance {tolerance:g})" if tolerance else "")
             )
         ),
+    )
+
+
+def _refuse_failed_reads(checks: tuple[FactCheck, ...]) -> None:
+    """Raise when a fact with a supported read path was **not read** — a failed read, not an absence.
+
+    W1 gave the burst length, the sound speed and the first gate a real reader, which splits what a
+    missing value can mean, and the two states must not be collapsed (plan §9.2):
+
+    - nothing on this machine can state the fact (the block cap) — the reading cannot disagree with
+      the definition about it, so it is carried ``declared`` and listed in
+      :attr:`ExecutableCampaign.unproven`;
+    - this driver *can* state it and this attempt did not — the check that exists was performed and
+      failed, so a normal campaign refuses before the first recording rather than proceeding on the
+      declaration alone.
+
+    Refusing on the first case would make every campaign unrunnable on a fact no reader reaches;
+    accepting the second would mean knowingly running when the instrument was not checked. Only
+    facts the definition actually declares are judged: a campaign that declares nothing for a fact
+    reconciles nothing (`_check_fact`), so there is nothing for a failed read to hide.
+
+    This runs *before* :func:`_refuse_disagreements` within the facts step: a fact that was never
+    read cannot be reported as agreeing or disagreeing, and the operator's first question is
+    whether the check ran at all.
+    """
+    failed = [
+        check
+        for check in checks
+        if check.name in SUPPORTED_READ_FACTS
+        and check.declared is not None
+        and check.observed.source is not FactSource.READ
+    ]
+    if not failed:
+        return
+    named = "; ".join(
+        f"{check.name} (the campaign declares {check.declared}, and the reading states no value: "
+        f"{check.observed.reason or 'no reason given'})"
+        for check in failed
+    )
+    raise CampaignError(
+        f"the reading did not establish {named} — each of those facts has a supported read path "
+        "in this driver, so this is a read that failed rather than a fact this machine cannot "
+        "state, and a campaign does not proceed on a declaration it could have checked. No "
+        "recording was spent and the application is untouched"
     )
 
 

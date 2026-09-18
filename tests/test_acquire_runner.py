@@ -229,25 +229,22 @@ def _block_for(path: Path | None, *, fake: FakeActuator | None = None) -> Script
 CLEAN_PANELS = 4
 CLEAN_CONTROLS = 43
 
-#: Why the three facts that live in a dialog cannot be read off the measurement screen. The
-#: fake states them the way the driver does, because a reason is part of the fact.
-UNREADABLE_DIALOG_ONLY = (
-    "{name!r} has no parameter-column field: it is set in the 'Operating parameters' dialog "
-    "only, so nothing on the measurement screen states it"
-)
-
 
 def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
 
-    The PRF and the emissions per profile are this module's measured constants, so the reading
-    agrees with the points these tests plan; the mode is manual; and the channel is **the one the
-    caller says it routed** — ``routed_channel`` is handed straight through, so a cycle that
+    The PRF, the emissions per profile **and the three dialog-only facts** are this module's measured
+    constants, so the reading agrees with the points these tests plan and the compile reconciles it
+    instead of refusing on a read that never happened; the mode is manual; and the channel is **the
+    one the caller says it routed** — ``routed_channel`` is handed straight through, so a cycle that
     routed and passed its verified channel over gets a ``routed`` fact, and a cycle that passed
-    nothing gets ``unreadable`` rather than a claim nobody could have made. The four facts
-    nothing can read yet are carried unreadable with their reasons rather than as numbers, which
-    is the honest state on this machine and the reason a reading cannot disagree with a
-    definition about a fact nobody read.
+    nothing gets ``unreadable`` rather than a claim nobody could have made.
+
+    The block cap is the one fact that stays unreadable, and now it is the *only* one: an application
+    Preference whose surface reconnaissance could not open safely (W1, plan §14), so no reader here
+    reaches it. Since W1 the three dialog facts have a reader, which is why they are stated rather
+    than merely declared — a reading without them is a failed read, and the compile refuses it
+    (plan §9.2).
     """
     channel = (
         routed(
@@ -276,9 +273,9 @@ def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
         emissions_per_profile=InstrumentFact(
             value=str(EMISSIONS_PER_PROFILE), source=FactSource.READ
         ),
-        burst_length=unreadable(UNREADABLE_DIALOG_ONLY.format(name="burst_length")),
-        sound_speed_ms=unreadable(UNREADABLE_DIALOG_ONLY.format(name="sound_speed_ms")),
-        first_gate_mm=unreadable(UNREADABLE_DIALOG_ONLY.format(name="first_gate_mm")),
+        burst_length=InstrumentFact(value=str(BURST_LENGTH), source=FactSource.READ),
+        sound_speed_ms=InstrumentFact(value=str(int(SOUND_SPEED_MS)), source=FactSource.READ),
+        first_gate_mm=InstrumentFact(value=str(int(FIRST_GATE_MM)), source=FactSource.READ),
         max_profiles_per_block=unreadable(
             "the block cap is an application Preference, not a measurement parameter"
         ),
@@ -2019,25 +2016,29 @@ def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
 def test_the_fake_answers_the_reading_a_run_expects(tmp_path: Path) -> None:
     """The fake's default is the expected configuration: it cannot disagree with a definition.
 
-    The two facts the measurement screen states are the module's own measured constants, and
-    the four with no read path are unreadable — no value for a compile to compare, which is
-    exactly the state the next slice has to handle *and* the state that keeps these cases
-    about the runner.
+    Its five readable facts are this module's own measured constants — including the three that come
+    out of the ``Operating parameters`` dialog, which have had a supported read path since W1 — so a
+    compile reconciles the reading instead of refusing a read that never happened. The block cap is
+    the one fact nothing here reads: an application Preference no reader in this driver reaches,
+    which is the honest state of this machine and the reason a reading cannot disagree with a
+    definition about it.
     """
     fake = FakeActuator(tmp_path)
 
     reading = fake.instrument_snapshot(routed_channel=1)
 
     assert fake.snapshot_checks == 1
-    assert reading.read_facts() == ("prf_us", "emissions_per_profile")
-    assert reading.fact("prf_us").value == str(PRF_US)
-    assert reading.fact("emissions_per_profile").value == str(EMISSIONS_PER_PROFILE)
-    assert reading.unreadable_facts() == (
+    assert reading.read_facts() == (
+        "prf_us",
+        "emissions_per_profile",
         "burst_length",
         "sound_speed_ms",
         "first_gate_mm",
-        "max_profiles_per_block",
     )
+    assert reading.fact("prf_us").value == str(PRF_US)
+    assert reading.fact("burst_length").value == str(BURST_LENGTH)
+    assert reading.fact("sound_speed_ms").value == str(int(SOUND_SPEED_MS))
+    assert reading.unreadable_facts() == ("max_profiles_per_block",)
     assert reading.fingerprint.visible_controls == CLEAN_CONTROLS
 
 
