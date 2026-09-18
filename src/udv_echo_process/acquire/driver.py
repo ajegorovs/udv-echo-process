@@ -265,6 +265,9 @@ from udv_echo_process.acquire.ui.strip import (
     strip_state_of,
 )
 from udv_echo_process.acquire.ui.strip import (
+    press_refusal as strip_press_refusal,
+)
+from udv_echo_process.acquire.ui.strip import (
     strip_row as _strip_row,
 )
 
@@ -319,6 +322,7 @@ __all__ = [
     "process_mode_clause",
     "same_directory",
     "screen_mode",
+    "strip_press_refusal",
     "strip_state_of",
     "text_at",
 ]
@@ -2922,6 +2926,10 @@ class Win32Actuator:
         strip is re-resolved — its rect and its children change with the view — and the index
         comes from :func:`…actuator.press_index`, never from a width.
 
+        The row is checked for a **binding** before the index is asked for: the ambiguous
+        four-button row with no slider has none, and it refuses by name rather than pressing
+        something the crops disagree about (:func:`…ui.strip.press_refusal`, ledger B10). Nothing
+        is posted and nothing is recorded on that path.
         """
         self._settle_press()
         roles = self._resolve()
@@ -2933,6 +2941,14 @@ class Win32Actuator:
         if roles["strip_panel"] is None:
             raise AcquisitionError("no recording strip panel found")
         state = self._state_of(roles)
+        # The ambiguous row is refused by name **before** the press, not by a missing index: it
+        # holds four buttons and no slider, the repository's own crops disagree about which of
+        # them is which, and a press here would post a real held message on the operator's
+        # instrument under a role nobody has verified (ledger B10). Nothing is posted and
+        # nothing is recorded; the clause is ``ui/strip.py``'s own wording.
+        refusal = strip_press_refusal(state)
+        if refusal is not None:
+            raise AcquisitionError(refusal)
         index = state.index_of(
             control
         )  # raises with the known row when the press is impossible

@@ -96,12 +96,6 @@ def test_the_four_captions_the_grown_crop_paints_are_the_store_rows_four() -> No
 
 
 # B10: critical and device-pending — no live tree of the grown state exists yet.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B10: classify_strip_view still calls a 4-button no-slider row StripView.READY, so "
-    "the row is startable and its buttons are bound by position — PATCH-2 makes it ambiguous "
-    "with no executable binding",
-)
 def test_a_four_button_row_without_a_slider_is_not_a_ready_strip() -> None:
     """B10: the state is AMBIGUOUS/unknown, so nothing in it may be addressed by position.
 
@@ -125,11 +119,6 @@ def test_a_four_button_row_without_a_slider_is_not_a_ready_strip() -> None:
 
 
 # B10: the driver's press path (Win32Actuator.press) over the ambiguous row.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B10: `press` still binds the 4-button no-slider row as (PAUSE, RECORD, DO_STORE, "
-    "CLEAR_AND_RESTART) and posts a held press — PATCH-2 refuses before the press",
-)
 def test_no_press_comes_out_of_a_four_button_row_without_a_slider() -> None:
     """B10's consequence, through the driver's own press path: nothing may be posted.
 
@@ -166,21 +155,16 @@ def test_no_press_comes_out_of_a_four_button_row_without_a_slider() -> None:
 
 
 # B10: the shape gate over manual_screen(strip_row=4) — the ambiguous row is not a shape.
-@pytest.mark.xfail(
-    strict=True,
-    reason="B10: the shape gate accepts a 4-button no-slider row as a known strip row — "
-    "PATCH-2 refuses the ambiguous row instead of gating on `StripView.READY`",
-)
 def test_the_shape_gate_does_not_treat_a_four_button_no_slider_row_as_known() -> None:
     """B10 in the gate: an ambiguous row is not a shape a run may be gated on.
 
     `layout_shape_reasons` asks whether the row's length maps into ``STRIP_BUTTON_ORDER`` for the
-    view the classifier returned, and the classifier returns ``READY`` for a no-slider four — so
-    the gate answers "known strip" for the one row the repository's own evidence contradicts, and
-    a run is allowed to start from it. Note that this assertion is deliberately at odds with
-    ``tests/test_acquire_layout_gate.py::test_a_strip_row_outside_the_known_rows_fails``, which
-    asserts the four-button row is accepted: that test encodes the assumption B10 invalidates,
-    and PATCH-2 has to change it *with* the fix rather than leave the two standing together.
+    view the classifier returned, and the classifier answers ``AMBIGUOUS`` for a no-slider four —
+    so the gate refuses the one row the repository's own evidence contradicts instead of gating a
+    run on it. The assertion this one was written against,
+    ``tests/test_acquire_layout_gate.py::test_a_strip_row_outside_the_known_rows_fails``, accepted
+    the four-button row until B10 landed: it has been **corrected with this fix** (4 joined the
+    lengths it refuses), so the two no longer stand against each other.
     """
     reasons = driver.layout_shape_reasons(manual_screen(strip_row=4))
 

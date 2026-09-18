@@ -258,20 +258,33 @@ def test_the_store_sliders_maximum_is_not_the_layout() -> None:
 
 
 def test_a_leftover_block_in_the_buffer_is_not_a_different_instrument() -> None:
-    """The ready row's 3 vs 4 buttons is buffer state — ``STRIP_BUTTON_ORDER`` holds both rows.
+    """The **store row's** 3 vs 4 buttons is buffer state — ``STRIP_BUTTON_ORDER`` holds both rows.
 
-    This application's ready row gains ``Do store`` once its block holds data, so a restart with
-    an empty buffer and a run resuming while holding a block differ by exactly this — and both
-    are ``READY``, the view a press is bound against. A comparison that included the count would
-    call the same instrument two, on a difference that is the *run's own progress*.
+    This application's row gains an entry once its block holds data, so a restart with an empty
+    buffer and a run resuming while holding a block differ by exactly this — and both readings are
+    :attr:`StripView.STORE`, the view a press is bound against. A comparison that included the
+    count would call the same instrument two, on a difference that is the *run's own progress*.
+
+    The pair is the store row's rather than the ready row's because ledger B10 renamed the
+    four-button **no-slider** row: that reading is now :attr:`StripView.AMBIGUOUS` — a state with
+    no binding, which a run refuses — so it is a *different view* and belongs in the comparison
+    (asserted below), while the count inside one view still does not move the identity. The claim
+    that D6 makes is unchanged and is still asserted; what moved is which two readings show it.
     """
-    empty = snapshot(fingerprint=fingerprint(strip=StripState(button_count=3)))
-    holding = snapshot(fingerprint=fingerprint(strip=StripState(button_count=4)))
+    empty = snapshot(fingerprint=fingerprint(strip=StripState(button_count=3, has_slider=True)))
+    holding = snapshot(fingerprint=fingerprint(strip=StripState(button_count=4, has_slider=True)))
 
     assert empty.fingerprint.strip.button_count == 3
     assert holding.fingerprint.strip.button_count == 4
     assert empty != holding
     assert digest(empty) == digest(holding)
+
+    # ...and the ambiguous reading is a *view*, not a count: it does move the identity, because a
+    # screen whose strip row cannot be bound is not the screen this run is resuming on.
+    ambiguous = snapshot(fingerprint=fingerprint(strip=StripState(button_count=4)))
+    assert ambiguous.fingerprint.strip.view is StripView.AMBIGUOUS
+    assert digest(ambiguous) != digest(holding)
+    assert digest(ambiguous) != digest(empty)
 
 
 @pytest.mark.parametrize("name", FIXED_FACT_FIELDS)

@@ -356,14 +356,23 @@ def test_a_tree_with_no_status_band_fails_and_the_clause_names_it() -> None:
 
 
 def test_a_strip_row_outside_the_known_rows_fails() -> None:
-    """§21.3 item 3's silent case: *a different button panel in the plot's middle band*."""
-    for length in (0, 2, 5, 9):
+    """§21.3 item 3's silent case: *a different button panel in the plot's middle band*.
+
+    **Corrected by ledger B10** (this assertion used to accept ``length == 4``): the four-button
+    row **without** a slider is the one row the repository's own crops contradict — UI-STRIP-01
+    paints ``Pause`` / ``Record`` / ``Clear and restart`` for the three-button row while
+    UI-STRIP-02's grown frame paints ``New acquisition`` / ``Do store`` / ``Clear and restart`` /
+    ``Remove current block`` for the four-button one — so it is a refusal here and not a
+    ``STRIP_BUTTON_ORDER`` row. Its sibling pin is
+    ``tests/test_acquire_strip_ambiguity.py::test_the_shape_gate_does_not_treat_a_four_button_no_slider_row_as_known``.
+    """
+    for length in (0, 2, 4, 5, 9):
         roles = manual_screen(strip_row=length)
         reasons = driver.layout_shape_reasons(roles)
         assert any("STRIP_BUTTON_ORDER" in text for text in reasons), (length, reasons)
     # ...while the rows the application really builds are accepted, one button included: a
     # *documented* view is not a shape failure (the runner refuses a non-startable view itself).
-    for length in (1, 3, 4):
+    for length in (1, 3):
         assert driver.layout_shape_reasons(manual_screen(strip_row=length)) == (), length
 
 

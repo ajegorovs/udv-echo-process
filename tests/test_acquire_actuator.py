@@ -61,7 +61,10 @@ STORE_FOUR = StripState(button_count=4, has_slider=True)
     [
         (1, False, StripView.RECORDING),  # a single [Stop]
         (3, False, StripView.READY),  # stopped with data, no slider
-        (4, False, StripView.READY),
+        # ...and four without a slider is the ambiguous row (ledger B10): UI-STRIP-01 and
+        # UI-STRIP-02 disagree about its first two buttons, so it is classified as a state with
+        # no binding rather than as a second `READY` row.
+        (4, False, StripView.AMBIGUOUS),
         (3, True, StripView.STORE),  # the slider is decisive
         (4, True, StripView.STORE),
         (0, False, StripView.UNKNOWN),
@@ -90,16 +93,6 @@ def test_strip_view_rejects_a_negative_button_count() -> None:
             StripView.READY,
             3,
             (StripControl.PAUSE, StripControl.RECORD, StripControl.CLEAR_AND_RESTART),
-        ),
-        (
-            StripView.READY,
-            4,
-            (
-                StripControl.PAUSE,
-                StripControl.RECORD,
-                StripControl.DO_STORE,
-                StripControl.CLEAR_AND_RESTART,
-            ),
         ),
         (
             StripView.STORE,
@@ -136,6 +129,8 @@ def test_button_rows_are_position_ordered(
         (StripView.UNKNOWN, 2),
         (StripView.RECORDING, 3),
         (StripView.READY, 1),
+        (StripView.READY, 4),  # the ambiguous row has no binding at all (ledger B10)
+        (StripView.AMBIGUOUS, 4),
         (StripView.STORE, 1),
     ],
 )
@@ -151,7 +146,6 @@ def test_an_unknown_row_is_refused_not_guessed(
     [
         (StripView.RECORDING, 1, StripControl.STOP, 0),
         (StripView.READY, 3, StripControl.RECORD, 1),
-        (StripView.READY, 4, StripControl.RECORD, 1),
         (StripView.READY, 3, StripControl.PAUSE, 0),
         (StripView.READY, 3, StripControl.CLEAR_AND_RESTART, 2),
         (StripView.STORE, 3, StripControl.NEW_ACQUISITION, 0),

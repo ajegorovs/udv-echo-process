@@ -566,7 +566,8 @@ def test_every_press_is_preceded_by_an_overlay_check(tmp_path: Path) -> None:
     [
         (1, False, StripView.RECORDING),
         (3, False, StripView.READY),
-        (4, False, StripView.READY),
+        # Four without a slider is the ambiguous row: no binding, no press (ledger B10).
+        (4, False, StripView.AMBIGUOUS),
         (3, True, StripView.STORE),
         (4, True, StripView.STORE),
         (0, False, StripView.UNKNOWN),
@@ -582,13 +583,15 @@ def test_the_strip_view_is_recognised_structurally(
 
 def test_the_documented_button_rows_are_the_only_ones_that_press() -> None:
     """Every row the driver may bind to is a documented ``(view, count)`` pair."""
+    # ...and there is deliberately no `(READY, 4)`: a four-button row without a slider is
+    # `AMBIGUOUS`, it binds nothing, and the table is where that is said (ledger B10).
     assert set(STRIP_BUTTON_ORDER) == {
         (StripView.RECORDING, 1),
         (StripView.READY, 3),
-        (StripView.READY, 4),
         (StripView.STORE, 3),
         (StripView.STORE, 4),
     }
+    assert (StripView.AMBIGUOUS, 4) not in STRIP_BUTTON_ORDER
     assert StripState(button_count=2).is_startable is False
     assert STARTABLE_VIEWS == (StripView.READY, StripView.STORE)
 
@@ -600,8 +603,6 @@ def test_the_documented_button_rows_are_the_only_ones_that_press() -> None:
         (StripView.READY, 3, StripControl.PAUSE, 0),
         (StripView.READY, 3, StripControl.RECORD, 1),
         (StripView.READY, 3, StripControl.CLEAR_AND_RESTART, 2),
-        (StripView.READY, 4, StripControl.RECORD, 1),  # `Record` stays at index 1
-        (StripView.READY, 4, StripControl.DO_STORE, 2),
         (StripView.STORE, 3, StripControl.NEW_ACQUISITION, 0),
         (StripView.STORE, 3, StripControl.DO_STORE, 1),
         (StripView.STORE, 4, StripControl.DO_STORE, 1),

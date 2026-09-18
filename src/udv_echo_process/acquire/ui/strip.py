@@ -11,7 +11,8 @@ reading the resolver took.
   and the **slider mark** that decides the view (:func:`has_slider`) — the panel is draggable and
   morphs (``98x40`` → ``352x40`` → ``413x123``), so its buttons are identified by their order in
   the current row, never by a width (134 vs 138 px is too close) and never by a caption;
-- the **state** one resolved strip is in (:func:`strip_state_of`);
+- the **state** one resolved strip is in (:func:`strip_state_of`) and the refusal a press out of
+  that state gets (:func:`press_refusal`);
 - the shape gate's strip clauses (:func:`strip_clauses`), so the gate asks this module what the row
   is instead of reading a row itself.
 
@@ -26,17 +27,27 @@ reading the resolver took.
 - the *dialog's* bottom button band (``ui.dialog.bottom_row``), which is a dialog binding and not
   a strip one.
 
-**The four-button, no-slider row (ledger B10 — critical, and *device-pending*).**
+**The four-button, no-slider row (ledger B10 — critical, and *device-pending*)**
 
-Two descriptions of that state disagree about *which button is which*, and this module does not
-reconcile them: the committed crop ``UI-STRIP-01`` (``ui-crops/run-controls.png``) paints
+Two descriptions of that state disagree about *which button is which*, and the disagreement is
+**not** reconciled here: the committed crop ``UI-STRIP-01`` (``ui-crops/run-controls.png``) paints
 ``Pause`` / ``Record`` / ``Clear and restart`` for the three-button row, while ``UI-STRIP-02``
 (``ui-crops/overlay-record-extra-block.png``, the grown state with a block held) paints
 ``New acquisition`` / ``Do store`` / ``Clear and restart`` / ``Remove current block`` for the
-four-button row. No live tree of the grown state exists in the repository, so the row is read
-through :data:`…actuator.STRIP_BUTTON_ORDER` like every other row — the *reading* is unchanged —
-and the disagreement itself is pinned in ``tests/test_acquire_strip_ambiguity.py``, which is where
-the role map goes the day ``docs/dop3000/device-verification.md`` V4 settles it.
+four-button row. The third slot is demonstrably the same button in both frames; the first two are
+not. No live tree of the grown state exists in the repository, so the state is classified
+:attr:`~udv_echo_process.acquire.actuator.StripView.AMBIGUOUS`: it has **no executable binding**,
+``StripState.is_startable`` is ``False``, asking for a position in it is a refusal
+(:func:`~udv_echo_process.acquire.actuator.press_index`), and ``Win32Actuator.press`` refuses
+before the held press is posted — nothing is pressed and nothing is recorded. The slider-bearing
+:attr:`~udv_echo_process.acquire.actuator.StripView.STORE` rows keep their documented bindings,
+including the store row's own four (`UI-STRIP-02`'s captions are that row's), and so does the
+three-button :attr:`~udv_echo_process.acquire.actuator.StripView.READY` row.
+
+Nothing here settles that state, and nothing may: the day a live tree capture lands,
+``docs/dop3000/device-verification.md`` V4 is where the role map is decided and this module is
+where the answer goes. Until then the refusal is the only safe reading, and it is a *refusal*, not
+a guess.
 """
 
 from __future__ import annotations
@@ -64,6 +75,7 @@ __all__ = [
     "classify_strip_view",
     "has_slider",
     "press_index",
+    "press_refusal",
     "strip_clauses",
     "strip_controls",
     "strip_row",
@@ -113,12 +125,40 @@ def strip_state_of(
     return StripState(button_count=button_count, has_slider=has_slider, slider_max=slider_max)
 
 
+def press_refusal(state: StripState) -> str | None:
+    """Why nothing may be pressed out of this strip state, or ``None`` when a binding exists.
+
+    Only the ambiguous four-button row is refused **here**: every other unrecognised row is
+    already refused by :func:`…actuator.press_index`, which raises because the row is no row in
+    ``STRIP_BUTTON_ORDER``. The ambiguous row has to be refused by name instead, because the
+    danger is not a missing index — a binding exists in today's table and would press *something*
+    — but that nothing states which button is which (ledger B10).
+    """
+    if state.view is not StripView.AMBIGUOUS:
+        return None
+    return (
+        "nothing is pressed out of this strip row: it holds "
+        f"{state.button_count} button(s) and no slider, which is the state ledger B10 leaves "
+        "unresolved — UI-STRIP-01 (ui-crops/run-controls.png) paints 'Pause' / 'Record' / "
+        "'Clear and restart' for the three-button row while UI-STRIP-02 "
+        "(ui-crops/overlay-record-extra-block.png), the grown state, paints 'New acquisition' / "
+        "'Do store' / 'Clear and restart' / 'Remove current block' for this one. The two readings "
+        "disagree about the first two buttons, they are consequential roles (a 'Record' press "
+        "starts a recording under the next point's name), and no live tree of this state exists "
+        "to settle it — so the row is ambiguous, it has no executable binding, and a live tree "
+        "capture has to resolve it before anything is pressed from it "
+        "(docs/dop3000/device-verification.md V4)"
+    )
+
+
 def strip_clauses(observation: ScreenObservation) -> tuple[str, ...]:
     """The strip's clauses of the shape gate: what this row is, or why it is not a shape.
 
     Returned rather than appended so the gate keeps its own order (the surface clauses come first,
     because the row a wrong-surface screen would diagnose is a *symptom* of the surface being
-    wrong — ledger B06).
+    wrong — ledger B06). An **ambiguous** row is refused by name here instead of being gated on:
+    before ledger B10 the classifier called every three-to-four-button no-slider row ``ready`` and
+    the gate then accepted a row the repository's own crops contradict.
     """
     strip = observation.strip.panel
     row = list(observation.strip.row)
@@ -140,6 +180,17 @@ def strip_clauses(observation: ScreenObservation) -> tuple[str, ...]:
             (
                 "the plot band did not resolve, so the strip's own rule (the button panel in the "
                 "middle of the plot) could not be applied to the panel that was found"
+            ),
+        )
+    if view is StripView.AMBIGUOUS:
+        return (
+            (
+                f"the strip's row holds {len(row)} button(s) and no slider, which is the "
+                "ambiguous row ledger B10 leaves unresolved (UI-STRIP-01 and UI-STRIP-02 "
+                "disagree about its first two buttons): it is no row in STRIP_BUTTON_ORDER, no "
+                "binding may be resolved in it, and a run may not be gated on it — a live tree "
+                "capture of the grown state has to settle the role map first "
+                "(docs/dop3000/device-verification.md V4)"
             ),
         )
     if view is None or (view, len(row)) not in STRIP_BUTTON_ORDER:
