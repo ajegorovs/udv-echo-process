@@ -43,9 +43,15 @@ class _SpyActuator:
         return 1
 
     def try_record_and_store(
-        self, name: str, duration_s: float, directory: Path
+        self,
+        name: str,
+        duration_s: float,
+        directory: Path,
+        *,
+        expected_mode: object = None,
     ) -> tuple[bool, Path | str]:
-        self.calls.append(("try_record_and_store", name, duration_s, str(directory)))
+        stated = getattr(expected_mode, "value", expected_mode)
+        self.calls.append(("try_record_and_store", name, duration_s, str(directory), stated))
         return self.store
 
     def preflight(self, duration_s: float, *, expect_directory: Path | None = None):
@@ -229,18 +235,45 @@ def test_a_point_passes_its_name_duration_and_directory_to_the_cycle(
 
     with pytest.raises(SystemExit) as exit_info:
         acquire_main(
-            ["point", "bringup-01", "--seconds", "3", "--store-dir", str(tmp_path), "--channel", "2"]
+            [
+                "point",
+                "bringup-01",
+                "--seconds",
+                "3",
+                "--store-dir",
+                str(tmp_path),
+                "--channel",
+                "2",
+                "--expect-mode",
+                "instrument",
+            ]
         )
 
     assert exit_info.value.code == 0
-    assert spy.calls == [("try_record_and_store", "bringup-01", 3.0, str(tmp_path))]
+    # The declared process reaches the cycle too: the record path is handed the expectation on
+    # every call (plan §24.4), and a CLI that took the flag and dropped it would pass this only
+    # if the assertion did not carry it.
+    assert spy.calls == [
+        ("try_record_and_store", "bringup-01", 3.0, str(tmp_path), "instrument")
+    ]
 
 
 def test_a_refused_point_exits_one(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _spy(monkeypatch, store=(False, "the working directory is not the one asked for"))
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["point", "x", "--seconds", "3", "--store-dir", str(tmp_path)])
+        acquire_main(
+            [
+                "point",
+                "x",
+                "--seconds",
+                "3",
+                "--store-dir",
+                str(tmp_path),
+                "--expect-mode",
+                "simulation",
+            ]
+        )
 
     assert exit_info.value.code == 1
 
@@ -252,7 +285,17 @@ def test_a_sweep_needs_its_ladder(
     _spy(monkeypatch)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["sweep", "--seconds", "3", "--store-dir", str(tmp_path)])
+        acquire_main(
+            [
+                "sweep",
+                "--seconds",
+                "3",
+                "--store-dir",
+                str(tmp_path),
+                "--expect-mode",
+                "simulation",
+            ]
+        )
 
     assert exit_info.value.code == 2
 
@@ -265,7 +308,7 @@ def test_the_store_directory_must_be_named_somewhere(
     monkeypatch.delenv("UDV_STORE_DIR", raising=False)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["point", "x", "--seconds", "3"])
+        acquire_main(["point", "x", "--seconds", "3", "--expect-mode", "simulation"])
 
     assert exit_info.value.code == 2
     assert "UDV_STORE_DIR" in capsys.readouterr().err

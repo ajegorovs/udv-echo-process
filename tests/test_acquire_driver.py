@@ -46,6 +46,7 @@ from udv_echo_process.acquire.actuator import (
     DialogControl,
     OverlayKind,
     ParamRole,
+    ProcessMode,
     StripControl,
     StripState,
     StripView,
@@ -76,6 +77,11 @@ STORE_FOUR = StripState(button_count=4, has_slider=True)
 
 #: The point used throughout: the finest rung of the ``c = 1460`` ladder.
 POINT_NAME = "sw100-k1-161738"
+
+#: The process a record path declares in these tests (plan §24.4): the fake screen is the
+#: instrument, so ``INSTRUMENT`` is the expectation its caption satisfies. Every record call
+#: takes it, because the port's signature requires it — which is the property being pinned.
+EXPECTED_MODE = ProcessMode.INSTRUMENT
 
 
 class PointFailed(RuntimeError):
@@ -321,6 +327,7 @@ class FakeActuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
     ) -> Path:
         directory = Path(directory)
@@ -525,7 +532,7 @@ def test_every_press_is_preceded_by_an_overlay_check(tmp_path: Path) -> None:
     fake = make_fake(tmp_path)
     fake.app.schedule(12, OverlayKind.WARNING)  # a panel appears mid-recording
     actuator = as_protocol(fake)
-    actuator.record_and_store(POINT_NAME, 1.0, tmp_path)
+    actuator.record_and_store(POINT_NAME, 1.0, tmp_path, expected_mode=EXPECTED_MODE)
 
     assert fake.calls, "the cycle was exercised through the Protocol"
     pressed = [
@@ -655,7 +662,7 @@ def test_a_point_cycle_records_stops_stores_and_reports_a_new_file(
     fake.app.strip = start
     actuator = as_protocol(fake)
 
-    path = actuator.record_and_store(POINT_NAME, 1.0, tmp_path)
+    path = actuator.record_and_store(POINT_NAME, 1.0, tmp_path, expected_mode=EXPECTED_MODE)
 
     assert fake.outcome[0] == "stored"
     assert fake.presses == expected_presses
@@ -686,7 +693,7 @@ def test_an_existing_file_raises_the_overwrite_warning_and_the_left_button_wins(
     existing = tmp_path / f"{POINT_NAME}.BDD"
     existing.write_bytes(b"seed")
 
-    path = actuator.record_and_store(POINT_NAME, 1.0, tmp_path)
+    path = actuator.record_and_store(POINT_NAME, 1.0, tmp_path, expected_mode=EXPECTED_MODE)
 
     assert fake.outcome == ("stored", f"{POINT_NAME}-2.BDD")
     assert fake.app.commit_attempts == 2  # retried exactly once
@@ -710,7 +717,8 @@ def test_a_point_that_never_reaches_the_store_view_is_failed_and_not_stored(
     actuator = as_protocol(fake)
 
     with pytest.raises(PointFailed, match="store view"):
-        actuator.record_and_store(POINT_NAME, 3.0, tmp_path)  # >cap x period profiles
+        # >cap x period profiles
+        actuator.record_and_store(POINT_NAME, 3.0, tmp_path, expected_mode=EXPECTED_MODE)
 
     assert fake.outcome[0] == "failed"
     # Reported as failed, and NOT stored: no name, no commit, no file.
@@ -740,7 +748,7 @@ def test_a_point_that_never_reaches_the_store_view_is_failed_and_not_stored(
     fake.app.recording = True
     before = list(fake.presses)
     with pytest.raises(PointFailed, match="recording"):
-        actuator.record_and_store(POINT_NAME, 1.0, tmp_path)
+        actuator.record_and_store(POINT_NAME, 1.0, tmp_path, expected_mode=EXPECTED_MODE)
     assert fake.outcome[0] == "refused"
     assert fake.presses == before  # nothing was pressed from a running recording
 
@@ -756,7 +764,7 @@ def test_waiting_is_polling_and_never_a_blind_sleep(
     fake.app.schedule(12, OverlayKind.WARNING)  # a panel appears mid-recording
     actuator = as_protocol(fake)
 
-    path = actuator.record_and_store(POINT_NAME, 2.0, tmp_path)
+    path = actuator.record_and_store(POINT_NAME, 2.0, tmp_path, expected_mode=EXPECTED_MODE)
 
     assert slept == []  # the fake's loop, like the driver's, never sleeps
     waits = actions(fake, "wait_for_view")
@@ -1350,11 +1358,12 @@ class FakeDriver(driver.Win32Actuator):
         if self.app.decoy_open:
             handles.append(HWND_DEFAULT_DIALOG)
         panels = [by_hwnd[hwnd] for hwnd in handles if hwnd in by_hwnd]
-        return {
+        ordered = sorted(panels, key=lambda p: p["top"])
+        roles = {
             "window": 0,
             "raw": raw,
             "parent_of": {node["hwnd"]: self.app.parent_of(node["hwnd"]) for node in nodes},
-            "panels": sorted(panels, key=lambda p: p["top"]),
+            "panels": ordered,
             "left_panel": by_hwnd.get(HWND_LEFT_PANEL),
             "menu": {"Parameters": by_hwnd.get(HWND_PARAMETERS)},
             # Only a *visible* popup counts as open — the real resolver reads visible
@@ -1363,7 +1372,20 @@ class FakeDriver(driver.Win32Actuator):
             "value_dialogs": set(),
             "browse_dialogs": set(),
             "strip_panel": None,
+            # The shape gate's inputs, reduced with the rest of this map — and the verdict is
+            # *computed by the driver's own functions* rather than written here, because a fake
+            # that simply asserted "this is a measurement screen" could hide a gate that stopped
+            # working. This tree has no strip and no plot, so the verdict it computes is a real
+            # one: the fake's own `layout_note` is what lets its cycle run (see below).
+            "class_name": driver.MAIN_CLASS,
+            "menu_band": ordered[0] if ordered else None,
+            "origin": (0, 0),
+            "client": (0, 0),
+            "plot": None,
         }
+        roles["layout_shape_reasons"] = driver.layout_shape_reasons(roles)
+        roles["layout_evidence"] = driver.layout_evidence(roles)
+        return roles
 
     def _children_of(self, parent: int, roles: dict) -> list[dict]:
         return [k for k in roles["raw"] if roles["parent_of"].get(k["hwnd"]) == parent]
@@ -1508,7 +1530,8 @@ class FakeDriver(driver.Win32Actuator):
 
     # ------------------------------------------------- the rest of the point cycle
 
-    def layout_note(self) -> str | None:
+    def layout_note(self, *, expected_mode: ProcessMode | None = None) -> str | None:
+        """The fake screen is drivable by construction: no note, whatever mode is declared."""
         return None
 
     def strip_state(self) -> StripState:
@@ -2888,7 +2911,9 @@ def test_a_point_verifies_the_channel_before_recording(tmp_path: Path) -> None:
     app = FakeUdopWindow(channel=1, directory=str(tmp_path / "somewhere-else"))
     actuator = fake_driver(app, channel=5)
 
-    stored = actuator.record_and_store("sw100-k1-161738", 0.5, directory)
+    stored = actuator.record_and_store(
+        "sw100-k1-161738", 0.5, directory, expected_mode=EXPECTED_MODE
+    )
 
     assert stored == directory / "sw100-k1-161738.BDD"
     order = [event[0] for event in app.events]
@@ -2913,7 +2938,9 @@ def test_a_point_is_failed_when_the_channel_cannot_be_verified(tmp_path: Path) -
     app = FakeUdopWindow(channel=1, combo_writes_ignored=True, directory=str(directory))
     actuator = fake_driver(app, channel=4)
 
-    ok, reason = actuator.try_record_and_store("sw100-k1-161738", 0.5, directory)
+    ok, reason = actuator.try_record_and_store(
+        "sw100-k1-161738", 0.5, directory, expected_mode=EXPECTED_MODE
+    )
 
     assert ok is False
     assert "channel 4" in str(reason)
@@ -2929,7 +2956,9 @@ def test_a_point_is_failed_when_the_directory_cannot_be_asserted(tmp_path: Path)
     app = FakeUdopWindow(channel=1, directory=str(tmp_path / "elsewhere"), text_writes_ignored=True)
     actuator = fake_driver(app, channel=1)
 
-    ok, reason = actuator.try_record_and_store("sw100-k1-161738", 0.5, expected)
+    ok, reason = actuator.try_record_and_store(
+        "sw100-k1-161738", 0.5, expected, expected_mode=EXPECTED_MODE
+    )
 
     assert ok is False
     assert str(expected) in str(reason)

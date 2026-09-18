@@ -68,6 +68,7 @@ from udv_echo_process.acquire.actuator import (
     DialogField,
     OverlayKind,
     ParamRole,
+    ProcessMode,
     ScreenFingerprint,
     StripControl,
     StripState,
@@ -231,6 +232,11 @@ def _block_for(path: Path | None, *, fake: FakeActuator | None = None) -> Script
 CLEAN_PANELS = 4
 CLEAN_CONTROLS = 43
 
+#: The caption the **instrument** states (``UDOP DOP3010.43``, plan §22.1) and the process mode it
+#: is read into. The fake is the measurement application, so its caption is this one: a run that
+#: declares ``simulation`` is refused on it, and one that declares ``instrument`` is not.
+FAKE_CAPTION = "UDOP DOP3010.43"
+
 
 def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
@@ -247,6 +253,10 @@ def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
     reaches it. Since W1 the three dialog facts have a reader, which is why they are stated rather
     than merely declared — a reading without them is a failed read, and the compile refuses it
     (plan §9.2).
+
+    ``process_mode`` is the instrument's own caption read into a fact (plan §24.4): the fake is the
+    measurement application, so it states :attr:`ProcessMode.INSTRUMENT`, which is what a run that
+    declares the same mode expects and what a run that declares the simulator is refused on.
     """
     channel = (
         routed(
@@ -268,9 +278,12 @@ def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
             panels=CLEAN_PANELS,
             visible_controls=CLEAN_CONTROLS,
             strip=StripState(button_count=3),
+            caption=FAKE_CAPTION,
+            process_mode=ProcessMode.INSTRUMENT,
         ),
         channel=channel,
         mode=InstrumentFact(value=ChannelMode.MANUAL.value, source=FactSource.READ),
+        process_mode=InstrumentFact(value=ProcessMode.INSTRUMENT.value, source=FactSource.READ),
         prf_us=InstrumentFact(value=str(PRF_US), source=FactSource.READ),
         emissions_per_profile=InstrumentFact(
             value=str(EMISSIONS_PER_PROFILE), source=FactSource.READ
@@ -336,6 +349,13 @@ class FakeActuator:
         self.size_queue: list[int | None] = []
         self.payload: Path | None = None
         self.layout_note_value: str | None = None
+        #: What the fake's per-point mode gate answers (plan §24.4): ``None`` means "the caption
+        #: states the mode this run declares", which is what a correctly configured instrument
+        #: gives. A test scripts a string here to make the run refuse before it writes anything.
+        self.process_mode_note_value: str | None = None
+        #: The expectation every per-point record call was handed, in order — a fake that accepted
+        #: it silently could not tell a hand-over from a default.
+        self.expected_modes: list[ProcessMode] = []
         self.view = StripView.READY
         self.name: str | None = None
         self.stored: list[Path] = []
@@ -378,6 +398,11 @@ class FakeActuator:
 
     def layout_note(self) -> str | None:
         return self.layout_note_value
+
+    def process_mode_note(self, expected: ProcessMode) -> str | None:
+        """The runner's mode gate (plan §24.4): a scripted note, else the declared mode."""
+        self.expected_modes.append(expected)
+        return self.process_mode_note_value
 
     def read_parameter(self, role: ParamRole) -> str:
         self.calls.append(("read_parameter", role.value))
@@ -544,11 +569,13 @@ class FakeActuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
         **extra: object,
     ) -> Path:
         """The Protocol's cycle: the stored path, or a raise."""
         self.calls.append(("record_and_store", name, float(duration_s)))
+        self.expected_modes.append(expected_mode)
         if extra:
             self.extra.append(("record_and_store", extra))
         if self.store_failure is not None:
@@ -561,12 +588,14 @@ class FakeActuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = STORE_TIMEOUT_S,
         verify_channel: bool = True,
         **extra: object,
     ) -> tuple[bool, object]:
         """The specification's cycle: ``(ok, path)`` or ``(False, reason)``."""
         self.calls.append(("try_record_and_store", name, float(duration_s)))
+        self.expected_modes.append(expected_mode)
         self.verify_channel_flags.append(verify_channel)
         if extra:
             self.extra.append(("try_record_and_store", extra))
@@ -903,6 +932,7 @@ def make_runner(
     script_verifier: bool = True,
     fake_class: type[FakeActuator] = FakeActuator,
     channel: int | None = None,
+    expected_mode: ProcessMode = ProcessMode.INSTRUMENT,
     **fake_kwargs: object,
 ) -> tuple[FakeActuator, object, Path, ScriptedReader | None]:
     """A runner over a fresh fake, a private capture directory and a private log.
@@ -917,6 +947,9 @@ def make_runner(
     to a measurement channel (``None`` takes the setting's default), and
     ``script_verifier=False`` leaves ``acquire/verify.py``'s own
     ``verify_stored_point`` in place for a case that must exercise it for real.
+    ``expected_mode`` is the process the run is declared to have been measured against (plan
+    §24.4) — the fake's caption is the instrument's, so the default is ``INSTRUMENT`` and a case
+    about the mode rung passes the other one.
     """
     base = Path(base)
     directory = base / "capture"
@@ -931,6 +964,7 @@ def make_runner(
         signature=signature,
         log_path=log_path,
         channel=channel,
+        expected_mode=expected_mode,
     )
     reader = (
         patch_reader(monkeypatch, block, fake=fake)
@@ -1258,6 +1292,7 @@ def test_run_point_returns_an_outcome_even_when_every_actuator_call_fails(
             tmp_path,
             signature=SizeSignature(),
             log_path=tmp_path / "sweep.jsonl",
+            expected_mode=ProcessMode.INSTRUMENT,
         )
     except Exception as exc:  # noqa: BLE001 - the point is that it must not happen
         pytest.fail(f"constructing the runner touched the actuator and raised {exc!r}")
@@ -2073,6 +2108,7 @@ def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
         "apply_point",
         "ensure_channel",
         "instrument_snapshot",
+        "process_mode_note",
         "read_dialog_parameters",
         "try_record_and_store",
     }

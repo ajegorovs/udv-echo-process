@@ -72,7 +72,7 @@ from pathlib import Path
 
 from pydantic import Field, ValidationError, field_validator
 
-from udv_echo_process.acquire.actuator import ChannelMode
+from udv_echo_process.acquire.actuator import ChannelMode, ProcessMode
 from udv_echo_process.acquire.config import (
     DEFAULT_CHANNEL,
     DEFAULT_MAX_PROFILES_PER_BLOCK,
@@ -144,6 +144,7 @@ __all__ = [
     "read_manifest_if_present",
     "record_identity",
     "recorded_points",
+    "refuse_process_mode",
     "run_campaign",
     "write_manifest",
 ]
@@ -399,10 +400,9 @@ class JobManifest(ValueModel):
     plan, and ``log_errors`` carries anything the runner could not append — a run whose
     log is incomplete must not read as a clean one.
 
-    The three fields below ``log_errors`` are the run path's own record, and every one of
-    them has a default: a manifest written before this slice carries none of them, and a
-    manifest that a reader refuses is a job whose log can no longer be read at all, so
-    nothing here is required.
+    The fields below ``log_errors`` are the run path's own record, and every one of them has a
+    default: a manifest written before this slice carries none of them, and a manifest that a
+    reader refuses is a job whose log can no longer be read at all, so nothing here is required.
     """
 
     job: str
@@ -439,6 +439,15 @@ class JobManifest(ValueModel):
     #: proven identity (``--resume-declaration-only``). Named on the record so a job that looks
     #: finished and a job that was *declared* finished are two different rows to a later reader.
     skipped_without_evidence: tuple[str, ...] = ()
+    #: The process this run was **declared** to have been measured against (``--expect-mode``),
+    #: and the one the instrument's own caption **stated** — persisted, both halves (plan §24.5,
+    #: D3), so the execution contract outlives the shell history that produced it and a past job
+    #: is reconstructable offline by someone with no instrument in front of them. ``None`` for
+    #: ``observed_process_mode`` means nothing stated it (no reading was taken at all —
+    #: ``declared_only`` — or the caption named no process this driver knows); ``None`` for
+    #: ``expected_process_mode`` means the manifest predates this field.
+    expected_process_mode: ProcessMode | None = None
+    observed_process_mode: ProcessMode | None = None
 
     @property
     def points_skipped(self) -> int:
@@ -941,6 +950,61 @@ def _refuse_unusable_screen(snapshot: InstrumentSnapshot) -> None:
         )
 
 
+def refuse_process_mode(snapshot: InstrumentSnapshot, expected: ProcessMode) -> None:
+    """Refuse a reading whose caption does not state the process this run declares — by name.
+
+    The mode rung of the compile path (plan §24.4, D3). The caption is the *only* surface that
+    states which process is on the screen — every widget inside the window is caption-less, and
+    the two clean layouts were measured at 43 and 44 controls, a difference *caused by* the mode
+    rather than a discriminator of it — so this is the one fact a run cannot check structurally
+    and the one it has to **declare** before anything is believed. Both sides are named, and so is
+    the caption string itself, so the operator's next question ("which process is in front of
+    me?") is answered by the refusal instead of by a second read (plan §24.5, D5).
+
+    A caption that states nothing is a refusal too, never a default — the same argument as
+    ``routed_channel`` (§12.1): an empty caption, or one naming a process this driver was not
+    measured against, cannot prove the declaration that was made. There is no "no expectation"
+    case to fall back to, because ``--expect-mode`` is required on every record path.
+
+    It drives nothing and reads nothing: the reading is the argument, so the whole check runs on
+    a captured snapshot on a host with no application at all.
+    """
+    fact = snapshot.process_mode
+    stated = _stated_process_mode(fact)
+    if fact.source is FactSource.READ and stated is expected:
+        return
+    if stated is None:
+        raise CampaignError(
+            f"nothing stated the process mode: {fact.reason or 'the caption names no process this driver knows'}. "
+            f"This run declares it was measured against {expected.value!r}, and a reading that states no mode "
+            "proves nothing about that, so nothing was stored and nothing is stopped. Bring up the process the "
+            "run was measured against, or declare the one that is in front of you (--expect-mode)"
+        )
+    raise CampaignError(
+        f"the process mode is {stated.value!r} where this run declares it was measured against "
+        f"{expected.value!r} (the caption read {snapshot.fingerprint.caption!r}): a point recorded under one "
+        "process and read as the other is a measurement whose conditions the record could not state, so nothing "
+        "was stored and nothing is stopped. Declare the mode of the process in front of you (--expect-mode), or "
+        "bring the one this job was measured against up"
+    )
+
+
+def _stated_process_mode(fact: InstrumentFact | Provenance | None) -> ProcessMode | None:
+    """The mode a fact states, or ``None`` when it states none this driver knows.
+
+    One place, so the compile's refusal and the manifest's ``observed_process_mode`` cannot
+    disagree about what a fact said — the reading's own :class:`InstrumentFact` and the identity's
+    :class:`Provenance` are read by the same rule. ``None`` also covers an identity written before
+    the field existed, which states nothing by construction.
+    """
+    if fact is None or fact.source is not FactSource.READ or fact.value is None:
+        return None
+    try:
+        return ProcessMode(fact.value)
+    except ValueError:
+        return None
+
+
 def _routed_channel(
     definition: CampaignDefinition, snapshot: InstrumentSnapshot
 ) -> int:
@@ -1136,6 +1200,7 @@ def run_campaign(
     now: datetime | None = None,
     no_snapshot: bool = False,
     resume_declaration_only: bool = False,
+    expected_mode: ProcessMode,
 ) -> JobManifest:
     """Run the points that still have to run, write the manifest, and say what happened.
 
@@ -1198,6 +1263,15 @@ def run_campaign(
     valid point that is not the point (docs/16 §12), so the runner verifies it once before
     the first recording, and the manifest records what it verified.
 
+    ``expected_mode`` is **required and keyword-only** (plan §24.5, D3): the process this run was
+    measured against is declared by the caller (``--expect-mode``), never inferred from what
+    happens to be running. It is compared with what the caption states
+    (:func:`refuse_process_mode`) *before* the compile and long before the first recording, handed
+    to the runner so its per-point gate carries the same expectation, and persisted on the
+    manifest as **both** halves (``expected_process_mode`` and ``observed_process_mode``) so the
+    execution contract outlives the shell history that produced it. A ``no_snapshot`` run records
+    the expectation and no observation — nothing was read.
+
     Raises :class:`CampaignError` when the definition cannot be planned, when no store
     directory is named, when the channel is not one the application offers, when the reading
     cannot be compiled against the definition, or when a resume's identity is not proven. The
@@ -1245,6 +1319,10 @@ def run_campaign(
             routed_channel=routed,
             dialog_parameters=actuator.read_dialog_parameters(),
         )
+        # (4a) the mode rung — the declaration against the caption, before the compile and long
+        # before the first recording. It is the one fact a run cannot check structurally, and it
+        # refuses by naming both sides and the caption itself (plan §24.4, §24.5 D3/D5).
+        refuse_process_mode(snapshot, expected_mode)
         # (5) compiled, or refused — untouched, because the refusal already names the fact or
         # the state that stopped the job.
         compiled = compile_campaign(definition, snapshot)
@@ -1286,6 +1364,7 @@ def run_campaign(
         directory,
         log_path=log,
         channel=effective_channel,
+        expected_mode=expected_mode,
     )
     outcomes = runner.run_points(
         tuple(
@@ -1314,6 +1393,13 @@ def run_campaign(
         compilation_identity=None if compiled is None else compiled.identity,
         declared_only=no_snapshot,
         skipped_without_evidence=skipped_without_evidence,
+        # D3's durability, both halves: what this run was declared to be measured against, and
+        # what the instrument's own caption stated. A no-snapshot run observed nothing, and says
+        # so with a None rather than with the declaration repeated.
+        expected_process_mode=expected_mode,
+        observed_process_mode=(
+            None if compiled is None else _stated_process_mode(compiled.identity.process_mode)
+        ),
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest
@@ -1423,19 +1509,26 @@ def _validate_resume(
     return True
 
 
-#: The identity's facts for a resume comparison, in the order a refusal reports them: the two
-#: that say *which* surface the previous job measured on, then the six a definition declares
+#: The identity's facts for a resume comparison, in the order a refusal reports them: the three
+#: that say *which surface* the previous job measured on — the channel, the channel's mode and the
+#: **process** the caption stated (plan §24.5, D2) — then the six a definition declares
 #: (:data:`~udv_echo_process.acquire.snapshot.FIXED_FACT_FIELDS`). Spelled out here rather than
 #: read off the model, because the message's order is part of the answer an operator reads.
-_IDENTITY_FACT_FIELDS: tuple[str, ...] = ("channel", "mode", *FIXED_FACT_FIELDS)
+_IDENTITY_FACT_FIELDS: tuple[str, ...] = ("channel", "mode", "process_mode", *FIXED_FACT_FIELDS)
 
-#: The identity's layout half: the window class, the panel and control counts, and the strip's
-#: view. Not :class:`Provenance` — nothing declared them, so a disagreement here is the *screen*
-#: having moved (a press is bound to a button's position in a view), never a setting.
+#: The identity's layout half: the window class, the panel count and the strip's view. Not
+#: :class:`Provenance` — nothing declared them, so a disagreement here is the *screen* having
+#: moved (a press is bound to a button's position in a view), never a setting.
+#:
+#: ``visible_controls`` is deliberately **out** (plan §24.5, D6): the reference install's clean
+#: screen is 43 in 4 and the instrument's own is 44 in 4, and whether that row is session state is
+#: still open, so two runs on one instrument in one mode could differ by that single control and
+#: be refused as a different instrument. It is the same ruling that took ``strip_button_count``
+#: out, applied to the same class of number; the count stays in the reading, in its note and in
+#: the record, where a reader sees the drift.
 _IDENTITY_LAYOUT_FIELDS: tuple[str, ...] = (
     "class_name",
     "panels",
-    "visible_controls",
     "strip_view",
     "strip_has_slider",
 )
@@ -1456,12 +1549,29 @@ def _identity_disagreements(
     Every disagreement is collected rather than raised on the first, the same way
     :func:`_refuse_disagreements` reports the whole list: the instrument is in front of the
     operator and one round trip should be enough to see all of it.
+
+    One fact may be **absent** rather than different, and it gets its own clause: an identity
+    written before ``process_mode`` existed carries none, and a comparison that read that as "a
+    different instrument" would send the operator looking at the instrument instead of at the
+    manifest. The refusal says which side carries no mode and what that means — the previous job's
+    mode is not proven — because that is the state every W4-era manifest is in, and
+    ``--resume-declaration-only`` is the documented way past it (plan §24.5, D2).
     """
     differences: list[str] = []
     for name in _IDENTITY_FACT_FIELDS:
         was = getattr(previous, name)
         now = getattr(current, name)
         if was == now:
+            continue
+        if was is None or now is None:
+            side = "the previous identity" if was is None else "this identity"
+            differences.append(
+                f"{name}: {side} carries no process mode, so the previous job's mode is not "
+                "proven — nothing says which process it was measured against (every manifest "
+                "written before the mode was recorded is in this state), and a point measured "
+                "under one process and read as the other is a measurement whose conditions the "
+                "record cannot state. A fresh run states one"
+            )
             continue
         differences.append(
             f"{name}: the previous job was compiled against {_provenance_text(was)}, this one "

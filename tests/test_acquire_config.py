@@ -158,6 +158,7 @@ def test_the_runner_names_that_channel_on_every_decode(
 ) -> None:
     """The verification path takes the same channel: no per-call channel argument."""
     runner_module = pytest.importorskip("udv_echo_process.acquire.runner")
+    from udv_echo_process.acquire.actuator import ProcessMode
     from udv_echo_process.acquire.config import RecordSettings
 
     class _NoRunActuator:
@@ -169,6 +170,7 @@ def test_the_runner_names_that_channel_on_every_decode(
             _NoRunActuator(),
             RecordSettings(name_prefix="sw100"),
             tmp_path / "capture",
+            expected_mode=ProcessMode.INSTRUMENT,
             **kwargs,
         )
 
