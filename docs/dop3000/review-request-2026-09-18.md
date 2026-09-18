@@ -21,7 +21,9 @@ The work delta is additive: **no file under `src/` and no test changed** — the
 files under `tools/live/` (four probes and `compare_reads.py`).
 
 **Status:** reviewed once, as round 2 on 2026-09-18. Its findings and what changed are the table in plan §25;
-the amendments are the commits after `ca8bac8`.
+the amendments are the commits after `ca8bac8`. **The first *code* slice built on that review is open separately
+as PR #8** (`feat/acquire-stated-process-mode-layout-shape`), with two findings from its own live verification
+posted as comments on the pull request — the plan's §26.12 and §26.3 record them in full.
 
 ## What to review, in two halves
 

@@ -697,6 +697,36 @@ records what the mode switch was: a **restart** of this machine's application, n
 planned in **§24** — a shape gate plus a stated mode, five decisions to agree (24.5), and a two-minute
 operator experiment on the `Tgc [dB]` row ahead of it (24.7, step 1).
 
+**Update — the same day, 16:00–18:10: the TGC experiment, the map, the crops (§26).** Step 1 is finished, and
+one part of it turned out to be *required* rather than prudent: the `Tgc [dB]` row is on screen exactly when the
+TGC mode is `Uniform` (**44** visible controls) and absent when it is `Auto` (**42**), measured three ways
+(§26.3) — so `visible_controls` must not move the resume identity (D6), because two legitimate runs minutes
+apart differ by it. The strip's rect is still `[343,414,695,454]`; the TGC mode is readable from a plain tree
+read (the hidden `Define TGC` combo, §26.3); the machine is back at the definition's frame
+(`600 / 50 / 1.850 / 1.00 / 20`) with the uniform TGC start at **40**; and the frame's own values are confirmed
+by a crop (§26.4, §26.8).
+
+- **The gate is implemented and open as PR #8** (`feat/acquire-stated-process-mode-layout-shape`, 1737 tests
+  green, `master` untouched). **Two live findings are posted on it** and queued behind the review rather than
+  landed under it: with an overlay open the strip resolver binds the *overlay's* panel, so the first refusal
+  clause blames the strip while the second diagnoses correctly; and the larger one — **an absent parameter
+  column is not evidence of the assisted channel** (§26.12), because that column is a `Preferences` toggle. A
+  real-mode, assisted-off screen with no column passes the shape check today.
+- **The application is mapped and cropped**: 45 indexed crops in `docs/dop3000/ui-element-index.md` — the
+  menu-by-menu behaviour and the blocking taxonomy (§26.7), the overlay convention (§26.2), the `Define TGC`
+  surface with its `Start [dB]` field (§26.3), the store directory read off the app's own `Record settings`
+  (§26.8), and the power↔TGC warning whose affirmative button **modifies the amplification** (§26.11).
+- **Two operator decisions bind from here:** do not work in **assisted mode** (§26.4), and do not untick
+  **`Show fast access parameters panel`** — unticking it removes the parameter column entirely, and §26.12 shows
+  what that does to the gate's inference.
+- **Item 3 — the matrix — is the only thing left that measurement cannot settle**, and §26.13 suggests it may be
+  a *confirmation* rather than a design: the operator's own tree reads
+  `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len`, i.e. a mixer at an RPM with emitting
+  frequency and burst length already carrying axes.
+- **Three cheap read-only items for the next sitting:** the strip's block-held state (does it report a slider,
+  and is the four-button row `STORE` or `READY`? §26.13), whether the cursor info box's depth and value exist in
+  the tree or only in paint (§26.9), and the `89` test — tree text against painted text (§26.6).
+
 **Live-state caveats a fresh session must not trip over.**
 
 - The application may be in **either** mode. The caption is the only reliable discriminator, and every geometry
