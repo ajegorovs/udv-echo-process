@@ -676,7 +676,9 @@ blocker: `EXPECTED_CONTROL_COUNT = 43` is a **simulation** number, this mode sta
 recording paths hard-fail on the note (§23.5) — every read runs, the first press does not. Fix it as
 §22.1's caption mode statement plus a structural layout gate, **not** as a second magic number. §23 also
 records what the mode switch was: a **restart** of this machine's application, nothing being measured
-(`hwnd 594454` → `591592`), so item 2's acceptance run is runnable here once the gate is fixed.
+(`hwnd 594454` → `591592`), so item 2's acceptance run is runnable here once the gate is fixed. The fix is
+planned in **§24** — a shape gate plus a stated mode, five decisions to agree (24.5), and a two-minute
+operator experiment on the `Tgc [dB]` row ahead of it (24.7, step 1).
 
 **Live-state caveats a fresh session must not trip over.**
 
@@ -2686,4 +2688,129 @@ mode-bound.
 - **The block cap** — still a declaration; §23.4's compile carries `257` on the authority of whoever
   wrote the definition, and nothing on the instrument states one.
 - **Everything §21.5 and §22.6 list that needs a press** — unchanged.
+
+## 24. The next slice: a stated mode, and a layout gate that does not need a total
+
+The slice §23.5 needs before §11.1's item 2 can run. **Plan only — nothing here is implemented**, and the
+decisions in 24.5 are the ones to agree before coding.
+
+### 24.1 What is wrong
+
+`layout_note()` (`driver.py:2967`) is `None` only when the visible-control count is exactly
+`EXPECTED_CONTROL_COUNT = 43` and the panel count 4, and both recording paths refuse on anything else:
+`Win32Actuator.record` raises before the first press (`driver.py:3246`), `SweepActuator` fails the point
+with `abort=True` (`runner.py:533`). The count is a **simulation** number, measured on this machine and
+recorded as the clean screen (§21.2); the same application in real-experiment mode states **44 in 4**
+(§22.2, §23.1) because its parameter column paints an extra `Tgc [dB]` row. So the instrument is refused
+for looking *more* like the instrument, and §22.6 forbids the obvious repair — writing `44` down as the
+new clean count — while it is unknown what makes that row visible.
+
+### 24.2 The gate is doing three jobs at once, and only one of them needs a total
+
+| job the gate is really doing | how it is done today | what it should be |
+|---|---|---|
+| refuse a screen with an overlay, a popup or a dialog up (roles would resolve to the wrong widgets) | the same count, incidentally | **structural**: the resolvers this driver already has — `roles["params"]`, `strip_panel`/`strip_row`, `open_popup`, `_find_overlay`, `_dialog_panels` — asserted together, which is the per-surface rule §21.1's table already states |
+| refuse a screen the run was **not measured against** (simulation vs real) | the same count, incidentally | **stated**: the caption, read with `WM_GETTEXT` on the top-level window, against a mode the caller declares (§22.1's rule) |
+| refuse an unrecognised layout (another application version) | the count, alone | the **shapes** above plus the count **carried as evidence in the note**, not as the gate |
+| — | — | and where a layout *has* been measured, a strict expectation may still be asserted per mode (24.5, D4) |
+
+Splitting them is what makes the refusal diagnosable, which is the *stated purpose of the note*: "so the
+refusal is diagnosable from the log alone" (`driver.py:2972`).
+
+### 24.3 The shape check — mode-independent, and read without pressing anything
+
+`layout_shape_reasons(roles) -> tuple[str, ...]` (name to be fixed): empty means "a measurement screen of
+some mode, nothing on top of it". Each entry is a reason, in the same voice as the existing notes:
+
+1. the window is `TMain_Scr` and the four panels resolve by **shape**, not by index: the menubar band at
+   the client's top, the sidebar column (`left - client_origin == 0 and h > 500`), the strip panel
+   (`_resolve`'s own rule: the short button-hosting panel inside the plot's 0.30–0.70 band, row sorted by
+   `left`), the status band at the bottom;
+2. the strip resolves **and** its row length maps into `STRIP_BUTTON_ORDER` — §21.3 item 3's silent case
+   ("a different button panel in the plot's middle band") is what this catches;
+3. nothing is over it: `open_popup` false, `_find_overlay(roles)` none, `_dialog_panels` empty;
+4. the sidebar column resolves with at least the seven roles (`PARAM_COLUMN_ORDER`), **or** the screen is
+   the assisted one (no column at all, 3 panels, §12.2's `screen_mode` rule) — the same distinction
+   `screen_mode()` already draws, so "no column" is a mode and not a missing layout.
+
+`layout_note()` keeps its contract *relative to the shape check*: `None` when it passes, a note naming
+the counts, the strip's view and the overlay when it does not. `EXPECTED_CONTROL_COUNT` stops being the
+gate and becomes what the note is compared against — `SIMULATION_LAYOUT` in 24.5's D4.
+
+### 24.4 The mode check — stated, required, and in the identity
+
+- **Vocabulary** next to `ChannelMode` in `actuator.py`, because it is a different axis and §22.1 says so:
+  the *channel's* mode is `manual`/`assisted` and is read from which panels the application builds; the
+  *process's* mode is simulation vs real, and only the caption states it. Proposed: `ProcessMode`
+  (`SIMULATION` / `INSTRUMENT`) with `PROCESS_MODE_PREFIXES` naming the strings
+  (`"UDOP Simul"` / `"UDOP DOP3010"`) — **prefix-matched**, since the caption carries the version.
+- **The read**: `Win32Actuator.window_caption()` → `_get_text(top_level_hwnd)`, and
+  `process_mode(caption) -> ProcessMode | None`. `None` for an empty or unrecognised caption — which is a
+  refusal, not a default, on the same argument as `routed_channel` (§12.1): nothing may imply a
+  verification.
+- **Where it is required**: `record(*, expected_mode)` and the runner's per-point gate, both **required and
+  keyword-only**, so no cycle can leave the expectation implied. The acceptance path is where it bites:
+  a run measured in simulation refuses to record in real mode, and vice versa, naming the caption it saw.
+- **Where it must not refuse**: `acquire status` (a diagnostic that refuses is useless) and the probes.
+  `acquire status` gains `process_mode` and the shape verdict so it *says* which mode is in front — today
+  it reports `visible_controls` and a note, and nothing that names the mode as a mode.
+- **In the identity**: `process_mode` as a fact with `FactSource.READ`, added to
+  `_IDENTITY_FACT_FIELDS` (24.5, D2). Today the two modes differ in the identity only *incidentally* —
+  through `visible_controls`, the very number this slice stops treating as a fact about cleanliness — so a
+  resume could match across a mode switch once the count is no longer asserted.
+
+### 24.5 Decisions before coding
+
+| # | decision | recommendation |
+|---|---|---|
+| D1 | what the expectation is *keyed on* | the **caption prefix**, per §22.1, read at the top level. Not the panel count (it differs *because* the layout differs — §22.1's own argument), and not a user-supplied string: a fixed vocabulary of two, extended when a third instance is measured |
+| D2 | does the process mode enter `CompilationIdentity` | **yes**, as a `READ` fact. It changes `identity_digest` for every future run — nothing records one yet (P1 records nothing, §12) — and it is the only way a resume is safe across a mode switch. Old manifests carry no identity at all and keep failing closed (criterion 6) |
+| D3 | where the expectation is *declared* for a campaign | a **required** field on the run's settings (command line `--expect-mode`, carried into the campaign record settings), refusing when absent rather than defaulting. A definition field is the alternative; the command line is chosen because the mode is a property of *the machine the operator is standing at*, not of the science |
+| D4 | is a strict count still asserted anywhere | **yes, per mode, and only where measured**: `SIMULATION_LAYOUT = (43, 4)` asserted as today; `INSTRUMENT_LAYOUT` asserted **shape-only** with the count recorded, until §22.6's `Tgc [dB]` question is answered by the 2-minute experiment in 24.7 — which may then justify a number for the instrument without guessing one now |
+| D5 | what the refusal says | the shape reasons **and** the mode mismatch as separate clauses, each naming what was read (the caption string, the counts, the strip's view) — a single "unclean layout" sentence is what made today's refusal look like a layout drift |
+
+### 24.6 The tests, and what each one is for
+
+Offline, against the fakes that already exist (`tests/test_acquire_driver.py:108`, `…runner.py:338` both
+carry a settable note; `tests/test_acquire_live.py` carries the fingerprint's note):
+
+| test | the behaviour it keeps |
+|---|---|
+| a 44-control, 4-panel tree with the real mode's caption **passes the shape check** | the instrument stops being refused for being the instrument |
+| a 43-control tree with a dialog panel open **fails**, naming the dialog | the guard this slice must not weaken |
+| a tree whose strip row has a length outside `STRIP_BUTTON_ORDER` **fails** | §21.3 item 3's silent case |
+| `record(expected_mode=SIMULATION)` on a fake captioned `UDOP DOP3010.43` **refuses**, naming the caption | the mode rung, the one thing that cannot be checked structurally |
+| an empty caption **refuses** with "nothing stated the mode" | the `None` case, by the `routed_channel` precedent |
+| `process_mode` appears in the identity and moves `identity_digest` when it changes | D2, the resume's safety |
+| `acquire status` on either mode **exits 0** and prints the mode | 24.4's "diagnostics do not refuse" |
+
+### 24.7 The live verification, in order
+
+1. **Before the code** (operator, ~2 minutes, and it may make D4's number legitimate rather than guessed):
+   with the application in real-experiment mode, the operator changes **TGC mode** by hand — auto ↔
+   uniform, i.e. the control §22.4 pairs with the `Tgc [dB]` row — and I re-read with
+   `main_geometry.py` after each change. If the row's visibility tracks that control, the `+1` is
+   explained, `44` stops being a coincidence, and `INSTRUMENT_LAYOUT` can assert a count like the
+   simulation's. If it does not, D4's shape-only answer stands and the question moves to the writer slice,
+   which is the first thing that will change the field.
+2. `acquire status` in **both** modes: `layout_note` as today, plus the mode and the shape verdict; the
+   counts change (43/44), the note does not.
+3. `acquire compile` twice on the instrument: the definition carrying §23.4's frame, with the expectation
+   declared → exit 0; the same definition with the *other* mode declared → exit 2 naming the caption.
+   Nothing stored in either.
+4. **Then** §11.1's item 2: the six-point non-simulation acceptance run, which needs (a) this slice, (b)
+   the definition's ladder — §11.1 item 5's decision, since `1.850 / 50` is this instrument's current
+   frame and not a ladder — and (c) the store directory, which is the operator's to read off the
+   application's own Record settings (§live-bringup §3).
+
+### 24.8 Out of scope
+
+- **What makes the `Tgc [dB]` row visible** — 24.7's step 1 is a two-minute read, not a fix; if the answer
+  is "the TGC mode", the *record* gains a sentence and no code changes.
+- **The writer slice (§19) and the five unturned knobs** — item 3, unchanged, and the reason 24.7 step 1
+  is a *hand* change: nothing this slice adds writes anything.
+- **`EXPECTED_CONTROL_COUNT`'s fate in `udop-automation.md` / `live-bringup.md` §4** — those tables tell a
+  second machine to set the count it reads; they stay true for simulation and gain the mode in the same
+  PR, or the slice leaves them and cites this section. Small, but it is a doc the second machine will read
+  first.
 
