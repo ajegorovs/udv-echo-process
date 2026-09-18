@@ -134,6 +134,9 @@ Patch 2 (``ui/model.py``, ``ui/layout.py``, then the widget interpreters ``ui/st
 :mod:`udv_echo_process.acquire.win32`:
 - ``win32/messages.py`` — the bounded send, the posted held click, the text commit, the
   combo select and the combo read-back;
+- ``win32/cursor.py`` — the foreground check, the real cursor move and restore,
+  ``ClipCursor``, and the package's one lazy ``win32gui``/``ctypes.windll`` resolution
+  (the handles landed with the transport, in the first commit of this patch);
 
 Every one of those names is imported back at the top of this file, so ``driver.screen_mode``,
 ``driver.layout_shape_reasons``, ``driver.dialog_value_fields``, ``driver._strip_row``,
@@ -292,9 +295,27 @@ from udv_echo_process.acquire.ui.strip import (
 # module at import time (``win32._acquisition_error`` resolves the failure class inside the
 # raise).
 from udv_echo_process.acquire.win32.cursor import (
+    _CURSOR_SETTLE_S,
+    _FOREGROUND_POLL_S,
+    _FOREGROUND_WAIT_S,
+    _HOVER_MOVE_DX,
+    _HOVER_MOVE_DY,
+    _HOVER_OPEN_S,
+    _HOVER_SETTLE_S,
+    MOUSEEVENTF_MOVE,
+    _activate_window,
+    _clip_rect,
     _ClipRect,
+    _cursor_position,
     _CursorPoint,
+    _foreground_window,
     _gui,
+    _hover_centre,
+    _move_real_cursor,
+    _release_clip,
+    _require_foreground,
+    _restore_cursor,
+    _thread_of,
     _user32,
 )
 from udv_echo_process.acquire.win32.messages import (
@@ -362,6 +383,7 @@ __all__ = [
     "MK_LBUTTON",
     "MODE_ASSISTED",
     "MODE_MANUAL",
+    "MOUSEEVENTF_MOVE",
     "PARAMETERS_ENTRY",
     "PARAMETERS_MENU",
     "SEND_TIMEOUT_MS",
@@ -380,9 +402,16 @@ __all__ = [
     "_COMBO_NONE_ABOVE",
     "_COMBO_SETTLE_S",
     "_COMMIT_RECIPE",
+    "_CURSOR_SETTLE_S",
     "_DIALOG_INPUT_CLASSES",
     "_DIALOG_MIN_CHILDREN",
     "_DIALOG_MIN_W",
+    "_FOREGROUND_POLL_S",
+    "_FOREGROUND_WAIT_S",
+    "_HOVER_MOVE_DX",
+    "_HOVER_MOVE_DY",
+    "_HOVER_OPEN_S",
+    "_HOVER_SETTLE_S",
     "_TEXT_COMMIT_SETTLE_S",
     "_TEXT_SETTLE_S",
     "_VK_RETURN_DOWN_LPARAM",
@@ -391,29 +420,39 @@ __all__ = [
     "Win32Actuator",
     "_ClipRect",
     "_CursorPoint",
+    "_activate_window",
     "_bottom_row",
     "_click_hold",
     "_client_bottom",
     "_client_top",
+    "_clip_rect",
     "_column_bands",
     "_combo_index",
     "_combo_items",
     "_combo_select",
     "_contains",
     "_control_id",
+    "_cursor_position",
     "_dialog_fact",
     "_dialog_only_reason",
     "_entry_buttons",
+    "_foreground_window",
     "_get_text",
     "_gui",
+    "_hover_centre",
     "_inside",
     "_is_dialog_panel",
+    "_move_real_cursor",
     "_observation_text",
     "_point_in_rect",
     "_post",
+    "_release_clip",
+    "_require_foreground",
+    "_restore_cursor",
     "_send",
     "_set_text_commit",
     "_strip_row",
+    "_thread_of",
     "_user32",
     "anchor_button",
     "anchor_clause",
@@ -485,20 +524,6 @@ _DIALOG_REPLACE_S = 2.0
 #: they are polled at — the reference recipe's own numbers (``while time.time() - t0 < 8:
 #: time.sleep(0.5)``, ``recon/41_burst_sampling_volume.py``), not a longer window.
 _MENU_TIMEOUT_S, _MENU_POLL_S = 8.0, 0.5
-#: The real-cursor hover the menubar needs, copied from the recipe that opened this menu
-#: (``SetCursorPos`` / ``sleep(0.3)`` / ``mouse_event(MOUSEEVENTF_MOVE, 2, 0, ..)`` /
-#: ``sleep(1.0)``): the settle after the jump, the second settle before the popup is
-#: polled for, and the settle after the cursor is put back.
-_HOVER_SETTLE_S, _HOVER_OPEN_S, _CURSOR_SETTLE_S = 0.3, 1.0, 0.05
-#: How long to keep re-reading the foreground window after asking Windows to activate the
-#: application, and how often: this application answers a hover **only** while it is
-#: active, so the hover waits for the activation to take instead of hovering into a window
-#: that will ignore it (measured live 2026-09-17, `recon/53`).
-_FOREGROUND_WAIT_S, _FOREGROUND_POLL_S = 1.0, 0.05
-#: ``mouse_event``'s move flag and the recipe's nudge: a ``SetCursorPos`` jump alone can
-#: be missed by the application's menu loop, the relative move is what it sees.
-MOUSEEVENTF_MOVE = 0x0001
-_HOVER_MOVE_DX, _HOVER_MOVE_DY = 2, 0
 #: The gesture a popup entry is taken with, named in the diagnostics the caller reports:
 #: the **posted held press** on the entry's own handle — the reference's own gesture
 #: (``click_hold(entry_hwnd)``, ``recon/41_burst_sampling_volume.py``), which opened
@@ -795,24 +820,13 @@ class Win32Actuator:
         """The rectangle the cursor is currently confined to, or ``None`` for no clip.
 
         This application sets ``ClipCursor`` while its blocking popups are up
-        (docs/dop3000/udop-automation.md §6), and a ``SetCursorPos`` outside that
-        rectangle is silently clamped to its edge — which is what parked a live run's
-        cursor in the open menu's bottom-left corner and then made a menubar hover
-        impossible. Read before every real move, and again when a move refuses, so the
-        clip is a *named* fact rather than a guess.
-
-        An empty rectangle, a failed read and a host without the call all answer ``None``:
-        an unreadable clip is not evidence of a locked desktop, and the move's own
-        read-back stays the authority.
+        (docs/dop3000/udop-automation.md §6), and a ``SetCursorPos`` outside that rectangle
+        is silently clamped to its edge — the live-run hazard. The read is
+        :func:`~udv_echo_process.acquire.win32.cursor._clip_rect`; an empty rectangle, a
+        failed read and a host without the call all answer ``None``.
         """
-        rect = _ClipRect()
-        try:
-            if not _user32().GetClipCursor(ctypes.byref(rect)):
-                return None
-        except Exception:  # noqa: BLE001 - no readable clip; the read-back still decides
-            return None
-        box = (int(rect.left), int(rect.top), int(rect.right), int(rect.bottom))
-        return None if box[2] <= box[0] or box[3] <= box[1] else box
+        return _clip_rect(user32=_user32)
+
 
     def _release_clip(self) -> bool:
         """``ClipCursor(NULL)``: drop the application's own confinement of the cursor.
@@ -822,121 +836,64 @@ class Win32Actuator:
         clip it wants. A release that fails is not raised here: the caller's read-back and
         its failure message are what report it, naming the clip it could not clear.
         """
-        try:
-            _user32().ClipCursor(None)
-        except Exception:  # noqa: BLE001 - reported by the caller's failure, not hidden
-            return False
-        return True
+        return _release_clip(user32=_user32)
+
 
     def _cursor_position(self) -> tuple[int, int]:
         """The operator's cursor position, in screen coordinates.
 
-        Read before any real move, so the move can be undone
-        (:meth:`_restore_cursor`). An unreadable position is refused rather than
-        ignored: a cursor moved with no way back is the operator's cursor taken, and
-        that is worse than a failed point.
+        Read before any real move, so the move can be undone (:meth:`_restore_cursor`).
+        An unreadable position is refused rather than ignored — a cursor moved with no way
+        back is the operator's cursor taken — by
+        :func:`~udv_echo_process.acquire.win32.cursor._cursor_position`.
         """
-        point = _CursorPoint()
-        if not _user32().GetCursorPos(ctypes.byref(point)):
-            raise AcquisitionError(
-                "the cursor position could not be read, so the real-cursor hover this "
-                "menubar needs would move the operator's cursor with no way back"
-            )
-        return int(point.x), int(point.y)
+        return _cursor_position(user32=_user32)
+
 
     def _restore_cursor(self, position: tuple[int, int]) -> None:
         """Put the operator's cursor back where :meth:`_cursor_position` found it.
 
-        **Not into a clip.** This application confines the pointer while its popups are up,
-        and a restore is a ``SetCursorPos`` like any other: restored from inside a popup's
-        clip, it is silently clamped to the clip's edge — the live run's cursor was put
-        back "at" its own position and landed in the open menu's bottom-left corner. So a
-        clip that does not *contain* the operator's position is released with
-        ``ClipCursor(NULL)`` before the restore; a clip that already contains it is left
-        alone, because the restore cannot be trapped by it and an open dialog is entitled
-        to the clip it set.
-
-        Nothing here is raised: this runs from a ``finally``, and masking the real failure
-        would be worse than a cursor left where it is. When a clip *was* up, the restore is
-        read back and an unfaithful one is recorded instead.
+        **Not into a clip.** The rule — a clip that does not contain the operator's position
+        is released with ``ClipCursor(NULL)`` before the restore, a clip that already
+        contains it is left alone, and nothing is raised because this runs from a
+        ``finally`` — is :func:`~udv_echo_process.acquire.win32.cursor._restore_cursor`,
+        which is handed this driver's own transport, its diagnostic sink (``self._note``)
+        and the edge-inclusive clip test.
         """
-        point = (int(position[0]), int(position[1]))
-        clip = self._clip_rect()
-        if clip is not None and not _point_in_rect(clip, point):
-            self._note(
-                f"the operator's cursor at {point} lies outside the clip {clip} this "
-                "application set on its popup; released the clip (ClipCursor(NULL)) so "
-                "the restore is not trapped inside that rectangle"
-            )
-            self._release_clip()
-        _user32().SetCursorPos(*point)
-        time.sleep(_CURSOR_SETTLE_S)
-        if clip is None:
-            return
-        try:
-            landed = self._cursor_position()
-        except AcquisitionError as exc:
-            self._note(f"the cursor restore could not be read back: {exc}")
-            return
-        if landed != point:
-            self._note(
-                f"the operator's cursor is at {landed} after the restore rather than "
-                f"{point}: a second clip {self._clip_rect()} is up — this runs on the "
-                "operator's desktop, so their cursor may have to be put back by hand"
-            )
+        _restore_cursor(
+            position,
+            note=self._note,
+            inside=_point_in_rect,
+            clip=self._clip_rect,
+            release=self._release_clip,
+            read_position=self._cursor_position,
+            user32=_user32,
+        )
+
 
     def _move_real_cursor(
         self, point: tuple[int, int], *, what: str, why: str
     ) -> tuple[int, int]:
         """Move the **real** cursor onto ``point``, clearing any clip that traps it.
 
-        This application clips the cursor on its blocking popups, so a move is never just
-        ``SetCursorPos``: the clip is read first and, when ``point`` lies outside it,
-        released — a clip clamps the move to its edge instead of refusing it, which looks
-        exactly like a cursor that "would not move". A move that still does not take is
-        released and retried once for the same reason. Only then is a failure raised, and
-        it **names the clip rectangle and the target point**; a failure with no clip up is
-        the locked-or-unattended-desktop case, which is named as such — attributing a
-        clamp to a locked desktop is what sent the live run looking in the wrong place.
+        The rule — read the clip first, release it when ``point`` lies outside it, retry
+        once, then refuse **naming the clip rectangle and the target point** rather than
+        blaming a locked desktop — is
+        :func:`~udv_echo_process.acquire.win32.cursor._move_real_cursor`, which is handed
+        this driver's own transport, its diagnostic sink and the edge-inclusive clip test.
         """
-        x, y = int(point[0]), int(point[1])
-        target = (x, y)
-        u32 = _user32()
-        clip = self._clip_rect()
-        if clip is not None and not _point_in_rect(clip, target):
-            self._note(
-                f"the cursor is clipped to {clip} (this application clips it on its "
-                f"popups) and {target} lies outside that rectangle; released the clip "
-                "with ClipCursor(NULL) so the move is not clamped to the popup's edge"
-            )
-            self._release_clip()
-        u32.SetCursorPos(x, y)
-        time.sleep(_HOVER_SETTLE_S)
-        if self._cursor_position() == target:
-            return target
-        # The move did not take. If a clip is up it is the cause — the application can set
-        # it again between the read above and the move — so release and try once more.
-        clip = self._clip_rect()
-        if clip is not None:
-            self._release_clip()
-            u32.SetCursorPos(x, y)
-            time.sleep(_HOVER_SETTLE_S)
-            if self._cursor_position() == target:
-                return target
-            clip = self._clip_rect()
-        if clip is not None:
-            raise AcquisitionError(
-                f"the cursor would not move onto {what} at {target}: the application "
-                f"clips the cursor to {clip} and the point lies outside that rectangle, "
-                "so SetCursorPos is clamped to the clip's edge; releasing the clip "
-                "(ClipCursor(NULL)) did not free it either, so this is the application's "
-                "own popup clamp — not a locked or unattended desktop, which reports a "
-                "move that never happened rather than one clamped to a rectangle"
-            )
-        raise AcquisitionError(
-            f"the cursor would not move onto {what} at {target}: no cursor clip is set, "
-            f"so a locked or unattended desktop refused SetCursorPos — {why}"
+        return _move_real_cursor(
+            point,
+            what=what,
+            why=why,
+            note=self._note,
+            inside=_point_in_rect,
+            clip=self._clip_rect,
+            release=self._release_clip,
+            read_position=self._cursor_position,
+            user32=_user32,
         )
+
 
     def _foreground_window(self) -> int:
         """The foreground window's handle — the menubar hover's **precondition**.
@@ -945,7 +902,8 @@ class Win32Actuator:
         cannot be scripted cannot be tested, and this one is invisible from the control
         tree (measured live 2026-09-17: `recon/53`).
         """
-        return _user32().GetForegroundWindow()
+        return _foreground_window(user32=_user32)
+
 
     @staticmethod
     def _thread_of(hwnd: int) -> int:
@@ -954,77 +912,44 @@ class Win32Actuator:
         ``win32process.GetWindowThreadProcessId`` is ``pywin32``'s home for this call and
         returns ``(threadId, processId)`` — **thread first**, despite the name — but the
         driver reaches Windows through ``ctypes`` here, so bringing a window forward needs
-        no extra import and works wherever the message layer does.
+        no extra import: see
+        :func:`~udv_echo_process.acquire.win32.cursor._thread_of`.
         """
-        owner = ctypes.c_ulong()
-        _user32().GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(owner))
-        return int(owner.value)
+        return _thread_of(hwnd, user32=_user32)
+
 
     def _activate_window(self, hwnd: int) -> None:
         """Ask Windows to make ``hwnd`` the foreground window.
 
         The documented route, because ``SetForegroundWindow`` returns 0 from a process the
         user is not interacting with (the foreground lock): attach our thread's input to the
-        current foreground thread, ask, detach. Returns regardless — what the call *did* is
-        checked by reading the foreground window back, never by trusting the return value.
+        current foreground thread, ask, detach — and check what the call *did* by reading the
+        foreground window back, never by trusting the return value. The route is
+        :func:`~udv_echo_process.acquire.win32.cursor._activate_window`.
         """
-        u32 = _user32()
-        front = u32.GetForegroundWindow()
-        target_thread = self._thread_of(hwnd)
-        front_thread = self._thread_of(front) if front else 0
-        attached = bool(front_thread) and front_thread != target_thread
-        try:
-            if attached:
-                u32.AttachThreadInput(front_thread, target_thread, True)
-            u32.SetForegroundWindow(ctypes.c_void_p(hwnd))
-        finally:
-            if attached:
-                u32.AttachThreadInput(front_thread, target_thread, False)
+        _activate_window(hwnd, user32=_user32)
+
 
     def _require_foreground(self, hwnd: int) -> None:
         """Assert the application is the **foreground** window before hovering it.
 
-        **Measured live 2026-09-17:** with a console window in front — the scheduled task's
-        own ``cmd.exe``, the one route that can reach this desktop from a session-0 shell —
-        the application reported ``is_foreground=False, has_focus=False``; the driver then
-        moved the real cursor onto the ``Parameters`` button and **no popup appeared**,
-        while the identical gesture had opened it minutes earlier with the operator having
-        just clicked inside the application. An inactive window ignores hover: its first
-        mouse event activates it and the menu opens only on the *second*. The failure was
-        therefore indistinguishable from "this gesture does not work" and cost a live slot,
-        which is exactly what a named precondition is for.
-
-        So: the window is brought forward (``_activate_window``) and the foreground window is
-        re-read; if it is still not this one, the run **refuses**, naming what is in front.
-        This is the one place the driver takes the user's focus, and it does it on purpose —
-        the menubar is hover-driven, so the application must be the active window for the
-        step to mean anything.
+        **Measured live 2026-09-17:** with a console window in front the same gesture that
+        had opened the menubar minutes earlier opened nothing, because an inactive window
+        ignores hover — its first mouse event activates it and the menu opens only on the
+        *second* — and the failure was indistinguishable from "this gesture does not work".
+        The precondition (bring the window forward, re-read the foreground window, refuse
+        naming what is in front) and that measurement in full are
+        :func:`~udv_echo_process.acquire.win32.cursor._require_foreground`; the refusal is
+        the facade's own :class:`AcquisitionError`.
         """
-        if self._foreground_window() == hwnd:
-            return
-        self._activate_window(hwnd)
-        deadline = time.monotonic() + _FOREGROUND_WAIT_S
-        while time.monotonic() < deadline:
-            if self._foreground_window() == hwnd:
-                return
-            time.sleep(_FOREGROUND_POLL_S)
-        win32gui, _ = _gui()
-        front = self._foreground_window()
-        try:
-            front_cls = win32gui.GetClassName(front) if front else "none"
-        except Exception:  # noqa: BLE001
-            front_cls = "unknown"
-        raise AcquisitionError(
-            f"the {self._class_name} window is not the foreground window, so its menubar "
-            f"cannot be hovered: the foreground window is {front:#x} ({front_cls!r}) and "
-            f"activating {hwnd:#x} did not take it within {_FOREGROUND_WAIT_S:.1f} s — "
-            "Windows' foreground lock refuses a request from a process the user is not "
-            "interacting with. This application ignores a hover while it is inactive (its "
-            "first mouse event only activates it), so the run stops here rather than "
-            "hovering into a window that cannot answer. Bring the application to the front "
-            "— and stop anything that steals it, such as a console window opened by the "
-            "launcher — then re-run"
+        _require_foreground(
+            hwnd,
+            self._class_name,
+            foreground=self._foreground_window,
+            activate=self._activate_window,
+            gui=_gui,
         )
+
 
     def _hover_centre(self, hwnd: int) -> tuple[int, int]:
         """Hover ``hwnd`` with the **real** cursor; return the screen point hovered.
@@ -1033,31 +958,27 @@ class Win32Actuator:
         drive: a posted ``WM_MOUSEMOVE`` opened nothing, and a posted press held for
         :data:`…actuator.PRESS_HOLD_MS` opened nothing either (two live runs, both
         aborting safely with nothing pressed), while the same button opened its menu
-        under the operator's real cursor in ``recon/41_burst_sampling_volume.py``. This
-        copies that gesture exactly, in that order: the control's centre in **screen**
-        coordinates (:meth:`win32gui.GetWindowRect`), ``SetCursorPos``, the recipe's
-        0.3 s settle, one ``mouse_event`` relative move of :data:`_HOVER_MOVE_DX` px,
-        then the recipe's 1.0 s settle before the caller polls for the popup.
-
-        The cursor now sits on the control, so the caller puts it back with
-        :meth:`_restore_cursor` — this runs on the operator's interactive desktop. The
-        move itself goes through :meth:`_move_real_cursor`, so the clip this application
-        sets on an open popup cannot clamp the cursor short of the button and be mistaken
-        for a locked desktop: the menubar button is *outside* any open popup's clip, which
-        is precisely the move the live run could not make.
+        under the operator's real cursor in ``recon/41_burst_sampling_volume.py``. The
+        gesture — the control's centre in **screen** coordinates, ``SetCursorPos``, the
+        recipe's 0.3 s settle, one ``mouse_event`` relative move, then the recipe's 1.0 s
+        settle — is :func:`~udv_echo_process.acquire.win32.cursor._hover_centre`, which is
+        handed this driver's own move (so the clip this application sets on an open popup
+        cannot clamp the cursor short of the button: the menubar button is *outside* any
+        open popup's clip, which is precisely the move the live run could not make) and the
+        two sentences the step is reported with. The cursor now sits on the control, so the
+        caller puts it back with :meth:`_restore_cursor`.
         """
-        win32gui, _ = _gui()
-        left, top, right, bottom = win32gui.GetWindowRect(hwnd)
-        x, y = (left + right) // 2, (top + bottom) // 2
-        self._move_real_cursor(
-            (x, y),
+        point = _hover_centre(
+            hwnd,
             what=f"the {PARAMETERS_MENU!r} button",
             why="this menubar answers nothing else, so nothing is posted to it",
+            move=self._move_real_cursor,
+            gui=_gui,
+            user32=_user32,
         )
-        _user32().mouse_event(MOUSEEVENTF_MOVE, _HOVER_MOVE_DX, _HOVER_MOVE_DY, 0, 0)
-        time.sleep(_HOVER_OPEN_S)
-        self.last_hover_screen = (x, y)
-        return x, y
+        self.last_hover_screen = point
+        return point
+
 
     # ------------------------------------------------------------------ binding
 
