@@ -225,8 +225,21 @@ Its first review approved the direction and returned three changes to the identi
 channel's provenance — provenance without the diagnostic prose, the buffer-dependent button count
 out of the identity, and routing as its own source that only the router can claim — all landed,
 one commit each, and §12 of the plan carries them.
-Next is **P3 = W3** (`compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
-refusals), which P1 is the input to.
+[PR #5](https://github.com/ajegorovs/udv-echo-process/pull/5) (draft, based on #4's branch) is the
+plan's **slice P3 = W3**: `compile_campaign(definition, snapshot) -> ExecutableCampaign` and its
+refusals, reusing the verifier's own enforced/advisory table rather than declaring a second
+vocabulary. §13 records what it settled.
+**Slice P2 = W1 (the live reconnaissance) is landed** on `feat/acquire-w1-recon` (stacked on #4's
+head): the sound speed, the first gate and the burst length now have a supported read path, verified
+against the running application — five of the six fixed facts are read from the instrument, and the
+block cap stays `unreadable` with its reason because the surface that holds it cannot be opened
+safely (the popup's second entry selects the assisted mode). The plan's §14 records the measurement,
+the three checks that stand between a positional binding and a value, and two facts about the
+application that any future gesture has to respect: **Escape closes nothing**, and a hover-opened
+popup cannot be dismissed programmatically, so a failed gesture can strand the application until it
+is restarted.
+Next is **P4 = W4**: snapshot and compile wired into `run_campaign`, the manifest, the resume and the
+`compile` verb — the first slice that changes how a campaign behaves.
 
 Binding outcomes:
 

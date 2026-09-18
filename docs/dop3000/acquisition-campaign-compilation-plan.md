@@ -209,6 +209,14 @@ is pinned by test.
 the machine is unavailable, this item waits and W2–W4 proceed with the three unreadable
 facts explicitly marked unreadable — which is the honest state either way.
 
+**Landed (§14).** Reconnaissance ran against the running application in simulation mode, and the
+three facts turned out to be readable: they are stated in the ``Operating parameters`` dialog's own
+value table, which the read opens through the routing step's gesture, binds **by position**, checks
+against the screen's own seven shared facts, and closes again in a ``finally`` (Escape closes
+nothing in this application — §14). The fourth fact, the block cap, is still `unreadable` with its
+reason, which is the outcome this item allowed for: "a fact that is not readable at all is recorded
+as a fact about the instrument and left declared; do not invent a read".
+
 ### W2 — `InstrumentSnapshot` (evidence) and `CompilationIdentity` (what a resume compares)
 
 **What.** Two models, because two different questions are asked of the same reading.
@@ -591,6 +599,9 @@ git fetch origin && git switch feat/acquisition-campaign-compilation
 #   src/udv_echo_process/acquire/runner.py        (SweepActuator:180)
 #   tests/test_acquire_campaign.py                (the campaign-level behaviour to keep)
 #   tests/test_acquire_snapshot.py                (the reading's own contract, and §12's)
+#   src/udv_echo_process/acquire/driver.py        (the dialog read path — §14)
+#   tests/test_acquire_dialog.py                  (the binding, the checks, §14's evidence)
+#   tests/data/udop-parameters-dialog-tree.json   (the measured dialog the binding is pinned to)
 
 uv run --no-sync --extra dev ruff check src tests
 uv run --no-sync --extra dev pytest -q
@@ -676,3 +687,75 @@ compiler's precondition is a **routed** channel, not a declaration to be trusted
 that had to keep moving is pinned in exchange — the identity still changes with each fact's value,
 with each fact's source, with a channel that is *routed* rather than *declared*, and with a strip
 view the run did not bind against.
+
+## 14. W1 as landed — the dialog's three facts, read by position and checked against the screen
+
+Reconnaissance ran on the live machine (the application in simulation mode, restarted before the
+pass; `tools/live/probes/w1_fixed_facts.py`), and it answered the two questions the plan left to it:
+**where** these facts are stated, and whether a read path exists at all.
+
+**Where.** In the ``Operating parameters`` dialog's own value table. Not in the parameter column —
+which is why these facts stay out of `ParamRole` and `PARAM_COLUMN_ORDER` and why the read path has
+its own vocabulary (`DialogField`, `DIALOG_FIELD_ORDER` in `actuator.py`). The table is three
+columns of `TSp_Value_Button` widgets; the columns are the x bands of the value edits' left edges
+(786 / 987 / 1187 px in a 627x384 dialog at 655,364), and inside a column a field's identity is its
+top-to-bottom position. A row's value is the **combo** when the row offers one — the burst length,
+the sensitivity and the sampling volume are chosen from lists — and the `TSp_Edit` beside it
+otherwise: at `burst = 4` the row states a combo `'4'` *and* an edit `'89'`, and the 89 is the
+sampling-volume read-out the manual describes (the corpus' own value at 1460 m/s is 0.876 mm), not
+the parameter.
+
+**Which facts came out.** Five of the six fixed facts are now read from the instrument:
+`prf_us '212'`, `emissions_per_profile '150'`, `burst_length '4'`, `sound_speed_ms '1460'`,
+`first_gate_mm '2'`, with `mode 'manual'`. The sixth — `max_profiles_per_block` — is **still
+`unreadable` with its reason**, which is the outcome W1 allowed for: the cap is an application
+Preference, and the surface that holds it (`Record settings`) is not reachable by a gesture
+reconnaissance could establish safely — the `Parameters` popup's entries are caption-less even
+through `WM_GETTEXT`, and the second one is `Default parameters`, which *selects the assisted mode*
+when pressed (manual doc 04, and the driver's own note records the assisted-mode word flipping in a
+stored file after a retry walked down that popup). Nothing invented a read; the fact is carried as
+unread.
+
+**What stands between the binding and a value** (`Driver.read_dialog_parameters`, and the tests in
+`tests/test_acquire_dialog.py`):
+
+1. the table **filled** — a freshly started application builds it empty (or not at all) the first
+   time it is opened and states it afterwards (measured: the first open read 2 stating controls,
+   the next 22); the read polls for `DIALOG_FILL_TIMEOUT_S` and then says *which* of the two it saw,
+   because an empty field is not a value;
+2. the table's **shape** is the measured one (`DIALOG_COLUMN_ROWS`) and it states the channel it is
+   showing in its header combo — a reading that cannot say whose parameters these are is not
+   something a compile may compare (the channel trap, docs/16 §12);
+3. every **anchor** agrees with the screen — seven of the dialog's fields are facts the column also
+   states, and all seven must read the same text on both surfaces before a dialog-only fact is
+   believed. A re-laid-out dialog would put a different value in `(column, row)` while still reading
+   like a value, so this is what makes a positional binding evidence instead of habit. An anchor
+   neither surface states is refused as *uncheckable* — a different reason from disagreement, and a
+   run record has to be able to tell them apart.
+
+**The hand-over rule holds.** `instrument_snapshot(*, routed_channel, dialog_parameters=None)`: the
+reading still presses nothing, and the three facts become `read` only when a caller hands over what
+`read_dialog_parameters` read. Verified live in one pass: two snapshots, identical except that one
+was handed the reading, and only one carries the three facts.
+
+**Two facts about the application that this slice measured, and that outlive it.**
+
+- **Escape closes nothing.** No popup, no dialog, no overlay (operator-reported, and noted before
+  this slice). A driver that leaves a dialog or a popup open therefore *traps the operator* — there
+  is no key they can press. That is why the reader closes the dialog in a `finally` and why the
+  probe restores the cursor in one.
+- **A hover-opened popup cannot be dismissed programmatically.** Moving the cursor off the menubar
+  does not close it; moving it past the last entry does not; a posted `WM_CANCELMODE` does not. The
+  only clean exit is the *press* the driver already makes (which selects an entry and closes the
+  popup), and a gesture that hovered and then failed strands the application until it is restarted.
+  This is a real gap in the driver's failure path and is recorded here rather than worked around: a
+  probe run during this slice did exactly that to the operator's desktop, and the recovery was a
+  restart.
+
+**What W4 must carry from here.** (a) The compile path has to *call* the reader — the snapshot will
+not read the dialog on its own, by design — and today's live state is the good case: five facts
+read, the cap unread, and the compile's existing rule that an unread fact is a refusal (or a
+warning, per the covariate table) then decides. (b) The reading carries the dialog's own channel
+field; comparing it against the routed channel is a refusal W4 owns, not this slice — a dialog
+showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
+place.
