@@ -856,3 +856,56 @@ warning, per the covariate table) then decides. (b) The reading carries the dial
 field; comparing it against the routed channel is a refusal W4 owns, not this slice — a dialog
 showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
 place.
+
+## 15. W4 as landed — the snapshot and the compile reach the run, the manifest and the CLI
+
+Slice P4 is implemented on `feat/acquire-w4-integration` (cut from this branch's tip after the three
+earlier slices merged), in four commits:
+
+| commit | what |
+|---|---|
+| `00ff9c9` | the decisions, as decisions: §9.1's stop condition, §9.2's read-path table, §9.3's recovery rule |
+| `a356d68` | the one policy change: `SUPPORTED_READ_FACTS` + `_refuse_failed_reads` |
+| `b2743f4` | §4's order in `run_campaign`, the resume identity, the manifest's three new fields |
+| `accc682` | the `compile` verb and the two flags |
+
+**The order is literal** (`run_campaign`): the static plan (so an unplannable file costs nothing, not
+even a dialog) → `ensure_channel()` (routing, not a scientific setting; `SweepRunner` now keeps that
+call's return and exposes `routed_channel` instead of discarding it) → `instrument_snapshot(routed_channel=…,
+dialog_parameters=read_dialog_parameters())`, once per run → `compile_campaign`, whose `CampaignError`
+propagates untouched (§13.2) → the resume identity, validated before the todo/skipped sets exist → the
+existing per-point cycle, over the **compiled** points. `SweepActuator` gains
+`read_dialog_parameters()`: the snapshot will not open that dialog by design, so a caller that wants
+the three dialog facts has to have paid for the step. The primitive `Actuator` still has no dialog
+reader, which the dialog tests pin.
+
+**Two behaviour changes are disclosed rather than hidden** (both deliberate, both in the commit body):
+a compiled campaign opens the channel dialog **twice** — step 3, then the runner's own pre-record
+guard, which is idempotent (it writes only when the channel differs) — and `plan_campaign` runs twice,
+once as step 2 and once inside the compile, where it is pure and the duplicate keeps the step-2
+refusal free of any gesture.
+
+**The resume is fail-closed, and the flag that bypasses it says so on the record.** A manifest whose
+definition fingerprint differs refuses and is *not* bypassable; a manifest with no compilation
+identity (every manifest written before this slice), or no manifest while the log holds successful
+records, refuses; a different identity refuses naming the fact that moved, with both sides.
+`--resume-declaration-only` turns those identity refusals into a proceed and records the authorisation
+in `skipped_without_evidence`. `--no-snapshot` takes no reading, compiles nothing and marks the
+manifest `declared_only`. `JobManifest.compilation_identity` carries the §3.3 stable projection, never
+the raw snapshot: the volatile half (hwnd, cursor, `is_foreground`, geometry) is not compatibility
+evidence, which is the distinction §3.3 exists to draw.
+
+**The live rehearsal stops at a precondition, and that is worth recording.** `acquire compile` against
+the running application refused with the driver's own foreground guard — "the `TMain_Scr` window is
+not the foreground window, so its menubar cannot be hovered: the foreground window is
+`Windows.UI.CoreWindow`" — before any hover, so nothing was opened and nothing was stranded. The verb
+therefore needs the application in front, which the operator's sequence has to say out loud (a console
+window opened by the launcher is the usual thief). The good case is otherwise available as-is: this
+machine reads exactly what `examples/campaign-single-channel.json` declares.
+
+**Still open, and named as W4's own obligation in §14:** the reading carries the dialog's own channel
+field, and comparing it against the routed channel is *not* implemented yet — the dialog's channel
+does not survive into `InstrumentSnapshot`, so neither the compile nor the run can see it. A dialog
+showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
+place (§14, "The channel trap in the one place this system cannot see"), and it stays open until the
+reading carries that field and something refuses on it.

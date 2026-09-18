@@ -249,6 +249,18 @@ change the review asked for is W4's: a campaign must refuse when a fact with a *
 read path could not be read, keeping "supported but this attempt failed" distinct from
 "genuinely unsupported" (the cap stays unproven).
 
+**P4 = W4 is implemented** on `feat/acquire-w4-integration` (cut from that merged tip), in four
+commits — `00ff9c9` (the decisions: §9.1's stop condition, §9.2's read-path table, §9.3's recovery
+rule), `a356d68` (a fact with a supported reader that did not read refuses), `b2743f4` (§4's order in
+`run_campaign`, the resume identity proof, the manifest's three new fields), `accc682` (`acquire
+compile` and the two flags). §15 records what each settled, and discloses the two behaviour changes
+on purpose: a compiled run opens the channel dialog twice (step 3, then the runner's own idempotent
+guard) and `plan_campaign` runs twice (pure, and it keeps step 2 gesture-free). Two things are **not**
+finished: the live rehearsal still needs the operator — the first attempt stopped at the driver's own
+foreground guard *before* any hover (nothing opened, nothing stranded), so UDOP has to be in front
+and `acquire compile` re-run — and §14's own obligation, comparing the dialog's channel field against
+the routed channel, stays open until that field survives into `InstrumentSnapshot`.
+
 
 Binding outcomes:
 
