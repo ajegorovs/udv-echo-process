@@ -1195,6 +1195,43 @@ change one knob by hand, re-open the dialog, and see which field moved.
 4. **Then, and only then, the batch** (§17): a batch is only as good as the number of knobs it can set, and
    per-point declaration needs a writer to declare *with*.
 
+### 18.3 The identification pass, as it stands
+
+The method works and is now cheap: `tools/live/probes/dialog_fields.py` — fast, dialog-only, read-only
+(opens the dialog through the driver's own gesture, dumps every control, closes it with its left button;
+measured 2.5 s, `dialog_closed: true`, no driver notes) — against a **committed** baseline, the measured tree
+in `tests/data/udop-parameters-dialog-tree.json`. The operator changes one knob, the probe is re-run, and the
+control that moved is the knob.
+
+**First knob pinned — `Number of skipped profiles`.** With the operator's field set from `0` to `2`, exactly
+one control in the whole dialog differed from the baseline:
+
+    TSp_Edit (989, 661, 1059, 677) '2'     # column 1, its bottom row, inside the value button
+                                           # (808, 653, 1067, 685)
+
+**And the knob is not one control.** Immediately right of it, on the same row, sits `TSp_Button`
+`(1077, 660, 1204, 680)` — the operator's "apply skip profile" checkbox, unticked. It is a `TSp_Button`, not
+a checkbox class (the dialog contains no `TSp_CheckBox` at all), and the repository already held that exact
+rect: `tests/test_acquire_driver.py` names it `HWND_DIALOG_CHECKBOX`, and `docs/dop3000/udop-automation.md`
+records "with an `Apply skip profile` checkbox". The knowledge existed in a test fixture and had never
+reached the read or write model. Two consequences, and they generalise to every dialog knob:
+
+- **the enable flag is part of the knob** — the writer must set both, and the *reader* must carry the flag as
+  well as the value, because a value's source says nothing about whether a second control has it in force;
+- with the flag unticked the value is **inert**: the application behaved identically, exactly as the operator
+  observed. A run that read `2` and reported "2 skipped profiles" without the flag would be claiming a
+  recording this instrument was never configured to make — the channel-mismatch failure in a different
+  costume.
+
+**Harness trap, paid for once.** `./tools/live/dispatch.sh tools/live/probes/<probe>.py` does **not** run the
+probe: the launcher joins its argument onto the probe directory, finds nothing, and returns without writing a
+log — so the dispatcher polls for a line that can never appear. The working form is the bare name:
+
+    PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh dialog_fields.py
+
+Two "probe runs" were lost to this, including a dialog read that never happened, so a baseline taken that way
+is not trustworthy (and, being a non-run, it also never touched the application).
+
 **Acceptance for the knob work.** Every knob the sweep matrix names is either written by the tool or
 explicitly recorded as unreachable with the reason; every dialog-written knob is read back and verified on the
 point that used it; and a wrong write (a value the combo does not offer, a field that is not there) refuses
