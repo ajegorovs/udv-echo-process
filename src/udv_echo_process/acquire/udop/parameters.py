@@ -457,7 +457,9 @@ class ParametersSurface:
 
         **How.** The routing step's own gesture: hover the menubar button with the operator's real
         cursor and press the topmost entry (:meth:`_open_parameters_dialog`), read the table, and
-        close the dialog with its own left button in a ``finally``. The close is not housekeeping:
+        close the dialog with its own left button in a ``finally`` — re-resolved, because the panel
+        this read opened can be gone by the time the read ends (:meth:`_close_any_dialog`), and
+        reported rather than assumed if it cannot be taken down. The close is not housekeeping:
         an open dialog confines the cursor to itself and traps the operator, and **Escape closes
         nothing in this application** (reported 2026-09-18, and noted before).
 
@@ -502,7 +504,16 @@ class ParametersSurface:
                 ),
             )
         finally:
-            self._close_parameters_dialog(panel)
+            # **Re-resolved, not the handle this read opened.** The application can take that panel
+            # away while the table is being read — it replaces its parameters dialog outright when
+            # a mode changes (measured live 2026-09-17, and again on a channel write) — and every
+            # handle taken before the replacement is dead: a close aimed at it presses nothing and
+            # leaves the **fresh** modal on the operator's screen, where Escape closes nothing and
+            # the cursor is confined to the dialog's own rectangle. The close is not housekeeping
+            # (an open dialog traps the operator), so it goes through the path that closes whatever
+            # is *up* — re-resolved — and that reports a dialog it could not take down instead of
+            # returning as if the screen were clear.
+            self._close_any_dialog()
 
     def _poll_dialog_fields(self, panel: dict) -> list[dict[str, object]]:
         """The dialog's value table, re-read until it states something or the wait runs out.
@@ -583,19 +594,39 @@ class ParametersSurface:
         raised "0 buttons in its bottom band". A close path that can itself fail on a stale
         handle is not a close path, so this resolves the panel afresh, presses the safe end,
         and reports — rather than raising — when even that cannot be done.
+
+        And it **ends by asking the screen whether the dialog is gone**, because the close it
+        calls never raises: a caller that took the attempt for the outcome would report a clean
+        finish with a modal still up. A dialog that survives every attempt is named by its own
+        rect, together with the remedy — nothing else on it is pressed and ``WM_CLOSE`` is never
+        sent, this driver having no surface it is entitled to guess at.
         """
         for _attempt in range(2):
             found = self._dialog_panels()
             if not found:
                 return
-            try:
-                self._close_parameters_dialog(found[0])
-            except AcquisitionError as exc:
-                self._note(
-                    f"a dialog is still up at {found[0]['rect'][:2]} and could not be "
-                    f"closed: {exc}"
-                )
-                return
+            self._close_parameters_dialog(found[0])
+        # **Whether the dialog is gone is asked of the screen, never assumed from the presses.**
+        # ``_close_parameters_dialog`` notes a band it cannot resolve instead of raising (a failed
+        # cleanup must never mask the failure it is cleaning up after), so two attempts that both
+        # pressed a dead handle — the panel the application replaced, or a band that no longer
+        # holds the pair — end here with the modal still up. A dialog left open confines the
+        # cursor to its own rectangle and traps the operator (docs/16 §6), and **Escape closes
+        # nothing in this application**, so the state is not one a later step can recover from:
+        # it is reported by its own rect, with nothing else pressed on it — this driver never
+        # guesses a surface — and with the remedy named.
+        remaining = self._dialog_panels()
+        if not remaining:
+            return
+        rect = tuple(remaining[0]["rect"])
+        self._note(
+            f"the {PARAMETERS_ENTRY!r} dialog is still open at {rect[:2]} (rect {rect}) after "
+            "both close attempts: its left (Cancel) button was pressed and the dialog did not go "
+            "away, and nothing else on it is pressed — this driver never guesses a surface. An "
+            "open dialog confines the cursor to its own rectangle and blocks the application, so "
+            "an operator has to close it from the UI, or the application has to be restarted, "
+            "before this point is retried"
+        )
 
     def _panel_map(self, roles: Mapping | None = None) -> dict[int, dict]:
         """Every visible ``TSp_Panel`` right now, by handle.
