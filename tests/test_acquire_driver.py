@@ -42,6 +42,7 @@ from udv_echo_process.acquire.actuator import (
     STRIP_BUTTON_ORDER,
     VIEW_TIMEOUT_S,
     Actuator,
+    ChannelMode,
     DialogControl,
     OverlayKind,
     ParamRole,
@@ -2990,3 +2991,68 @@ def test_a_strip_press_is_a_posted_held_press_and_takes_no_cursor(monkeypatch) -
 
 
 
+
+
+# ------------------------------- the mode of the channel, read off the measurement screen
+
+
+def role_map(**overrides: object) -> dict:
+    """A resolved role map in the shape ``Win32Actuator._resolve`` returns.
+
+    Only the keys :func:`driver.screen_mode` reads are populated, and they are spelled the way
+    the resolver spells them — a test that invented its own names would pin itself instead of
+    the driver. The rest of the map is deliberately absent: the function has to answer from
+    *this* evidence and from nothing else, which is also why it takes the map rather than
+    resolving one.
+    """
+    roles: dict[str, object] = {
+        "params": {
+            role: {"edit": {"hwnd": 100 + index}}
+            for index, role in enumerate(PARAM_COLUMN_ORDER)
+        },
+        "open_popup": False,
+        "value_dialogs": set(),
+        "browse_dialogs": set(),
+        "strip_panel": {"hwnd": 77},
+    }
+    roles.update(overrides)
+    return roles
+
+
+def test_a_resolved_parameter_column_is_a_channel_in_manual_mode() -> None:
+    """The sidebar exists only for a manual channel, so its presence is the statement."""
+    assert driver.screen_mode(role_map()) is ChannelMode.MANUAL
+
+
+def test_the_measurement_screen_without_a_column_is_an_assisted_channel() -> None:
+    """The reading the driver's own missing-field failure already names.
+
+    Measured live 2026-09-17: a manual channel's clean screen is 43 visible controls in 4
+    panels, an assisted channel's 21 in 3 — the sidebar parameter column is the difference,
+    and this reads it without opening anything.
+    """
+    assert driver.screen_mode(role_map(params={}, param_rows=[])) is ChannelMode.ASSISTED
+
+
+def test_a_resolved_column_outlives_a_popup() -> None:
+    """Positive evidence is positive: only the *absence* of the column is ambiguous."""
+    assert driver.screen_mode(role_map(open_popup=True)) is ChannelMode.MANUAL
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("open_popup", True),
+        ("value_dialogs", {4102}),
+        ("browse_dialogs", {4103}),
+        ("strip_panel", None),
+    ],
+)
+def test_an_absent_column_is_not_evidence_of_a_mode(key: str, value: object) -> None:
+    """A popup, a dialog or an unrecognised screen: no mode is read, and the caller carries it.
+
+    Guessing ``assisted`` here is the failure this refusal exists for — a manual channel behind
+    a dialog would be read as a channel whose parameter surface is gone, and the refusal would
+    name the mode instead of the screen.
+    """
+    assert driver.screen_mode(role_map(params={}, param_rows=[], **{key: value})) is None

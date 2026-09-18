@@ -146,6 +146,7 @@ from udv_echo_process.acquire.actuator import (
     STORE_TIMEOUT_S,
     VIEW_TIMEOUT_S,
     Actuator,
+    ChannelMode,
     DialogControl,
     OverlayKind,
     ParamRole,
@@ -163,6 +164,13 @@ from udv_echo_process.acquire.config import (
     MIN_CHANNEL,
     ChannelSetting,
     ParameterSet,
+)
+from udv_echo_process.acquire.snapshot import (
+    FactSource,
+    InstrumentFact,
+    InstrumentSnapshot,
+    declared,
+    unreadable,
 )
 
 __all__ = ["AcquisitionError", "Win32Actuator", "channel_items", "same_directory"]
@@ -521,15 +529,12 @@ def _hidden_panels(win: int) -> list[dict]:
     return out
 
 
-#: The two ways this application's parameters panel can present a channel. The app states the
-#: mode by *which panel it builds for that channel* (measured live 2026-09-17): a channel in
-#: **assisted** mode gets the "Assisted mode parameters for channel N" panel — 511x384, the
-#: ``Shorter acquisition time / Best quality`` slider, derived resolution/gate read-outs, and
-#: **no sidebar parameter column at all** — while a channel in manual mode gets the
-#: "Operating parameters" panel, 627x384, the value table and the two indicator buttons, with
-#: the sidebar present. Read here rather than inferred from a caption: every one of these
-#: widgets is caption-less.
-MODE_ASSISTED, MODE_MANUAL = "assisted", "manual"
+#: The two ways this application's parameters panel can present a channel, as the names this
+#: driver reports them by. The vocabulary is
+#: :class:`~udv_echo_process.acquire.actuator.ChannelMode`, which carries what each panel is
+#: (they are told apart by structure, never by a caption: every one of these widgets is
+#: caption-less).
+MODE_ASSISTED, MODE_MANUAL = ChannelMode.ASSISTED.value, ChannelMode.MANUAL.value
 
 
 def panel_mode(panel: dict, kids: Sequence[dict]) -> str:
@@ -541,6 +546,47 @@ def panel_mode(panel: dict, kids: Sequence[dict]) -> str:
     if any(k["cls"] == "TSp_Sliding_Bar" for k in kids):
         return MODE_ASSISTED
     return MODE_MANUAL
+
+
+def screen_mode(roles: Mapping) -> ChannelMode | None:
+    """The mode of the channel **on the measurement screen**, read without pressing anything.
+
+    :func:`panel_mode` answers the same question from a parameters *dialog*, which costs the
+    menubar hover the dialog is opened with. The measurement screen answers it too, and for
+    free: the sidebar parameter column exists only for a channel in manual mode (measured live
+    2026-09-17 — a manual channel's clean screen is 43 visible controls in 4 panels, an assisted
+    channel's 21 in 3, the column among the missing), so a resolved column is ``MANUAL`` and a
+    measurement screen with no column at all is ``ASSISTED``. That second reading is the same
+    evidence the driver's own missing-field failure already names
+    (:meth:`Win32Actuator._assisted_mode_clause`).
+
+    ``None`` when neither can be read — a dialog, a menu popup or an unrecognised layout is up,
+    so the absent column is evidence of *that* and not of a mode. A mode guessed from it would
+    refuse a campaign for the wrong reason, with a diagnosis pointing at the mode instead of at
+    the screen, so the caller is given the ``None`` and has to carry it.
+    """
+    if roles.get("params"):
+        return ChannelMode.MANUAL
+    if roles.get("open_popup") or roles.get("value_dialogs") or roles.get("browse_dialogs"):
+        return None
+    if roles.get("strip_panel") is None:
+        return None
+    return ChannelMode.ASSISTED
+
+
+def _dialog_only_reason(name: str) -> str:
+    """Why a fact that lives in the ``Operating parameters`` dialog cannot be read here.
+
+    ``first_gate_depth``, ``burst_length``, ``sound_speed`` and ``sampling_volume`` have no
+    parameter-column field at all (:data:`DIALOG_ONLY_PARAMETERS`): the column is the surface a
+    *point* writes, and a point never writes these — they are read once per channel, from the
+    dialog. The reason is written out rather than summarised, because it lands in a run record
+    read by someone who has no instrument in front of them.
+    """
+    return (
+        f"{name!r} has no parameter-column field: it is set in the {PARAMETERS_ENTRY!r} "
+        "dialog only, so nothing on the measurement screen states it"
+    )
 
 
 def _is_dialog_panel(panel: dict, kids: Sequence[dict]) -> bool:
@@ -2290,6 +2336,107 @@ class Win32Actuator:
             cursor=cursor,
             is_foreground=foreground,
         )
+
+    def instrument_snapshot(self) -> InstrumentSnapshot:
+        """Read the instrument's current state, pressing nothing that changes it.
+
+        Read-only with respect to the configuration — it writes no parameter, accepts no dialog
+        and selects no channel — and narrower than that even: it presses **nothing at all**. The
+        screen fingerprint and the parameter column are read off the resolved control tree (the
+        same reads :meth:`screen_fingerprint` and :meth:`read_parameter` make), and the menubar
+        hover that *reading the channel* would cost is deliberately not paid
+        (:meth:`_channel_fact`): routing to the requested channel is a separate step that happens
+        before this one, and it is recorded as such. An instrument somebody else is using is
+        therefore safe to read this way.
+
+        Two of the six fixed facts come off the column and are recorded as ``read``; the four
+        that live in the ``Operating parameters`` dialog or in a ``Preference`` are carried as
+        ``unreadable`` with the reason. That asymmetry is the honest state today, and the one
+        fact that changes here is a fact about the *driver*: a read path that reconnaissance
+        finds later becomes a read, without the models changing.
+
+        A screen that cannot be resolved at all raises, from :meth:`_resolve` — the same answer
+        :meth:`screen_fingerprint` gives, for the same reason: no window is a fact the caller has
+        to see.
+
+        The screen is enumerated twice, once for the fingerprint and once for the mode, and that
+        is the driver's standing habit rather than an oversight: everything here re-resolves
+        instead of holding what it read a moment ago (the alternative — reading
+        :attr:`last_roles` — would couple this method to the order of the calls inside
+        :meth:`screen_fingerprint`), and anything that moved on screen between the two reads is
+        a state the compile refuses on rather than one this recording can hide.
+        """
+        fingerprint = self.screen_fingerprint()
+        roles = self._resolve()
+        mode = screen_mode(roles)
+        return InstrumentSnapshot(
+            fingerprint=fingerprint,
+            channel=self._channel_fact(),
+            mode=(
+                unreadable(
+                    "no mode could be read from this screen: a dialog, a menu popup or a layout "
+                    "this driver does not recognise is up, so the absent parameter column is "
+                    "evidence about the screen and not about the channel's mode"
+                )
+                if mode is None
+                else InstrumentFact(value=mode.value, source=FactSource.READ)
+            ),
+            prf_us=self._column_fact(roles, ParamRole.PRF),
+            emissions_per_profile=self._column_fact(roles, ParamRole.EMISSIONS_PER_PROFILE),
+            burst_length=unreadable(_dialog_only_reason("burst_length")),
+            sound_speed_ms=unreadable(_dialog_only_reason("sound_speed_ms")),
+            first_gate_mm=unreadable(_dialog_only_reason("first_gate_mm")),
+            max_profiles_per_block=unreadable(
+                "the block cap is an application Preference (\"Do not keep in a block more "
+                "profiles than\"), not a measurement parameter, and nothing in this driver "
+                "reads the Preference surface"
+            ),
+        )
+
+    def _channel_fact(self) -> InstrumentFact:
+        """The channel the run is aimed at — ``declared``, because this read did not ask.
+
+        Reading the channel means opening ``Operating parameters``: a menubar hover with the
+        operator's real cursor, which is the *routing* step's own gesture and by design happens
+        before this snapshot (:meth:`ensure_channel`, which refuses a selection the application
+        did not keep and leaves the dialog's read-back in the run log). Paying for a second
+        dialog here would buy a number the run already holds — and on a channel in assisted mode
+        it would buy nothing at all: that panel carries no channel combo to read.
+        """
+        return declared(
+            str(self._channel_setting.channel),
+            reason=(
+                "the configured channel — the routing step (ensure_channel) selects and verifies "
+                "it against the dialog before this reading, and does not take on an unverified "
+                "one; this snapshot asks the application for no channel of its own"
+            ),
+        )
+
+    def _column_fact(self, roles: dict, role: ParamRole) -> InstrumentFact:
+        """One parameter-column field as a fact, or an unreadable fact saying why not.
+
+        Read off the already-resolved role map rather than through :meth:`read_parameter`, which
+        *raises* on a missing row. A column that is absent is not a failed binding here: it is
+        what this application builds for a channel in assisted mode (measured: 43 visible
+        controls in 4 panels became 21 in 3), it is a fact about the instrument, and a snapshot
+        exists to carry facts rather than to fail on them. A field that resolves but reads back
+        empty is unreadable for the same reason a missing one is — an empty control stated
+        nothing, and a value of ``""`` recorded as ``read`` would claim it did.
+        """
+        row = roles.get("params", {}).get(role)
+        if row is None:
+            return unreadable(
+                f"the parameter column holds no field for {role.value!r} on this screen: the "
+                "column is absent, which is what this application builds for a channel in "
+                f"{MODE_ASSISTED} mode"
+            )
+        text = self._get_text(row["edit"]["hwnd"])
+        if not text.strip():
+            return unreadable(
+                f"the parameter column's field for {role.value!r} read back empty — an empty "
+                "control states no value, so there is nothing to record as read"
+            )
+        return InstrumentFact(value=text, source=FactSource.READ)
 
     def hold_recording(self, duration_s: float) -> None:
         """Wait out a point's duration, watching the view and the overlays.

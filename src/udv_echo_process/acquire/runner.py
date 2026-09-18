@@ -125,6 +125,7 @@ from udv_echo_process.acquire.plan import (
     plan_sweep,
     profiles_for_duration,
 )
+from udv_echo_process.acquire.snapshot import InstrumentSnapshot
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -178,11 +179,17 @@ ABORT_NOTE = (
 
 
 class SweepActuator(Actuator, Protocol):
-    """The :class:`Actuator` surface plus the two composed calls a sweep needs.
+    """The :class:`Actuator` surface plus the composed calls a sweep needs.
 
-    ``Actuator`` fixes the primitives; the ordered parameter write and the whole
-    record/stop/store cycle are what a sweep calls, and naming them here is what lets
-    this module be written and faked against the actuator interface alone.
+    ``Actuator`` fixes the primitives; the ordered parameter write, the whole
+    record/stop/store cycle and the one reading of the instrument's fixed state are what a
+    sweep calls, and naming them here is what lets this module be written and faked against
+    the actuator interface alone.
+
+    ``instrument_snapshot`` is **additive**: it is the only method here that does not
+    already have a caller in this module's own cycle, and no existing primitive changed to
+    make room for it, so an implementation that satisfied the port before still does — it
+    gains one method.
     """
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole, str]:
@@ -191,6 +198,19 @@ class SweepActuator(Actuator, Protocol):
 
     def ensure_channel(self) -> int:
         """Verify the measurement channel from the dialog and return it."""
+        ...
+
+    def instrument_snapshot(self) -> InstrumentSnapshot:
+        """Read the instrument's current state, pressing nothing that changes it.
+
+        Read-only with respect to the configuration: it writes no parameter, accepts no
+        dialog and selects no channel. Routing to the requested channel is a separate step
+        that happens before it, and is recorded as such.
+
+        The reading is the *evidence*: which channel and mode are active, which fixed facts
+        the instrument itself states and which nothing can read yet
+        (:mod:`~udv_echo_process.acquire.snapshot`).
+        """
         ...
 
     def try_record_and_store(
