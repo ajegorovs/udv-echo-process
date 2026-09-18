@@ -908,4 +908,41 @@ field, and comparing it against the routed channel is *not* implemented yet — 
 does not survive into `InstrumentSnapshot`, so neither the compile nor the run can see it. A dialog
 showing channel 2's parameters while the run routed channel 1 is exactly the channel trap in a new
 place (§14, "The channel trap in the one place this system cannot see"), and it stays open until the
-reading carries that field and something refuses on it.
+reading carries that field and something refuses on it. It cannot fire in the planned experiment,
+which runs one channel with the dialog on that channel, so it does not hold the experiment back.
+
+### 15.1 The live acceptance run, on the real application
+
+Dispatched through `tools/live/` against UDOP in simulation mode, the application foreground (the
+first attempt refused at the driver's own foreground guard, before any hover, with nothing opened and
+nothing stranded — that guard is the reason the operator sequence now states the precondition).
+
+1. **The good case** — `acquire compile --definition examples/campaign-single-channel.json` → exit 0,
+   channel `1` **routed**, mode `manual` **read**, and `prf_us 212`, `emissions_per_profile 150`,
+   `burst_length 4`, `sound_speed_ms 1460`, `first_gate_mm 2` all **read** and all agreeing with the
+   declaration. `max_profiles_per_block` is carried `unreadable` with its reason and marked `agreed:
+   None`, so the record says "declared, not verified" instead of pretending. Nothing was recorded —
+   the verb has no store path and `compile_campaign` takes no actuator.
+2. **A deliberate mismatch, definition side** — a copy declaring `burst_length 5` against an
+   instrument reading `4` refused with exit 2: "the instrument disagrees with the campaign before the
+   first recording, so nothing was stored and the application is untouched: burst_length: the campaign
+   declares 5, the instrument states '4'".
+3. **A deliberate mismatch, instrument side** (the operator moved the burst one step in the dialog,
+   which the combo took to `6`) — the unmodified definition refused the same way, naming `4` against
+   `6`. Both directions of criterion 1 proved on the application, not in a fake.
+4. **The six-point campaign, unchanged** — `acquire campaign --definition
+   examples/campaign-single-channel.json --store-dir <the application's own Record settings directory>
+   --log outputs/live/w4-acceptance.jsonl` → `6/6 point(s) ok`, six `.BDD` files stamped
+   `20260918T113607` in the application's capture directory, six log entries all `ok`, and a manifest
+   carrying `compilation_identity` with `channel ('1','routed')`, `burst ('4','read')`, `sound speed
+   ('1460','read')`, `first gate ('2','read')` and the cap `(None,'unreadable')` — plus
+   `declared_only: false`, `skipped: []`, `skipped_without_evidence: []`.
+5. **The resume** — the same command with `--resume` → `0/6 point(s) ok; 6 skipped as already
+   recorded`, exit 0. The identity was proved **before** any point left the todo set: this is §4's
+   step 6 doing its job on a real manifest, and it is the check that did not exist before this slice.
+
+With that, §9.1's stop condition is satisfied: the campaign routes the target channel, snapshots the
+fixed settings, refuses a deliberate mismatch before recording, and ran the existing six-point
+campaign unchanged. **The acquisition architecture stops growing here** — what comes next is the
+parameter-sensitivity experiment this was all built for.
+

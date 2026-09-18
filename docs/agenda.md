@@ -259,7 +259,9 @@ guard) and `plan_campaign` runs twice (pure, and it keeps step 2 gesture-free). 
 finished: the live rehearsal still needs the operator — the first attempt stopped at the driver's own
 foreground guard *before* any hover (nothing opened, nothing stranded), so UDOP has to be in front
 and `acquire compile` re-run — and §14's own obligation, comparing the dialog's channel field against
-the routed channel, stays open until that field survives into `InstrumentSnapshot`.
+the routed channel, stays open until that field survives into `InstrumentSnapshot` — it cannot fire in the planned experiment, which runs one channel with the dialog on that channel.
+
+**The review's milestone is met, live (plan §15.1).** `acquire compile` accepted the machine's own configuration (five facts read and agreeing, the cap declared-not-verified, nothing written); a deliberately wrong declaration *and* a deliberately wrong instrument each refused with exit 2, the fact named with both sides, nothing stored; the existing six-point campaign ran unchanged — 6/6 ok, six `.BDD` files, a manifest carrying the compiled identity — and `--resume` skipped 6/6 only after proving that identity. Per §9.1 the acquisition architecture **stops growing here**: the next work is the parameter-sensitivity experiment, and re-opening the architecture needs evidence (a real campaign failed, ambiguous evidence, or a downstream analysis that cannot establish an essential condition).
 
 
 Binding outcomes:
