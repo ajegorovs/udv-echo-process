@@ -25,8 +25,9 @@ Three properties are load-bearing, each paid for once in the lab:
    nothing here ``WM_CLOSE``\\ s a popup: an open popup is reported through
    :meth:`Win32Actuator.layout_note` and the run refuses to start instead.
 
-``ctypes.windll`` and ``win32gui``/``win32con`` are touched **only inside functions**
-(:func:`_user32`, :func:`_gui`), so this module imports cleanly on any host.
+``ctypes.windll`` and ``win32gui``/``win32con`` are touched **only inside functions** —
+:func:`~udv_echo_process.acquire.win32.cursor._user32` and ``_gui``, in ``acquire/win32/cursor.py``
+as of Patch 3 — so this module and that package both import cleanly on any host.
 ``pywinauto``, ``watchdog`` and ``PIL`` are not dependencies of this file.
 
 Two further rules are enforced inside the cycle, both of them about *not measuring
@@ -127,25 +128,31 @@ the live bug. Instead:
   classes (:attr:`Win32Actuator.last_entry_attempt`). "The entry opened no dialog" is not
   a diagnosis; the next live run has to be told what happened instead.
 
-**What this module no longer owns.** The *pure* half — the normalized observation, the surface
-classification, the shape gate, the mode reading and the geometry the binding rules are written
-in — moved to :mod:`udv_echo_process.acquire.ui` (``ui/model.py``, ``ui/layout.py``), and the
-widget interpreters followed in the same patch's widget slice: the recording strip
-(``ui/strip.py``: its row, its state and the ambiguous four-button row of ledger B10), the
-``Operating parameters`` dialog (``ui/dialog.py``: the value table, the widget-aware extraction,
-the dialog-only facts, the three checks and the channel comparison) and the one menubar binding
-this driver has (``ui/menu.py``: the ``Parameters`` anchor, its signature and the popup's own
-order and geometry — ledger B03). Every one of those names is imported back at the top of this
-file, so ``driver.screen_mode``, ``driver.layout_shape_reasons``, ``driver.dialog_value_fields``,
-``driver._strip_row``, ``driver.PARAMETERS_MENU`` and the rest keep resolving for every caller and
-every test written against the flat module (``docs/dop3000/acquisition-architecture.md`` §5,
-"compatibility first"). What stays here is what needs a live window: the transport, the cursor and
-foreground management, the enumeration and the gestures — and those gestures are **byte-identical**
-to the ones the live sessions proved, because this refactor moves code and corrects interpretation
-rules, never a workflow. The two corrections this slice makes are *decisions*, and both refuse
-earlier than the code they replace: an unprovable ``Parameters`` anchor publishes no binding at
-all (so the menubar hover is unreachable rather than mis-aimed), and an ambiguous strip row
-refuses before the held press is posted.
+**Where the mechanics live.** The *pure* half moved to :mod:`udv_echo_process.acquire.ui` in
+Patch 2 (``ui/model.py``, ``ui/layout.py``, then the widget interpreters ``ui/strip.py``,
+``ui/dialog.py`` and ``ui/menu.py``); the **Win32 mechanics** moved in Patch 3 into
+:mod:`udv_echo_process.acquire.win32`:
+- ``win32/messages.py`` — the bounded send, the posted held click, the text commit, the
+  combo select and the combo read-back;
+
+Every one of those names is imported back at the top of this file, so ``driver.screen_mode``,
+``driver.layout_shape_reasons``, ``driver.dialog_value_fields``, ``driver._strip_row``,
+``driver.PARAMETERS_MENU``, ``driver._send``, ``driver._CursorPoint``, ``driver._click_hold`` and
+the rest keep resolving for every caller and every test written against the flat module
+(``docs/dop3000/acquisition-architecture.md`` §5, "compatibility first").
+
+What stays here is what composes a *reading* or a *gesture* out of those mechanics: the resolve
+and the state machine, the surface/overlay/dialog identification, the channel verification, the
+store cycle and the read-only surface. Each moved body is called with this module's **own**
+transport names (``_gui``, ``_user32``, ``_post``, and this module's ``_send``) passed in
+explicitly, which is what keeps every fake in this repository — each of which scripts the window
+layer by patching ``driver._gui`` / ``driver._user32`` / ``driver._post`` — biting at the same
+place it always did. The live-proven gestures are **byte-identical** to the ones the live
+sessions proved: this refactor moves code and corrects interpretation rules, never a workflow.
+The two corrections this slice makes are *decisions*, and both refuse earlier than the code they
+replace: an unprovable ``Parameters`` anchor publishes no binding at all (so the menubar hover is
+unreachable rather than mis-aimed), and an ambiguous strip row refuses before the held press is
+posted.
 """
 
 from __future__ import annotations
@@ -153,7 +160,6 @@ from __future__ import annotations
 import ctypes
 import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from functools import lru_cache
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import (
@@ -161,7 +167,6 @@ from udv_echo_process.acquire.actuator import (
     DIALOG_COLUMN_ROWS,
     DIALOG_FIELD_ORDER,
     DIALOG_ONLY_PARAMETERS,
-    NUMERIC_WRITE_RECIPE,
     PARAM_COLUMN_ORDER,
     PRESS_HOLD_MS,
     PROCESS_MODE_PREFIXES,
@@ -275,44 +280,141 @@ from udv_echo_process.acquire.ui.strip import (
     strip_row as _strip_row,
 )
 
+# The Win32 mechanics — the transport, the cursor and the control tree — moved to
+# ``acquire/win32`` by Patch 3 and imported back here on purpose: every name below still
+# resolves as ``driver.<name>``, exactly as it did when it was defined in this file, so no
+# caller and no test has to change (``docs/dop3000/acquisition-architecture.md`` §5,
+# *compatibility first*).
+# The facade hands its own transport names (``_gui``, ``_user32``, ``_post``, and this
+# module's ``_send``) to every mechanic it calls, so a caller or a test that fakes
+# ``driver._gui`` — which is how this repository's fakes have always scripted the window
+# layer — is still faking what the mechanic uses. Nothing in ``acquire/win32`` imports this
+# module at import time (``win32._acquisition_error`` resolves the failure class inside the
+# raise).
+from udv_echo_process.acquire.win32.cursor import (
+    _ClipRect,
+    _CursorPoint,
+    _gui,
+    _user32,
+)
+from udv_echo_process.acquire.win32.messages import (
+    _CLICK_SETTLE_S,
+    _COMBO_NONE_ABOVE,
+    _COMBO_SETTLE_S,
+    _COMMIT_RECIPE,
+    _TEXT_COMMIT_SETTLE_S,
+    _TEXT_SETTLE_S,
+    _VK_RETURN_DOWN_LPARAM,
+    _VK_RETURN_UP_LPARAM,
+    CB_GETCOUNT,
+    CB_GETCURSEL,
+    CB_GETLBTEXT,
+    CB_SETCURSEL,
+    CBN_SELCHANGE,
+    EN_CHANGE,
+    MK_LBUTTON,
+    SEND_TIMEOUT_MS,
+    SMTO_ABORTIFHUNG,
+    VK_RETURN,
+    WM_COMMAND,
+    WM_GETTEXT,
+    WM_KEYDOWN,
+    WM_KEYUP,
+    WM_LBUTTONDOWN,
+    WM_LBUTTONUP,
+    WM_MOUSEMOVE,
+    WM_SETTEXT,
+    _click_hold,
+    _combo_index,
+    _combo_items,
+    _combo_select,
+    _control_id,
+    _get_text,
+    _post,
+    _send,
+    _set_text_commit,
+)
+
 __all__ = [
-    # Moved out of this module by Patch 2 — the pure half into ``acquire/ui/`` — and re-exported
-    # here, so a caller or a test written against the flat module keeps resolving. Listed rather
-    # than left implicit: the names are the module's published surface, private ones included,
-    # exactly as they were before the move (``docs/dop3000/acquisition-architecture.md`` §5).
-    # ``ui/layout.py`` (Patch 2's layout slice), then ``ui/strip.py``, ``ui/dialog.py`` and
-    # ``ui/menu.py`` (this widget slice).
+    # The module's published surface — private names included — listed rather than left
+    # implicit: what this file re-exports for every caller and every test written against the
+    # flat module (``docs/dop3000/acquisition-architecture.md`` §5, *compatibility first*).
+    # The pure half moved to ``acquire/ui/`` in Patch 2 and the Win32 mechanics to
+    # ``acquire/win32/`` in Patch 3; these are the names that travelled, so ``driver.screen_mode``,
+    # ``driver._strip_row``, ``driver.PARAMETERS_MENU``, ``driver._send``, ``driver._CursorPoint``,
+    # ``driver.WM_LBUTTONDOWN`` and the rest keep resolving exactly as they did when they were
+    # defined here. Sorted, not grouped: ruff owns the order (RUF022), the import block above
+    # owns which module each name came from.
+    "CBN_SELCHANGE",
+    "CB_GETCOUNT",
+    "CB_GETCURSEL",
+    "CB_GETLBTEXT",
+    "CB_SETCURSEL",
     "DIALOG_ANCHORS",
     "DIALOG_COLUMN_GAP",
     "DIALOG_COLUMN_ROWS",
+    "EN_CHANGE",
     "EXPECTED_CONTROL_COUNT",
     "EXPECTED_PANEL_COUNT",
     "MAIN_CLASS",
     "MEASURED_BAR",
     "MENU_ORDER",
+    "MK_LBUTTON",
     "MODE_ASSISTED",
     "MODE_MANUAL",
     "PARAMETERS_ENTRY",
     "PARAMETERS_MENU",
+    "SEND_TIMEOUT_MS",
+    "SMTO_ABORTIFHUNG",
+    "VK_RETURN",
+    "WM_COMMAND",
+    "WM_GETTEXT",
+    "WM_KEYDOWN",
+    "WM_KEYUP",
+    "WM_LBUTTONDOWN",
+    "WM_LBUTTONUP",
+    "WM_MOUSEMOVE",
+    "WM_SETTEXT",
     "_BAND_MARGIN_FRACTION",
+    "_CLICK_SETTLE_S",
+    "_COMBO_NONE_ABOVE",
+    "_COMBO_SETTLE_S",
+    "_COMMIT_RECIPE",
     "_DIALOG_INPUT_CLASSES",
     "_DIALOG_MIN_CHILDREN",
     "_DIALOG_MIN_W",
+    "_TEXT_COMMIT_SETTLE_S",
+    "_TEXT_SETTLE_S",
+    "_VK_RETURN_DOWN_LPARAM",
+    "_VK_RETURN_UP_LPARAM",
     "AcquisitionError",
     "Win32Actuator",
+    "_ClipRect",
+    "_CursorPoint",
     "_bottom_row",
+    "_click_hold",
     "_client_bottom",
     "_client_top",
     "_column_bands",
+    "_combo_index",
+    "_combo_items",
+    "_combo_select",
     "_contains",
+    "_control_id",
     "_dialog_fact",
     "_dialog_only_reason",
     "_entry_buttons",
+    "_get_text",
+    "_gui",
     "_inside",
     "_is_dialog_panel",
     "_observation_text",
     "_point_in_rect",
+    "_post",
+    "_send",
+    "_set_text_commit",
     "_strip_row",
+    "_user32",
     "anchor_button",
     "anchor_clause",
     "channel_items",
@@ -337,23 +439,15 @@ __all__ = [
 #: The left column's combo boxes, top -> bottom.
 COMBO_ORDER: tuple[str, ...] = ("Sensitivity", "Emitting power")
 
-WM_SETTEXT, WM_GETTEXT, WM_COMMAND = 0x000C, 0x000D, 0x0111
-WM_KEYDOWN, WM_KEYUP = 0x0100, 0x0101
-WM_LBUTTONDOWN, WM_LBUTTONUP, MK_LBUTTON = 0x0201, 0x0202, 0x0001
-#: Deliberately **unused**: this application's menubar ignores posted messages — a
-#: posted move opened nothing (and so did a posted press), while the same button opened
-#: its menu under the *real* cursor hover (:meth:`Win32Actuator._hover_centre`) — so
-#: nothing here sends this. It is named so the tests can assert that no move is posted
-#: while a menu is being opened.
-WM_MOUSEMOVE = 0x0200
-EN_CHANGE, CBN_SELCHANGE, CB_SETCURSEL = 0x0300, 0x0001, 0x014E
-#: Combo *read-back* messages: the selected index, the item count, one item's text.
-CB_GETCOUNT, CB_GETCURSEL, CB_GETLBTEXT = 0x0146, 0x0147, 0x0148
-VK_RETURN, SMTO_ABORTIFHUNG = 0x0D, 0x0002
-#: A `CB_GETCURSEL`/`CB_GETCOUNT` answer above this is not an index or a count: the
-#: value comes back through an unsigned ``LRESULT``, so ``CB_ERR`` (-1) arrives as a
-#: huge number. Treating it as "no selection" is the only safe reading.
-_COMBO_NONE_ABOVE = 0xFFFF
+# The message vocabulary (``WM_*``/``CB_*``/``CBN_*``/``EN_*``/``MK_*``/``SMTO_*``/
+# ``VK_*``), the bounded-send timeout, the write recipe's settles and the
+# cursor/foreground settles moved to ``acquire/win32`` in Patch 3 with the bodies that
+# send and time them (``win32/messages.py``, ``win32/cursor.py``) and are imported at the
+# top of this file under their own names, so ``driver.WM_LBUTTONDOWN``,
+# ``driver.SEND_TIMEOUT_MS``, ``driver._HOVER_SETTLE_S`` and the rest keep resolving —
+# including the deliberately unused ``WM_MOUSEMOVE`` the tests name to assert that no
+# move is ever posted. The constants below stay here: the loops that read them are this
+# module's own.
 # ``PARAMETERS_MENU``, ``PARAMETERS_ENTRY`` and the popup overlay's own geometry
 # (``_OVERLAY_LEFT``/``_OVERLAY_MIN_H``: a caption-less ``TSp_Panel`` at ``(169, 55, 401, 250)``,
 # 195 px tall, which is the reference's own predicate ``left == 169 and h > 120`` from
@@ -412,152 +506,30 @@ _HOVER_MOVE_DX, _HOVER_MOVE_DY = 2, 0
 #: It is not a cursor move and not a click, and there is no second gesture: a re-derived
 #: alternative is what three fix cycles went into.
 GESTURE_POSTED_PRESS = "posted held press"
-#: Every send is bounded; a hung target returns instead of blocking (docs/16 §1).
-SEND_TIMEOUT_MS = 2000
-#: The key-event lParams the verified recipe used (scan code / transition packed).
-_VK_RETURN_DOWN_LPARAM, _VK_RETURN_UP_LPARAM = 0x001C0001, 0xC01C0001
-
-#: What :meth:`Win32Actuator._set_text_commit` sends, in order — compared below so the
-#: port cannot drift from the committed recipe.
-_COMMIT_RECIPE = (
-    "WM_SETTEXT",
-    "WM_COMMAND(EN_CHANGE)",
-    "WM_KEYDOWN(VK_RETURN)",
-    "WM_KEYUP(VK_RETURN)",
-)
-assert _COMMIT_RECIPE == tuple(NUMERIC_WRITE_RECIPE), (
-    "NUMERIC_WRITE_RECIPE changed; the driver must follow the committed recipe"
-)
-
-#: Settle times from the reference script — they are what make the recipes reliable (a
-#: command posted in the same millisecond as the text is lost).
-_TEXT_SETTLE_S, _TEXT_COMMIT_SETTLE_S = 0.08, 0.25
-#: A combo *change notification* needs the reference's own settle before the selection is
-#: read back (``recon/41_burst_sampling_volume.py``: ``CB_SETCURSEL`` + ``CBN_SELCHANGE``,
-#: then ``time.sleep(0.8)``). The channel is decided on this path and a write can silently
-#: not apply, so it is the reference's 0.8 s, not the shorter text-write settle.
-_COMBO_SETTLE_S = 0.8
-_CLICK_SETTLE_S, _OVERLAY_SETTLE_S, _POLL_S = 0.35, 0.8, 0.4
+#: The settle after an accepted overlay answer, and the cadence the polling loops below
+#: run at. The held press's own settle travels with the gesture, in ``win32/messages.py``.
+_OVERLAY_SETTLE_S, _POLL_S = 0.8, 0.4
 
 
 class AcquisitionError(RuntimeError):
     """The cycle could not be completed; nothing was stored under this point's name."""
 
 
-class _CursorPoint(ctypes.Structure):
-    """``POINT`` for ``GetCursorPos``/``SetCursorPos``.
-
-    Declared here rather than imported from ``ctypes.wintypes``: that module is not
-    importable on a host without Windows headers, and this module has to import
-    cleanly anywhere (the ``ctypes`` description is portable).
-    """
-
-    _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+# ``_CursorPoint``, ``_ClipRect``, ``_gui`` and ``_user32`` were defined here: the two
+# ctypes structs, and the lazy ``win32gui``/``ctypes.windll`` resolution whose
+# signatures (including the 64-bit ``lParam``) must not be re-derived. They are
+# ``acquire/win32/cursor.py``'s as of Patch 3, imported at the top of this file under
+# these same names, so ``driver._CursorPoint`` and ``driver._user32`` keep resolving —
+# and are still the names a caller or a test replaces when it scripts the window layer.
 
 
-class _ClipRect(ctypes.Structure):
-    """``RECT`` for ``GetClipCursor`` — the rectangle the cursor is confined to.
 
-    An empty rectangle (``right <= left`` or ``bottom <= top``) is *no clip*: on a
-    desktop that is not clipped ``GetClipCursor`` answers the screen rectangle, which
-    contains every point the driver ever asks for. Declared here rather than imported
-    from ``ctypes.wintypes`` for the same reason as :class:`_CursorPoint`.
-    """
+# ``_send`` and ``_post`` were defined here: the bounded ``SendMessageTimeoutW`` and
+# the posted-message pair every gesture in this file is built from. They are
+# ``acquire/win32/messages.py``'s as of Patch 3, imported at the top of this file under
+# these same names and handed to the mechanics as a parameter, so ``driver._post`` is
+# still the name a caller or a test replaces to watch what is posted.
 
-    _fields_ = [
-        ("left", ctypes.c_long),
-        ("top", ctypes.c_long),
-        ("right", ctypes.c_long),
-        ("bottom", ctypes.c_long),
-    ]
-
-
-@lru_cache(maxsize=1)
-def _gui():
-    """``(win32gui, win32con)`` — loaded inside a function so the module imports anywhere."""
-    import win32con
-    import win32gui
-
-    return win32gui, win32con
-
-
-@lru_cache(maxsize=1)
-def _user32():
-    """``user32`` with its message signatures bound once.
-
-    ``ctypes.windll`` only exists on Windows, so it is touched here — never at import
-    time — and the argument types are declared so a 64-bit ``lParam`` (a buffer address)
-    is not truncated.
-    """
-    u32 = ctypes.windll.user32  # type: ignore[attr-defined]
-    u32.SendMessageTimeoutW.argtypes = (
-        ctypes.c_void_p,
-        ctypes.c_uint,
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-        ctypes.c_uint,
-        ctypes.c_uint,
-        ctypes.POINTER(ctypes.c_size_t),
-    )
-    u32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
-    u32.PostMessageW.argtypes = (
-        ctypes.c_void_p,
-        ctypes.c_uint,
-        ctypes.c_size_t,
-        ctypes.c_size_t,
-    )
-    u32.PostMessageW.restype = ctypes.c_ssize_t
-    # The real-cursor gesture the menubar needs (``SetCursorPos`` + ``mouse_event``,
-    # with the read-back that proves the jump took). ``mouse_event``'s ``dwExtraInfo``
-    # is a ``ULONG_PTR``, so ``c_size_t``; its restype is ``None``.
-    u32.GetCursorPos.argtypes = (ctypes.POINTER(_CursorPoint),)
-    u32.GetCursorPos.restype = ctypes.c_int
-    u32.SetCursorPos.argtypes = (ctypes.c_int, ctypes.c_int)
-    u32.SetCursorPos.restype = ctypes.c_int
-    u32.mouse_event.argtypes = (
-        ctypes.c_uint,
-        ctypes.c_int,
-        ctypes.c_int,
-        ctypes.c_uint,
-        ctypes.c_size_t,
-    )
-    u32.mouse_event.restype = None
-    # The cursor *clip*: this application confines the pointer while its blocking popups
-    # are up (docs/dop3000/udop-automation.md §6), and ``SetCursorPos`` to a point outside
-    # that rectangle is silently clamped to the clip's edge — which is what parked a live
-    # run's cursor in the open menu's bottom-left corner. ``ClipCursor(NULL)`` releases
-    # the clip, so it is declared with a void pointer (only ``None`` is ever passed).
-    u32.GetClipCursor.argtypes = (ctypes.POINTER(_ClipRect),)
-    u32.GetClipCursor.restype = ctypes.c_int
-    u32.ClipCursor.argtypes = (ctypes.c_void_p,)
-    u32.ClipCursor.restype = ctypes.c_int
-    return u32
-
-
-def _send(
-    hwnd: int, msg: int, wp: int = 0, lp: int = 0, timeout_ms: int = SEND_TIMEOUT_MS
-) -> int:
-    """``SendMessageTimeoutW``, never a plain ``SendMessage``.
-
-    A busy target thread blocks ``SendMessage`` forever; this returns 0 on hang or
-    timeout. ``lp`` may be a ctypes buffer address (``WM_SETTEXT``/``WM_GETTEXT``).
-    """
-    result = ctypes.c_size_t(0)
-    _user32().SendMessageTimeoutW(
-        ctypes.c_void_p(hwnd),
-        msg,
-        wp,
-        lp,
-        SMTO_ABORTIFHUNG,
-        timeout_ms,
-        ctypes.byref(result),
-    )
-    return int(result.value)
-
-
-def _post(hwnd: int, msg: int, wp: int = 0, lp: int = 0) -> None:
-    """Post a message (key events and ``WM_COMMAND`` are posted, as verified)."""
-    _user32().PostMessageW(ctypes.c_void_p(hwnd), msg, wp, lp)
 
 
 def _visible_children(win: int) -> list[dict]:
@@ -766,65 +738,44 @@ class Win32Actuator:
         lp: int = 0,
         timeout_ms: int = SEND_TIMEOUT_MS,
     ) -> int:
-        """Bounded send; see :func:`_send`."""
-        return _send(hwnd, msg, wp, lp, timeout_ms)
+        """Bounded send; see :func:`~udv_echo_process.acquire.win32.messages._send`."""
+        return _send(hwnd, msg, wp, lp, timeout_ms, user32=_user32)
+
 
     def _get_text(self, hwnd: int) -> str:
         """The control's own text (``WM_GETTEXT``, bounded)."""
-        buf = ctypes.create_unicode_buffer(256)
-        self._send(hwnd, WM_GETTEXT, 256, ctypes.addressof(buf))
-        return buf.value
+        return _get_text(hwnd, send=self._send)
+
 
     def _control_id(self, hwnd: int) -> int:
         """The id only as the field *inside* ``WM_COMMAND`` — never as an identity."""
-        win32gui, _ = _gui()
-        cid = win32gui.GetDlgCtrlID(hwnd)
-        return ctypes.c_short(cid).value if cid > 32767 else cid
+        return _control_id(hwnd, gui=_gui)
+
 
     def _set_text_commit(self, hwnd: int, text: str, parent: int | None = None) -> None:
         """Write ``text`` and **commit** it: the recipe in ``NUMERIC_WRITE_RECIPE``.
 
         ``WM_SETTEXT`` alone changes the control's text while the application keeps its
         own value; the ``EN_CHANGE`` command and the ``VK_RETURN`` key event are what make
-        the model take the new value (docs/14 §4, docs/16 §12a).
+        the model take the new value (docs/14 §4, docs/16 §12a). The four sends, their two
+        settles and the order they are in are
+        :func:`~udv_echo_process.acquire.win32.messages._set_text_commit`, where the recipe
+        is also compared against :data:`~udv_echo_process.acquire.actuator.NUMERIC_WRITE_RECIPE`
+        so the port cannot drift from it.
         """
-        win32gui, _ = _gui()
-        if parent is None:
-            parent = win32gui.GetParent(hwnd)
-        buf = ctypes.create_unicode_buffer(text)
-        self._send(hwnd, WM_SETTEXT, 0, ctypes.addressof(buf))
-        time.sleep(_TEXT_SETTLE_S)
-        _post(
-            parent,
-            WM_COMMAND,
-            (EN_CHANGE << 16) | (self._control_id(hwnd) & 0xFFFF),
-            hwnd,
-        )
-        time.sleep(_TEXT_SETTLE_S)
-        _post(hwnd, WM_KEYDOWN, VK_RETURN, _VK_RETURN_DOWN_LPARAM)
-        _post(hwnd, WM_KEYUP, VK_RETURN, _VK_RETURN_UP_LPARAM)
-        time.sleep(_TEXT_COMMIT_SETTLE_S)
+        _set_text_commit(hwnd, text, parent, send=self._send, post=_post, gui=_gui)
+
 
     def _combo_select(self, hwnd: int, index: int, parent: int | None = None) -> None:
         """Select a combo entry: ``CB_SETCURSEL`` + ``CBN_SELCHANGE``, **no Enter**.
 
         A combo commits on the change notification; a key event here would re-trigger
-        whatever the Enter handler does. The settle after the notification is the
-        reference's own :data:`_COMBO_SETTLE_S` (0.8 s) — the shorter text-write settle
-        was never proven on this path, and this is the path that decides the channel.
+        whatever the Enter handler does. The selection, the notification and the
+        reference's own settle are
+        :func:`~udv_echo_process.acquire.win32.messages._combo_select`.
         """
-        win32gui, _ = _gui()
-        if parent is None:
-            parent = win32gui.GetParent(hwnd)
-        self._send(hwnd, CB_SETCURSEL, index, 0)
-        time.sleep(_TEXT_SETTLE_S)
-        _post(
-            parent,
-            WM_COMMAND,
-            (CBN_SELCHANGE << 16) | (self._control_id(hwnd) & 0xFFFF),
-            hwnd,
-        )
-        time.sleep(_COMBO_SETTLE_S)
+        _combo_select(hwnd, index, parent, send=self._send, post=_post, gui=_gui)
+
 
     def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
         """Press and **hold** a control: down, ``hold_ms``, up.
@@ -832,20 +783,13 @@ class Win32Actuator:
         An instant down/up in the same millisecond is ignored by the strip (that is
         exactly what every early attempt sent, docs/16 §1). ``lParam`` is in the target's
         client coordinates, so the centre comes from ``GetClientRect`` and is converted to
-        screen only so a failure can be reported in real screen terms.
+        screen only so a failure can be reported in real screen terms. The message
+        sequence, the hold and the settle are
+        :func:`~udv_echo_process.acquire.win32.messages._click_hold`; the screen point it
+        read comes back here, where it stays a diagnostic and never a binding.
         """
-        win32gui, _ = _gui()
-        left, top, right, bottom = win32gui.GetClientRect(hwnd)
-        x, y = (right - left) // 2, (bottom - top) // 2
-        try:
-            self.last_press_screen = win32gui.ClientToScreen(hwnd, (x, y))
-        except Exception:  # noqa: BLE001 - diagnostic only
-            self.last_press_screen = None
-        lp = ((y & 0xFFFF) << 16) | (x & 0xFFFF)
-        _post(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp)
-        time.sleep(max(0, int(hold_ms)) / 1000.0)
-        _post(hwnd, WM_LBUTTONUP, 0, lp)
-        time.sleep(_CLICK_SETTLE_S)
+        self.last_press_screen = _click_hold(hwnd, hold_ms, post=_post, gui=_gui)
+
 
     def _clip_rect(self) -> tuple[int, int, int, int] | None:
         """The rectangle the cursor is currently confined to, or ``None`` for no clip.
@@ -1519,29 +1463,24 @@ class Win32Actuator:
     def _combo_index(self, hwnd: int) -> int:
         """The combo's selected index, or ``-1`` when it has no selection.
 
-        ``CB_GETCURSEL`` answers ``CB_ERR`` (-1) through an unsigned result, so a
-        value above :data:`_COMBO_NONE_ABOVE` means *no selection*, never a huge
-        index. This is the control's own belief, which is why it is never the only
-        read-back (:meth:`_channel_readback`).
+        ``CB_GETCURSEL`` answers ``CB_ERR`` (-1) through an unsigned result, so a value above
+        :data:`_COMBO_NONE_ABOVE` means *no selection*, never a huge index. This is the
+        control's own belief, which is why it is never the only read-back
+        (:meth:`_channel_readback`); the read is
+        :func:`~udv_echo_process.acquire.win32.messages._combo_index`.
         """
-        raw = self._send(hwnd, CB_GETCURSEL, 0, 0)
-        return -1 if raw > _COMBO_NONE_ABOVE else raw
+        return _combo_index(hwnd, send=self._send)
+
 
     def _combo_items(self, hwnd: int) -> tuple[str, ...]:
         """Every item the combo holds, in order (``CB_GETCOUNT`` + ``CB_GETLBTEXT``).
 
         The item *list* is how the channel combo is identified, so it is read rather
-        than assumed; a nonsense count is an empty list, not a spin.
+        than assumed; a nonsense count is an empty list, not a spin. The read is
+        :func:`~udv_echo_process.acquire.win32.messages._combo_items`.
         """
-        count = self._send(hwnd, CB_GETCOUNT, 0, 0)
-        if count <= 0 or count > _COMBO_NONE_ABOVE:
-            return ()
-        items: list[str] = []
-        for index in range(count):
-            buf = ctypes.create_unicode_buffer(64)
-            self._send(hwnd, CB_GETLBTEXT, index, ctypes.addressof(buf))
-            items.append(buf.value)
-        return tuple(items)
+        return _combo_items(hwnd, send=self._send)
+
 
     def _channel_combo(self, panel: dict, roles: Mapping | None = None) -> tuple[dict, int]:
         """The channel combo inside ``panel``: ``(combo, its parent's hwnd)``.
