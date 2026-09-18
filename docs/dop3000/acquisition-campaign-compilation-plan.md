@@ -1670,12 +1670,29 @@ is the larger of it and the floor the burst implies.
 | `4` | `3.650` | burst `4` | volume `3.650` | `max(3.650, 0.730) = 3.650` | yes |
 | `4` | `3.650` | volume `1.168` | `1.168` | above the floor → accepted, and it is the new remembered value | yes |
 | `4` | `1.168` | volume `0.876` | `0.876` | above the floor → accepted | yes |
+| `4 → 8` | `0.876` | burst `8` | `1.460` **in the same dialog** | `max(0.876, 1.460) = 1.460` | yes |
+| `8 → 4` | `1.460` | burst `4` | `0.876` **in the same dialog** | `max(0.876, 0.730) = 0.876` — the raise was not remembered | yes |
 
 The floor itself was bracketed at burst `4` on a seventh run (`below-floor --volume 0.730`, `sv-15`): `0.730`
 is **accepted** (no modal — the mode recorded *"the rejection did not reproduce"* and refused the point
 anyway) where `0.584` is rejected, so `floor(4) ∈ (0.584, 0.730]`, the operator's `0.730` sitting on the
-upper end. The floors at `6` and `8` (`1.095`, `1.460`) stay **hand-measured**: `1.460` is not in the
-volume's list at all, so no `select by value` can ask for it.
+upper end. `floor(8) = 1.460` is measured outright below; the `6` floor (`1.095`) stays hand-measured.
+
+**The couple, measured in the same dialog and in both directions.** §18.9 could not see the burst → volume
+couple at `4 → 2`, because `0.876` was already at or above `floor(2) = 0.365`: there, `max(remembered, floor)`
+and "no coupling at all" are the same reading. One burst write **to `8`** with `0.876` in force separates them,
+and it was run twice:
+
+| run | written | the field **inside the dialog, before `Accept`** | re-opened | what it settles |
+|---|---|---|---|---|
+| `21` | burst `4 → 8` | volume **`0.876 → 1.460`** | burst `8`, volume `1.460`, slot 0 `1.460` | the upward couple is real: `max(0.876, 1.460) = 1.460`, so `floor(8) = 1.460` is **measured**, not hand-measured |
+| `22` | burst `8 → 4` | volume **`1.460 → 0.876`** | burst `4`, volume `0.876`, list identical to the baseline | a floor-raise is **not** a remembered write: the remembered `0.876` is what comes back, so `max(remembered, floor)` is the whole rule in both directions |
+| `19` | burst `4 → 8`, then volume `0.876` | burst `8` (uncommitted), volume `1.460` | nothing committed | `0.876` **is** below `floor(8)`: asking for it explicitly raises the same warning — and the `write` mode, whose rule is that a single-button warning's `Continue` is not pressed, **refused** the run instead of answering it. That report says `dialog_closed: false`: the warning was left standing and the dialog's own `Cancel` takes a moment to clear both. The next run found no modal, the dialog openable, and the burst/volume unchanged — nothing was left committed. |
+
+The raise in `21` is the third way slot 0 is filled: the list was
+`[1.460, 3.650, 1.752, 1.168, 0.876, 0.730, 0.584]` — **`1.460` is not in the tail**, so slot 0 states a
+volume the combo does not offer. That is the writer's problem in one row, and the reason the rule below asks
+for the effective value rather than the requested one.
 
 **The option lists, as read.** The measured shape is `[the value in force] + a fixed six-entry tail`, and the
 tail did **not** move from burst `4` to burst `8` — the *list* is not burst-derived on this machine, contrary
@@ -1733,7 +1750,13 @@ Two consequences, and the second is the reason the writer rule below is worded t
   exactly where they started (`4`/`0.876`, list identical, the restored and final dialog PNGs byte-identical,
   `sha256 79c5091f…`) while the *configuration* does not, because one cell outside those two knobs was
   re-derived by the application and putting it back needs a first-gate write, which is not one of the two
-  knobs this probe writes.
+  knobs this probe writes. **The closing state, stated rather than implied:** burst `4`, volume `0.876`, all
+  42 controls and 15 cells at their baseline values and the option list identical — except `First gate depth
+  [mm] = 7` and the `Depth = 104 mm` the dialog derives from it, where the baseline read `2` and `99 mm`.
+  Restoring that one field is an operator's edit in the dialog (or a writer for `DialogField.FIRST_GATE_MM`,
+  which does not exist yet); the campaign path will not fix it silently, it will *refuse*: `first_gate_mm` is
+  a `FIXED_FACT_FIELDS` entry that `plan_campaign`'s check compares against this very cell, so a campaign
+  declaring `2.0` stops at the compile until the cell states it.
 - **`(1, 1)` is not a stray cell: it is a declared fixed fact.** `DialogField.FIRST_GATE_MM` is bound there,
   `first_gate_mm` is in `FIXED_FACT_FIELDS`/`SUPPORTED_READ_FACTS`, and `plan_campaign` refuses a campaign
   whose points disagree about it — so a point recorded after a volume write carries the instrument's derived
@@ -1767,9 +1790,14 @@ limited to the fields it asked for:
 `sv-01-baseline.*`, `sv-02-volume-3650.*`, `sv-03-belowfloor-safe.*`, `sv-04-belowfloor-continue.*`,
 `sv-05-burst8.*`, `sv-06-burst4.*`, `sv-07-volume-1168.*`, `sv-08-restored.*`, `sv-09-final.*`,
 `sv-10a-state.*`, `sv-11-volume-1752.*`, `sv-12-idle-dump.*`, `sv-13-volume-back.*`, `sv-14-final-dump.*`,
-`sv-15-belowfloor-0730.*`, `sv-16-restore-volume.*`, `sv-17-final.*`; the warning's own pixels as
+`sv-15-belowfloor-0730.*`, `sv-16-restore-volume.*`, `sv-17-final.*`, `sv-18-closing.*` (identical to
+`sv-17`, the tree stable while this was written up), `sv-19-burst8-volume.*`, `sv-20-burst4-back.*`,
+`sv-21-burst8-raises.*`, `sv-22-burst4-returns.*`; the warning's own pixels as
 `sv-03-belowfloor-safe-modal.png` and `sv-04-belowfloor-continue-modal.png` (byte-identical); the diffs
-`sv-compare-baseline-restored.json`, `sv-compare-baseline-final.json`, `sv-compare-baseline-17final.json`;
+`sv-compare-baseline-restored.json`, `sv-compare-baseline-final.json`, `sv-compare-baseline-17final.json`,
+`sv-compare-baseline-closing.json` (the baseline against the closing state — the one difference below),
+`sv-compare-18-closing-vs-22.json` (identical: the extra runs `19`–`22` left the tree where run `18` found
+it);
 and each run's dispatcher log as `sv-run-*.log` with the probe's own log beside it as `sv-task-*.log`. Each
 step costs 3.6 s (`dump`, `compare`) to 12 s (`write`, `below-floor`, whose modal capture and second read are
 the difference).
