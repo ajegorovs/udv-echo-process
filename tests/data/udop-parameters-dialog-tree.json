@@ -1,0 +1,836 @@
+{
+ "probe": "tools/live/probes/w1_fixed_facts.py, 2026-09-18",
+ "note": "the Operating parameters dialog as opened on the running application, all 42 controls, visible and stating; handles are deliberately absent (they are volatile)",
+ "dialog": {
+  "hwnd": 8585312,
+  "cls": "TSp_Panel",
+  "text": "",
+  "rect": [
+   655,
+   364,
+   1282,
+   748
+  ],
+  "left": 655,
+  "top": 364,
+  "w": 627,
+  "h": 384,
+  "id": 8585312
+ },
+ "controls": [
+  {
+   "depth": 0,
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    1077,
+    660,
+    1204,
+    680
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    808,
+    653,
+    1067,
+    685
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "0",
+   "rect": [
+    989,
+    661,
+    1059,
+    677
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    862,
+    712,
+    1059,
+    737
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    663,
+    712,
+    857,
+    737
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    1091,
+    703,
+    1171,
+    728
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TComboBox",
+   "text": "1",
+   "rect": [
+    1083,
+    373,
+    1128,
+    394
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    862,
+    596,
+    1065,
+    628
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TComboBox",
+   "text": "0.876",
+   "rect": [
+    984,
+    600,
+    1062,
+    621
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    987,
+    604,
+    1057,
+    620
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    727,
+    561,
+    866,
+    593
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "40",
+   "rect": [
+    788,
+    569,
+    858,
+    585
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    1120,
+    518,
+    1265,
+    550
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TComboBox",
+   "text": "medium",
+   "rect": [
+    1184,
+    522,
+    1262,
+    543
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    1187,
+    526,
+    1257,
+    542
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    869,
+    483,
+    1065,
+    515
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "2",
+   "rect": [
+    987,
+    491,
+    1057,
+    507
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    710,
+    484,
+    864,
+    516
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TComboBox",
+   "text": "4",
+   "rect": [
+    783,
+    488,
+    861,
+    509
+   ],
+   "visible": true
+  },
+  {
+   "depth": 2,
+   "cls": "Edit",
+   "text": "4",
+   "rect": [
+    786,
+    491,
+    841,
+    506
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    786,
+    492,
+    856,
+    508
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    697,
+    522,
+    864,
+    554
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TComboBox",
+   "text": "Medium",
+   "rect": [
+    783,
+    526,
+    861,
+    547
+   ],
+   "visible": true
+  },
+  {
+   "depth": 2,
+   "cls": "Edit",
+   "text": "Medium",
+   "rect": [
+    786,
+    529,
+    841,
+    544
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    786,
+    530,
+    856,
+    546
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    670,
+    446,
+    864,
+    478
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "4000",
+   "rect": [
+    786,
+    454,
+    856,
+    470
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    1101,
+    480,
+    1265,
+    512
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "0",
+   "rect": [
+    1187,
+    488,
+    1257,
+    504
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    1088,
+    443,
+    1265,
+    475
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "150",
+   "rect": [
+    1187,
+    451,
+    1257,
+    467
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    892,
+    558,
+    1065,
+    590
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "0.122",
+   "rect": [
+    987,
+    566,
+    1057,
+    582
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    1077,
+    594,
+    1265,
+    626
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "1460",
+   "rect": [
+    1187,
+    602,
+    1257,
+    618
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    1072,
+    556,
+    1265,
+    588
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "0.68",
+   "rect": [
+    1187,
+    564,
+    1257,
+    580
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    912,
+    521,
+    1065,
+    553
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "797",
+   "rect": [
+    987,
+    529,
+    1057,
+    545
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    926,
+    446,
+    1065,
+    478
+   ],
+   "visible": true
+  },
+  {
+   "depth": 1,
+   "cls": "TSp_Edit",
+   "text": "212",
+   "rect": [
+    987,
+    454,
+    1057,
+    470
+   ],
+   "visible": true
+  },
+  {
+   "depth": 0,
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    1183,
+    702,
+    1263,
+    727
+   ],
+   "visible": true
+  }
+ ],
+ "stating": [
+  {
+   "depth": 1,
+   "hwnd": 1575750,
+   "cls": "TSp_Edit",
+   "text": "0",
+   "rect": [
+    989,
+    661,
+    1059,
+    677
+   ],
+   "visible": true,
+   "parent": 461812
+  },
+  {
+   "depth": 0,
+   "hwnd": 395526,
+   "cls": "TComboBox",
+   "text": "1",
+   "rect": [
+    1083,
+    373,
+    1128,
+    394
+   ],
+   "visible": true,
+   "parent": 8585312
+  },
+  {
+   "depth": 1,
+   "hwnd": 395522,
+   "cls": "TComboBox",
+   "text": "0.876",
+   "rect": [
+    984,
+    600,
+    1062,
+    621
+   ],
+   "visible": true,
+   "parent": 395520
+  },
+  {
+   "depth": 1,
+   "hwnd": 723168,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    987,
+    604,
+    1057,
+    620
+   ],
+   "visible": true,
+   "parent": 395520
+  },
+  {
+   "depth": 1,
+   "hwnd": 4197970,
+   "cls": "TSp_Edit",
+   "text": "40",
+   "rect": [
+    788,
+    569,
+    858,
+    585
+   ],
+   "visible": true,
+   "parent": 2034626
+  },
+  {
+   "depth": 1,
+   "hwnd": 395516,
+   "cls": "TComboBox",
+   "text": "medium",
+   "rect": [
+    1184,
+    522,
+    1262,
+    543
+   ],
+   "visible": true,
+   "parent": 7736160
+  },
+  {
+   "depth": 1,
+   "hwnd": 1248228,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    1187,
+    526,
+    1257,
+    542
+   ],
+   "visible": true,
+   "parent": 7736160
+  },
+  {
+   "depth": 1,
+   "hwnd": 917670,
+   "cls": "TSp_Edit",
+   "text": "2",
+   "rect": [
+    987,
+    491,
+    1057,
+    507
+   ],
+   "visible": true,
+   "parent": 1509594
+  },
+  {
+   "depth": 1,
+   "hwnd": 1377844,
+   "cls": "TComboBox",
+   "text": "4",
+   "rect": [
+    783,
+    488,
+    861,
+    509
+   ],
+   "visible": true,
+   "parent": 394932
+  },
+  {
+   "depth": 2,
+   "hwnd": 394934,
+   "cls": "Edit",
+   "text": "4",
+   "rect": [
+    786,
+    491,
+    841,
+    506
+   ],
+   "visible": true,
+   "parent": 1377844
+  },
+  {
+   "depth": 1,
+   "hwnd": 985256,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    786,
+    492,
+    856,
+    508
+   ],
+   "visible": true,
+   "parent": 394932
+  },
+  {
+   "depth": 1,
+   "hwnd": 394908,
+   "cls": "TComboBox",
+   "text": "Medium",
+   "rect": [
+    783,
+    526,
+    861,
+    547
+   ],
+   "visible": true,
+   "parent": 658700
+  },
+  {
+   "depth": 2,
+   "hwnd": 394928,
+   "cls": "Edit",
+   "text": "Medium",
+   "rect": [
+    786,
+    529,
+    841,
+    544
+   ],
+   "visible": true,
+   "parent": 394908
+  },
+  {
+   "depth": 1,
+   "hwnd": 920748,
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    786,
+    530,
+    856,
+    546
+   ],
+   "visible": true,
+   "parent": 658700
+  },
+  {
+   "depth": 1,
+   "hwnd": 331144,
+   "cls": "TSp_Edit",
+   "text": "4000",
+   "rect": [
+    786,
+    454,
+    856,
+    470
+   ],
+   "visible": true,
+   "parent": 395736
+  },
+  {
+   "depth": 1,
+   "hwnd": 1444220,
+   "cls": "TSp_Edit",
+   "text": "0",
+   "rect": [
+    1187,
+    488,
+    1257,
+    504
+   ],
+   "visible": true,
+   "parent": 2493510
+  },
+  {
+   "depth": 1,
+   "hwnd": 2298194,
+   "cls": "TSp_Edit",
+   "text": "150",
+   "rect": [
+    1187,
+    451,
+    1257,
+    467
+   ],
+   "visible": true,
+   "parent": 594458
+  },
+  {
+   "depth": 1,
+   "hwnd": 723472,
+   "cls": "TSp_Edit",
+   "text": "0.122",
+   "rect": [
+    987,
+    566,
+    1057,
+    582
+   ],
+   "visible": true,
+   "parent": 4523812
+  },
+  {
+   "depth": 1,
+   "hwnd": 1179798,
+   "cls": "TSp_Edit",
+   "text": "1460",
+   "rect": [
+    1187,
+    602,
+    1257,
+    618
+   ],
+   "visible": true,
+   "parent": 1116792
+  },
+  {
+   "depth": 1,
+   "hwnd": 462296,
+   "cls": "TSp_Edit",
+   "text": "0.68",
+   "rect": [
+    1187,
+    564,
+    1257,
+    580
+   ],
+   "visible": true,
+   "parent": 789088
+  },
+  {
+   "depth": 1,
+   "hwnd": 462314,
+   "cls": "TSp_Edit",
+   "text": "797",
+   "rect": [
+    987,
+    529,
+    1057,
+    545
+   ],
+   "visible": true,
+   "parent": 331142
+  },
+  {
+   "depth": 1,
+   "hwnd": 1182026,
+   "cls": "TSp_Edit",
+   "text": "212",
+   "rect": [
+    987,
+    454,
+    1057,
+    470
+   ],
+   "visible": true,
+   "parent": 2885700
+  }
+ ]
+}

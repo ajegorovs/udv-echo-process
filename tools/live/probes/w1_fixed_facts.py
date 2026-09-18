@@ -31,11 +31,15 @@ dialog's own left (``Cancel``) button. Output is JSON on stdout, which ``task_ru
 ``outputs/live/task-<probe>.log``.
 
 **A probe that hovers owns its cleanup.** The first run of this probe crashed *between* the
-menubar hover and the cursor restore, and left the menu popup open on the desktop — after which
-every later gesture refused ("a menu popup is already open; this driver never ``WM_CLOSE``s a
-popup"). Two lessons are built in here: the restore happens in a ``finally``, and step 0
-*recovers* from that state rather than only avoiding it, by moving the real cursor off the menubar
-(which is what closes the popup) and reporting whether it closed.
+menubar hover and the cursor restore and left the menu popup open on the desktop. Two
+measurements followed, both reported by the operator on 2026-09-18 and confirmed here: **Escape
+closes nothing in this application** — no popup, no dialog, no overlay ("noted before") — and a
+hover-opened popup is not collapsed by moving the cursor off the menubar, nor past the last
+entry, nor by a posted `WM_CANCELMODE`; the only clean exit is the one the driver already takes,
+*pressing* an entry. So a gesture that hovers can strand the application, and only a restart
+clears it (the operator restarted it once during this reconnaissance). Two rules are built in
+here: a restore happens in a `finally`, and anything that *opens* a dialog closes it in a
+`finally` too, because the operator has no key that would.
 """
 
 from __future__ import annotations
@@ -186,6 +190,15 @@ def main() -> int:
         tree = walk(root, text)
         report["tree_controls"] = len(tree)
         report["tree_with_text"] = stated(tree)
+        report["screen_visible"] = [
+            {
+                "cls": row.get("cls"),
+                "text": row.get("text"),
+                "rect": row.get("rect"),
+            }
+            for row in tree
+            if row.get("visible")
+        ]
 
     # --- 3. the Parameters popup's entries, read and never pressed -----------------------
     # **Opt-in** (`--popup`): measured 2026-09-18, hovering the menubar opens a popup that
@@ -233,6 +246,7 @@ def main() -> int:
         report["dialog_error"] = "skipped: the popup did not close, and this probe never WM_CLOSEs one"
         print(json.dumps(report, indent=2, default=str))
         return 0
+    panel = None
     try:
         panel = actuator._open_parameters_dialog()
         report["dialog"] = {k: v for k, v in panel.items() if k != "raw"}
@@ -242,10 +256,81 @@ def main() -> int:
         report["dialog_value_buttons"] = [
             row for row in dialog if row.get("cls") == "TSp_Value_Button"
         ]
-        actuator._close_parameters_dialog(panel)
-        report["dialog_closed"] = True
+        # The whole tree, so the fixture a test pins the binding against is complete rather than
+        # only the controls that happened to state something on the day.
+        report["dialog_all"] = [
+            {
+                "depth": row["depth"],
+                "cls": row.get("cls"),
+                "text": row.get("text"),
+                "rect": row.get("rect"),
+                "visible": row.get("visible"),
+            }
+            for row in dialog
+        ]
+        # **Does the dialog populate lazily?** The first run of this probe (against an instance
+        # that had been up ten hours, whose surfaces had therefore been built at least once) read
+        # the three dialog-only facts straight out of the main window's hidden panels; the run
+        # against a *freshly restarted* instance found those panels stating other things and none
+        # of these. So: dump the same subtree again after it has been on screen for two seconds,
+        # and dump the main window's panels again while it is open, to see whether a value appears
+        # with time or with the surface being built.
+        time.sleep(2.0)
+        again = walk(panel["hwnd"], text)
+        report["dialog_with_text_after_2s"] = stated(again)
+        report["dialog_controls_after_2s"] = len(again)
+        report["dialog_value_buttons_after_2s"] = [
+            row for row in again if row.get("cls") == "TSp_Value_Button"
+        ]
+        if root:
+            built = walk(root, text)
+            report["tree_with_text_while_dialog_open"] = stated(built)
     except (driver.AcquisitionError, ValueError) as exc:
         report["dialog_error"] = repr(exc)
+    finally:
+        # A dialog is *not* recoverable by the operator: Escape closes nothing in this
+        # application (reported 2026-09-18 and noted before), so a dump that raises must still
+        # put the dialog back the way it found it — its own left (`Cancel`) button.
+        if panel is not None:
+            try:
+                actuator._close_parameters_dialog(panel)
+                report["dialog_closed"] = True
+            except (driver.AcquisitionError, ValueError) as exc:
+                report["dialog_close_error"] = repr(exc)
+
+    # --- 5. the read path itself, as the driver now reads it -----------------------------
+    # The reconnaissance above established *where* the three dialog-only facts are stated; this is
+    # the implementation reading them as the driver performs it, on the same application, in the
+    # same run: the table is bound by position, its shape and its anchors are checked against the
+    # screen, and the dialog is closed again. The snapshot is then taken twice — once with the
+    # reading handed over, once without it — because the difference between the two is the whole
+    # point of the hand-over rule: a reading carries what a step established, and only that.
+    try:
+        # What the reader is looking at, before it reads: a refusal that says "no value buttons"
+        # without saying what *was* there cannot be told from a stale binding.
+        diagnostic = actuator._open_parameters_dialog()
+        kids = actuator._children_of(diagnostic["hwnd"], actuator._resolve())
+        report["read_path_panel"] = {k: v for k, v in diagnostic.items() if k != "raw"}
+        report["read_path_children"] = len(kids)
+        report["read_path_classes"] = sorted({k["cls"] for k in kids})
+        report["read_path_value_buttons"] = sum(
+            1 for k in kids if k["cls"] == "TSp_Value_Button"
+        )
+        actuator._close_parameters_dialog(diagnostic)
+
+        reading = actuator.read_dialog_parameters()
+        report["dialog_reading"] = json.loads(reading.model_dump_json())
+        report["dialog_reading_readable"] = reading.readable()
+        with_it = actuator.instrument_snapshot(routed_channel=None, dialog_parameters=reading)
+        without_it = actuator.instrument_snapshot(routed_channel=None)
+        report["snapshot_with_the_reading"] = {
+            name: fact.model_dump() for name, fact in with_it.facts()
+        }
+        report["snapshot_without_the_reading"] = {
+            name: fact.model_dump() for name, fact in without_it.facts()
+        }
+    except (driver.AcquisitionError, ValueError) as exc:
+        report["read_path_error"] = repr(exc)
 
     print(json.dumps(report, indent=2, default=str))
     return 0
