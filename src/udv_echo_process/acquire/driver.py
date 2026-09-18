@@ -1194,6 +1194,21 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         self.last_roles = roles
         return roles
 
+    def _has_slider(self, roles: dict, panel: dict | None) -> bool:
+        """True when the strip panel owns a ``TSp_Sliding_Bar`` — the store view's mark.
+
+        The flat class's own seam, kept on the class it published it from: ``_resolve`` reads the
+        mark once and carries it on the resolved map as ``roles["strip_slider"]``, and the rule
+        itself lives in ``ui/strip.py`` (:func:`…ui.strip.has_slider`), which this delegates to —
+        so the two spellings of the question cannot drift apart. A caller that has a panel and no
+        map still gets the read the flat module gave it, and it is the same read: an absent panel
+        is ``False`` without walking anything (a screen with no strip panel owns no slider), and
+        otherwise the panel's own children — never a guessed handle — are asked.
+        """
+        if panel is None:
+            return False
+        return has_slider(self._children_of(panel["hwnd"], roles))
+
     # ------------------------------------------------------------- the read-only surface
 
     def _is_visible(self, hwnd: int) -> bool:

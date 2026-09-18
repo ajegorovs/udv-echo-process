@@ -3234,3 +3234,71 @@ def test_the_routed_channel_rests_on_the_routers_own_read_back() -> None:
     assert routed_fact.value == "1"
     assert not routed_fact.is_read
     assert "ensure_channel" in (routed_fact.reason or "")
+
+
+# ------------------------------- the flat class's slider read is still a seam on the class
+
+#: The strip panel, the slider child that marks the store view, and an unrelated button. The
+#: values are meaningless on purpose: nothing in this driver keys on a control id.
+HWND_SEAM_SLIDER_BAR, HWND_SEAM_SLIDER, HWND_SEAM_BUTTON = 71, 72, 73
+HWND_SEAM_STRIP, HWND_SEAM_NO_SLIDER = 74, 75
+
+
+def seam_node(hwnd: int, cls: str) -> dict:
+    """A node in the shape the resolver projects, with only what the seam's reader reads."""
+    return {"hwnd": hwnd, "cls": cls, "left": 0, "top": 0, "w": 10, "h": 10}
+
+
+class SeamDriver(driver.Win32Actuator):
+    """``Win32Actuator`` over a scripted child enumeration, so the seam is read with no window.
+
+    ``_children_of`` is the one thing overridden, because it is the one thing the seam reads a
+    panel's own children through — which is what lets a captured or synthesised tree answer the
+    question a live one does, and what makes this read takeable off the instrument.
+    """
+
+    def __init__(self, kids: dict[int, list[dict]]) -> None:
+        super().__init__(channel=1)
+        self.kids = kids
+        self.enumerated: list[int] = []
+
+    def _children_of(self, parent: int, roles: dict) -> list[dict]:
+        self.enumerated.append(parent)
+        return list(self.kids.get(parent, []))
+
+
+def test_the_slider_read_is_still_a_seam_on_the_live_class() -> None:
+    """``Win32Actuator._has_slider`` survives the refactor, answering what ``bfbbb10`` answered.
+
+    ``_resolve`` now reads the mark once and carries it on the resolved map as
+    ``roles["strip_slider"]``, and the rule itself moved to ``ui/strip.has_slider`` — but the
+    method the flat class published is still there, and still answers the three ways it did: an
+    absent panel is no slider, a panel whose own children carry no ``TSp_Sliding_Bar`` is no
+    slider, and the panel that owns one is the store view whatever else its row holds. The
+    children are read through ``self._children_of`` — the seam a fake (``FakeDriver``) overrides
+    — so the two answers are read off the panel's own handle and never off a guessed one.
+    """
+    assert callable(getattr(driver.Win32Actuator, "_has_slider", None))
+    actuator = SeamDriver(
+        {
+            HWND_SEAM_STRIP: [
+                seam_node(HWND_SEAM_BUTTON, "TSp_Button"),
+                seam_node(HWND_SEAM_SLIDER, "TSp_Sliding_Bar"),
+            ],
+            HWND_SEAM_NO_SLIDER: [
+                seam_node(HWND_SEAM_BUTTON, "TSp_Button"),
+                seam_node(HWND_SEAM_SLIDER_BAR, "TSp_Browse"),
+            ],
+        }
+    )
+    roles: dict = {"raw": []}
+
+    # No strip panel is no slider — and the tree is not walked to find that out.
+    assert actuator._has_slider(roles, None) is False
+    assert actuator.enumerated == []
+
+    # A panel without the mark is not the store view; the panel that owns it is.
+    assert actuator._has_slider(roles, {"hwnd": HWND_SEAM_NO_SLIDER}) is False
+    assert actuator._has_slider(roles, {"hwnd": HWND_SEAM_STRIP}) is True
+    # Both answers came off the panel's own children, by the panel's own handle.
+    assert actuator.enumerated == [HWND_SEAM_NO_SLIDER, HWND_SEAM_STRIP]

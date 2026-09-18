@@ -130,6 +130,7 @@ FACADE_METHODS = (
     "_children_of",
     "_param_rows",
     "_resolve",
+    "_has_slider",
     "_is_visible",
     "_hidden_panels",
     "_descendants_of",
