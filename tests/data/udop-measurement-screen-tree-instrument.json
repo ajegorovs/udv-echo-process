@@ -1,0 +1,490 @@
+{
+ "probe": "tools/live/probes/main_geometry.py, 2026-09-18",
+ "caption": "UDOP DOP3010.43",
+ "note": "the same measurement screen read in real-experiment mode (caption 'UDOP DOP3010.43', not the simulation frame's 'UDOP Simul'): the parameter column's own values, the strip's view, and the visible controls - 44 in 4 panels, against the simulation frame's 43 in 4, the column carrying the extra painted Tgc [dB] row; handles, cursor and screen-capture statistics dropped, as in the simulation fixture",
+ "param_column": [
+  {
+   "role": null,
+   "text": "4000"
+  },
+  {
+   "role": null,
+   "text": "600"
+  },
+  {
+   "role": null,
+   "text": "50"
+  },
+  {
+   "role": null,
+   "text": "1.850"
+  },
+  {
+   "role": null,
+   "text": "1.00"
+  },
+  {
+   "role": null,
+   "text": "20"
+  },
+  {
+   "role": null,
+   "text": "0"
+  },
+  {
+   "role": null,
+   "text": "20"
+  },
+  {
+   "role": null,
+   "text": "89"
+  },
+  {
+   "role": null,
+   "text": "89"
+  }
+ ],
+ "strip_view": "ready",
+ "controls": [
+  {
+   "cls": "TSp_Panel",
+   "text": "",
+   "rect": [
+    343,
+    414,
+    695,
+    454
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    409,
+    467,
+    453,
+    482
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    350,
+    467,
+    401,
+    482
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    353,
+    424,
+    432,
+    444
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    442,
+    424,
+    527,
+    444
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    537,
+    423,
+    675,
+    443
+   ]
+  },
+  {
+   "cls": "TDop_Plot",
+   "text": "",
+   "rect": [
+    200,
+    65,
+    1910,
+    1006
+   ]
+  },
+  {
+   "cls": "TSp_Panel",
+   "text": "",
+   "rect": [
+    0,
+    55,
+    190,
+    1016
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    325,
+    105,
+    349
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "20",
+   "rect": [
+    14,
+    329,
+    54,
+    345
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    300,
+    130,
+    324
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "0",
+   "rect": [
+    14,
+    304,
+    54,
+    320
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    375,
+    153,
+    399
+   ]
+  },
+  {
+   "cls": "TComboBox",
+   "text": "Medium",
+   "rect": [
+    12,
+    377,
+    76,
+    398
+   ]
+  },
+  {
+   "cls": "Edit",
+   "text": "Medium",
+   "rect": [
+    15,
+    380,
+    56,
+    395
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    14,
+    379,
+    74,
+    395
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    275,
+    143,
+    299
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "20",
+   "rect": [
+    14,
+    279,
+    54,
+    295
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    350,
+    131,
+    374
+   ]
+  },
+  {
+   "cls": "TComboBox",
+   "text": "medium",
+   "rect": [
+    12,
+    352,
+    76,
+    373
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "89",
+   "rect": [
+    14,
+    354,
+    74,
+    370
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    250,
+    159,
+    274
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "1.00",
+   "rect": [
+    14,
+    254,
+    54,
+    270
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    225,
+    139,
+    249
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "1.850",
+   "rect": [
+    14,
+    229,
+    54,
+    245
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    200,
+    119,
+    224
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "50",
+   "rect": [
+    14,
+    204,
+    54,
+    220
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    175,
+    105,
+    199
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "600",
+   "rect": [
+    14,
+    179,
+    54,
+    195
+   ]
+  },
+  {
+   "cls": "TSp_Value_Button",
+   "text": "",
+   "rect": [
+    10,
+    150,
+    160,
+    173
+   ]
+  },
+  {
+   "cls": "TSp_Edit",
+   "text": "4000",
+   "rect": [
+    14,
+    154,
+    54,
+    169
+   ]
+  },
+  {
+   "cls": "TSp_Panel",
+   "text": "",
+   "rect": [
+    0,
+    1016,
+    1920,
+    1050
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    1850,
+    1025,
+    1910,
+    1045
+   ]
+  },
+  {
+   "cls": "TSp_Panel",
+   "text": "",
+   "rect": [
+    0,
+    23,
+    1920,
+    55
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    526,
+    28,
+    596,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    1850,
+    28,
+    1880,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    466,
+    28,
+    516,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    334,
+    28,
+    394,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    406,
+    27,
+    456,
+    52
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    169,
+    28,
+    239,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    258,
+    28,
+    328,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    8,
+    28,
+    58,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    606,
+    28,
+    676,
+    53
+   ]
+  },
+  {
+   "cls": "TSp_Button",
+   "text": "",
+   "rect": [
+    63,
+    28,
+    153,
+    53
+   ]
+  }
+ ]
+}
