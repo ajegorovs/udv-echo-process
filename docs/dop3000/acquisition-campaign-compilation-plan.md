@@ -1251,6 +1251,27 @@ Recorded here rather than in the code because nothing in this slice should act o
 which axis it belongs to and the operator has settled the TGC mode question (auto vs manual, and whether the
 assisted mode forces auto).
 
+### 18.5 What the first knob taught the reader and the writer
+
+Pinning `Number of skipped profiles` produced two rules worth more than the field itself.
+
+**A dialog value field needs an explicit commit keystroke.** The operator typed `0` over the `2` and the
+field kept its old value until they pressed **Enter**; with Enter, the next read shows `0` and *only* that
+control differs from the baseline — twice over, once each direction (`0 → 2` and `2 → 0`, one control in the
+whole dialog moving each time). So the reader is exact, and the writer must commit the text, not merely set
+it. The driver already has that discipline for the measurement screen's own fields
+(`_set_text_commit`), which is the name to look for when the dialog writer is built.
+
+**The dialog's value fields are not where every fact comes from.** The fifteen `TSp_Edit` cells carry
+`4000 | 89 | 89 | 40` (column 0), `212 | 2 | 797 | 0.122 | 89 | 0` (column 1) and
+`150 | 0 | 89 | 0.68 | 1460` (column 2) — and **no `4` anywhere**, even though the run reports burst length
+`4` with source `read`, and the burst field is bound to `(0,1)`. Since the dialog also contains five
+`TComboBox` controls and burst is a combo (the combo-steps-past-a-value measurement), the likely explanation
+is that burst is a **combo**, not an edit, and therefore never appears in the edit table at all — with the
+consequence that the `(0,1)` binding's comment and the edit at `(0,1)` (which reads `89`) describe different
+things. Open until the operator reads the dialog's painted labels, which are invisible to every API read in
+this repo.
+
 **Harness trap, paid for once.** `./tools/live/dispatch.sh tools/live/probes/<probe>.py` does **not** run the
 probe: the launcher joins its argument onto the probe directory, finds nothing, and returns without writing a
 log — so the dispatcher polls for a line that can never appear. The working form is the bare name:
