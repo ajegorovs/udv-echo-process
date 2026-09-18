@@ -3346,7 +3346,9 @@ map of the application the record did not have, and it corrects §26.5 and §26.
 inferred "non-blocking" for every overlay that left the mouse free; **the Alt-Tab trick was what freed it**, so
 that inference was confounded by the very hole §26.5 records. The measured answer: **most overlays are
 blocking**, every `Parameters` entry is blocking, and the non-blocking set is small — `Define TGC`,
-`Search artefacts`, `Acquire raw data` — while the two `Preferences` items are not overlays at all. §26.5's list
+`Search artefacts`, `Acquire raw data` — while the `Preferences` menu's own `Assisted mode` is a toggle button
+rather than an overlay at all, and the two dialogs behind its `Record options` and `Options` entries are
+blocking like the rest. §26.5's list
 is superseded by that, and the crop index's `blocking` column records the operator's per-surface answer instead
 of the naming convention. `External trigger settings` remains unclassified.
 
@@ -3374,4 +3376,35 @@ entry switches which curve the monitor plots — `Profile`, `Echo`, `Energy`, `P
 of the phantom: the monitor's *field* is selectable, and the operator's matrix should say which field the
 analysis reads. `Cursors` is the other half of that — `Add a cursor on curve` with a colour selector is a
 measurement aid drawn on the monitor, i.e. a readout surface this work has never used.
+
+### 26.8 Two dialogs the crop set already held — including the store directory
+
+The menu walk named `Record options` and `Options` as the two blocking `Preferences` entries, and the crop set
+**already contains both dialogs** (`UI-OVERLAY-07`, `UI-OVERLAY-06`) under the captions the application itself
+gives them. That is the same pattern `Search artefacts` → `Sweep PRF` established: **the menu entry names the
+entry's purpose, the window carries its own caption, and the two do not have to match.**
+
+- **`UI-OVERLAY-06`, captioned `Preferences`** (the `Options` entry): `Color for curve (or channel)` with a
+  channel selector showing `1` and its current colour swatch; `Background color` / `Grid color` / `Text color`;
+  three checkboxes — `No warning when profiles are removed from memory` (off), **`Show floating PRF panel`**
+  (off), `Show fast access parameters panel (not available in assisted mode)` (on); `50`
+  `Emitting frequency step increment [kHz]`; `Close`.
+- **`UI-OVERLAY-07`, captioned `Record settings`** (the `Record options` entry): `Data directory`
+  `C:\USERS\MHD01\DESKTOP\EXPERIMENT_DATA\001\RES` with `Browse`; `Ultrasonic field data directory` `C:\` with
+  `Browse`; `Number of pre-recorded profiles` `0`; **the cap** — `Do not keep in a block more profiles than`
+  `932068`, under it in green *Your memory can record up to 2097152 profiles*; `Same data directory for all
+  settings` (on); `Use all software packages when reading data file` (off); `Close`.
+
+Three consequences worth having in this record rather than only in a crop:
+
+- **§11.1 item 1's prerequisite now has evidence instead of a transcription.** "The store directory, the
+  operator's to read off the application's own Record settings" is now a *crop* — `EXPERIMENT_DATA\001\RES` —
+  and the crop is the artifact, not somebody's note of it.
+- **The cap that §18 lists as "the one knob with no path" is painted together with the limit that explains it**
+  (`932068` against `2097152 profiles` of memory), so the next reader can see why a long run stops.
+- **`Show floating PRF panel`** is the first evidence that the application can display a PRF readout of its own,
+  and `Emitting frequency step increment [kHz] = 50` is the UI's own granularity for the `US Frequency [kHz]`
+  knob. Both are worth knowing before a writer or a sweep touches either.
+
+The index's gap list loses two entries accordingly: those two dialogs were never missing, only misnamed.
 
