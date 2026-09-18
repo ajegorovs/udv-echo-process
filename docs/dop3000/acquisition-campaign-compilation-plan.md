@@ -3242,8 +3242,12 @@ The operator's taxonomy, which the crop set encodes in its filenames: **a blocki
 inside its own window or widget**, so nothing else in the application can be reached while it is up; a
 non-blocking one leaves the rest of the screen live. Read off the crop names:
 
-- **blocking** — `Record settings`, `Measure sound speed`, `Default parameters`, `Save parameters`,
-  `Operating parameters`; `External trigger settings` is the one filename that is not marked either way.
+- **blocking** — `Measure sound speed`, `Default parameters`, `Save parameters`, `Operating parameters`: each
+  carries the `-blocking` suffix the convention is built on.
+- **unclassified, and they need the operator's word rather than a convention** — `Record settings` and
+  `External trigger settings`. Neither filename carries the suffix, and **`Record settings` was listed as
+  blocking here on no authority at all** (this section's first draft inferred it); the crop set records the
+  uncertainty in its cells instead, which is the right way round.
 - **non-blocking** — `Define TGC` (measured in §26.3: the monitor stayed live and the mouse was free; only the
   strip was hidden), `Preferences`, `Recall parameters`, `Acquire raw data`, `Search artifacts`, `Update files`.
 
@@ -3271,4 +3275,50 @@ free to diverge; that is the same argument this project adopted for its own gate
 what commits. On that reading the Alt-Tab hole is not a design choice but a leak in one. The manual corpus
 documents neither the block nor the leak, so this is recorded as interpretation and must not be cited as
 spec.
+
+### 26.6 The UI crop set, indexed — and what a second reader of the pixels found
+
+`docs/dop3000/ui-element-index.md` and `docs/dop3000/ui-crops/`: 30 hand-cut crops, indexed as
+`UI-<FAMILY>-<nn>` (12 `MENU`, 15 `OVERLAY`, 1 `SIDEBAR`, 1 `BAR`, 1 `STRIP`), one row each with the surface,
+the state at capture, the readable captions and the `blocking` column. The header states the set is **partial**;
+two sections name what it does **not** cover — the operator's own `Measure US field` and `Compare profiles`,
+plus every surface the plan names with no crop (the monitor and its plots, the title bar and the mode
+statement, the two caption-less buttons below the strip, the four-button band, both warning modals, the
+`Tgc [dB]` row, `Search artefacts`).
+
+Reading it produced four things the plan did not have:
+
+1. **The `89`s are not painted, and that is the finding.** §23.3's tree read lists four `TSp_Edit`s holding
+   `89` in the dialog; the crop of that same dialog reads no `89` anywhere. In the sidebar the two `89`s sit in
+   the *inner* `Edit`s of the `Sensitivity` and `Emitting power` combos, whose painted text is
+   `medium` / `Medium`. So `89` is plausibly a **buffer value in an edit that is not painted**, in all three
+   places it has appeared — the leading hypothesis now, and a cheap one to test by comparing each edit's tree
+   text against its painted text. The rule it implies is a read-path rule: **an edit's tree text is not
+   evidence of a displayed parameter unless it is painted**, and a combo must be read through its own
+   selection rather than through a child edit's text.
+2. **The assisted frame is corroborated by the pixels, and dated.** The `Operating parameters` crop (16:33)
+   reads `296 / 726 / 0.123 / 0.49 / 150` with `Tgc 40`, eight other cells agreeing with §23.3 exactly — and it
+   is arithmetically coherent with itself (`726 × 0.123 ≈ 89.3 mm` against its own `Depth 90 mm`;
+   `1480 m/s` / `296 µs` / `4 MHz × 0.49 ≈ 153 mm/s` against its painted `Velocity scale 154.2 mm/s`), which
+   is what makes it a second parameter frame rather than a misreading. It also paints `Sampling volumes
+   overlapped` in green — the manual's own indication, produced here by a resolution below the manual's floor.
+   §26.4's attribution of the frame move to the assisted toggle therefore rests on two independent witnesses.
+3. **The `Parameters` popup is caption-less only in the tree.** All five entries are painted
+   (`Operating parameters`, `Default parameters`, `Save parameters`, `Recall parameters`,
+   `Tigger parameters` — the application's own spelling of the last). "Caption-less" has to be read as
+   "carries no `WM_GETTEXT` text", and the crop, not the tree, is the oracle for the words.
+4. **A filename that does not match its content — and a surface this record did not know existed.**
+   `overlay-search-artifacts.png` carries a small overlay captioned **`Sweep PRF`** with `Range`
+   (`Fine` / `Medium` / `Large`) and `Sweeping` (`Fast` / `Medium` / `slow`) plus `Start` / `Exit`, not the
+   `Search artefacts` surface, which has no crop at all. **If the application has a PRF sweep of its own, that
+   is a matrix-relevant fact**: either it makes a PRF axis cheap to run, or it collides with a driver-driven
+   sweep that assumes it alone is moving the PRF. Open question for the operator, and recorded as a surface
+   with no proper coverage either way.
+
+Two cross-checks came back clean and are recorded so nobody re-raises them. The far-right 30 px menubar button
+is the `Help` **icon** of §22.3's own table — which is why a `Help` dropdown exists while the instrument paints
+nine *entry* buttons, `UDV mode` being the missing entry as §26.3 says. And the strip crop confirms
+`Pause` / `Record` / `Clear and restart` with no slider. One contrast worth keeping: the bottom-bar crop reads
+`CH: 1`, agreeing with the column's channel 1, where the archive's machine read `CH: 10` with the column
+writing 1 (§D2's attribution hazard) — so this is an agreement here, not a rule.
 
