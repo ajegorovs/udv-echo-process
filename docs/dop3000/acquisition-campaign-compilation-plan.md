@@ -3408,3 +3408,48 @@ Three consequences worth having in this record rather than only in a crop:
 
 The index's gap list loses two entries accordingly: those two dialogs were never missing, only misnamed.
 
+### 26.9 Cursors as a readout surface, and the application's own PRF search
+
+Four behaviours the operator demonstrated in the second crop pass. The first is the one that matters beyond
+documentation.
+
+**`Cursors` is a measurement instrument, and its readout is persistent and non-blocking.** With
+`Show cursors` on, clicking a depth on the plot places an `X` marker at that depth and opens a **small
+persistent, draggable, non-blocking** window showing **the selected depth and the measured value at that
+depth**. Three consequences, in order of usefulness:
+
+- **§11.1 item 5's "analysis that would read the result" now has a candidate mechanism that is not curve
+  digitisation.** A depth-anchored value readout is exactly what a sensitivity experiment needs to state an
+  outcome, and it exists as an application feature rather than something this project must build.
+- **It is non-blocking, so it can be up during an acquisition** — unlike every `Parameters` dialog, which
+  would refuse a run. A cursor window that persists through a run is the first *readout* surface this work has
+  found that can coexist with recording.
+- **The value is painted, so reading it is a screenshot job** until proven otherwise — and whether the tree
+  carries it at all is an open question with an obvious cheap test (place a cursor, read the tree, look for the
+  depth and the value; then check whether either is painted or a control text, since §26.6's rule about
+  unpainted edits applies to any control whose text is not the displayed value).
+
+**`Measure US field` replaces the monitor with a single echo plot.** The second whole-screen replacement, after
+`Compare profiles`: it is a different surface, not the measurement screen with a dialog on it, and it is
+blocking. Both are crops now or soon.
+
+**The application's own PRF search is a search, not an axis.** The operator started `Tools → Search artefacts`
+(the overlay captioned `Sweep PRF`): it runs **continuously** and offers to keep whatever it finds, and it could
+not be characterised further because *there is nothing being measured on this machine right now*.
+
+That last clause is the finding, and it is the same one the science has:
+
+> **Both the application's PRF search and the experiment need a moving target.** The monitor is flat because
+> nothing moves; the operator cannot tell what the search does because it has no signal to work on; and §11.1
+> item 5 lists a *dynamic* target as one of the four things the matrix must supply. One missing thing, three
+> consequences.
+
+It also settles the PRF axis in one direction: **the application's search cannot be a matrix axis.** It is
+non-deterministic by design (it runs until it finds something and the operator keeps the result), it needs a
+live signal to do anything, and it *chooses* the PRF rather than setting a stated one — so a PRF sweep stays
+driver-driven, and the search stays a tool the operator may use before a run. If the matrix ever wants the
+search inside a run, that is a different experiment and it would have to say what "found" means.
+
+**A full-window capture now exists** (`app-whole.png`), which closes the index's "no whole-frame view" gap, and
+the crop set stands at 41 files with one rename recorded.
+
