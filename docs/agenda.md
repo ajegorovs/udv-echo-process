@@ -276,7 +276,7 @@ operator's input, with the W6 predicted-timing caveat flagged as experimentally 
 
 
 **Next work is planned, ordered, and pinned to a revision:**
-[`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) (2026-09-19). It lands the
+[`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) (2026-09-19). It landed the
 open stack — `#9`, then `#8` (whose two live findings are fixed **only** on the refactor branch, so they go
 to `#8` as a disclosure comment naming the fixing commits), then `#10` retargeted onto `master` — and runs
 the refactor's remaining device items as **four sittings**: the read-only V2 bracket on the final head, then
@@ -287,6 +287,19 @@ operator can answer — is `experiment_data\mixer\sensitivity-analysis\4MHz\0500
 experiment? — in front of every later decision. It adds no architecture (§9.1 binds) and carries no
 checklist ([`dop3000/device-verification.md`](dop3000/device-verification.md) owns the items and their pass
 criteria).
+
+**Status, 2026-09-19.** The stack is **merged** — `#9` `b2f74ea`, `#8` `e8fe2ac`, `#10` `5f74b8f`, `#11`
+`5a36b40`; `master` is at `5a36b40`, cloud-green (`1843 passed, 22 skipped`, ruff clean) — and **sitting A
+passed** on that merge head: the V2 bracket ran with UDOP in front (`is_foreground: true`, the precondition
+the failed attempt lacked), its two status readings are identical field for field except the `cursor` field
+the gesture itself moved, the dialog resolved live at the measured rect with its own channel and the three
+dialog-only fields `source: read`, no error key names anything and no popup was stranded. The `89` rule the
+index could not settle is now **confirmed on the pixels** — the four dialog edits read `89` while their
+combos paint `1.776` / `4` / `medium` / `Medium` (crop `UI-OVERLAY-24`). The cursor-info-box item is
+**sharpened, not closed**: the monitor side carries no text-bearing control, but the box was not up and it
+need not descend from `TMain_Scr`, so it wants a top-level window enumeration with the box up — that joins
+sitting B. V5's cap is untouched. V4's four-button role map, the refusal paths, and the write path
+(`ensure_channel`, V6) remain device-pending.
 
 Binding outcomes:
 
