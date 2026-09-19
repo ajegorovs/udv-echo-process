@@ -218,9 +218,10 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
 - **The intermediate state was read too** (11:55, same process): panel 453x40, four buttons — `Pause` /
   `Record` / `Do store` / `Clear and restart` — and it paints nothing below the row while the tree still
   reports the slider hidden and the `Show block` combo and the toggle pair `visible`; the `Show block`
-  value is **`1`**, i.e. no block held. **Left open:** the fourth combination (UI-STRIP-04, three buttons
-  and a slider) is **cropped but not read**, so its handle row is a prediction from the pool; and the
-  `STORE` versus `READY`-with-block naming, plus V5's cap, stay this sitting's items.
+  value is **`1`**, i.e. no block held. **And the fourth combination is read too**: UI-STRIP-04's state
+  (three buttons and a slider) was reached live at 12:03 and is the strip's `store` view — the pool's
+  predicted handle row, panel rect and `Show block` came out exact, so all four states of this row are
+  read rather than inferred. **Left open:** the `STORE` versus `READY`-with-block naming, and V5's cap.
 - **The block-held state reproduces exactly** (read again at 11:59 after the operator passed through the
   intermediate state): `compare_reads.py` gives **tree delta `+0 / -0 / moved 0 of 273`**, the same ten strip
   children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so

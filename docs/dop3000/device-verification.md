@@ -704,15 +704,19 @@ does not use this feature. It is recorded here for the **strip mis-resolution it
 not as a readout: an app-side readout of the tracked cursor does not exist, so the analysis stays
 post-processing, which is where §26.11 already put it, and those two numbers can come only from pixels.
 
-### The fourth combination is cropped but not read
+### The fourth combination — cropped and then read, so the pool is closed
 
-The operator's second new crop (`ui-crops/overlay-pause.png`, UI-STRIP-04) shows a state one step earlier —
-reached by pressing `Pause` while the strip reads `Pause` / `Record` / `Clear and restart` — painting
-**three** buttons (`Resume` / `Do store` / `Clear and restart`), the `Profiles history in second / profile`
-row, a slider whose ends read `1` ... `392`, and `Show block` = `1`. Its handles are **unmeasured** (that
-state was photographed, not read). Its row is consistent with the pool above — `1574908` / `2821164` /
-`1641666` visible, `4787852` and `7867344` hidden — but that is a **prediction from the pool, not a
-reading**, and it is recorded as a prediction.
+The operator's second new crop (`ui-crops/overlay-pause.png`, UI-STRIP-04) is the state pressing `Pause`
+leaves when the strip reads `Pause` / `Record` / `Clear and restart`: **three** buttons (`Resume` /
+`Do store` / `Clear and restart`), the `Profiles history in second / profile` row, a slider whose ends read
+`1` ... `392`, and `Show block` = `1`. At the time it was only a photograph, and the pool model made a
+**prediction** for it — `1574908` / `2821164` / `1641666` visible, `4787852` and `7867344` hidden, panel
+370x123, slider visible, `Show block` = `1`. The same state was then reached live and read (12:03:31, same
+process): the strip resolves as **`view 'store'`, 3 buttons, slider**, on panel `[343,414,713,537]`, and
+**every line of the prediction held** — the only difference from the crop being the slider's numbers
+(`1` ... `4772` against its `1` ... `392`, i.e. the history growing between the two moments). So all four
+states of this row are now **read**, not inferred, and the pool model has been tested on states it was not
+built from.
 
 ### Evidence
 
