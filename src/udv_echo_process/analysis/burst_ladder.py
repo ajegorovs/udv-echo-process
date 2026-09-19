@@ -561,9 +561,10 @@ def _build(
     dataset_root: Path, manifest_path: Path, envelope_path: Path, analysis_commit: str | None
 ) -> tuple[BurstLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
     """Build the ladder and return it beside each level's native mean profile."""
+    rows = select_level_rows(manifest_path)  # a missing manifest is refused by name here
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
     envelope = grid.read_envelope(Path(envelope_path), manifest_sha256)
-    decoded = [_read_level(Path(dataset_root), row) for row in select_level_rows(manifest_path)]
+    decoded = [_read_level(Path(dataset_root), row) for row in rows]
     _require_clean_ofat([entry for entry, *_ in decoded])
     period = wp1.shared_profile_period_s([entry.profile_period_s for entry, *_ in decoded])
     revolutions = wp1.common_revolution_count([entry.duration_s for entry, *_ in decoded])

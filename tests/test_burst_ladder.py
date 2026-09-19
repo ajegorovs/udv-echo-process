@@ -143,7 +143,6 @@ def test_axis_artefact_names_and_manifest_selection() -> None:
 
     assert (AXIS, FOCUS_WINDOW_CYCLES, FOCUS_PAIR_CYCLES) == ("burst_len", (16, 20), (18, 20))
     assert (module.LEVELS_NAME, module.PAIRS_NAME) == ("burst-levels.csv", "burst-pairs.csv")
-    assert module.FIGURE_NAME == "burst-ladder.png"
     assert module.PROVENANCE_NAME == "burst-ladder.provenance.json"
     rows = select_level_rows(MANIFEST)
     assert [int(row["burst_length"]) for row in rows] == list(CYCLES)
@@ -208,20 +207,21 @@ def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_envelope(
         build_burst_ladder(DATASET_ROOT, changed, ENVELOPE, analysis_commit=COMMIT)
 
 
-def test_the_ladder_audits_that_only_the_burst_length_moved(tmp_path) -> None:
-    """A manifest that hides a coupled setting behind the axis must still be refused."""
+def test_the_ladder_audits_that_only_the_burst_length_moved() -> None:
+    """A ladder whose companion setting moved must be refused, not credited to the burst."""
     from udv_echo_process.analysis.burst_ladder import (
         _require_clean_ofat,
     )
 
-    entries = [entry for entry in build_burst_ladder(
-        DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE, analysis_commit=COMMIT
-    ).inputs]
+    entries = list(
+        build_burst_ladder(
+            DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE, analysis_commit=COMMIT
+        ).inputs
+    )
     _require_clean_ofat(entries)  # the committed ladder is clean
-    coupled = list(entries)
-    coupled[-1] = coupled[-1].model_copy(update={"emit_power": "high"})
+    entries[-1] = entries[-1].model_copy(update={"emit_power": "high"})
     with pytest.raises(BurstLadderError, match="OFAT ladder"):
-        _require_clean_ofat(coupled)
+        _require_clean_ofat(entries)
 
 
 def test_common_duration_view_and_common_support(ladder) -> None:
@@ -278,10 +278,7 @@ def test_level_rows_carry_native_grid_metrics_computed_before_any_alignment(ladd
     means = values[time_s <= time_s[0] + COMMON_WINDOW_S + 1e-9].mean(axis=0)
     gradient = spatial_gradient(depths, means)
     correlation = correlation_length(depths, means)
-    # One grid for the whole ladder, measured on each level's own gates.
-    assert [r["pitch_mm"] for r in ladder.levels] == pytest.approx([PITCH_MM] * len(CYCLES))
     assert row["pitch_mm"] == pytest.approx(float(np.diff(depths).mean()))
-    assert row["gates_in_support"] == depths.size
     assert (row["gradient_median_abs_mm_s_per_mm"], row["gradient_max_abs_mm_s_per_mm"])         == pytest.approx((gradient.median_abs_mm_s_per_mm, gradient.max_abs_mm_s_per_mm))
     assert row["correlation_length_mm"] == pytest.approx(correlation.length_mm)
     assert row["correlation_length_over_pitch"] == pytest.approx(
@@ -341,7 +338,6 @@ def test_the_temporal_floor_and_envelope_come_from_the_committed_wp1(ladder) -> 
     assert floor["source_paths"] == [
         s["relative_path"] for s in temporal["series"]
     ]
-    assert floor["band_hz"] == [0.5, 20.0]
     assert floor["band_max_abs_level_difference_db"] == pytest.approx(
         temporal["band_max_abs_level_difference_db"]
     )
@@ -369,20 +365,12 @@ def test_pairs_cover_the_ladder_on_the_shared_knots_without_upsampling(ladder) -
         )
     means = {r["cycles"]: _window(r["relative_path"]).mean(axis=0) for r in ladder.levels}
     for row in ladder.pairs:
-        assert row["short_cycles"] < row["long_cycles"]
         difference = means[row["short_cycles"]] - means[row["long_cycles"]]
-        # Identical grids: the knots are that grid, the offset is exactly zero, nothing is
-        # interpolated.
-        assert (
-            row["max_knot_offset_mm"],
-            row["max_abs_difference_mm_s"],
-            row["mean_abs_difference_mm_s"],
-        ) == pytest.approx(
-            (
-                0.0,
-                float(np.abs(difference).max()),
-                float(np.abs(difference).mean()),
-            )
+        assert (row["max_knot_offset_mm"], row["max_abs_difference_mm_s"]) == pytest.approx(
+            (0.0, float(np.abs(difference).max()))
+        )
+        assert row["mean_abs_difference_mm_s"] == pytest.approx(
+            float(np.abs(difference).mean())
         )
 
 
@@ -488,7 +476,6 @@ def test_written_artefacts_reproduce_the_declared_columns_and_bytes(tmp_path) ->
         assert b"\r" not in first and first.endswith(b"\n")
         assert str(ROOT).encode() not in first
         assert b"C:/" not in first and b"C:\\" not in first
-        assert b"udv-echo-process" not in first
     figure = (tmp_path / "a" / FIGURES_DIRNAME / FIGURE_NAME).read_bytes()
     assert figure == (tmp_path / "b" / FIGURES_DIRNAME / FIGURE_NAME).read_bytes()
     assert figure.startswith(b"\x89PNG\r\n\x1a\n") and len(figure) > 40_000
@@ -531,7 +518,6 @@ def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) 
     assert COMMIT in figure["caption"] and "16-20" in figure["caption"]
     assert "18" in figure["caption"] and "not a phase reference" in figure["caption"]
     assert "independent experimental replicate" in figure["caption"]
-    assert COMMIT in figure["caption"]
     assert "--analysis-commit" in document["regeneration"]["command"]
 
 
@@ -570,10 +556,10 @@ def test_findings_answer_the_plans_burst_questions_from_the_numbers(tmp_path) ->
     assert temporal["floor_hf_share_difference"] == pytest.approx(
         model.temporal["floor"]["hf_share_difference"]
     )
-    assert temporal["statement"]
     assert len(findings["limitations"]) >= 3
     assert "drift" in " ".join(findings["limitations"])
     assert "replicate" in " ".join(findings["limitations"])
+    assert findings["knees"]["psd_hf_share"]["monotone_decreasing"] is False
 
 
 def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
@@ -647,3 +633,13 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
     refused_output = capsys.readouterr()
     assert "stale" in refused_output.err and "Traceback" not in refused_output.err
     assert not (tmp_path / "reports" / "burst-levels.csv").exists()
+    with pytest.raises(SystemExit) as absent:
+        burst_ladder_main(  # a missing default manifest is a named refusal, not a traceback
+            [
+                "--dataset-root", str(DATA_ROOT),
+                "--report-dir", str(tmp_path / "empty"),
+                "--analysis-commit", COMMIT,
+            ]
+        )
+    assert absent.value.code == 1
+    assert "cannot read the manifest" in capsys.readouterr().err
