@@ -12,9 +12,9 @@ form the analysis plan's verification section names) carry the report-writing
 commands alongside ``acquire``: ``sweep-inventory`` writes the WP0 mixer-sweep
 manifest and QC summary from the committed BDD files, ``reference-repeat``
 writes the WP1 reference-repeatability table, provenance document and figure
-from that manifest, ``resolution-ladder`` writes the WP2 resolution axis —
-levels, pairs and figure — against the WP1 envelope, and none of them touches an
-instrument.
+from that manifest, ``resolution-ladder`` writes the WP2 resolution axis and
+``burst-ladder`` the WP2 burst-length axis — levels, pairs and figure — both
+against the WP1 envelope, and none of them touches an instrument.
 """
 
 from __future__ import annotations
@@ -32,6 +32,7 @@ from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.analysis import (
+    burst_ladder,
     reference_repeat,
     resolution_ladder,
     sweep_inventory,
@@ -419,6 +420,117 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
     print(f"provenance  : {report_dir / resolution_ladder.PROVENANCE_NAME}")
     print(
         f"figure      : {report_dir / resolution_ladder.FIGURES_DIRNAME / resolution_ladder.FIGURE_NAME}"
+    )
+    print(f"commit      : {model.analysis_commit}")
+    raise SystemExit(0)
+
+
+def burst_ladder_main(argv: list[str] | None = None) -> None:
+    """``burst-ladder`` — write the WP2 burst-length-axis artefacts.
+
+    Selects every ``burst_len`` recording from the WP0 manifest, re-checks each source hash
+    and decoded setting, refuses a ladder where a setting other than the burst length moved,
+    and writes ``burst-levels.csv``, ``burst-pairs.csv``, ``burst-ladder.provenance.json``
+    and ``figures/burst-ladder.png`` into the report directory, comparing every level pair to
+    the committed WP1 repeatability envelope and the matched temporal view to the temporal
+    repeat floor the committed WP1 curves imply. Exits 0 on success and 1 with the named
+    reason on stderr when the selection, the bytes, the envelope or the temporal floor cannot
+    be trusted (never a traceback, never a half-written artefact). It touches nothing but
+    those four files: no instrument, no cache.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-burst-ladder",
+        description=(
+            "Analyse the committed mixer sweep's burst-length ladder: depth-resolved metrics "
+            "and matched full-record temporal metrics per decoded cycle count, every level "
+            "pair on the shared knots, and every effect against the WP1 repeatability envelope"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=burst_ladder.inventory.DATASET_ROOT.as_posix(),
+        help="directory of <axis>/<label>.BDD points",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=burst_ladder.inventory.REPORT_DIR.as_posix(),
+        help="directory to write the WP2 burst artefacts into",
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="WP0 manifest the ladder is selected from (default: <report-dir>/manifest.csv)",
+    )
+    parser.add_argument(
+        "--envelope",
+        default=None,
+        help=(
+            "WP1 provenance the repeatability envelope and temporal floor are read from "
+            "(default: <report-dir>/reference-repeat.provenance.json)"
+        ),
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record (default: the checkout's short git SHA; pass the recorded "
+            "commit to reproduce the committed artefacts byte for byte)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    try:
+        model = burst_ladder.write_burst_ladder(
+            Path(args.dataset_root),
+            report_dir,
+            manifest_path=None if args.manifest is None else Path(args.manifest),
+            envelope_path=None if args.envelope is None else Path(args.envelope),
+            analysis_commit=args.analysis_commit,
+        )
+    except burst_ladder.BurstLadderError as exc:
+        print(f"udv-burst-ladder: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    findings = burst_ladder.provenance_document(model)["findings"]
+    gate = findings["envelope_gate"]
+    focus = findings["focus_18_vs_20"]
+    window = findings["focus_window_16_20"]
+    temporal = findings["temporal_bandwidth"]
+    cycles = [row["cycles"] for row in model.levels]
+    print(
+        f"levels      : {len(model.levels)} decoded burst lengths {cycles[0]}-{cycles[-1]} "
+        f"cycles, {len(model.pairs)} pairs, clean OFAT ladder"
+    )
+    print(
+        f"common view : {model.common['revolutions']} rev = {model.common['window_s']:.4g} s; "
+        f"support {model.common['support_min_mm']:.6g}-{model.common['support_max_mm']:.6g} mm; "
+        f"temporal {model.temporal['segment_profiles']}-profile segments at "
+        f"{model.temporal['profile_period_s']:.6g} s "
+        f"({model.temporal['frequency_resolution_hz']:.4g} Hz resolution)"
+    )
+    print(
+        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}); "
+        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
+        f"{gate['max_ratio_to_envelope']:.3g} x, "
+        f"{gate['clearances_involving_the_longest_bursts']} of them at the longest bursts"
+    )
+    print(
+        f"focus 18/20 : max |diff| {focus['max_abs_difference_mm_s']:.4g} mm/s at "
+        f"{focus['max_abs_difference_depth_mm']:.4g} mm = {focus['ratio_to_envelope']:.3g} x "
+        f"envelope, {focus['knots_above_envelope']} of {focus['knots']} knots above it; "
+        f"16-20-cycle region {window['pairs']} pairs, "
+        f"{window['pairs_above_envelope']} clearing it"
+    )
+    print(
+        f"bandwidth   : in-band power above 10 Hz {temporal['hf_share_min']:.4g}-"
+        f"{temporal['hf_share_max']:.4g}, against a same-settings floor of "
+        f"{temporal['floor_hf_share_difference']:.4g} in the same share"
+    )
+    print(f"levels table: {report_dir / burst_ladder.LEVELS_NAME}")
+    print(f"pairs table : {report_dir / burst_ladder.PAIRS_NAME}")
+    print(f"provenance  : {report_dir / burst_ladder.PROVENANCE_NAME}")
+    print(
+        f"figure      : {report_dir / burst_ladder.FIGURES_DIRNAME / burst_ladder.FIGURE_NAME}"
     )
     print(f"commit      : {model.analysis_commit}")
     raise SystemExit(0)
@@ -1013,6 +1125,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
 #: session that owns the screen and a dispatcher can only name a module (`tools/live/README.md`).
 _COMMANDS = {
     "acquire": acquire_main,
+    "burst-ladder": burst_ladder_main,
     "inspect": inspect_main,
     "reference-repeat": reference_repeat_main,
     "resolution-ladder": resolution_ladder_main,
