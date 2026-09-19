@@ -824,6 +824,36 @@ process): the strip resolves as **`view 'store'`, 3 buttons, slider**, on panel 
 states of this row are now **read**, not inferred, and the pool model has been tested on states it was not
 built from.
 
+### Two guards, one panel — and the tree cannot tell them apart
+
+`[Clear all]` raises a guard too (as predicted), and it is **the same panel**: `TSp_Panel 4393476`
+`[772,490,1164,622]` — 392x132 — with the same two `TSp_Button`s, `3738758` (`Cancel`, the **left** one) and
+`2886516` (`Confirm`, the right). Only the **painted** text differs:
+
+| guard | title painted | message painted |
+|---|---|---|
+| `[Remove current block]` | `WARNING` | `All data contained in the current block will be removed from memory` |
+| `[Clear all]` | `Warning` | `This will remove all the data from memory` |
+
+So the application reuses **one** warning panel for two different destructive actions, and the difference
+between them exists **only on the pixels**: the tree reports the same class, the same rect and the same two
+caption-less buttons in both cases, and even the titles differ only in case (`WARNING` against `Warning`). A
+caller that wanted to know *which* guard is up — i.e. whether `Confirm` discards one block or the whole
+buffer — cannot read it from the control tree at all. That is the sharpest form of the `89` and `131918`
+lesson in this record: the tree states *that* a control is there, never *what it will do*.
+
+The screen's own reading behaves identically in both cases: at 392 px the guard is **not** identified as a
+dialog while the 502-px strip panel behind it is (`1 dialog panel(s)`, active surface `dialog`,
+`open_popup: False`), and the strip resolver names **the guard** as "the strip" (`panel_rect
+[772,490,1164,622]`, `view 'unknown'`, `button_count 0`). Both destructive paths of this widget are therefore
+gated by a modal the screen misplaces.
+
+**Untested, and the next prediction:** whether this `Confirm` empties the buffer — predicted to take the
+screen to the three-button ready shape (panel `[343,414,695,454]`, no slider painted, `Show block` `1`, the
+third button relabelling **back** to `Clear and restart` at 138 px) and the band's `Profile :` to `0` if the
+extent model holds. If `Profile :` stays at `16381`, the counter is not the buffer's extent after all and
+step 6 needs re-reading.
+
 ### The removal, answered: what `[Confirm]` did
 
 `[Confirm]` (the right button, `2886516`) answered the guard, and the 12:29:45 read shows what the app did
