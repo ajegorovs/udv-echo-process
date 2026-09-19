@@ -704,6 +704,48 @@ does not use this feature. It is recorded here for the **strip mis-resolution it
 not as a readout: an app-side readout of the tracked cursor does not exist, so the analysis stays
 post-processing, which is where §26.11 already put it, and those two numbers can come only from pixels.
 
+### The fifth step — the cross-check holds, and the buffer model
+
+The prediction for `[Pause]` from the intermediate state was written before the press, and all of it held in
+the 12:19:47 read: the row `Resume` / `Do store` / `Clear and restart` / `Remove current block` on `1574908`
+/ `2821164` / `1641666` / `7867344` at `[353,424,444,444]`, `[454,423,545,443]`, `[555,423,693,443]`,
+`[703,423,874,443]` with `Record` hidden; panel `[343,414,894,537]`; the slider visible; the resolver naming
+the info box; the layout saying "a dialog is up"; `open_popup` `False`; 50 visible controls in 5 panels — and
+**`Show block` = `3`**, the discriminating line, so the combo follows the last *completed* block.
+
+**The cross-check asked for came out exact, from two surfaces that cannot see each other.** In the same frame:
+
+- the **slider** paints `16382` … `26771` with `10390` under the track (`26771 - 16382 + 1 = 10390`);
+- the **bottom band** paints `Profile : 26771   CH: 1   Block : 3   Memory : Filling   Time bewteen profile =
+  22.3 ms   [22.3 22.4]`.
+
+So the pause ended block 3 at exactly the profile the band's counter stood at, and the slider's right end and
+the band's counter are the same number read off two different surfaces. The block boundary cannot be faked by
+either one alone.
+
+**The buffer model, now measured on three blocks:**
+
+| `Show block` | slider range | length | off the track | how read |
+|---|---|---|---|---|
+| 1 | `1` … `4772` | 4772 | store state, 12:03 | slider |
+| 2 | `4773` … `16381` | 11609 | block-held, 12:11 | slider |
+| 3 | `16382` … `26771` | 10390 | block-held, 12:19 | slider **and** the band's counter |
+
+The ranges are **contiguous over one monotonic profile counter**, so the blocks are sequential partitions of a
+single global buffer — the operator's own reading of the widget, now on the pixels. `Show block` selects
+*which block's range the slider paints*, and the selected block is not necessarily the one being acquired: at
+12:14 the combo read `2` while the band read `Block : 3`.
+
+**Two details this step corrected or sharpened.**
+
+- **`Memory : Filling` stays painted after the pause.** The band reads it while the profile counter is frozen
+  at the block's last profile, so the word describes the memory buffer rather than an active acquisition.
+  (The step-4 note above read it as the running state's own word — this supersedes that reading.)
+- **The timing disagreement reproduces.** Block 3 grew 3816 profiles between the 12:14:34 read and the pause,
+  i.e. roughly **16 profiles/s** while the band painted `22.4 ms` (44.6/s). That is a second, independent
+  instance of the mismatch recorded in step 4, so it is systematic rather than a single bad reading, and it
+  belongs with the timing check, not with the strip.
+
 ### The fourth step, and the block-adding loop
 
 The prediction for `[Resume]` from the block-held state was written before the press, and **all of it held**

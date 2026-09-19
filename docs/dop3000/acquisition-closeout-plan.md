@@ -228,6 +228,16 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   pixels alone**, and the store state is the only one whose strip resolves. The step's prediction was ten of
   eleven exact (the miss was the slider's left end), and the block-held state reproduced a **third** time
   byte-identically (`+0 / -0 / moved 0 of 273`).
+- **The buffer model, measured on three blocks** (12:19): the `Show block` combo selects which block the
+  strip's slider paints, and the slider is that block's profile range with its length between the numbers —
+  `1` … `4772` (4772), `4773` … `16381` (11609), `16382` … `26771` (10390). The ranges are **contiguous over
+  one monotonic profile counter**, i.e. sequential partitions of a single global buffer, and the pause that
+  ends a block puts the slider's right end at exactly the profile the bottom band's counter stands at — two
+  independent painted surfaces agreeing. `Show block` is the *selected* block and need not be the one being
+  acquired (at 12:14 the combo read `2` while the band read `Block : 3`). Each pause/resume cycle opens a new
+  block, so one cycle costs one block. `Memory : Filling` stays painted after the pause (it describes the
+  buffer), and the band's painted `22.4 ms` per profile still disagrees with the observed rate (~16-31
+  profiles/s across two windows) — an unreconciled timing item for §16.4.
 - **The block-held state reproduces exactly** (read again at 11:59 after the operator passed through the
   intermediate state): `compare_reads.py` gives **tree delta `+0 / -0 / moved 0 of 273`**, the same ten strip
   children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so
