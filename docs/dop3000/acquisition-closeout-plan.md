@@ -32,14 +32,18 @@ of `device-verification.md` does not carry either sitting's record.
 
 Then, in this order:
 
-1. **Sitting C** (§3) — the refusals, still device-pending and none attempted: V3's `Define TGC` overlay, V1's
-   sidebar preference, V5's declaration-only mismatch.
-2. **The identity fix this session made concrete.** The strip panel and *both* destructive guards are
-   misclassified by one chain: the `>400 px` dialog predicate admits the strip (551/502 px) and **misses both
-   guards** (392 px), the strip resolver's decoy panel moves with the panel set (info box → guard → nothing at
-   all), and the popup test fires **only when the other two resolve**. Naming the guard's and the box's
-   identity **once** is what the record argues for; three symptom patches is what it argues against. This needs
-   a plan before code — §9.1's stop condition still binds the architecture.
+1. **Sitting C is complete** (§3, `device-verification.md`): V1 passed and restored cleanly; V3 refused
+   safely but failed its diagnosis by calling `Define TGC` a dialog and then blaming the strip; V5 was not
+   run because `compile` invokes the channel-dialog `Accept` before comparing the declaration, so it moves
+   beside that authorised write in sitting D.
+2. **The identity fix this session made concrete — planned in
+   [`identity-classification-plan.md`](identity-classification-plan.md).** The strip panel, `Define TGC`, the
+   cursor info box and *both* destructive guards are misclassified by one chain: the `>400 px` dialog
+   predicate admits the strip (551/502/453 px) and `Define TGC` (450 px) and **misses both guards** (392 px),
+   the strip resolver's decoy panel moves with the panel set (info box -> guard -> nothing at all), and the
+   popup test fires only when the other two resolve and the info box is up. The plan names panel identity
+   **once** before dialog/strip/popup consumers, pins the 453x40 cleanup hazard, and requires read-only device
+   reruns before sitting D. Three symptom patches are explicitly out of scope.
 3. **Sitting D** — the writes (`ensure_channel`, V6's six-point campaign on the instrument, V7/V8), unchanged.
 4. **The one operator question** that unblocks the experiment: is
    `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment?
@@ -305,9 +309,10 @@ the four-button strip, block-held*.
    against overlay state; cancel by hand; re-read a clean status. This is also the device evidence for
    `#10`'s one deliberately-open item: the canonical `>400 px` dialog predicate also accepts the measured
    `Define TGC` overlay class, actions now refuse when that union is non-empty, but `_close_any_dialog` can
-   still treat an operator-opened panel in that class as a dialog. The sitting should capture whether any
-   cleanup path *tried* to press it — that reading is what decides whether the boundary needs code or only a
-   sentence.
+   still treat an operator-opened panel in that class as a dialog. Sitting C established the misdiagnosis but
+   stopped before its compile half, so it did **not** exercise cleanup. The bounded cleanup-safety recheck now
+   lives in `identity-classification-plan.md` §5 after the press-raising cloud tests; no cleanup gesture is
+   attempted against `Define TGC` itself.
 2. **V1 — the sidebar preference, now cheap and known.** Untick `Show fast access parameters panel`, run
    status/compile, confirm the run refuses a manual channel **and does not claim `assisted`**, naming the
    preference; tick it back; re-read a clean status (44 visible controls in 4 panels). The 2026-09-18
