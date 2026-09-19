@@ -14,7 +14,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-acquire = ["pywin32"]
+# The instrument path is Windows-only (`pywin32`); Pillow is carried here because the
+# capture probes and the crop tooling in `tools/ui/` both need it, and the crop tooling
+# must stay installable on a Linux host that can only read the committed crops.
+acquire = ["pywin32; sys_platform == 'win32'", "pillow"]
 dev = ["pytest>=8.0", "ruff>=0.16.6"]
 marimo = [
     "marimo-inspect",

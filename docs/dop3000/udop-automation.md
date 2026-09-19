@@ -16,12 +16,15 @@ that silently invalidate a point.
 > supplies the mechanism and the read-back that plan assumes.
 >
 > **Evidence:** the private instrument-side control repository
-> (`~/Repos/dop-control`) — `docs/14-input-methods.md`,
+> (`~/Repos/dop-control`, **retired 2026-09-18** and archived at
+> `~/Repos/_archive/dop-control-20260918.zip` — see
+> [`recon-archive-retirement.md`](recon-archive-retirement.md)) — `docs/14-input-methods.md`,
 > `docs/15-labelled-fixture.md`, `docs/16-record-strip-automation.md`, and the
 > `recon/` scripts those documents cite (`recon/05`, `08`, `14`, `30`,
 > `33`–`35`, `40`–`42`) with their JSONL logs and captures. Nothing below is
 > inferred from the manual alone, and nothing below should be re-derived from
-> the manual instead of read here.
+> the manual instead of read here; a `recon/NN` citation names a probe in that
+> archive, not a dependency of this repository.
 
 ---
 

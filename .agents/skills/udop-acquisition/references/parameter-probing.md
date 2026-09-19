@@ -37,6 +37,43 @@ before designing a sweep or a batch run around it.
   way to verify a setting the UI never shows — and the only way to catch one that is wrong, since
   such a constant scales the data rather than corrupting it.
 
+## Identifying which control is which knob
+
+A surface of caption-less value fields states values, not names, so the binding has to be established
+by measurement before anything can be written by position at all.
+
+1. **Change exactly one knob by hand, then re-read and diff positionally.** One change at a time,
+   named with the value the operator set. Derive each field's identity as `(column, row)` from its
+   rectangle — never an id — and report which field moved; "nothing in this surface moved" is the
+   equally useful answer that the knob lives somewhere else.
+2. **Diff against a baseline captured before the change.** One taken earlier and committed as a
+   fixture is trustworthy; a read dispatched before the change but landing after it is not, and a
+   probe that buffers its output hides exactly that difference.
+3. **Keep the read fast and single-purpose.** One surface, one open/close, JSON to stdout, seconds
+   rather than minutes: an operator round trip cannot wait on a do-everything probe, and a long read
+   holds the very surface they need between steps.
+4. **Have the value restored, and confirm the restore.** The machine has to end in the state the plan
+   was computed against — a knob left changed silently invalidates the next run's pre-run check.
+5. **Expect a knob to be more than one control.** A value field with an enable flag beside it (a tick
+   box, an "apply") is one knob: the value is inert until the flag is set, and the flag is usually a
+   different control class from the value fields, so it never shows up in a value-field count. Record
+   the pair together, write both, read both back.
+6. **Do not resolve an ambiguous diff by plausibility.** When two fields move together a coupled
+   recompute is the usual cause — re-run with a different value to attribute it, and keep the coupling
+   as a write-order constraint.
+
+7. **Bind the cell's own control, and expect the value's class to differ from cell to cell.** Walk the
+   *wrapper* the surface draws for each value (a row-per-value grid) and record the class of the child
+   that actually states the value: an edit-only scan of fifteen cells found **no** value for one knob at
+   all, because that cell's value is held by a combo — and the same scan's count still came out right, so
+   nothing flagged it. **A cell can hold two controls stating the same value** (measured: a combo plus an
+   inner edit), so "the first thing inside the cell" is luck; bind by class *and* by the value read back.
+   **And cells overlap geometrically:** a containment test with a few pixels of tolerance adopted a
+   *neighbouring* cell's control and mis-assigned a value to the wrong knob, so confirm a cell's own child
+   by its class and rectangle, and treat a control that appears inside several cells as unattributed
+   until its real cell is established. A label is the one thing no API read returns — read labels off a
+   capture at full resolution, and take the numbers from the control, never from the image.
+
 ## Where the result goes
 
 A scanned domain is an input to the plan, not a curiosity: record the accepted ladder, the

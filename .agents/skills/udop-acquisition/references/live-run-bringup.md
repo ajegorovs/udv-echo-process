@@ -95,6 +95,8 @@ instrument; stage 5 is the loop end to end. A stage-1 failure is configuration; 
 failure is almost always the target directory or the selector; a stage-5 failure carries its
 reason per item. Stage 5b is the gate the writing stages sit behind: it costs no slot and
 no stored file, and it is where a wrong declaration is caught before a recording is spent.
+Stated once more in the shorter form it takes where nothing gates the writing stages:
+reason per item.
 
 ## The measurements folded in from the first machine
 

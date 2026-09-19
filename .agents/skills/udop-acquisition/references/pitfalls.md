@@ -1,206 +1,36 @@
----
-name: windows-gui-automation
-description: "Use when automating a Windows app that has no API."
-version: 1.0.0
-author: Hermes Agent
-license: MIT
-platforms: [windows]
-metadata:
-  hermes:
-    tags: [windows, gui, automation, pywinauto, win32, uia, legacy, delphi, vcl, reconnaissance]
-    category: software-development
-    related_skills: [computer-use, spike]
----
-
-# Windows GUI automation (apps with no API)
-
-This is the project-maintained copy: the repository it sits in is where the automation lives, so a
-lesson learned here belongs here first. The generic craft is shared with the Hermes skill of the
-same name, which serves other projects; where the two disagree about *this* instrument, this copy
-and the documents it cites are the authority.
-
-Reconnaissance, control-id mapping, message-based driving and artifact verification for
-Windows desktop applications that expose no SDK, CLI or protocol.
-
-## When to use
-
-Signs: *"automate this old Windows program"*, *"click through this software for N parameter
-sets"*, *"sweep parameters in our instrument software"*, *"hook up to the UI elements or use
-AutoHotkey?"*, *"find out how we can automate it"*. Use it for the **reconnaissance** even when
-the conclusion turns out to be "do not drive the GUI at all".
-
-Adjacent: `computer-use` (bundled) drives the desktop by screenshot + element index and is the
-right tool on macOS/Linux or when an app must be driven visually. This skill is for
-**control-level Win32/UIA automation**, which keeps working when the window is occluded,
-unfocused, or the session is locked.
-
-## Order of attack
-
-**0. Exhaust the cheaper interfaces first.** Before writing any GUI code, check for a vendor
-SDK/DLL, a CLI, a documented serial/TCP command set, a config file the app re-reads on start,
-and a documented output format. Search the install directory for shipped helper code and sample
-data (`*.py`, `*.m`, `*.dll`, `*.chm`, `DEMO*`, `UTILITIES`) — a vendor-supplied reader for
-the product's own file format removes an entire reverse-engineering track, and a vendor's own
-constants beat anything inferred. Bypassing the GUI beats automating it, always.
-
-**1. Reconnoitre before designing, and classify every control A/B/C/D.** Run
-`scripts/win_ui_probe.py`. The classification decides the entire implementation; guessing it
-costs a rewrite. Explore with an **incremental step runner** — one script taking
-`--steps snap,click:<role>,wait:3,snap` and persisting its state to JSON — rather than one
-do-everything script, so each action is inspected before the next one is chosen; a monolith
-cannot answer a question you only discover halfway through.
-
-| Class | Symptom in the probe output | How to drive it |
-|---|---|---|
-| **A** | real child window: class name + control id, text readable | messages: `WM_GETTEXT` / `WM_SETTEXT`; for any button a **posted down / ~180 ms hold / up** at the rectangle centre — never an instant down+up |
-| **B** | reachable through UI Automation (control type, automation id) | UIA patterns / `pywinauto` `backend="uia"` |
-| **C** | nothing identifying, but keyboard-reachable | focus + keys (prefers matching bitness) |
-| **D** | owner-drawn: no child window at all | coordinates from the *parent* rectangle, plus vision for labels |
-
-**2. Drive with messages; escalate to input injection only on returned evidence.**
-`WM_SETTEXT` + a `VK_RETURN` key message applies values in many apps with no focus, no cursor
-movement and no keystrokes — verified against a vendor whose widgets are fully custom-drawn.
-For a **button**, the message recipe is a press that is *held*: post `WM_LBUTTONDOWN`, sleep
-~180 ms, post `WM_LBUTTONUP`, both with **client-relative** `lParam`. Custom widget layers discard
-an instant down/up, and a discarded click is indistinguishable from an unreachable control — one
-record strip was written off as undrivable for an entire session on that alone, then driven
-normally the moment the press was held. `scripts/win_click_probe.py` runs the whole recipe matrix
-against any control and reports which one the app actually reacts to.
-Escalate only when the app ignores **every** recipe: focus + keys, then real `SendInput` with the
-window foregrounded. **Foregrounding is its own step**, and a driver launched from a console finds the
-app unfocused as a matter of course — blaming the surface before establishing the state wastes live
-slots. `SetForegroundWindow` returns 0 from a background process (the foreground lock refuses it);
-attach to the current foreground thread, set foreground, detach, then confirm with
-`GetForegroundWindow() == target` rather than trusting the return value:
-`AttachThreadInput(GetWindowThreadProcessId(GetForegroundWindow(), None),
-GetWindowThreadProcessId(target, None), True)` -> `SetForegroundWindow(target)` -> detach. **Treat the
-foreground request as a precondition the operator satisfies, not as a driver failure:** Windows refuses
-a foreground request from anything but the user (measured: `SetForegroundWindow(hwnd)` returned 0 three
-times from an interactive session), a probe dispatched into a *separate* session cannot take it at all,
-and a console window opened by the launcher is the usual thief — so put the guard **before** the first
-hover, where a refusal has opened nothing and stranded nothing, and the remedy is for the operator to
-click the window or Alt+Tab to it and re-run the **same** command (`docs/dop3000/live-bringup.md` §4,
-plan §15.1). An inactive
-window ignores hover and gives its first click to activation, which is indistinguishable from a surface
-that does not answer input at all. Message-based control is also bitness-agnostic, which matters because
-`pywinauto` warns loudly when a 64-bit interpreter drives a 32-bit target.
-
-**2b. Write only where a wrong value is harmless, and put it back.** Probe writes in the app's
-own simulation/demo/idle state when it has one — never mid-run on real hardware. Change one
-field, read it back, check the coupled observable, then restore the original value and confirm
-the restore. State in the report which field you touched and what it held before: a
-reconnaissance session that silently leaves an instrument configured differently, or a run
-triggered while a measurement was live, is worse than one that asks first.
-
-**2c. Treat menus as setup-only surfaces and never clean one up with `WM_CLOSE`.** These popups
-open on **mouse-over, not on a click**: move the real cursor onto the menubar button (`SetCursorPos`
-alone) and the menu appears — provided the point is actually on the item, so derive it from the item's
-**rectangle at run time**: one full-screen app sat at `(-8,-8)` and had shifted out from under every
-literal hover point recorded earlier, and a hover that misses looks exactly like a surface that ignores
-input. Hold the pointer on the item through the popup poll *and* the entry press, restoring it only
-afterwards — moving off a hover-opened popup is itself a dismissal, and restoring early was enough to
-defeat a working gesture. And check the **detector** before the gesture (evidence discipline, below) —
-a click (posted *or* injected) sent after that moment *closes* the menu
-it just opened, which is why every click-based attempt failed and why the one menu that did open did
-so with the operator's cursor already over the button. Once open, its **entries take ordinary posted
-clicks**, which performs the action *and* consumes the popup: that is the whole recipe for menu-driven
-setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
-button again, clicking the plot, and `ESC` (posted or real) all leave it on screen, and opening a
-different menu merely replaces it. So menus are the one place that should not be in a per-point loop. **If a popup is open when a run resumes, stop and raise the failure;
-do not try to close it.** **The policy for one that has already stranded the application is the
-operator's restart:** abort the run, mark the application's state unverified, and require the operator —
-no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
-it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
-failed; plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
-still inside its modal menu loop, and from then on *no* menu opens by any means — posted clicks,
-real clicks, real `ESC`, a click outside, `Alt` — until the app is restarted; the rest of the app
-keeps working, so a liveness check will not catch it. Dialog panels are different: they own a
-Close button and a posted click on it works. Best to worst for applying a parameter set: a
-prepared config file the app recalls in one action, message-based writes to the fields, menus
-driven by design-time recall or by hover + entry-click in setup, never menu navigation per point.
-
-**2d. Dropdowns take a selection plus a notification, never a typed string.** A combo answers combo
-messages even across processes (the OS marshals `CB_GETLBTEXT` exactly like `WM_GETTEXT`, so your own
-buffer address is fine): read `CB_GETCOUNT`, each item with `CB_GETLBTEXT`, and `CB_GETCURSEL`. To set
-one, `CB_SETCURSEL(index)` and then send the parent a `WM_COMMAND` carrying `CBN_SELCHANGE` in the high
-word and the control id in the low word — the selection alone updates the control, but the app's
-parameter changes only when its change handler runs. A list-style combo has **no inner edit**, so
-text-based tricks have no target; an edit-style one has both, and setting only the text leaves
-`ItemIndex` stale. Verify the write like any other: read the index back *and* check a coupled
-observable (the app's own painted value, or a readout it recomputes). **Select a combo's item by value, never by counting steps or keystrokes:** a combo can step *past* a
-value (measured: one step up from burst length `4` landed on `6`), so read the options back, take the
-index whose text states the value you mean, and then read the field back to confirm what it now states.
-When a `TSp_Value_Button`-style
-wrapper and its inner combo report the **same control id they are one widget** — put one entry in the
-map, not two.
-
-**3. Verify with a coupled observable, never with an echo.** Reading back the field you just
-wrote only proves the text buffer changed. Pick a value the app *recomputes from* that
-parameter (a status-bar readout, a derived count, a timestamp interval, the parameters
-embedded in the file it writes) and assert on that. This is the difference between "the sweep
-ran" and "the sweep ran with these parameters".
-
-**4. Persist the map as ROLES, not ids, and re-resolve both at every launch.** In these toolkits a
-`control_id` is a per-instance handle, not an identifier: measured across two launches of one
-executable, both dumps held 43 visible controls with **43/43 classes at the same sorted position
-and 1 of 43 ids in common**. An id-keyed map therefore passes every check inside the process that
-captured it and reports *0 found* on the next launch — which reads as a broken app, not a broken
-map. Store the role (`class` + its containing panel + its order within it) and resolve it to a
-live handle at run time; keep ids for logging and for diffing two dumps of one launch. Rectangles
-move within a session too (a window was relocated so every absolute coordinate went stale).
-Identify the **container** by its ordinal position among its siblings — its handle changes per launch
-like every other id — and band widgets on the parent panel, never on a fraction of the window: the
-percentage cut moves relative to the widget as the client is resized (`references/control-id-mapping.md`
-§8 has the measured case).
-Recipe: `references/control-id-mapping.md` §8.
-
-**5. Re-validate the map against the live instance before the first write — and attach in the
-right order.** Find the process, wait for the main window's *class*, wait for it to become
-**visible**, and only then validate. On a cold start the window may not exist yet, or may exist
-hidden behind a startup/mode-selection dialog, and binding by executable path can attach to the
-wrong instance of it — all three look identical to "the app is not running". Resolve with
-`scripts/win_attach.py`; the state-machine capture method is in
-`references/app-lifecycle-and-state.md`.
-
-A map captured in one state — simulation/demo mode, an unlicensed build, a different
-instrument — is only a hypothesis for any other instance. Mark every binding `required: true|false` and run a pre-flight
-check that prints found/missing/unknown and **exits non-zero when a required control is absent**,
-so driving fails loudly instead of clicking blind. Record a **geometry fingerprint** at
-validation time (client size, DPI, minimized/maximized) and assert it before a run: screenshot
-crops and anything cached depend on it. Maximizing is a fine convention for reproducible crops,
-but it is not what makes the driver correct — `control_id` plus a run-time rectangle is. See
-`references/control-id-mapping.md` §7.
-Record a **control-count fingerprint** alongside the geometry one and assert it in the same
-pre-flight: it is the cheapest detector for "a menu popup or a dialog is open, so this is not the
-screen you mapped". When it fires, report what is extra and stop, rather than resolving roles against it.
-
-**5b. Read the instrument's own fixed facts before the first recording, and refuse a disagreement
-before anything is stored.** A plan may rest only on facts read off *this* instrument: read them from
-the surfaces that state them (the measurement screen, the dialogs) before the first point, refuse the
-run when a fact disagrees with the definition — naming **every** fact that disagreed, in one message,
-because the comparison is cheap and the instrument is in front of the operator — and carry the reading
-into the run's manifest as a projection of each fact's **value and its source** (`read` / `routed` /
-`declared` / `unreadable`), so a stored file can be attributed to the state that produced it. Two rules
-make the gate mean something. **A fact that has a reader and whose read failed refuses the run**,
-instead of falling back to the declared value: "this instrument cannot state it" and "this attempt
-failed" are different claims, and demoting the second is knowingly proceeding past a check that exists.
-And the declaration is never overwritten by the reading, so the record keeps both and a disagreeing
-fact is visible after the fact. `docs/dop3000/acquisition-campaign-compilation-plan.md` §9.2, §13,
-§15; stage 5b of `docs/dop3000/live-bringup.md` is the live acceptance of it.
-
-**6. Measure a discretised knob's domain instead of trusting the number you typed.** Numeric
-fields snap to a ladder and clamp silently. Scan a range, read each value back, and design around
-the value the app *accepted*. See `references/parameter-probing.md`.
-**Derive the sweep plan from the app's own read-back constants, not from what you were told the
-settings are.** A stated change may not be in the configuration you are actually driving: a sound
-speed reported as changed to 1460 m/s was still 1500 in the channel's stored parameters, which moved
-the resolution ladder rung from 0.1217 mm to 0.125 mm and would have put every planned point on the
-wrong rung. Read the constants out of the app (its dialog readouts, or the artifact it writes) before
-computing a plan, and where a derived readout exists — total depth as a function of first gate, gate
-count and resolution — compute the plan so that it is checkable against that one number. **Assert the plan against the artefact's own derived quantity, not against the UI's text:** the app's painted first-gate/depth values are control values, and a decoder that reproduced the file's own depth profile matched it to within the quantisation step while the UI's stated first gate was 0.2-0.3 mm out — close enough to look right, and wrong enough to bias every planned point.
+# Pitfalls — the failure modes this class of application produces, and the rule each one forces
 
 ## Pitfalls
 
+- **`GetWindowText` reads nothing from another process — use `WM_GETTEXT` (via the driver's own text
+  reader).** A reconnaissance probe that used `GetWindowText` over this application's whole tree saw
+  empty captions everywhere and concluded that the pre-created hidden panels state nothing; with
+  `WM_GETTEXT` the same panels state `1460`, `2`, `4`, `212`, `150`, `4000`, `797`, `0.122`… — they had been
+  stating the instrument's whole parameter set the entire time. The same API also decides *identity*:
+  these widgets carry no caption under either reader (measured, including the five menu entries), which
+  is why every binding in this driver is structural and positional, never by name.
+  **`GetWindowText` is not a caption test — it cannot read across processes:** for a window owned by
+  another process it returns `""` for *every* control, caption or not, so an empty read taken with it
+  is evidence of nothing, and a whole-tree dump built on `win32gui.GetWindowText` reported no
+  text anywhere while re-reading the same controls through
+  `WM_GETTEXT` (`SendMessage`) returned all of them. Read text through the same message the driver
+  uses, and only then believe that a widget carries no caption.
+- **A value can live one level inside the wrapper drawn for it, and "it stated nothing" is not the
+  same as "the read failed".** Some toolkits build a dialog as a row-per-value grid of wrapper
+  buttons and put each value in the control *inside* its wrapper — the `Operating parameters`
+  dialog's 21 **direct** children are its 15 `TSp_Value_Button` widgets, its
+  header and its bottom buttons, and not one of them states a value: each field's text lives in the
+  `TSp_Edit` or `TComboBox` *inside* its value button — so a
+  reader written against the
+  parent's direct children then finds no values anywhere and refuses with a state rather than a
+  cause — walk the surface live (child → next → recurse) when the values are nested, and print the
+  **child count by class** in
+  the failure path, because that count is what turns a refusal into a diagnosis — and it is what
+  turned a refusal into a cause here. And once a setting
+  has a supported read path, a read that fails must **refuse** the run rather than quietly degrade to
+  "declared": a fact you can read and did not is not a passed check, while a setting nothing in the
+  driver can read is carried as unproven. Keep those two states distinct in the record — they have
+  different execution consequences. Recipe: `references/control-id-mapping.md` §9.
 - **Bind by a role resolved at run time — never by caption, and not by a stored `control_id`.**
   Owner-drawn toolkits (Delphi/VCL `TCustomControl` descendants, MFC owner-draw,
   accessible-disabled Qt) return **empty window text** for buttons and menu items, and UI
@@ -258,9 +88,13 @@ count and resolution — compute the plan so that it is checkable against that o
   (depth ranges, derived counts, resolution). Measured: writing gate count *then* resolution let the
   resolution write recompute the gate count and silently trim it (805 requested -> 474 accepted, depth
   59 mm against a 100 mm target); writing resolution *then* gate count applied the full request and hit
-  the target exactly. Re-read **all** fields of the set once it is written, and do that *before* the
-  irreversible step it feeds (the recording, the store, the upload), so a clamped point costs a
-  read-back instead of a wasted run and a junk artefact. The app's recomputation is silent but lands in
+  the target exactly. Re-read **all** fields of the set once it is written — including ones you never wrote — and do that
+  *before* the irreversible step it feeds (the recording, the store, the upload), so a clamped point
+  costs a read-back instead of a wasted run and a junk artefact. **Expect the recomputation to be
+  one-way, and that is what makes it dangerous for a sweep:** measured on a dialog, every commit of a
+  volume knob re-derived the depth-window knob (a floor that grows with the other setting) and no later
+  write of the volume could put it back, so a sweep of that single knob would have silently moved a fact
+  the plan compared elsewhere — the pre-run fixed-fact check was the only thing that caught it. The app's recomputation is silent but lands in
   the control text, so assert on the read-back, never on the request.
 - **Continuous-acquisition apps advance their own counters regardless of what you ask.**
   "Is it done?" must key off a specific control value or a file event — never a blanket wait on
@@ -285,7 +119,12 @@ count and resolution — compute the plan so that it is checkable against that o
   reduces a value to satisfy a constraint it never reports (a gate count of 10 landing on 9
   because the pitch left no room in the reproducible depth; 1001 landing on 1000). Always read
   back, and distinguish *reduced* from *refused*: a refusal leaves the field at its previous
-  value, a clamp moves it to a different one.
+  value, a clamp moves it to a different one. **A refusal is announced by a modal whose affirmative
+  button is a dismissal, not a repair:** measured, a below-floor request raised a warning naming the
+  other knob with a single `Continue`, and Continue left the field holding the value from **before** the
+  attempt (the remembered one), not the value the application would have derived from the current
+  settings. So a refusal costs no write: read the field back, refuse the point, and never read that
+  button as applying anything.
 - **Specify a measurement point by wall-clock duration, never by acquired-frame count, and treat the
   frame period as an input constraint.** The physics under observation is time-dependent: a point is a
   fixed observation window, and defining it in frames makes that window drift with every parameter that
@@ -313,7 +152,18 @@ count and resolution — compute the plan so that it is checkable against that o
   run: a probe that finished in 24 s reads as a two-minute stall, and the operator watching the
   screen has no way to tell the two apart. Write the probe's closing marker into its log and poll
   for it (2 s steps, a hard cap, print the log either way) — the call then returns when the run
-  returns, and a genuine hang is legible as a timeout instead of hidden inside the wait.
+  returns, and a genuine hang is legible as a timeout instead of hidden inside the wait. **And read
+  the payload's reported status, not the wrapper's exit code:** a dispatcher that prints its child's
+  outcome (`=== exit=2 ===`) still exits 0 itself, so a follow-up step gated on the wrapper's status
+  treats every refusal as a success. Gate on the printed status line, or make the wrapper propagate
+  the child's code — and check which of the two you are reading before you branch on it. **And confirm the probe actually
+  started before believing anything about how long it takes:** a dispatcher that takes a bare probe *name*
+silently ignores a path-shaped argument — it joins the argument onto its probe directory, finds nothing,
+prints nothing and writes no log — so the poller waits out its whole budget and an empty output file reads
+exactly like a slow run. Measured: two "probe runs" that never ran, one of them reported to the operator as
+slowness, and the read that was supposed to establish a baseline never happened. Check the invocation form
+against the dispatcher's own usage, and look for the run's first marker line before drawing any conclusion
+from elapsed time.
 - **A documented input rule is only as good as the context it was measured in — A/B it on the live
   widget.** "The strip ignores posted messages" was measured with an *instant* posted click (both
   messages in the same millisecond); a posted press **held** ~180 ms works fine, and a real
@@ -369,6 +219,22 @@ count and resolution — compute the plan so that it is checkable against that o
   picking a menu entry by first match in a tree walk pressed the *second* entry instead of the first,
   because the walk happened to visit it first. Sort candidates by screen position (`top`, then `left`)
   before indexing into any list of widgets.
+- **A name table indexed over *visible* widgets silently renames its neighbours the moment one is missing.**
+  A menubar bound as `ORDER[i]` names the wrong control for every name after an absent item, and these
+  buttons carry no text, so nothing in the tree says which name went missing. Measured: an instrument painted
+  ten menubar buttons where the reference install paints eleven, so three late names resolved to the wrong
+  widget (or to nothing) while the one early name a gesture uses stayed correct — which is exactly why the
+  gesture kept working and the defect stayed invisible for as long as it did. Never infer **which** name is
+  missing from its position in the order (that inference produced a wrong entry in a committed document);
+  bind the item a gesture needs by its own rectangle, and read the rendered labels off a frame.
+- **An overlay can *remove* a mapped surface, so its absence is a modality symptom, not a layout drift.**
+  Measured: while a settings overlay was up, the record strip was not painted at all — which makes the
+  missing strip the cheapest overlay detector on that screen, and makes the recording path fail-safe for the
+  same reason (no strip, so nothing for a record press to bind to). Read the absence in that direction: a
+  refusal naming the missing surface sends the operator to look at the surface, when the honest sentence is
+  that an overlay is up. An overlay that merely *covers* a surface leaves it in the tree; one that replaces
+  it takes it out — for a press the two are the same hazard, but only the second is visible as a missing
+  role.
 - **Filter a panel's children by the panel's own rectangle before counting them as a state signal.**
   These toolkits keep extra children positioned *outside* their parent (measured: two buttons 13 px
   below the strip's bottom edge, never painted until a prompt is active), so a naive count reported 5
@@ -438,28 +304,7 @@ unrecognised prompt is one you must not answer blind.
 - **A capture session's mode is a variable of the map.** Mark mode- or licence-dependent
   bindings `required: false` and re-check them on the target instance; a control that exists only
   in the demo build must not silently become a skipped step in a live run.
-- **A whole-state reading is two objects, not one: the evidence, and the identity anything
-  compares.** Keep the full fingerprint for diagnosis — geometry, `hwnd`, cursor, foreground,
-  because that is how a screen that does not match gets *described* — and derive a separate
-  projection for "is this the same instrument as last time". The projection must exclude
-  everything a **restart** changes (a new `hwnd`, a drag, maximising, another screen: keying on
-  those makes a restart read as a different instrument, and the resume re-runs a finished job)
-  and everything that is the *run's own data* — the store slider's maximum is the selected
-  block's profile count, so an identity carrying it moves as the buffer fills. An overlay being
-  up, and a minimised window, are **preconditions that refuse** rather than properties of the
-  instrument. Exclude *all* of the state that changes with the run's own data, not only the
-  obvious part: this application's ready row is 3 buttons or 4 depending on whether a leftover
-  block is held, and the store slider's maximum is the selected block's profile count — so a count
-  in the projection is a property of how far the run has got, not of the instrument. Where the
-  count classifies into a *view* that a press is bound against, the view is what belongs in the
-  projection, and the binding itself is resolved live at press time. Exclude a fact's explanatory
-  `reason` for the same class of reason: it is written to be rewritten, so hashing it turns a
-  documentation improvement into "a different instrument" and re-runs a finished job — put the
-  value and the *source* in the projection and leave the prose in the reading. And when a value
-  rests on another step's verification rather than on the reading's own, give it its own source
-  name (a channel the router selected and read back is neither "the caller declared it" nor "this
-  reading read it") and make the caller **hand the proof over as a required argument**, so that no
-  call can imply a verification that never ran.
+
 - **Read a per-channel state without pressing, and never read a mode out of an absence.** The
   channel itself costs a menubar hover (the dialog is the only place it lives), but the channel's
   *mode* does not: the sidebar parameter column exists only for a manual channel, so the
@@ -471,11 +316,12 @@ unrecognised prompt is one you must not answer blind.
 
 - **A dialog can be a child panel of the main window, not a window.** A settings/options dialog
   that never appears in a top-level window enumeration can still be on screen and fully drivable
-  (measured: a settings dialog was a `TSp_Panel` inside the main window, owning real `TEdit` fields
-  with Browse buttons — and its fields take `WM_SETTEXT` like any other edit; **name which surface it
-  was**: this application's *Store* dialog is that shape and its path is exercised, while its `Record
-  settings` surface — the one holding the block cap — has never been opened here, and evidence about
-  one surface is not evidence about the other). Dump
+  (measured: a settings dialog was a `TSp_Panel` inside the main window, owning real
+  `TEdit` fields with Browse buttons — and its fields take `WM_SETTEXT` like any other edit; **name
+  which surface it was**, because this application's *Store* dialog is that shape and its path is
+  exercised, while its `Record settings` surface — the one holding the block cap — has never been opened
+  here, and evidence about one surface is not evidence about the other (a retelling that calls the panel
+  measured here "Record settings" has swapped one surface for another). Dump
   the **child tree** before concluding that a dialog, or a feature behind it, does not exist, and
   identify such a panel structurally (directly owns an edit plus a browse button) rather than by
   position. A press that seems to do nothing is often exactly this: an `EnumWindows`-based "did a
@@ -498,6 +344,26 @@ unrecognised prompt is one you must not answer blind.
   that test *after* the interaction of interest, never before, because it moves the cursor and moving
   off a hover menu dismisses the menu you were about to test. Either signal doubles as a free modality
   detector: a live clip means a capturing popup is on screen, so answer it before pressing anything.
+- **A modality block can leak, so never argue safety from a captured cursor.** The capture that keeps a popup
+  modal is released by a focus change: measured, Alt-Tabbing away from the application and back freed the
+  pointer, after which other menus opened and more than one overlay could be up at once. Two consequences.
+  The guard is the overlay's **presence** check, never the capture, so no safety argument may rest on "the
+  mouse is trapped"; and the multi-overlay screen is a state of its own (the read reports it as extra
+  control-hosting panels), so a sequence assuming at most one overlay assumes something the operator can break
+  in two keystrokes. Where the block *is* in force it is worse than a nuisance: the pointer is confined to the
+  overlay, so a press aimed at a column row or a strip button lands on whatever sits at that point **inside**
+  the overlay — refuse the press on the presence check, before the cursor moves. Classify each popup's modality
+  once and keep it in the map: on one app every `Parameters` entry, the record and display-option dialogs, the
+  filter-parameter dialog and the measurement tools block, while the TGC editor, the PRF search, the raw-data
+  capture and a cursor read-out window do not.
+- **A menu entry's name and the window it opens need not match — record both.** Measured on one app: the entry
+  `Search artefacts` opens a window captioned `Sweep PRF`; `Record options` opens `Record settings`; `Options`
+  opens `Preferences`. The entry names the purpose, the window names itself, so identify a surface by the
+  caption you can actually see and keep both strings in the map; filing a crop or a note under the entry's name
+  alone is how a later reader concludes a surface is missing — a crop named after the entry read as a
+  filename/content mismatch, while the window it showed was that surface all along. Dropdown contents are
+  state-dependent in the same way — toggles add entries (`Show cursors` adds a cursor item, enabling a filter
+  adds a parameter item) — so never press a dropdown entry by a remembered index.
 - **A panel the operator can drag must be found through its widgets, not by position or ordinal.**
   Measured: the record strip is a floating panel the user can move by dragging a corner, while every
   script bound it as `x == 448`. Bind it as `GetParent()` of the widgets it owns — correct wherever
@@ -531,8 +397,8 @@ unrecognised prompt is one you must not answer blind.
   automation has never read or written — so "the settings dialog" is ambiguous and a plan that depends on
   the cap depends on a value nothing here has established. The cap is **not a planning limit** (the UI
   accepted a million) while the value *in force* does truncate a long point's start (plan §18;
-  `docs/dop3000/udop-automation.md` §7, §12.4). **Treat the cap as an input you were told, not as a law
-  you measured, and never let it refuse the
+  `docs/dop3000/udop-automation.md` §7, §12.4).
+  **Treat the cap as an input you were told, not as a law you measured, and never let it refuse the
   project's own operating point.** Measured: the production point length stores less than it asks for
   (12 s asked, ~8.4 s kept — the last ~257 profiles), and that recording *is* the deliverable, so a plan
   guard that refuses it makes the goal unrunnable while proving nothing. State the consequence instead —
@@ -639,9 +505,43 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   tests stop being a gate.
 - **No control ids or screen coordinates in the ported logic.** Geometry tables are fine; an id or a
   literal coordinate written into a branch is a bug the next launch will find.
+- **Answer "can the tool turn every knob?" with a coverage inventory against the operator's own list,
+  never from memory.** Take the parameter list from *their* document (a sweep matrix, a settings table,
+  a manual chapter), key the inventory to their names, and give every row: which mechanism reaches it
+  (the parameter column / a dialog's positional value table / a settings dialog nothing reaches),
+  whether it is *read*, whether it is *written*, and what is missing. Two things fall out that a
+  recollection never gives. The writing half is regularly already present as a private helper —
+  measured, a driver's `_combo_select` and `_set_text_commit` both took the field's own handle all
+  along, so a "read-only" dialog field needed a positional binding rather than a new mechanism — and
+  the arithmetic of the unbound surface is the work list: a dialog's 15 value fields with 10 bound sat
+  beside exactly 5 knobs with no home anywhere else, which is a mapping to *confirm*, not to assume.
+  State the confirmation method with the hypothesis (change one knob by hand, re-read the surface, see
+  which field moved) and never code against the guess. Name the one knob with no path at all rather
+  than letting it disappear into the list: it is the honest gap in the answer.
+  **A knob is the group of controls it takes, not the field holding its number.** A value field paired
+  with an enable flag is inert while the flag is off — measured: a skipped-profile count of `2` changed
+  nothing in the application or the artefact because the "apply" tick box beside it was unticked, and a
+  record written from that field alone would have claimed a setting nobody applied. Identify the whole
+  group before writing it, read the flag back with the value, and treat a value without its flag the way
+  you treat a value without its source. The flag is usually a different control class from the surface's
+  value fields, so it does not disturb the field count the inventory above depends on.
+  **Trust only a baseline captured before the change, and probe with something that returns in
+  seconds.** A read dispatched before the operator's edit but landing after it is not a baseline — a dump
+  taken earlier and committed is, or sequence it strictly (read, change, read). Do not reuse the
+  multi-purpose reconnaissance probe for an operator round trip: measured, it ran past four minutes with
+  zero bytes written, because a probe that prints its JSON once at the end gives you nothing to poll for
+  and in-flight is indistinguishable from hung. Write a fast single-purpose read of that one surface, and
+  never dispatch a slow read while asking the operator to change something "meanwhile". Recipe:
+  `references/parameter-probing.md` §Identifying which control is which knob.
 - **The coordinator owns the gate, whoever wrote the code.** Run the lint and the focused tests
   yourself before committing a port, and check that the changed file set is exactly the set you
-  expected before you write the commit message.
+  expected before you write the commit message. When the suite is red, **classify the failures
+  instead of counting them**: a cluster of identical errors inside one module is one defect with one
+  cause, and a failure that predates the branch is not automatically unrelated to it — reproduce the
+  failing call on two unrelated inputs to tell an environment problem from a platform one. (On
+  Windows `os.open` on a directory always raises `PermissionError`, so a directory-durability helper
+  built on it is broken there unconditionally, and a Linux CI passes it and hides that.) A gate
+  nobody can run green is not a gate.
 - **The proven probe script is the spec: port it verbatim, and never re-derive a gesture.** When
   reconnaissance left a script that demonstrably performed the interaction (opened the dialog, read its
   fields, changed a value, accepted — repeatedly), transcribe its gesture, its order and its decisions
@@ -678,6 +578,13 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   Verify a selection by **re-opening the surface and reading it again** after accepting: a control can
   hold a value the application discarded, and silently measuring the wrong channel or protocol is worse
   than a refused point — fail the point when the selection did not take.
+- **Order an inspection after the routing step that establishes which item is in scope.** A "read the
+  current state" step placed *before* the per-item selection (channel, port, segment) reports whatever
+  was selected before it, so a plan that compares that against the requested item reports a mismatch
+  for a state the run was about to fix — turning supported behaviour (select the requested item) into
+  a refusal. Read-only means *changes no configuration*, not *runs before everything*: select, then
+  read, then decide, and record the selection beside the reading it preceded. A helper that returns
+  the verified selection together with a fresh screen read is the shape to copy.
 - **Carry the live path in the deliverable repository, not in the reconnaissance project.** The probes,
   the dispatch wrapper and the interactive-session route are what make the automation *runnable*; leave
   them in a scratch archive and a second machine can clone the repository and still run nothing. Ship
@@ -721,250 +628,3 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   each measurement with what to do when it does not hold, and give a staged way to find out which one
   it is (`references/live-run-bringup.md`). Never let a fallback silently accept a state the run was not
   designed for.
-
-## Evidence discipline
-
-Label every load-bearing claim **verified** (measured on this machine), **from documentation**,
-or **unverified** — and grep the source text for the exact phrase a proposal attributes to it
-before designing around it. Documentation and marketing pages describe features that the
-shipped build, or the licence, does not have; option/licence state is visible inside the app
-itself and is worth checking early, because it can invalidate a whole design. When a claim from
-the manual cannot be found in the manual, say so plainly rather than repeating it.
-
-**Treat a handover document as a hypothesis set, not as measurements.** Long-running automation work
-spans sessions, and the handoff carries the previous session's *beliefs* alongside its facts: before
-porting anything from it, re-open the capture, log or probe script each load-bearing claim cites and
-check the claim against it — including the capture code's own filters and truncation limits, which
-silently bound what the artifact can show. The reference script that performed the interaction is the
-strongest evidence in the pack; a summary of it is not.
-
-**An empty result from a filtered query is not evidence until the filter is proven.** Before
-believing "nothing matched", run the same command against something known to qualify: a
-time-filtered file search that silently ignored its own age flag reported "no file was written" for
-a file that was sitting on disk, and that wrong conclusion stood until the flag was tested against a
-known-recent file. Validate the predicate first, then trust the absence.
-
-**A capture is a query too — read the capture code before trusting a count.** A dump that slices its
-list (`kids[:12]`) or filters by class turns a partial inventory into a definitive-looking one:
-measured, a dialog's direct-child count read as an exact 12 from a capture that truncated at 12, while
-the rule consuming it required `>= 15`, which pointed at the wrong conclusion about which predicate the
-working reference used. Re-enumerate fresh and unfiltered before asserting a count or the absence of a
-control class, and treat a suspiciously round number as the truncation limit.
-
-The same trap in UI form, and it cost three live probes: asking a **stock-Windows question of a
-custom-widget app** answers "nothing there" no matter what is on screen. Looking for the native menu
-class to decide whether a menu had opened returned nothing at every position and for every gesture,
-because these toolkits draw their own menus — the entries are ordinary child widgets inside a panel the
-app positions itself. Probe with the **same detector the driver uses** (the app's own control tree,
-filtered the way the map filters it), and read agreement between several independent probes as a reason
-to doubt the detector, not to believe the result. A negative from an API the app never used is not
-evidence of absence; it is an untested measure.
-
-**A positive from the control tree is not evidence of what is on screen either.** A custom
-overlay's panel and all four of its entry rectangles were present in the child tree — geometry
-identical to the real dropdown — while the operator saw no menu at all, on a freshly restarted app.
-A driver that trusts the tree then clicks real coordinates on an invisible surface and reports "the
-popup did not react", which is indistinguishable from a gesture the app ignores. Require a
-*displayed* signal (a pixel change, or the operator's confirmation) before treating an overlay as
-open, and hold "the tree says it is there" as a hypothesis. **The usual mechanism is a pre-created
-panel:** these toolkits construct the overlay at startup with `WS_VISIBLE` off and show it on the
-opening gesture, so "present in the tree" and "open on screen" are different states that a
-presence-based rule conflates. Make visibility an **enforced precondition**, not a diagnostic — the
-overlay poll returns only panels reporting `IsWindowVisible`, the press refuses an overlay or entry
-that does not, and the refusal names the hidden panel and its rectangle so the log records which state
-was actually seen.
-
-**Ask the operator what they saw; their report outranks your telemetry.** Run the live slot step by
-step: one change per run, and never two unverified gestures in the same attempt, so the outcome can
-be attributed to something. Measured twice in one session, the operator's eyes resolved what the
-APIs could not — the cursor visibly locked inside a popup, and a menu that never appeared — and each
-observation redirected the diagnosis immediately. State which single hypothesis the next run tests
-before you start it.
-
-- **The agent's own shell may be in a non-interactive session — prove that before believing the
-driver is broken.** Your shell can run in **session 0** on a *service* window station
-(`Service-0x0-…$`) while the target app runs in **session 1** on `WinSta0`. From there
-`GetForegroundWindow()` returns 0, `GetCursorPos()` fails with **1459** (*"requires an interactive
-window station"*), `EnumWindows` sees no application window and `FindWindow("TMain_Scr")` returns 0 — so
-the driver refuses with *"no visible <MainClass> window"*, which reads exactly like a broken binding and
-is not one. Check the caller first (`ProcessIdToSessionId(os.getpid())` plus the window station name via
-`GetUserObjectInformationW(GetProcessWindowStation(), 2, …)`), print the comparison against the target
-process's session, and only then look at the driver. To run the driver anyway, register a **scheduled
-task with the caller's own principal**: `schtasks /create /tn X /tr "C:\...\run.cmd" /sc once /st 23:59
-/ru INTERACTIVE /it /f` then `schtasks /run /tn X` executes in the logged-on interactive session, needs
-no password, and its redirected stdout is a log the agent can read. Have the wrapper read the probe name
-and its arguments from small **files** instead of passing them through `/tr` — quoting arguments through
-`schtasks` is where that always breaks. **The action must create no window at all:** a `.cmd`
-action gives the task a *console window on the interactive desktop, in front of the target app*,
-and that alone can break the driver — measured: with the console up, the app reported
-`is_foreground=False` and a menubar **hover opened nothing**, because an inactive window ignores
-hover (its first mouse event only activates it). Use a GUI-subsystem host (`pythonw.exe`) that
-runs the child with `CREATE_NO_WINDOW`, and verify afterwards that the foreground window is not
-a console. **Screenshots are then the only route to painted labels:**
-caption-less widgets answer `GetWindowText` with `""`, so `PIL.ImageGrab` executed *inside that session*
-(plus 2x crops of the popup/dialog) is how the *text* on a button is read, and the difference between
-`Cancel` and the indicator next to it is pixels, not window text. State the plan's expected geometry in
-the probe and print an `EXPECTED vs OBSERVED` table, so a divergence is a named line rather than a
-coordinate lost in a wall of output.
-- **Keep ad-hoc probe commands short, and run multi-step ones from a file.** The operator reads the
-session's tool calls on screen, and a long single-line `python -c` blob renders as garbled wrapped
-JSON in their view — put the probe in a small script the report can name, and keep inline commands
-to a few readable lines.
-- **A probe is code under test too: read the helper's real signature and field names before running
-  it.** A probe that passed a control and a count in the wrong order reported three buttons that
-  "did not respond" — indistinguishable from a widget the app ignores — and guessed model field names
-  read as missing values in a decode that was fine. Grep the signature and the field list out of the
-  source, run the probe read-only once, and only then believe a negative result. **When a probe has to
-  bypass one of the driver's own guards, lift it inside the probe, print that it did, and leave every
-  other guard in place** — measured: a store on a mode the driver refuses by design, with the channel
-  still written, read back and the artefact still decoded. Never loosen the production path for a
-  probe's sake, or the guard stops meaning anything.
-
-**`GetWindowText` reads nothing from another process — use `WM_GETTEXT` (via the driver's own text
-reader).** A reconnaissance probe that used `GetWindowText` over this application's whole tree saw
-empty captions everywhere and concluded that the pre-created hidden panels state nothing; with
-`WM_GETTEXT` the same panels state `1460`, `2`, `4`, `212`, `150`, `4000`, `797`, `0.122`… — they had been
-stating the instrument's whole parameter set the entire time. The same API also decides *identity*:
-these widgets carry no caption under either reader (measured, including the five menu entries), which
-is why every binding in this driver is structural and positional, never by name.
-
-**A widget's value often lives one level inside it — walk the surface before binding a position.** The
-`Operating parameters` dialog's 21 **direct** children are its 15 `TSp_Value_Button` widgets, its
-header and its bottom buttons, and not one of them states a value: each field's text lives in the
-`TSp_Edit` or `TComboBox` *inside* its value button. A read built on the resolver's own child
-enumeration therefore sees a dialog with no table at all — which is exactly how the first live read
-failed, with a reason that did not yet name the cause. Walk the surface live (child → next → recurse)
-when the values are nested, and report the **count of children by class** in the failure path: that
-count is what turned a refusal into a cause.
-
-**A row that offers a choice states its value in the *combo*, and the control beside it is a derived
-read-out.** At `burst = 4` the row holds a `TComboBox` `'4'`, its inner `'4'`, and a `TSp_Edit`
-`'89'` — and the 89 is the sampling volume the manual says this window displays (0.876 mm at
-1460 m/s), not the burst. Bind the combo when a row has one, and prove the rule survives
-**enumeration order**: controls come back in creation order, so the test has to try both orders or a
-"first control in the row" implementation passes for the wrong reason (it did, on the first pass).
-
-**A field bound by position is evidence only if a second surface confirms the position.** Seven of
-this dialog's fields are facts the measurement screen also states; requiring all seven to read the
-same text on both surfaces is what makes the binding trustworthy rather than habitual — a
-re-laid-out dialog (another software package installed, a field built or not built) would put a
-*different* value in the same `(column, row)` while still reading exactly like a value, and a pre-run
-check would then hand the run a plausible wrong fact. Refuse as **uncheckable** (nothing states the
-anchor on both surfaces) separately from **disagreement** (the two surfaces state different text):
-they are different faults, and a run record has to be able to tell which one happened. Gate the
-**shape** before the anchors: a positionally-read surface is read only when it builds the measured shape
-(here: three columns of value fields in a `4 / 6 / 5` row-per-column layout), and one that does not is
-refused unread. A field's identity on such a surface *is* its `(column, row)` — never a control id (ids
-change on every launch) and never a caption (these carry none) — so the shape is the only thing saying
-the position you are about to believe is the position it was measured at. Pin all of it to a committed
-capture of the measured tree (`tests/data/udop-parameters-dialog-tree.json`) so a re-layout refuses
-rather than mis-reads: `DIALOG_FIELD_ORDER` / `DIALOG_ANCHORS` / `DIALOG_COLUMN_ROWS` in
-`src/udv_echo_process/acquire/actuator.py` are the binding as data (plan §14).
-
-**A freshly started application builds its value table empty the first time a dialog is opened, and
-states it on the next open.** Measured: the first open after a restart read 2 stating controls where
-the second read 22. Poll for the fill with a bounded timeout, and record *which* state was seen — an
-empty field is not a value, and a read that took the first empty answer as the answer would report
-three unreadable facts about an instrument that states them perfectly well. The same is true of the
-pre-created panels: a long-running instance has them populated, a fresh one does not.
-
-**Escape closes nothing here, and a hover-opened popup cannot be dismissed programmatically.** Moving
-the cursor off the menubar does not close it, moving past the last entry does not, and a posted
-`WM_CANCELMODE` does not; the only clean exit is a *press*, which selects an entry and closes the
-popup. So any gesture that hovers or opens a dialog owns its cleanup in a `finally` — a probe run
-during this work crashed between the hover and the restore and left a popup on the operator's desktop
-that nothing but a restart could clear. When a probe has to leave the application as it found it, say
-what it found and what it left in its own output: a state the operator has to fix by hand must never
-be discovered by them.
-
-## Deliverables shape
-
-Put findings in reading order under `docs/NN-topic.md`, keep the machine-readable control map
-next to the tooling, and keep the reconnaissance scripts re-runnable so the next session
-re-derives nothing. The final report states what was measured, what was assumed, and the single
-experiment that would settle each open question — with the highest-risk unknown first.
-
-**Answer a capability question with the mechanism, one measurement and the gap — not a
-narration of the implementation.** When the operator asks whether something is possible (*can we
-record for a fixed time? is this value settable?*), what they need is: the exact step that sets
-it, one number from a real run showing it took effect, and what still does not hold. Code
-detail, call order and internal naming read as evasion when the question was yes-or-no, and a
-report that opens with what changed rather than what is now *true* gets pushed back on even
-when the work was correct. Lead with the number, then the caveat, then the file.
-
-## Support files
-
-- `references/control-id-mapping.md` — the geometry recipe, toolkit fingerprints, input
-escalation ladder, the map-file schema, and **§8 role binding** (why ids do not survive a restart,
-  and the panel-based recipe to bind instead).
-- `scripts/win_ui_probe.py` — read-only probe: lists windows, dumps the handle-deduplicated
-visible control tree, and captures each window's own pixels.
-- `scripts/win_control_io.py` — the write path: read a control's value by id, set it by message,
-read it back, and restore the previous value.
-- `scripts/win_param_scan.py` — measure a numeric field's accepted domain: scan a ladder of
-values, report what was accepted, and restore every field it touched.
-- `references/parameter-probing.md` — snapping, silent clamping, hidden constants revealed by a
-  ladder, and the confounded-probe trap.
-- `references/app-lifecycle-and-state.md` — attach and cold-start resolution, hidden windows,
-  capturing a UI state machine, the buffer budget for unattended recording, **§5 menus and popups**
-  (the dismissal matrix, the `WM_CLOSE` wedge, and why menus stay out of a run), and **§6 the
-  record/stop/store cycle** (the strip's state views, the held-press recipe, the store dialog).
-- `scripts/win_click_probe.py` — run the click-recipe matrix against one control (hold time,
-  coordinate space, move-first, posted vs injected) and report which recipe the app reacts to, with
-  the enabled / `WindowFromPoint` diagnostics that rule out the mundane causes.
-- `scripts/win_attach.py` — resolve which process owns the target window (by class, across all
-  pids) and print the candidates; run it before any driver binds, and after any restart.
-- `scripts/win_find_overlay.py` — the modality guard: lists the main window's child panels
-  topmost-first, flags the one covering the mapped surface, and with `--press` answers its safe
-  (left) button. Run it before a press sequence, and whenever a press appears to do nothing.
-- `references/artefact-decoding.md` — decoding the file a run produces, which is the only read-back
-  that proves a point: proving word size/stride/channel indexing before trusting a number, pinning
-  fields by differencing two labelled fixtures, and the cross-checks that make a decode verified
-  rather than merely plausible. **§5** adds what the file proves about the run's *duration* (requested
-  vs stored window, the two-duration linearity run) and about per-item state.
-- `references/win32-control-recipes.md` — the condensed recipe sheet for this class: value and
-  commit recipes, the held press, overlay-before-press, button identity by order in the view, menu
-  hover, and the long-unattended-loop rules (poll instead of sleeping, return to a known-good state
-  before the next item, size-check every artefact).
-- `references/custom-menus-clipcursor-and-real-input.md` — the custom-widget app's own menu overlays
-  (caption-less panel + entries, geometry and screen-order matching, content-based dialog identity),
-  when real cursor input is required and when posted messages still work, `ClipCursor` as a systemic
-  hazard for real-cursor gestures, and the state checks that must precede any press.
-- `references/dop3010-sweep-automation.md` — the project-specific sweep notes for the instrument this
-  class was developed against.
-- `references/live-run-bringup.md` — running the automation on a machine that is not the one it was
-  measured on: what the repository must carry to be runnable at all (the interactive-session wrapper,
-  the dispatcher, the capability probes), the staged bring-up with pass criteria, the
-  measurements-folded-in table, what to declare open, and the window-move proxy test.
-- **Promote the probes' private reach into a public surface, and let the package be the
-  interface.** A capability probe calls the driver's *privates*, which makes it the least verified
-  code in the repository: the fakes model the public surface, so no test can drive it. Move each
-  capability into the package as a command returning a report **model** (the project's model base,
-  JSON-serialisable, declared with the protocol's vocabulary because a report is destined for the
-  job log), add a thin public wrapper for every private a command needs
-  (`hold_recording`, `wait_for_view_guarded`, `peek_overlay`), and give a whole sequence one
-  composed method whose destructive step is replaced by the safe one (`preflight`: record, stop,
-  read the store dialog, **cancel** it). Three rules make the seam testable, and each was forced by
-  a fake that could not be driven otherwise: it reads through the **public primitive** the double
-  already answers rather than the internal helper beside it (`strip_state()`, not
-  `_state_of(roles)` — the same read, and only one of the two a double can produce); it uses the
-  **same detector the cycle uses** rather than a parallel finder, so a reader and a run cannot
-  disagree about what is on screen; and it captures the run's notes **into the report** as well as
-  to the caller's sink. Add the module-level dispatcher in the same change —
-  `python -m <pkg>.cli <command> …` is the form the live route can actually start, so an entry
-  point with no `__main__` guard cannot be dispatched at all. Then split the tests by what each
-  layer owes: driver-level cases against the existing fake, command-level cases with the actuator
-  **replaced** (a CLI owes argument handling and exit codes, not the cycle it delegates to).
-  Assert **self-consistency with the primitives and the double's own event vocabulary** — never the
-  installation's measured numbers, which belong in the bring-up table: a control count is a fact
-  about that machine, and a double may not model a state at all (assert the absence of its own
-  "stored" event rather than a dialog flag it never clears).
-  **Retire the probe once its command exists, and correct every document that still names it.** A probe
-  earns its place only while it *measures* something no command covers (a geometry stress test, a
-  one-off diagnostic); a probe that acts on the instrument and duplicates a command is a second
-  implementation of the same gesture — the untested one, and therefore the copy that drifts. Delete the
-  superseded files, say in the README what the survivor is for, and grep the docs, the bring-up
-  checklist **and the dispatcher's own usage examples** for the old filenames: a checklist that names a
-  deleted probe, or a command form that never existed, costs the next machine its first hour. Re-run the
-  survivor from the clone after the deletion — a surviving script is verified by running it, never by
-  compiling it.
