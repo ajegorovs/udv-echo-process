@@ -1,0 +1,926 @@
+{
+  "artefact": "gain-power-screen",
+  "axes": [
+    "tgc",
+    "em_pow"
+  ],
+  "analysis_commit": "71b7906",
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "sensitivity": {
+    "column": "sensitivity",
+    "values_in_manifest": [
+      "medium"
+    ],
+    "rows_in_manifest": 40,
+    "axis_present": false,
+    "identifiable": false,
+    "levels_screened": 10
+  },
+  "manifest": {
+    "path": "reports/mixer-sensitivity-analysis/manifest.csv",
+    "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
+  },
+  "envelope": {
+    "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "metric": "max_gate_abs_mean_difference_mm_s",
+    "units": "mm/s",
+    "value_mm_s": 19.37008103465545,
+    "gate_index": 39,
+    "depth_mm": 82.31266666666666,
+    "median_abs_mean_difference_mm_s": 8.908740794548184,
+    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
+    "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "axis_blocks": [
+    {
+      "axis": "tgc",
+      "tgc_representation": {
+        "mode_word": 23,
+        "start_word": 24,
+        "key_cell": "tgc_start_db",
+        "role": "the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder",
+        "end_word": 25,
+        "mode_label": "uniform",
+        "end_db": 40.0
+      },
+      "key": {
+        "column": "tgc_start_db",
+        "label": "decoded TGC start",
+        "units": "dB",
+        "values": [
+          0.1568627450980392,
+          4.862745098039215,
+          9.882352941176471,
+          14.901960784313726,
+          24.941176470588236,
+          29.96078431372549,
+          34.98039215686275,
+          40.0
+        ]
+      },
+      "audited_constants": {
+        "settings": [
+          "resolution_mm",
+          "burst_length",
+          "emissions_per_profile",
+          "emit_power",
+          "sensitivity",
+          "tgc_mode",
+          "tgc_end_db",
+          "prf_period_us",
+          "sound_speed_ms",
+          "velo_max_ms",
+          "gates"
+        ],
+        "tgc_end_db": 40.0,
+        "tgc_mode": "uniform",
+        "sensitivity": "medium"
+      },
+      "base_state": {
+        "label": "20",
+        "decoded_key": "19.9215686275",
+        "in_ladder": false,
+        "straddling_keys": [
+          14.901960784313726,
+          24.941176470588236
+        ],
+        "straddling_pair": [
+          "tgc/15.BDD",
+          "tgc/25.BDD"
+        ]
+      },
+      "screening": {
+        "dropout_gate_limit": 0.5,
+        "spread_ratio_limit": 3.0,
+        "levels_screened": 8,
+        "levels_flagged": 2,
+        "levels_dropout_limited": [
+          "tgc/0.BDD",
+          "tgc/40.BDD"
+        ],
+        "levels_spread_limited": [
+          "tgc/40.BDD"
+        ],
+        "flagged_paths": [
+          "tgc/0.BDD",
+          "tgc/40.BDD"
+        ],
+        "axis_median_gate_robust_spread_mm_s": 29.803946811682447
+      },
+      "inputs": [
+        {
+          "relative_path": "tgc/0.BDD",
+          "requested_label": "0",
+          "key_value": 0.1568627450980392,
+          "tgc_start_db": 0.1568627450980392,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "dropout-limited",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 516,
+          "gates": 50,
+          "duration_s": 11.5275,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "4f936ff8751593313a621d0cbf4ea322ae7fb5e23e12ea7d109ce683a613b72e"
+        },
+        {
+          "relative_path": "tgc/5.BDD",
+          "requested_label": "5",
+          "key_value": 4.862745098039215,
+          "tgc_start_db": 4.862745098039215,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 496,
+          "gates": 50,
+          "duration_s": 11.0823,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "64f571f427fe38c292df962f50744dbd6293690304b46ccb5ebe355dd0f9272c"
+        },
+        {
+          "relative_path": "tgc/10.BDD",
+          "requested_label": "10",
+          "key_value": 9.882352941176471,
+          "tgc_start_db": 9.882352941176471,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 522,
+          "gates": 50,
+          "duration_s": 11.664900000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "d15a4ce74bae1640ff017dcec17e497c4b7b7270928ddb9f582e32bf2d1f3f81"
+        },
+        {
+          "relative_path": "tgc/15.BDD",
+          "requested_label": "15",
+          "key_value": 14.901960784313726,
+          "tgc_start_db": 14.901960784313726,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 494,
+          "gates": 50,
+          "duration_s": 11.038,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "05c6f63a67b087be9c56d547cb748f5fbc43cf7cedacf44f768ce6e0ea3abc9f"
+        },
+        {
+          "relative_path": "tgc/25.BDD",
+          "requested_label": "25",
+          "key_value": 24.941176470588236,
+          "tgc_start_db": 24.941176470588236,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 614,
+          "gates": 50,
+          "duration_s": 13.7246,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "c90c19e57f565253de44a029f923eb703138e0f01db3223d14205ef949376c1e"
+        },
+        {
+          "relative_path": "tgc/30.BDD",
+          "requested_label": "30",
+          "key_value": 29.96078431372549,
+          "tgc_start_db": 29.96078431372549,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 517,
+          "gates": 50,
+          "duration_s": 11.552800000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "083f2df703f787a275eb544df8b7cf21d2315c4bca2ccfc8fba8ce9ecbd5324e"
+        },
+        {
+          "relative_path": "tgc/35.BDD",
+          "requested_label": "35",
+          "key_value": 34.98039215686275,
+          "tgc_start_db": 34.98039215686275,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 418,
+          "gates": 50,
+          "duration_s": 9.3363,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "dbc6d7d4a5300e86d4e64f6c76236da90bd934c25d3f0e28db577d0c464a4be1"
+        },
+        {
+          "relative_path": "tgc/40.BDD",
+          "requested_label": "40",
+          "key_value": 40.0,
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "dropout- and spread-limited",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 492,
+          "gates": 50,
+          "duration_s": 10.9928,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "source_sha256": "07c90296fdf8572599be1aedfbf715886fd952af52e35f77cb1764a3ca49dd64"
+        }
+      ],
+      "views": {
+        "time": {
+          "common_duration": {
+            "nominal_rpm": 500.0,
+            "revolution_s": 0.12,
+            "revolutions": 77,
+            "window_s": 9.24,
+            "profiles_window": {
+              "tgc/0.BDD": 413,
+              "tgc/5.BDD": 413,
+              "tgc/10.BDD": 413,
+              "tgc/15.BDD": 413,
+              "tgc/25.BDD": 413,
+              "tgc/30.BDD": 413,
+              "tgc/35.BDD": 413,
+              "tgc/40.BDD": 413
+            }
+          },
+          "rule": "the largest integer number of nominal revolutions fitting every recording of this axis, truncated per file by the recorded timestamps"
+        },
+        "depth": {
+          "common_support_min_mm": 10.162666666666668,
+          "common_support_max_mm": 100.81266666666667,
+          "plan_declared_mm": [
+            10.163,
+            96.743
+          ],
+          "contains_plan_window": true,
+          "gates_in_support": {
+            "tgc/0.BDD": 50,
+            "tgc/5.BDD": 50,
+            "tgc/10.BDD": 50,
+            "tgc/15.BDD": 50,
+            "tgc/25.BDD": 50,
+            "tgc/30.BDD": 50,
+            "tgc/35.BDD": 50,
+            "tgc/40.BDD": 50
+          },
+          "rule": "the intersection of this axis's decoded depth ranges; each level keeps its own decoded gate grid inside it and nothing is resampled"
+        },
+        "alignment": {
+          "upsampled": false,
+          "focus_pair": [
+            "tgc/15.BDD",
+            "tgc/25.BDD"
+          ],
+          "max_knot_offset_over_all_pairs_mm": 0.0,
+          "knot_rule": "the higher key's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid; the lower level is sampled there by its nearest native gate, never interpolated"
+        },
+        "depths": {
+          "rows": 400,
+          "columns": [
+            "axis",
+            "relative_path",
+            "requested_label",
+            "key_name",
+            "key_value",
+            "gate_index",
+            "depth_mm",
+            "in_plan_window",
+            "profiles_window",
+            "mean_mm_s",
+            "robust_spread_mm_s",
+            "std_mm_s",
+            "rms_mm_s",
+            "zero_fraction",
+            "majority_blank"
+          ]
+        }
+      }
+    },
+    {
+      "axis": "em_pow",
+      "tgc_representation": {
+        "mode_word": 23,
+        "start_word": 24,
+        "key_cell": "tgc_start_db",
+        "role": "the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder",
+        "end_word": 25,
+        "mode_label": "uniform",
+        "end_db": 40.0
+      },
+      "key": {
+        "column": "emit_power",
+        "label": "requested emitting power",
+        "units": "declared step",
+        "values": [
+          "low",
+          "high"
+        ]
+      },
+      "audited_constants": {
+        "settings": [
+          "resolution_mm",
+          "burst_length",
+          "emissions_per_profile",
+          "sensitivity",
+          "tgc_mode",
+          "tgc_start_db",
+          "tgc_end_db",
+          "prf_period_us",
+          "sound_speed_ms",
+          "velo_max_ms",
+          "gates"
+        ],
+        "tgc_end_db": 40.0,
+        "tgc_mode": "uniform",
+        "sensitivity": "medium"
+      },
+      "base_state": {
+        "label": "medium",
+        "decoded_key": "medium",
+        "in_ladder": false,
+        "straddling_keys": [
+          "low",
+          "high"
+        ],
+        "straddling_pair": [
+          "em_pow/low.BDD",
+          "em_pow/high.BDD"
+        ]
+      },
+      "screening": {
+        "dropout_gate_limit": 0.5,
+        "spread_ratio_limit": 3.0,
+        "levels_screened": 2,
+        "levels_flagged": 0,
+        "levels_dropout_limited": [],
+        "levels_spread_limited": [],
+        "flagged_paths": [],
+        "axis_median_gate_robust_spread_mm_s": 28.44922195660597
+      },
+      "inputs": [
+        {
+          "relative_path": "em_pow/low.BDD",
+          "requested_label": "low",
+          "key_value": "low",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "low",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 556,
+          "gates": 50,
+          "duration_s": 12.425600000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "source_sha256": "40b1de33bbaee4e3654d9ab00f20ef740e16b517efc8e40bec56f6d340df6144"
+        },
+        {
+          "relative_path": "em_pow/high.BDD",
+          "requested_label": "high",
+          "key_value": "high",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "high",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 520,
+          "gates": 50,
+          "duration_s": 11.620000000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "source_sha256": "9e02546ba83b86842ddeb7bb9516b4a21d5eff9412c57c6f827cff655c437b5d"
+        }
+      ],
+      "views": {
+        "time": {
+          "common_duration": {
+            "nominal_rpm": 500.0,
+            "revolution_s": 0.12,
+            "revolutions": 96,
+            "window_s": 11.52,
+            "profiles_window": {
+              "em_pow/low.BDD": 515,
+              "em_pow/high.BDD": 515
+            }
+          },
+          "rule": "the largest integer number of nominal revolutions fitting every recording of this axis, truncated per file by the recorded timestamps"
+        },
+        "depth": {
+          "common_support_min_mm": 10.162666666666668,
+          "common_support_max_mm": 100.81266666666667,
+          "plan_declared_mm": [
+            10.163,
+            96.743
+          ],
+          "contains_plan_window": true,
+          "gates_in_support": {
+            "em_pow/low.BDD": 50,
+            "em_pow/high.BDD": 50
+          },
+          "rule": "the intersection of this axis's decoded depth ranges; each level keeps its own decoded gate grid inside it and nothing is resampled"
+        },
+        "alignment": {
+          "upsampled": false,
+          "focus_pair": [
+            "em_pow/low.BDD",
+            "em_pow/high.BDD"
+          ],
+          "max_knot_offset_over_all_pairs_mm": 0.0,
+          "knot_rule": "the higher key's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid; the lower level is sampled there by its nearest native gate, never interpolated"
+        },
+        "depths": {
+          "rows": 100,
+          "columns": [
+            "axis",
+            "relative_path",
+            "requested_label",
+            "key_name",
+            "key_value",
+            "gate_index",
+            "depth_mm",
+            "in_plan_window",
+            "profiles_window",
+            "mean_mm_s",
+            "robust_spread_mm_s",
+            "std_mm_s",
+            "rms_mm_s",
+            "zero_fraction",
+            "majority_blank"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "key": "the decoded cell the axis's ladder is ordered and keyed by, re-checked against the manifest cell: tgc_start_db (op word 24) on the TGC axis, the emit_power label on the power axis; never a filename and never a requested label",
+    "tgc_representation": "op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / decoded tgc_start_db moves across the eight files: the representation this axis is screened through, not a validated scalar gain ladder",
+    "power_gap": "the distance between two power levels along the instrument's declared low < medium < high: low -> high is two steps, with the base state's medium between them",
+    "common_duration": "the leading whole nominal 500-RPM revolutions (0.12 s each) that fit every recording of one axis, truncated per file by the recorded timestamps; every distributional metric of that axis uses that window and nothing else",
+    "common_support": "the intersection of one axis's decoded depth ranges; every cross-level summary of that axis uses it, and each level keeps its own native gate grid inside it",
+    "spread_metrics": "per level, the IQR p75 - p25 across supported gates of the per-gate time means and the RMS about zero in mm/s (not a sigma); per gate in the depth rows, the IQR of that gate's window samples, their standard deviation about the gate's own mean and their RMS about zero",
+    "zero_fraction": "samples exactly 0.0 over the common window and support, per gate in the depth rows: the dropout the screen screens on",
+    "majority_blank": "a supported gate whose window samples are exactly zero in more than the declared dropout gate limit (0.5) of the profiles: a screening margin, not an instrument flag, and no gate is dropped from any table",
+    "spread_ratio": "a level's largest per-gate robust spread divided by its own axis's median per-gate robust spread: the screen's second aggregate, with the declared limit 3.0, and every ratio is published so the margin can be moved",
+    "screen": "one word from the two declared margins: usable, dropout-limited, spread-limited, or both; it says a setting cannot carry a wider ladder, never that a gain or a power setting caused the dropout",
+    "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
+    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
+    "base_state": "the level each axis does not hold: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis), and the two ladder-adjacent levels whose keys bracket it",
+    "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit"
+  },
+  "findings": {
+    "envelope": {
+      "value_mm_s": 19.37008103465545,
+      "metric": "max_gate_abs_mean_difference_mm_s",
+      "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+      "median_abs_mean_difference_mm_s": 8.908740794548184,
+      "statement": "Threshold: the committed WP1 envelope 19.3701 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json) bounds same-settings repeatability plus uncontrolled drift, and every mean-profile effect in both axes is compared to it."
+    },
+    "axes": {
+      "tgc": {
+        "screen": {
+          "key": "tgc_start_db",
+          "levels": 8,
+          "levels_flagged": 3,
+          "levels_dropout_limited": [
+            "tgc/0.BDD",
+            "tgc/40.BDD"
+          ],
+          "levels_spread_limited": [
+            "tgc/40.BDD"
+          ],
+          "dropout_gate_limit": 0.5,
+          "spread_ratio_limit": 3.0,
+          "axis_median_gate_robust_spread_mm_s": 29.803946811682447,
+          "statement": "Screen (tgc): 8 levels keyed by tgc_start_db dB, overall dropout 0.006295-0.2437; 2 carry a gate blank above 0.5 of the window (tgc/0.BDD with 10 of 50 gates covering 84.1627..100.813 mm at up to 0.8111 blank, tgc/40.BDD with 1 of 50 gates covering 69.3627..69.3627 mm at up to 0.5545 blank) and 1 a per-gate spread past 3x the axis median (tgc/40.BDD at 4.97x = 148.1 mm/s at 73.06 mm). A flag rules a setting out of a wider ladder, not a cause."
+        },
+        "effect_gate": {
+          "pairs": 28,
+          "envelope_mm_s": 19.37008103465545,
+          "knots_above_envelope": 14,
+          "pairs_above_envelope": 14,
+          "clearing_pairs": [
+            [
+              "tgc/0.BDD",
+              "tgc/15.BDD",
+              3,
+              "78.6127..78.6127; 95.2627..97.1127"
+            ],
+            [
+              "tgc/0.BDD",
+              "tgc/30.BDD",
+              1,
+              "15.7127..15.7127"
+            ],
+            [
+              "tgc/0.BDD",
+              "tgc/40.BDD",
+              4,
+              "10.1627..10.1627; 15.7127..15.7127; 73.0627..74.9127"
+            ],
+            [
+              "tgc/5.BDD",
+              "tgc/30.BDD",
+              3,
+              "56.4127..60.1127"
+            ],
+            [
+              "tgc/5.BDD",
+              "tgc/40.BDD",
+              3,
+              "10.1627..10.1627; 73.0627..74.9127"
+            ],
+            [
+              "tgc/10.BDD",
+              "tgc/40.BDD",
+              5,
+              "10.1627..10.1627; 73.0627..74.9127; 80.4627..82.3127"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/30.BDD",
+              8,
+              "10.1627..15.7127; 76.7627..82.3127"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/35.BDD",
+              1,
+              "10.1627..10.1627"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/40.BDD",
+              11,
+              "10.1627..10.1627; 15.7127..15.7127; 19.4127..19.4127; 73.0627..86.0127"
+            ],
+            [
+              "tgc/25.BDD",
+              "tgc/30.BDD",
+              3,
+              "13.8627..15.7127; 78.6127..78.6127"
+            ],
+            [
+              "tgc/25.BDD",
+              "tgc/40.BDD",
+              8,
+              "10.1627..10.1627; 15.7127..15.7127; 73.0627..74.9127; 78.6127..84.1627"
+            ],
+            [
+              "tgc/30.BDD",
+              "tgc/35.BDD",
+              4,
+              "47.1627..52.7127"
+            ],
+            [
+              "tgc/30.BDD",
+              "tgc/40.BDD",
+              2,
+              "73.0627..74.9127"
+            ],
+            [
+              "tgc/35.BDD",
+              "tgc/40.BDD",
+              6,
+              "73.0627..74.9127; 78.6127..78.6127; 82.3127..86.0127"
+            ]
+          ],
+          "max_ratio_to_envelope": 2.4317786964690544,
+          "max_abs_difference_mm_s": 47.10375040895438,
+          "max_abs_difference_paths": [
+            "tgc/30.BDD",
+            "tgc/40.BDD"
+          ],
+          "max_abs_difference_depth_mm": 73.06266666666666,
+          "statement": "Effect gate (tgc): the largest absolute per-knot mean difference over the 28 pair(s) is 47.1 mm/s (tgc/30.BDD / tgc/40.BDD at 73.06 mm) = 2.43 of the 19.37 mm/s WP1 envelope; 14 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+        },
+        "focus_pair": {
+          "low_path": "tgc/15.BDD",
+          "high_path": "tgc/25.BDD",
+          "low_key": 14.901960784313726,
+          "high_key": 24.941176470588236,
+          "knots": 50,
+          "ratio_to_envelope": 0.6036169961523308,
+          "knots_above_envelope": 0,
+          "mean_signed_difference_mm_s": 0.41805854123403735,
+          "max_abs_difference_mm_s": 11.692110129365954,
+          "max_abs_difference_depth_mm": 63.812666666666665,
+          "statement": "Focus pair (tgc): the base state's own tgc_start_db (19.9215686275) is no level of this axis; the levels bracketing it \u2014 tgc/15.BDD (14.902) and tgc/25.BDD (24.9412) \u2014 differ by at most 11.69 mm/s at 63.81 mm = 0.604 of the 19.37 mm/s envelope, 0 of 50 knots above it (mean signed +0.4181 mm/s)."
+        },
+        "base_state": {
+          "label": "20",
+          "decoded_key": "19.9215686275",
+          "in_ladder": false,
+          "straddling_pair": [
+            "tgc/15.BDD",
+            "tgc/25.BDD"
+          ],
+          "straddling_keys": [
+            14.901960784313726,
+            24.941176470588236
+          ],
+          "statement": "Base state (tgc): the manifest's other rows carry tgc_start_db = 19.9215686275 and no level of this axis does; the ladder straddles it at 14.902 and 24.9412 (tgc/15.BDD / tgc/25.BDD)."
+        }
+      },
+      "em_pow": {
+        "screen": {
+          "key": "emit_power",
+          "levels": 2,
+          "levels_flagged": 0,
+          "levels_dropout_limited": [],
+          "levels_spread_limited": [],
+          "dropout_gate_limit": 0.5,
+          "spread_ratio_limit": 3.0,
+          "axis_median_gate_robust_spread_mm_s": 28.44922195660597,
+          "statement": "Screen (em_pow): 2 levels keyed by emit_power declared step, overall dropout 0.008971-0.03984; 0 carry a gate blank above 0.5 of the window (none) and 0 a per-gate spread past 3x the axis median (none). A flag rules a setting out of a wider ladder, not a cause."
+        },
+        "effect_gate": {
+          "pairs": 1,
+          "envelope_mm_s": 19.37008103465545,
+          "knots_above_envelope": 0,
+          "pairs_above_envelope": 0,
+          "clearing_pairs": [],
+          "max_ratio_to_envelope": 0.5374215354901027,
+          "max_abs_difference_mm_s": 10.409898692212249,
+          "max_abs_difference_paths": [
+            "em_pow/low.BDD",
+            "em_pow/high.BDD"
+          ],
+          "max_abs_difference_depth_mm": 47.16266666666666,
+          "statement": "Effect gate (em_pow): the largest absolute per-knot mean difference over the 1 pair(s) is 10.41 mm/s (em_pow/low.BDD / em_pow/high.BDD at 47.16 mm) = 0.537 of the 19.37 mm/s WP1 envelope; 0 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+        },
+        "focus_pair": {
+          "low_path": "em_pow/low.BDD",
+          "high_path": "em_pow/high.BDD",
+          "low_key": "low",
+          "high_key": "high",
+          "knots": 50,
+          "ratio_to_envelope": 0.5374215354901027,
+          "knots_above_envelope": 0,
+          "mean_signed_difference_mm_s": -3.017982084914264,
+          "max_abs_difference_mm_s": 10.409898692212249,
+          "max_abs_difference_depth_mm": 47.16266666666666,
+          "statement": "Focus pair (em_pow): the base state's own emit_power (medium) is no level of this axis; the levels bracketing it \u2014 em_pow/low.BDD (low) and em_pow/high.BDD (high) \u2014 differ by at most 10.41 mm/s at 47.16 mm = 0.537 of the 19.37 mm/s envelope, 0 of 50 knots above it (mean signed -3.018 mm/s)."
+        },
+        "base_state": {
+          "label": "medium",
+          "decoded_key": "medium",
+          "in_ladder": false,
+          "straddling_pair": [
+            "em_pow/low.BDD",
+            "em_pow/high.BDD"
+          ],
+          "straddling_keys": [
+            "low",
+            "high"
+          ],
+          "statement": "Base state (em_pow): the manifest's other rows carry emit_power = medium and no level of this axis does; the ladder straddles it at low and high (em_pow/low.BDD / em_pow/high.BDD)."
+        }
+      }
+    },
+    "screen_summary": {
+      "levels": 10,
+      "pairs": 29,
+      "levels_flagged": 2,
+      "pairs_above_envelope": 14,
+      "flagged": [
+        {
+          "relative_path": "tgc/0.BDD",
+          "screen": "dropout-limited",
+          "zero_fraction": 0.24372881355932202,
+          "majority_blank_gates": 10,
+          "majority_blank_depth_ranges_mm": "84.1627..100.813",
+          "worst_gate_zero_fraction": 0.8111380145278451,
+          "max_gate_spread_ratio_to_axis_median": 1.4545454545454541,
+          "max_gate_robust_spread_mm_s": 43.351195362447186,
+          "max_gate_robust_spread_depth_mm": 56.41266666666667,
+          "axis": "tgc"
+        },
+        {
+          "relative_path": "tgc/40.BDD",
+          "screen": "dropout- and spread-limited",
+          "zero_fraction": 0.03878934624697337,
+          "majority_blank_gates": 1,
+          "majority_blank_depth_ranges_mm": "69.3627..69.3627",
+          "worst_gate_zero_fraction": 0.5544794188861986,
+          "max_gate_spread_ratio_to_axis_median": 4.969696969696968,
+          "max_gate_robust_spread_mm_s": 148.11658415502788,
+          "max_gate_robust_spread_depth_mm": 73.06266666666666,
+          "axis": "tgc"
+        }
+      ],
+      "statement": "Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the envelope anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow."
+    },
+    "sensitivity": {
+      "column": "sensitivity",
+      "values_in_manifest": [
+        "medium"
+      ],
+      "rows_in_manifest": 40,
+      "axis_present": false,
+      "identifiable": false,
+      "levels_screened": 10,
+      "statement": "Sensitivity: every one of the 40 committed manifest rows carries 'medium' and neither screened axis varies it, so the axis is absent from this sweep and its effect is unidentifiable from it."
+    },
+    "velocity_only": {
+      "channels": "one axial-velocity channel per file, in mm/s; no echo or energy profile",
+      "not_inferred": [
+        "echo SNR",
+        "receiver saturation",
+        "a safe plateau",
+        "acoustic energy",
+        "the gain a TGC or emitting-power setting applied"
+      ],
+      "measured": [
+        "depth-resolved dropout (the share of window samples exactly 0.0 per gate); bias (the signed per-gate mean difference between two levels, per knot); variance and robust spread (per-gate IQR and std, by level and depth)"
+      ],
+      "statement": "Velocity only: this screen measures dropout, bias and spread and stops there. Echo SNR, receiver saturation, a safe plateau and acoustic energy are not measurable in these files and are not inferred, and a dropout or spread anomaly is not attributed to gain."
+    },
+    "diagnostic": {
+      "justified": true,
+      "wider_ladder_justified": false,
+      "outcome_claimed": false,
+      "flagged_levels": 2,
+      "pairs_above_envelope": 14,
+      "focus_pair_ratios": {
+        "tgc": 0.6036169961523308,
+        "em_pow": 0.5374215354901027
+      },
+      "statement": "Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the envelope, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show."
+    },
+    "limitations": [
+      "One recording per setting and no acquisition order: the only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s), no level is replicated, no p-value is produced and no replicate claim is made.",
+      "Velocity only: these files carry one axial-velocity channel in mm/s and no echo or energy profile, so echo SNR, receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred here. A majority-blank gate or a disproportionate per-gate spread is a property of the recorded velocity array, not evidence that a gain, a power or the receiver saturated.",
+      "TGC representation: the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. Reading word 24 as a calibrated gain set point is reading something these files do not establish, and no wider TGC ladder can be designed on that reading.",
+      "Both axes bracket the base state rather than sampling it (tgc: 14.901960784313726 and 24.941176470588236; em_pow: low and high), and that state's sensitivity is medium like every other row, so neither axis can be compared with the committed reference recording from inside its own ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it \u2014 no pair in this screen varies it, and its effect on dropout, bias or spread is not estimable from the committed sweep."
+    ]
+  },
+  "tables": {
+    "levels": {
+      "path": "gain-power-levels.csv",
+      "columns": [
+        "axis",
+        "relative_path",
+        "requested_label",
+        "key_name",
+        "key_value",
+        "tgc_start_db",
+        "tgc_end_db",
+        "tgc_mode",
+        "emit_power",
+        "sensitivity",
+        "resolution_mm",
+        "prf_period_us",
+        "burst_length",
+        "emissions_per_profile",
+        "gates",
+        "profiles",
+        "duration_s",
+        "profiles_window",
+        "gates_in_support",
+        "pitch_mm",
+        "mean_mm_s",
+        "robust_spread_mm_s",
+        "rms_mm_s",
+        "zero_fraction",
+        "median_gate_robust_spread_mm_s",
+        "max_gate_robust_spread_mm_s",
+        "max_gate_robust_spread_depth_mm",
+        "max_gate_spread_ratio_to_axis_median",
+        "max_gate_std_mm_s",
+        "worst_gate_zero_fraction",
+        "worst_gate_zero_fraction_depth_mm",
+        "majority_blank_gates",
+        "majority_blank_depth_ranges_mm",
+        "dropout_limited",
+        "spread_limited",
+        "screen"
+      ],
+      "rows": 10
+    },
+    "pairs": {
+      "path": "gain-power-pairs.csv",
+      "columns": [
+        "axis",
+        "low_path",
+        "low_label",
+        "low_key",
+        "high_path",
+        "high_label",
+        "high_key",
+        "key_gap",
+        "knots",
+        "knot_spacing_mm",
+        "max_knot_offset_mm",
+        "mean_signed_difference_mm_s",
+        "mean_abs_difference_mm_s",
+        "max_abs_difference_mm_s",
+        "max_abs_difference_depth_mm",
+        "knots_above_envelope",
+        "max_abs_difference_over_envelope",
+        "depth_ranges_above_envelope_mm",
+        "robust_spread_change_mm_s",
+        "zero_fraction_change",
+        "focus_pair"
+      ],
+      "rows": 29
+    },
+    "depths": {
+      "path": "gain-power-depths.csv",
+      "columns": [
+        "axis",
+        "relative_path",
+        "requested_label",
+        "key_name",
+        "key_value",
+        "gate_index",
+        "depth_mm",
+        "in_plan_window",
+        "profiles_window",
+        "mean_mm_s",
+        "robust_spread_mm_s",
+        "std_mm_s",
+        "rms_mm_s",
+        "zero_fraction",
+        "majority_blank"
+      ],
+      "rows": 500
+    }
+  },
+  "figure": {
+    "path": "figures/gain-power-screen.png",
+    "caption": "gain-power-screen: the velocity-only screening of 10 committed levels over two axes \u2014 tgc 8 (0, 5, 10, 15, 25, 30, 35, 40) and em_pow 2 (low, high). Common-duration view per axis: 77 nominal 500-RPM revolutions = 9.24 s for tgc and 96 = 11.52 s for em_pow, truncated per file by the recorded timestamps. Common support: 10.1627-100.813 mm on each axis's own 1.85 mm grid, which contains the plan's declared 10.163-96.743 mm window; pairs use the higher key's own gate depths as knots, so nothing is interpolated or upsampled. Threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Screening margins: a gate blank in more than 0.5 of the window, and a per-gate robust spread past 3x the axis's median. Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the envelope anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow. Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the envelope, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show. Spread and bias by depth are in gain-power-depths.csv. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. one recording per setting and no acquisition order: no gate and no profile is an independent experimental replicate, a level effect cannot be separated from drift, and no p-value is produced. the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it. Generated at commit 71b7906 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "panels": [
+      "dropout by depth: every level's per-gate zero fraction against depth with the declared majority-blank limit (the per-gate robust spread is tabulated in gain-power-depths.csv)",
+      "each axis's focus pair against the envelope: the signed low - high per-gate mean difference of the two levels bracketing the base state's own key, at the shared knots, against the WP1 envelope band"
+    ]
+  },
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}
