@@ -226,6 +226,19 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so
   neither the state nor the wrong diagnoses are one-off. The four transitions between the states are now
   **observed** by the operator (the third witness V4 wanted), with three of the four states read.
+- **The model was tested by prediction, and it holds — and the test found a third false positive.** From the
+  `Pause` / `Record` / `Clear and restart` state the operator was asked to press `Pause`, with the outcome
+  predicted in advance: the row's handles, their rects, the panel's rect (`[343,414,713,537]`, from a sizing
+  rule derived from the three measured states), the slider's presence and `Show block` = `1` all came out
+  **exact** — as did the prediction that the `>400 px` dialog predicate would stop firing at 370 px
+  (`0 dialog panel(s)`). What the prediction missed is that **another** wrong readout takes its place: the
+  screen reports `open_popup: True` and the surface reads `popup`, because the **cursor info box** (`131916`)
+  directly owns one `TSp_Button` (`131918` — the control recorded as visible while painting nothing) and the
+  popup predicate is "a panel that is not the menu, not the status bar, not the strip and not a dialog, and
+  that hosts a button" (`driver.py:1102`). The three wrong readouts **hide each other**: while the strip
+  resolver named the info box as the strip and the classifier named the strip a dialog, the popup test had
+  no candidate and printed "no menu popup". So the popup false positive appears **only once the other two
+  classify correctly** — which is the argument for naming the box's identity once, rather than each symptom.
 
 Full record, with the rects, the handles and the two refusal texts: `device-verification.md`, *2026-09-19 —
 the four-button strip, block-held*.

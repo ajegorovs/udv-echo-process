@@ -536,6 +536,55 @@ so the two are not competing for one slot at all. `ui-element-index.md`'s findin
 row relabels its first two buttons") is therefore **wrong in its second half, corrected here**: one control
 relabels, and the rest of the row is a subset of a five-button pool.
 
+### A prediction walk, and the third false positive
+
+The pool model above was then **tested**: from the `Pause` / `Record` / `Clear and restart` state the
+operator was asked to press `Pause`, and the outcome was predicted **before the state existed** — row
+captions, which handles would be visible, their rects, the panel's rect, whether the slider would be
+painted, and the `Show block` value. Six of the seven predictions came out **exact**, and the seventh
+produced the finding below.
+
+| predicted from the model | measured at 12:03:31 | verdict |
+|---|---|---|
+| row `Resume` / `Do store` / `Clear and restart`, no `Record` | the resolver itself reports `view 'store'`, `button_count 3`, `has_slider: true` on panel `3149132` | exact |
+| visible `1574908` / `2821164` / `1641666`, hidden `4787852` / `7867344` | exactly that, and the resolver's own row lists those three ids | exact |
+| row rects `[353,424,444,444]`, `[454,423,545,443]`, `[555,423,693,443]` | identical | exact |
+| panel **`[343,414,713,537]`** (370x123), from the sizing rule | `panel_rect [343,414,713,537]` | exact |
+| the second row painted, slider **visible** | `TSp_Sliding_Bar 3344390` `visible: true` (I declined to predict its rect; it kept `[465,449,716,499]`, the rect it had while hidden in the intermediate state) | exact |
+| `Show block` reads **`1`** | combo `1967830` text `1` | exact |
+| the `>400 px` dialog predicate stops firing at 370 px | `0 dialog panel(s)` — it stopped | exact |
+| …and nothing else takes its place | **wrong**: the screen reports `open_popup: True`, the surface reads `popup`, and the note says *"a menu popup is open"* | **false positive found** |
+
+**The new false positive, and its cause — by the code's own predicate.** No popup is open on this screen.
+`driver.py:1102` reads:
+
+```python
+roles["open_popup"] = any(
+    i not in (menu_idx, status_idx, rec_idx)
+    and host_count.get(i)
+    and panels[i]["hwnd"] not in dialog_panels
+    for i in range(len(panels))
+)
+```
+
+with `host_count[i]` counting the `TSp_Button`s a panel **directly owns** (`driver.py:1017`). On this
+screen the five panels are: the menu band (10 buttons, excluded as `menu_idx`), the sidebar (its children
+are `TSp_Value_Button`s, so `host_count` is 0), the strip (7 buttons — excluded as `rec_idx`, because the
+strip now **resolves**), the bottom band (excluded as `status_idx`) — and **the cursor info box `131916`,
+which directly owns one `TSp_Button`, `131918`, and is neither the menu, the status bar, the strip, nor a
+dialog.** That button is the one recorded above as *reported visible while painting nothing*: it is what
+makes the screen claim a menu popup is open, and the refusal that follows would name a popup that is not
+there.
+
+**And it only appears now, because the other two wrong readouts were cancelling it.** In the 11:41 and
+11:55 states the strip resolver had named the *info box* as the strip (so it was `rec_idx`, excluded from
+the popup test) and the dialog classifier had named the *strip panel* a dialog (so that panel was excluded
+too), leaving no candidate and printing "no menu popup". So **the popup false positive surfaces only once
+the strip and the layout classify correctly** — three readouts, two of which hide each other, and the
+cursor info box's caption-less button sitting at the bottom of the chain. That is the strongest argument in
+this record for fixing the box's *identity* (a panel that hosts one button and paints nothing below the
+strip is not a menu popup, not a dialog and not the strip) rather than each symptom separately.
+
 ### Reproduced exactly, and the transitions observed
 
 After clearing the block, passing through the intermediate state and pressing `Pause`, the operator returned
