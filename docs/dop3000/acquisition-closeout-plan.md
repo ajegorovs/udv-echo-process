@@ -93,10 +93,14 @@ behaviours are worth keeping, because both cost time and neither is about this r
 | **V0** — the read-only inventory on the instrument | instrument, refactor head | `device-verification.md` §Session record 2026-09-18 |
 | **V2**, precondition and read-only gesture halves | `7de790c` | `device-verification.md` §Session record 2026-09-19: hover → topmost entry → the measured dialog → channel `1` → safe close → an identical post-run status |
 | the review fixes are **not** device-verified | `00fd6a0` + | the same bracket stopped *before* the hover because UDOP was not foreground; nothing opened, nothing was stranded |
-| V1, V2's write half (`ensure_channel`), V3–V8 | — | device-pending |
+| V1 | `010c975` | passed on the instrument: disabling the fast-access preference produced an incomplete 0-of-7 manual panel without claiming assisted mode; restoring it returned the exact clean application fields |
+| V2's write half (`ensure_channel`), V5, V6–V8 | — | device-pending; V5's compiles move beside `ensure_channel` because compile presses the dialog's `Accept` before comparing fixed facts |
+| V3 | `010c975` | failed safely: `Define TGC` was called a dialog and then the strip was blamed; the shared identity correction is planned in `identity-classification-plan.md` |
+| V4 | `010c975` | closed: all six strip-state rows, the five-button pool, safe transitions and both destructive guards are measured |
 
-So the honest sentence today is: **the refactor is cloud-verified at its final head and device-verified at
-`7de790c`**, one read-only gesture short of its own head. Closing that gap is sitting A.
+So the honest sentence now is: **the refactor's read-only path is device-verified on its merge head; V1 and
+V4 are closed, V3 exposed a safe diagnostic defect, and every path that presses `Accept`, `Record` or Store
+remains device-pending.**
 
 **One live state fact a reader of this plan must not trip over.** UDOP was in *either* build at any point;
 the window caption (`UDOP Simul` / `UDOP DOP3010.43`) is the only discriminator, every geometry measurement
@@ -210,7 +214,7 @@ tree read in the state that paints them, not a photograph, because a camera cann
 
 **Outcome, 2026-09-19 — the map exists, and it is not one mechanism.** The operator reached the block-held
 state by hand, left the monitor paused and placed a cursor at 45 mm; the capture ran on the **same process**
-the V2 bracket had read two minutes earlier (hwnd `3935144`), which is what makes the handle comparison below
+the V2 bracket had read nineteen minutes earlier (hwnd `3935144`), which is what makes the handle comparison below
 a measurement rather than an inference. Nothing on the strip was pressed by the automation.
 
 - **The row is four visible `TSp_Button`s in the strip's own grown panel** (`3149132`, `[343,414,894,537]`,
@@ -220,7 +224,7 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
 - **The row is drawn from a pool of five button controls, not one slot per position** — measured across
   three states in one process: `1574908` is one of the **two** controls that relabel (`Pause` → `Resume`; the other is `1641666`: `Clear and restart` → `Clear all`, measured after a block removal);
   `4787852` keeps `Record` and is hidden when a block is held; `2821164` keeps `Do store`; `1641666`
-  keeps `Clear and restart` in every state; `7867344` (`Remove current block`) appears only with a held
+  relabels between `Clear and restart` and `Clear all`; `7867344` (`Remove current block`) appears only with a held
   block. The intermediate state shows `Record` **and** `Do store` side by side, so the two are not
   competing for one slot, and `ui-element-index.md`'s finding 20 is corrected accordingly.
 - **The grown row does report a slider**: `TSp_Sliding_Bar 3344390` `[465,449,897,499]`, a direct child of
