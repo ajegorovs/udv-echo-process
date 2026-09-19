@@ -51,6 +51,15 @@ The classifier is ordered from the narrowest actionable shapes to the broadest f
    90 px with a two-button bottom row, after store dialogs are excluded. Fixtures cover 392x132, 397x135 and
    353x155; the store overwrite warning's geometry is not measured, so the family rule—not one rect—carries
    it. The tree cannot distinguish the two destructive warnings; any generic warning answer is left/Safe.
+   A panel holding a `TSp_Value_Button` of its own is not the family at all: every measured guard
+   carries only its two buttons, while the values-dialog class (`Operating parameters`, `Record
+   settings`) is exactly the class that holds value buttons directly — the same fact the resolver
+   splits its dialogs by. Without that clause a compact command dialog with a two-button band is
+   claimed as a warning and leaves the dialog union, so a caller that asked to *read* it is answered
+   as a destructive guard. The residue is recorded rather than hidden: a compact (fewer than
+   `_DIALOG_MIN_CHILDREN`) non-store command dialog is not yet distinguishable from a
+   non-measurement overlay, so it is refused as a blocking surface rather than read. No such panel
+   is measured; the device settles it when one is.
 4. **Measurement strip.** Resolve it independently of the dialog union. Its warrant uses `strip_row`'s exact
    geometry: button centres inside the panel, button `top < panel.top + 30`, left-to-right, in the plot-band
    context already used by the resolver. Identity and binding are separate: the measured 453x40 four-button,
@@ -131,7 +140,12 @@ All consumers take the same classified inventory; none re-derives panel meaning.
   info box or unknown panel to `bottom_row[-2]`.
 - strip actions: continue binding by the visible row's live left-to-right index after strip identity is proven.
   The existing index-0 role name is not corrected by this change; the live record supersedes its old crop
-  caption, and executable mapping remains a follow-up.
+  caption, and executable mapping remains a follow-up. **And the strip's own row is the pressable row** once
+  that identity is proven: the measured 370x123, 502x123 and 551x123 states stop refusing because their panel
+  was called a dialog (502/551) or because the info box made the screen report a menu (370) — false refusals
+  from the defect this plan closes, not safety properties. What stays refused is the *ambiguous* four-button
+  453x40 row, by `ui/strip.py`'s own named refusal, and nothing else changes: no cleanup, no parameters
+  gesture and no dialog close may address any strip panel's band (§3.1, §4 Slice 3).
 
 ### 3.1 The cleanup hazard this plan must close
 
@@ -214,7 +228,10 @@ Required negative assertions:
 - no press for strip, `Define TGC`, info box, unknown panel or menu popup;
 - warning answer is left/Safe only, never Confirm, including the overwrite-warning continuation path;
 - a failed gesture with warning/overlay/menu still reports the surface and names the operator remedy;
-- cleanup cannot press `Do store` on the 453x40 strip; 502/551/370 strip shapes also remain non-actionable;
+- cleanup cannot press `Do store` on the 453x40 strip, and no cleanup, gesture or dialog close may address
+  a 502/551/370 strip band either — those shapes are non-actionable **for those paths**, which is what §3
+  intends, while the strip's own bound press (a proven identity plus a startable state) is unchanged by this
+  change and is not what this bullet refuses;
 - no hover occurs when a blocking surface is already identified;
 - browse/store dialog remains distinct from warning and retains its store behaviour;
 - a real Operating parameters dialog still closes by its left/Safe end and screen recheck;
