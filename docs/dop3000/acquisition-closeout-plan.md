@@ -222,6 +222,12 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   (three buttons and a slider) was reached live at 12:03 and is the strip's `store` view — the pool's
   predicted handle row, panel rect and `Show block` came out exact, so all four states of this row are
   read rather than inferred. **Left open:** the `STORE` versus `READY`-with-block naming, and V5's cap.
+- **The slider's own arithmetic, measured** (12:11): its painted numbers are the **displayed block's** profile
+  range with the range's length between them — `1` … `4772` with `4772` in the store state, `4773` … `16381`
+  with `11609` once block 2 is held (`16381 - 4773 + 1 = 11609`). So the **block boundary is legible from
+  pixels alone**, and the store state is the only one whose strip resolves. The step's prediction was ten of
+  eleven exact (the miss was the slider's left end), and the block-held state reproduced a **third** time
+  byte-identically (`+0 / -0 / moved 0 of 273`).
 - **The block-held state reproduces exactly** (read again at 11:59 after the operator passed through the
   intermediate state): `compare_reads.py` gives **tree delta `+0 / -0 / moved 0 of 273`**, the same ten strip
   children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so

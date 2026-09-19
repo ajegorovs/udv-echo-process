@@ -704,6 +704,33 @@ does not use this feature. It is recorded here for the **strip mis-resolution it
 not as a readout: an app-side readout of the tracked cursor does not exist, so the analysis stays
 post-processing, which is where §26.11 already put it, and those two numbers can come only from pixels.
 
+### The third step, and what the slider's numbers actually mean
+
+The prediction for `[Pause]` from the intermediate state was written before the press, and ten of its eleven
+lines held in the 12:11:03 read: the four-button row on `1574908` / `2821164` / `1641666` / `7867344` at
+`[353,424,444,444]`, `[454,423,545,443]`, `[555,423,693,443]`, `[703,423,874,443]` with `4787852` hidden;
+panel `[343,414,894,537]` (551x123); the slider visible at `[465,449,897,499]`; `Show block` = **`2`**; the
+resolver naming the **info box** as the strip; the layout saying "a dialog is up" naming
+`((343,414,894,537), 'TSp_Panel')`; `open_popup` back to **`False`**; 50 visible controls in 5 panels. Against
+the 11:59 read of that state, `compare_reads.py` gives **`+0 / -0 / moved 0 of 273`** — the block-held state
+has now reproduced **three times** (11:41, 11:59, 12:11) with byte-identical trees.
+
+**The line I got wrong is the interesting one.** I predicted the slider's left-hand number would be `1`; it
+reads **`4773`**, against a right-hand **`16381`** and **`11609`** under the track. That is the **displayed
+block's own profile range**, and the painted arithmetic is exact:
+
+| state | painted ends | under the track | check |
+|---|---|---|---|
+| store, 12:03 | `1` … `4772` | `4772` | `4772 - 1 + 1 = 4772` |
+| block-held, 12:11 | `4773` … `16381` | `11609` | `16381 - 4773 + 1 = 11609` |
+
+So the slider spans the **currently displayed block's** profiles rather than the whole history, the middle
+number is the range's length, and **the block boundary is legible from the pixels**: block 1 covered
+profiles 1…4772 and block 2 covers 4773…16381 — which is the operator's "new second block", created by the
+`Pause` that moved the intermediate state to the block-held one. That is the first painted readout in this
+corpus with a measured arithmetic of its own, and it gives the experiment a way to see block boundaries
+without opening anything.
+
 ### The fourth combination — cropped and then read, so the pool is closed
 
 The operator's second new crop (`ui-crops/overlay-pause.png`, UI-STRIP-04) is the state pressing `Pause`
