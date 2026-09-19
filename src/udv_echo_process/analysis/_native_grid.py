@@ -1,31 +1,24 @@
-"""Axis-agnostic native-grid and pairwise support for the WP2 axis analyses.
+"""Axis-agnostic native-grid, axis-input and pairwise support for the WP2 axes.
 
-Shared by :mod:`udv_echo_process.analysis.resolution_ladder` and, later, by the
-burst, PRF and TGC/power axes of the same plan. Nothing here knows which manifest
-axis it is serving or what a row's key column is called: the callers select the
-rows (``select_level_rows``) and hand this module decoded grids.
+Shared by :mod:`udv_echo_process.analysis.resolution_ladder` and
+:mod:`udv_echo_process.analysis.burst_ladder`, and by the PRF and TGC/power axes of
+the same plan when they land. Nothing here knows which manifest axis it serves or what
+a row's key column is called: the callers name their axis, their ladder and their key,
+and hand this module decoded grids.
 
-What it provides, and the contract each piece carries:
+What it carries: the axis-input layer (:func:`read_decoded_level`,
+:func:`manifest_axis_rows`, :func:`select_axis_rows`, :func:`require_clean_ofat`), the
+common views (:func:`window`, :func:`common_support`), the native-grid metrics
+(:func:`level_metrics`, :func:`spatial_gradient`, :func:`correlation_length`), the
+pairwise alignment (:func:`align_on_knots`, :func:`depth_ranges`), the committed WP1
+envelope and temporal-floor readers (:func:`read_envelope`,
+:func:`read_temporal_floor`), the ladder shape (:func:`largest_step`, :func:`knees`)
+and the deterministic writers (:func:`csv_text`, :func:`wrap_caption`,
+:func:`write_text_artefacts`, :func:`panel_figure`).
 
-- **The common views** — :func:`window` cuts a recording at a shared *duration*
-  (the timestamp bound, plan §3.1) and :func:`common_support` intersects depth
-  ranges, so one physical support serves every cross-level summary (plan §3.2).
-- **Native-grid spatial metrics** — :func:`spatial_gradient` and
-  :func:`correlation_length` are computed on a level's *own* decoded gate grid,
-  before any alignment, so no quantity here ever implies an upsampled resolution.
-- **Pairwise alignment** — :func:`nearest_gate_indices` samples a finer profile at
-  the coarser grid's knots by one nearest native gate: no interpolation, and the
-  offset never exceeds half the finer pitch. :func:`depth_ranges` formats the knot
-  runs where an effect cleared its threshold.
-- **The decision threshold** — :class:`EnvelopeBinding` and :func:`read_envelope`
-  read the committed WP1 repeatability envelope and bind it to the manifest hash of
-  the run that will be compared to it.
-- **Deterministic artefacts** — :func:`csv_text` and :func:`wrap_caption` are the
-  writers the axes share, so every table and caption is formatted identically.
-
-``NativeGridError`` is the error class every consumer re-exports under its own
-name (``ResolutionLadderError`` today): one class, so a caller can catch a helper
-failure and an axis failure with the same name.
+``NativeGridError`` is the error class every consumer re-exports under its own name
+(``ResolutionLadderError``, ``BurstLadderError``), so a caller catches a helper refusal
+and an axis refusal with one name.
 """
 
 from __future__ import annotations
@@ -33,22 +26,25 @@ from __future__ import annotations
 import csv
 import hashlib
 import io
+import itertools
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
+from typing import NamedTuple
 
 import numpy as np
 
+from udv_echo_process.analysis.reference_repeat import gate_metrics
 from udv_echo_process.analysis.sweep_inventory import format_cell
+from udv_echo_process.io import load
 from udv_echo_process.models.base import ValueModel
+from udv_echo_process.models.channel_config import ChannelConfig
 
 
 class GradientStats(ValueModel):
-    """Native-grid gate-to-gate gradient of one level's supported mean profile.
-
-    ``|Δ mean| / pitch`` in mm/s per mm on the level's own grid (never a resampled
-    one), attributed to the interval's midpoint depth.
+    """Native-grid gate-to-gate gradient of one level's supported mean profile:
+    ``|Δ mean| / pitch`` in mm/s per mm on the level's own grid, at the interval midpoint.
     """
 
     pitch_mm: float
@@ -59,12 +55,9 @@ class GradientStats(ValueModel):
 
 
 class CorrelationStats(ValueModel):
-    """Native-grid spatial correlation length of the same mean profile.
-
-    ``length_mm`` is the first lag whose normalized native autocovariance of the
-    mean-removed profile falls below 1/e, in mm. ``reaches_floor`` is false when it
-    does not fall below the floor within ``lag_max_mm`` (half the profile), and
-    ``length_mm`` is then that cap — a lower bound, not a measurement.
+    """Native-grid spatial correlation length of the same mean profile: the first
+    lag whose normalized native autocovariance falls below 1/e, or the lag cap (a lower bound)
+    when it does not.
     """
 
     pitch_mm: float
@@ -76,11 +69,9 @@ class CorrelationStats(ValueModel):
 
 
 class EnvelopeBinding(ValueModel):
-    """The committed WP1 repeatability envelope this axis is measured against.
-
-    ``value_mm_s`` is the largest absolute per-gate mean difference of the only
-    same-settings repeat: an **upper bound** on repeatability plus uncontrolled
-    drift, not a repeatability estimate on its own.
+    """The committed WP1 repeatability envelope an axis is measured against:
+    ``value_mm_s`` is the largest absolute per-gate mean difference of the only same-settings
+    repeat, an upper bound on repeatability plus uncontrolled drift.
     """
 
     path: str
@@ -99,15 +90,61 @@ class EnvelopeBinding(ValueModel):
 
 
 class NativeGridError(ValueError):
-    """A WP2-resolution input is not the ladder the plan describes.
-
-    Raised for a manifest that is missing, holds no ``res`` rows, repeats a row,
-    carries an undecodable one, gives none a usable pitch or two of them one
-    pitch; for a recoded cell that no longer matches the bytes; for a missing or
-    re-bound WP1 envelope; and for a pair that cannot be aligned on the coarser
-    grid. The command turns it into a non-zero exit naming the reason, never a
-    traceback.
+    """A WP2 axis input is not the ladder the plan describes: a manifest, a
+    recording, a committed WP1 artefact or a pair the axis cannot bind. The command turns it into
+    a non-zero exit naming the reason, never a traceback.
     """
+
+
+class DecodedLevel(NamedTuple):
+    """One manifest-selected recording: its bound row, arrays and decoded cells.
+
+    ``pitch_mm`` is the recording's own realised pitch; ``observed`` holds the decoded value of
+    every :data:`DECODED_CELLS` key, which the row's cells are re-checked against.
+    """
+
+    relative_path: str
+    axis: str
+    requested_label: str
+    source_sha256: str
+    pitch_mm: float
+    config: ChannelConfig
+    values: np.ndarray
+    time_s: np.ndarray
+    depths: np.ndarray
+    observed: dict[str, object]
+
+
+class LevelMetrics(NamedTuple):
+    """One level's common-window numbers on its own native grid.
+
+    ``per_gate`` holds WP1's distributions over the whole window; ``mask`` is the supported-gate
+    mask, and ``means``/``supported`` are those numbers restricted to it.
+    """
+
+    profiles_window: int
+    supported_gates: int
+    per_gate: dict[str, np.ndarray]
+    mask: np.ndarray
+    means: np.ndarray
+    supported: np.ndarray
+    gradient: GradientStats
+    correlation: CorrelationStats
+
+
+class KnotAlignment(NamedTuple):
+    """Two levels aligned on the coarser participant's own knots: ``absolute`` is the
+    per-knot ``|sampled - knot|``, ``flagged`` the knots clearing the threshold, ``worst`` the
+    largest one, ``offset_mm`` the largest gate offset used.
+    """
+
+    knots: np.ndarray
+    indices: np.ndarray
+    absolute: np.ndarray
+    flagged: np.ndarray
+    worst: int
+    offset_mm: float
+    sampled_variance: float
 
 
 CORRELATION_FLOOR = 1.0 / math.e
@@ -116,43 +153,264 @@ CORRELATION_FLOOR = 1.0 / math.e
 GRID_UNIFORMITY_RTOL = 1e-6
 TOLERANCE_S = 1e-9
 
-#: Column order of ``resolution-levels.csv``; the field order of :class:`LevelRow`
-#: is the same tuple, so the table and the model cannot drift apart.
+#: The WP1 envelope metric every axis compares to, as its provenance records it.
+ENVELOPE_METRIC = "max_gate_abs_mean_difference_mm_s"
+
+#: Every decoded cell the WP0 inventory publishes for a recording, in row-column
+#: order: shape and timing, the depth support and the acquisition settings. An axis
+#: re-checks the cells it depends on; the full set is the default.
+DECODED_CELLS: tuple[str, ...] = (
+    "profiles",
+    "gates",
+    "duration_s",
+    "depth_min_mm",
+    "depth_max_mm",
+    "resolution_mm",
+    "prf_period_us",
+    "burst_length",
+    "emissions_per_profile",
+    "emit_power",
+    "sensitivity",
+    "tgc_mode",
+)
+
+
 def sha256_file(path: Path) -> str:
+    """The SHA-256 of a file's bytes, hex, as the WP0 manifest records it.
+    """
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-#: The WP1 envelope metric every axis compares to, as its provenance records it.
-ENVELOPE_METRIC = "max_gate_abs_mean_difference_mm_s"
+def observed_cells(
+    values: np.ndarray, time_s: np.ndarray, depths: np.ndarray, config: ChannelConfig
+) -> dict[str, object]:
+    """The decoded value of every :data:`DECODED_CELLS` key, ready to be compared
+    with the manifest's cells, so every axis compares like for like.
+    """
+    return {
+        "profiles": int(values.shape[0]),
+        "gates": int(values.shape[1]),
+        "duration_s": float(time_s[-1] - time_s[0]),
+        "depth_min_mm": float(depths[0]),
+        "depth_max_mm": float(np.max(depths)),
+        "resolution_mm": config.resolution_mm,
+        "prf_period_us": 1e6 / float(config.pulse_repetition_freq_hz),
+        "burst_length": config.burst_length,
+        "emissions_per_profile": config.emissions_per_profile,
+        "emit_power": config.emit_power,
+        "sensitivity": config.sensitivity,
+        "tgc_mode": config.tgc_mode,
+    }
+
+
+def read_decoded_level(
+    dataset_root: Path, row: Mapping[str, str], *, cells: Sequence[str] = DECODED_CELLS
+) -> DecodedLevel:
+    """Decode one manifest-selected recording and bind it to its row.
+
+    Refuses a row without a usable path or file, bytes that do not reproduce the recorded hash, a
+    payload that is not one 2-D axial-velocity channel in ``mm/s``, NaNs, a grid that is not the
+    recording's own uniform increasing grid at its recorded pitch, and any cell in ``cells`` that
+    disagrees with the decoded value: a stale inventory must not be analysed by one axis and
+    caught by another.
+    """
+    relative = row.get("relative_path") or ""
+    path = Path(dataset_root) / relative
+    if not relative or not path.is_file():
+        raise NativeGridError(f"manifest row {relative!r} is not a file at {path}")
+    actual = sha256_file(path)
+    recorded = (row.get("source_sha256") or "").strip()
+    if recorded != actual:
+        raise NativeGridError(
+            f"source sha256 mismatch for {relative}: manifest records {recorded!r}, "
+            f"file hashes to {actual!r}"
+        )
+    recording = load(path).recording
+    if recording.source_asset.content_sha256 != actual:
+        raise NativeGridError(
+            f"{relative}: the reader's content hash "
+            f"{recording.source_asset.content_sha256!r} is not the file hash {actual!r}"
+        )
+    if len(recording.streams) != 1:
+        raise NativeGridError(
+            f"{relative}: expected exactly one channel stream, found {len(recording.streams)}"
+        )
+    stream = recording.streams[0]
+    values = np.asarray(stream.data.values, dtype=float)
+    time_s = np.asarray(stream.data.time_s, dtype=float)
+    depths = np.asarray(stream.data.gate_depths_mm, dtype=float)
+    if stream.descriptor.unit != "mm/s" or values.ndim != 2:
+        raise NativeGridError(
+            f"{relative}: expected a 2-D axial-velocity array in mm/s, got {values.ndim}-D "
+            f"in {stream.descriptor.unit!r}"
+        )
+    if np.count_nonzero(np.isnan(values)):
+        raise NativeGridError(f"{relative}: the velocity array carries NaNs")
+    config = stream.config
+    observed = observed_cells(values, time_s, depths, config)
+    for cell in cells:
+        if (row.get(cell) or "") != format_cell(observed[cell]):
+            raise NativeGridError(
+                f"{relative}: manifest {cell}={row.get(cell)!r} does not match the decoded "
+                f"{cell}={format_cell(observed[cell])!r}; the comparison must not run on a "
+                "stale inventory"
+            )
+    if depths.size < 2:
+        raise NativeGridError(f"{relative}: the gate grid holds {depths.size} gate(s)")
+    steps = np.diff(depths)
+    pitch = float(steps.mean())
+    if not np.all(steps > 0.0) or not math.isfinite(pitch) or pitch <= 0.0:
+        raise NativeGridError(
+            f"{relative}: the native gate depths must increase strictly, got steps including "
+            f"{steps.min()!r}"
+        )
+    deviation = float(np.abs(steps - pitch).max())
+    if deviation > GRID_UNIFORMITY_RTOL * pitch:
+        raise NativeGridError(
+            f"{relative}: the native gate grid is not uniform: steps deviate by "
+            f"{deviation:.3g} mm from the {pitch:g} mm mean pitch"
+        )
+    if not math.isclose(pitch, float(config.resolution_mm), rel_tol=1e-6):
+        raise NativeGridError(
+            f"{relative}: the decoded gate pitch {pitch!r} is not the manifest's "
+            f"resolution_mm {config.resolution_mm!r}"
+        )
+    return DecodedLevel(
+        relative_path=relative,
+        axis=row.get("axis") or "",
+        requested_label=row.get("requested_label") or "",
+        source_sha256=actual,
+        pitch_mm=pitch,
+        config=config,
+        values=values,
+        time_s=time_s,
+        depths=depths,
+        observed=observed,
+    )
+
+
+def manifest_axis_rows(
+    manifest_path: Path, axis: str, *, ladder_label: str
+) -> tuple[dict[str, str], ...]:
+    """Every manifest row of one axis, in file order.
+
+    The ladder is bound to the WP0 manifest, never to a hand-maintained filename list. Refuses a
+    missing or unreadable manifest, no rows of ``axis``, a row without a relative path, a repeated
+    path, and a row that did not decode.
+    """
+    path = Path(manifest_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise NativeGridError(f"cannot read the manifest {path}: {exc}") from exc
+    selected = [
+        row for row in csv.DictReader(text.splitlines()) if (row.get("axis") or "") == axis
+    ]
+    if not selected:
+        raise NativeGridError(
+            f"manifest {path} holds no {axis} rows; the {ladder_label} ladder is selected "
+            "from the WP0 inventory, never from a filename list"
+        )
+    counts: dict[str, int] = {}
+    for row in selected:
+        relative = (row.get("relative_path") or "").strip()
+        if not relative:
+            raise NativeGridError(
+                f"manifest {path} holds a {axis} row without a relative_path"
+            )
+        counts[relative] = counts.get(relative, 0) + 1
+    for relative, count in counts.items():
+        if count != 1:
+            raise NativeGridError(
+                f"manifest {path} must hold exactly one row for {relative!r}, found {count}"
+            )
+    for row in selected:
+        if row.get("decode_error"):
+            raise NativeGridError(
+                f"{row['relative_path']}: the manifest records "
+                f"decode_error={row['decode_error']!r}; a ladder must be selected from "
+                "decoded recordings"
+            )
+    return tuple(selected)
+
+
+def select_axis_rows(
+    manifest_path: Path,
+    *,
+    axis: str,
+    ladder_label: str,
+    order_key: Callable[[Mapping[str, str]], float],
+    order_label: str,
+) -> tuple[dict[str, str], ...]:
+    """Every manifest row of one axis, ordered by its decoded key then by path.
+
+    ``order_key`` reads the row's own quantity (a cycle count, a pitch) and raises when that cell
+    is unusable; ``order_label`` names the quantity in the refusals, because a ladder is ordered
+    by its decoded key, never by a filename. Refuses two rows carrying one key.
+    """
+    rows = manifest_axis_rows(manifest_path, axis, ladder_label=ladder_label)
+    ordered = sorted(rows, key=lambda row: (order_key(row), row["relative_path"]))
+    for first, second in itertools.pairwise(ordered):
+        if order_key(first) == order_key(second):
+            raise NativeGridError(
+                f"{first['relative_path']} and {second['relative_path']} carry the same "
+                f"{order_label} {order_key(first)}; a ladder needs one level per {order_label}"
+            )
+    return tuple(ordered)
+
+
+def require_clean_ofat(
+    entries: Sequence[object], settings: Sequence[str], *, axis_label: str
+) -> None:
+    """Refuse a ladder in which a setting other than the varied one moved.
+
+    Decoded settings are compared, never folder names (plan §2): the first entry is the baseline
+    and every later one must agree with it on all ``settings``.
+    """
+    for entry in entries[1:]:
+        moved = sorted(
+            setting
+            for setting in settings
+            if getattr(entry, setting) != getattr(entries[0], setting)
+        )
+        if moved:
+            raise NativeGridError(
+                f"{entries[0].relative_path} and {entry.relative_path} are not a "
+                f"{axis_label} OFAT ladder: {moved} also differ"
+            )
+
+
+def read_manifest_bound_document(
+    path: Path, manifest_sha256: str, what: str
+) -> dict[str, object]:
+    """Read a committed artefact and refuse one generated against another manifest.
+
+    The WP1 artefacts carry the WP0 manifest they were measured against, and that cell is
+    re-checked: a threshold or floor measured on another inventory must not supply one silently.
+    """
+    target = Path(path)
+    try:
+        document = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise NativeGridError(f"cannot read the {what} {target}: {exc}") from exc
+    recorded = str(((document.get("manifest") or {}).get("sha256")) or "")
+    if recorded != manifest_sha256:
+        raise NativeGridError(
+            f"the {what} {target} records manifest {recorded or '<none>'}, the ladder is "
+            f"built from {manifest_sha256}; it must come from the same inventory"
+        )
+    return document
 
 
 def read_envelope(envelope_path: Path, manifest_sha256: str) -> EnvelopeBinding:
     """Read the committed WP1 envelope and bind it to this manifest.
 
-    The threshold is *read* from the committed WP1 artefact, not recomputed here:
-    the comparison must use the number the WP1 gate declared. Its recorded
-    ``manifest.sha256`` is re-checked against the manifest the ladder is built from,
-    so an envelope measured on another inventory cannot supply it silently.
-
-    Raises:
-        NativeGridError: when the file is missing or unreadable, carries no
-            envelope for :data:`ENVELOPE_METRIC`, records no positive finite value,
-            or was generated against a different manifest.
+    The threshold is *read*, not recomputed: the comparison must use the number the WP1 gate
+    declared. Refuses a missing document, one from another manifest, another metric, or a value
+    that is not positive and finite.
     """
     path = Path(envelope_path)
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise NativeGridError(
-            f"cannot read the WP1 envelope {path}: {exc}"
-        ) from exc
-    recorded = str(((document.get("manifest") or {}).get("sha256")) or "")
-    if recorded != manifest_sha256:
-        raise NativeGridError(
-            f"the WP1 envelope {path} records manifest {recorded or '<none>'}, the "
-            f"ladder is built from {manifest_sha256}; the effects must be compared to "
-            "an envelope measured on the same inventory"
-        )
+    document = read_manifest_bound_document(path, manifest_sha256, "WP1 envelope")
     envelope = document.get("envelope") or {}
     metric = str(envelope.get("metric") or "")
     if metric != ENVELOPE_METRIC:
@@ -184,24 +442,99 @@ def read_envelope(envelope_path: Path, manifest_sha256: str) -> EnvelopeBinding:
     )
 
 
-#: Manifest cells re-checked against the decoded recording, in row-column order.
+def psd_band_summary(
+    frequency_hz: Sequence[float],
+    density: Sequence[float],
+    band: tuple[float, float],
+    *,
+    hf_above_hz: float,
+) -> dict[str, float]:
+    """The bandwidth summary of one ensemble PSD inside ``band``: the power-weighted
+    mean frequency, the RMS spread about it and the share of in-band power above ``hf_above_hz`` —
+    the same three numbers for a level's curve and the committed WP1 curves. Refuses a band that
+    carries no power.
+    """
+    frequency = np.asarray(frequency_hz, dtype=float)
+    values = np.asarray(density, dtype=float)
+    inside = (frequency >= band[0]) & (frequency <= band[1])
+    frequencies, densities = frequency[inside], values[inside]
+    total = float(densities.sum())
+    if not math.isfinite(total) or total <= 0.0:
+        raise NativeGridError(f"the ensemble PSD carries no power in {band} Hz")
+    centroid = float((frequencies * densities).sum() / total)
+    return {
+        "centroid_hz": centroid,
+        "bandwidth_hz": float(
+            np.sqrt(((frequencies - centroid) ** 2 * densities).sum() / total)
+        ),
+        "hf_share": float(densities[frequencies > hf_above_hz].sum() / total),
+    }
+
+
+def read_temporal_floor(
+    envelope_path: Path,
+    manifest_sha256: str,
+    *,
+    band_hz: tuple[float, float],
+    hf_above_hz: float,
+) -> dict[str, object]:
+    """The temporal repeat floor the committed WP1 curves record.
+
+    Both recordings are summarised with the same :func:`psd_band_summary` the axis levels use, so
+    their difference is comparable to a difference across a ladder. Refuses a missing document,
+    one from another manifest, one without two temporal series, or curves with no power in the
+    band.
+    """
+    path = Path(envelope_path)
+    document = read_manifest_bound_document(path, manifest_sha256, "WP1 envelope")
+    temporal = document.get("views", {}).get("temporal") or {}
+    series = temporal.get("series") or []
+    if len(series) != 2:
+        raise NativeGridError(
+            f"the WP1 envelope {path} records {len(series)} temporal series; the floor "
+            "needs two"
+        )
+    summaries = [
+        psd_band_summary(
+            item["psd"]["frequency_hz"], item["psd"]["mean_mm2_s2_per_hz"], band_hz,
+            hf_above_hz=hf_above_hz,
+        )
+        for item in series
+    ]
+    lags = [float(item["acf"]["e_folding_lag_s"]) for item in series]
+    floor: dict[str, object] = {
+        "source_path": path.as_posix(), "source_sha256": sha256_file(path),
+        "manifest_sha256": manifest_sha256,
+        "source_paths": [str(item["relative_path"]) for item in series],
+        "source_hashes": [str(item["source_sha256"]) for item in series],
+        "profile_period_s": float(temporal.get("profile_period_s") or 0.0),
+        "band_hz": list(band_hz),
+        "band_max_abs_level_difference_db": float(
+            temporal.get("band_max_abs_level_difference_db") or 0.0
+        ),
+        "e_folding_lag_s": lags, "e_folding_lag_difference_s": abs(lags[0] - lags[1]),
+        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
+    }
+    for name in ("hf_share", "centroid_hz", "bandwidth_hz"):
+        pair = [float(item[name]) for item in summaries]
+        floor[name] = pair
+        floor[f"{name}_difference"] = abs(pair[0] - pair[1])
+    return floor
+
+
+
 def window(
     values: np.ndarray, time_s: np.ndarray, window_s: float
 ) -> np.ndarray:
-    """The leading ``window_s`` of a recording, cut by the recorded timestamps.
-
-    Cutting on the timestamp means every level is cut at the same *duration* even
-    though their profile counts differ (plan §3.1).
+    """The leading ``window_s`` of a recording, cut by the recorded timestamps, so every
+    level is cut at the same *duration* though their profile counts differ (plan §3.1).
     """
     return values[time_s <= time_s[0] + window_s + TOLERANCE_S]
 
 
 def common_support(ranges: Sequence[tuple[float, float]]) -> tuple[float, float]:
-    """The intersection of the given ``(depth_min_mm, depth_max_mm)`` ranges.
-
-    Raises:
-        NativeGridError: when no range is given, a range is not a finite
-            increasing interval, or the intersection is empty.
+    """The intersection of the given ``(depth_min_mm, depth_max_mm)`` ranges, refused
+    when a range is not finite and increasing or the intersection is empty (plan §3.2).
     """
     if not ranges:
         raise NativeGridError("common_support needs at least one depth range")
@@ -221,15 +554,16 @@ def common_support(ranges: Sequence[tuple[float, float]]) -> tuple[float, float]
 
 
 def in_support(depths: np.ndarray, support: tuple[float, float]) -> np.ndarray:
-    """Boolean mask of the native gates inside the common physical support."""
+    """Boolean mask of the native gates inside the common physical support.
+    """
     return (depths >= support[0] - TOLERANCE_S) & (depths <= support[1] + TOLERANCE_S)
 
 
 def nearest_gate_indices(grid: np.ndarray, targets: np.ndarray) -> np.ndarray:
     """Index of the nearest entry of ``grid`` for every value in ``targets``.
 
-    This is the only alignment this module uses: a finer profile is *sampled* at the
-    coarser knots, so an offset never exceeds half the finer grid's own pitch.
+    The only alignment here: a finer profile is *sampled* at the coarser knots, so an offset never
+    exceeds half the finer grid's own pitch.
     """
     values = np.asarray(grid, dtype=float).reshape(-1)
     wanted = np.asarray(targets, dtype=float).reshape(-1)
@@ -245,7 +579,8 @@ def nearest_gate_indices(grid: np.ndarray, targets: np.ndarray) -> np.ndarray:
 def grid_and_profile(
     depths_mm: np.ndarray, profile_mm_s: np.ndarray
 ) -> tuple[np.ndarray, np.ndarray, float]:
-    """Validate one native grid and its profile; return both and the pitch."""
+    """Validate one native grid and its profile; return both and the pitch.
+    """
     depths = np.asarray(depths_mm, dtype=float).reshape(-1)
     profile = np.asarray(profile_mm_s, dtype=float).reshape(-1)
     if depths.size != profile.size:
@@ -276,16 +611,47 @@ def grid_and_profile(
     return depths, profile, pitch
 
 
+def level_metrics(
+    relative_path: str,
+    values: np.ndarray,
+    time_s: np.ndarray,
+    depths: np.ndarray,
+    *,
+    window_s: float,
+    support: tuple[float, float],
+) -> LevelMetrics:
+    """One level's common-window numbers, on its own native grid.
+
+    The distributional metrics are WP1's :func:`gate_metrics`; both spatial metrics are computed on
+    the supported native grid, *before* any cross-level alignment. Refuses fewer than two gates in
+    the common support.
+    """
+    view = window(values, time_s, window_s)
+    mask = in_support(depths, support)
+    supported_gates = int(np.count_nonzero(mask))
+    if supported_gates < 2:
+        raise NativeGridError(
+            f"{relative_path}: {supported_gates} gate(s) fall inside the common "
+            f"support [{support[0]:g}, {support[1]:g}] mm; the spatial metrics need two"
+        )
+    per_gate = gate_metrics(view)
+    means = per_gate["mean"][mask]
+    return LevelMetrics(
+        profiles_window=int(view.shape[0]),
+        supported_gates=supported_gates,
+        per_gate=per_gate,
+        mask=mask,
+        means=means,
+        supported=view[:, mask],
+        gradient=spatial_gradient(depths[mask], means),
+        correlation=correlation_length(depths[mask], means),
+    )
+
+
 def spatial_gradient(depths_mm: np.ndarray, profile_mm_s: np.ndarray) -> GradientStats:
-    """Native-grid gate-to-gate gradient of one depth-resolved mean profile.
-
-    Computed on the profile's *own* grid, before any cross-level alignment:
-    ``|mean[k + 1] - mean[k]| / pitch`` in mm/s per mm, at the interval midpoint. A
+    """Native-grid gate-to-gate gradient of one depth-resolved mean profile:
+    ``|mean[k + 1] - mean[k]| / pitch``, at the interval midpoint, before any alignment — a
     relative-spread statement, not a shear-rate measurement.
-
-    Raises:
-        NativeGridError: for fewer than two gates, a non-increasing or
-            non-uniform grid, or a depth grid that does not match the profile.
     """
     depths, profile, pitch = grid_and_profile(depths_mm, profile_mm_s)
     gradient = np.abs(np.diff(profile)) / pitch
@@ -304,14 +670,8 @@ def correlation_length(
 ) -> CorrelationStats:
     """Native-grid spatial correlation length of one depth-resolved mean profile.
 
-    The mean-removed profile's normalized autocovariance (biased, divided by
-    ``N · var``) is evaluated on its own grid; the length is the first lag whose
-    value falls below 1/e, in mm. The lag grid stops at ``floor((gates - 1) / 2)``
-    gates — half the supported profile.
-
-    Raises:
-        NativeGridError: for fewer than two gates, a constant profile (its
-            autocovariance is undefined), or a non-uniform or mismatched grid.
+    The mean-removed profile's biased normalized autocovariance is evaluated on its own grid up to
+    half the profile; the length is the first lag below 1/e.
     """
     _depths, profile, pitch = grid_and_profile(depths_mm, profile_mm_s)
     centred = profile - profile.mean()
@@ -338,11 +698,56 @@ def correlation_length(
     )
 
 
-def depth_ranges(knots: np.ndarray, flagged: np.ndarray) -> str:
-    """Depth ranges of the flagged knots as ``low..high``, runs joined by ``"; "``.
+def align_on_knots(
+    sampled_depths_mm: np.ndarray,
+    sampled_mean_mm_s: np.ndarray,
+    knot_depths_mm: np.ndarray,
+    knot_mean_mm_s: np.ndarray,
+    *,
+    path: str,
+    support: tuple[float, float],
+    threshold_mm_s: float,
+) -> KnotAlignment:
+    """Align two profiles on the *knot* participant's own native gate depths.
 
-    The flag exists only at the common knots, so a range names the first and last
-    flagged knot of one contiguous run of the knot grid.
+    The knots are those depths inside the common support, so their spacing is the knot
+    participant's pitch; the sampled participant is read there by its nearest native gate: no
+    interpolation, no upsampling. Refuses fewer than two knots, or a sampled profile whose
+    supported values are constant.
+    """
+    sampled_depths = np.asarray(sampled_depths_mm, dtype=float)
+    knot_depths = np.asarray(knot_depths_mm, dtype=float)
+    inside = in_support(knot_depths, support)
+    knots = knot_depths[inside]
+    if knots.size < 2:
+        raise NativeGridError(
+            f"{path}: {knots.size} knot(s) fall inside the common support "
+            f"[{support[0]:g}, {support[1]:g}] mm; a pair needs two"
+        )
+    sampled_mean = np.asarray(sampled_mean_mm_s, dtype=float)
+    variance = float(np.var(sampled_mean[in_support(sampled_depths, support)]))
+    if variance == 0.0:
+        raise NativeGridError(
+            f"{path}: the supported mean profile is constant; the pair difference is "
+            "undefined"
+        )
+    indices = nearest_gate_indices(sampled_depths, knots)
+    difference = sampled_mean[indices] - np.asarray(knot_mean_mm_s, dtype=float)[inside]
+    absolute = np.abs(difference)
+    return KnotAlignment(
+        knots=knots,
+        indices=indices,
+        absolute=absolute,
+        flagged=absolute > threshold_mm_s,
+        worst=int(np.argmax(absolute)),
+        offset_mm=float(np.abs(sampled_depths[indices] - knots).max()),
+        sampled_variance=variance,
+    )
+
+
+def depth_ranges(knots: np.ndarray, flagged: np.ndarray) -> str:
+    """Depth ranges of the flagged knots as ``low..high``, runs joined by ``"; "``:
+    each range names the first and last flagged knot of one contiguous run of the knot grid.
     """
     runs: list[tuple[int, int]] = []
     start: int | None = None
@@ -358,7 +763,8 @@ def depth_ranges(knots: np.ndarray, flagged: np.ndarray) -> str:
 
 
 def csv_text(columns: Sequence[str], rows: Sequence[Mapping[str, object]]) -> str:
-    """Render rows as CSV text (LF endings, one trailing newline)."""
+    """Render rows as CSV text (LF endings, one trailing newline).
+    """
     buffer = io.StringIO()
     writer = csv.DictWriter(
         buffer, fieldnames=list(columns), lineterminator="\n", extrasaction="raise"
@@ -370,7 +776,8 @@ def csv_text(columns: Sequence[str], rows: Sequence[Mapping[str, object]]) -> st
 
 
 def wrap_caption(text: str, width: int = 168) -> str:
-    """Wrap the caption into the figure's footnote without breaking words."""
+    """Wrap the caption into the figure's footnote without breaking words.
+    """
     lines: list[str] = []
     current = ""
     for word in text.split():
@@ -386,3 +793,98 @@ def wrap_caption(text: str, width: int = 168) -> str:
     return "\n".join(lines)
 
 
+def largest_step(
+    metric: str, cycles: Sequence[int], values: Sequence[float]
+) -> dict[str, object]:
+    """The largest one-step change of one metric along a ladder (the discrete knee).
+
+    Returns that step's cycle count, the value there, the signed change, the net change and whether
+    the sequence falls at every step: no smoothing, and no knee for a sequence that does not fall.
+    Refuses fewer than two levels or a value count that does not match.
+    """
+    counts = [int(value) for value in cycles]
+    numbers = [float(value) for value in values]
+    if len(counts) < 2 or len(numbers) != len(counts):
+        raise NativeGridError(
+            f"a knee needs at least two levels with one value each, got {len(counts)} cycle "
+            f"counts and {len(numbers)} values"
+        )
+    steps = [b - a for a, b in itertools.pairwise(numbers)]
+    worst = max(range(len(steps)), key=lambda index: (abs(steps[index]), -index))
+    return {
+        "metric": metric, "cycles": counts, "knee_cycles": counts[worst + 1],
+        "knee_value": numbers[worst + 1], "knee_change": steps[worst],
+        "net_change": numbers[-1] - numbers[0],
+        "monotone_decreasing": bool(all(step < 0.0 for step in steps)),
+    }
+
+
+def knees(
+    levels: Sequence[Mapping[str, object]], metrics: Sequence[str]
+) -> dict[str, dict[str, object]]:
+    """One knee per named metric of a ladder, each carrying its own statement.
+    """
+    counts = [row["cycles"] for row in levels]
+    reported: dict[str, dict[str, object]] = {}
+    for name in metrics:
+        row = largest_step(name, counts, [level[name] for level in levels])
+        outcome = "falls" if row["monotone_decreasing"] else "does not fall monotonically"
+        row["statement"] = (
+            f"{name}: largest one-step change {row['knee_change']:+.4g} across {counts[0]}-"
+            f"{counts[-1]} cycles, reached at {row['knee_cycles']} cycles (value "
+            f"{row['knee_value']:.4g}), net {row['net_change']:+.4g}; the sequence {outcome}"
+        )
+        reported[name] = row
+    return reported
+
+
+def write_text_artefacts(directory: Path, documents: Mapping[str, str]) -> None:
+    """Write LF-only text artefacts into ``directory``, creating it first, in the
+    mapping's order, so a refused build leaves no half-artefact behind.
+    """
+    target = Path(directory)
+    target.mkdir(parents=True, exist_ok=True)
+    for name, text in documents.items():
+        (target / name).write_text(text, encoding="utf-8", newline="")
+
+
+def panel_figure(
+    suptitle: str,
+    caption: str,
+    draw: Callable[[Sequence[object]], None],
+    path: Path,
+    *,
+    adjust: Mapping[str, float],
+    caption_width: int = 168,
+    dpi: int = 150,
+) -> Path:
+    """Write one deterministic two-panel figure and return its path.
+
+    The frame is fixed: two 12.0 x 5.4 in panels, one suptitle, the wrapped caption in monospace at
+    the bottom-left (a figure never travels without its caveats), the subplot margins and the PNG
+    write. ``draw`` receives the two axes and paints the panels, which is the only part an axis
+    owns.
+    """
+    import matplotlib
+
+    matplotlib.use("Agg", force=True)
+    from matplotlib import pyplot as plt
+
+    figure, axes = plt.subplots(1, 2, figsize=(12.0, 5.4), dpi=dpi)
+    draw(axes)
+    figure.suptitle(suptitle, fontsize=11, y=0.975)
+    figure.text(
+        0.008,
+        0.008,
+        wrap_caption(caption, width=caption_width),
+        fontsize=5.2,
+        va="bottom",
+        ha="left",
+        family="monospace",
+    )
+    figure.subplots_adjust(**adjust)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(target, dpi=dpi)
+    plt.close(figure)
+    return target

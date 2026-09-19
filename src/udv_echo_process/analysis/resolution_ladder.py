@@ -1,50 +1,37 @@
 """WP2, resolution axis — the measured pitch ladder against the repeatability bound.
 
-The committed sweep holds a 13-point resolution ladder: one base-state recording per
-gate pitch, 0.247 mm (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates),
-over the same ~100 mm window (plan §2). This module answers the plan's question —
-*does 0.247 mm add information over 0.617 mm, and how coarse can a measured pitch go
-before structure is lost* — from the ``res`` rows of the WP0 manifest, never a
-filename list (plan §4 WP2 gate). What it computes:
+The committed sweep holds a 13-point resolution ladder: one base-state recording per gate pitch,
+0.247 mm (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates), over the same ~100 mm
+window (plan §2). This module answers the plan's question — *does 0.247 mm add information over
+0.617 mm, and how coarse can a measured pitch go before structure is lost* — from the ``res``
+rows of the WP0 manifest, never a filename list (plan §4 WP2 gate). One build produces:
 
-- **Common-duration view** — the largest integer number of nominal 500-RPM
-  revolutions (0.12 s) fitting *every* resolution recording: 93 revolutions =
-  11.16 s, truncated per file by the recorded timestamps (plan §3.1).
-- **Common physical support** — the intersection of the 13 decoded depth ranges,
-  10.1626666667-96.7426666667 mm, for every cross-level summary (plan §3.2).
-- **Level metrics on each native grid** — mean, robust spread (IQR), RMS about
-  zero, zero fraction and gate-level temporal IQR over the common window, plus two
-  spatial metrics computed *before* any comparison: the gate-to-gate gradient
-  (|Δmean| / native pitch, at the interval midpoint) and the spatial correlation
-  length (first native lag whose normalized autocovariance drops below 1/e).
-- **Pairs on common knots** — every unordered level pair on the *coarser*
-  participant's native gate depths inside the support, so knot spacing is never
-  finer than the coarsest participating pitch. The finer level is *sampled* there
-  by nearest native gate: no interpolation, no upsampling, no claim about
-  structure between knots.
-- **Effect versus the envelope** — the committed WP1 repeatability envelope
-  (19.37 mm/s, read from ``reference-repeat.provenance.json`` and bound to this
-  manifest) is the threshold: each pair reports the knots that clear it, where in
-  depth, and by what ratio (plan §4 WP1 gate).
-- **Detail below the coarse knots** — measured inside the finer recording alone, so
-  no drift enters it: its native mean profile minus that same profile sampled at the
-  coarse knots. That is the spatial variance a finer pitch adds here.
+- the **common views** — the largest whole number of nominal 500-RPM revolutions (0.12 s) fitting
+  every recording, and the intersection of the decoded depth ranges (plan §3.1, §3.2);
+- **level metrics on each native grid** — mean, robust spread (IQR), RMS about zero, zero fraction
+  and gate-level temporal IQR over the common window, plus the gate-to-gate gradient and the
+  spatial correlation length, both computed *before* any comparison (plan §3.2);
+- **pairs on common knots** — every unordered pair on the coarser participant's own gate depths
+  inside the support, the finer level *sampled* there by nearest native gate: no interpolation,
+  no upsampling, and the knots that clear the committed WP1 envelope, where in depth and by what
+  ratio (plan §4 WP1 gate);
+- the **detail below the coarse knots**, measured inside the finer recording alone so no drift
+  enters it: its native mean profile minus that same profile sampled at the coarse knots.
 
-Gates and profiles are not independent replicates, the levels carry no acquisition
-order (their differences hold drift as well as pitch), and no p-value family is
-produced (plan §3.3). Resolution axis only: burst, PRF, TGC/power and emissions are
-out of scope, and 500 RPM is a marker (8.33 Hz), never a phase reference.
+Gates and profiles are not independent replicates, the levels carry no acquisition order (their
+differences hold drift as well as pitch), and no p-value family is produced (plan §3.3). Resolution
+axis only: burst, PRF, TGC/power and emissions are out of scope, and 500 RPM is a marker
+(8.33 Hz), never a phase reference.
 
-Most of the machinery is *shared*, not duplicated: the common views, the native-grid
-spatial metrics, the pairwise alignment, the WP1 envelope binding and the artefact
-writers live in ``_native_grid.py``, which the burst, PRF and TGC/power axes of the
-same plan reuse. WP1's temporal models (per-gate autocorrelation/PSD on a second time
-base) have no counterpart here: this axis compares pitch, not time.
+The input binding and most of the machinery are *shared*, not duplicated: the axis-input layer, the
+common views, the native-grid metrics, the pairwise alignment, the committed WP1 readers and the
+writers live in ``_native_grid.py``, which the burst, PRF and TGC/power axes of the same plan reuse.
+WP1's temporal models (per-gate autocorrelation/PSD on a second time base) have no counterpart
+here: this axis compares pitch, not time.
 """
 
 from __future__ import annotations
 
-import csv
 import itertools
 import json
 import math
@@ -56,35 +43,35 @@ from pydantic import model_validator
 
 from udv_echo_process.analysis._native_grid import (
     CORRELATION_FLOOR,
-    GRID_UNIFORMITY_RTOL,
-    TOLERANCE_S,
     EnvelopeBinding,
+    LevelMetrics,
     NativeGridError,
+    align_on_knots,
     common_support,
-    correlation_length,
+    correlation_length,  # noqa: F401 - re-exported for the focused resolution tests
     csv_text,
     depth_ranges,
     in_support,
+    level_metrics,
     nearest_gate_indices,
+    panel_figure,
+    read_decoded_level,
     read_envelope,
+    select_axis_rows,
     sha256_file,
-    spatial_gradient,
-    window,
-    wrap_caption,
+    spatial_gradient,  # noqa: F401 - re-exported for the focused resolution tests
+    write_text_artefacts,
 )
 from udv_echo_process.analysis.reference_repeat import (
     NOMINAL_REVOLUTION_S,
     NOMINAL_RPM,
     common_revolution_count,
-    gate_metrics,
 )
 from udv_echo_process.analysis.sweep_inventory import (
     DATASET_ROOT,
     MANIFEST_NAME,
     REPORT_DIR,
-    format_cell,
 )
-from udv_echo_process.io import load
 from udv_echo_process.models.base import ValueModel
 from udv_echo_process.provenance.models import current_revision
 
@@ -332,80 +319,16 @@ def _row_pitch(row: Mapping[str, str], manifest_path: Path) -> float:
 def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
     """Return every ``res`` manifest row, ordered by pitch and then by path.
 
-    The ladder is bound to the WP0 manifest rather than to a hand-maintained
-    filename list: the files compared are the ones the inventory decoded, and each
-    row's ``source_sha256`` is the content identity :func:`_read_level` re-checks
-    against the bytes.
-
-    Raises:
-        ResolutionLadderError: when the manifest is missing or unreadable, holds no
-            ``res`` rows, repeats a relative path, carries a row that did not
-            decode, gives a row no usable pitch, or gives two rows one pitch.
+    The ladder is bound to the WP0 manifest rather than to a hand-maintained filename list: the
+    selection, the ordering and the refusals are the shared axis-input layer's
+    (:func:`_native_grid.select_axis_rows`), driven here with this axis's ``resolution_mm`` key.
     """
     path = Path(manifest_path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ResolutionLadderError(f"cannot read the manifest {path}: {exc}") from exc
-    selected = [
-        row
-        for row in csv.DictReader(text.splitlines())
-        if (row.get("axis") or "") == AXIS
-    ]
-    if not selected:
-        raise ResolutionLadderError(
-            f"manifest {path} holds no res rows; the resolution ladder is selected "
-            "from the WP0 inventory, never from a filename list"
-        )
-    counts: dict[str, int] = {}
-    for row in selected:
-        relative = (row.get("relative_path") or "").strip()
-        if not relative:
-            raise ResolutionLadderError(
-                f"manifest {path} holds a res row without a relative_path"
-            )
-        counts[relative] = counts.get(relative, 0) + 1
-    for relative, count in counts.items():
-        if count != 1:
-            raise ResolutionLadderError(
-                f"manifest {path} must hold exactly one row for {relative}, found "
-                f"{count}"
-            )
-    for row in selected:
-        if row.get("decode_error"):
-            raise ResolutionLadderError(
-                f"{row['relative_path']}: the manifest records "
-                f"decode_error={row['decode_error']!r}; a ladder must be selected "
-                "from decoded recordings"
-            )
-        _row_pitch(row, path)
-    ordered = sorted(
-        selected, key=lambda row: (_row_pitch(row, path), row["relative_path"])
+    return select_axis_rows(
+        path, axis=AXIS, ladder_label="resolution",
+        order_key=lambda row: _row_pitch(row, path), order_label="pitch",
     )
-    for first, second in itertools.pairwise(ordered):
-        if _row_pitch(first, path) == _row_pitch(second, path):
-            raise ResolutionLadderError(
-                f"{first['relative_path']} and {second['relative_path']} carry the "
-                f"same pitch {_row_pitch(first, path):g} mm; a ladder needs one row "
-                "per pitch"
-            )
-    return tuple(ordered)
 
-
-_VERIFIED_CELLS: tuple[tuple[str, str], ...] = (
-    ("profiles", "profiles"),
-    ("gates", "gates"),
-    ("duration_s", "duration_s"),
-    ("depth_min_mm", "depth_min_mm"),
-    ("depth_max_mm", "depth_max_mm"),
-    ("resolution_mm", "resolution_mm"),
-    ("prf_period_us", "prf_period_us"),
-    ("burst_length", "burst_length"),
-    ("emissions_per_profile", "emissions_per_profile"),
-    ("emit_power", "emit_power"),
-    ("sensitivity", "sensitivity"),
-    ("tgc_mode", "tgc_mode"),
-)
 
 
 def _read_level(
@@ -413,146 +336,47 @@ def _read_level(
 ) -> tuple[LevelInput, np.ndarray, np.ndarray, np.ndarray]:
     """Decode one manifest-selected level and bind it to its manifest row.
 
-    Returns ``(entry, values, time_s, gate_depths_mm)`` — the manifest record and
-    the ``(profiles, gates)`` velocity array in ``mm/s`` with its two axes.
-
-    Raises:
-        ResolutionLadderError: for a row with no usable path, bytes that do not
-            reproduce the recorded SHA-256, a payload that is not one axial-velocity
-            channel, a gate grid that is not the instrument's uniform increasing grid,
-            or a re-checked cell that disagrees with the decoded value (a stale
-            inventory must not be analysed).
+    Returns ``(entry, values, time_s, gate_depths_mm)`` — the manifest record and the
+    ``(profiles, gates)`` velocity array in ``mm/s`` with its two axes. The decode and every check on
+    it are the shared axis-input layer's, so this axis and the burst axis cannot disagree about what
+    a bound recording is.
     """
-    relative = row.get("relative_path") or ""
-    path = dataset_root / relative
-    if not relative or not path.is_file():
-        raise ResolutionLadderError(f"manifest row {relative!r} is not a file at {path}")
-    recorded = (row.get("source_sha256") or "").strip()
-    actual = sha256_file(path)
-    if recorded != actual:
-        raise ResolutionLadderError(
-            f"source sha256 mismatch for {relative}: manifest records {recorded!r}, "
-            f"file hashes to {actual!r}"
-        )
-    recording = load(path).recording
-    if recording.source_asset.content_sha256 != actual:
-        raise ResolutionLadderError(
-            f"{relative}: the reader's content hash "
-            f"{recording.source_asset.content_sha256!r} is not the file hash {actual!r}"
-        )
-    if len(recording.streams) != 1:
-        raise ResolutionLadderError(
-            f"{relative}: expected exactly one channel stream, found "
-            f"{len(recording.streams)}"
-        )
-    stream = recording.streams[0]
-    values = np.asarray(stream.data.values, dtype=float)
-    time_s = np.asarray(stream.data.time_s, dtype=float)
-    depths = np.asarray(stream.data.gate_depths_mm, dtype=float)
-    if stream.descriptor.unit != "mm/s" or values.ndim != 2:
-        raise ResolutionLadderError(
-            f"{relative}: expected a 2-D axial-velocity array in mm/s, got "
-            f"{values.ndim}-D in {stream.descriptor.unit!r}"
-        )
-    if np.count_nonzero(np.isnan(values)):
-        raise ResolutionLadderError(f"{relative}: the velocity array carries NaNs")
-    config = stream.config
-    observed = {
-        "profiles": format_cell(int(values.shape[0])),
-        "gates": format_cell(int(values.shape[1])),
-        "duration_s": format_cell(float(time_s[-1] - time_s[0])),
-        "depth_min_mm": format_cell(float(depths[0])),
-        "depth_max_mm": format_cell(float(np.max(depths))),
-        "resolution_mm": format_cell(config.resolution_mm),
-        "prf_period_us": format_cell(1e6 / float(config.pulse_repetition_freq_hz)),
-        "burst_length": format_cell(config.burst_length),
-        "emissions_per_profile": format_cell(config.emissions_per_profile),
-        "emit_power": format_cell(config.emit_power),
-        "sensitivity": format_cell(config.sensitivity),
-        "tgc_mode": format_cell(config.tgc_mode),
-    }
-    for cell, key in _VERIFIED_CELLS:
-        if (row.get(cell) or "") != observed[key]:
-            raise ResolutionLadderError(
-                f"{relative}: manifest {cell}={row.get(cell)!r} does not match the "
-                f"decoded {key}={observed[key]!r}; the comparison must not run on a "
-                "stale inventory"
-            )
-    if depths.size < 2:
-        raise ResolutionLadderError(
-            f"{relative}: the gate grid holds {depths.size} gate(s)"
-        )
-    steps = np.diff(depths)
-    pitch = float(steps.mean())
-    if not np.all(steps > 0.0) or not math.isfinite(pitch) or pitch <= 0.0:
-        raise ResolutionLadderError(
-            f"{relative}: the native gate depths must increase strictly, got steps "
-            f"including {steps.min()!r}"
-        )
-    deviation = float(np.abs(steps - pitch).max())
-    if deviation > GRID_UNIFORMITY_RTOL * pitch:
-        raise ResolutionLadderError(
-            f"{relative}: the native gate grid is not uniform: steps deviate by "
-            f"{deviation:.3g} mm from the {pitch:g} mm mean pitch"
-        )
-    if not math.isclose(pitch, float(config.resolution_mm), rel_tol=1e-6):
-        raise ResolutionLadderError(
-            f"{relative}: the decoded gate pitch {pitch!r} is not the manifest's "
-            f"resolution_mm {config.resolution_mm!r}"
-        )
+    level = read_decoded_level(Path(dataset_root), row)
+    observed = level.observed
     return (
         LevelInput(
-            relative_path=relative,
-            axis=row.get("axis") or "",
-            requested_label=row.get("requested_label") or "",
-            source_sha256=actual,
-            pitch_mm=pitch,
-            gates=int(values.shape[1]),
-            profiles=int(values.shape[0]),
-            duration_s=float(time_s[-1] - time_s[0]),
-            depth_min_mm=float(depths[0]),
-            depth_max_mm=float(np.max(depths)),
+            relative_path=level.relative_path,
+            axis=level.axis,
+            requested_label=level.requested_label,
+            source_sha256=level.source_sha256,
+            pitch_mm=level.pitch_mm,
+            gates=int(level.values.shape[1]),
+            profiles=int(level.values.shape[0]),
+            duration_s=float(observed["duration_s"]),
+            depth_min_mm=float(observed["depth_min_mm"]),
+            depth_max_mm=float(observed["depth_max_mm"]),
         ),
-        values,
-        time_s,
-        depths,
+        level.values,
+        level.time_s,
+        level.depths,
     )
+
 
 
 # ── the two common views and the pure spatial helpers ──────────────────
 
 
 def level_row(
-    entry: LevelInput,
-    values: np.ndarray,
-    time_s: np.ndarray,
-    depths: np.ndarray,
-    *,
-    window_s: float,
-    support: tuple[float, float],
+    entry: LevelInput, metrics: LevelMetrics, *, support: tuple[float, float]
 ) -> LevelRow:
     """One level's row: the common-duration window on its own native grid.
 
-    Every distributional metric uses the common window and only the gates inside
-    the common support; both spatial metrics use that supported native grid.
-
-    Raises:
-        ResolutionLadderError: when fewer than two gates fall inside the common
-            support, so the level's spatial metrics are undefined.
+    Every distributional metric uses the common window and only the gates inside the common support,
+    and both spatial metrics use that supported native grid: the shared metric layer's numbers,
+    computed before any alignment.
     """
-    view = window(values, time_s, window_s)
-    mask = in_support(depths, support)
-    supported_gates = int(np.count_nonzero(mask))
-    if supported_gates < 2:
-        raise ResolutionLadderError(
-            f"{entry.relative_path}: {supported_gates} gate(s) fall inside the common "
-            f"support [{support[0]:g}, {support[1]:g}] mm; the spatial metrics need two"
-        )
-    per_gate = gate_metrics(view)
-    means = per_gate["mean"][mask]
-    supported = view[:, mask]
-    gradient = spatial_gradient(depths[mask], means)
-    correlation = correlation_length(depths[mask], means)
+    gradient, correlation = metrics.gradient, metrics.correlation
+    means = metrics.means
     return LevelRow(
         axis=entry.axis,
         relative_path=entry.relative_path,
@@ -561,8 +385,8 @@ def level_row(
         gates=entry.gates,
         duration_s=entry.duration_s,
         profiles=entry.profiles,
-        profiles_window=int(view.shape[0]),
-        gates_in_support=supported_gates,
+        profiles_window=metrics.profiles_window,
+        gates_in_support=metrics.supported_gates,
         depth_min_mm=entry.depth_min_mm,
         depth_max_mm=entry.depth_max_mm,
         support_min_mm=support[0],
@@ -571,9 +395,11 @@ def level_row(
         robust_spread_mm_s=float(
             np.percentile(means, 75.0) - np.percentile(means, 25.0)
         ),
-        rms_mm_s=float(np.sqrt(np.mean(np.square(supported)))),
-        zero_fraction=float(np.count_nonzero(supported == 0.0) / supported.size),
-        time_iqr_median_mm_s=float(np.median(per_gate["iqr"][mask])),
+        rms_mm_s=float(np.sqrt(np.mean(np.square(metrics.supported)))),
+        zero_fraction=float(
+            np.count_nonzero(metrics.supported == 0.0) / metrics.supported.size
+        ),
+        time_iqr_median_mm_s=float(np.median(metrics.per_gate["iqr"][metrics.mask])),
         gradient_median_abs_mm_s_per_mm=gradient.median_abs_mm_s_per_mm,
         gradient_max_abs_mm_s_per_mm=gradient.max_abs_mm_s_per_mm,
         gradient_max_depth_mm=gradient.max_depth_mm,
@@ -582,6 +408,7 @@ def level_row(
         correlation_reaches_floor=correlation.reaches_floor,
         correlation_length_over_pitch=correlation.length_mm / entry.pitch_mm,
     )
+
 
 
 def pair_row(
@@ -597,21 +424,13 @@ def pair_row(
 ) -> PairRow:
     """Compare a fine level with a coarse one on the coarser grid's own knots.
 
-    The knots are the coarse participant's native gate depths inside the common
-    support, so their spacing is the coarser pitch, never finer than the coarsest
-    participating pitch (plan §3.2). The fine profile is sampled there by the shared
-    :func:`nearest_gate_indices` — the nearest native gate's value, no interpolation —
-    and the difference is the signed ``fine − coarse`` per-gate time mean in mm/s.
-
-    The ``fine_detail_*`` fields are measured inside the *finer recording alone*: its
-    supported native mean profile minus that same profile sampled at the coarse knots.
-    No second recording enters them, so they carry no drift, and they bound how much
-    spatial variance the finer pitch adds below the coarse knot spacing.
-
-    Raises:
-        ResolutionLadderError: when the arguments are not (fine, coarse), the coarser
-            participant carries fewer than two knots in the support, or the finer
-            profile has no spatial variance.
+    The knots are the coarse participant's native gate depths inside the common support, so their
+    spacing is the coarser pitch, never finer than the coarsest participating pitch (plan §3.2); the
+    fine profile is sampled there by the shared :func:`nearest_gate_indices` — the nearest native
+    gate's value, no interpolation. The ``fine_detail_*`` fields are measured inside the *finer
+    recording alone* (its supported native mean profile minus that same profile sampled at the coarse
+    knots), so they carry no drift and bound how much spatial variance the finer pitch adds below the
+    coarse knot spacing.
     """
     if fine.pitch_mm >= coarse.pitch_mm:
         raise ResolutionLadderError(
@@ -620,30 +439,21 @@ def pair_row(
         )
     fine_depths = np.asarray(fine_depths_mm, dtype=float)
     coarse_depths = np.asarray(coarse_depths_mm, dtype=float)
-    coarse_mask = in_support(coarse_depths, support)
-    knots = coarse_depths[coarse_mask]
-    if knots.size < 2:
-        raise ResolutionLadderError(
-            f"{coarse.relative_path}: {knots.size} knot(s) fall inside the common "
-            f"support [{support[0]:g}, {support[1]:g}] mm; a pair needs two"
-        )
     fine_mean = np.asarray(fine_mean_mm_s, dtype=float)
-    indices = nearest_gate_indices(fine_depths, knots)
-    fine_at_knots = fine_mean[indices]
-    difference = fine_at_knots - np.asarray(coarse_mean_mm_s, dtype=float)[coarse_mask]
-    absolute = np.abs(difference)
-    flagged = absolute > envelope.value_mm_s
-    worst = int(np.argmax(absolute))
+    aligned = align_on_knots(
+        fine_depths,
+        fine_mean,
+        coarse_depths,
+        np.asarray(coarse_mean_mm_s, dtype=float),
+        path=fine.relative_path,
+        support=support,
+        threshold_mm_s=envelope.value_mm_s,
+    )
+    knots, absolute, flagged = aligned.knots, aligned.absolute, aligned.flagged
+    fine_at_knots = fine_mean[aligned.indices]
     fine_mask = in_support(fine_depths, support)
     native = fine_mean[fine_mask]
-    native_variance = float(np.var(native))
-    if native_variance == 0.0:
-        raise ResolutionLadderError(
-            f"{fine.relative_path}: the supported mean profile is constant, so the "
-            "detail below the coarse knots is undefined"
-        )
-    mapped = fine_at_knots[nearest_gate_indices(knots, fine_depths[fine_mask])]
-    detail = native - mapped
+    detail = native - fine_at_knots[nearest_gate_indices(knots, fine_depths[fine_mask])]
     return PairRow(
         axis=fine.axis,
         fine_path=fine.relative_path,
@@ -656,22 +466,23 @@ def pair_row(
         knots=int(knots.size),
         support_min_mm=support[0],
         support_max_mm=support[1],
-        max_knot_offset_mm=float(np.abs(fine_depths[indices] - knots).max()),
+        max_knot_offset_mm=aligned.offset_mm,
         mean_abs_difference_mm_s=float(absolute.mean()),
         median_abs_difference_mm_s=float(np.median(absolute)),
-        max_abs_difference_mm_s=float(absolute[worst]),
-        max_abs_difference_depth_mm=float(knots[worst]),
+        max_abs_difference_mm_s=float(absolute[aligned.worst]),
+        max_abs_difference_depth_mm=float(knots[aligned.worst]),
         knots_above_envelope=int(np.count_nonzero(flagged)),
         fraction_above_envelope=float(np.count_nonzero(flagged) / flagged.size),
-        max_abs_difference_over_envelope=float(absolute[worst] / envelope.value_mm_s),
+        max_abs_difference_over_envelope=float(absolute[aligned.worst] / envelope.value_mm_s),
         depth_ranges_above_envelope_mm=depth_ranges(knots, flagged),
         fine_variance_share_at_coarse_knots=float(
-            np.var(fine_at_knots) / native_variance
+            np.var(fine_at_knots) / aligned.sampled_variance
         ),
         fine_detail_rms_mm_s=float(np.sqrt(np.mean(np.square(detail)))),
         fine_detail_max_abs_mm_s=float(np.abs(detail).max()),
-        fine_detail_variance_share=float(np.var(detail) / native_variance),
+        fine_detail_variance_share=float(np.var(detail) / aligned.sampled_variance),
     )
+
 
 
 def _focus_pair(levels: Sequence[LevelRow]) -> tuple[str, str]:
@@ -714,16 +525,19 @@ def _build(
     support = common_support(
         [(entry.depth_min_mm, entry.depth_max_mm) for entry, *_ in decoded]
     )
-    levels = tuple(
-        level_row(entry, values, time_s, depths, window_s=window_s, support=support)
-        for entry, values, time_s, depths in decoded
-    )
-    profiles = {
-        entry.relative_path: (
-            depths,
-            gate_metrics(window(values, time_s, window_s))["mean"],
+    metrics = [
+        level_metrics(
+            entry.relative_path, values, time_s, depths, window_s=window_s, support=support
         )
         for entry, values, time_s, depths in decoded
+    ]
+    levels = tuple(
+        level_row(entry, own, support=support)
+        for (entry, *_rest), own in zip(decoded, metrics, strict=True)
+    )
+    profiles = {
+        entry.relative_path: (depths, own.per_gate["mean"])
+        for (entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
     }
     pairs = tuple(
         pair_row(
@@ -752,14 +566,12 @@ def _build(
             revolutions=revolutions,
             window_s=window_s,
             profiles_window={
-                entry.relative_path: int(
-                    np.count_nonzero(time_s <= time_s[0] + window_s + TOLERANCE_S)
-                )
-                for entry, _values, time_s, _depths in decoded
+                entry.relative_path: own.profiles_window
+                for (entry, *_rest), own in zip(decoded, metrics, strict=True)
             },
             gates_in_support={
-                entry.relative_path: int(np.count_nonzero(in_support(depths, support)))
-                for entry, _values, _time_s, depths in decoded
+                entry.relative_path: own.supported_gates
+                for (entry, *_rest), own in zip(decoded, metrics, strict=True)
             },
             support_min_mm=support[0],
             support_max_mm=support[1],
@@ -772,6 +584,7 @@ def _build(
     return model, profiles
 
 
+
 def build_resolution_ladder(
     dataset_root: Path = DATASET_ROOT,
     manifest_path: Path = REPORT_DIR / MANIFEST_NAME,
@@ -781,23 +594,10 @@ def build_resolution_ladder(
 ) -> ResolutionLadder:
     """Build the WP2 resolution ladder from the manifest-selected recordings.
 
-    Args:
-        dataset_root: root holding the ``<axis>/<label>.BDD`` points.
-        manifest_path: the WP0 manifest the ladder is selected from and re-checked
-            against.
-        envelope_path: the committed WP1 provenance the threshold is read from.
-        analysis_commit: revision to record; ``None`` probes the checkout's short git
-            SHA once (never blocking), and passing it reproduces a committed
-            artefact.
-
-    Returns:
-        The levels, the two common views, the focus pair and every pair row.
-
-    Raises:
-        ResolutionLadderError: for a manifest that is missing, unreadable, empty of
-            ``res`` rows, duplicated, undecodable or stale; for a WP1 envelope that is
-            missing or bound to another manifest; and for any recording whose settings
-            or grid contradict its manifest row.
+    ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA once
+    (never blocking), and passing the recorded commit reproduces a committed artefact. A manifest, a
+    WP1 envelope or a recording that contradicts its row is refused by name before anything is
+    written.
     """
     return _build(
         dataset_root, Path(manifest_path), Path(envelope_path), analysis_commit
@@ -933,20 +733,11 @@ def pairs_csv_text(model: ResolutionLadder) -> str:
     return csv_text(PAIR_COLUMNS, _rows_of(PAIR_COLUMNS, model.pairs))
 
 
-def regeneration_command(model: ResolutionLadder) -> str:
-    """The exact command that reproduces the committed artefacts byte for byte."""
-    return (
-        ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder "
-        f"--analysis-commit {model.analysis_commit or '<generator commit>'}"
-    )
-
-
 def _findings(model: ResolutionLadder) -> dict[str, object]:
-    """The plan's questions answered from the numbers the tables already carry.
+    """The plan's resolution questions answered from the numbers the tables already carry.
 
-    Every statement is composed from those values, so a regeneration says what it
-    wrote. Nothing here is a p-value or a significance claim, and nothing here
-    decides an axis this module does not own.
+    Every statement is composed from those values, so a regeneration says what it wrote. Nothing here
+    is a p-value, a significance claim, or a decision about an axis this module does not own.
     """
     envelope = model.envelope.value_mm_s
     pairs = model.pairs
@@ -1084,9 +875,8 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
 def figure_caption(model: ResolutionLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
-    It names the ladder, both views, the alignment rule, the envelope and its source,
-    the focus pair's numbers and the two caveats: the setpoint is not a phase
-    reference, and nothing here is an independent replicate.
+    It names the ladder, both views, the alignment rule, the envelope with its source, and the plan's
+    two named pitches with their numbers.
     """
     findings = _findings(model)
     information = findings["information"]
@@ -1125,8 +915,7 @@ def figure_caption(model: ResolutionLadder) -> str:
 def provenance_document(model: ResolutionLadder) -> dict[str, object]:
     """The machine-readable record beside the tables and the figure.
 
-    Keys are inserted in a fixed order and floats keep Python's shortest round-trip
-    representation, so a regeneration from the same commit is byte-identical.
+    Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
     """
     support = (model.common.support_min_mm, model.common.support_max_mm)
     matches_plan = all(
@@ -1255,7 +1044,10 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
             "panels": list(FIGURE_PANELS),
         },
         "regeneration": {
-            "command": regeneration_command(model),
+            "command": (
+                ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder "
+                f"--analysis-commit {model.analysis_commit or '<generator commit>'}"
+            ),
             "note": (
                 "pass the recorded analysis_commit to reproduce these artefacts byte for "
                 "byte; the bare command records the current HEAD"
@@ -1267,23 +1059,6 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
 # ── the figure ─────────────────────────────────────────────────────────
 
 
-def _focus_series(
-    model: ResolutionLadder, profiles: Mapping[str, tuple[np.ndarray, np.ndarray]]
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
-    """The focus pair's native profiles and its difference at the coarse knots."""
-    fine_path, coarse_path = model.focus_pair
-    fine_depths, fine_mean = profiles[fine_path]
-    coarse_depths, coarse_mean = profiles[coarse_path]
-    inside = in_support(
-        coarse_depths, (model.common.support_min_mm, model.common.support_max_mm)
-    )
-    knots = coarse_depths[inside]
-    difference = (
-        fine_mean[nearest_gate_indices(fine_depths, knots)] - coarse_mean[inside]
-    )
-    return fine_depths, fine_mean, knots, difference
-
-
 def render_figure(
     model: ResolutionLadder,
     profiles: Mapping[str, tuple[np.ndarray, np.ndarray]],
@@ -1293,143 +1068,104 @@ def render_figure(
 ) -> Path:
     """Write the two-panel resolution figure, deterministically, and return it.
 
-    Panels: the native correlation length against pitch (with the 1:1 line where a
-    correlation length would be one gate), and the plan's focus pair — both aligned
-    profiles against depth with the signed difference at the coarse knots against
-    the WP1 envelope band. The gradient spread stays in ``resolution-levels.csv``:
-    the figure carries only what the resolution decision needs. The caption is part
-    of the image, so the figure cannot be separated from its caveats.
-
-    Args:
-        model: the built ladder (supplies every number the panels annotate).
-        profiles: each level's ``(gate_depths_mm, per-gate time mean)`` on its native
-            grid, as :func:`build_resolution_ladder`'s internal build returns them.
-        path: target PNG path (parent directories are created).
-        dpi: figure resolution.
+    Panels: the native correlation length against pitch (with the 1:1 line where a correlation length
+    would be one gate), and the plan's focus pair — both aligned profiles against depth with the
+    signed difference at the coarse knots against the WP1 envelope band. The gradient spread stays in
+    ``resolution-levels.csv``. The frame is the shared writer's, so this module owns the panels only,
+    and the caption is part of the image.
     """
-    import matplotlib
-
-    matplotlib.use("Agg", force=True)
-    from matplotlib import pyplot as plt
     from matplotlib.ticker import NullFormatter
 
     envelope = model.envelope.value_mm_s
-    figure, axes = plt.subplots(1, 2, figsize=(12.0, 5.4), dpi=dpi)
-    length_ax, pair_ax = axes
     pitch = np.asarray([row.pitch_mm for row in model.levels])
-
-    # The pitch axis is discrete: one tick per measured pitch, with the log scale's
-    # own minor labels suppressed. The scale is set first: setting one resets ticks.
-    ticks = [float(value) for value in pitch]
-    length_ax.set_xscale("log")
-    length_ax.set_xticks(ticks)
-    length_ax.set_xticklabels(
-        [f"{value:.3g}" for value in ticks], fontsize=5.6, rotation=45
-    )
-    length_ax.xaxis.set_minor_formatter(NullFormatter())
-
-    # (1) native-grid correlation length versus pitch
-    length_ax.plot(
-        pitch,
-        [row.correlation_length_mm for row in model.levels],
-        "o-",
-        color="#1f77b4",
-        linewidth=1.4,
-        markersize=4,
-    )
-    length_ax.plot(
-        pitch,
-        pitch,
-        ":",
-        color="#777777",
-        linewidth=0.9,
-        label="one gate per correlation length",
-    )
-    length_ax.set_xlabel("native gate pitch [mm]")
-    length_ax.set_ylabel("native spatial correlation length [mm]")
-    length_ax.set_title(
-        "structure scale versus pitch\n"
-        f"1/e lag of the mean profile, native grid ({len(model.levels)} levels)",
-        fontsize=9.5,
-    )
-    length_ax.grid(alpha=0.2)
-    length_ax.legend(loc="upper right", fontsize=6.5, framealpha=0.9)
-
-    # (2) the focus pair on the coarser grid's own knots
-    fine_depths, fine_mean, knots, difference = _focus_series(model, profiles)
     focus = next(
         row for row in model.pairs if (row.fine_path, row.coarse_path) == model.focus_pair
     )
+    fine_depths, fine_mean = profiles[model.focus_pair[0]]
     coarse_depths, coarse_mean = profiles[model.focus_pair[1]]
-    pair_ax.plot(
-        fine_mean,
-        fine_depths,
-        color="#1f77b4",
-        linewidth=1.3,
-        label=f"{focus.fine_path} ({focus.fine_pitch_mm:.4g} mm) native",
+    inside = in_support(
+        coarse_depths, (model.common.support_min_mm, model.common.support_max_mm)
     )
-    pair_ax.plot(
-        fine_mean[nearest_gate_indices(fine_depths, knots)],
-        knots,
-        "o",
-        color="#1f77b4",
-        markersize=2.6,
-        label="the same profile sampled at the coarse knots",
-    )
-    pair_ax.plot(
-        coarse_mean,
-        coarse_depths,
-        color="#d62728",
-        linewidth=1.6,
-        label=f"{focus.coarse_path} ({focus.coarse_pitch_mm:.4g} mm) native",
-    )
-    pair_ax.set_xlabel("per-gate mean velocity [mm/s]")
-    pair_ax.set_ylabel("depth from transducer face [mm]")
-    pair_ax.invert_yaxis()
-    difference_ax = pair_ax.twiny()
-    difference_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.18, linewidth=0)
-    for sign in (-1.0, 1.0):
-        difference_ax.axvline(
-            sign * envelope, color="#555555", linewidth=0.8, linestyle=":"
-        )
-    difference_ax.plot(
-        difference,
-        knots,
-        color="#111111",
-        linewidth=1.0,
-        label="fine - coarse at the coarse knots",
-    )
-    difference_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope", fontsize=7.5)
-    difference_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
-    pair_ax.set_title(
-        f"plan's pair: {focus.knots} knots at {focus.knot_spacing_mm:.4g} mm; "
-        f"max |diff| {focus.max_abs_difference_mm_s:.4g} mm/s",
-        fontsize=9.0,
-    )
-    pair_ax.grid(alpha=0.2)
-    pair_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
-    difference_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
+    knots = coarse_depths[inside]
+    difference = fine_mean[nearest_gate_indices(fine_depths, knots)] - coarse_mean[inside]
 
-    figure.suptitle(
+    def draw(axes: Sequence[object]) -> None:
+        length_ax, pair_ax = axes
+        # The pitch axis is discrete: one tick per measured pitch, with the log scale's own
+        # minor labels suppressed. The scale is set first: setting one resets ticks.
+        ticks = [float(value) for value in pitch]
+        length_ax.set_xscale("log")
+        length_ax.set_xticks(ticks)
+        length_ax.set_xticklabels(
+            [f"{value:.3g}" for value in ticks], fontsize=5.6, rotation=45
+        )
+        length_ax.xaxis.set_minor_formatter(NullFormatter())
+
+        # (1) native-grid correlation length versus pitch
+        length_ax.plot(
+            pitch, [row.correlation_length_mm for row in model.levels], "o-",
+            color="#1f77b4", linewidth=1.4, markersize=4,
+        )
+        length_ax.plot(
+            pitch, pitch, ":", color="#777777", linewidth=0.9,
+            label="one gate per correlation length",
+        )
+        length_ax.set_xlabel("native gate pitch [mm]")
+        length_ax.set_ylabel("native spatial correlation length [mm]")
+        length_ax.set_title(
+            "structure scale versus pitch\n"
+            f"1/e lag of the mean profile, native grid ({len(model.levels)} levels)",
+            fontsize=9.5,
+        )
+        length_ax.grid(alpha=0.2)
+        length_ax.legend(loc="upper right", fontsize=6.5, framealpha=0.9)
+
+        # (2) the focus pair on the coarser grid's own knots
+        pair_ax.plot(
+            fine_mean, fine_depths, color="#1f77b4", linewidth=1.3,
+            label=f"{focus.fine_path} ({focus.fine_pitch_mm:.4g} mm) native",
+        )
+        pair_ax.plot(
+            fine_mean[nearest_gate_indices(fine_depths, knots)], knots, "o", color="#1f77b4",
+            markersize=2.6, label="the same profile sampled at the coarse knots",
+        )
+        pair_ax.plot(
+            coarse_mean, coarse_depths, color="#d62728", linewidth=1.6,
+            label=f"{focus.coarse_path} ({focus.coarse_pitch_mm:.4g} mm) native",
+        )
+        pair_ax.set_xlabel("per-gate mean velocity [mm/s]")
+        pair_ax.set_ylabel("depth from transducer face [mm]")
+        pair_ax.invert_yaxis()
+        difference_ax = pair_ax.twiny()
+        difference_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.18, linewidth=0)
+        for sign in (-1.0, 1.0):
+            difference_ax.axvline(
+                sign * envelope, color="#555555", linewidth=0.8, linestyle=":"
+            )
+        difference_ax.plot(
+            difference, knots, color="#111111", linewidth=1.0,
+            label="fine - coarse at the coarse knots",
+        )
+        difference_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope", fontsize=7.5)
+        difference_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
+        pair_ax.set_title(
+            f"plan's pair: {focus.knots} knots at {focus.knot_spacing_mm:.4g} mm; "
+            f"max |diff| {focus.max_abs_difference_mm_s:.4g} mm/s",
+            fontsize=9.0,
+        )
+        pair_ax.grid(alpha=0.2)
+        pair_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
+        difference_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
+
+    return panel_figure(
         "WP2 resolution ladder — 13 measured pitches against the WP1 repeatability bound",
-        fontsize=11,
-        y=0.975,
+        figure_caption(model),
+        draw,
+        path,
+        adjust={"top": 0.76, "bottom": 0.30, "wspace": 0.22},
+        dpi=dpi,
     )
-    figure.text(
-        0.008,
-        0.008,
-        wrap_caption(figure_caption(model)),
-        fontsize=5.2,
-        va="bottom",
-        ha="left",
-        family="monospace",
-    )
-    figure.subplots_adjust(top=0.76, bottom=0.30, wspace=0.22)
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(target, dpi=dpi)
-    plt.close(figure)
-    return target
+
 
 
 def write_resolution_ladder(
@@ -1442,22 +1178,9 @@ def write_resolution_ladder(
 ) -> ResolutionLadder:
     """Build the ladder and write the four reviewer-visible artefacts.
 
-    ``resolution-levels.csv``, ``resolution-pairs.csv``,
-    ``resolution-ladder.provenance.json`` and ``figures/resolution-ladder.png`` are
-    written with LF endings (the figure is binary), so two runs on the same inputs and
-    commit produce identical bytes. Nothing is written when the build raises: a failed
-    selection leaves no half-artefact behind.
-
-    Args:
-        dataset_root: root holding the ``<axis>/<label>.BDD`` points.
-        report_dir: directory the artefacts land in (``figures/`` inside it).
-        manifest_path: the WP0 manifest, default ``<report_dir>/manifest.csv``.
-        envelope_path: the WP1 provenance the threshold is read from, default
-            ``<report_dir>/reference-repeat.provenance.json``.
-        analysis_commit: revision to record; ``None`` probes the checkout.
-
-    Returns:
-        The built :class:`ResolutionLadder`.
+    The three text artefacts use LF endings and the figure is written deterministically, so two runs
+    on the same inputs and commit produce identical bytes; nothing is written when the build raises,
+    because the model is built (and refused) before the shared writer is called.
     """
     directory = Path(report_dir)
     manifest = (
@@ -1467,17 +1190,10 @@ def write_resolution_ladder(
         Path(envelope_path) if envelope_path is not None else directory / ENVELOPE_NAME
     )
     model, profiles = _build(dataset_root, manifest, envelope, analysis_commit)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / LEVELS_NAME).write_text(
-        levels_csv_text(model), encoding="utf-8", newline=""
-    )
-    (directory / PAIRS_NAME).write_text(
-        pairs_csv_text(model), encoding="utf-8", newline=""
-    )
-    (directory / PROVENANCE_NAME).write_text(
-        json.dumps(provenance_document(model), indent=2) + "\n",
-        encoding="utf-8",
-        newline="",
-    )
+    write_text_artefacts(directory, {
+        LEVELS_NAME: levels_csv_text(model),
+        PAIRS_NAME: pairs_csv_text(model),
+        PROVENANCE_NAME: json.dumps(provenance_document(model), indent=2) + "\n",
+    })
     render_figure(model, profiles, directory / FIGURES_DIRNAME / FIGURE_NAME)
     return model

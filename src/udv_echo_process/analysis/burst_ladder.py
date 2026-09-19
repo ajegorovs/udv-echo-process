@@ -6,32 +6,32 @@ window on the same 1.85 mm gate grid (plan §2). This module answers the plan's 
 from the ``burst_len`` rows of the WP0 manifest, never a filename list (plan §4 WP2 gate):
 where the empirical transition is, and whether 18 can be separated from 20 cycles.
 
-One build produces the common-duration view and the common physical support for every
-cross-level summary (plan §3.1, §3.2); per-level metrics on each native grid (mean, robust
-spread, RMS, zero fraction, native gradient and correlation length, computed before any
-alignment); the matched full-record temporal view (one shared segment length and profile
-period for every file, summarised by the in-band power share above 10 Hz, the spectral
-centroid, the RMS bandwidth and the ACF e-folding lag); the temporal repeat floor read from
-the committed WP1 curves; every unordered pair on the longer pulse's own knots against the
-committed WP1 envelope, with the depth ranges where a difference clears it; the knees of the
-dropout, variance, smoothing and bandwidth metrics; and the artefacts ``burst-levels.csv``,
-``burst-pairs.csv``, ``burst-ladder.provenance.json`` and ``figures/burst-ladder.png``.
+One build produces the common views (plan §3.1, §3.2), the per-level native-grid metrics, the
+matched full-record temporal view with its repeat floor, every unordered pair against the
+committed WP1 envelope (with the depth ranges where a difference clears it), the knees of the
+dropout/variance/smoothing/bandwidth metrics, and the four artefacts.
 
-Only the decoded burst length may differ across the files, so a coupled ladder is refused
-rather than analysed (plan §2). No profile or gate is an independent experimental replicate,
-the levels carry no acquisition order, and no p-value is produced (plan §3.3). Burst axis
-only: resolution, PRF, TGC/power and emissions are out of scope, 500 RPM is a marker (8.33 Hz)
-never a phase reference, and the two ladders meet only at the reference, so pitch x burst
-interaction is not estimable here. The shared machinery lives in `_native_grid.py` and the WP1
-temporal estimator in `reference_repeat.py`.
+The input binding is **not** written here: the manifest selection, the decode with its
+hash/cell/grid re-checks, the clean-OFAT audit, the common views, the native-grid metrics, the
+knot alignment, the committed WP1 envelope and temporal-floor readers, the knees and the writers
+belong to the shared layer (:mod:`udv_echo_process.analysis._native_grid`), which this axis
+drives with its own axis name, key cell, settings and columns — and which the resolution, PRF and
+TGC/power axes drive with theirs, so no axis can drift from the inventory contract its siblings
+honour. What is left here is what is burst-specific: the columns, the rows, the findings, the
+caption and the panels.
+
+Only the decoded burst length may differ across the files, so a coupled ladder is refused rather
+than analysed (plan §2). No profile or gate is an independent experimental replicate, the levels
+carry no acquisition order, and no p-value is produced (plan §3.3). Burst axis only: resolution,
+PRF, TGC/power and emissions are out of scope, 500 RPM is a marker (8.33 Hz) never a phase
+reference, and the two ladders meet only at the reference, so pitch x burst interaction is not
+estimable here.
 """
 
 from __future__ import annotations
 
-import csv
 import itertools
 import json
-import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -41,7 +41,6 @@ from pydantic import model_validator
 from udv_echo_process.analysis import _native_grid as grid
 from udv_echo_process.analysis import reference_repeat as wp1
 from udv_echo_process.analysis import sweep_inventory as inventory
-from udv_echo_process.io import load
 from udv_echo_process.models.base import ValueModel
 from udv_echo_process.provenance.models import current_revision
 
@@ -58,13 +57,18 @@ FOCUS_PAIR_CYCLES: tuple[int, int] = (18, 20)
 
 #: The plan's declared support window; the band every temporal metric integrates over and the
 #: frequency above which power counts as high-frequency; the decoded settings that must *not*
-#: move, because this axis changes the burst length only.
+#: move, because this axis changes the burst length only; and the manifest cells this axis
+#: re-checks against every decoded recording (the shape and timing its summaries rest on).
 PLAN_SUPPORT_MM: tuple[float, float] = (10.163, 96.743)
 PSD_BAND_HZ: tuple[float, float] = (0.5, 20.0)
 PSD_HF_ABOVE_HZ = 10.0
 COUPLED_SETTINGS: tuple[str, ...] = (
     "prf_period_us", "resolution_mm", "emissions_per_profile", "emit_power", "sensitivity",
     "tgc_mode", "sound_speed_ms", "velo_max_ms", "gates",
+)
+VERIFIED_CELLS: tuple[str, ...] = (
+    "profiles", "gates", "duration_s", "resolution_mm", "prf_period_us", "burst_length",
+    "emissions_per_profile", "emit_power", "sensitivity", "tgc_mode",
 )
 
 #: Column order of the two tables: the dict rows of :class:`BurstLadder` carry exactly these
@@ -86,18 +90,21 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "zero_fraction_change", "hf_share_change", "acf_e_folding_lag_change_s",
 )
 
-#: The metrics :func:`knees` reports: dropout, variance, spatial smoothing and bandwidth.
+#: The metrics the knees report: dropout, variance, spatial smoothing and bandwidth.
 KNEE_METRICS: tuple[str, ...] = (
     "zero_fraction", "robust_spread_mm_s", "rms_mm_s", "correlation_length_mm",
     "gradient_max_abs_mm_s_per_mm", "psd_hf_share", "acf_e_folding_lag_s",
 )
 
-#: The error class of every message this module raises; the native-grid helpers raise the same
-#: class, so one name covers a helper refusal and an axis refusal. The manifest-bound level
-#: record is the shape WP1 already binds, so the WP1 temporal estimator is reused.
+#: The error class of every message this module raises; the shared helpers raise the same class,
+#: so one name covers a helper refusal and an axis refusal. The manifest-bound level record is
+#: the shape WP1 already binds, so the WP1 temporal estimator is reused.
 BurstLadderError = grid.NativeGridError
 LevelInput = wp1.RepeatInput
-#: The WP0 dataset and report locations this axis reads and writes by default.
+#: The knee of a ladder is axis-agnostic machinery: the shared layer's, re-exported here.
+largest_step = grid.largest_step
+#: The WP0 dataset and report locations this axis reads and writes by default, and the nominal
+#: revolution its common-duration view counts in.
 NOMINAL_REVOLUTION_S = wp1.NOMINAL_REVOLUTION_S
 DATASET_ROOT = inventory.DATASET_ROOT
 MANIFEST_NAME = inventory.MANIFEST_NAME
@@ -107,9 +114,8 @@ REPORT_DIR = inventory.REPORT_DIR
 class BurstLadder(ValueModel):
     """The WP2 burst result: the level rows, the pair rows and the two matched views.
 
-    ``levels`` and ``pairs`` are dict rows keyed by the declared column tuples; ``common`` and
-    ``temporal`` carry the shared views, the temporal one including the ``floor`` read from the
-    committed WP1 provenance.
+    ``levels`` and ``pairs`` are dict rows keyed by the declared column tuples; ``temporal``
+    carries the ``floor`` read from the committed WP1 provenance.
     """
 
     dataset_root: str
@@ -132,9 +138,8 @@ class BurstLadder(ValueModel):
         ]:
             raise ValueError("every level must appear exactly once, in input order")
         for columns, rows in ((LEVEL_COLUMNS, self.levels), (PAIR_COLUMNS, self.pairs)):
-            for row in rows:
-                if tuple(row) != columns:
-                    raise ValueError("a row must carry exactly the declared columns")
+            if any(tuple(row) != columns for row in rows):
+                raise ValueError("a row must carry exactly the declared columns")
         if any(b <= a for a, b in itertools.pairwise(row["cycles"] for row in self.levels)):
             raise ValueError("levels must be ordered by increasing cycle count")
         if len(self.pairs) != len(self.levels) * (len(self.levels) - 1) // 2:
@@ -146,61 +151,32 @@ class BurstLadder(ValueModel):
         return self
 
 
-def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
-    """Every ``burst_len`` manifest row, ordered by cycles then path.
-
-    The ladder is bound to the WP0 manifest, never to a filename list: the files compared are
-    the ones the inventory decoded, and each row's ``source_sha256`` is the content identity
-    :func:`_read_level` re-checks against the bytes. Refuses a missing manifest, no rows, a
-    repeated path, an undecoded row, an unusable cycle count or two rows with one count.
-    """
-
-    def cycles_of(row: Mapping[str, str]) -> int:
-        cell = (row.get("burst_length") or "").strip()
-        try:
-            cycles = int(cell)
-        except ValueError:
-            raise BurstLadderError(
-                f"{row.get('relative_path')}: manifest burst_length={cell!r} in "
-                f"{manifest_path} is not an integer cycle count"
-            ) from None
-        if cycles < 1:
-            raise BurstLadderError(f"{row.get('relative_path')}: burst_length={cell!r} <= 0")
-        return cycles
-
-    path = Path(manifest_path)
+def _cycles_of(row: Mapping[str, str], manifest_path: Path) -> int:
+    """The row's decoded cycle count, refused unless it is a positive integer."""
+    cell = (row.get("burst_length") or "").strip()
     try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise BurstLadderError(f"cannot read the manifest {path}: {exc}") from exc
-    selected = [
-        row for row in csv.DictReader(text.splitlines()) if (row.get("axis") or "") == AXIS
-    ]
-    if not selected:
+        cycles = int(cell)
+    except ValueError:
         raise BurstLadderError(
-            f"manifest {path} holds no {AXIS} rows; the burst ladder is selected from the WP0 "
-            "inventory, never from a filename list"
-        )
-    paths = [(row.get("relative_path") or "").strip() for row in selected]
-    for relative, row in zip(paths, selected):
-        if not relative or paths.count(relative) != 1:
-            raise BurstLadderError(
-                f"manifest {path} must hold exactly one path-bearing row at {relative!r}"
-            )
-        if row.get("decode_error"):
-            raise BurstLadderError(
-                f"{relative}: decode_error={row['decode_error']!r}; a ladder must be selected "
-                "from decoded recordings"
-            )
-        cycles_of(row)
-    ordered = sorted(selected, key=lambda row: (cycles_of(row), row["relative_path"]))
-    for first, second in itertools.pairwise(ordered):
-        if cycles_of(first) == cycles_of(second):
-            raise BurstLadderError(
-                f"{first['relative_path']} and {second['relative_path']} carry the same cycle "
-                f"count {cycles_of(first)}; a ladder needs one level per cycle count"
-            )
-    return tuple(ordered)
+            f"{row.get('relative_path')}: manifest burst_length={cell!r} in {manifest_path} is "
+            "not an integer cycle count"
+        ) from None
+    if cycles < 1:
+        raise BurstLadderError(f"{row.get('relative_path')}: burst_length={cell!r} <= 0")
+    return cycles
+
+
+def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
+    """Every ``burst_len`` manifest row, ordered by decoded cycle count then path.
+
+    The ladder is bound to the WP0 manifest, never to a filename list: the selection, the ordering
+    and the refusals are the shared axis-input layer's, driven with this axis's key.
+    """
+    path = Path(manifest_path)
+    return grid.select_axis_rows(
+        path, axis=AXIS, ladder_label="burst",
+        order_key=lambda row: _cycles_of(row, path), order_label="cycle count",
+    )
 
 
 def _read_level(
@@ -208,224 +184,72 @@ def _read_level(
 ) -> tuple[LevelInput, np.ndarray, np.ndarray, np.ndarray]:
     """Decode one manifest-selected level, returning ``(entry, values, time_s, depths)``.
 
-    The ``(profiles, gates)`` array is in ``mm/s`` with its two axes. Refuses a missing file,
-    bytes that do not reproduce the recorded SHA-256, a payload that is not one
-    axial-velocity channel, a gate grid that is not the instrument's uniform increasing grid
-    at the recorded pitch, and any re-checked cell that disagrees with the decoded value.
+    The entry is the manifest-bound WP1 record the temporal estimator takes, and every check on
+    the arrays is the shared axis-input layer's, against :data:`VERIFIED_CELLS`.
     """
-    relative = row.get("relative_path") or ""
-    path = dataset_root / relative
-    if not relative or not path.is_file():
-        raise BurstLadderError(f"manifest row {relative!r} is not a file at {path}")
-    actual = grid.sha256_file(path)
-    recorded = (row.get("source_sha256") or "").strip()
-    if recorded != actual:
-        raise BurstLadderError(
-            f"source sha256 mismatch for {relative}: manifest records {recorded!r}, file hashes "
-            f"to {actual!r}"
-        )
-    recording = load(path).recording
-    if len(recording.streams) != 1:
-        raise BurstLadderError(
-            f"{relative}: expected one channel stream, found {len(recording.streams)}"
-        )
-    stream = recording.streams[0]
-    values = np.asarray(stream.data.values, dtype=float)
-    time_s = np.asarray(stream.data.time_s, dtype=float)
-    depths = np.asarray(stream.data.gate_depths_mm, dtype=float)
-    if recording.source_asset.content_sha256 != actual:
-        raise BurstLadderError(
-            f"{relative}: the reader's content hash "
-            f"{recording.source_asset.content_sha256!r} is not the file hash {actual!r}"
-        )
-    if stream.descriptor.unit != "mm/s" or values.ndim != 2:
-        raise BurstLadderError(
-            f"{relative}: expected a 2-D axial-velocity array in mm/s, got {values.ndim}-D in "
-            f"{stream.descriptor.unit!r}"
-        )
-    if np.count_nonzero(np.isnan(values)):
-        raise BurstLadderError(f"{relative}: the velocity array carries NaNs")
-    config = stream.config
-    observed: dict[str, object] = {
-        "profiles": int(values.shape[0]), "gates": int(values.shape[1]),
-        "duration_s": float(time_s[-1] - time_s[0]), "resolution_mm": config.resolution_mm,
-        "prf_period_us": 1e6 / float(config.pulse_repetition_freq_hz),
-        "burst_length": config.burst_length,
-        "emissions_per_profile": config.emissions_per_profile,
-        "emit_power": config.emit_power, "sensitivity": config.sensitivity,
-        "tgc_mode": config.tgc_mode,
-    }
-    for cell, decoded in observed.items():
-        if (row.get(cell) or "") != inventory.format_cell(decoded):
-            raise BurstLadderError(
-                f"{relative}: manifest {cell}={row.get(cell)!r} does not match the decoded "
-                f"{cell}={inventory.format_cell(decoded)!r}; the comparison must not run on a "
-                "stale inventory"
-            )
-    steps = np.diff(depths)
-    pitch = float(steps.mean()) if depths.size > 1 else 0.0
-    if depths.size < 2 or not np.all(steps > 0.0) or pitch <= 0.0:
-        raise BurstLadderError(
-            f"{relative}: the gate depths must strictly increase across >= 2 gates, got "
-            f"{depths.size} gate(s)"
-        )
-    if float(np.abs(steps - pitch).max()) > grid.GRID_UNIFORMITY_RTOL * pitch:
-        raise BurstLadderError(
-            f"{relative}: the native gate grid is not uniform around its {pitch:g} mm mean pitch"
-        )
-    if not math.isclose(pitch, float(config.resolution_mm), rel_tol=1e-6):
-        raise BurstLadderError(
-            f"{relative}: the decoded gate pitch {pitch!r} is not the manifest's resolution_mm "
-            f"{config.resolution_mm!r}"
-        )
-    entry = LevelInput(
-        relative_path=relative, axis=row.get("axis") or "", source_sha256=actual,
-        requested_label=row.get("requested_label") or "", profiles=int(values.shape[0]),
-        gates=int(values.shape[1]), duration_s=float(time_s[-1] - time_s[0]),
-        profile_period_s=float((time_s[-1] - time_s[0]) / (time_s.size - 1)),
-        depth_min_mm=float(depths[0]), depth_max_mm=float(np.max(depths)),
-        prf_period_us=float(observed["prf_period_us"]),
-        resolution_mm=float(config.resolution_mm), burst_length=int(config.burst_length),
-        emissions_per_profile=int(config.emissions_per_profile),
-        emit_power=str(config.emit_power), sensitivity=str(config.sensitivity),
-        tgc_mode=str(config.tgc_mode), sound_speed_ms=float(config.sound_speed_ms),
-        velo_max_ms=float(config.velo_max_ms),
+    level = grid.read_decoded_level(Path(dataset_root), row, cells=VERIFIED_CELLS)
+    observed, config = level.observed, level.config
+    return (
+        LevelInput(
+            relative_path=level.relative_path, axis=level.axis,
+            requested_label=level.requested_label, source_sha256=level.source_sha256,
+            profiles=int(level.values.shape[0]), gates=int(level.values.shape[1]),
+            duration_s=float(observed["duration_s"]),
+            profile_period_s=float(observed["duration_s"] / (level.time_s.size - 1)),
+            depth_min_mm=float(observed["depth_min_mm"]),
+            depth_max_mm=float(observed["depth_max_mm"]),
+            prf_period_us=float(observed["prf_period_us"]),
+            resolution_mm=float(config.resolution_mm), burst_length=int(config.burst_length),
+            emissions_per_profile=int(config.emissions_per_profile),
+            emit_power=str(config.emit_power), sensitivity=str(config.sensitivity),
+            tgc_mode=str(config.tgc_mode), sound_speed_ms=float(config.sound_speed_ms),
+            velo_max_ms=float(config.velo_max_ms),
+        ),
+        level.values,
+        level.time_s,
+        level.depths,
     )
-    return entry, values, time_s, depths
 
 
 def _require_clean_ofat(entries: Sequence[LevelInput]) -> None:
     """Refuse a ladder where a setting other than the burst length moved.
 
-    Decoded settings are compared, never folder names (plan §2).
+    Decoded settings are compared, never folder names (plan §2): the shared audit, against
+    :data:`COUPLED_SETTINGS`.
     """
-    for entry in entries[1:]:
-        moved = sorted(
-            setting for setting in COUPLED_SETTINGS
-            if getattr(entry, setting) != getattr(entries[0], setting)
-        )
-        if moved:
-            raise BurstLadderError(
-                f"{entries[0].relative_path} and {entry.relative_path} are not a burst-length "
-                f"OFAT ladder: {moved} also differ"
-            )
-
-
-def _psd_summary(frequency_hz, density, band: tuple[float, float]) -> dict[str, float]:
-    """The bandwidth summary of one ensemble PSD inside ``band``: the power-weighted mean
-    frequency (``centroid_hz``), the RMS spread about it and the share of in-band power above
-    :data:`PSD_HF_ABOVE_HZ`. Refuses a band that carries no power.
-    """
-    frequency = np.asarray(frequency_hz, dtype=float)
-    values = np.asarray(density, dtype=float)
-    inside = (frequency >= band[0]) & (frequency <= band[1])
-    frequencies, densities = frequency[inside], values[inside]
-    total = float(densities.sum())
-    if not math.isfinite(total) or total <= 0.0:
-        raise BurstLadderError(f"the ensemble PSD carries no power in {band} Hz")
-    centroid = float((frequencies * densities).sum() / total)
-    return {
-        "centroid_hz": centroid,
-        "bandwidth_hz": float(
-            np.sqrt(((frequencies - centroid) ** 2 * densities).sum() / total)
-        ),
-        "hf_share": float(densities[frequencies > PSD_HF_ABOVE_HZ].sum() / total),
-    }
-
-
-def _temporal_floor(envelope_path: Path, manifest_sha256: str) -> dict[str, object]:
-    """Read the temporal repeat floor from the committed WP1 provenance curves.
-
-    The WP1 document already records the matched temporal grid and both recordings' ensemble
-    ACF and PSD. This re-checks that it was generated against *this* manifest and summarises
-    both files with the same :func:`_psd_summary` the burst levels use, so their difference is
-    comparable to a difference across the ladder. Refuses a missing document, one from another
-    manifest, or one without two temporal series.
-    """
-    path = Path(envelope_path)
-    try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        raise BurstLadderError(f"cannot read the WP1 envelope {path}: {exc}") from exc
-    recorded = str(((document.get("manifest") or {}).get("sha256")) or "")
-    if recorded != manifest_sha256:
-        raise BurstLadderError(
-            f"the WP1 envelope {path} records manifest {recorded or '<none>'}, the ladder is "
-            f"built from {manifest_sha256}; the floor must come from the same inventory"
-        )
-    temporal = document.get("views", {}).get("temporal") or {}
-    series = temporal.get("series") or []
-    if len(series) != 2:
-        raise BurstLadderError(
-            f"the WP1 envelope {path} records {len(series)} temporal series; the floor needs two"
-        )
-    summaries = [
-        _psd_summary(item["psd"]["frequency_hz"], item["psd"]["mean_mm2_s2_per_hz"], PSD_BAND_HZ)
-        for item in series
-    ]
-    lags = [float(item["acf"]["e_folding_lag_s"]) for item in series]
-    floor: dict[str, object] = {
-        "source_path": path.as_posix(), "source_sha256": grid.sha256_file(path),
-        "manifest_sha256": manifest_sha256,
-        "source_paths": [str(item["relative_path"]) for item in series],
-        "source_hashes": [str(item["source_sha256"]) for item in series],
-        "profile_period_s": float(temporal.get("profile_period_s") or 0.0),
-        "band_hz": list(PSD_BAND_HZ),
-        "band_max_abs_level_difference_db": float(
-            temporal.get("band_max_abs_level_difference_db") or 0.0
-        ),
-        "e_folding_lag_s": lags, "e_folding_lag_difference_s": abs(lags[0] - lags[1]),
-        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
-    }
-    for name in ("hf_share", "centroid_hz", "bandwidth_hz"):
-        pair = [float(item[name]) for item in summaries]
-        floor[name] = pair
-        floor[f"{name}_difference"] = abs(pair[0] - pair[1])
-    return floor
+    grid.require_clean_ofat(entries, COUPLED_SETTINGS, axis_label="burst-length")
 
 
 def level_row(
-    entry: LevelInput,
-    values: np.ndarray,
-    time_s: np.ndarray,
-    depths: np.ndarray,
-    series: wp1.TemporalSeries,
-    *,
-    window_s: float,
-    support: tuple[float, float],
+    entry: LevelInput, metrics: grid.LevelMetrics, series: wp1.TemporalSeries
 ) -> dict[str, object]:
     """One level's row: the common-duration window on its own native grid.
 
-    Every distributional metric uses the common window and the gates inside the common support;
-    the spatial metrics use that supported native grid, before any alignment; the temporal
-    metrics are the level's own full-record ensemble ACF/PSD inside the band. Refuses fewer
-    than two gates in the support, where the spatial metrics are undefined.
+    The distributional and spatial metrics are the shared metric layer's, on the supported native
+    grid and before any alignment; the temporal ones summarise the level's own full-record
+    ensemble ACF/PSD with the same shared band summary the WP1 floor uses.
     """
-    view = grid.window(values, time_s, window_s)
-    mask = grid.in_support(depths, support)
-    supported_gates = int(np.count_nonzero(mask))
-    if supported_gates < 2:
-        raise BurstLadderError(
-            f"{entry.relative_path}: {supported_gates} gate(s) inside the common support "
-            f"[{support[0]:g}, {support[1]:g}] mm; the spatial metrics need two"
-        )
-    means = wp1.gate_metrics(view)["mean"][mask]
-    supported = view[:, mask]
-    gradient = grid.spatial_gradient(depths[mask], means)
-    correlation = grid.correlation_length(depths[mask], means)
-    psd = _psd_summary(series.frequency_hz, series.psd_mean_mm2_s2_per_hz, PSD_BAND_HZ)
+    psd = grid.psd_band_summary(
+        series.frequency_hz, series.psd_mean_mm2_s2_per_hz, PSD_BAND_HZ,
+        hf_above_hz=PSD_HF_ABOVE_HZ,
+    )
     return {
         "axis": entry.axis, "relative_path": entry.relative_path,
         "requested_label": entry.requested_label, "cycles": entry.burst_length,
-        "profiles_window": int(view.shape[0]), "gates_in_support": supported_gates,
-        "pitch_mm": entry.resolution_mm, "mean_mm_s": float(means.mean()),
-        "robust_spread_mm_s": float(np.percentile(means, 75.0) - np.percentile(means, 25.0)),
-        "rms_mm_s": float(np.sqrt(np.mean(np.square(supported)))),
-        "zero_fraction": float(np.count_nonzero(supported == 0.0) / supported.size),
-        "gradient_median_abs_mm_s_per_mm": gradient.median_abs_mm_s_per_mm,
-        "gradient_max_abs_mm_s_per_mm": gradient.max_abs_mm_s_per_mm,
-        "correlation_length_mm": correlation.length_mm,
-        "correlation_length_over_pitch": correlation.length_mm / entry.resolution_mm,
+        "profiles_window": metrics.profiles_window,
+        "gates_in_support": metrics.supported_gates,
+        "pitch_mm": entry.resolution_mm, "mean_mm_s": float(metrics.means.mean()),
+        "robust_spread_mm_s": float(
+            np.percentile(metrics.means, 75.0) - np.percentile(metrics.means, 25.0)
+        ),
+        "rms_mm_s": float(np.sqrt(np.mean(np.square(metrics.supported)))),
+        "zero_fraction": float(
+            np.count_nonzero(metrics.supported == 0.0) / metrics.supported.size
+        ),
+        "gradient_median_abs_mm_s_per_mm": metrics.gradient.median_abs_mm_s_per_mm,
+        "gradient_max_abs_mm_s_per_mm": metrics.gradient.max_abs_mm_s_per_mm,
+        "correlation_length_mm": metrics.correlation.length_mm,
+        "correlation_length_over_pitch": metrics.correlation.length_mm / entry.resolution_mm,
         "acf_e_folding_lag_s": series.acf_e_folding_lag_s,
         "psd_hf_share": psd["hf_share"], "psd_centroid_hz": psd["centroid_hz"],
         "psd_bandwidth_hz": psd["bandwidth_hz"],
@@ -444,11 +268,8 @@ def pair_row(
     """Compare a short-burst level with a longer-burst one on the shared knots.
 
     Each ``*_profile`` is ``(gate_depths_mm, per-gate time mean)``. The knots are the *longer*
-    pulse's native gate depths inside the common support — the smoother participant's own grid
-    — so their spacing is never finer than that grid; the shorter profile is sampled there by
-    the shared nearest-native-gate rule (no interpolation) and the difference is the signed
-    ``short - long`` per-gate time mean in mm/s. Refuses arguments that are not (short, long),
-    fewer than two knots, or a constant shorter profile.
+    pulse's native gate depths inside the common support; the shorter profile is sampled there by
+    the shared nearest-native-gate rule, and the difference is the signed ``short - long`` mm/s.
     """
     if short["cycles"] >= long["cycles"]:
         raise BurstLadderError(
@@ -457,35 +278,24 @@ def pair_row(
         )
     short_depths, short_mean = (np.asarray(part, dtype=float) for part in short_profile)
     long_depths, long_mean = (np.asarray(part, dtype=float) for part in long_profile)
-    inside = grid.in_support(long_depths, support)
-    knots = long_depths[inside]
-    if knots.size < 2:
-        raise BurstLadderError(
-            f"{long['relative_path']}: {knots.size} knot(s) inside the common support "
-            f"[{support[0]:g}, {support[1]:g}] mm; a pair needs two"
-        )
-    if float(np.var(short_mean[grid.in_support(short_depths, support)])) == 0.0:
-        raise BurstLadderError(
-            f"{short['relative_path']}: the supported mean profile is constant; the pair "
-            "difference is undefined"
-        )
-    indices = grid.nearest_gate_indices(short_depths, knots)
-    absolute = np.abs(short_mean[indices] - long_mean[inside])
-    flagged = absolute > envelope.value_mm_s
-    worst = int(np.argmax(absolute))
+    aligned = grid.align_on_knots(
+        short_depths, short_mean, long_depths, long_mean, path=str(short["relative_path"]),
+        support=support, threshold_mm_s=envelope.value_mm_s,
+    )
+    absolute, worst = aligned.absolute, aligned.worst
     return {
         "axis": short["axis"], "short_path": short["relative_path"],
         "short_label": short["requested_label"], "short_cycles": short["cycles"],
         "long_path": long["relative_path"], "long_label": long["requested_label"],
         "long_cycles": long["cycles"], "cycle_gap": long["cycles"] - short["cycles"],
-        "knots": int(knots.size), "knot_spacing_mm": long["pitch_mm"],
-        "max_knot_offset_mm": float(np.abs(short_depths[indices] - knots).max()),
+        "knots": int(aligned.knots.size), "knot_spacing_mm": long["pitch_mm"],
+        "max_knot_offset_mm": aligned.offset_mm,
         "mean_abs_difference_mm_s": float(absolute.mean()),
         "max_abs_difference_mm_s": float(absolute[worst]),
-        "max_abs_difference_depth_mm": float(knots[worst]),
-        "knots_above_envelope": int(np.count_nonzero(flagged)),
+        "max_abs_difference_depth_mm": float(aligned.knots[worst]),
+        "knots_above_envelope": int(np.count_nonzero(aligned.flagged)),
         "max_abs_difference_over_envelope": float(absolute[worst] / envelope.value_mm_s),
-        "depth_ranges_above_envelope_mm": grid.depth_ranges(knots, flagged),
+        "depth_ranges_above_envelope_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
         "correlation_length_change_mm": long["correlation_length_mm"]
         - short["correlation_length_mm"],
         "gradient_median_change_mm_s_per_mm": long["gradient_median_abs_mm_s_per_mm"]
@@ -498,50 +308,8 @@ def pair_row(
     }
 
 
-def largest_step(
-    metric: str, cycles: Sequence[int], values: Sequence[float]
-) -> dict[str, object]:
-    """The largest one-step change of one metric along the cycle ladder (the discrete knee).
-
-    Returns that step's cycle count, the value there, the signed change, the net change over
-    the ladder and whether the sequence falls at every step. No smoothing is applied and no
-    knee is claimed for a sequence that does not fall.
-    """
-    counts = [int(value) for value in cycles]
-    numbers = [float(value) for value in values]
-    if len(counts) < 2 or len(numbers) != len(counts):
-        raise BurstLadderError(
-            f"a knee needs at least two levels with one value each, got {len(counts)} cycle "
-            f"counts and {len(numbers)} values"
-        )
-    steps = [b - a for a, b in itertools.pairwise(numbers)]
-    worst = max(range(len(steps)), key=lambda index: (abs(steps[index]), -index))
-    return {
-        "metric": metric, "cycles": counts, "knee_cycles": counts[worst + 1],
-        "knee_value": numbers[worst + 1], "knee_change": steps[worst],
-        "net_change": numbers[-1] - numbers[0],
-        "monotone_decreasing": bool(all(step < 0.0 for step in steps)),
-    }
-
-
-def knees(levels: Sequence[Mapping[str, object]]) -> dict[str, dict[str, object]]:
-    """One knee per dropout/variance/smoothing/bandwidth metric, with its statement."""
-    counts = [row["cycles"] for row in levels]
-    reported: dict[str, dict[str, object]] = {}
-    for name in KNEE_METRICS:
-        row = largest_step(name, counts, [level[name] for level in levels])
-        outcome = "falls" if row["monotone_decreasing"] else "does not fall monotonically"
-        row["statement"] = (
-            f"{name}: largest one-step change {row['knee_change']:+.4g} across {counts[0]}-"
-            f"{counts[-1]} cycles, reached at {row['knee_cycles']} cycles (value "
-            f"{row['knee_value']:.4g}), net {row['net_change']:+.4g}; the sequence {outcome}"
-        )
-        reported[name] = row
-    return reported
-
-
 def _focus_pair(levels: Sequence[Mapping[str, object]]) -> tuple[str, str]:
-    """The two levels the plan's 18-versus-20 question names, selected by cycle count.
+    """The two levels the plan's 18-versus-20 question names, by decoded cycle count.
 
     Refuses a ladder without exactly one level at either named count.
     """
@@ -565,23 +333,26 @@ def _build(
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
     envelope = grid.read_envelope(Path(envelope_path), manifest_sha256)
     decoded = [_read_level(Path(dataset_root), row) for row in rows]
-    _require_clean_ofat([entry for entry, *_ in decoded])
-    period = wp1.shared_profile_period_s([entry.profile_period_s for entry, *_ in decoded])
-    revolutions = wp1.common_revolution_count([entry.duration_s for entry, *_ in decoded])
+    entries = [entry for entry, *_ in decoded]
+    _require_clean_ofat(entries)
+    period = wp1.shared_profile_period_s([entry.profile_period_s for entry in entries])
+    revolutions = wp1.common_revolution_count([entry.duration_s for entry in entries])
     window_s = revolutions * wp1.NOMINAL_REVOLUTION_S
-    support = grid.common_support(
-        [(entry.depth_min_mm, entry.depth_max_mm) for entry, *_ in decoded]
-    )
-    series = [wp1.temporal_series(entry, values, period) for entry, values, _t, _d in decoded]
-    levels = tuple(
-        level_row(entry, values, time_s, depths, own, window_s=window_s, support=support)
-        for (entry, values, time_s, depths), own in zip(decoded, series, strict=True)
-    )
-    profiles = {
-        entry.relative_path: (
-            depths, wp1.gate_metrics(grid.window(values, time_s, window_s))["mean"]
+    support = grid.common_support([(entry.depth_min_mm, entry.depth_max_mm) for entry in entries])
+    metrics = [
+        grid.level_metrics(
+            entry.relative_path, values, time_s, depths, window_s=window_s, support=support
         )
         for entry, values, time_s, depths in decoded
+    ]
+    series = [wp1.temporal_series(entry, values, period) for entry, values, _t, _d in decoded]
+    levels = tuple(
+        level_row(entry, own, own_series)
+        for (entry, *_rest), own, own_series in zip(decoded, metrics, series, strict=True)
+    )
+    profiles = {
+        entry.relative_path: (depths, own.per_gate["mean"])
+        for (entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
     }
     pairs = tuple(
         pair_row(
@@ -590,28 +361,25 @@ def _build(
         )
         for short, long in itertools.combinations(levels, 2)
     )
-    floor = _temporal_floor(Path(envelope_path), manifest_sha256)
-    periods = [entry.profile_period_s for entry, *_ in decoded]
-    windowed = {
-        entry.relative_path: int(
-            np.count_nonzero(time_s <= time_s[0] + window_s + grid.TOLERANCE_S)
-        )
-        for entry, _values, time_s, _depths in decoded
+    floor = grid.read_temporal_floor(
+        Path(envelope_path), manifest_sha256, band_hz=PSD_BAND_HZ, hf_above_hz=PSD_HF_ABOVE_HZ
+    )
+    counts = {
+        entry.relative_path: (own.profiles_window, own.supported_gates)
+        for (entry, *_rest), own in zip(decoded, metrics, strict=True)
     }
-    gates = {
-        entry.relative_path: int(np.count_nonzero(grid.in_support(depths, support)))
-        for entry, _values, _time_s, depths in decoded
-    }
+    periods = [entry.profile_period_s for entry in entries]
     model = BurstLadder(
         dataset_root=Path(dataset_root).as_posix(),
         manifest_path=Path(manifest_path).as_posix(), manifest_sha256=manifest_sha256,
         envelope=envelope,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
-        inputs=tuple(entry for entry, *_ in decoded),
+        inputs=tuple(entries),
         common={
             "nominal_rpm": wp1.NOMINAL_RPM, "revolution_s": wp1.NOMINAL_REVOLUTION_S,
             "revolutions": revolutions, "window_s": window_s,
-            "profiles_window": windowed, "gates_in_support": gates,
+            "profiles_window": {path: window for path, (window, _g) in counts.items()},
+            "gates_in_support": {path: gates for path, (_w, gates) in counts.items()},
             "support_min_mm": support[0], "support_max_mm": support[1],
             "levels": len(levels),
         },
@@ -645,18 +413,14 @@ def build_burst_ladder(
 ) -> BurstLadder:
     """Build the WP2 burst ladder from the manifest-selected recordings.
 
-    ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA
-    once (never blocking), and passing the recorded commit reproduces a committed artefact.
-    Refuses a manifest that is missing, unreadable, empty of ``burst_len`` rows, duplicated,
-    undecodable or stale; a WP1 envelope that is missing, bound to another manifest or without
-    its two temporal series; a ladder where a setting other than the burst length moved; and
-    any recording whose settings or grid contradict its row.
+    ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA once
+    (never blocking). A manifest, a WP1 envelope, a coupled setting or a recording that contradicts
+    its row is refused by name before anything is written.
     """
     return _build(dataset_root, Path(manifest_path), Path(envelope_path), analysis_commit)[0]
 
 
-#: Metric definitions, recorded verbatim in the provenance document so the tables cannot be read
-#: without them.
+#: Metric definitions, recorded verbatim in the provenance document (WP0's rule for its tables).
 DEFINITIONS: dict[str, str] = {
     "cycles": "decoded burst length, re-checked against the manifest burst_length cell",
     "robust_spread": "IQR p75 - p25 across supported gates of the per-gate time means",
@@ -730,20 +494,11 @@ def pairs_csv_text(model: BurstLadder) -> str:
     return grid.csv_text(PAIR_COLUMNS, model.pairs)
 
 
-def regeneration_command(model: BurstLadder) -> str:
-    """The exact command that reproduces the committed artefacts byte for byte."""
-    return (
-        ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder "
-        f"--analysis-commit {model.analysis_commit or '<generator commit>'}"
-    )
-
-
 def _findings(model: BurstLadder) -> dict[str, object]:
     """The plan's burst questions answered from the numbers the tables already carry.
 
-    Every statement is composed from those values, so a regeneration says what it wrote.
-    Nothing here is a p-value or a significance claim, and nothing here decides an axis this
-    module does not own.
+    Every statement is composed from those values, so a regeneration says what it wrote. Nothing
+    here is a p-value, a significance claim, or a decision about an axis this module does not own.
     """
     envelope = model.envelope.value_mm_s
     above = [row for row in model.pairs if row["knots_above_envelope"]]
@@ -762,9 +517,8 @@ def _findings(model: BurstLadder) -> dict[str, object]:
     centroids = [row["psd_centroid_hz"] for row in model.levels]
     bandwidths = [row["psd_bandwidth_hz"] for row in model.levels]
     cycles = [row["cycles"] for row in model.levels]
-    longest, at_the_longest = model.levels[-1], sum(
-        1 for row in above if {row["short_label"], row["long_label"]} & {"28", "32"}
-    )
+    longest = model.levels[-1]
+    at_the_longest = sum(1 for row in above if {row["short_label"], row["long_label"]} & {"28", "32"})
     return {
         "envelope_gate": {
             "pairs": len(model.pairs), "envelope_mm_s": envelope,
@@ -803,16 +557,14 @@ def _findings(model: BurstLadder) -> dict[str, object]:
         "focus_window_16_20": {
             "cycles": list(FOCUS_WINDOW_CYCLES), "pairs": len(window),
             "pairs_above_envelope": window_above,
-            "max_ratio_to_envelope": max(
-                row["max_abs_difference_over_envelope"] for row in window
-            ),
+            "max_ratio_to_envelope": max(row["max_abs_difference_over_envelope"] for row in window),
             "statement": (
                 f"16-20-cycle region: {len(window)} unordered pairs, {window_above} of them "
                 "clearing the envelope, so no level differs from another by more than "
                 "repeat-plus-drift there."
             ),
         },
-        "knees": knees(model.levels),
+        "knees": grid.knees(model.levels, KNEE_METRICS),
         "temporal_bandwidth": {
             "band_hz": list(PSD_BAND_HZ), "hf_above_hz": PSD_HF_ABOVE_HZ,
             "levels": len(model.levels), "segment_profiles": model.temporal["segment_profiles"],
@@ -859,15 +611,15 @@ def _findings(model: BurstLadder) -> dict[str, object]:
         "limitations": [
             (
                 f"The only repeat bounds repeatability plus uncontrolled drift ({envelope:.4g} "
-                f"mm/s per gate, {model.envelope.metric}): the levels are separate recordings "
-                "with no acquisition order, so a smaller effect cannot be separated from drift "
-                "and a larger one could still be drift or one recording rather than the burst "
-                "length. No level is replicated."
+                f"mm/s per gate, {model.envelope.metric}): the levels are separate recordings with "
+                "no acquisition order, so a smaller effect cannot be separated from drift and a "
+                "larger one could still be drift or one recording rather than the burst length. No "
+                "level is replicated."
             ),
             (
-                f"Temporal metrics are bounded by the same-settings WP1 pair through its "
-                f"committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), "
-                "and one pair cannot estimate that floor's own spread."
+                f"Temporal metrics are bounded by the same-settings WP1 pair through its committed "
+                f"curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), and one pair "
+                "cannot estimate that floor's own spread."
             ),
             (
                 "The file carries the velocity-time index only: the 500-RPM setpoint is a marker "
@@ -875,9 +627,9 @@ def _findings(model: BurstLadder) -> dict[str, object]:
                 "separates a burst effect from aliased temporal noise or one recording's dropout."
             ),
             (
-                "This module owns the burst-length axis only: resolution, PRF, TGC, emitting "
-                "power and emissions per profile are neither analysed nor decided here, and the "
-                "pitch x burst interaction is not estimable from this dataset."
+                "This module owns the burst-length axis only: resolution, PRF, TGC, emitting power "
+                "and emissions per profile are neither analysed nor decided here, and the pitch x "
+                "burst interaction is not estimable from this dataset."
             ),
         ],
     }
@@ -886,8 +638,8 @@ def _findings(model: BurstLadder) -> dict[str, object]:
 def figure_caption(model: BurstLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
-    It names the ladder, both time views, the common support, the alignment rule, the envelope
-    and the temporal floor with their sources, and the 18-versus-20 numbers.
+    It names the ladder, both time views, the common support, the alignment rule, the envelope and
+    the temporal floor with their sources, and the 18-versus-20 numbers.
     """
     findings = _findings(model)
     focus, temporal = findings["focus_18_vs_20"], findings["temporal_bandwidth"]
@@ -923,8 +675,7 @@ def figure_caption(model: BurstLadder) -> str:
 def provenance_document(model: BurstLadder) -> dict[str, object]:
     """The machine-readable record beside the tables and the figure.
 
-    Keys are inserted in a fixed order and floats keep their shortest round-trip form, so a
-    regeneration from the same commit is byte-identical.
+    Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
     """
     common, temporal = model.common, model.temporal
     return {
@@ -1025,26 +776,16 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
             "panels": list(FIGURE_PANELS),
         },
         "regeneration": {
-            "command": regeneration_command(model),
+            "command": (
+                ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder "
+                f"--analysis-commit {model.analysis_commit or '<generator commit>'}"
+            ),
             "note": (
                 "pass the recorded analysis_commit to reproduce these artefacts byte for byte; "
                 "the bare command records the current HEAD"
             ),
         },
     }
-
-
-def _focus_series(
-    model: BurstLadder, profiles: Mapping[str, tuple[np.ndarray, np.ndarray]]
-) -> tuple[np.ndarray, np.ndarray]:
-    """The focus pair's difference at the shared knots, as ``(knots, difference)``."""
-    short_depths, short_mean = profiles[model.focus_pair[0]]
-    long_depths, long_mean = profiles[model.focus_pair[1]]
-    inside = grid.in_support(
-        long_depths, (model.common["support_min_mm"], model.common["support_max_mm"])
-    )
-    knots = long_depths[inside]
-    return knots, short_mean[grid.nearest_gate_indices(short_depths, knots)] - long_mean[inside]
 
 
 def render_figure(
@@ -1056,85 +797,72 @@ def render_figure(
 ) -> Path:
     """Write the two-panel burst figure, deterministically, and return it.
 
-    Panel 1 carries dropout and variance against cycle count with the plan's 16-20-cycle region
-    shaded; panel 2 carries the plan's own 18-versus-20 difference at the shared knots against
-    the WP1 envelope band. The caption is part of the image.
+    Panel 1 is dropout and variance against cycle count with the plan's 16-20-cycle region shaded;
+    panel 2 the plan's own 18-versus-20 difference at the shared knots against the WP1 envelope band.
+    The frame is the shared writer's, so this module owns the panels only.
     """
-    import matplotlib
-
-    matplotlib.use("Agg", force=True)
-    from matplotlib import pyplot as plt
-
     envelope = model.envelope.value_mm_s
-    figure, (dropout_ax, focus_ax) = plt.subplots(1, 2, figsize=(12.0, 5.4), dpi=dpi)
     cycles = np.asarray([row["cycles"] for row in model.levels])
-
-    dropout_ax.axvspan(*FOCUS_WINDOW_CYCLES, color="#ffd8a8", alpha=0.55, linewidth=0)
-    dropout_ax.plot(
-        cycles, [100.0 * row["zero_fraction"] for row in model.levels], "o-", color="#d62728",
-        linewidth=1.4, markersize=4, label="dropout: samples equal to 0 [%]",
-    )
-    dropout_ax.set_xlabel("decoded burst length [cycles]")
-    dropout_ax.set_ylabel("dropout [%]")
-    dropout_ax.grid(alpha=0.2)
-    variance_ax = dropout_ax.twinx()
-    variance_ax.plot(
-        cycles, [row["robust_spread_mm_s"] for row in model.levels], "s--", color="#1f77b4",
-        linewidth=1.2, markersize=3.4, label="robust spread (IQR) [mm/s]",
-    )
-    variance_ax.plot(
-        cycles, [row["rms_mm_s"] for row in model.levels], "^:", color="#2ca02c", linewidth=1.2,
-        markersize=3.4, label="RMS about zero [mm/s]",
-    )
-    variance_ax.set_ylabel("spread / RMS [mm/s]")
-    dropout_ax.legend(loc="upper left", fontsize=6.2, framealpha=0.9)
-    variance_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
-
     focus = next(
         row for row in model.pairs if (row["short_path"], row["long_path"]) == model.focus_pair
     )
-    short_depths, short_mean = profiles[model.focus_pair[0]]
-    long_depths, long_mean = profiles[model.focus_pair[1]]
-    inside = grid.in_support(long_depths, (common_min := model.common["support_min_mm"],
-                                          model.common["support_max_mm"]))
-    knots = long_depths[inside]
-    difference = short_mean[grid.nearest_gate_indices(short_depths, knots)] - long_mean[inside]
-    focus_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.25, linewidth=0)
-    for sign in (-1.0, 1.0):
-        focus_ax.axvline(sign * envelope, color="#555555", linewidth=0.8, linestyle=":")
-    focus_ax.plot(
-        difference, knots, color="#111111", linewidth=1.2,
-        label="18 - 20 cycles per-gate mean at the shared knots",
-    )
-    del common_min
-    focus_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
-    focus_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope")
-    focus_ax.set_ylabel("depth from transducer face [mm]")
-    focus_ax.invert_yaxis()
-    focus_ax.set_title(
-        f"plan's pair: {focus['knots']} knots, max |diff| "
-        f"{focus['max_abs_difference_mm_s']:.4g} mm/s = "
-        f"{focus['max_abs_difference_over_envelope']:.3g} envelope",
-        fontsize=9.5,
-    )
-    focus_ax.grid(alpha=0.2)
-    focus_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
 
-    figure.suptitle(
-        f"WP2 burst-length ladder — {len(model.levels)} cycle counts against the WP1 "
-        "repeatability bound",
-        fontsize=11, y=0.975,
+    def draw(axes: Sequence[object]) -> None:
+        dropout_ax, focus_ax = axes
+        dropout_ax.axvspan(*FOCUS_WINDOW_CYCLES, color="#ffd8a8", alpha=0.55, linewidth=0)
+        dropout_ax.plot(
+            cycles, [100.0 * row["zero_fraction"] for row in model.levels], "o-", color="#d62728",
+            linewidth=1.4, markersize=4, label="dropout: samples equal to 0 [%]",
+        )
+        dropout_ax.set_xlabel("decoded burst length [cycles]")
+        dropout_ax.set_ylabel("dropout [%]")
+        dropout_ax.grid(alpha=0.2)
+        variance_ax = dropout_ax.twinx()
+        variance_ax.plot(
+            cycles, [row["robust_spread_mm_s"] for row in model.levels], "s--", color="#1f77b4",
+            linewidth=1.2, markersize=3.4, label="robust spread (IQR) [mm/s]",
+        )
+        variance_ax.plot(
+            cycles, [row["rms_mm_s"] for row in model.levels], "^:", color="#2ca02c",
+            linewidth=1.2, markersize=3.4, label="RMS about zero [mm/s]",
+        )
+        variance_ax.set_ylabel("spread / RMS [mm/s]")
+        dropout_ax.legend(loc="upper left", fontsize=6.2, framealpha=0.9)
+        variance_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
+
+        short_depths, short_mean = profiles[model.focus_pair[0]]
+        long_depths, long_mean = profiles[model.focus_pair[1]]
+        support_mm = (model.common["support_min_mm"], model.common["support_max_mm"])
+        inside = grid.in_support(long_depths, support_mm)
+        knots = long_depths[inside]
+        difference = (
+            short_mean[grid.nearest_gate_indices(short_depths, knots)] - long_mean[inside]
+        )
+        focus_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.25, linewidth=0)
+        for sign in (-1.0, 1.0):
+            focus_ax.axvline(sign * envelope, color="#555555", linewidth=0.8, linestyle=":")
+        focus_ax.plot(
+            difference, knots, color="#111111", linewidth=1.2,
+            label="18 - 20 cycles per-gate mean at the shared knots",
+        )
+        focus_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
+        focus_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope")
+        focus_ax.set_ylabel("depth from transducer face [mm]")
+        focus_ax.invert_yaxis()
+        focus_ax.set_title(
+            f"plan's pair: {focus['knots']} knots, max |diff| "
+            f"{focus['max_abs_difference_mm_s']:.4g} mm/s = "
+            f"{focus['max_abs_difference_over_envelope']:.3g} envelope", fontsize=9.5,
+        )
+        focus_ax.grid(alpha=0.2)
+        focus_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
+
+    return grid.panel_figure(
+        "WP2 burst-length ladder — "
+        f"{len(model.levels)} cycle counts against the WP1 repeatability bound",
+        figure_caption(model), draw, path, caption_width=150, dpi=dpi,
+        adjust={"top": 0.80, "bottom": 0.32, "wspace": 0.30},
     )
-    figure.text(
-        0.008, 0.008, grid.wrap_caption(figure_caption(model), width=150), fontsize=5.2,
-        va="bottom", ha="left", family="monospace",
-    )
-    figure.subplots_adjust(top=0.80, bottom=0.32, wspace=0.30)
-    target = Path(path)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    figure.savefig(target, dpi=dpi)
-    plt.close(figure)
-    return target
 
 
 def write_burst_ladder(
@@ -1147,22 +875,19 @@ def write_burst_ladder(
 ) -> BurstLadder:
     """Build the ladder and write the four reviewer-visible artefacts.
 
-    The three text artefacts use LF endings and the figure is written deterministically, so two
-    runs on the same inputs and commit produce identical bytes; nothing is written when the
-    build raises.
+    The text artefacts use LF endings and the figure is written deterministically, so two runs on
+    the same inputs and commit produce identical bytes; nothing is written when the build raises.
     """
     directory = Path(report_dir)
     manifest = (
-        Path(manifest_path) if manifest_path is not None
-        else directory / inventory.MANIFEST_NAME
+        Path(manifest_path) if manifest_path is not None else directory / inventory.MANIFEST_NAME
     )
     envelope = Path(envelope_path) if envelope_path is not None else directory / ENVELOPE_NAME
     model, profiles = _build(dataset_root, manifest, envelope, analysis_commit)
-    directory.mkdir(parents=True, exist_ok=True)
-    (directory / LEVELS_NAME).write_text(levels_csv_text(model), encoding="utf-8", newline="")
-    (directory / PAIRS_NAME).write_text(pairs_csv_text(model), encoding="utf-8", newline="")
-    (directory / PROVENANCE_NAME).write_text(
-        json.dumps(provenance_document(model), indent=2) + "\n", encoding="utf-8", newline=""
-    )
+    grid.write_text_artefacts(directory, {
+        LEVELS_NAME: levels_csv_text(model),
+        PAIRS_NAME: pairs_csv_text(model),
+        PROVENANCE_NAME: json.dumps(provenance_document(model), indent=2) + "\n",
+    })
     render_figure(model, profiles, directory / FIGURES_DIRNAME / FIGURE_NAME)
     return model
