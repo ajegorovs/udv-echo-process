@@ -247,6 +247,14 @@ def project_rows(tree: Mapping) -> list[dict]:
         itself inside another carrying the same x is dropped first: it is the outer panel's own
         furniture, and a control beside it is the outer panel's child (the cursor info box's
         caption-less interior panel is the case this rule exists for).
+
+        **Ties are broken by vertical distance, and the residue is asserted.** The two full-width
+        bands have the same width, so a control no narrow panel carries on x — the strip's own
+        hidden `Remove current block` at `[746,423,917,443]`, outside the 453 px rect but laid out
+        against that panel — admits both bands as candidates. The panel it is laid out against is
+        the one **nearest in y** (measured: that control's parent is the strip panel, 0 px away
+        against 378 px for the menubar and 583 px for the status band), so that is the tie-break,
+        and a tie the rule still cannot settle is an assertion rather than a silent choice.
         """
         cx, _cy = _centre(one)
         outer = [
@@ -260,7 +268,28 @@ def project_rows(tree: Mapping) -> list[dict]:
                 for other in panels
             )
         ]
-        return min(outer, key=lambda wide: rect[wide][2] - rect[wide][0], default=None)
+        if not outer:
+            return None
+        narrowest = min(rect[wide][2] - rect[wide][0] for wide in outer)
+        finalists = [wide for wide in outer if rect[wide][2] - rect[wide][0] == narrowest]
+        if len(finalists) > 1:
+            # The full-width bands tie on width: the panel the control is laid out against is the
+            # one nearest it vertically (the docstring's measured case).
+            _cx, cy = _centre(one)
+            gap = {
+                wide: 0
+                if rect[wide][1] <= cy <= rect[wide][3]
+                else min(abs(cy - rect[wide][1]), abs(cy - rect[wide][3]))
+                for wide in finalists
+            }
+            closest = min(gap.values())
+            finalists = [wide for wide in finalists if gap[wide] == closest]
+        # The uniqueness guard: a residue the rule cannot settle is the *inference* deciding the
+        # tree rather than the fixture, and a fixture re-baselined by its own harness proves
+        # nothing. The assertion the narrowest-by-area rule carried, kept for the rule that
+        # replaced it.
+        assert len(finalists) == 1, f"a control at {one} has no unique panel above it"
+        return finalists[0]
 
     def panel_for(one: tuple[int, int, int, int]) -> int | None:
         """The panel a control belongs to: the one holding its centre, else the x-span rule."""

@@ -465,10 +465,21 @@ def test_a_measured_warning_form_is_the_warning_surface(
         "'some panel hosts a button'"
     )
     kind = classify_surface(roles)
-    assert kind is not SurfaceKind.MEASUREMENT
-    assert kind is not SurfaceKind.DIALOG
-    assert kind is not SurfaceKind.POPUP
-    assert kind is not SurfaceKind.REPLACEMENT
+    # The kind is **pinned**, not merely excluded (the adversarial review's reading of §4): the kind
+    # vocabulary has no ``WARNING`` member and the plan keeps it that way, so a warning screen is one
+    # of the overlay group's surfaces and reads ``OVERLAY`` — the *identity* and the blocking surface
+    # are what name it as a warning. The four exclusions the plan's pass list states are implied by
+    # this one assertion, and asserted as a set here after it so a future kind cannot slip in.
+    assert kind is SurfaceKind.OVERLAY, (
+        f"a warning screen reads {kind!r}: a warning guard is over the measurement screen, and the "
+        "kind vocabulary carries no WARNING member (plan §3) — the warning is the identity"
+    )
+    assert kind not in {
+        SurfaceKind.MEASUREMENT,
+        SurfaceKind.DIALOG,
+        SurfaceKind.POPUP,
+        SurfaceKind.REPLACEMENT,
+    }
     clause = first_surface_clause_of(roles)
     assert "warning" in clause.lower(), (
         f"the surface's first clause does not name the warning surface: {clause!r}"
