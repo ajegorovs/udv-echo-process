@@ -406,8 +406,94 @@ anything that steals focus, then rerun.
 
 That refusal moved no cursor, opened no popup or dialog and pressed nothing, and the post-run status
 confirmed that nothing was stranded. It proves the foreground guard on the final head, not the V2
-clean path: the successful V2 device claim remains pinned to `7de790c`, while the review fixes in
-`00fd6a0` are cloud-verified until this exact bracket completes with UDOP already in front.
+clean path: the successful V2 device claim remained pinned to `7de790c` until the bracket was rerun with
+the application already in front — which it was, on 2026-09-19, on the merge head (see the next
+subsection).
+
+### 2026-09-19 — the V2 bracket on the merge head, and the `89` rule read off the pixels
+
+Application: **`UDOP DOP3010.43`**, instrument (non-simulation) variant, 1920x1080, maximized,
+main hwnd **3935144** — the installation the two readings above came from. Revision under test:
+**`master` at `5a36b40`**, the merge head of `#9` → `#8` → `#10` → `#11`. `src/` at that revision is
+byte-identical to `b007278` (the merges carried no source changes; `git diff b007278 5a36b40` is three
+documentation files), so the recipe under test is the refactor's final head.
+
+**The bracket, in order, and the one field that differs across it.** The three commands of the V2
+procedure, with `PROBE_TIMEOUT_S=240` on the probe:
+
+```bash
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status   # 11:22:24, exit=0
+PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py                        # 11:22:33 → 11:22:47, exit=0
+PROBE_TIMEOUT_S=150 ./tools/live/dispatch.sh -m udv_echo_process.cli acquire status   # 11:22:51, exit=0
+```
+
+The dispatcher `rm -f`s `outputs/live/task-<slug>.log` before each run, so the two status readings share
+one path and the second one overwrites the first; the pre-run text is therefore **copied aside
+immediately** (`outputs/live/sittingA-pre-status.log`, and the gesture's JSON as
+`sittingA-gesture.json.log`, the shot's as `sittingA-dialog-shot.log`). The pre- and post-run readings
+are **identical field for field except `cursor`** — `[1874, 0]` → `[453, 0]`, the position the gesture
+left the pointer at. That is the honest shape of this bracket, and it is one field stricter than the
+`7de790c` run: that one's two readings differed only in the `running` header line, because its cursor
+happened to be put back where it started. Nothing else in either text moves: 44 visible controls in 4
+panels, strip `ready` / 3 buttons / no slider, `overlay: None`, `layout_note: None`,
+`layout_shape_reasons: []`, `process_mode: instrument`, `layout_evidence` naming the fast-access panel
+`present_complete`, no menu popup, 0 dialog panel(s).
+
+**`is_foreground: true`** in the pre-run reading — the precondition the earlier final-head attempt
+lacked, and the reason that attempt refused before the hover. This time the guard was satisfied and the
+gesture ran.
+
+| what the run reported | the reading |
+|---|---|
+| popup at start / the bar | `popup_open_at_start: false`; the menubar resolves to exactly `["Parameters"]` |
+| the screen's own mode | `manual`, `source: read` (`snapshot.mode`); `process_mode` `instrument`, `source: read`; 44 visible controls in 4 panels, fast-access panel `present_complete` |
+| the surface the gesture opened | the `Operating parameters` dialog: `TSp_Panel` at `(655, 364, 1282, 748)`, 627x384, **21 direct children** (`read_path_children: 21`), classes `{TComboBox, TSp_Button, TSp_Value_Button}` — the measured dialog the committed fixture `tests/data/udop-parameters-dialog-tree.json` carries. Resolved live and agreeing with the driver's own report (`rect_from_driver`, `dialog_shot` run, same rect) |
+| the dialog's channel | `'1'` (`dialog_reading.channel`) = the run's configured channel (`UDV_CHANNEL` unset → `DEFAULT_CHANNEL = 1`); this run wrote no channel |
+| the three dialog-only facts | `burst_length 4`, `first_gate_mm 1`, `sound_speed_ms 1480`, all `source: read`, `reason: ""`, `dialog_reading_readable: true`. The same snapshot **without** the reading handed over reports all three `unreadable` with the reason — the routing that makes the read meaningful, measured both ways in one run |
+| the framed facts | the parameter column resolved **7 of 7** roles: `4000` US Frequency, `600` PRF, `50` gates, `1.850` resolution, `1.00` velocity scale factor, `20` emissions/profile, `0` Doppler angle |
+| the close | `dialog_closed: true` **and** the screen's own answer to it: the post-run status reads `0 dialog panel(s)` and no menu popup. The key alone is not a screen check (see the caveat under *What these records may not claim*), which is why the bracket's second status read is the evidence and not the key |
+| error keys | **none**: no `popup_error`, `resolve_error`, `dialog_error`, `dialog_close_error` or `read_path_error`; no key names a stranded popup, and the only keys matching an error pattern in the whole report are the four reasons that *should* be there (`max_profiles_per_block`, and the three dialog-only fields in the snapshot that was not handed a reading) |
+| the cap | `max_profiles_per_block` is still `unreadable` — *the block cap is an application Preference* — so **V5 stays unproven**; this run does not touch it |
+
+**V2 passes on the merge head**: the popup opens off the real-cursor hover on the anchor the V0 session
+proved positionally, the topmost entry is the one taken (proved by its outcome — a lower entry is
+`Default parameters`, the assisted mode — and refuted by the screen, which still reads `manual` with the
+fast-access panel complete), the dialog's own channel agrees with the run's, the close is the dialog's
+safe end, and the run's only presses are that entry and that left button. The device-pending item — *the
+final-head foregrounded V2 rerun* — is closed by this record. V1, V3, V4, V5, V6, V7, V8 remain
+device-pending; V4's four-button map and V5's cap stay the critical ones.
+
+**The `89` rule, confirmed on the pixels (sitting A's second item).** The same run's dialog walk read
+**four `TSp_Edit` controls carrying `89`** — at `[987,604,1057,620]` inside the `TSp_Value_Button` whose
+combo reads `1.776`, at `[1187,526,1257,542]` under the `medium` combo, at `[786,492,856,508]` under the
+`4` combo, and at `[786,530,856,546]` under the `Medium` combo. `dialog_shot.py`, run a minute later
+(same rect, `frame_stable: true`, `non_blank: true`, 43 distinct greys), photographed that dialog; each
+of the four areas magnified x6 reads **`1.776` / `4` / `medium` / `Medium`** and nothing anywhere reads
+`89` — the crop is committed as `ui-crops/ui-89-rule-dialog-rows.png` (UI-OVERLAY-24) so the reviewer can
+check it without this machine. The two sidebar combos behave the same way in the same screen read: their
+`TSp_Edit`s read `89` at `[14,354,74,370]` and `[14,379,74,395]` while the combos above them paint
+`medium` and `Medium` (the combo's inner `Edit` child reads the painted value). **So the rule holds live:
+an edit's tree text is not evidence of a displayed parameter unless it is painted** — and the four
+dialog edits the index could "neither confirm nor refute" are now confirmed as buffer values, not
+painted ones.
+
+**The monitor side, and what the tree does *not* carry (sitting A's third item, partly).** Of the 44
+visible controls, **two** start right of x=690: the monitor's own `TDop_Plot` `[200,65,1910,1006]` and
+the bottom bar's `Exit` `[1840,1025,1900,1045]`. The plot has no children, and no control anywhere on the
+monitor side carries text. In this state (no cursor placed, so no info box up) there is therefore no
+app-side readout to read — but that is not yet the full question, because the info box was not up: a
+window this application spawns over the plot need not be a descendant of `TMain_Scr` at all, and the
+main-window walk can only ever see descendants. The item is **sharpened rather than closed**: the next
+read wants a **top-level window enumeration** (`EnumWindows`) with the box up, not another main-tree
+dump. That is one operator action (show cursors, click a depth) and a small probe, and it belongs with
+V4's sitting, which already asks the operator to reach a state by hand.
+
+**Evidence.** `outputs/live/` is git-ignored, so the readings above are quoted here rather than
+committed (this page's own rule), together with the run times and the exact three commands; the four
+logs of this sitting are `sittingA-pre-status.log` (11:22:24), `sittingA-gesture.json.log` (11:22:33,
+`=== exit=0 ===`), `sittingA-post-status.log` (11:22:51) and `sittingA-dialog-shot.log` (11:23:43), plus
+`dialog-full.png` / `dialog.png` from the same moment as the shot. The only committed artefact is the
+crop, because it is the one piece of evidence a reviewer cannot reconstruct by rerunning the commands.
 
 ## What these records may **not** claim
 

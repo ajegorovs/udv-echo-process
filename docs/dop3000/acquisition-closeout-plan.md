@@ -146,6 +146,21 @@ dismisses one, ledger B20) costs one item rather than a sitting.
 identical field for field and the probe reports no stranded popup and no error key — the same pass shape as
 the successful `7de790c` run, now with UDOP in front.
 
+**Outcome, 2026-09-19.** Item 1 **passed on the merge head** (`5a36b40`, `is_foreground: true`, so the
+guard the earlier attempt tripped on was satisfied): the two status readings are identical field for field
+**except the `cursor` field the gesture moved** (`[1874,0]` → `[453,0]`), the dialog resolved live at
+`(655,364,1282,748)` with 21 direct children and its own channel `1`, the three dialog-only fields read
+`source: read` while the same snapshot *not* handed a reading calls them `unreadable`, no error key names
+anything, no popup was stranded, and the close is answered by the screen (`0 dialog panel(s)`). Item 2
+**confirmed the `89` rule on the pixels**: the four dialog edits read `89` while their combos paint
+`1.776` / `4` / `medium` / `Medium` (crop `UI-OVERLAY-24`), and two sidebar combos do the same in the same
+screen read. Item 3 **sharpened rather than closed**: with no cursor placed the monitor side carries
+exactly two controls — the plot `[200,65,1910,1006]` and the bottom bar's `Exit` — and no text anywhere,
+but the info box was not up in this sitting, and a window this application spawns over the plot need not
+descend from `TMain_Scr`, so the read that settles it is a **top-level window enumeration** with the box
+up; it joins sitting B, which already asks the operator to reach a state by hand. V5's cap is untouched by
+all of it. Full record: `device-verification.md`, *2026-09-19 — the V2 bracket on the merge head*.
+
 ### Sitting B — V4, the four-button strip role map (the critical one, operator-driven)
 
 The operator reaches the **block-held / grown-strip** state by their normal workflow; **the automation
