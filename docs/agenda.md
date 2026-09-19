@@ -193,6 +193,21 @@ profiles in one fixture and 4193–4927 in another.
 
 ## Active work — DOP3010 acquisition: stabilize before extending
 
+> **Outstanding — next on this workstream (2026-09-19).** The panel-identity change is merged
+> ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17); planned and corrected in
+> [`dop3000/identity-classification-plan.md`](dop3000/identity-classification-plan.md)) and **none of
+> its §5 device ladder has been run**. That ladder is the item to do next, operator-attended and
+> read-only, in its own order: the clean screen, V3 with `Define TGC` open (the overlay clause first
+> and no input sent), the cursor info box, a grown strip, a raised warning guard, and only then the
+> bounded cleanup probe. **Nothing in that change is device-verified**, and two readings want the
+> operator's own eyes: the grown **370 / 502 / 551 px strip rows are pressable again** (they were
+> refused only because their panel was misread as a dialog, or because the cursor info box made the
+> screen report a menu — the plan's §3 ratifies that), and a **warning screen reports the identity
+> `WARNING` while its `SurfaceKind` reads `overlay`**. Criteria, pass conditions and the stop
+> condition are the plan's §5; sitting D's writes (`ensure_channel`, V5's two compiles, V6, V7/V8)
+> stay behind it, ordered in
+> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md).
+
 An independent repository-wide review of the acquisition subsystem was assessed
 against the checkout on 2026-09-18: **all eight findings verified, the direction
 accepted, the refactor roadmap accepted only in part**. Decision record, review
