@@ -21,6 +21,29 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
+**Resume here — end of the 2026-09-19 session.** Two **documents-only** pull requests carry everything that
+session produced and they are **not on `master` yet**: [PR #12](https://github.com/ajegorovs/udv-echo-process/pull/12)
+(sitting A — the V2 bracket on the merge head, the `89` rule read off the pixels, the cursor info box
+answered) stacked under [PR #13](https://github.com/ajegorovs/udv-echo-process/pull/13) (sitting B — the
+strip's whole state tree, the block/buffer model, the two destructive guards, the misdiagnosis chain). **Merge
+`#12` first, then retarget `#13` onto `master` *before* deleting `#12`'s branch** — deleting a merged base
+branch closes its dependents, which is the landing lesson recorded in §1.1. Until that happens, `master`'s copy
+of `device-verification.md` does not carry either sitting's record.
+
+Then, in this order:
+
+1. **Sitting C** (§3) — the refusals, still device-pending and none attempted: V3's `Define TGC` overlay, V1's
+   sidebar preference, V5's declaration-only mismatch.
+2. **The identity fix this session made concrete.** The strip panel and *both* destructive guards are
+   misclassified by one chain: the `>400 px` dialog predicate admits the strip (551/502 px) and **misses both
+   guards** (392 px), the strip resolver's decoy panel moves with the panel set (info box → guard → nothing at
+   all), and the popup test fires **only when the other two resolve**. Naming the guard's and the box's
+   identity **once** is what the record argues for; three symptom patches is what it argues against. This needs
+   a plan before code — §9.1's stop condition still binds the architecture.
+3. **Sitting D** — the writes (`ensure_channel`, V6's six-point campaign on the instrument, V7/V8), unchanged.
+4. **The one operator question** that unblocks the experiment: is
+   `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment?
+
 ## 1. Where the work stands
 
 The three pull requests that carried everything not on `master` **landed on 2026-09-19**, in the order §2
