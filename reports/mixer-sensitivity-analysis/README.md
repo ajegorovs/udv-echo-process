@@ -33,6 +33,17 @@ Expected outputs, in work-plan order:
 | `figures/energy-*` | WP2 | not produced here: the higher-sensitivity/echo-energy diagnostic this screen asks for |
 | `decision-table.md` | WP3 | candidate-level keep/defer/replace/diagnostic verdicts |
 
+### Delivery status
+
+| Work package | State | Where |
+|---|---|---|
+| WP0 — inventory and reader surface | delivered | `manifest.csv`, `qc-summary.json` |
+| WP1 — the reference-repeatability bound | delivered | `reference-repeat.csv`, `reference-repeat.provenance.json`, `figures/reference-repeat.png` |
+| WP2 — resolution, burst, PRF, TGC and emitting power | delivered, all four axes | the `resolution-*`, `burst-*`, `prf-*` and `gain-power-*` rows above |
+| WP3 — the decision table | delivered | [`decision-table.md`](decision-table.md) — hand-written (nothing regenerates it), bound by SHA-256 to the 22 artifacts above and to the source hashes of `manifest.csv` |
+| WP4 — the first measured augmentation | delivered as design, no acquisition executed | [`docs/dop3000/sparse-parameter-set.md`](../../docs/dop3000/sparse-parameter-set.md) §3 — 7 unique new conditions (8 with the conditional one) and 3 reference repeats per run, no Cartesian product |
+| `figures/energy-*` | not produced here | the higher-sensitivity/echo-energy diagnostic the gain/power screen asks for: no committed file carries an echo or energy channel, so there is nothing to plot yet |
+
 The WP0 artefacts are regenerated with the committed reader and nothing else:
 
 ```text

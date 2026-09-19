@@ -5,6 +5,12 @@
 > existing 40 velocity recordings have been analysed. No new instrument acquisition belongs to this
 > plan until the existing-data decision table is complete.
 >
+> **State — WP0, WP1, WP2, WP3 and WP4 are delivered.** The inventory, the repeatability bound, the four
+> axis analyses, the decision table
+> ([`reports/mixer-sensitivity-analysis/decision-table.md`](../../reports/mixer-sensitivity-analysis/decision-table.md))
+> and the evidence-gated first augmentation (`sparse-parameter-set.md` §2-§3) all sit in this PR, which
+> runs no new acquisition: the augmentation is a design, and the limitations §7 lists still hold.
+>
 > **Dataset:**
 > [`data/mixer-sensitivity-analysis/4MHz/0500RPM/001/`](../../data/mixer-sensitivity-analysis/4MHz/0500RPM/001/)
 > — 40 committed `.BDD` files: resolution 13, burst length 12, PRF 5, TGC 8 and
@@ -153,6 +159,12 @@ Deliver `decision-table.md`, one row per candidate condition, with:
 Gate: update `sparse-parameter-set.md` from this table. Do not retain a level merely because the
 instrument accepts it.
 
+**Delivered.** `reports/mixer-sensitivity-analysis/decision-table.md` — seven columns exactly as named
+above, one row per candidate condition of the sparse-set draft plus explicit rows for the four introduced
+pitch x burst corner conditions and the reference control. It is hand-written and bound by SHA-256 to the 22
+committed artifacts it reads. The gate is met by `sparse-parameter-set.md` §2-§3: the 17-condition candidate
+list is replaced by 7 unique new conditions, and no level is retained for feasibility reasons.
+
 ### WP4 — Design only the missing measurements
 
 The provisional augmentation, subject to WP3, is:
@@ -165,6 +177,13 @@ The provisional augmentation, subject to WP3, is:
 - PRF 250 µs only if the committed 400-µs data show inadequate headroom.
 
 Gate: every new acquisition closes a named information gap; no Cartesian product.
+
+**Delivered as design** in `sparse-parameter-set.md` §3, with the provisional list decided condition by
+condition: the four crossing corners are kept (the interaction is not estimable from the committed set), 8 and
+64 are kept with 128 conditional on a named measured trigger, the one higher-sensitivity diagnostic is
+requested together with the echo/energy channel and is the only condition no writer can execute today, the
+controls are three per run, and **PRF 250 µs is not acquired** — measured, at 400 µs, as inadequate on
+neither count. Burst 18 cycles replaces 20 on an explicit cost rationale, not a claimed effect.
 
 ## 5. Implementation order and commits
 
@@ -204,3 +223,13 @@ This plan is complete when:
   and no pitch × burst interaction in the old set;
 - the next campaign contains only the independent references and missing-information measurements
   justified by the decision table.
+
+**Where each condition stands.** The 22 generated artifacts are committed and reproduce byte for byte from
+the commands their provenance records (hash list and commands in the report README); the decision table is
+hand-written, so it is bound to those artifacts by SHA-256 rather than regenerated, and the table's own
+Binding section carries both. PR #23's 17-condition Stage-1 list and its ten review questions are replaced by
+`sparse-parameter-set.md` §2-§3: 7 unique new conditions (8 with the conditional `E128`), 3 reference repeats
+per run, and the automation list §6 — every one of them traced to a row of the decision table. The limitations
+above are not resolved by this work and are not claimed to be: they are the reason the augmentation exists and
+they are restated in the decision table's closing section, in `sparse-parameter-set.md` §8 and in each axis
+module's own `findings.limitations`.
