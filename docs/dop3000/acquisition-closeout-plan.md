@@ -228,6 +228,13 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   pixels alone**, and the store state is the only one whose strip resolves. The step's prediction was ten of
   eleven exact (the miss was the slider's left end), and the block-held state reproduced a **third** time
   byte-identically (`+0 / -0 / moved 0 of 273`).
+- **The strip's state tree is closed, all six states read** (12:34): `[Clear all]`'s guard answered takes the
+  screen back to the **reference** state — resolver `view 'ready'` with three buttons, panel
+  `[343,414,695,454]`, no slider painted, the third button relabelled back to `Clear and restart`, the band's
+  counter restarted from `0` (a new block 1 opened immediately) and **44 visible controls in 4 panels with
+  `layout_note: None`** — the screen's first clean reading since the sitting began. So the loop closes onto the
+  reference, the counter is the buffer's extent (it fell to `16381` on a removal and to `0` on a clear), and
+  both destructive exits are gated by the one reused guard panel that the dialog predicate misses.
 - **The removal semantics, measured** (12:29): the guard's `Confirm` drops the **selected** block from the
   buffer, the selection falls back one block (combo `3` → `2`), the slider repaints that block's range
   (`4773` … `16381`, `11609`) and **the profile counter follows the buffer** — `26771` before, `16381` after —

@@ -301,6 +301,14 @@ need not descend from `TMain_Scr`, so it wants a top-level window enumeration wi
 sitting B. V5's cap is untouched. V4's four-button role map, the refusal paths, and the write path
 (`ensure_channel`, V6) remain device-pending.
 
+**The strip's state tree is closed, same day.** Six states, every one read in one process and every
+transition pressed by the operator: `ready` / `store` / intermediate / block-held / block-held-after-a-removal,
+and back to `ready`. Two destructive exits (`Remove current block`, `Clear all`) share **one** reused guard
+panel whose two messages differ only on the pixels, neither is identified by the dialog predicate, and the
+strip resolver names the guard as the strip in both cases. `Clear all` returns the screen to the reference
+reading (44 controls in 4 panels, no refusal), with the profile counter back to 0 — so the counter is the
+buffer's extent. Full record: `device-verification.md`, *2026-09-19 — the four-button strip, block-held*.
+
 **Sitting B, same day.** The operator reached the block-held state by hand and the map is taken, on the same
 process as sitting A: the grown row is four visible buttons (`Resume` / `Do store` / `Clear and restart` /
 `Remove current block`) **whose slot 1 is two different controls** — the `ready` state's second button is

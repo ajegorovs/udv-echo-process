@@ -895,6 +895,55 @@ while still reporting `view 'unknown'`, `button_count 0`. The layout still calls
 resolver's failure mode is not one thing: it names the info box when that box is up, names the modal when the
 modal is up, and returns nothing when neither is.
 
+### The loop closes: `[Clear all]` + `Confirm` returns the screen to the reference state
+
+The last untested branch is answered, and it closes the tree. The 12:34:23 read after `Confirm`:
+
+| predicted | measured |
+|---|---|
+| the three-button ready shape, panel `[343,414,695,454]` (352x40) | **exactly that** — and the resolver itself says `view 'ready'`, `button_count 3`, `pan_id 3149132`, panel `[343,414,695,454]` |
+| no slider painted | `TSp_Sliding_Bar 3344390` `visible: False`, `has_slider: false` |
+| the third button relabels **back** to `Clear and restart` (138 px) | painted `Clear and restart` at `[537,423,675,443]` — 138 px — and the resolver's own `row_meanings` reads `["pause", "record", "clear_and_restart"]` |
+| `Profile :` → `0` if the counter is the buffer's extent | the band restarted from `0` and reads `Profile : 2596   CH: 1   Block : 1   Memory : Filling` at the read — so the extent model holds, and a **new block 1** is opened immediately |
+| `Show block` → `1` | **wrong**: in this state the combo is **hidden** (`visible: False`) and holds a stale `2`. The ready state shows no `Show block` at all; my prediction assumed the widget stays visible |
+
+And the screen's own reading is clean for the first time since 11:22: **44 visible controls in 4 panels**,
+`layout_note: None`, `layout_shape_reasons: None`, `open_popup: False`, `overlay: None` — i.e. no refusal of
+any kind, the strip resolving as `ready`, and the whole panel set back to the four the reference screen
+carries. The strip's own three handles and rects are the ones measured at 11:22 to the pixel
+(`1574908` `[353,424,432,444]`, `4787852` `[442,424,527,444]`, `1641666` `[537,423,675,443]`), and the two
+children that carry no role in this state (`2821164`, `7867344`) are simply `visible: False`. So the widget's
+loop is a real cycle: every state is reachable, and the destructive exits return to the reference.
+
+### The strip's state tree, as measured
+
+All six states below are **read**, not inferred, each in the same process (`TMain_Scr` hwnd `3935144`), with
+the captions bound to handles by position off the same-moment frame:
+
+| state | row, left to right | panel | slider painted | `Show block` |
+|---|---|---|---|---|
+| `ready` | `Pause` / `Record` / `Clear and restart` | `[343,414,695,454]` 352x40 | no | hidden |
+| `store` | `Resume` / `Do store` / `Clear and restart` | `[343,414,713,537]` 370x123 | yes | `1` |
+| intermediate | `Pause` / `Record` / `Do store` / `Clear and restart` | `[343,414,796,454]` 453x40 | no (present, hidden) | `1`, later `2` |
+| block-held | `Resume` / `Do store` / `Clear and restart` / `Remove current block` | `[343,414,894,537]` 551x123 | yes | `2`, later `3` |
+| block-held after a removal | `Resume` / `Do store` / `Clear all` / `Remove current block` | `[343,414,845,537]` 502x123 | yes | `N-1` |
+| back to `ready` after `Clear all` | `Pause` / `Record` / `Clear and restart` | `[343,414,695,454]` 352x40 | no | hidden |
+
+and the transitions, every one of them **pressed by the operator and measured either side**:
+
+```
+ready --Pause--> store --Resume--> intermediate --Pause--> block-held
+block-held --Remove current block (+Confirm)--> block-held, one block back
+block-held --Clear and restart--> ready
+block-held --Clear all (+Confirm)--> ready, buffer emptied, counter back to 0
+```
+
+Two of the six states carry a **destructive guard** (both the same reused `TSp_Panel 4393476`, distinguishable
+only on the pixels), and neither guard is identified by the `>400 px` dialog predicate while the strip panel
+behind it always is. The pool model survived a real falsification test in this walk — its "exactly one button
+relabels" claim was wrong and is corrected above — and the parts that survived did so on states they were not
+built from, including a state predicted in full before it existed.
+
 ### The removal guard — a blocking modal the `>400 px` predicate does not identify
 
 `[Remove current block]` does not remove anything directly: it raises a **blocking modal**, and until it is
