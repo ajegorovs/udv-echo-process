@@ -301,6 +301,18 @@ need not descend from `TMain_Scr`, so it wants a top-level window enumeration wi
 sitting B. V5's cap is untouched. V4's four-button role map, the refusal paths, and the write path
 (`ensure_channel`, V6) remain device-pending.
 
+**Sitting B, same day.** The operator reached the block-held state by hand and the map is taken, on the same
+process as sitting A: the grown row is four visible buttons (`Resume` / `Do store` / `Clear and restart` /
+`Remove current block`) **whose slot 1 is two different controls** — the `ready` state's second button is
+merely hidden — while slot 0 genuinely relabels; the row does carry a slider (`TSp_Sliding_Bar`, two handles,
+`1513` … `8297`) and a `Show block` combo reading `2`; the two caption-less buttons below it are the
+`Profiles history in second / profile` selector. Two refusals on the state are **safe but misdiagnosed**: the
+strip resolver named *the cursor info box* as the strip, and the layout classifier reported **"a dialog is
+up"** naming the strip's own grown panel — so the `>400 px` predicate admits the strip itself when a block is
+held. The cursor info box is in the tree but its `Depth` / `Velocity` numbers are **paint only**, which closes
+sitting A's third item. The intermediate state (UI-STRIP-03) is photographed, not read: one more read with it
+on screen finishes the map.
+
 Binding outcomes:
 
 - **The acquisition stop condition** (from the review of the batch, now recorded in the plan's

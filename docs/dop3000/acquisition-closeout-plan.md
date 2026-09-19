@@ -181,6 +181,46 @@ observed transition — before the code may gain one. The same visit is the best
 **"two caption-less buttons below the strip"** (`ui-element-index.md`'s outstanding unknown): it wants a
 tree read in the state that paints them, not a photograph, because a camera cannot name a control.
 
+**Outcome, 2026-09-19 — the map exists, and it is not one mechanism.** The operator reached the block-held
+state by hand, left the monitor paused and placed a cursor at 45 mm; the capture ran on the **same process**
+the V2 bracket had read two minutes earlier (hwnd `3935144`), which is what makes the handle comparison below
+a measurement rather than an inference. Nothing on the strip was pressed by the automation.
+
+- **The row is four visible `TSp_Button`s in the strip's own grown panel** (`3149132`, `[343,414,894,537]`,
+  551x123, ten direct children — against the `ready` strip's `[343,414,695,454]`, 352x40): `1574908`
+  `Resume`, `2821164` `Do store`, `1641666` `Clear and restart`, `7867344` `Remove current block`, each
+  caption bound to its handle by position.
+- **Slot 1 is two different controls, not one relabelling** — `4787852` (the `ready` state's second button)
+  is **hidden**, with `2821164` visible in its place — while **slot 0 does relabel** (`1574908`,
+  `Pause` → `Resume`) and slot 2 survives unchanged (`1641666`, moved 18 px right). The row therefore mixes
+  both mechanisms, and `ui-element-index.md`'s finding 20 is corrected accordingly.
+- **The grown row does report a slider**: `TSp_Sliding_Bar 3344390` `[465,449,897,499]`, a direct child of
+  the strip panel, painted as a two-handle range (`1513` … `8297`, `6785` under the track) — with a second,
+  hidden one elsewhere in the tree, so the class alone does not identify it. The combo `1967830`
+  (`Show block`) reading **`2`** is the one app-readable value in the state.
+- **The two caption-less buttons are the `Profiles history in second / profile` selector pair**
+  (`2690436` `[350,467,401,482]`, `1967842` `[409,467,453,482]`, the green tick on `profile`) — that unknown
+  is closed, and the read it needed is the one taken here.
+- **Two false diagnoses on the state, both safe and both wrong.** The strip resolver returned
+  `view: "unknown"`, `button_count: 0` and named **the cursor info box** as the strip (nothing was pressed;
+  the refusal is `d04a88c`'s designed behaviour, but the diagnosis misdirects a caller). And the layout
+  classifier reported **"a dialog is up"**, naming the strip's own grown panel, with the active surface
+  reading `dialog` and **50 visible controls in 5 panels** against the clean 44 in 4 — so the `>400 px`
+  predicate that admits the `Define TGC` overlay admits **the strip itself**, in the state a held block puts
+  the screen in. That is the boundary sitting C was going to inspect for the overlay; it is now a measured
+  fact about the strip, and it is the more important of the two.
+- **The cursor info box is in the tree but its numbers are paint only**: two caption-less panels
+  (`131916` + `131920`), and no control text in any of the process's 46 top-level windows carries a depth or
+  a velocity. Sitting A's third item **closes** on that: the analysis stays post-processing, as §26.11
+  decided, and those two numbers come from pixels or not at all.
+- **Left open by this sitting:** the intermediate state (`Record` → `Pause` → `New acquisition`, the
+  operator's new crop, UI-STRIP-03) was **photographed, not read**, so the map covers `ready` and block-held
+  only — one more read with that state on screen finishes it; and the `STORE` versus `READY`-with-block
+  naming, plus V5's cap, stay this sitting's items.
+
+Full record, with the rects, the handles and the two refusal texts: `device-verification.md`, *2026-09-19 —
+the four-button strip, block-held*.
+
 ### Sitting C — the refusals, three cheap items (~20 min)
 
 1. **V3 — the overlay refusal, with the overlay the refactor is unsure about.** Open `Define TGC` by hand
