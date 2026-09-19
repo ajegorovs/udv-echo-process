@@ -1,7 +1,7 @@
 {
   "artefact": "burst-ladder",
   "axis": "burst_len",
-  "analysis_commit": "fc91881",
+  "analysis_commit": "e5d7f6a",
   "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
   "manifest": {
     "path": "reports/mixer-sensitivity-analysis/manifest.csv",
@@ -692,14 +692,14 @@
   },
   "figure": {
     "path": "figures/burst-ladder.png",
-    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the envelope, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit fc91881 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the envelope, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit e5d7f6a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "dropout (zero fraction) and variance (robust spread, RMS) versus cycle count, with the plan's 16-20-cycle region shaded",
       "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 envelope band"
     ]
   },
   "regeneration": {
-    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit fc91881",
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit e5d7f6a",
     "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
   }
 }
