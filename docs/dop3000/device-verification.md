@@ -1037,6 +1037,26 @@ already assigned a plan before code: an understood overlay is admitted by the di
 absence from the measurement layout is restated as a strip failure. V1 and V5 remain unattempted; the live
 instrument is back on the clean measurement surface and continued acquiring throughout.
 
+### 2026-09-19 — sitting C, V1 passes and the sidebar preference restores cleanly
+
+Starting from the clean post-V3 screen, the operator opened **Preferences -> Options**, unticked only
+`Show fast access parameters panel (not available in assisted mode)`, and closed the dialog. The 12:56:14
+status read pressed nothing and reported 20 visible controls in 3 panels, the same `ready` three-button
+strip, `process_mode: instrument`, active surface `measurement`, and the fast-access panel
+`incomplete`: 0 of 7 roles and 0 rows. Its one layout reason refuses because writes would land on the wrong
+fields. It does **not** call the screen `assisted`, does not substitute another panel and does not resolve a
+write target, so V1's absent-panel refusal passes.
+
+The operator restored the preference by hand. The 12:57:55 read returned to 44 visible controls in 4 panels,
+7 of 7 roles, `present_complete`, no layout reason, popup, dialog or overlay. Against the clean 12:54:02
+post-V3 reading, a literal diff changes only the running timestamp and cursor (`[0,349]` -> `[0,721]`);
+every application field is identical. Evidence:
+`outputs/live/sittingC-v1-panel-absent-status.log` and `sittingC-v1-restored-status.log`, both `exit=0`.
+
+**Outcome:** V1 passes and is no longer device-pending. V3 remains failed-safe pending the identity-fix plan;
+V5 remains unattempted. Acquisition continued throughout, and the application is restored to the clean
+measurement surface.
+
 ## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency
