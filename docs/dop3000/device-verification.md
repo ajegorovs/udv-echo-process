@@ -536,6 +536,27 @@ so the two are not competing for one slot at all. `ui-element-index.md`'s findin
 row relabels its first two buttons") is therefore **wrong in its second half, corrected here**: one control
 relabels, and the rest of the row is a subset of a five-button pool.
 
+### Reproduced exactly, and the transitions observed
+
+After clearing the block, passing through the intermediate state and pressing `Pause`, the operator returned
+to the block-held state and a fourth read was taken (11:59:23). Compared with the 11:41 read by the
+repository's own comparator (`tools/live/compare_reads.py`), it is the **same state, not a similar one**:
+same `TMain_Scr` hwnd `3935144`, same counts (50 visible controls, 5 panels, 273 tree rows), the same ten
+strip-panel children at **identical handles and rects**, the same `Show block` = **`2`**, the same
+`layout_note` naming `((343, 414, 894, 537), 'TSp_Panel')` as a dialog — and **tree delta `+0 / -0 / moved 0
+of 273` common controls**. So neither the state nor either misdiagnosis (the resolver naming `131916`, the
+classifier saying "a dialog is up") is a one-off of one moment: they are what this screen does whenever a
+block is held.
+
+**The transitions, observed by the operator** (nothing pressed by the automation; the three starred states
+are the ones *read*, and the operator's two crops are the ones photographed): from the block-held state,
+`Clear and restart` -> the three-button `Pause` / `Record` / `Clear and restart` row with `Show block` = `1`;
+`Pause` -> the three-button `Resume` / `Do store` / `Clear and restart` row **with the slider up**
+(UI-STRIP-04, cropped only); `Resume` -> the four-button `Pause` / `Record` / `Do store` / `Clear and
+restart` row with nothing painted below it (`*` read at 11:55); `Pause` -> the block-held four-button row
+with the slider (`*` read at 11:41 and again at 11:59). That is the "safe observed transition" V4 asks for as
+its third witness — and it is the operator's; the tree, not the operator, is the witness for the handles.
+
 ### The slider, and where it is
 
 `TSp_Sliding_Bar 3344390`, a **direct child of the strip panel**, painted as a two-handle range over the

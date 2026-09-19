@@ -221,6 +221,11 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   value is **`1`**, i.e. no block held. **Left open:** the fourth combination (UI-STRIP-04, three buttons
   and a slider) is **cropped but not read**, so its handle row is a prediction from the pool; and the
   `STORE` versus `READY`-with-block naming, plus V5's cap, stay this sitting's items.
+- **The block-held state reproduces exactly** (read again at 11:59 after the operator passed through the
+  intermediate state): `compare_reads.py` gives **tree delta `+0 / -0 / moved 0 of 273`**, the same ten strip
+  children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so
+  neither the state nor the wrong diagnoses are one-off. The four transitions between the states are now
+  **observed** by the operator (the third witness V4 wanted), with three of the four states read.
 
 Full record, with the rects, the handles and the two refusal texts: `device-verification.md`, *2026-09-19 —
 the four-button strip, block-held*.
