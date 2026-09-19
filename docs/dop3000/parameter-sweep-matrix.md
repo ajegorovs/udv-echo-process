@@ -310,6 +310,17 @@ gap measured on a real sweep point rather than argued from the manual. The PRF a
 beside it is 400 / 500 / 600 / 700 / 800 µs: 100 µs steps around this point, finer than §5 row 5's
 ×2 ladder.
 
+**And the set it belongs to is committed.** The same visit produced five *sparse* sweeps around
+this reference point — `prf` 400…800 µs, `burst_len` 2…32, `res` on the instrument's rung labels
+`0-2`…`3-0`, `tgc` 0…40 dB and `em_pow` low/high — forty `.BDD` files in all, copied byte for byte
+and listed with their own SHA-256 in
+[`data/mixer-sensitivity-analysis/README.md`](../../data/mixer-sensitivity-analysis/README.md),
+which also carries the rig's geometry (a magnetic pill mixer, water in a 10 x 10 x 5 cm vessel,
+measured ~2.5 cm off centre and ~2.5 cm up, flow circular with corner eddies). The points were
+picked roughly and measured by hand, **none of them has been analysed**, and the manual procedure
+was tedious enough that acquisition automation became the route instead — so the set is raw
+material for this matrix, not evidence about the flow.
+
 Implied by C2 at the velocity baseline: `V_max = 152 mm/s`, quantisation step
 `V_max·s/128 ≈ 1.19 mm/s` at `s = 1`. Measured values sit around 30 % of scale,
 while Ch. 8.1 recommends ≥ 50 % — a first, cheap Tier-0 improvement.
