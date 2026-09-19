@@ -283,6 +283,19 @@ at the final head and compare fields.
 Any changed clean-screen fingerprint, unknown modal, stranded popup, attempted strip press, Confirm press or
 unverified state stops the device session. The operator restores/restarts; automation does not improvise.
 
+**Ran, 2026-09-19 — rungs 1, 2, 4, 5 and 6 pass; rung 3 was not taken.** On the change's final merged
+code (`master` `665573d`, the change `4644abf`) the clean read is identical field for field to the
+pre-change one; `Define TGC` puts the overlay clause first with `layout_evidence` reading `'overlay'`
+where the old head said `'dialog'`; both grown `store` rows resolve as the strip (413x123 three-button,
+551x123 four-button) with no dialog clause; a raised warning guard reports the identity `warning` and
+`blocking_surface` `warning` while its `SurfaceKind` stays `'overlay'`; and the cleanup probe closed
+only the real dialog, with its pre/post status pair identical apart from the cursor. Rung 3 (the cursor
+info box) needs cursors enabled — the operator has them disabled and states the experiment does not use
+the feature — so `CURSOR_INFO` stays verified by the block-held read that first measured the
+mis-resolution plus this change's own tests, **not** by this ladder, and the record says that rather
+than implying a pass. Times, quoted fields, commands and artifact names:
+[`device-verification.md`](device-verification.md), *the identity change's device ladder*.
+
 ## 6. Acceptance and non-goals
 
 Done means one classifier supplies every consumer, all measured counterexamples pass, the full cloud suite is
