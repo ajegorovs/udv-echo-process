@@ -500,7 +500,7 @@ crop, because it is the one piece of evidence a reviewer cannot reconstruct by r
 **Operator-driven, and the automation pressed nothing.** The operator reached the block-held state by hand
 (`Record` -> `Pause` -> `New acquisition` -> `Pause`), left the monitor **paused**, and placed a cursor at
 **45 mm**; later in the same session they cleared the block and reached the intermediate state below. All
-three reads are the **same process**, main hwnd **3935144** — the process the V2 bracket above read two
+three reads are the **same process**, main hwnd **3935144** — the process the V2 bracket above read nineteen
 minutes before the first of them — which is what makes the handle comparison below a measurement rather
 than an inference. Read-only probes only, pressing nothing: `main_geometry.py` (11:22's state was read by
 `w1_fixed_facts.py` for the V2 bracket; 11:41:54 and 11:55:34 are `main_geometry.py` plus its same-moment
@@ -522,7 +522,7 @@ off the frame at x5-x6), and the handles say what the captions alone cannot:
 
 | handle | its caption | `ready` (11:22) | intermediate (11:55) | block-held (11:41) |
 |---|---|---|---|---|
-| `1574908` | `Pause` -> `Resume` — **the one control that relabels** | visible, `[353,424,432,444]` | visible, same rect | visible, `[353,424,444,444]` |
+| `1574908` | `Pause` -> `Resume` — **one of the two controls that relabel** | visible, `[353,424,432,444]` | visible, same rect | visible, `[353,424,444,444]` |
 | `4787852` | `Record` | visible, `[442,424,527,444]` | visible, same rect | **hidden**, same rect |
 | `2821164` | `Do store` | hidden | visible, `[537,423,628,443]` | visible, `[454,423,545,443]` |
 | `1641666` | `Clear and restart` ↔ `Clear all` | visible, `[537,423,675,443]` | visible, `[638,423,776,443]` | visible, `[555,423,693,443]` |
@@ -532,16 +532,17 @@ off the frame at x5-x6), and the handles say what the captions alone cannot:
 and the row's slots shift with it — `Do store` is the second visible button in the block-held state and the
 third in the intermediate one, and the intermediate state shows `Record` **and** `Do store` side by side,
 so the two are not competing for one slot at all. `ui-element-index.md`'s finding 20 ("the strip's grown
-row relabels its first two buttons") is therefore **wrong in its second half, corrected here**: one control
-relabels, and the rest of the row is a subset of a five-button pool.
+row relabels its first two buttons") is therefore **wrong in its second half, corrected here**: two controls
+relabel (`1574908` and `1641666`), and the rest of the row is a subset of a five-button pool.
 
 ### A prediction walk, and the third false positive
 
 The pool model above was then **tested**: from the `Pause` / `Record` / `Clear and restart` state the
 operator was asked to press `Pause`, and the outcome was predicted **before the state existed** — row
 captions, which handles would be visible, their rects, the panel's rect, whether the slider would be
-painted, and the `Show block` value. Six of the seven predictions came out **exact**, and the seventh
-produced the finding below.
+painted, the `Show block` value, whether the dialog predicate would stop firing, and whether anything else
+would take its place. Seven of the eight predictions came out **exact**, and the eighth produced the finding
+below.
 
 | predicted from the model | measured at 12:03:31 | verdict |
 |---|---|---|
@@ -579,8 +580,10 @@ there.
 11:55 states the strip resolver had named the *info box* as the strip (so it was `rec_idx`, excluded from
 the popup test) and the dialog classifier had named the *strip panel* a dialog (so that panel was excluded
 too), leaving no candidate and printing "no menu popup". So **the popup false positive surfaces only once
-the strip and the layout classify correctly** — three readouts, two of which hide each other, and the
-cursor info box's caption-less button sitting at the bottom of the chain. That is the strongest argument in
+the strip and the layout classify correctly *and* the cursor info box is up** — three readouts, two of which
+hide each other, and the cursor info box's caption-less button sitting at the bottom of the chain. The clean
+`ready` read at 12:34:23 pins that third condition: the strip and layout classify correctly there too, but
+`open_popup` is `False` because `131916` / `131918` are hidden. That is the strongest argument in
 this record for fixing the box's *identity* (a panel that hosts one button and paints nothing below the
 strip is not a menu popup, not a dialog and not the strip) rather than each symptom separately.
 
@@ -596,7 +599,7 @@ moved control is the **hidden** `7867344`, sitting at the block-held rect `[703,
 the `[746,423,917,443]` it had at 11:55. So a state's layout pass repositions the buttons it **shows** and
 leaves hidden ones where the last shown pass left them — a detail the pool model predicts and does not need.
 
-**The masking claim, measured across all four reads** — `open_popup`, the strip's own view, and what the
+**The masking claim, measured across five reads** — `open_popup`, the strip's own view, and what the
 layout note calls the screen:
 
 | read | strip's own view | the layout says | `open_popup` |
@@ -605,10 +608,12 @@ layout note calls the screen:
 | 11:55 intermediate (453x40) | `unknown`, 0 buttons | "a dialog is up" | `False` |
 | 12:03 store (370x123) | **`store`, 3 buttons, slider** | **no dialog, 0 dialog panels** | **`True`** |
 | 12:06 intermediate again (453x40) | `unknown`, 0 buttons | "a dialog is up" | `False` |
+| 12:34 `ready` again (352x40) | `ready`, 3 buttons | no dialog, `layout_note: None` | `False` |
 
-Only the state in which the strip **resolves** and the layout **stops** calling the strip a dialog reports a
-popup: the cancellation is now measured rather than argued. And note which state that is — the **store**
-state, the one a run would actually be allowed to proceed in.
+Only a state in which the strip **resolves**, the layout **stops** calling the strip a dialog **and the cursor
+info box is up** reports a popup: the box's caption-less `131918` is the test's only candidate. The
+cancellation is now measured rather than argued. And note which state meets all three conditions — the
+**store** state, the one a run would actually be allowed to proceed in.
 
 ### Reproduced exactly, and the transitions observed
 
@@ -633,18 +638,20 @@ its third witness — and it is the operator's; the tree, not the operator, is t
 
 ### The slider, and where it is
 
-`TSp_Sliding_Bar 3344390`, a **direct child of the strip panel**, painted as a two-handle range over the
-history: `1513` at the left end and `8297` at the right with `6785` under the track in the block-held state,
-the left portion filled green with a red segment at the right end. Its own width is a property of the state
-too (`[465,449,897,499]` block-held, `[465,449,716,499]` intermediate), and in the intermediate state it is
-present and **hidden**. A **second, hidden** `TSp_Sliding_Bar` (`5573538`) sits in a hidden panel
+`TSp_Sliding_Bar 3344390`, a **direct child of the strip panel**, paints a two-handle range over the
+**displayed block's** profiles, not the whole history (settled by *the third step* below): in the opening
+block-held read it showed `1513` at the left end, `8297` at the right and `6785` under the track, with the
+left portion filled green and a red segment at the right end. Its width follows the panel it sits in:
+`[465,449,897,499]` on the 551-px panel, `[465,449,848,499]` on the 502-px panel after removal, and
+`[465,449,716,499]` while hidden in the intermediate state. A **second, hidden** `TSp_Sliding_Bar` (`5573538`) sits in a hidden panel
 `[782,488,1024,541]`, so the class is not unique to the strip: a resolver keying on the class alone would
 find the wrong one.
 
 The combo `1967830` at `[429,506,474,527]` is the `Show block` selector (painted caption `Show block`,
-which is the value that states *which* block: **`2`** block-held, **`1`** in the intermediate state, with a
-hidden sibling `1249874` reading `1` in both). It is the one control here whose *value* is readable without
-pixels; the slider's numbers are paint only.
+which states *which* block is displayed: `1` in the first store/intermediate reads, `2` in the first three
+block-held reads, `3` in the 12:19 block-held read, and `2` after the removal; in `ready` it is hidden and
+holds that stale `2`). It is the one control here whose *value* is readable without pixels; the slider's
+numbers are paint only.
 
 ### The two caption-less buttons below the row — identified
 
@@ -681,8 +688,8 @@ are each a claim about the tree — **only the frame says what is painted.**
    `((343, 414, 894, 537), 'TSp_Panel')` in the block-held state and `((343, 414, 796, 454), 'TSp_Panel')` in
    the intermediate one — the strip panel in both — with the active surface reading **`dialog`** and the
    count 50 visible controls in 5 panels (block-held) / 49 in 5 (intermediate) against the clean 44 in 4. So
-   the canonical `>400 px` dialog predicate admits the strip itself — twice, at two different widths — and
-   PR #10's one deliberately-open item (`_close_any_dialog` could treat an operator-opened panel in that
+   the canonical `>400 px` dialog predicate admits the strip itself — at 551 px, 453 px and, after the
+   removal, 502 px — and PR #10's one deliberately-open item (`_close_any_dialog` could treat an
    class as a dialog) is therefore about **the strip**, in the state a running block leaves the screen in,
    not about an exotic panel. Nothing in this sitting pressed it; what the cleanup path would *do* with it
    is still the open question.
@@ -730,8 +737,10 @@ either one alone.
 | 2 | `4773` … `16381` | 11609 | block-held, 12:11 | slider |
 | 3 | `16382` … `26771` | 10390 | block-held, 12:19 | slider **and** the band's counter |
 
-The ranges are **contiguous over one monotonic profile counter**, so the blocks are sequential partitions of a
-single global buffer — the operator's own reading of the widget, now on the pixels. `Show block` selects
+The ranges are **contiguous over one profile counter while the buffer is retained**, so the blocks are
+sequential partitions of a single global buffer — the operator's own reading of the widget, now on the
+pixels. The counter restarts when the buffer is emptied, as *the removal, answered* establishes. `Show
+block` selects
 *which block's range the slider paints*, and the selected block is not necessarily the one being acquired: at
 12:14 the combo read `2` while the band read `Block : 3`.
 
@@ -740,10 +749,10 @@ single global buffer — the operator's own reading of the widget, now on the pi
 - **`Memory : Filling` stays painted after the pause.** The band reads it while the profile counter is frozen
   at the block's last profile, so the word describes the memory buffer rather than an active acquisition.
   (The step-4 note above read it as the running state's own word — this supersedes that reading.)
-- **The timing disagreement reproduces.** Block 3 grew 3816 profiles between the 12:14:34 read and the pause,
-  i.e. roughly **16 profiles/s** while the band painted `22.4 ms` (44.6/s). That is a second, independent
-  instance of the mismatch recorded in step 4, so it is systematic rather than a single bad reading, and it
-  belongs with the timing check, not with the strip.
+- **The timing disagreement needs a timestamped bracket, not another estimate.** Block 3 grew 3816 profiles
+  between the 12:14:34 read and the pause, while the band painted `22.4 ms` (44.6/s), but the pause itself
+  was not timestamped. This record therefore cannot derive an observed rate from those two facts; the timing
+  question stays with the plan's timing caveat (§16.4), not with the strip.
 
 ### The fourth step, and the block-adding loop
 
@@ -769,7 +778,7 @@ that gives the **block-adding loop** the operator named:
 |---|---|---|---|
 | 1 | `1` … `4772` | 4772 | slider, store state 12:03 |
 | 2 | `4773` … `16381` | 11609 | slider, block-held 12:11 |
-| 3 | `16382` … `22955` and still filling | 6574 so far | bottom band 12:14, starting one past block 2's end |
+| 3 | `16382` … `22955` and still filling | 6574 so far | bottom band 12:14, starting one past block 2's end; completed at `26771` by the 12:19 pause |
 
 **The ranges are contiguous** — each block begins exactly one profile after the previous one ends — and every
 `Resume` after a `Pause` opens a **new** block rather than continuing the old one, which is what "the
@@ -848,11 +857,10 @@ dialog while the 502-px strip panel behind it is (`1 dialog panel(s)`, active su
 [772,490,1164,622]`, `view 'unknown'`, `button_count 0`). Both destructive paths of this widget are therefore
 gated by a modal the screen misplaces.
 
-**Untested, and the next prediction:** whether this `Confirm` empties the buffer — predicted to take the
-screen to the three-button ready shape (panel `[343,414,695,454]`, no slider painted, `Show block` `1`, the
-third button relabelling **back** to `Clear and restart` at 138 px) and the band's `Profile :` to `0` if the
-extent model holds. If `Profile :` stays at `16381`, the counter is not the buffer's extent after all and
-step 6 needs re-reading.
+**Tested at 12:34:23 — every line held but one** (see *the loop closes*): this `Confirm` empties the
+buffer, returns the three-button ready panel `[343,414,695,454]`, hides the slider, relabels the third button
+back to `Clear and restart` at 138 px, and restarts `Profile :` from `0`. The one failed prediction is `Show
+block`: in `ready` its combo is hidden and holds a stale `2`, not a visible `1`.
 
 ### The removal, answered: what `[Confirm]` did
 
@@ -917,7 +925,7 @@ loop is a real cycle: every state is reachable, and the destructive exits return
 
 ### The strip's state tree, as measured
 
-All six states below are **read**, not inferred, each in the same process (`TMain_Scr` hwnd `3935144`), with
+All six rows below (`ready` at both ends) are **read**, not inferred, each in the same process (`TMain_Scr` hwnd `3935144`), with
 the captions bound to handles by position off the same-moment frame:
 
 | state | row, left to right | panel | slider painted | `Show block` |
@@ -946,6 +954,9 @@ built from, including a state predicted in full before it existed.
 
 ### The removal guard — a blocking modal the `>400 px` predicate does not identify
 
+This is the 12:26:06 read that precedes *the removal, answered* above; the 12:29:45 `Confirm` result is
+therefore already known where this chronological insert is read.
+
 `[Remove current block]` does not remove anything directly: it raises a **blocking modal**, and until it is
 answered the strip behind it is unreachable. Read live at 12:26:06, with the modal up:
 
@@ -961,8 +972,8 @@ answered the strip behind it is unreachable. Read live at 12:26:06, with the mod
 reports as "a dialog is up" is `((343, 414, 894, 537), 'TSp_Panel')` — **the strip**, at 551 px. So the screen
 refuses (correctly, nothing is reachable behind a modal) but its *reason* names the strip while the actual
 blocking dialog goes unlisted, and the surface classification reads `dialog` by accident. Together with the
-three earlier data points this pins the predicate's behaviour: **551 px named, 453 px named, 370 px not named,
-and a genuine blocking modal at 392 px not named.**
+other measured widths this pins the predicate's behaviour: **551 px, 453 px and 502 px named (all strip
+panels); 370 px and the 352 px `ready` strip not named; and a genuine blocking modal at 392 px not named.**
 
 **The resolver's decoy moved, and that is new.** In the earlier states the strip resolver's "different button
 panel in the plot's middle band" was the cursor info box; here it is the **modal** (`panel_rect
@@ -976,19 +987,22 @@ app's own words — *"All data contained in the current block will be removed fr
 cost the step-5 prediction attributed to the button ("its profiles may be gone from the buffer, and this UI
 exposes no undo"), so the destructive path is **confirmed as destructive and confirmed to have a safe end**:
 `Cancel` is the left button, the same left/safe convention every other dialog in this corpus follows, and
-`Confirm` is the one that discards. What the removal does to the buffer (does the combo fall back to `N-1`?
-does the profile counter shrink?) is **still unmeasured**, because the modal has not been answered.
+`Confirm` is the one that discards. The 12:29:45 confirmation above then measured the buffer effect: the
+combo fell `3` -> `2` and the profile counter shrank `26771` -> `16381` (*the removal, answered*).
 
 ### Evidence
 
-`outputs/live/` is git-ignored, so the readings are quoted here with their times: the three reads are kept
-beside each other as `keep/main-geometry-2026-09-19-blockheld.json` (11:41:54) and
+`outputs/live/` is git-ignored, so the readings are quoted here with their times. The opening reads are kept
+as `keep/main-geometry-2026-09-19-blockheld.json` (11:41:54) and
 `keep/main-geometry-2026-09-19-intermediate.json` (11:55:34), with `top-level-windows-blockheld.log`
-(11:43:40) and the `ready` state's row from the V2 bracket's own gesture log (11:22:33) — all `exit=0`. The
-same-moment frames are `main-geometry-full.png` (two of them, 11:41 and 11:55) and
-`top-level-windows-full-a.png` (`stable: true`, `non_blank: true`). Committed artefacts: the operator's
-**two new strip crops** (`overlay-record-stop-new-acquisition.png` = UI-STRIP-03,
-`overlay-pause.png` = UI-STRIP-04) and the measured rects above.
+(11:43:40) and the `ready` state's row from the V2 bracket's own gesture log (11:22:33) — all `exit=0`.
+The later named snapshots are `blockheld-repeat`, `pause3`, `step2`, `blockheld-3`, `step4`, `step5`,
+`remove-warning`, `after-removal`, `clearall-warning` and `after-clearall` under `keep/main-geometry-2026-09-19-*.json`;
+together they cover the 11:59:23 through 12:34:23 reads quoted above. The three `compare_reads.py` results
+are quoted beside the pairs they compare; same-moment frames supplied the painted-only captions and values.
+Committed artefacts are the operator's strip crops (`overlay-record-stop-new-acquisition.png` = UI-STRIP-03,
+`overlay-pause.png` = UI-STRIP-04), both warning crops (`warning-remove-current-block.png` and
+`warning-clear-all.png`), and the measured rects above.
 
 ## What these records may **not** claim
 
