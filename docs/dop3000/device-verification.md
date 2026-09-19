@@ -585,6 +585,32 @@ cursor info box's caption-less button sitting at the bottom of the chain. That i
 this record for fixing the box's *identity* (a panel that hosts one button and paints nothing below the
 strip is not a menu popup, not a dialog and not the strip) rather than each symptom separately.
 
+### The second step, predicted first — 7 of 7, and the masking claim measured
+
+From the store state the operator was asked to press `Resume`, with the prediction written in advance: the
+four-button row `Pause` / `Record` / `Do store` / `Clear and restart` on handles `1574908` / `4787852`
+(visible again) / `2821164` / `1641666` at `[353,424,432,444]`, `[442,424,527,444]`, `[537,423,628,443]`,
+`[638,423,776,443]`; panel `[343,414,796,454]` (453x40); the slider **hidden**; nothing painted below the
+row; `Show block` `1`. The 12:06:51 read matches **on every line**, the slider's `visible: false` included,
+and against the 11:55 read of the same state `compare_reads.py` gives **`+0 / -0 / moved 1 of 273`**: the one
+moved control is the **hidden** `7867344`, sitting at the block-held rect `[703,423,874,443]` here instead of
+the `[746,423,917,443]` it had at 11:55. So a state's layout pass repositions the buttons it **shows** and
+leaves hidden ones where the last shown pass left them — a detail the pool model predicts and does not need.
+
+**The masking claim, measured across all four reads** — `open_popup`, the strip's own view, and what the
+layout note calls the screen:
+
+| read | strip's own view | the layout says | `open_popup` |
+|---|---|---|---|
+| 11:41 block-held (551x123) | `unknown`, 0 buttons | "a dialog is up" | `False` |
+| 11:55 intermediate (453x40) | `unknown`, 0 buttons | "a dialog is up" | `False` |
+| 12:03 store (370x123) | **`store`, 3 buttons, slider** | **no dialog, 0 dialog panels** | **`True`** |
+| 12:06 intermediate again (453x40) | `unknown`, 0 buttons | "a dialog is up" | `False` |
+
+Only the state in which the strip **resolves** and the layout **stops** calling the strip a dialog reports a
+popup: the cancellation is now measured rather than argued. And note which state that is — the **store**
+state, the one a run would actually be allowed to proceed in.
+
 ### Reproduced exactly, and the transitions observed
 
 After clearing the block, passing through the intermediate state and pressing `Pause`, the operator returned
