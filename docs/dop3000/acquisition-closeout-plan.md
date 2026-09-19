@@ -57,11 +57,14 @@ closed) and V1 still passes. Readings, times, commands and artifact names:
 The ladder's stop condition was never reached: no changed clean-screen fingerprint, no unknown modal,
 no strip press by automation, no Confirm press at all, and every state restored to the one before it.
 
-Then, unchanged, and behind it:
+**Sitting D has since run and its writes are verified** (2026-09-19): the channel write, V5's compiles in
+both directions, V6's six-point campaign on the instrument (`6/6 ok`), the resume and post-run recovery all
+pass, so **V5–V8 are no longer device-pending** — §3's *Outcome* paragraph carries the readings and the
+evidence names.
 
-1. **Sitting D** — the writes: `ensure_channel`, V5's two compiles on that already-authorised write
-   path, V6's six-point campaign on the instrument, V7/V8.
-2. **The matrix question §4 carries** is answered in substance by the operator's own sweep tree: the
+What is left, unchanged:
+
+1. **The matrix question §4 carries** is answered in substance by the operator's own sweep tree: the
    experiment is the mixer sensitivity analysis at 4 MHz / 500 RPM, its axes are those folders, and
    the set plus the rig's geometry are now committed (#18). A first sparse matrix is being re-derived
    around the reference point, so §4's follow-on — which writers are funded — waits on that
@@ -369,6 +372,20 @@ the four-button strip, block-held*.
    gates/resolution, covariates, retained window, verdict), and no unexplained overlay or popup afterwards.
 3. **V7 and V8** — resume identity, and post-run recovery (intended frame, no popup/dialog/overlay, the
    cursor not clipped, the expected store directory, the device outputs preserved with the session record).
+
+**Outcome, 2026-09-19 — all three items pass on the instrument.** The channel write left the screen as it
+found it (the pre/post status pair identical apart from the cursor); the compile accepted this machine's own
+frame, refused a declaration-only `burst_length: 5` before any recording, refused the committed ladder against
+a frame it does not declare (naming `prf_us`, `sound_speed_ms`, `first_gate_mm`), and accepted it once the
+operator had set the instrument by hand to what the ladder declares (`212 / 150 / 4 / 1460 / 2`); the
+six-point campaign ran **`6/6 point(s) ok`** in 110 s with the stored `.BDD` files' own words agreeing with
+the request; the resume afterwards reported `0/6 point(s) ok; 6 skipped as already recorded` with
+`skipped_without_evidence: []`; and recovery found the intended frame still active, no popup/dialog/overlay,
+the expected store directory and an unclipped pointer. **V5, V6, V7 and V8 pass** — V7's TGC item
+structurally, its live half not taken — and nothing in the acquisition architecture changed: no new code, no
+new probe. Readings, times, quoted fields and artifact names:
+[`device-verification.md`](device-verification.md), *sitting D*. The instrument is left on the frame the
+campaign declares; the operator's frame before the sitting (`600 / 20 / 1480 / 1`) is theirs to restore.
 
 **Why V6 is last and not first:** every item above it either proves the refusal that precedes a write or
 proves the state a write stands on. A campaign run before those is a run whose failure could not be
