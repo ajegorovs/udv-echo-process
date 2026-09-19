@@ -389,6 +389,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
     # WP0, WP1 and WP2 add the read-only analysis verbs beside the four live ones.
     assert set(cli._COMMANDS) == {
         "acquire",
+        "burst-ladder",
         "inspect",
         "reference-repeat",
         "resolution-ladder",
