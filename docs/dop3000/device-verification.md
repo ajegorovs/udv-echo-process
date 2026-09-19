@@ -825,6 +825,41 @@ process): the strip resolves as **`view 'store'`, 3 buttons, slider**, on panel 
 states of this row are now **read**, not inferred, and the pool model has been tested on states it was not
 built from.
 
+### The removal guard — a blocking modal the `>400 px` predicate does not identify
+
+`[Remove current block]` does not remove anything directly: it raises a **blocking modal**, and until it is
+answered the strip behind it is unreachable. Read live at 12:26:06, with the modal up:
+
+| what | measured |
+|---|---|
+| the modal | `TSp_Panel 4393476` `[772,490,1164,622]` — **392x132**, caption-less (`WM_GETTEXT` answers `""`), a black corner triangle at its top-left |
+| its controls | exactly **two** `TSp_Button`s: `3738758` `[1000,587,1069,612]` (**left** = `Cancel`) and `2886516` `[1079,587,1154,612]` (**right** = `Confirm`) |
+| painted text | `WARNING` centred, then `All data contained in the current block will be` / `removed from memory` (two painted lines), then the two captions — read off the same-moment frame at x3 |
+| the screen's own read | `open_popup: False`, active surface **`dialog`**, 50 visible controls in 5 panels, `1 dialog panel(s)` |
+
+**The predicate names the wrong panel — and misses the real dialog.** The modal is **392 px** wide, under the
+`>400 px` threshold the dialog predicate uses, so it is **not** identified as a dialog at all; what the run
+reports as "a dialog is up" is `((343, 414, 894, 537), 'TSp_Panel')` — **the strip**, at 551 px. So the screen
+refuses (correctly, nothing is reachable behind a modal) but its *reason* names the strip while the actual
+blocking dialog goes unlisted, and the surface classification reads `dialog` by accident. Together with the
+three earlier data points this pins the predicate's behaviour: **551 px named, 453 px named, 370 px not named,
+and a genuine blocking modal at 392 px not named.**
+
+**The resolver's decoy moved, and that is new.** In the earlier states the strip resolver's "different button
+panel in the plot's middle band" was the cursor info box; here it is the **modal** (`panel_rect
+[772,490,1164,622]`, `view 'unknown'`, 0 buttons). The reason is visible in the same read: the info box and its
+button are now `visible: False` (`131916`, `131920`, `131918`), so the panel set no longer contains them — the
+decoy is simply *whichever non-menu, non-status panel sits in the band*, which is a property of the screen's
+current panel set rather than of the strip.
+
+**What this means for the removal itself.** Nothing has been removed by this press: the action is gated. The
+app's own words — *"All data contained in the current block will be removed from memory"* — are also the exact
+cost the step-5 prediction attributed to the button ("its profiles may be gone from the buffer, and this UI
+exposes no undo"), so the destructive path is **confirmed as destructive and confirmed to have a safe end**:
+`Cancel` is the left button, the same left/safe convention every other dialog in this corpus follows, and
+`Confirm` is the one that discards. What the removal does to the buffer (does the combo fall back to `N-1`?
+does the profile counter shrink?) is **still unmeasured**, because the modal has not been answered.
+
 ### Evidence
 
 `outputs/live/` is git-ignored, so the readings are quoted here with their times: the three reads are kept
