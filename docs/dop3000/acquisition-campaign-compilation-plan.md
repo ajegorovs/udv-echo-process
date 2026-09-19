@@ -849,7 +849,7 @@ the failing evidence in the commit body.
 | # | finding | what changed | commit |
 |---|---|---|---|
 | 1 | `identity_digest` hashed `InstrumentFact.reason`, so rewording a diagnostic sentence produced a "different instrument" | `Provenance` (value + source, no field for a reason at all) and `InstrumentFact.provenance()` as the one mapping; a test asserts every fact field of the identity *is* a `Provenance` | `ad3d2f2` |
-| 2 | `strip_button_count` is buffer state — the ready row gains `Do store` when a block is held — so it could differ on one instrument | the count is out of the identity and stays in the reading; the **view** remains, and still moves the identity when it changes | `a7e9172` |
+| 2 | `strip_button_count` is buffer state — this historical wording said the ready row gains `Do store`; the 2026-09-19 same-process walk supersedes that mechanism with a five-button pool whose members change visibility and position — so it could differ on one instrument | the count is out of the identity and stays in the reading; the **view** remains, and still moves the identity when it changes | `a7e9172` |
 | 3 | `DECLARED` implied "the router already verified this", which a standalone `instrument_snapshot()` cannot claim | `FactSource.ROUTED`, `routed()`, and `instrument_snapshot(*, routed_channel)` — required and keyword-only; nothing established yields `unreadable` | `6f9567a` |
 
 Point 3 is the one W3 must not lose, and point 1 above is where this document now carries it: the
@@ -921,9 +921,10 @@ columns of `TSp_Value_Button` widgets; the columns are the x bands of the value 
 (786 / 987 / 1187 px in a 627x384 dialog at 655,364), and inside a column a field's identity is its
 top-to-bottom position. A row's value is the **combo** when the row offers one — the burst length,
 the sensitivity and the sampling volume are chosen from lists — and the `TSp_Edit` beside it
-otherwise: at `burst = 4` the row states a combo `'4'` *and* an edit `'89'`, and the 89 is the
-sampling-volume read-out the manual describes (the corpus' own value at 1460 m/s is 0.876 mm), not
-the parameter.
+otherwise: at `burst = 4` the row states a combo `'4'` and an edit `'89'`. **Superseded by the
+2026-09-19 pixel check:** the four `89` edits are unpainted buffer values; UI-OVERLAY-24 paints
+`1.776` / `4` / `medium` / `Medium`, and nothing in the frame reads `89`. The manual's 0.876 mm
+sampling-volume example therefore cannot identify this edit.
 
 **Which facts came out.** Five of the six fixed facts are now read from the instrument:
 `prf_us '212'`, `emissions_per_profile '150'`, `burst_length '4'`, `sound_speed_ms '1460'`,

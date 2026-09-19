@@ -221,8 +221,9 @@ state that was left behind — never attempt a speculative recovery gesture.
   **with the session's evidence named**; failed hypotheses stay in that ledger as history
   rather than quietly leaving the text (Patch 6).
 - Record the exact verified application/version/device scope on this page when it is
-  established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant, **V0 and
-  V2**. Every other item still covers **no** specific version.
+  established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant. V0, V1, V2 and V4
+  now have device evidence; V3 has a device-measured safe diagnostic failure; V5–V8 remain pending, with
+  V5's compile half moved beside sitting D's authorised channel-dialog write.
 
 ## Session record
 

@@ -192,9 +192,11 @@ remains the green `Sampling volumes overlapped` line in the `Operating parameter
 **The "four-button band" is off this list: it is not a separate surface.** §18.7 (from the recon
 archive) and §11.1 item 5 carried a "four-button band" as unexplained, and the operator's answer
 identifies it - the only four-button band they know is the recording strip's own row, and that row is
-now cropped as UI-STRIP-02 (`New acquisition`, `Do store`, `Clear and restart`, `Remove current block`),
-i.e. it is `STRIP_BUTTON_ORDER`'s row at four entries, already inside §21.1's strip clause and its
-index-by-index press hazard. Nothing is left to photograph for it.
+now cropped as UI-STRIP-02. That crop paints `New acquisition` / `Do store` / `Clear and restart` /
+`Remove current block`; the later same-process handle walk supersedes a literal role reading of its first
+caption with the five-button pool (`1574908` paints `Pause`/`Resume`, while `Record` and `Do store` are
+separate controls). It is already inside the strip clause and its index-by-index press hazard. Nothing is
+left to photograph for it.
 
 **The two caption-less buttons below the recording strip - identified, and they are a separate pair.**
 The read this page asked for ("what settles it is a tree read in the state that paints them, not a
@@ -251,7 +253,7 @@ rather than a to-do - see `Known gaps` for what separates the two.
 | the TGC mode indicator `[434,182,498,203]` (`Auto` / `Uniform`) | §22.2 (the mode control), §22.4 (an indicator, not the control) | - | **NO CROP** - the four Define TGC crops show *that overlay's* `Mode` combo, not this control; and in UI-WINDOW-01 that very rectangle is empty plot area with grid, which is a datum rather than a crop of the control |
 | the warning modals: the power <-> TGC warning, and the sampling-volume rejection warning | §18.4 (`Moving Emitting power ... raises a modal warning`), §18.11 / §1729 (a caption-less rejection) | UI-OVERLAY-23 (the power <-> TGC one), - (the rejection) | **partly** - the power <-> TGC `Warning` is now cropped and says so in its own words (`The TGC is in auto mode. Changing the emitting power` / `will modify the TGC mode and amplification`); the caption-less sampling-volume rejection is **deliberately deferred** (a crop would capture a shape, not words - `Known gaps`) |
 | the `Parameters` popup in its pre-created, hidden state | §9.3 (a stranded popup), §21.3 item 1, §22.2 (the hidden popup and its five entries) | UI-MENU-05 (painted form only) | **NO CROP** of the hidden state - it is not painted, so there is nothing to photograph; the painted dropdown is cropped |
-| the four-button band + its indicator hazard | §18.7 (what the recon archive established), §11.1 item 5 | UI-STRIP-02 (the strip's own row at four entries) | **NOT A SEPARATE SURFACE** - it is the recording strip's own row: `STRIP_BUTTON_ORDER` at four entries, which §21.1 already resolves by index, now cropped as UI-STRIP-02 (`New acquisition`, `Do store`, `Clear and restart`, `Remove current block`). The hazard §18.7 attaches to it is §21.1's strip clause; nothing is left to photograph |
+| the four-button band + its indicator hazard | §18.7 (what the recon archive established), §11.1 item 5 | UI-STRIP-02 (the strip's own row at four entries) | **NOT A SEPARATE SURFACE** - it is the recording strip's own row, now modeled as the five-button pool measured in one process. UI-STRIP-02 paints `New acquisition`, but the later handle walk binds `1574908` as the `Pause`/`Resume` control and proves `Record` / `Do store` are separate controls. The hazard is the strip clause; nothing is left to photograph |
 | the title bar / the mode statement `UDOP DOP3010.43` | §22.1 (the mode is in the caption) | UI-WINDOW-01 | yes - the title bar is in the whole-window capture and reads exactly `UDOP DOP3010.43`, with the application's own icon beside it |
 | the `Search artefacts` surface (Tools > `Search artefacts`) | §26.2 and the Tools menu mapping, §26.7 (the correction) | UI-OVERLAY-15, UI-OVERLAY-20 | yes - the crop IS that surface, its window captioned `Sweep PRF`, and the entry and the caption are both the application's own; UI-OVERLAY-20 adds the running state, with its live `562 us` readout |
 | the `Filters parameters` overlay, reached from `Define filtering parameters` | §26.7 (the `Filters` row) | UI-MENU-17 (the entry), UI-OVERLAY-16, UI-OVERLAY-17 (the overlay) | yes - the entry is cropped once a filter is on (UI-MENU-17), and the blocking overlay it opens is cropped in both of its forms; its own window caption reads `Auto correction of the aliasing` |
