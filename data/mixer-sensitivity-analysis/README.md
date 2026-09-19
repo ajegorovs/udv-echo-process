@@ -26,8 +26,15 @@ The base state every sweep holds is the run's own note of 2026-09-16: *sensitivi
 power medium, TCG 20, emissions/profile 20, resolution 1.85 mm, gates 50, PRF 600, burst length 10*.
 `4MHz/0500RPM/001/prf/600.BDD` is that state recorded, and its header confirms every value the reader
 decodes (`docs/dop3000/parameter-sweep-matrix.md` §8). **`Emissions/profile` is the one base-state
-value no file can state** — it is word 14, the decode §9 of that document lists as missing — so this
-set cannot be identified from its files alone on that axis.
+value no file decodes** — it is word 14, the decode §9 of that document lists as missing — but the
+*recorded time base still measures it*: the median profile interval divided by `T_prf` is **37.3 on
+every one of the forty points** (22.4 ms at 600 µs, 15.0 ms at 400 µs, 29.8 ms at 800 µs), which is
+C5's `16 + N_PRF` with roughly 0.6–1.0 ms of transit overhead — i.e. **N_PRF = 20**, the note's own
+value, recovered without the word. A recording at a second `N_PRF` would separate the application's
+constant from that overhead and make the axis readable from the file alone. The operator reads the
+parameter as **time averaging** and may set it to the smallest the instrument allows (~8) for the
+sweep — undecided; it is recorded here because it moves the stored step (to ~15 ms at 600 µs, a 1.5x
+faster profile rate), not because it blocks anything.
 
 ## The 40 points, decoded from the files
 
@@ -83,8 +90,10 @@ depth, and `V_max` the unaliased velocity limit the file declares.
 
 - **Every file is the base state except its own axis.** That is what makes this a designed sparse
   matrix rather than forty unrelated recordings, and it is the property any re-derivation can lean on.
-- **The `res` axis holds the ~100 mm window and the gate count follows the resolution** — 365 gates at
-  0.247 mm down to 31 at 2.96 mm — so it is a resolution ladder across the same vessel span rather
+- **The `res` axis holds the ~100 mm window and the gate count follows the resolution** — which is the
+  operator's own account of that folder: *"res folder is where I change gate resolution, and tweak
+  number of gates so that last gate is at ~ 100 mm depth"*. 365 gates at
+  0.247 mm down to 31 at 2.96 mm, so it is a resolution ladder across the same vessel span rather
   than a window sweep.
 - **The `res` folder names are the instrument's rung labels, not millimetres.** `1-8` decodes as
   1.85 mm, `2-0` as 1.97 mm, `0-2` as 0.247 mm: label and decoded value are not the same number, and
