@@ -11,6 +11,16 @@ that is a deliberate edit on the new machine, not a generalization to maintain. 
 happen is the test being unrunnable because a capability lives in a directory that is not
 cloned.
 
+> **Authority (added 2026-09-18, documentation freeze).** This document is the **bring-up
+> path** for a machine that has only this repository: the stages, their pass criteria, and the
+> measurements folded into the code with what to do when they do not hold. It is not the
+> subsystem's architecture ([`acquisition-architecture.md`](acquisition-architecture.md)), not
+> the surface/binding model
+> ([`acquisition-ui-model.md`](acquisition-ui-model.md)), and its stages are not the refactor's
+> device verification procedure ([`device-verification.md`](device-verification.md)) — the two
+> are complementary: this proves the controls answer on a new machine, that one proves the
+> refactor did not change what they do. Nothing in the body changed at the freeze.
+
 ## 1. Prerequisites
 
 - **The application**: UDOP driving a DOP3010 (or its simulator), installed and licensed.
@@ -68,7 +78,7 @@ directory or the channel; a stage-5 failure carries its own reason per point in 
 
 | folded-in measurement | where | if it differs on the new machine |
 |---|---|---|
-| the clean layout is **43 visible controls in 4 panels** on *this* machine, and **44 in 4** on the instrument (`driver.EXPECTED_CONTROL_COUNT` / `EXPECTED_PANEL_COUNT`) | `driver.py`, evidence only | **nothing to set** — do not make a total a gate on the new machine. What a run needs is stage 1's **shape verdict** (`layout_shape_reasons: []`: the `TMain_Scr` window, a menubar band at the client's top, a status band at its bottom, a strip panel whose row length maps into `STRIP_BUTTON_ORDER`, no popup and no dialog panel, and either the sidebar column with its seven roles or **no column at all**) plus the **stated process mode** (`--expect-mode`, checked against the window's caption). An **assisted-mode channel** is 21 in 3 and passes the shape too; the 43/44 totals are read beside all of it, so a drift is visible without stopping a run |
+| the clean layout is **43 visible controls in 4 panels** on *this* machine, and **44 in 4** on the instrument (`driver.EXPECTED_CONTROL_COUNT` / `EXPECTED_PANEL_COUNT`) | `driver.py`, evidence only | **nothing to set** — do not make a total a gate on the new machine. What a run needs is stage 1's **shape verdict** (`layout_shape_reasons: []`: the `TMain_Scr` window, a menubar band at the client's top, a status band at its bottom, a strip panel whose row length maps into `STRIP_BUTTON_ORDER`, no popup and no dialog panel, and the sidebar column with its seven roles) plus the **stated process mode** (`--expect-mode`, checked against the window's caption). A screen with **no column at all** is refused by name as of Patch 2 rather than read as a mode: the fast-access panel may be hidden by the application's own `Preferences` option while the channel stays manual, so the refusal names both that and an assisted channel (ledger B01), and an **assisted-mode channel** — 21 in 3 — is refused by the same clause. The 43/44 totals are read beside all of it, so a drift is visible without stopping a run |
 | the parameters popup is the visible panel at `left == 169` (screen coords) | `driver._poll_parameters_overlay` | the appearance-diff fallback should carry it: measured on 2026-09-17 with the window un-maximised and moved to `(300, 120)` — every absolute screen coordinate shifted — the menu, the dialog, the strip and the Store dialog all still worked |
 | the window is found by class name `TMain_Scr` | `driver.MAIN_CLASS` | if a new UDOP version renames it, nothing resolves: set `MAIN_CLASS` for that install |
 | the store dialog's geometry (`584x330`, its buttons from the right) | `driver` predicates | dialogs are found structurally; a changed dialog will refuse loudly rather than press the wrong thing |

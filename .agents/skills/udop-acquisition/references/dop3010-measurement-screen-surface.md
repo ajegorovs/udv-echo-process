@@ -4,6 +4,11 @@ Read-only observations of the 6.07.x instrument in **real-experiment mode**, tak
 the probe's own full frames and crops, and the operator's own vision of open dialogs. Bindings age: re-verify
 a rectangle against a fresh live read before pressing, per the rules in SKILL.md.
 
+> **Authority (frozen 2026-09-18).** The repository's surface model is
+> `docs/dop3000/acquisition-ui-model.md`, and the painted captions quoted here are the committed
+> crops' business (`docs/dop3000/ui-element-index.md`, cited by crop id). Where this file and the
+> repository documents disagree, the repository documents decide.
+
 ## The left parameter column
 
 The **labels are painted**, not controls — the tree gives the row *values* with `role=None` for every row, so

@@ -3,6 +3,15 @@
 State of the automation work: what is proven, what is broken, and exactly what to do
 next. Written for a fresh session starting in this repository.
 
+> **Authority (added 2026-09-18, documentation freeze).** This document is the
+> **state-of-the-work and measurement record**: what was proven, when, on which machine, and
+> what to do next. It is not the authority for architecture and invariants
+> ([`acquisition-architecture.md`](acquisition-architecture.md)) or for surfaces, widgets and
+> bindings ([`acquisition-ui-model.md`](acquisition-ui-model.md)), and it is not the device
+> verification procedure ([`device-verification.md`](device-verification.md)) — a fact about
+> a surface below is a measurement made on a date, not the current model of that surface.
+> Nothing in the body changed at the freeze; this header is the only edit.
+
 ## 1. Where the work lives
 
 - `C:\Repos\udv-echo-process`, branch **`feat/dop3010-acquisition`**, pushed to origin;

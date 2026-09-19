@@ -14,6 +14,13 @@ Handles are synthesized here on purpose. The fixture carries the geometry and th
 control stated; it carries no handle, because handles are volatile — control ids change on every
 launch (43/43 classes at the same positions, 1/43 ids in common) — and a binding that depended on
 one would be testing the launch instead of the layout.
+
+The two timing knobs these reads use are patched where their loop reads them —
+``udop_parameters.DIALOG_FILL_TIMEOUT_S`` and ``udop_parameters._POLL_S``, both owned by
+``acquire/udop/parameters.py``. Patching ``driver`` instead resolves and changes nothing: the
+facade re-exports their values, and the fill loop resolves the names in its own module
+(``test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs`` is the test that fails if
+that regresses).
 """
 
 from __future__ import annotations
@@ -29,11 +36,13 @@ from udv_echo_process.acquire.actuator import (
     DIALOG_ANCHORS,
     DIALOG_COLUMN_ROWS,
     DIALOG_FIELD_ORDER,
+    PRESS_HOLD_MS,
     DialogField,
     ParamRole,
     ScreenFingerprint,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, FactSource
+from udv_echo_process.acquire.udop import parameters as udop_parameters
 
 FIXTURE = Path(__file__).parent / "data" / "udop-parameters-dialog-tree.json"
 DIALOG_HWND = 395058
@@ -41,6 +50,13 @@ DIALOG_HWND = 395058
 #: below it, so that the two surfaces can be told apart by handle in the fakes.
 DIALOG_HANDLE_BASE = 900000
 SCREEN_HANDLE_BASE = 800000
+#: The dialog the application **replaces** the read's one with. Measured live 2026-09-17: the
+#: replacement is a narrower panel with handles of its own — `Operating parameters` (627x384 at
+#: ``(655, 364)``) became `Assisted mode parameters for channel 2` (511x384 at ``(713, 364)``) —
+#: so every handle taken before the replacement is dead, and a press aimed at one reaches nothing.
+REPLACEMENT_HWND = 395099
+REPLACEMENT_RECT = (713, 364, 1224, 748)
+REPLACEMENT_HANDLE_BASE = 970000
 
 #: What the dialog stated, by class and text — the values the campaign's own definition declares
 #: (``sound speed 1460``, ``first gate 2``, ``burst 4``), which is what makes them identifiable.
@@ -88,10 +104,19 @@ def read_text_for(rows: list[dict], overrides: dict[int, str] | None = None):
 class FakeDialogDriver(driver.Win32Actuator):
     """``Win32Actuator`` whose dialog is the measured tree and whose screen is the fixture's anchors.
 
-    What is faked is the window layer only: the resolution of the screen's column, the children of
-    the open dialog, the text a control states, the gesture that opens and closes it, and the run
-    log. What is under test is everything between them — the binding, the three checks and the
-    close in the ``finally``.
+    What is faked is the window layer only: the resolution of the screen's column, the *panel set*
+    (the dialog that is up), the children of that panel, the text a control states, the gesture
+    that opens it and the held press on its bottom pair, and the run log. What is under test is
+    everything between them — the binding, the three checks and the close in the ``finally``.
+
+    Two scripted states, both of them things the live application did to a read in flight:
+
+    - ``replace_during_read`` — while the read is walking the dialog, the application takes that
+      panel away and builds a **fresh** one with handles of its own (measured live 2026-09-17: a
+      replacement dialog is a narrower panel with its own buttons), so the handle the read opened
+      is dead by the time the close runs and a press aimed at it reaches nothing;
+    - ``close_ignored`` — the press on the dialog's Cancel is made and the dialog **stays up**,
+      which is the state a close path must report rather than assume away.
     """
 
     def __init__(
@@ -103,6 +128,8 @@ class FakeDialogDriver(driver.Win32Actuator):
         channel: str = "1",
         fill_after: int = 0,
         open_raises: str | None = None,
+        replace_during_read: bool = False,
+        close_ignored: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
@@ -112,8 +139,21 @@ class FakeDialogDriver(driver.Win32Actuator):
         self.stated_channel = channel
         self.fill_after = fill_after
         self.open_raises = open_raises
+        self.replace_during_read = replace_during_read
+        self.close_ignored = close_ignored
         self.reads = 0
+        #: How often the dialog was actually closed — by the press on the pair the driver's own
+        #: bottom-band rule resolves, never by a counter that a dead handle would also raise.
         self.closed = 0
+        #: The hwnd of every panel whose Cancel the press reached, and every handle pressed.
+        self.closed_panels: list[int] = []
+        self.presses: list[int] = []
+        #: Whether the application replaced the dialog the read opened (``replace_during_read``).
+        self.replaced = False
+        #: The dialog that is **up** right now — the panel the resolver enumerates, and the only
+        #: one whose handles reach anything. A handle belonging to any other panel is dead.
+        self.open_panel: dict | None = self.panel(DIALOG_HWND)
+        self._replacement_pending = replace_during_read
         #: How often the reading's *screen* half was asked for. Kept because a reading that
         #: refuses on the dialog's channel refuses before it reads the screen at all, and that
         #: is observable here and nowhere else.
@@ -122,9 +162,58 @@ class FakeDialogDriver(driver.Win32Actuator):
 
     # ------------------------------------------------------------------ the window layer
 
+    def panel(self, hwnd: int) -> dict:
+        """The dialog panel ``hwnd`` names, at the geometry the live panels were read at.
+
+        Two panels, never one: the read's dialog at ``(655, 364)`` 627x384 and the narrower
+        replacement the application builds for another mode at ``(713, 364)`` 511x384.
+        """
+        rect = (655, 364, 1282, 748) if hwnd == DIALOG_HWND else REPLACEMENT_RECT
+        left, top, right, bottom = rect
+        return {
+            "hwnd": hwnd,
+            "cls": "TSp_Panel",
+            "rect": rect,
+            "left": left,
+            "top": top,
+            "w": right - left,
+            "h": bottom - top,
+        }
+
+    def panel_children(self, panel: dict) -> list[dict]:
+        """A panel's own direct children — carrying the handles *that* panel was built with.
+
+        The replacement's buttons are its own, which is the point: a press aimed at the handles
+        the read was holding reaches no window at all.
+        """
+        offset = (
+            0
+            if panel["hwnd"] == DIALOG_HWND
+            else REPLACEMENT_HANDLE_BASE - DIALOG_HANDLE_BASE
+        )
+        rows = [row for row in self.rows if row["depth"] == 0]
+        return [dict(row, hwnd=row["hwnd"] + offset) for row in rows]
+
+    def cancel_handle(self, hwnd: int) -> int:
+        """The Cancel end of dialog ``hwnd``, by the driver's own bottom-band rule.
+
+        ``(bottom[-2])``, resolved through the driver's own ``bottom_row`` so this fake cannot
+        disagree with the close path about which button is which.
+        """
+        panel = self.panel(hwnd)
+        return int(driver._bottom_row(panel, self.panel_children(panel))[-2]["hwnd"])
+
     def _resolve(self) -> dict:
         roles: dict = {
             "raw": self.rows,
+            # The dialog that is **up**, as the resolver enumerates it: the close path
+            # re-resolves through this set, and a handle that is not in it cannot be pressed.
+            "panels": [] if self.open_panel is None else [self.open_panel],
+            "left_panel": None,
+            # No menubar here: this fake's subject is the read's dialog, not the popup. The
+            # facade's own ``open_popup`` question is answered, so a surface that asks it is not
+            # answered by a missing key.
+            "open_popup": False,
             "params": {role: {"edit": self._screen_edit(role)} for role, _c, _r in DIALOG_ANCHORS},
         }
         return roles
@@ -148,16 +237,31 @@ class FakeDialogDriver(driver.Win32Actuator):
         return {"hwnd": SCREEN_HANDLE_BASE + list(ParamRole).index(role), "text": stated}
 
     def _children_of(self, parent: int, roles: dict) -> list[dict]:
-        """The dialog's **direct** children, as the resolver enumerates them: buttons and the header.
+        """The **direct** children of a panel that is up, as the resolver enumerates them.
 
         No value is stated at this level — that is the measurement, and a fake that returned the
         whole tree here would hide the very defect this models (the live read failed on exactly it).
+        A handle the application has taken away has no children at all, which is what the live
+        close on a replaced panel found: zero buttons in the band, and nothing pressed.
         """
-        return [row for row in self.rows if row["depth"] == 0]
+        panel = self.open_panel
+        if panel is None or parent != panel["hwnd"]:
+            return []
+        return self.panel_children(panel)
 
     def _descendants_of(self, hwnd: int) -> list[dict]:
-        """The dialog walked whole, which is where its values are — and counted, for the fill."""
+        """The dialog walked whole, which is where its values are — and counted, for the fill.
+
+        ``replace_during_read`` scripts what the live application did to a read *in flight*: the
+        panel the read is walking is taken away and a fresh one — narrower, with its own handles —
+        is built in its place (measured 2026-09-17), so the handle the caller is holding is dead
+        by the time it closes the dialog.
+        """
         self.reads += 1
+        if self._replacement_pending:
+            self._replacement_pending = False
+            self.replaced = True
+            self.open_panel = self.panel(REPLACEMENT_HWND)
         return self.rows
 
     @property
@@ -182,10 +286,29 @@ class FakeDialogDriver(driver.Win32Actuator):
     def _open_parameters_dialog(self) -> dict:
         if self.open_raises:
             raise driver.AcquisitionError(self.open_raises)
-        return {"hwnd": DIALOG_HWND, "cls": "TSp_Panel", "left": 655, "top": 364, "w": 627, "h": 384}
+        return self.panel(DIALOG_HWND)
 
-    def _close_parameters_dialog(self, panel: dict) -> None:
+    def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
+        """A dialog button pressed: the Cancel of the dialog that is up closes it.
+
+        Which button is Cancel is the driver's own bottom-band rule (:func:`…ui.dialog.bottom_row`,
+        addressed from the right) resolved through this fake's panels, so the fake cannot disagree
+        with the close path about it. A press on any other handle is recorded and does **nothing**:
+        that is the dead handle of a panel the application replaced, and the live failure that put
+        a fresh modal on the operator's screen. ``close_ignored`` scripts the press that is made on
+        the right button and still does not take the dialog down.
+        """
+        self.presses.append(hwnd)
+        panel = self.open_panel
+        if panel is None:
+            return
+        if hwnd != self.cancel_handle(panel["hwnd"]):
+            return  # not this dialog's own Cancel: a handle that reaches no window
+        if self.close_ignored:
+            return  # the press is made and the dialog stays up
         self.closed += 1
+        self.closed_panels.append(panel["hwnd"])
+        self.open_panel = None
 
     def _note(self, message: str) -> None:
         self.notes.append(message)
@@ -354,7 +477,7 @@ def test_a_dialog_with_no_value_table_at_all_is_a_refusal_and_not_a_crash():
 
 def test_a_dialog_that_has_not_filled_is_unreadable_rather_than_read(monkeypatch):
     """The first open on a freshly started application states nothing (measured); it is not a value."""
-    monkeypatch.setattr(driver, "DIALOG_FILL_TIMEOUT_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "DIALOG_FILL_TIMEOUT_S", 0.0)
     reading = FakeDialogDriver(fill_after=10**6).read_dialog_parameters()
 
     assert isinstance(reading, DialogParameters)
@@ -365,13 +488,61 @@ def test_a_dialog_that_has_not_filled_is_unreadable_rather_than_read(monkeypatch
 
 def test_the_read_waits_for_a_table_that_fills_after_the_dialog_appears(monkeypatch):
     """The table that fills a moment late is a read, not a refusal: the poll is the difference."""
-    monkeypatch.setattr(driver, "_POLL_S", 0.01)
+    monkeypatch.setattr(udop_parameters, "_POLL_S", 0.01)
     reading = FakeDialogDriver(fill_after=2).read_dialog_parameters()
 
     assert reading.readable()
     assert reading.value(DialogField.SOUND_SPEED_MS.value) == str(SOUND_SPEED)
     assert reading.value(DialogField.FIRST_GATE_MM.value) == str(FIRST_GATE)
     assert reading.value(DialogField.BURST_LENGTH.value) == str(BURST)
+
+
+class RecordingClock:
+    """A stand-in for the surface module's ``time``: it records what the fill loop waited for.
+
+    ``monkeypatch.setattr(udop_parameters, "time", clock)`` replaces the *module's own* reference to
+    the ``time`` module, so the loop under test reports every ``sleep`` it takes with the value it
+    was given and its deadline arithmetic runs on this clock instead of on the wall clock. What the
+    patch target did is then an assertion, not a stopwatch reading.
+    """
+
+    def __init__(self) -> None:
+        self.sleeps: list[float] = []
+        self.now = 0.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def test_the_dialog_fill_cadence_and_wait_are_read_where_the_loop_runs(monkeypatch):
+    """Both knobs are read by ``udop/parameters.py``'s own loop; the facade's copies reach nothing.
+
+    ``_poll_dialog_fields`` sleeps ``_POLL_S`` between reads and gives up on
+    ``DIALOG_FILL_TIMEOUT_S``, both resolved in its own module. The facade re-exports their *values*,
+    so the ``monkeypatch.setattr(driver, ...)`` these cases used to make resolved and then left the
+    loop on the defaults — 0.4 s per poll and a 2.0 s wait. On the recorded clock the difference is
+    an assertion: the patched cadence, twice, for a table that fills on the third read; and no sleep
+    at all for a wait of 0.0 s, where the default would have polled five times.
+    """
+    cadence = RecordingClock()
+    monkeypatch.setattr(udop_parameters, "_POLL_S", 0.017)
+    monkeypatch.setattr(udop_parameters, "time", cadence)
+    reading = FakeDialogDriver(fill_after=2).read_dialog_parameters()
+
+    assert reading.readable()
+    assert cadence.sleeps == [0.017, 0.017]  # the patched cadence, per unbuilt read
+
+    wait = RecordingClock()
+    monkeypatch.setattr(udop_parameters, "DIALOG_FILL_TIMEOUT_S", 0.0)
+    monkeypatch.setattr(udop_parameters, "time", wait)
+    unreadable = FakeDialogDriver(fill_after=10**6).read_dialog_parameters()
+
+    assert not unreadable.readable()
+    assert wait.sleeps == []  # a 0 s wait: the first read is the last one
 
 
 def test_a_table_that_is_not_the_measured_shape_is_refused_rather_than_read():
@@ -442,6 +613,176 @@ def test_a_gesture_that_cannot_open_the_dialog_returns_an_unreadable_reading_and
     assert "could not be opened" in reading.reason
     assert fake.notes and "could not be opened" in fake.notes[0]
     assert fake.closed == 0
+
+
+# ------------------------------------------- the dialog the read opened is not always the one it closes
+
+
+def test_the_read_closes_a_dialog_the_application_replaced_while_it_was_being_read():
+    """The handle the read holds can be dead by the time the close runs — so the close re-resolves.
+
+    Measured live 2026-09-17 (twice): this application **replaces** its parameters dialog, and the
+    replacement is a narrower panel carrying handles of its own, so every handle taken before the
+    replacement is dead. A close that presses the handle the read opened therefore presses nothing
+    and leaves the *fresh* modal on the operator's screen, where — with Escape closing nothing in
+    this application — it confines the cursor to itself and traps the operator (docs/16 §6). The
+    read path closes through a fresh resolve, so the dialog that goes away is the one that is
+    actually up.
+    """
+    fake = FakeDialogDriver(replace_during_read=True)
+    dead_cancel = fake.cancel_handle(DIALOG_HWND)
+
+    reading = fake.read_dialog_parameters()
+
+    # The read itself stands — the table came from the same tree — and it is the *close* that
+    # has to find the panel that is up rather than the handle this read was handed.
+    assert reading.readable()
+    # The application did replace the dialog while the read was walking it...
+    assert fake.replaced
+    # ...and nothing is left on the operator's screen.
+    assert fake.open_panel is None
+    # The *fresh* modal is the one that was closed, by its own Cancel ...
+    assert fake.closed_panels == [REPLACEMENT_HWND]
+    fresh_cancel = fake.cancel_handle(REPLACEMENT_HWND)
+    assert fake.presses == [fresh_cancel]
+    # ... which is not the handle the read was holding, and that one was never pressed at all.
+    assert fresh_cancel != dead_cancel
+    assert dead_cancel not in fake.presses
+
+
+def test_a_dialog_that_survives_the_close_is_reported_by_its_rect_and_never_pressed_over():
+    """A close that did not take is *reported* — with the rect that is still up and the remedy.
+
+    The dialog's Cancel can be pressed and the dialog can stay up, and this application confines
+    the cursor to an open dialog while Escape closes nothing, so a close path that assumed it had
+    worked would call a run clean with a modal still blocking the operator. It is named by its own
+    rect, the run says who has to act, and nothing else on it is pressed: this driver never guesses
+    a surface (its very reason for not ``WM_CLOSE``\\ ing anything).
+    """
+    fake = FakeDialogDriver(close_ignored=True)
+
+    reading = fake.read_dialog_parameters()
+
+    assert reading.readable()  # the read stands; it is the close that did not take
+    assert fake.closed == 0
+    assert fake.open_panel is not None  # the dialog is still up
+    warning = next(note for note in fake.notes if "is still open" in note)
+    assert "(655, 364)" in warning  # the dialog that survived, by its own rect
+    assert "operator" in warning  # who has to act
+    assert "restart" in warning  # the documented remedy
+    assert "never guesses a surface" in warning  # and no invented press is promised
+    # Only its own Cancel was ever pressed, and no other surface was touched.
+    assert set(fake.presses) == {fake.cancel_handle(DIALOG_HWND)}
+
+
+def test_a_close_that_could_not_press_anything_does_not_report_a_press():
+    """L5: the cleanup note is written from what the close **did**, never from what it meant to do.
+
+    ``_close_parameters_dialog`` swallows every ``AcquisitionError`` into a note — including the
+    ``0 buttons in its bottom band`` refusal, i.e. a close where *nothing was pressed at all* — so
+    a report that reads "its left (Cancel) button was pressed and the dialog did not go away"
+    asserts a gesture the driver may never have made, in the one diagnostic an operator acts on.
+    It also names the panel ``'Operating parameters'`` although it closed whatever panel
+    ``_dialog_panels()`` returned fullest: with the structural dialog predicate that can be a panel
+    that is not the parameters dialog at all. The note says which of the two happened, and names
+    the panel by the rect and the child classes the resolve actually states.
+    """
+
+    class NoBottomBand(FakeDialogDriver):
+        """The measured dialog with **no** ``TSp_Button`` in its own children: no pair to press."""
+
+        def _children_of(self, parent: int, roles: dict) -> list[dict]:
+            kids = super()._children_of(parent, roles)
+            return [k for k in kids if k["cls"] != "TSp_Button"]
+
+    fake = NoBottomBand()
+    reading = fake.read_dialog_parameters()
+
+    assert reading.readable()  # the read stands; it is the close that could not be made
+    assert fake.open_panel is not None  # the dialog is still up
+    assert fake.presses == [], "the fixture is wrong: a close with no band pressed something"
+    warning = next(note for note in fake.notes if "is still open" in note)
+    assert "Cancel) button was pressed" not in warning, warning  # the press it never made
+    assert "could not be pressed" in warning, warning
+    assert "'Operating parameters'" not in warning, warning  # not a panel this close identified
+    assert "(655, 364)" in warning, warning  # named by its own rect ...
+    assert "TSp_Value_Button" in warning, warning  # ... and the classes its resolve states
+    assert "operator" in warning and "restart" in warning, warning
+    assert "never guesses a surface" in warning, warning
+
+
+class HandedOverOnTheClosePress(FakeDialogDriver):
+    """A close whose press the application answers by putting **another** panel up.
+
+    The second of the live states a close has to survive (measured 2026-09-17, on a channel write):
+    the panel the close resolved is taken away and a *different* panel is up — here the narrower
+    one :data:`REPLACEMENT_HWND` names — so the second attempt is resolved against a panel the
+    first attempt's press never touched. The panel handed over to holds no bottom pair of its own
+    (no ``TSp_Button`` among its children), which is the band the driver's own rule cannot resolve:
+    nothing on it is pressable, and the note has to say that about *it*.
+
+    What is scripted is the hand-over and the band that does not resolve; what is under test is the
+    attribution, which does not depend on why the second panel has no pair to press.
+    """
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(**kwargs)
+        #: Whether the hand-over has happened (set once, where the fake scripts it).
+        self.handed_over = False
+
+    def _children_of(self, parent: int, roles: dict) -> list[dict]:
+        """The panel handed over to has no ``TSp_Button``: its band is not resolvable at all."""
+        kids = super()._children_of(parent, roles)
+        if parent == REPLACEMENT_HWND:
+            return [k for k in kids if k["cls"] != "TSp_Button"]
+        return kids
+
+    def _click_hold(self, hwnd: int, hold_ms: int = PRESS_HOLD_MS) -> None:
+        """The press that took the first panel down is answered by a fresh panel in its place."""
+        super()._click_hold(hwnd, hold_ms)
+        if hwnd == self.cancel_handle(DIALOG_HWND) and self.open_panel is None:
+            self.handed_over = True
+            self.open_panel = self.panel(REPLACEMENT_HWND)
+
+
+def test_a_press_on_one_panel_is_never_reported_as_a_press_on_the_panel_that_replaced_it():
+    """L5, cross-panel: the note's outcome is the **remaining** panel's own, never another's.
+
+    Both close attempts run, and the application can put a different dialog up between them — it
+    does exactly that on a channel write (measured 2026-09-17): the first attempt's press reaches
+    the panel that was up, and by the second attempt that panel is gone and another is up. One
+    boolean accumulated across the two attempts and then read as the survivor's outcome says "its
+    left (Cancel) button was pressed and the dialog did not go away" about a panel **whose band
+    never resolved** — a gesture that was never made on it, asserted in the one diagnostic an
+    operator acts on. The report says what was done *to the panel that is still up*: nothing could
+    be pressed on it, named by its own rect and the classes its resolve states.
+    """
+    fake = HandedOverOnTheClosePress()
+
+    reading = fake.read_dialog_parameters()
+
+    assert reading.readable()  # the read stands; it is the close that is under test
+    # The first attempt pressed the panel that was up, by its own Cancel ... and only that one.
+    assert fake.closed_panels == [DIALOG_HWND], fake.closed_panels
+    assert fake.presses == [fake.cancel_handle(DIALOG_HWND)], fake.presses
+    # ... the hand-over happened, and the panel that is still up is the one nothing was pressed on.
+    assert fake.handed_over and fake.open_panel is not None
+    assert fake.open_panel["hwnd"] == REPLACEMENT_HWND, fake.open_panel
+    # The fixture's own premise, asserted: the panel that is up *is* a dialog by the driver's rule
+    # and *has* no pair in its band — otherwise this case is not about the panel it names.
+    kids = fake._children_of(fake.open_panel["hwnd"], fake._resolve())
+    assert driver._is_dialog_panel(fake.open_panel, kids), "the remaining panel is no dialog"
+    assert driver._bottom_row(fake.open_panel, kids) == [], "the remaining panel has a pair to press"
+
+    warning = next(note for note in fake.notes if "is still open" in note)
+    assert "Cancel) button was pressed" not in warning, warning  # the press it never made
+    assert "could not be pressed" in warning, warning
+    assert "(713, 364)" in warning, warning  # the panel that is up, by its own rect ...
+    assert "(655, 364)" not in warning, warning  # ... never the panel the press did reach
+    assert "TSp_Value_Button" in warning, warning  # and the classes its resolve states
+    assert "TSp_Button" not in warning, warning  # no button this panel does not hold
+    assert "operator" in warning and "restart" in warning, warning
+    assert "never guesses a surface" in warning, warning
 
 
 # ------------------------------------------------------------------ the snapshot's side

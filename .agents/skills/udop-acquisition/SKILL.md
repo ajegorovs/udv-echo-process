@@ -34,6 +34,18 @@ probes in `tools/live/`, the crops and their tooling in `tools/ui/`, and the bri
 machine. Everything else here is the reusable craft, and `docs/dev-handoff.md` in this repository
 is the entry point for a machine that cannot reach the instrument at all.
 
+**Where the DOP3010 facts live (frozen 2026-09-18).** The repository holds a small set of
+authoritative documents for this instrument, and this skill **points at them instead of repeating
+them**: architecture, layering and invariants —
+`docs/dop3000/acquisition-architecture.md`; surfaces, widgets, bindings and the blind-spot ledger
+B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verification procedure —
+`docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
+chain — `docs/dop3000/udop-automation.md`; the state of the work —
+`docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
+quotes carry — `docs/dop3000/ui-element-index.md`. A rule learned while driving the instrument
+belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
+a second copy in a skill is how the two forks drifted apart before.
+
 Reconnaissance, control-id mapping, message-based driving and artifact verification for
 Windows desktop applications that expose no SDK, CLI or protocol.
 
@@ -454,6 +466,15 @@ values, report what was accepted, and restore every field it touched.
   measured on: what the repository must carry to be runnable at all (the interactive-session wrapper,
   the dispatcher, the capability probes), the staged bring-up with pass criteria, the
   measurements-folded-in table, what to declare open, and the window-move proxy test.
+- `docs/dop3000/acquisition-architecture.md` (repository) — the architecture, the layer boundaries
+  and the invariants the refactor may not reinterpret, plus the target module layout with a
+  *status: target / landed by patch N* marker per module. Read it before describing how this
+  subsystem is organised.
+- `docs/dop3000/acquisition-ui-model.md` (repository) — the surface taxonomy, the
+  measurement-screen predicate, every cropped surface by crop id, the widget and binding rules, and
+  the blind-spot ledger B01..B20 with what may be asserted before the next device session.
+- `docs/dop3000/device-verification.md` (repository) — the V0..V8 procedure that retires the
+  device-pending items after a refactor, with its stop condition and its promotion rules.
 - **Promote the probes' private reach into a public surface, and let the package be the
   interface.** A capability probe calls the driver's *privates*, which makes it the least verified
   code in the repository: the fakes model the public surface, so no test can drive it. Move each

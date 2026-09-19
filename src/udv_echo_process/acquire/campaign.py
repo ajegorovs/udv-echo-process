@@ -1520,6 +1520,14 @@ _IDENTITY_FACT_FIELDS: tuple[str, ...] = ("channel", "mode", "process_mode", *FI
 #: :class:`Provenance` — nothing declared them, so a disagreement here is the *screen* having
 #: moved (a press is bound to a button's position in a view), never a setting.
 #:
+#: All four are **optional at parse time with a default** (the ``process_mode`` precedent, and
+#: for the same reason): a manifest written before a later UI slice added one of them carries no
+#: such field, and a *required* one would make ``read_manifest`` call that valid file "not a job
+#: manifest" instead of refusing it by name at the comparison below. ``None`` on either side
+#: means the field was never recorded, which is exactly what the refusal says — a field tolerated
+#: at parse time and then silently ignored would instead skip points on evidence the previous job
+#: never carried.
+#:
 #: ``visible_controls`` is deliberately **out** (plan §24.5, D6): the reference install's clean
 #: screen is 43 in 4 and the instrument's own is 44 in 4, and whether that row is session state is
 #: still open, so two runs on one instrument in one mode could differ by that single control and
@@ -1550,12 +1558,14 @@ def _identity_disagreements(
     :func:`_refuse_disagreements` reports the whole list: the instrument is in front of the
     operator and one round trip should be enough to see all of it.
 
-    One fact may be **absent** rather than different, and it gets its own clause: an identity
-    written before ``process_mode`` existed carries none, and a comparison that read that as "a
-    different instrument" would send the operator looking at the instrument instead of at the
-    manifest. The refusal says which side carries no mode and what that means — the previous job's
-    mode is not proven — because that is the state every W4-era manifest is in, and
-    ``--resume-declaration-only`` is the documented way past it (plan §24.5, D2).
+    One field may be **absent** rather than different, and it gets its own clause: an identity
+    written before ``process_mode`` existed carries none, and an identity written before a later
+    UI slice's field carries none of *those* — and a comparison that read either as "a different
+    instrument" would send the operator looking at the instrument instead of at the manifest. The
+    refusal says which side carries no reading and what that means — the previous job's mode or
+    layout is not proven — because that is the state every manifest written before the field was
+    recorded is in, and ``--resume-declaration-only`` is the documented way past it (plan §24.5,
+    D2; the same rule for the identity's UI half).
     """
     differences: list[str] = []
     for name in _IDENTITY_FACT_FIELDS:
@@ -1581,6 +1591,16 @@ def _identity_disagreements(
         was = getattr(previous, name)
         now = getattr(current, name)
         if was == now:
+            continue
+        if was is None or now is None:
+            side = "the previous identity" if was is None else "this identity"
+            differences.append(
+                f"{name}: {side} carries no reading for this part of the layout, so the screen "
+                "the previous job's presses were bound to is not proven — nothing recorded it "
+                "(every manifest written before the field was recorded is in this state), and a "
+                "point measured on one layout and resumed against another is a measurement "
+                "whose conditions the record cannot state. A fresh run states one"
+            )
             continue
         differences.append(
             f"{name}: the previous job's screen was {was!r} where this one's is {now!r} (the "

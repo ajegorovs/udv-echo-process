@@ -396,9 +396,13 @@ class CompilationIdentity(ValueModel):
     :class:`Provenance`), and everything that is a property of **the data in the application's
     buffer rather than of the instrument**: the store slider's ``maximum`` — the strip's
     *structure* is in, its slider's range is not, because that range is the selected block's
-    profile count — and the strip's top-row **button count**, which is 3 or 4 depending on
-    whether a leftover block is held (``actuator.STRIP_BUTTON_ORDER`` documents both rows, and
-    ``classify_strip_view`` puts both in the same ``READY`` view).
+    profile count — and the strip's top-row **button count**, which moves with whether a leftover
+    block is held (``actuator.STRIP_BUTTON_ORDER`` documents a row per view, and several views are
+    painted with more than one length). What *is* in is the **view** those buttons classify into:
+    it is what a press is bound against, and ledger B10 is the reason the two are not the same
+    thing — the four-button row **without** a slider is now its own view
+    (``StripView.AMBIGUOUS``, which binds nothing and which a run refuses), so a reading that
+    cannot be pressed from is not confused with one that can.
 
     The **visible-control total is out too** (plan §24.5, D6), and it is the same ruling as the
     strip's button count rather than a new one: once the count is not a cleanliness fact — the
@@ -443,13 +447,23 @@ class CompilationIdentity(ValueModel):
     sound_speed_ms: Provenance
     first_gate_mm: Provenance
     max_profiles_per_block: Provenance
-    class_name: str
-    panels: int = Field(ge=0)
+    #: The layout half of the identity — the window class, the panel count and the strip's view.
+    #:
+    #: **Optional at parse time with a default, deliberately** (the ``process_mode`` precedent):
+    #: an identity written before one of these fields existed carries none of them, and a
+    #: *required* field would make ``read_manifest`` report a valid older manifest as *"not a job
+    #: manifest"* (``campaign._explain_validation``) — a misdiagnosis of the file instead of a
+    #: statement about the evidence, landing on exactly the person least able to tell the two
+    #: apart. ``None`` therefore means "this identity was written before the field was recorded",
+    #: and the resume comparison refuses **by name** (``campaign._identity_disagreements``), with
+    #: ``--resume-declaration-only`` the documented way past it.
+    class_name: str | None = None
+    panels: int | None = Field(default=None, ge=0)
     #: The view the strip was in: a press is bound to a button's **position in that row**
     #: (:func:`~udv_echo_process.acquire.actuator.press_index`), so a view the run did not bind
     #: against is a screen whose presses would land elsewhere.
-    strip_view: StripView
-    strip_has_slider: bool
+    strip_view: StripView | None = None
+    strip_has_slider: bool | None = None
 
     @classmethod
     def from_snapshot(cls, snapshot: InstrumentSnapshot) -> CompilationIdentity:

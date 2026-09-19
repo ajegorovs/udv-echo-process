@@ -266,7 +266,14 @@ def process_mode(caption: str) -> ProcessMode | None:
 
 
 class StripControl(str, Enum):
-    """A record-strip button, addressed by role and by its position in the view."""
+    """A record-strip button, addressed by role and by its position in the view.
+
+    :attr:`UNRESOLVED` is not a button: it is a **position** of a row whose roles are not known —
+    the ambiguous four-button row of ledger B10. It exists so a row can be *counted* without a role
+    being invented for any of its buttons, and it is never pressed: no
+    :data:`STRIP_BUTTON_ORDER` row contains it, so :func:`press_index` refuses it by name rather
+    than binding it to a position.
+    """
 
     PAUSE = "pause"
     RECORD = "record"
@@ -275,6 +282,8 @@ class StripControl(str, Enum):
     CLEAR_AND_RESTART = "clear_and_restart"
     NEW_ACQUISITION = "new_acquisition"
     REMOVE_CURRENT_BLOCK = "remove_current_block"
+    #: A position of a row whose roles are unresolved: never a press target (ledger B10).
+    UNRESOLVED = "unresolved"
 
 
 class DialogControl(str, Enum):
@@ -315,10 +324,23 @@ class StripView(str, Enum):
 
     #: One top-row button: ``[Stop]``.
     RECORDING = "recording"
-    #: Stopped with data, no slider: the ``Record`` row (3 or 4 buttons).
+    #: Stopped with data, no slider: the three-button ``Pause`` / ``Record`` /
+    #: ``Clear and restart`` row (``UI-STRIP-01``).
     READY = "ready"
     #: After ``Stop``: three top-row buttons **and** a ``TSp_Sliding_Bar`` child.
     STORE = "store"
+    #: The four-button, no-slider row: **no executable binding** (ledger B10, critical and
+    #: device-pending). ``UI-STRIP-01`` (``ui-crops/run-controls.png``) paints ``Pause`` /
+    #: ``Record`` / ``Clear and restart`` for the three-button row while ``UI-STRIP-02``
+    #: (``ui-crops/overlay-record-extra-block.png``, the grown state) paints ``New acquisition``
+    #: / ``Do store`` / ``Clear and restart`` / ``Remove current block`` for this one — the two
+    #: readings disagree about the first two buttons, and no live tree of the grown state exists
+    #: to settle it. So this view is a **refusal state**: :data:`STRIP_BUTTON_ORDER` carries no
+    #: row for it, :func:`strip_controls` / :func:`press_index` refuse, ``StripState.is_startable``
+    #: is ``False`` and ``Win32Actuator.press`` refuses before it posts anything. The day a tree
+    #: capture lands, ``docs/dop3000/device-verification.md`` V4 is where the role map is decided
+    #: and :data:`STRIP_BUTTON_ORDER` is where the binding goes.
+    AMBIGUOUS = "ambiguous"
     #: Anything else — do not guess, refuse the cycle.
     UNKNOWN = "unknown"
 
@@ -328,20 +350,21 @@ class StripView(str, Enum):
 #: ``record_and_store`` may only start from a verified ``READY`` view: starting
 #: from ``RECORDING`` stores a leftover recording under the next point's name
 #: (docs/16 §15b).
+#:
+#: **There is no row for ``(AMBIGUOUS, 4)``, and that is the entry's whole content.** A binding
+#: exists only for a known-safe state (architecture invariant: *a* ``StripBinding`` *that carries
+#: executable button roles exists only for known-safe strip states*), and the four-button row
+#: without a slider is the one row the repository's own evidence contradicts (ledger B10): this
+#: table used to bind it ``PAUSE`` / ``RECORD`` / ``DO_STORE`` / ``CLEAR_AND_RESTART`` — the
+#: reference implementation relied on ``row[1]`` being ``Record`` (docs/16 §7/§10) — while
+#: ``UI-STRIP-02``'s grown frame paints ``New acquisition`` / ``Do store`` / ``Clear and restart``
+#: / ``Remove current block``, whose first two positions are **not** those two buttons. A row
+#: that has no binding is a refusal, never a default.
 STRIP_BUTTON_ORDER: dict[tuple[StripView, int], tuple[StripControl, ...]] = {
     (StripView.RECORDING, 1): (StripControl.STOP,),
     (StripView.READY, 3): (
         StripControl.PAUSE,
         StripControl.RECORD,
-        StripControl.CLEAR_AND_RESTART,
-    ),
-    # The no-slider row is documented both with and without a `Do store`; both
-    # readings keep `Record` at index 1, which is what the reference
-    # implementation relied on (`row[1]` = Record, docs/16 §7/§10).
-    (StripView.READY, 4): (
-        StripControl.PAUSE,
-        StripControl.RECORD,
-        StripControl.DO_STORE,
         StripControl.CLEAR_AND_RESTART,
     ),
     (StripView.STORE, 3): (
@@ -366,9 +389,18 @@ STARTABLE_VIEWS: tuple[StripView, ...] = (StripView.READY, StripView.STORE)
 def classify_strip_view(button_count: int, has_slider: bool) -> StripView:
     """Recognise the strip's view from structure alone (docs/16 §3, §7).
 
-    The slider is decisive: it exists only in the store view. Otherwise one
-    top-row button means a recording in progress, 3-4 mean stopped with data, and
-    anything else is unrecognised.
+    The slider is decisive: it exists only in the store view, whatever the row's length.
+    Otherwise one top-row button means a recording in progress, **three** mean stopped with data —
+    and **four are ambiguous**: the no-slider four is the row ``UI-STRIP-01`` and ``UI-STRIP-02``
+    describe with different roles, so it is classified :attr:`StripView.AMBIGUOUS`, which carries
+    no binding and from which nothing may be pressed (ledger B10 — see :class:`StripView`). Every
+    other length is unrecognised.
+
+    This used to answer ``READY`` for ``button_count in (3, 4)``, which made the four-button row
+    startable and bound its positions as ``PAUSE`` / ``RECORD`` / ``DO_STORE`` /
+    ``CLEAR_AND_RESTART`` — a role map the committed grown crop contradicts. Widening a *known*
+    state over a row the evidence disagrees about is exactly the failure this classifier now
+    refuses to make.
     """
     if button_count < 0:
         raise ValueError(f"button_count must be >= 0, got {button_count}")
@@ -376,8 +408,10 @@ def classify_strip_view(button_count: int, has_slider: bool) -> StripView:
         return StripView.STORE
     if button_count == 1:
         return StripView.RECORDING
-    if button_count in (3, 4):
+    if button_count == 3:
         return StripView.READY
+    if button_count == 4:
+        return StripView.AMBIGUOUS
     return StripView.UNKNOWN
 
 
@@ -533,10 +567,20 @@ class StripState(ValueModel):
 
     @property
     def controls(self) -> tuple[StripControl, ...]:
-        """The top-row controls, left → right (empty for an unknown view)."""
+        """The top-row controls, left → right — each one a *role* only in a bound view.
+
+        A view with no row at all (:attr:`StripView.UNKNOWN`) answers with nothing. The
+        **ambiguous** row answers with :attr:`StripControl.UNRESOLVED` once per painted button:
+        that row exists and its length is a reading, while no role may be invented for any of its
+        buttons — which is why nothing may be pressed from it (ledger B10, see
+        :attr:`StripView.AMBIGUOUS`). This property is a *reading*; the binding is
+        :func:`press_index`, and it refuses.
+        """
         try:
             return strip_controls(self.view, self.button_count)
         except ValueError:
+            if self.view is StripView.AMBIGUOUS:
+                return (StripControl.UNRESOLVED,) * self.button_count
             return ()
 
     @property

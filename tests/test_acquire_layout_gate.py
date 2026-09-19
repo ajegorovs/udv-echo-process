@@ -137,6 +137,14 @@ def manual_screen(
     # bands, the row and the plot that its shape is judged by.
     while len(raw) < max(controls, 1):
         raw.append(_widget(700 + len(raw), "TSp_Label", 10, oy + 400, 120, 18))
+    # The measured bar, not a bar of one: the `Parameters` anchor is proven by its **relative
+    # location** in a bar whose painted length is one of the two measured ones (UI-WINDOW-01's ten
+    # entries, or `MENU_ORDER`'s eleven names), so a one-button menubar is a screen on which the
+    # anchor cannot be claimed at all and the gate refuses it (ledger B03).
+    menu = {
+        name: _button(300 + index, 40 + 180 * index, oy)
+        for index, name in enumerate(driver.MEASURED_BAR)
+    }
     roles: dict = {
         "window": 0,
         "class_name": _CLASS,
@@ -145,7 +153,7 @@ def manual_screen(
         "raw": raw,
         "panels": sorted(panels, key=lambda p: p["top"]),
         "parent_of": {w["hwnd"]: 0 for w in raw},
-        "menu": {"Parameters": _button(200, 0, oy)},
+        "menu": menu,
         "menu_band": menu_band,
         "plot": plot_control,
         "open_popup": popup,
@@ -191,6 +199,14 @@ def assisted_screen(*, controls: int = 21) -> dict:
     raw = [menu_band, strip, status, plot_control, *row]
     while len(raw) < controls:
         raw.append(_widget(700 + len(raw), "TSp_Label", 10, oy + 300, 120, 18))
+    # The measured bar, not a bar of one: the `Parameters` anchor is proven by its **relative
+    # location** in a bar whose painted length is one of the two measured ones (UI-WINDOW-01's ten
+    # entries, or `MENU_ORDER`'s eleven names), so a one-button menubar is a screen on which the
+    # anchor cannot be claimed at all and the gate refuses it (ledger B03).
+    menu = {
+        name: _button(300 + index, 40 + 180 * index, oy)
+        for index, name in enumerate(driver.MEASURED_BAR)
+    }
     roles: dict = {
         "window": 0,
         "class_name": _CLASS,
@@ -199,7 +215,7 @@ def assisted_screen(*, controls: int = 21) -> dict:
         "raw": raw,
         "panels": [menu_band, strip, status],
         "parent_of": {w["hwnd"]: 0 for w in raw},
-        "menu": {"Parameters": _button(200, 0, oy)},
+        "menu": menu,
         "menu_band": menu_band,
         "plot": plot_control,
         "open_popup": False,
@@ -252,19 +268,45 @@ def test_no_count_is_a_gate_at_any_value() -> None:
         assert len(roles["raw"]) == controls, controls
 
 
-def test_an_assisted_screen_passes_and_is_classified_from_its_absent_column() -> None:
-    """Row 2, and round 2's P1: three panels pass, and `screen_mode` still gets to classify them.
+def test_the_assisted_shape_passes_the_common_core_and_is_refused_by_its_absent_column() -> None:
+    """Row 2, and round 2's P1 — **corrected by ledger B01**.
 
-    The assisted screen is refused by *nothing* here — which is the property the plan insists on,
-    because a gate that required a parameter column would reject this screen before
-    :func:`driver.screen_mode` could read the missing column as ``ASSISTED``.
+    The test this replaces asserted that the assisted shape passes the gate *and* that
+    :func:`driver.screen_mode` reads the missing column as ``ASSISTED``. The live incident B01
+    (``UI-OVERLAY-06``, the ``Preferences`` dialog) disproved the second half: the option *Show
+    fast access parameters panel (not available in assisted mode)* takes the column away while
+    the channel stays manual, so the absent column cannot be read as a mode, and a manual
+    acquisition requires the panel **present and complete**.
+
+    What survives is the shape half, asserted here so the refusal cannot be satisfied by refusing
+    the shape: the assisted tree is refused by *nothing structural* — no clause about the window
+    class, the menubar band, the strip, the status band or the plot — and the clause that does
+    refuse it is the parameter panel's own, naming the ``Preferences`` option and the assisted
+    possibility without claiming either. The manual screen is unaffected.
     """
     roles = assisted_screen()
-    assert driver.layout_refusal(roles) is None
-    assert driver.screen_mode(roles) is ChannelMode.ASSISTED
     assert len(roles["panels"]) == 3
-    # The manual shape is the manual screen's, and each is refused by the other's absence.
+
+    # ...the common core passes untouched: the refusal is about the panel, not the shape.
+    structural = [
+        clause
+        for clause in driver.layout_shape_reasons(roles)
+        if "parameter panel" not in clause
+    ]
+    assert structural == [], structural
+
+    # ...and the panel is what refuses it, by name, with both readings of its absence.
+    refusal = driver.layout_refusal(roles)
+    assert refusal is not None
+    assert "fast-access parameter panel is absent" in refusal, refusal
+    assert "Preferences" in refusal and "assisted" in refusal, refusal
+    assert "missing field" not in refusal  # a refusal about the screen, not a broken binding
+
+    # No mode is read out of the absence — the reading ledger B01 forbids.
+    assert driver.screen_mode(roles) is None
+    # The manual shape is the manual screen's, and each is still told apart by its column.
     assert driver.screen_mode(manual_screen()) is ChannelMode.MANUAL
+    assert driver.layout_refusal(manual_screen()) is None
 
 
 # ------------------------------------------------------------------ 24.6, row 3
@@ -330,14 +372,23 @@ def test_a_tree_with_no_status_band_fails_and_the_clause_names_it() -> None:
 
 
 def test_a_strip_row_outside_the_known_rows_fails() -> None:
-    """§21.3 item 3's silent case: *a different button panel in the plot's middle band*."""
-    for length in (0, 2, 5, 9):
+    """§21.3 item 3's silent case: *a different button panel in the plot's middle band*.
+
+    **Corrected by ledger B10** (this assertion used to accept ``length == 4``): the four-button
+    row **without** a slider is the one row the repository's own crops contradict — UI-STRIP-01
+    paints ``Pause`` / ``Record`` / ``Clear and restart`` for the three-button row while
+    UI-STRIP-02's grown frame paints ``New acquisition`` / ``Do store`` / ``Clear and restart`` /
+    ``Remove current block`` for the four-button one — so it is a refusal here and not a
+    ``STRIP_BUTTON_ORDER`` row. Its sibling pin is
+    ``tests/test_acquire_strip_ambiguity.py::test_the_shape_gate_does_not_treat_a_four_button_no_slider_row_as_known``.
+    """
+    for length in (0, 2, 4, 5, 9):
         roles = manual_screen(strip_row=length)
         reasons = driver.layout_shape_reasons(roles)
         assert any("STRIP_BUTTON_ORDER" in text for text in reasons), (length, reasons)
     # ...while the rows the application really builds are accepted, one button included: a
     # *documented* view is not a shape failure (the runner refuses a non-startable view itself).
-    for length in (1, 3, 4):
+    for length in (1, 3):
         assert driver.layout_shape_reasons(manual_screen(strip_row=length)) == (), length
 
 
@@ -346,6 +397,33 @@ def test_a_column_that_resolves_without_its_roles_fails() -> None:
     roles = manual_screen(column_roles=3)
     reasons = driver.layout_shape_reasons(roles)
     assert any("roles" in text for text in reasons), reasons
+
+
+def test_a_rect_less_incomplete_column_refuses_rather_than_raising() -> None:
+    """The gate is **total** over the role maps it is documented to read — even a partial one.
+
+    ``Rect.from_control`` reads a row's rectangle from its ``rect`` **or** from its
+    ``left/top/w/h``, which is the shape a captured or partial role map states, and the one
+    :func:`driver.observation_of`'s projection and ``ui.layout``'s own ``_rect_text`` are written
+    in. The INCOMPLETE clause used to reach into the raw row and index ``column['rect']``, so such
+    a tree raised ``KeyError`` out of a pure shape check instead of returning its refusal.
+
+    Asserted on the clause the gate already builds for this shape: the refusal is the normal one,
+    and it names the geometry the module's own projection reads off the row.
+    """
+    roles = manual_screen(column_roles=3)
+    column = roles["left_panel"]
+    # The row states its geometry as left/top/w/h and carries no rect tuple at all.
+    del column["rect"]
+    assert "rect" not in column
+    assert {"left", "top", "w", "h"} <= set(column)
+
+    reasons = driver.layout_shape_reasons(roles)
+    clause = next(text for text in reasons if "parameter column" in text)
+    assert "neither accepted shape" in clause, clause
+    # (0, 83, 190, 1028) is this row's rect as `Rect.from_control` resolves it from left/top/w/h.
+    assert "(0, 83, 190, 1028)" in clause, clause
+    assert driver.layout_refusal(roles) is not None
 
 
 def test_the_class_and_the_plot_band_are_checked_too() -> None:

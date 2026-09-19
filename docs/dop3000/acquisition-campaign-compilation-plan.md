@@ -1,5 +1,19 @@
 # Plan — compile campaigns against live instrument state (the review's Phase 6)
 
+> **Historical record (frozen 2026-09-18).** This document is the plan for the Phase-6 slice
+> and the running chronology of the work that followed it. It is retained for its evidence
+> and its reasoning, and it is **no longer the authority for how the acquisition subsystem is
+> organised**: architecture, layering and invariants are
+> [`acquisition-architecture.md`](acquisition-architecture.md); surfaces, widgets, bindings
+> and the blind-spot ledger are [`acquisition-ui-model.md`](acquisition-ui-model.md); and the
+> procedure that retires the device-pending items is
+> [`device-verification.md`](device-verification.md). Read those three before acting on
+> anything below. §11.1 is the live checkpoint **as of the date written** and §26 the live
+> findings of that day; later sections in the same style are history too, and a statement of
+> where the work *stands now* belongs in
+> [`handoff-dop3010-acquisition.md`](handoff-dop3010-acquisition.md) instead. **Nothing below
+> has been altered by the freeze** — this header is the only edit.
+
 **Status: plan only. Nothing in this document is implemented.**
 It is the first commit of the PR that carries it, which is the branch the implementation
 continues on. The slice before it — the acquisition correctness baseline — is merged
@@ -2780,7 +2794,11 @@ the screen before that classification ran would refuse the assisted mode for bei
   at the client's bottom — found by **shape, never by index**;
 - the strip's row length maps into `STRIP_BUTTON_ORDER` — §21.3 item 3's silent case ("a different button
   panel in the plot's middle band") is what this catches;
-- nothing is over it: `open_popup` false, `_find_overlay(roles)` none, `_dialog_panels` empty;
+- nothing is over it: `open_popup` false, `_find_overlay(roles)` none, and the resolver's
+  `value_dialogs | browse_dialogs` union empty. That union is an independent precondition of both a
+  strip press and the real-cursor menubar hover: `open_popup` excludes dialogs and `_find_overlay`
+  treats value dialogs as known panels. `_dialog_panels()` is the fresh post-action read used by
+  `_close_any_dialog`; it is not a substitute for this pre-action refusal;
 - the process mode is stated (24.4), because "a measurement screen of some mode" is not enough to record
   against.
 
