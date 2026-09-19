@@ -301,6 +301,29 @@ need not descend from `TMain_Scr`, so it wants a top-level window enumeration wi
 sitting B. V5's cap is untouched. V4's four-button role map, the refusal paths, and the write path
 (`ensure_channel`, V6) remain device-pending.
 
+**The strip's state tree is closed, same day.** Six states, every one read in one process and every
+transition pressed by the operator: `ready` / `store` / intermediate / block-held / block-held-after-a-removal,
+and back to `ready`. Two destructive exits (`Remove current block`, `Clear all`) share **one** reused guard
+panel whose two messages differ only on the pixels, neither is identified by the dialog predicate, and the
+strip resolver names the guard as the strip in both cases. `Clear all` returns the screen to the reference
+reading (44 controls in 4 panels, no refusal), with the profile counter back to 0 — so the counter is the
+buffer's extent. Full record: `device-verification.md`, *2026-09-19 — the four-button strip, block-held*.
+
+**Sitting B, same day.** The operator reached the block-held state by hand and the map is taken, on the same
+process as sitting A: the grown row is four visible buttons (`Resume` / `Do store` / `Clear and restart` /
+`Remove current block`) **whose slot 1 is two different controls** — the `ready` state's second button is
+merely hidden — while slot 0 genuinely relabels; the row does carry a slider (`TSp_Sliding_Bar`, two handles,
+`1513` … `8297`) and a `Show block` combo reading `2`; the two caption-less buttons below it are the
+`Profiles history in second / profile` selector. Two refusals on the state are **safe but misdiagnosed**: the
+strip resolver named *the cursor info box* as the strip, and the layout classifier reported **"a dialog is
+up"** naming the strip's own grown panel — so the `>400 px` predicate admits the strip itself when a block is
+held. The cursor info box is in the tree but its `Depth` / `Velocity` numbers are **paint only**, which closes
+sitting A's third item. The intermediate state was read too (11:55, same process): four buttons —
+`Pause` / `Record` / `Do store` / `Clear and restart` — painting nothing below the row, with `Show block`
+= `1`; and the row turns out to be drawn from a **pool of five button controls** of which two (`Pause`/`Resume`, and `Clear and restart`/`Clear all`) relabel, the rest being visibility — and all four combinations are now **read**,
+with the pool model having predicted the last one (UI-STRIP-04, the strip's `store` view) exactly
+before it was reached.
+
 Binding outcomes:
 
 - **The acquisition stop condition** (from the review of the batch, now recorded in the plan's

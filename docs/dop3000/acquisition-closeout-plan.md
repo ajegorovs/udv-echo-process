@@ -21,6 +21,29 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
+**Resume here — end of the 2026-09-19 session.** Two **documents-only** pull requests carry everything that
+session produced and they are **not on `master` yet**: [PR #12](https://github.com/ajegorovs/udv-echo-process/pull/12)
+(sitting A — the V2 bracket on the merge head, the `89` rule read off the pixels, the cursor info box
+answered) stacked under [PR #13](https://github.com/ajegorovs/udv-echo-process/pull/13) (sitting B — the
+strip's whole state tree, the block/buffer model, the two destructive guards, the misdiagnosis chain). **Merge
+`#12` first, then retarget `#13` onto `master` *before* deleting `#12`'s branch** — deleting a merged base
+branch closes its dependents, which is the landing lesson recorded in §1.1. Until that happens, `master`'s copy
+of `device-verification.md` does not carry either sitting's record.
+
+Then, in this order:
+
+1. **Sitting C** (§3) — the refusals, still device-pending and none attempted: V3's `Define TGC` overlay, V1's
+   sidebar preference, V5's declaration-only mismatch.
+2. **The identity fix this session made concrete.** The strip panel and *both* destructive guards are
+   misclassified by one chain: the `>400 px` dialog predicate admits the strip (551/502 px) and **misses both
+   guards** (392 px), the strip resolver's decoy panel moves with the panel set (info box → guard → nothing at
+   all), and the popup test fires **only when the other two resolve**. Naming the guard's and the box's
+   identity **once** is what the record argues for; three symptom patches is what it argues against. This needs
+   a plan before code — §9.1's stop condition still binds the architecture.
+3. **Sitting D** — the writes (`ensure_channel`, V6's six-point campaign on the instrument, V7/V8), unchanged.
+4. **The one operator question** that unblocks the experiment: is
+   `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment?
+
 ## 1. Where the work stands
 
 The three pull requests that carried everything not on `master` **landed on 2026-09-19**, in the order §2
@@ -180,6 +203,99 @@ is a refusal into a **map**, and the procedure requires all three witnesses — 
 observed transition — before the code may gain one. The same visit is the best chance to identify the
 **"two caption-less buttons below the strip"** (`ui-element-index.md`'s outstanding unknown): it wants a
 tree read in the state that paints them, not a photograph, because a camera cannot name a control.
+
+**Outcome, 2026-09-19 — the map exists, and it is not one mechanism.** The operator reached the block-held
+state by hand, left the monitor paused and placed a cursor at 45 mm; the capture ran on the **same process**
+the V2 bracket had read two minutes earlier (hwnd `3935144`), which is what makes the handle comparison below
+a measurement rather than an inference. Nothing on the strip was pressed by the automation.
+
+- **The row is four visible `TSp_Button`s in the strip's own grown panel** (`3149132`, `[343,414,894,537]`,
+  551x123, ten direct children — against the `ready` strip's `[343,414,695,454]`, 352x40): `1574908`
+  `Resume`, `2821164` `Do store`, `1641666` `Clear and restart`, `7867344` `Remove current block`, each
+  caption bound to its handle by position.
+- **The row is drawn from a pool of five button controls, not one slot per position** — measured across
+  three states in one process: `1574908` is one of the **two** controls that relabel (`Pause` → `Resume`; the other is `1641666`: `Clear and restart` → `Clear all`, measured after a block removal);
+  `4787852` keeps `Record` and is hidden when a block is held; `2821164` keeps `Do store`; `1641666`
+  keeps `Clear and restart` in every state; `7867344` (`Remove current block`) appears only with a held
+  block. The intermediate state shows `Record` **and** `Do store` side by side, so the two are not
+  competing for one slot, and `ui-element-index.md`'s finding 20 is corrected accordingly.
+- **The grown row does report a slider**: `TSp_Sliding_Bar 3344390` `[465,449,897,499]`, a direct child of
+  the strip panel, painted as a two-handle range (`1513` … `8297`, `6785` under the track) — with a second,
+  hidden one elsewhere in the tree, so the class alone does not identify it. The combo `1967830`
+  (`Show block`) reading **`2`** is the one app-readable value in the state.
+- **The two caption-less buttons are the `Profiles history in second / profile` selector pair**
+  (`2690436` `[350,467,401,482]`, `1967842` `[409,467,453,482]`, the green tick on `profile`) — that unknown
+  is closed, and the read it needed is the one taken here.
+- **Two false diagnoses on the state, both safe and both wrong.** The strip resolver returned
+  `view: "unknown"`, `button_count: 0` and named **the cursor info box** as the strip (nothing was pressed;
+  the refusal is `d04a88c`'s designed behaviour, but the diagnosis misdirects a caller). And the layout
+  classifier reported **"a dialog is up"**, naming the strip's own grown panel, with the active surface
+  reading `dialog` and **50 visible controls in 5 panels** against the clean 44 in 4 — so the `>400 px`
+  predicate that admits the `Define TGC` overlay admits **the strip itself**, in the state a held block puts
+  the screen in. That is the boundary sitting C was going to inspect for the overlay; it is now a measured
+  fact about the strip, and it is the more important of the two.
+- **The cursor info box is in the tree but its numbers are paint only**: two caption-less panels
+  (`131916` + `131920`), and no control text in any of the process's 46 top-level windows carries a depth or
+  a velocity. Sitting A's third item **closes** on that: the analysis stays post-processing, as §26.11
+  decided, and those two numbers come from pixels or not at all.
+- **The intermediate state was read too** (11:55, same process): panel 453x40, four buttons — `Pause` /
+  `Record` / `Do store` / `Clear and restart` — and it paints nothing below the row while the tree still
+  reports the slider hidden and the `Show block` combo and the toggle pair `visible`; the `Show block`
+  value is **`1`**, i.e. no block held. **And the fourth combination is read too**: UI-STRIP-04's state
+  (three buttons and a slider) was reached live at 12:03 and is the strip's `store` view — the pool's
+  predicted handle row, panel rect and `Show block` came out exact, so all four states of this row are
+  read rather than inferred. **Left open:** the `STORE` versus `READY`-with-block naming, and V5's cap.
+- **The slider's own arithmetic, measured** (12:11): its painted numbers are the **displayed block's** profile
+  range with the range's length between them — `1` … `4772` with `4772` in the store state, `4773` … `16381`
+  with `11609` once block 2 is held (`16381 - 4773 + 1 = 11609`). So the **block boundary is legible from
+  pixels alone**, and the store state is the only one whose strip resolves. The step's prediction was ten of
+  eleven exact (the miss was the slider's left end), and the block-held state reproduced a **third** time
+  byte-identically (`+0 / -0 / moved 0 of 273`).
+- **The strip's state tree is closed, all six states read** (12:34): `[Clear all]`'s guard answered takes the
+  screen back to the **reference** state — resolver `view 'ready'` with three buttons, panel
+  `[343,414,695,454]`, no slider painted, the third button relabelled back to `Clear and restart`, the band's
+  counter restarted from `0` (a new block 1 opened immediately) and **44 visible controls in 4 panels with
+  `layout_note: None`** — the screen's first clean reading since the sitting began. So the loop closes onto the
+  reference, the counter is the buffer's extent (it fell to `16381` on a removal and to `0` on a clear), and
+  both destructive exits are gated by the one reused guard panel that the dialog predicate misses.
+- **The removal semantics, measured** (12:29): the guard's `Confirm` drops the **selected** block from the
+  buffer, the selection falls back one block (combo `3` → `2`), the slider repaints that block's range
+  (`4773` … `16381`, `11609`) and **the profile counter follows the buffer** — `26771` before, `16381` after —
+  so the counter is the retained extent, not a monotonic session counter. The row's third button relabels with
+  it (`Clear and restart` → `Clear all`), the panel narrows 551 → 502 px by exactly the caption's width with
+  the sizing rule intact, and the strip resolver's failure mode turns out to depend on the panel set: the info
+  box while it is up, the modal while *it* is up, and **no panel at all** when neither is.
+- **The buffer model, measured on three blocks** (12:19): the `Show block` combo selects which block the
+  strip's slider paints, and the slider is that block's profile range with its length between the numbers —
+  `1` … `4772` (4772), `4773` … `16381` (11609), `16382` … `26771` (10390). The ranges are **contiguous over
+  one monotonic profile counter**, i.e. sequential partitions of a single global buffer, and the pause that
+  ends a block puts the slider's right end at exactly the profile the bottom band's counter stands at — two
+  independent painted surfaces agreeing. `Show block` is the *selected* block and need not be the one being
+  acquired (at 12:14 the combo read `2` while the band read `Block : 3`). Each pause/resume cycle opens a new
+  block, so one cycle costs one block. `Memory : Filling` stays painted after the pause (it describes the
+  buffer), and the band's painted `22.4 ms` per profile still disagrees with the observed rate (~16-31
+  profiles/s across two windows) — an unreconciled timing item for §16.4.
+- **The block-held state reproduces exactly** (read again at 11:59 after the operator passed through the
+  intermediate state): `compare_reads.py` gives **tree delta `+0 / -0 / moved 0 of 273`**, the same ten strip
+  children at identical handles and rects, the same `Show block` = `2`, and the same two misdiagnoses — so
+  neither the state nor the wrong diagnoses are one-off. The four transitions between the states are now
+  **observed** by the operator (the third witness V4 wanted), with three of the four states read.
+- **The model was tested by prediction, and it holds — and the test found a third false positive.** From the
+  `Pause` / `Record` / `Clear and restart` state the operator was asked to press `Pause`, with the outcome
+  predicted in advance: the row's handles, their rects, the panel's rect (`[343,414,713,537]`, from a sizing
+  rule derived from the three measured states), the slider's presence and `Show block` = `1` all came out
+  **exact** — as did the prediction that the `>400 px` dialog predicate would stop firing at 370 px
+  (`0 dialog panel(s)`). What the prediction missed is that **another** wrong readout takes its place: the
+  screen reports `open_popup: True` and the surface reads `popup`, because the **cursor info box** (`131916`)
+  directly owns one `TSp_Button` (`131918` — the control recorded as visible while painting nothing) and the
+  popup predicate is "a panel that is not the menu, not the status bar, not the strip and not a dialog, and
+  that hosts a button" (`driver.py:1102`). The three wrong readouts **hide each other**: while the strip
+  resolver named the info box as the strip and the classifier named the strip a dialog, the popup test had
+  no candidate and printed "no menu popup". So the popup false positive appears **only once the other two
+  classify correctly** — which is the argument for naming the box's identity once, rather than each symptom.
+
+Full record, with the rects, the handles and the two refusal texts: `device-verification.md`, *2026-09-19 —
+the four-button strip, block-held*.
 
 ### Sitting C — the refusals, three cheap items (~20 min)
 
