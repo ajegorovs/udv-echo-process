@@ -32,14 +32,18 @@ of `device-verification.md` does not carry either sitting's record.
 
 Then, in this order:
 
-1. **Sitting C** (§3) — the refusals, still device-pending and none attempted: V3's `Define TGC` overlay, V1's
-   sidebar preference, V5's declaration-only mismatch.
-2. **The identity fix this session made concrete.** The strip panel and *both* destructive guards are
-   misclassified by one chain: the `>400 px` dialog predicate admits the strip (551/502 px) and **misses both
-   guards** (392 px), the strip resolver's decoy panel moves with the panel set (info box → guard → nothing at
-   all), and the popup test fires **only when the other two resolve**. Naming the guard's and the box's
-   identity **once** is what the record argues for; three symptom patches is what it argues against. This needs
-   a plan before code — §9.1's stop condition still binds the architecture.
+1. **Sitting C is complete** (§3, `device-verification.md`): V1 passed and restored cleanly; V3 refused
+   safely but failed its diagnosis by calling `Define TGC` a dialog and then blaming the strip; V5 was not
+   run because `compile` invokes the channel-dialog `Accept` before comparing the declaration, so it moves
+   beside that authorised write in sitting D.
+2. **The identity fix this session made concrete — planned in
+   [`identity-classification-plan.md`](identity-classification-plan.md).** The strip panel, `Define TGC`, the
+   cursor info box and *both* destructive guards are misclassified by one chain: the `>400 px` dialog
+   predicate admits the strip (551/502/453 px) and `Define TGC` (450 px) and **misses both guards** (392 px),
+   the strip resolver's decoy panel moves with the panel set (info box -> guard -> nothing at all), and the
+   popup test fires only when the other two resolve and the info box is up. The plan names panel identity
+   **once** before dialog/strip/popup consumers, pins the 453x40 cleanup hazard, and requires read-only device
+   reruns before sitting D. Three symptom patches are explicitly out of scope.
 3. **Sitting D** — the writes (`ensure_channel`, V6's six-point campaign on the instrument, V7/V8), unchanged.
 4. **The one operator question** that unblocks the experiment: is
    `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment?
@@ -305,27 +309,37 @@ the four-button strip, block-held*.
    against overlay state; cancel by hand; re-read a clean status. This is also the device evidence for
    `#10`'s one deliberately-open item: the canonical `>400 px` dialog predicate also accepts the measured
    `Define TGC` overlay class, actions now refuse when that union is non-empty, but `_close_any_dialog` can
-   still treat an operator-opened panel in that class as a dialog. The sitting should capture whether any
-   cleanup path *tried* to press it — that reading is what decides whether the boundary needs code or only a
-   sentence.
+   still treat an operator-opened panel in that class as a dialog. Sitting C established the misdiagnosis but
+   stopped before its compile half, so it did **not** exercise cleanup. The bounded cleanup-safety recheck now
+   lives in `identity-classification-plan.md` §5 after the press-raising cloud tests; no cleanup gesture is
+   attempted against `Define TGC` itself.
 2. **V1 — the sidebar preference, now cheap and known.** Untick `Show fast access parameters panel`, run
    status/compile, confirm the run refuses a manual channel **and does not claim `assisted`**, naming the
    preference; tick it back; re-read a clean status (44 visible controls in 4 panels). The 2026-09-18
    incident (§26.12) measured this state **and its recovery** by accident, so the item's cost is two
    `Preferences` interactions and its risk is bounded — and it is now the *only* item that requires
    deliberately reproducing a configuration this experiment otherwise forbids touching.
-3. **V5's declaration-only half.** Compile the matching definition and make one **declaration-only** mismatch
-   without touching the instrument: the run must refuse before `Record` and write no `.BDD`. Confirm the
-   block cap stays **explicitly unproven** — it is a `Preferences` value, not a parameter, so a painted
-   number is evidence, not a read path.
+3. **V5's declaration-only half — deferred to sitting D by the live path's actual ordering.** A code-path
+   audit before this item found that `acquire compile` always calls `ensure_channel` first, and
+   `ensure_channel` unconditionally presses the Operating parameters dialog's **Accept** end even when the
+   channel is already `1`; only afterwards does compilation compare `burst_length`. The mismatch can never
+   write a `.BDD` (the compile verb has no store path), but it cannot satisfy this sitting's “without touching
+   the instrument” boundary either. Do not run a weaker offline substitute: `acquire plan` cannot see an
+   instrument/declaration mismatch. Run the matching and mismatching compiles immediately after sitting D's
+   already-planned `ensure_channel` verification, where that Accept press belongs. Keep the block cap
+   **explicitly unproven** — it is a `Preferences` value, not a parameter, so a painted number is evidence,
+   not a read path.
 
 ### Sitting D — the writes, and the milestone
 
-1. **V2's write half: `ensure_channel`.** The routing route presses the dialog's **accept** end and writes
-   the channel before it reads — a different path from the read the `7de790c` session ran. Run it on the
-   channel the instrument already stands on, or with the operator standing by to restore the channel; the
-   pass criterion is that the dialog's own channel, the routed channel and the run's configuration agree
-   afterwards, and that the screen reads clean.
+1. **V2's write half: `ensure_channel`, then V5's two compiles on that already-authorised write path.** The
+   routing route presses the dialog's **accept** end and writes the channel before it reads — a different path
+   from the read the `7de790c` session ran. Run it on the channel the instrument already stands on, or with
+   the operator standing by to restore the channel; the pass criterion is that the dialog's own channel, the
+   routed channel and the run's configuration agree afterwards, and that the screen reads clean. Then compile
+   `examples/campaign-single-channel.json` once matching and once with a declaration-only `burst_length: 5`:
+   the first must pass, the second must refuse before `Record`, neither can write a `.BDD`, and the block cap
+   remains explicitly unproven.
 2. **V6 — the six-point campaign through the compiled path, on the instrument.** This is the milestone, not a
    verification chore: the same campaign the simulation run already passed, now with the instrument's own
    frame declared and compiled. Pass: exactly the expected files, every point verified (channel,
