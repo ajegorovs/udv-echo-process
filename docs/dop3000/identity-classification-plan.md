@@ -75,6 +75,39 @@ The classifier is ordered from the narrowest actionable shapes to the broadest f
 This removes the current circularity: dialog membership may not decide which panel is the strip while strip
 membership simultaneously decides which panel counts as a popup.
 
+### 2.2 The admitting clause and the decoy, measured off the kept trees
+
+Re-read offline with the **unmodified** predicates against the 2026-09-19 dumps under `outputs/live/keep/`
+(probe `tools/live/probes/main_geometry.py`; each dump carries the whole 273-row tree, so a panel's *direct*
+children are the dump's own parent links):
+
+| panel | state | `_is_dialog_panel` | the clause that decided it |
+|---|---|---|---|
+| 453x40 | the intermediate four-button strip | **True** | one direct `TComboBox` |
+| 502x123 | the grown strip after a removal | **True** | one direct `TComboBox` |
+| 551x123 | the grown strip, block held | **True** | one direct `TComboBox` |
+| 370x123 | `Pause` / `Record` / `Clear and restart` + slider | False | `w > 400` only |
+| 392x132 | the reused destructive guard, both warning states | False | `w > 400` only |
+| 149x59 | the cursor info box | False | `w > 400` only |
+
+Three corrections to the account in §1 and §2.1:
+
+- **The clause that admits the strip is the input-class one, not "full of controls".** Each admitted strip
+  panel directly owns exactly one `TComboBox` — the `Show block` combo — and `_DIALOG_INPUT_CLASSES` accepts
+  that for any panel wider than 400 px. A fix that narrows *shape* while leaving the input-class clause
+  unconditional would leave the 453 row red and the 370 row green for the wrong reason: 370 escapes only
+  because the sizing rule happens to stop 30 px short of the width guard.
+- **The guard is not admitted at all** (`392 <= 400`), in either warning state, so "the predicate misses the
+  warning family" is exact. What the guard does instead is win the **strip** vote: `strip.panel_id` is the
+  392x132 panel in both warning dumps, and the cursor info box (`131916`) in the block-held and intermediate
+  ones, which is present in every one of those reads and holds its caption-less button in the held states.
+  The §1 chain is therefore reproduced without the instrument — and item 4's warrant has to reject the guard
+  and the info box on its own evidence rather than on the dialog union.
+- **A strip panel's children can lie outside its own rect.** In the 453x40 state the panel is
+  `[343,414,796,454]` while the row's four buttons paint at y 423-444 and the two `Profiles history` toggles
+  at y 467-482. Item 4's warrant survives this (`top < panel.top + 30` with an in-panel centre excludes the
+  pair); a rule that asks *only* for "inside the panel" does not.
+
 ## 3. Consumer rules
 
 All consumers take the same classified inventory; none re-derives panel meaning.
@@ -102,10 +135,19 @@ All consumers take the same classified inventory; none re-derives panel meaning.
 
 ### 3.1 The cleanup hazard this plan must close
 
-The 453x40 intermediate strip is currently admitted by the dialog predicate. Its broad “bottom 70 px” row
-can resolve `Do store` as `row[-2]`; a cleanup path could therefore press a state-changing strip control while
-believing it is `Cancel`. This is a code-proven hazard, not a device claim. The first regression test must
-make that press impossible before any production edit proceeds.
+The 453x40 intermediate strip is admitted by the dialog predicate — measured, not inferred:
+`ui.dialog._is_dialog_panel` returns True for the `[343,414,796,454]` panel of
+`outputs/live/keep/main-geometry-2026-09-19-intermediate.json`, on its one direct `TComboBox` (§2.2). Its
+broad “bottom 70 px” row then resolves **six** buttons rather than the row's four: left -> right the two
+caption-less `Profiles history` toggles (`2690436` at `[350,467,401,482]`, `1967842` at `[409,467,453,482]`,
+painted below the panel's own 40 px rect and inside the band), then the row's `1574908` `[353,424,432,444]`,
+`4787852` `[442,424,527,444]`, `2821164` `[537,423,628,443]`, `1641666` `[638,423,776,443]`. So a cleanup
+path's safe end (`row[-2]`) lands on `2821164` — the control the same-process handle map binds as
+**`Do store`** — and its confirm end (`row[-1]`) lands on `1641666` — **`Clear and restart`**: *both* ends
+are state-changing strip controls, and even `row[0]` is not the row's first button. This is code- and
+tree-proven, not a device claim. The first regression test must make that press impossible before any
+production edit proceeds, and it must assert against the **six-entry band**: a four-button fixture makes it
+pass for the wrong reason.
 
 The V3 status run did not exercise cleanup, so no document may claim that `Define TGC` cleanup is presently
 safe or unsafe. The implementation must establish safety through classification tests first, then a bounded
@@ -118,7 +160,12 @@ Each device-forced correction is its own commit. Do not mix behaviour changes wi
 ### Slice 1 — prove the measured counterexamples red, then land the tests with Slice 2
 
 Add a surface-identity matrix assembled from named evidence sources; each row states whether it is a raw tree,
-a committed fixture or a synthesized measured shape. It covers:
+a committed fixture or a synthesized measured shape. The states the instrument produced on 2026-09-19 already
+exist as raw trees under `outputs/live/keep/` — `…-intermediate.json` (453x40), `…-after-removal.json`
+(502x123), `…-blockheld.json` (551x123), `…-pause3.json` (370x123), `…-clearall-warning.json`
+and `…-remove-warning.json` (the 392x132 guard) — and the fixtures are those trees **sanitised to the
+committed convention** (`cls` / `text` / `rect` only, no handles, no parent links), the shape
+`tests/data/udop-measurement-screen-tree-instrument.json` already has. It covers:
 
 - strip: 352, 370, 453, 502 and 551 px, with absent/visible slider and an explicitly excluded hidden node;
 - warnings: measured 392x132, 397x135 and 353x155 two-button forms, plus an unmeasured-geometry overwrite
@@ -177,9 +224,10 @@ Required negative assertions:
 ### Slice 4 — refusal wording and stale-document corrections
 
 Make V3's expected first reason name an active overlay/non-measurement surface. Strip/sidebar reasons may
-follow as evidence but may not precede or replace identity. Correct only stale claims needed to review this
-change: the five-button pool supersedes “ready gains Do store”; V1 disproves “missing column means assisted”;
-the `89` edits are buffer values; V1/V3/V4/V5 status must match the current device record.
+follow as evidence but may not precede or replace identity. The document half of this slice **landed with
+[#15](https://github.com/ajegorovs/udv-echo-process/pull/15)**: the five-button pool supersedes “ready gains
+Do store”, V1 disproves “missing column means assisted”, and the `89` edits are buffer values. What remains
+here is the V3 first-clause wording and the V1/V3/V4/V5 status table's agreement with the device record.
 
 ## 5. Verification ladder
 
