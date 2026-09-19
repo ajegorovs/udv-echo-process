@@ -358,13 +358,16 @@ class ParametersSurface:
                 still_up = {}
             if still_up.get("open_popup"):
                 # **And the popup is the reference's own, not every panel that hosts buttons.**
-                # ``open_popup`` is true for the ``Define TGC`` overlay and for every measured
-                # warning box (392/397/353 px, docs/16 §8) while zero dialog panels resolved, so a
-                # note written from it alone would name a stranded ``Parameters`` menu — and hand
-                # the operator a restart — for a warning they clear with ``Continue``. The panel
-                # is therefore the one :func:`parameters_overlay` finds on this fresh map, by the
-                # rectangle ``recon/41`` recorded; and when that panel is not up, the panel that
-                # is gets named for what it is: not this menu.
+                # ``open_popup`` *was* true for the ``Define TGC`` overlay and for every measured
+                # warning box (392/397/353 px, docs/16 §8) while zero dialog panels resolved — that
+                # was the defect ``ui/identity.py`` closed, and the key is now the ``Parameters``
+                # menu's own identity and nothing else. The panel is still taken from
+                # :func:`parameters_overlay` on this fresh map, by the rectangle ``recon/41``
+                # recorded, rather than inferred from the key: the guard has to answer a map that
+                # states no identities too (a fake, a fixture, a caller's own dict), and a note
+                # written from the key alone would name a stranded menu — and hand the operator a
+                # restart — for a warning they clear with ``Continue``. When that panel is not up,
+                # the panel that is gets named for what it is: not this menu.
                 overlay = parameters_overlay(self._panel_map(still_up), self._is_visible)
                 if overlay is not None:
                     rect = tuple(overlay["rect"])
