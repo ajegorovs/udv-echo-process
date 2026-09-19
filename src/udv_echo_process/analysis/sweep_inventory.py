@@ -227,12 +227,13 @@ def discover_sweep_files(dataset_root: Path) -> tuple[Path, ...]:
     """Return the dataset's ``<axis>/<label>.BDD`` files, sorted.
 
     Sorted so the walk order is deterministic; the axis is the directory name
-    and the requested label is the file stem (the dataset's own naming).
+    and the requested label is the file stem (the dataset's own naming). An
+    empty (or absent) dataset root yields no files rather than an error: the
+    gate — ``file_count`` — is what reports a missing or incomplete dataset,
+    and a caller needs the header-only manifest to see which files were found.
     """
     root = Path(dataset_root)
     files = sorted(path for path in root.glob("*/*.BDD") if path.is_file())
-    if not files:
-        raise ValueError(f"no '<axis>/<label>.BDD' files under {root}")
     return tuple(files)
 
 
@@ -251,7 +252,9 @@ def read_manifest_row(path: Path, dataset_root: Path) -> dict[str, str]:
     label and content SHA-256 are read from the file itself — with every
     remaining column empty and ``decode_error`` naming the failure, so the
     manifest always has one row per committed file and the QC's decode-failure
-    count is the number of rows that failed.
+    count is the number of rows that failed. "Cannot be decoded" includes any
+    ordinary decoder exception (a truncated payload raises ``struct.error``
+    inside the binary reader), not just ``OSError``/``ValueError``.
     """
     relative = path.relative_to(dataset_root).as_posix()
     row = dict.fromkeys(COLUMNS, "")
@@ -261,7 +264,11 @@ def read_manifest_row(path: Path, dataset_root: Path) -> dict[str, str]:
 
     try:
         recording = load(path).recording
-    except (OSError, ValueError) as exc:
+    except Exception as exc:  # noqa: BLE001 - a row that cannot decode is a failure, not an abort
+        # A truncated or malformed payload can raise ``struct.error`` (or another
+        # non-``OSError``/``ValueError`` exception) from inside the binary reader;
+        # catching ``Exception`` still lets ``KeyboardInterrupt`` and
+        # ``SystemExit`` (``BaseException``) propagate.
         row["source_sha256"] = hashlib.sha256(path.read_bytes()).hexdigest()
         row["decode_error"] = f"{type(exc).__name__}: {exc}"
         return row
@@ -361,7 +368,10 @@ def build_sweep_inventory(
         *not* written here — see :func:`write_sweep_inventory`.
 
     Raises:
-        ValueError: the dataset root holds no ``<axis>/<label>.BDD`` file.
+        Nothing for an undecodable file or an empty dataset root: a file that
+        cannot be decoded becomes a ``decode_error`` row and an empty discovery
+        yields no rows, so the checks — ``decode_failures``, ``file_count`` —
+        report the failure instead of an exception escaping the command.
     """
     root = Path(dataset_root)
     commit = analysis_commit if analysis_commit is not None else current_revision()
@@ -370,8 +380,13 @@ def build_sweep_inventory(
     axis_counts = _axis_counts(rows)
     invariant_words = _observed_invariant_words(rows)
     failures = tuple(row["relative_path"] for row in rows if row["decode_error"])
+    # A decode-error row carries an empty ``timestamps_monotone`` because it has
+    # no timestamps at all — that is not evidence of a non-monotone series, so
+    # the timestamp gate judges only rows that actually decoded.
     non_monotone = tuple(
-        row["relative_path"] for row in rows if row["timestamps_monotone"] != "true"
+        row["relative_path"]
+        for row in rows
+        if not row["decode_error"] and row["timestamps_monotone"] != "true"
     )
     nan_cells = sum(int(row["nan_count"] or 0) for row in rows)
     invariant_ok = invariant_words == EXPECTED_INVARIANT_WORDS and all(

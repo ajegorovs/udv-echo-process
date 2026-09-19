@@ -298,3 +298,161 @@ def test_report_readme_states_the_regeneration_command() -> None:
     readme = (REPORT_DIR / "README.md").read_text(encoding="utf-8")
     assert ".venv/Scripts/python.exe -m udv_echo_process.cli sweep-inventory" in readme
     assert MANIFEST_NAME in readme and QC_NAME in readme
+
+
+def test_report_readme_states_how_to_reproduce_the_committed_commit() -> None:
+    """F3: the bare command records HEAD; the committed artefact must pass its own commit."""
+    readme = (REPORT_DIR / "README.md").read_text(encoding="utf-8")
+    assert "--analysis-commit" in readme
+    assert "current HEAD" in readme
+    assert "generator" in readme
+
+
+# ── malformed and empty inputs: the gate reports, the command never aborts ──
+
+
+def _truncated_fixture(directory: Path, name: str) -> Path:
+    """Write ``<name>`` as a deliberately truncated copy of ``prf/600.BDD``.
+
+    1000 bytes is long enough to be identified as a file and short enough that
+    the operation-table read raises ``struct.error`` — an ordinary decoder
+    exception that is neither ``OSError`` nor ``ValueError``.
+    """
+    source = (ROOT / DATASET_ROOT / "prf" / "600.BDD").read_bytes()[:1000]
+    path = directory / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(source)
+    return path
+
+
+def _inventory_argv(tmp_path: Path) -> list[str]:
+    return [
+        "--dataset-root",
+        str(tmp_path / "dataset"),
+        "--report-dir",
+        str(tmp_path / "reports"),
+        "--analysis-commit",
+        COMMIT,
+    ]
+
+
+def _multi_stream_fixture(directory: Path, name: str) -> Path:
+    """Write ``<name>`` as a copy of a committed four-channel recording.
+
+    It decodes without raising, but no single profile block belongs to it, so
+    ``read_manifest_row`` reports it as a decode failure with no timestamps —
+    the second, exception-free kind of decode-error row.
+    """
+    source = (ROOT / "data" / "4-sensor-velocity" / "200RPM.BDD").read_bytes()
+    path = directory / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(source)
+    return path
+
+
+def test_truncated_bdd_becomes_one_decode_error_row_and_a_failed_gate(tmp_path) -> None:
+    """F1: a file that breaks a decoder is a row failure, never an abort."""
+    dataset = tmp_path / "dataset"
+    _truncated_fixture(dataset, "res/0-6.BDD")
+    inventory = write_sweep_inventory(
+        dataset, tmp_path / "reports", analysis_commit=COMMIT
+    )
+    assert inventory.files == 1
+    assert inventory.manifest_rows == 1
+    assert len(inventory.rows) == 1
+    row = inventory.rows[0]
+    assert row["relative_path"] == "res/0-6.BDD"
+    assert (row["axis"], row["requested_label"]) == ("res", "0-6")
+    assert re.fullmatch(r"[0-9a-f]{64}", row["source_sha256"]), row["source_sha256"]
+    assert row["decode_error"].startswith("error: "), row["decode_error"]
+    assert row["timestamps_monotone"] == ""
+    assert inventory.decode_failures == 1
+    assert inventory.decode_failure_files == ("res/0-6.BDD",)
+    # F2 for the same row: no timestamps, so no non-monotone claim either.
+    assert inventory.non_monotone_files == ()
+    assert inventory.checks["decode_failures"] is False
+    assert inventory.checks["timestamps_monotone"] is True
+    assert inventory.ok is False
+    document = json.loads(
+        (tmp_path / "reports" / QC_NAME).read_text(encoding="utf-8")
+    )
+    assert document["decode_failures"] == 1
+    assert document["decode_failure_files"] == ["res/0-6.BDD"]
+    assert document["non_monotone_files"] == []
+    assert document["ok"] is False
+    assert len(_rows(tmp_path / "reports" / MANIFEST_NAME)) == 1
+
+
+def test_decode_error_rows_are_not_listed_as_non_monotone(tmp_path) -> None:
+    """F2: a row with no timestamps carries no timestamp evidence.
+
+    Uses the exception-free decode failure (a multi-channel recording) so the
+    classification is observable without F1's abort in the way.
+    """
+    dataset = tmp_path / "dataset"
+    (dataset / "prf").mkdir(parents=True)
+    (dataset / "prf" / "600.BDD").write_bytes(
+        (ROOT / DATASET_ROOT / "prf" / "600.BDD").read_bytes()
+    )
+    _multi_stream_fixture(dataset, "res/1-8.BDD")
+    inventory = build_sweep_inventory(dataset, analysis_commit=COMMIT)
+    row = next(r for r in inventory.rows if r["relative_path"] == "res/1-8.BDD")
+    assert row["decode_error"].startswith("expected exactly one channel stream")
+    assert row["timestamps_monotone"] == ""
+    assert inventory.decode_failure_files == ("res/1-8.BDD",)
+    assert inventory.non_monotone_files == ()
+    assert inventory.checks["timestamps_monotone"] is True
+    assert inventory.checks["decode_failures"] is False
+
+
+def test_empty_dataset_writes_a_header_only_manifest_and_a_failed_gate(tmp_path) -> None:
+    """F4: an empty discovery is a gate failure the QC reports, not an exception."""
+    dataset = tmp_path / "dataset"
+    dataset.mkdir()
+    assert discover_sweep_files(dataset) == ()
+    inventory = write_sweep_inventory(
+        dataset, tmp_path / "reports", analysis_commit=COMMIT
+    )
+    assert inventory.files == 0
+    assert inventory.manifest_rows == 0
+    assert inventory.rows == ()
+    assert inventory.decode_failures == 0
+    assert inventory.checks["file_count"] is False
+    assert inventory.ok is False
+    manifest = (tmp_path / "reports" / MANIFEST_NAME).read_text(encoding="utf-8")
+    assert manifest == ",".join(COLUMNS) + "\n"
+    document = json.loads(
+        (tmp_path / "reports" / QC_NAME).read_text(encoding="utf-8")
+    )
+    assert document["files"] == 0
+    assert document["ok"] is False
+    assert document["checks"]["file_count"] is False
+    assert document["manifest_sha256"] == (
+        f"sha256:{hashlib.sha256(manifest.encode('utf-8')).hexdigest()}"
+    )
+
+
+def test_cli_exits_one_without_a_traceback_on_a_truncated_bdd(tmp_path, capsys) -> None:
+    from udv_echo_process.cli import sweep_inventory_main
+
+    _truncated_fixture(tmp_path / "dataset", "res/0-6.BDD")
+    with pytest.raises(SystemExit) as excinfo:
+        sweep_inventory_main(_inventory_argv(tmp_path))
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "check failed: decode_failures" in captured.err
+    assert "Traceback" not in captured.err
+    assert len(_rows(tmp_path / "reports" / MANIFEST_NAME)) == 1
+
+
+def test_cli_exits_one_without_a_traceback_on_an_empty_dataset(tmp_path, capsys) -> None:
+    from udv_echo_process.cli import sweep_inventory_main
+
+    (tmp_path / "dataset").mkdir()
+    with pytest.raises(SystemExit) as excinfo:
+        sweep_inventory_main(_inventory_argv(tmp_path))
+    assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert "check failed: file_count" in captured.err
+    assert "Traceback" not in captured.err
+    assert (tmp_path / "reports" / QC_NAME).is_file()
