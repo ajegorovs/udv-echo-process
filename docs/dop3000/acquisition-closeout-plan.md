@@ -191,7 +191,7 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   `Resume`, `2821164` `Do store`, `1641666` `Clear and restart`, `7867344` `Remove current block`, each
   caption bound to its handle by position.
 - **The row is drawn from a pool of five button controls, not one slot per position** — measured across
-  three states in one process: `1574908` is the **one** control that relabels (`Pause` → `Resume`);
+  three states in one process: `1574908` is one of the **two** controls that relabel (`Pause` → `Resume`; the other is `1641666`: `Clear and restart` → `Clear all`, measured after a block removal);
   `4787852` keeps `Record` and is hidden when a block is held; `2821164` keeps `Do store`; `1641666`
   keeps `Clear and restart` in every state; `7867344` (`Remove current block`) appears only with a held
   block. The intermediate state shows `Record` **and** `Do store` side by side, so the two are not
@@ -228,6 +228,13 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   pixels alone**, and the store state is the only one whose strip resolves. The step's prediction was ten of
   eleven exact (the miss was the slider's left end), and the block-held state reproduced a **third** time
   byte-identically (`+0 / -0 / moved 0 of 273`).
+- **The removal semantics, measured** (12:29): the guard's `Confirm` drops the **selected** block from the
+  buffer, the selection falls back one block (combo `3` → `2`), the slider repaints that block's range
+  (`4773` … `16381`, `11609`) and **the profile counter follows the buffer** — `26771` before, `16381` after —
+  so the counter is the retained extent, not a monotonic session counter. The row's third button relabels with
+  it (`Clear and restart` → `Clear all`), the panel narrows 551 → 502 px by exactly the caption's width with
+  the sizing rule intact, and the strip resolver's failure mode turns out to depend on the panel set: the info
+  box while it is up, the modal while *it* is up, and **no panel at all** when neither is.
 - **The buffer model, measured on three blocks** (12:19): the `Show block` combo selects which block the
   strip's slider paints, and the slider is that block's profile range with its length between the numbers —
   `1` … `4772` (4772), `4773` … `16381` (11609), `16382` … `26771` (10390). The ranges are **contiguous over

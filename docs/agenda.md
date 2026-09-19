@@ -312,8 +312,7 @@ up"** naming the strip's own grown panel — so the `>400 px` predicate admits t
 held. The cursor info box is in the tree but its `Depth` / `Velocity` numbers are **paint only**, which closes
 sitting A's third item. The intermediate state was read too (11:55, same process): four buttons —
 `Pause` / `Record` / `Do store` / `Clear and restart` — painting nothing below the row, with `Show block`
-= `1`; and the row turns out to be drawn from a **pool of five button controls** of which one
-(`Pause`/`Resume`) relabels, the rest being visibility — and all four combinations are now **read**,
+= `1`; and the row turns out to be drawn from a **pool of five button controls** of which two (`Pause`/`Resume`, and `Clear and restart`/`Clear all`) relabel, the rest being visibility — and all four combinations are now **read**,
 with the pool model having predicted the last one (UI-STRIP-04, the strip's `store` view) exactly
 before it was reached.
 

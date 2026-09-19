@@ -525,11 +525,10 @@ off the frame at x5-x6), and the handles say what the captions alone cannot:
 | `1574908` | `Pause` -> `Resume` — **the one control that relabels** | visible, `[353,424,432,444]` | visible, same rect | visible, `[353,424,444,444]` |
 | `4787852` | `Record` | visible, `[442,424,527,444]` | visible, same rect | **hidden**, same rect |
 | `2821164` | `Do store` | hidden | visible, `[537,423,628,443]` | visible, `[454,423,545,443]` |
-| `1641666` | `Clear and restart` | visible, `[537,423,675,443]` | visible, `[638,423,776,443]` | visible, `[555,423,693,443]` |
+| `1641666` | `Clear and restart` ↔ `Clear all` | visible, `[537,423,675,443]` | visible, `[638,423,776,443]` | visible, `[555,423,693,443]` |
 | `7867344` | `Remove current block` | hidden | **hidden** | visible, `[703,423,874,443]` |
 
-**So the answer to the question a crop could never settle is a pool, not a slot.** Exactly one button
-relabels (`1574908`: `Pause` <-> `Resume`); every other change to the row is **visibility and position**,
+**So the answer to the question a crop could never settle is a pool, not a slot.** Two of the five pool members relabel (`1574908`: `Pause` ↔ `Resume`, and `1641666`: `Clear and restart` ↔ `Clear all`, which is only visible after a block removal — see *the removal, answered*); what changes for the other three is **visibility and position**,
 and the row's slots shift with it — `Do store` is the second visible button in the block-held state and the
 third in the intermediate one, and the intermediate state shows `Record` **and** `Do store` side by side,
 so the two are not competing for one slot at all. `ui-element-index.md`'s finding 20 ("the strip's grown
@@ -824,6 +823,47 @@ process): the strip resolves as **`view 'store'`, 3 buttons, slider**, on panel 
 (`1` ... `4772` against its `1` ... `392`, i.e. the history growing between the two moments). So all four
 states of this row are now **read**, not inferred, and the pool model has been tested on states it was not
 built from.
+
+### The removal, answered: what `[Confirm]` did
+
+`[Confirm]` (the right button, `2886516`) answered the guard, and the 12:29:45 read shows what the app did
+with the buffer:
+
+| | before (12:26, guard up) | after (12:29) |
+|---|---|---|
+| `Show block` | `3` | **`2`** — the selection falls back one block |
+| slider | (guard up, strip unreachable) | visible, `[465,449,848,499]`, painting `4773` … `16381` with `11609` between |
+| bottom band | `Profile : 26771   Block : 3` | **`Profile : 16381   Block : 2`** |
+| panels / visible | 5 / 50 (strip, modal, info box, menu, bar) | **4 / 47** (strip, menu, bar, and one more below) |
+
+So the removal **drops the selected block from the buffer and moves the selection back one block** — both
+predicted — and the slider repaints the newly selected block's range (`4773` … `16381`, `11609`, block 2's
+range measured at 12:11). **The line the prediction could not call is answered: the profile counter follows
+the buffer.** It read `26771` before the removal and `16381` after — block 2's last profile — so the counter
+is **the buffer's retained extent, not a monotonic session counter**, and the band's `Block :` follows the
+selection. (Block 3's 10390 profiles are gone from memory, exactly as the modal warned.)
+
+**The row changed, and one of my own model's claims is falsified by it.** The third button measured `89` px
+where `Clear and restart` needed `138`, and the pixels say why: it now paints **`Clear all`**. So the row is
+`Resume` / `Do store` / `Clear all` / `Remove current block`, and **`1641666` is a second control that
+relabels** — `Clear and restart` (138 px) before the removal, `Clear all` (89 px) after it. The earlier claim
+in this record that "exactly one button relabels" is therefore **wrong and corrected here**: two of the five
+pool members relabel (`1574908`: `Pause` <-> `Resume`; `1641666`: `Clear and restart` <-> `Clear all`), and
+the rest of the row's change over states is visibility and position.
+
+**Two geometry rules survived the relabel, which is a useful check on both.** The panel came out
+`[343,414,845,537]` — 502x123, i.e. **49 px narrower**, exactly the difference between the two captions — and
+the sizing rule is still exact on it: `10` px left padding, `10` px gaps, `20` px right padding
+(502 = 472 + 30). And the slider, when it is **painted**, spans the panel's width plus three pixels
+(`848 = 845 + 3`); while hidden it keeps whatever rect it last had (`[465,449,716,499]` in the intermediate
+state), which is why its hidden rect did not match its panel at that time.
+
+**And the screen's reads moved again.** With the modal answered and the cursor info box now `visible: False`
+(`131916`, `131918`), the strip resolver returns **`panel_rect: null`** — no decoy panel exists at all now —
+while still reporting `view 'unknown'`, `button_count 0`. The layout still calls the strip a dialog
+(`((343,414,845,537), 'TSp_Panel')`, 502 px > 400) and the visible count drops to 47 in 4 panels. So the
+resolver's failure mode is not one thing: it names the info box when that box is up, names the modal when the
+modal is up, and returns nothing when neither is.
 
 ### The removal guard — a blocking modal the `>400 px` predicate does not identify
 
