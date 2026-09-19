@@ -224,16 +224,30 @@ FIXTURE = Path(__file__).parent / "data" / "udop-parameters-dialog-tree.json"
 
 
 def _row(
-    hwnd: int, cls: str, parent: int, rect: tuple[int, int, int, int], text: str = ""
+    hwnd: int,
+    cls: str,
+    parent: int,
+    rect: tuple[int, int, int, int],
+    text: str = "",
+    *,
+    visible: bool = True,
 ) -> dict:
-    """One control of the stand-in's tree, in the shape ``_visible_children`` produces."""
+    """One control of the stand-in's tree, in the shape ``_visible_children`` produces.
+
+    ``visible`` is keyword-only and defaults to ``True``, so every caller written before the
+    kept-read fixtures (whose control lists carry the *hidden* controls of the read, exactly as
+    ``_visible_children``'s own filter sees them) keeps the tree it always had: a row that states
+    ``visible: False`` is answered ``IsWindowVisible == False`` by the stand-in and dropped by the
+    resolver's enumeration, which is what makes a fixture's hidden node evidence rather than a
+    control anyone binds to.
+    """
     left, top, right, bottom = rect
     return {
         "hwnd": hwnd,
         "cls": cls,
         "parent": parent,
         "text": text,
-        "visible": True,
+        "visible": visible,
         "rect": (left, top, right, bottom),
         "left": left,
         "top": top,

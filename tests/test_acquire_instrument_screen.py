@@ -50,7 +50,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 import pytest
-from test_acquire_layout_gate import CLIENT, ORIGIN
+from test_acquire_layout_gate import CLIENT, INSTRUMENT_CAPTION, ORIGIN
 from test_acquire_surface_classification import WINDOW_HWND, _MeasuredGui, _row
 from test_acquire_ui_counterexamples import INSTRUMENT_BAR
 
@@ -106,6 +106,31 @@ def instrument_tree() -> dict:
     return json.loads(FIXTURE.read_text(encoding="utf-8"))
 
 
+#: The kept live reads of 2026-09-19 — and the 2026-09-18 ``Define TGC`` read — sanitised into this
+#: repository's fixture convention, one file per state the instrument was in. Each one is the
+#: *whole* probe read (``tools/live/probes/main_geometry.py``: the 273- or 309-row control tree with
+#: its own ``parent`` links, the resolver's panels, the strip it resolved and the fingerprint),
+#: reduced to ``cls``/``text``/``rect`` per control — handles, parent links and depth dropped — with
+#: the controls the read found **hidden** carried as ``"visible": false``. What each read is, which
+#: probe took it and how the sanitisation was verified is in the fixture's own ``note``;
+#: ``outputs/live/`` is git-ignored, so the fixture is the record that survives.
+KEPT_READS = {
+    "453": "udop-screen-strip-453-intermediate.json",
+    "502": "udop-screen-strip-502-after-removal.json",
+    "551": "udop-screen-strip-551-blockheld.json",
+    "370": "udop-screen-strip-370-pause3.json",
+    "warning": "udop-screen-warning-392-clearall.json",
+    "tgc": "udop-screen-tgc-overlay.json",
+}
+
+DATA = Path(__file__).parent / "data"
+
+
+def kept_read(name: str) -> dict:
+    """One sanitised kept read, by the name :data:`KEPT_READS` gives it, read off disk."""
+    return json.loads((DATA / KEPT_READS[name]).read_text(encoding="utf-8"))
+
+
 def _rect(control: Mapping) -> tuple[int, int, int, int]:
     """One fixture control's rect, as the tuple the projection and the rules compare."""
     left, top, right, bottom = control["rect"]
@@ -143,69 +168,175 @@ def _area(rect: tuple[int, int, int, int]) -> int:
     return (rect[2] - rect[0]) * (rect[3] - rect[1])
 
 
+#: The container widgets this application puts between a panel and a control, as the kept reads
+#: of 2026-09-19 measured them: a hidden panel's own ``TPanel`` rungs, the dialog boxes' ``TMemo``
+#: and ``TListBox`` children and the ``TRichEdit`` a warning box paints. A control inside one of
+#: these belongs to it, which is what makes them candidates at all — they are never a *band*.
+_HOST_CLASSES = ("TPanel", "TMemo", "TListBox", "TRichEdit")
+
+
 def project_rows(tree: Mapping) -> list[dict]:
     """The fixture's flat control list as rows on the ``win32gui`` surface, tree inferred.
 
     The projection the module docstring describes, and nothing else: one row per fixture control,
-    in the fixture's own order, each stating the rect, the class, the text the read recorded and a
-    **handle** the fixture does not carry (``HANDLE_BASE`` + the control's index). The parent map
-    is the inferred one, and :func:`test_the_flat_fixture_projects_onto_a_window_the_resolver_can_read`
-    is the guard on its shape.
+    in the fixture's own order, each stating the rect, the class, the text the read recorded, the
+    **visibility** the read recorded and a **handle** the fixture does not carry (``HANDLE_BASE``
+    + the control's index). The parent map is the inferred one, and
+    :func:`test_the_flat_fixture_projects_onto_a_window_the_resolver_can_read` is the guard on its
+    shape.
+
+    **Only visible controls host anything.** ``_visible_children`` enumerates with
+    ``IsWindowVisible``, so a hidden panel is never the parent of a row the resolver binds — and
+    the kept reads carry many (224 of one dump's 273 rows). The projection therefore infers every
+    parent among the controls the read found **visible**, while still projecting the hidden ones,
+    which is what lets a fixture assert that a hidden node was excluded rather than absent.
+
+    **Inference, and why it is not one rule.** A control is placed by what the tree's own answers
+    say, in this order:
+
+    * the bands and the monitor (``TSp_Panel``/``TDop_Plot``) are the window's children unless a
+      panel is painted *inside* another — the cursor info box holds a caption-less panel of its
+      own, and the reads' dialogs hold sub-panels;
+    * a ``TSp_Button`` belongs to the panel whose rect holds its centre; a button painted outside
+      every panel's rect — the two ``Profiles history`` toggles below the grown strip, the info
+      box's own button below *its* panel — belongs to the panel whose **x-span carries its
+      centre**, never to the full-width menubar or status band that carries every x, and a panel
+      that is itself inside another carrying that x is dropped first (it is the outer panel's own
+      furniture; without that rule the info box's interior panel would take its button);
+    * a value field belongs to the ``TSp_Value_Button`` that wraps it, and the native ``Edit``
+      inside a ``TComboBox`` to that combo (a Windows combo owns its edit), while a ``TSp_Edit`` is
+      always its row's own child and never the combo's — the stale-cell shape ledger B09 measured
+      beside a painted combo;
+    * a ``TComboBox`` belongs to the value button that wraps it (the strip's own ``Show block``
+      combo is no value button's child, so it falls to the panel rule) and a ``TSp_Sliding_Bar`` to
+      the panel that holds or carries it — the grown strip's slider is painted *below* the 40 px
+      intermediate rect.
     """
     controls = list(tree["controls"])
     handle = {index: HANDLE_BASE + index for index in range(len(controls))}
     rect = {index: _rect(control) for index, control in enumerate(controls)}
-    panels = [
-        index for index, control in enumerate(controls) if control["cls"] == "TSp_Panel"
-    ]
+    seen = [index for index, control in enumerate(controls) if control.get("visible", True)]
+    panels = [index for index in seen if controls[index]["cls"] == "TSp_Panel"]
     fields = [
-        index
-        for index, control in enumerate(controls)
-        if control["cls"] == "TSp_Value_Button"
+        index for index in seen if controls[index]["cls"] == "TSp_Value_Button"
     ]
-    combos = [
-        index for index, control in enumerate(controls) if control["cls"] == "TComboBox"
+    combos = [index for index in seen if controls[index]["cls"] == "TComboBox"]
+    bars = [index for index in seen if controls[index]["cls"] == "TSp_Sliding_Bar"]
+    hosts = panels + [
+        index for index in seen if controls[index]["cls"] in _HOST_CLASSES
     ]
 
+    def innermost(candidates: Sequence[int], holds) -> int | None:
+        """The smallest-area candidate whose rect ``holds`` — the innermost container."""
+        best: int | None = None
+        for candidate in candidates:
+            if holds(rect[candidate]) and (
+                best is None or _area(rect[candidate]) < _area(rect[best])
+            ):
+                best = candidate
+        return best
+
+    def panel_of(one: tuple[int, int, int, int]) -> int | None:
+        """The panel a control painted outside every panel belongs to, or ``None``.
+
+        The panel whose x-span carries the control's centre, the **narrowest x-span** of the
+        outermost ones: the menubar and status bands carry every x and would otherwise answer for
+        every control. Narrowest by *width* and not by area, because a grown strip (502x123) paints
+        more pixels than the 1920x32 menubar band while being the panel the control is on — the
+        measured `Show block` combo sits under the strip and not under the bar. A panel that is
+        itself inside another carrying the same x is dropped first: it is the outer panel's own
+        furniture, and a control beside it is the outer panel's child (the cursor info box's
+        caption-less interior panel is the case this rule exists for).
+
+        **Ties are broken by vertical distance, and the residue is asserted.** The two full-width
+        bands have the same width, so a control no narrow panel carries on x — the strip's own
+        hidden `Remove current block` at `[746,423,917,443]`, outside the 453 px rect but laid out
+        against that panel — admits both bands as candidates. The panel it is laid out against is
+        the one **nearest in y** (measured: that control's parent is the strip panel, 0 px away
+        against 378 px for the menubar and 583 px for the status band), so that is the tie-break,
+        and a tie the rule still cannot settle is an assertion rather than a silent choice.
+        """
+        cx, _cy = _centre(one)
+        outer = [
+            candidate
+            for candidate in panels
+            if rect[candidate][0] <= cx <= rect[candidate][2]
+            and not any(
+                other != candidate
+                and rect[other][0] <= cx <= rect[other][2]
+                and _wraps(rect[other], rect[candidate])
+                for other in panels
+            )
+        ]
+        if not outer:
+            return None
+        narrowest = min(rect[wide][2] - rect[wide][0] for wide in outer)
+        finalists = [wide for wide in outer if rect[wide][2] - rect[wide][0] == narrowest]
+        if len(finalists) > 1:
+            # The full-width bands tie on width: the panel the control is laid out against is the
+            # one nearest it vertically (the docstring's measured case).
+            _cx, cy = _centre(one)
+            gap = {
+                wide: 0
+                if rect[wide][1] <= cy <= rect[wide][3]
+                else min(abs(cy - rect[wide][1]), abs(cy - rect[wide][3]))
+                for wide in finalists
+            }
+            closest = min(gap.values())
+            finalists = [wide for wide in finalists if gap[wide] == closest]
+        # The uniqueness guard: a residue the rule cannot settle is the *inference* deciding the
+        # tree rather than the fixture, and a fixture re-baselined by its own harness proves
+        # nothing. The assertion the narrowest-by-area rule carried, kept for the rule that
+        # replaced it.
+        assert len(finalists) == 1, f"a control at {one} has no unique panel above it"
+        return finalists[0]
+
+    def panel_for(one: tuple[int, int, int, int]) -> int | None:
+        """The panel a control belongs to: the one holding its centre, else the x-span rule."""
+        host = innermost(panels, lambda outer: _holds_centre(outer, one))
+        return host if host is not None else panel_of(one)
+
     def parent_of(index: int) -> int:
-        """The inferred parent of one control — the module docstring's rules, in order."""
+        """The inferred parent of one control — the docstring's rules, in order."""
         cls = controls[index]["cls"]
+        here = rect[index]
         if cls in ("TSp_Panel", "TDop_Plot"):
             # The bands and the monitor are the window's own children: no band sits inside
-            # another, and the monitor is not inside any of them.
-            return WINDOW_HWND
-        if cls == "TSp_Button":
-            host = next(
-                (p for p in panels if _holds_centre(rect[p], rect[index])), None
+            # another, and the monitor is not inside any of them — while a panel *inside* a panel
+            # is a shape this application builds (the info box's interior, a dialog's sub-panel).
+            host = innermost(
+                [panel for panel in panels if panel != index],
+                lambda outer: _wraps(outer, here),
             )
-            if host is not None:
-                return handle[host]
-            # A button no panel's rect holds: the strip panel's own two, below its rect. The
-            # narrowest panel whose x-span carries it is that panel — the full-width bands carry
-            # every x, so taking the innermost is what identifies it, and the guard below fails
-            # if that is ever not a unique choice (the inference, not the fixture, would then
-            # have decided the tree).
-            spans = [
-                p for p in panels if rect[p][0] <= _centre(rect[index])[0] <= rect[p][2]
-            ]
-            narrowest = min(spans, key=lambda p: _area(rect[p]))
-            assert all(
-                _area(rect[p]) > _area(rect[narrowest]) for p in spans if p != narrowest
-            ), f"control {index} has no unique panel above it"
-            return handle[narrowest]
+            return WINDOW_HWND if host is None else handle[host]
+        if cls == "TSp_Button":
+            host = panel_for(here)
+            return WINDOW_HWND if host is None else handle[host]
         if cls == "Edit":
             # The native edit a combo owns, which is the Win32 structure of a combo box.
-            host = next((c for c in combos if _wraps(rect[c], rect[index])), None)
-            return handle[host] if host is not None else WINDOW_HWND
-        # A `TSp_Edit` or a `TComboBox`: the *value button* that wraps it is its row container.
-        # The innermost one wins; a `TSp_Edit` never nests inside a combo, which is the shape
-        # ledger B09 measured (a stale cell beside the combo that paints the value).
-        host = min(
-            (f for f in fields if _wraps(rect[f], rect[index])),
-            key=lambda f: _area(rect[f]),
-            default=None,
-        )
-        return handle[host] if host is not None else WINDOW_HWND
+            host = innermost(combos, lambda outer: _wraps(outer, here))
+            return WINDOW_HWND if host is None else handle[host]
+        if cls == "TComboBox":
+            host = innermost(fields, lambda outer: _wraps(outer, here))
+            if host is None:
+                host = innermost(bars, lambda outer: _wraps(outer, here))
+            if host is None:
+                host = panel_for(here)
+            return WINDOW_HWND if host is None else handle[host]
+        if cls == "TSp_Sliding_Bar":
+            host = panel_for(here)
+            return WINDOW_HWND if host is None else handle[host]
+        if cls == "TSp_Edit":
+            host = innermost(fields, lambda outer: _wraps(outer, here))
+            if host is None:
+                host = innermost(hosts, lambda outer: _wraps(outer, here))
+            return WINDOW_HWND if host is None else handle[host]
+        # A `TSp_Value_Button`, and the containers a read only ever finds hidden: the innermost
+        # panel or container that wraps them.
+        host = innermost(hosts, lambda outer: _wraps(outer, here))
+        if host is None:
+            host = panel_for(here)
+        return WINDOW_HWND if host is None else handle[host]
 
     return [
         _row(
@@ -214,6 +345,7 @@ def project_rows(tree: Mapping) -> list[dict]:
             parent_of(index),
             rect[index],
             control["text"],
+            visible=bool(control.get("visible", True)),
         )
         for index, control in enumerate(controls)
     ]
@@ -229,6 +361,19 @@ def resolved_instrument(
 ) -> dict:
     """``Win32Actuator._resolve``'s own answer for the fixture's tree, or for one variant of it."""
     gui = surface(project_rows(instrument_tree()) if rows is None else rows)
+    monkeypatch.setattr(driver, "_gui", lambda: (gui, None))
+    return driver.Win32Actuator(channel=1)._resolve()
+
+
+def resolved_kept_read(monkeypatch: pytest.MonkeyPatch, name: str) -> dict:
+    """``Win32Actuator._resolve``'s own answer for one sanitised kept read (see :data:`KEPT_READS`).
+
+    The same resolve the production tree goes through, on fixtures that **carry their hidden
+    controls**: the stand-in enumerates every row the read recorded and ``_visible_children`` drops
+    the ones it found hidden, so the roles a row binds are the roles a live run would bind — and a
+    hidden node is only ever evidence.
+    """
+    gui = surface(project_rows(kept_read(name)))
     monkeypatch.setattr(driver, "_gui", lambda: (gui, None))
     return driver.Win32Actuator(channel=1)._resolve()
 
@@ -268,6 +413,67 @@ class _TextUser32:
 
 
 # ----------------------------------------------------------------- the fixture, and its projection
+
+
+def test_a_kept_read_carries_the_controls_its_read_found_hidden() -> None:
+    """The kept reads' own guard: the convention is the read's, hidden controls included.
+
+    ``tests/test_acquire_identity_matrix.py`` asserts identities on these six fixtures, so what they
+    *are* has to be guarded where the projection is: the committed shape (``probe``/``caption``/
+    ``note``/``strip_view``/``controls``, one control per row, ``cls``/``text``/``rect`` only), the
+    read's own order, and — the part a sanitisation usually loses — the controls the probe found
+    with ``IsWindowVisible == False``, carried as ``"visible": false`` rather than dropped. Each
+    fixture's ``note`` states the counts, and the projection answers them; the one relationship the
+    hidden rows may never have is parenthood of a visible one, because ``_visible_children`` drops
+    them before any rule reads the tree.
+    """
+    for name, filename in KEPT_READS.items():
+        fixture = kept_read(name)
+        controls = list(fixture["controls"])
+        hidden = [c for c in controls if c.get("visible") is False]
+        rows = project_rows(fixture)
+        visible = len(controls) - len(hidden)
+
+        assert set(fixture) == {"probe", "caption", "note", "strip_view", "controls"}, filename
+        assert fixture["probe"].startswith("tools/live/probes/main_geometry.py"), filename
+        assert fixture["caption"] == INSTRUMENT_CAPTION, filename
+        assert hidden, f"{filename} carries no hidden control, so the exclusion it exists for is untested"
+        assert set(controls[0]) <= {"cls", "text", "rect", "visible"}, filename
+        assert all("hwnd" not in c and "parent" not in c for c in controls), filename
+        assert f"the {len(hidden)} of its {len(controls)} controls" in fixture["note"], filename
+        assert f"**{visible}/{visible} visible controls**" in fixture["note"], (
+            f"{filename} states no sanitisation round trip for its own visible controls"
+        )
+        assert len(rows) == len(controls) == len(hidden) + visible
+        assert sum(1 for row in rows if not row["visible"]) == len(hidden)
+
+        # No hidden row is any visible row's parent: the reads' hidden panels overlap arbitrary
+        # other panels (one window child is painted inside another panel's rect), so the projection
+        # places every inferred parent among the visible controls — which is all the resolver sees.
+        hidden_handles = {row["hwnd"] for row in rows if not row["visible"]}
+        assert not [
+            row for row in rows if row["visible"] and row["parent"] in hidden_handles
+        ], filename
+
+
+def test_a_kept_read_resolves_to_the_controls_its_read_found_visible(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same guard one step on: the resolved tree is the read's **visible** projection.
+
+    ``_visible_children`` drops the carried hidden rows, so the resolver's ``raw`` holds exactly the
+    controls the probe found visible — no more (a hidden row was bound, which is the state the
+    pre-created popup and the grown strip's unseen buttons produce) and no fewer (the read's own
+    count, which each fixture's note states).
+    """
+    for name in KEPT_READS:
+        fixture = kept_read(name)
+        visible = [c for c in fixture["controls"] if c.get("visible", True)]
+        roles = resolved_kept_read(monkeypatch, name)
+
+        assert len(roles["raw"]) == len(visible), name
+        assert roles["panels"], name
+        assert roles["state"] in {view.value for view in StripView}, name
 
 
 def test_the_fixture_is_the_read_its_own_note_states() -> None:

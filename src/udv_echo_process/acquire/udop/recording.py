@@ -48,6 +48,7 @@ from udv_echo_process.acquire.actuator import (
 )
 from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
+from udv_echo_process.acquire.ui.identity import PanelIdentity
 from udv_echo_process.acquire.ui.strip import (
     press_refusal as strip_press_refusal,
 )
@@ -63,31 +64,83 @@ _OVERLAY_SETTLE_S, _POLL_S = 0.8, 0.4
 
 
 def dialog_up_clause(roles: Mapping) -> str | None:
-    """Why no press and no menubar gesture may be taken while an application dialog is up.
+    """Why no press and no menubar gesture may be taken while a blocking surface is up.
 
-    The resolver decides a dialog **structurally** and publishes the union on the map
-    (``value_dialogs`` | ``browse_dialogs``). Every panel that union names is a modal the
-    application's own posted clicks ignore (docs/16 §8), and the predicates the runtime checks used
-    to see one with — ``_find_overlay``'s rows (the values dialog is in its ``known`` set) and
-    ``open_popup`` (which excludes dialogs) — no longer answer for it. So this clause is read where
-    an action would be taken, not only where a reading is interpreted: a panel the dialog reader
-    would call a dialog must not be one the press path cannot see.
+    The resolver decides what every panel **is** — once, from the panel's own shape
+    (:mod:`udv_echo_process.acquire.ui.identity`) — and publishes the classified inventory plus
+    the surface that blocks an action (``roles["blocking_surface"]``: ``WARNING``, ``OVERLAY``,
+    ``APPLICATION_DIALOG`` or ``MENU_POPUP``). This clause reads both statements, so a step that
+    would act behind *any* of them refuses before it acts: a dialog is a modal this application's
+    own posted clicks ignore (docs/16 §8), a warning guard is the reused destructive panel, a
+    ``Define TGC`` overlay is an operator's surface the driver must not act under, and an open
+    menu is the strip resolver's decoy. Nothing here presses anything, and nothing here dismisses
+    anything: the operator clears the surface from the UI.
 
-    ``None`` when the map states no dialog. The panel is named by its own rect, never by a caption:
-    these widgets are caption-less and the identity of the panel ``_dialog_panels`` returns is the
-    panel that happens to be up, not necessarily the ``Operating parameters`` one.
+    **The name is kept** for the callers and tests written against it (``press``,
+    ``_settle_press``, ``_open_parameters_dialog``), and the *wording* keeps the dialog case's
+    exact sentence, because that failure has been read by operators: ``None`` means nothing is
+    blocking, never "nothing was checked".
+
+    A map that states the *dialog union* and no ``blocking_surface`` — every fixture and fake
+    written before the classification landed — is answered by the union alone, so those callers
+    keep refusing exactly what they refused.
     """
     up = set(roles.get("value_dialogs") or ()) | set(roles.get("browse_dialogs") or ())
-    if not up:
+    if up:
+        panel = next((p for p in roles.get("panels") or () if p["hwnd"] in up), None)
+        if panel is None:
+            return None
+        rect = tuple(panel["rect"])
+        return (
+            f"an application dialog is up at {rect[:2]} (rect {rect}): this step would act behind a "
+            "modal in an application whose posted clicks ignore modality (docs/16 §8) — clear the "
+            "dialog from the UI first, this driver never WM_CLOSEs a dialog and never presses into one"
+        )
+    surface = roles.get("blocking_surface")
+    if surface is None:
         return None
-    panel = next((p for p in roles.get("panels") or () if p["hwnd"] in up), None)
-    if panel is None:
+    try:
+        kind = PanelIdentity(str(getattr(surface, "value", surface)))
+    except ValueError:  # a name this vocabulary does not carry: refuse, by that name
+        kind = PanelIdentity.OTHER
+    named = {
+        PanelIdentity.WARNING: (
+            "a warning guard",
+            (
+                "the application reuses one panel family for its destructive guards and the tree "
+                "does not state which warning is painted, so this driver answers none of them here"
+            ),
+        ),
+        PanelIdentity.OVERLAY: (
+            "a non-measurement overlay",
+            (
+                "it is not the measurement layout, and nothing under it resolves to the widgets "
+                "these roles were bound to"
+            ),
+        ),
+        PanelIdentity.MENU_POPUP: (
+            "a menu popup",
+            (
+                "the parameter roles below it would bind to the popup's own controls, and this "
+                "driver never WM_CLOSEs a popup"
+            ),
+        ),
+    }.get(kind)
+    if named is None:
         return None
-    rect = tuple(panel["rect"])
+    what, why = named
+    panel = next(
+        (
+            p
+            for p in roles.get("panels") or ()
+            if roles.get("identities", {}).get(p["hwnd"]) is kind
+        ),
+        None,
+    )
+    at = f" at {tuple(panel['rect'])}" if panel is not None else ""
     return (
-        f"an application dialog is up at {rect[:2]} (rect {rect}): this step would act behind a "
-        "modal in an application whose posted clicks ignore modality (docs/16 §8) — clear the "
-        "dialog from the UI first, this driver never WM_CLOSEs a dialog and never presses into one"
+        f"{what} is up{at}: {why} — this step would act behind it, so nothing is pressed and "
+        "nothing is dismissed here; clear it from the UI (Cancel/its own safe end) first"
     )
 
 
@@ -133,8 +186,20 @@ class RecordingSurface:
         none of the values dialog's ``TSp_Value_Button`` children. The app reuses one
         geometry for all its warnings, so structure is the only discriminator
         (docs/16 §8, §12b).
+
+        **Both halves are read off the classification now** (``roles["identities"]``): only a panel
+        the classifier called :attr:`…identity.PanelIdentity.WARNING` is a warning here, and only an
+        :attr:`…identity.PanelIdentity.APPLICATION_DIALOG` panel that also carries the browse
+        discriminator is a store dialog. That is what keeps this surface's *answer* — a press of the
+        warning's safe end — off every other panel that merely looked like a warning: measured
+        2026-09-19, the ``Define TGC`` overlay (450x120, six children, three buttons in its own
+        bottom band) satisfied the old family rule, and the strip's own panel satisfied it in the
+        intermediate state. A map that states **no** identities — a fixture or a fake written
+        before the classification — is read by the structural rules below, so those callers keep
+        exactly the behaviour they had.
         """
         roles = roles if roles is not None else self._resolve()
+        identities: Mapping = roles.get("identities") or {}
         known: set[int] = set()
         for key in ("menu", "combos"):
             known.update(k["hwnd"] for k in (roles.get(key) or {}).values())
@@ -153,6 +218,15 @@ class RecordingSurface:
             known.add(roles["panels"][-1]["hwnd"])  # the status bar's
         for panel in roles["panels"]:
             if panel["hwnd"] in known:
+                continue
+            identity = identities.get(panel["hwnd"])
+            if identity is not None and identity not in (
+                PanelIdentity.WARNING,
+                PanelIdentity.APPLICATION_DIALOG,
+            ):
+                # Classified, and not one of the two surfaces this method owns an answer for:
+                # an overlay, the cursor info box, a strip panel or an unknown panel is never
+                # answered — and never pressed — from here.
                 continue
             kids = self._children_of(panel["hwnd"], roles)
             if any(k["cls"] == "TSp_Browse" for k in kids) and any(

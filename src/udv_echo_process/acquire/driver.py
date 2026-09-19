@@ -277,6 +277,13 @@ from udv_echo_process.acquire.ui.dialog import (
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
 from udv_echo_process.acquire.ui.dialog import dialog_fact as _dialog_fact
 from udv_echo_process.acquire.ui.dialog import dialog_only_reason as _dialog_only_reason
+from udv_echo_process.acquire.ui.identity import (
+    PanelIdentity,
+    ScreenContext,
+    blocking_surface,
+    classify_panels,
+    panel_identity,
+)
 from udv_echo_process.acquire.ui.layout import (
     _BAND_MARGIN_FRACTION,
     EXPECTED_CONTROL_COUNT,
@@ -320,6 +327,7 @@ from udv_echo_process.acquire.ui.menu import (
 )
 from udv_echo_process.acquire.ui.menu import entry_buttons as _entry_buttons
 from udv_echo_process.acquire.ui.menu import observation_text as _observation_text
+from udv_echo_process.acquire.ui.model import Rect
 from udv_echo_process.acquire.ui.strip import (
     has_slider,
     strip_state_of,
@@ -482,6 +490,8 @@ __all__ = [
     "Iterable",
     "Mapping",
     "OverlayKind",
+    "PanelIdentity",
+    "ScreenContext",
     "StripState",
     "Win32Actuator",
     "_ClipRect",
@@ -529,8 +539,10 @@ __all__ = [
     "_visible_children",
     "anchor_button",
     "anchor_clause",
+    "blocking_surface",
     "channel_items",
     "channel_mismatch",
+    "classify_panels",
     "dialog_channel_text",
     "dialog_refusal",
     "dialog_value_fields",
@@ -540,6 +552,7 @@ __all__ = [
     "layout_shape_reasons",
     "normalized_path",
     "overlay_answer",
+    "panel_identity",
     "panel_mode",
     "process_mode_clause",
     "same_directory",
@@ -997,6 +1010,13 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             # rather than another enumeration of the window.
             "parent_of": {k["hwnd"]: parent_of(k["hwnd"]) for k in kids},
         }
+        # ...and each row states its own parent as well, so a consumer that was handed this list
+        # can ask *this panel's own children* of it without re-enumerating the window — which is
+        # what the classifier's per-panel pass and the kept reads' fixtures both do. The
+        # enumeration's own row shape is unchanged: this is the resolver adding the tree's
+        # structure to the rows it publishes, exactly as it publishes the map above.
+        for k in kids:
+            k["parent"] = roles["parent_of"][k["hwnd"]]
 
         # --- panels -------------------------------------------------------------------
         # Every cluster sits inside its own TSp_Panel, and the panels are ordered
@@ -1026,18 +1046,54 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         #: resolver chose, rather than of an index the gate would have to re-derive (plan §24.2).
         roles["menu_band"] = panels[menu_idx] if menu_idx is not None else None
 
-        # --- panels that are dialogs, not the measurement layout ------------------------
-        # A dialog is identified **structurally**, by the canonical predicate the dialog reader
-        # itself resolves the live dialog with (:func:`…ui.dialog._is_dialog_panel`): a panel
-        # wider than 400 px that is full of controls — at least 15 direct children, or a
-        # ``TSp_Browse`` among them, or input widgets of its own. One holding ``TSp_Value_Button``
-        # children is the values dialog (``Operating parameters``, ``Record settings``); the
-        # browse/store class is the one that carries an edit and a ``TSp_Browse`` and no value
-        # buttons. Detected structurally, so the file-exists warning and the store dialog are
-        # never confused.
+        # --- what every panel of this screen *is*, decided once ---------------------------
+        # One classification pass, over every panel, **before** anything below excludes or votes
+        # on one: a panel's own children and the screen's context decide it
+        # (:mod:`…ui.identity`, the plan's §2.1 order), and every consumer of this map reads that
+        # answer instead of re-deriving panel meaning from a decision another consumer made.
         #
-        # The predicate is the reader's and not a narrower rule of this method's own, because a
-        # dialog the reader would find must not be one this resolver does not know: the measured
+        # This is the defect the pass closes (measured 2026-09-19, `device-verification.md`,
+        # *the four-button strip, block-held* and *sitting C*): the dialog predicate admitted the
+        # recording strip's own panel at 453 px, 502 px and 551 px — each of those panels directly
+        # owns exactly one ``TComboBox`` (the ``Show block`` combo) and
+        # :data:`…ui.dialog._DIALOG_INPUT_CLASSES` accepts that for any panel wider than 400 px —
+        # while the reused 392x132 destructive guard was never admitted at all. Because the strip
+        # was then excluded from the strip vote, the vote fell to the cursor info box or to the
+        # guard; because the strip panel was a "dialog", ``open_popup`` printed "no menu popup"
+        # while the info box was up; and every such screen's active surface read ``dialog``.
+        context = ScreenContext(
+            plot=Rect.from_control(plot) if plot is not None else None,
+            # The band the bar is read from, and only when it hosts the bar's buttons — the same
+            # two facts ``ui.layout._menubar_resolved`` asks of the projection
+            # (``observation.menu.band`` and its buttons), stated here so the classifier's
+            # replacement clause and the gate's own evidence cannot disagree.
+            menubar=(
+                panels[menu_idx]["hwnd"]
+                if menu_idx is not None and host_count.get(menu_idx)
+                else None
+            ),
+        )
+        identities = classify_panels(
+            panels, lambda panel: children_of(panel["hwnd"]), context=context
+        )
+        #: ``{panel hwnd: PanelIdentity}`` — the classified inventory, published for every
+        #: consumer (the surface classifier reads it through ``ui.layout.observation_of``).
+        roles["identities"] = identities
+        #: The surface that blocks an action while it is up (``WARNING`` / ``OVERLAY`` /
+        #: ``APPLICATION_DIALOG`` / ``MENU_POPUP``), or ``None``. Narrowing ``open_popup`` to a
+        #: real menu popup erases no safety information: the surfaces that must be cleared from
+        #: the UI are named *here* instead of being inferred from "some panel hosts a button".
+        roles["blocking_surface"] = blocking_surface(identities)
+
+        # --- panels that are dialogs, not the measurement layout ------------------------
+        # The **application dialogs** of the classification, split by what they hold: one owning
+        # ``TSp_Value_Button`` children is the values dialog (``Operating parameters``,
+        # ``Record settings``); the browse/store class is the one that carries an edit and a
+        # ``TSp_Browse`` and no value buttons. Detected structurally, so the file-exists warning
+        # and the store dialog are never confused.
+        #
+        # The split is the reader's own and not a narrower rule of this method's, because a dialog
+        # the reader would find must not be one this resolver does not know: the measured
         # ``Operating parameters`` panel (627x384, read live 2026-09-18 —
         # ``tests/data/udop-parameters-dialog-tree.json``) carries **neither** a direct
         # ``TEdit``/``TSp_Edit`` **nor** a ``TSp_Browse``, so a rule that asked for that pair left
@@ -1047,9 +1103,9 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         value_dialogs: set[int] = set()
         browse_dialogs: set[int] = set()
         for p in panels:
-            direct = children_of(p["hwnd"])
-            if not _is_dialog_panel(p, direct):
+            if identities[p["hwnd"]] is not PanelIdentity.APPLICATION_DIALOG:
                 continue
+            direct = children_of(p["hwnd"])
             if any(k["cls"] == "TSp_Value_Button" for k in direct):
                 value_dialogs.add(p["hwnd"])
             else:
@@ -1058,53 +1114,29 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         dialog_panels = value_dialogs | browse_dialogs
 
         # --- the recording strip --------------------------------------------------------
-        # The strip is the button panel in the MIDDLE of the plot area. "The panel with the
-        # most buttons" is wrong the moment a popup is open: an open menu is itself a panel
-        # full of buttons near the menu bar, and it wins that vote.
-        def strip_score(i: int) -> float | None:
-            if not host_count.get(i):
-                return None
-            if plot is None:
-                return float(host_count[i])
-            band = [b for b in buttons if index_of.get(parent_of(b["hwnd"])) == i]
-            centre_y = sum(b["top"] + b["h"] / 2 for b in band) / len(band)
-            frac = (centre_y - plot["top"]) / max(1, plot["h"])
-            return frac if 0.30 <= frac <= 0.70 else None
-
-        scored = {
-            i: s
-            for i in range(len(panels))
-            if i not in (menu_idx, status_idx)
-            and panels[i]["hwnd"] not in dialog_panels
-            and (s := strip_score(i)) is not None
-        }
-        rec_idx = max(scored, key=lambda i: host_count[i]) if scored else None
-        strip_panel = panels[rec_idx] if rec_idx is not None else None
-        if strip_panel is not None and not any(
-            k["cls"] == "TSp_Button" for k in children_of(strip_panel["hwnd"])
-        ):
-            strip_panel = None
-        if strip_panel is None:
-            # Fallback: a short panel (not the menu, not the status bar, not a dialog) that
-            # directly owns strip buttons.
-            strip_panel = max(
-                (
-                    p
-                    for i, p in enumerate(panels)
-                    if i not in (menu_idx, status_idx)
-                    and p["hwnd"] not in dialog_panels
-                    and p["h"] <= 200
-                    and host_count.get(i)
-                ),
-                key=lambda p: p["h"],
-                default=None,
-            )
+        # The strip is the panel the classification called ``MEASUREMENT_STRIP``: the button panel
+        # whose own top row sits in the middle of the plot area (``ui/identity.py``, item 4).
+        # It is never chosen by *exclusion* — "the button panel in the middle of the plot that is
+        # not a dialog" is what bound the cursor info box in the block-held and intermediate reads
+        # and the 392x132 guard in both warning reads, and "the panel with the most buttons" is
+        # what lets an open menu, a dialog or an overlay's own band win the vote.
+        strips = [p for p in panels if identities[p["hwnd"]] is PanelIdentity.MEASUREMENT_STRIP]
+        # Among panels that *are* strips the resolver keeps its own tie-break — the one hosting
+        # the most of its own buttons — so a screen offering two strip-shaped panels resolves
+        # exactly as it did before this classification existed: the identity says which panels are
+        # candidates at all, and the vote only orders them.
+        strip_panel = max(
+            strips, key=lambda p: host_count.get(index_of[p["hwnd"]], 0), default=None
+        )
         roles["strip_panel"] = strip_panel
+        # ``open_popup`` is now the **menu popup's own identity**, and nothing else. It used to be
+        # "a panel besides the menu bar, the status bar and the strip hosts buttons", which is a
+        # true statement about every warning box, about the cursor info box and about the
+        # ``Define TGC`` overlay — measured, 2026-09-19, the info box made a *paused* screen report
+        # an open menu. The surfaces that must be cleared from the UI are carried by
+        # ``blocking_surface`` instead, so narrowing this key erases no safety information.
         roles["open_popup"] = any(
-            i not in (menu_idx, status_idx, rec_idx)
-            and host_count.get(i)
-            and panels[i]["hwnd"] not in dialog_panels
-            for i in range(len(panels))
+            value is PanelIdentity.MENU_POPUP for value in identities.values()
         )
 
         # --- the `Parameters` anchor, and nothing else ------------------------------------

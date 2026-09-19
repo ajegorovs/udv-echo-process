@@ -1,0 +1,2962 @@
+{
+  "probe": "tools/live/probes/main_geometry.py, 2026-09-19",
+  "caption": "UDOP DOP3010.43",
+  "note": "the kept read outputs/live/keep/main-geometry-2026-09-19-pause3.json (probe tools/live/probes/main_geometry.py), the **store** strip (`Resume` / `Do store` / `Clear and restart`), 370x123, with the slider painted and the cursor info box up; sanitised to this repository's fixture convention exactly as tests/data/udop-measurement-screen-tree-instrument.json states it — cls/text/rect only, every handle, parent link and depth dropped, the controls in the read's own order, and the 224 of its 273 controls the read found **hidden** carried as `\"visible\": false` so the stand-in answers them hidden and `_visible_children` filters them. The sanitisation round trip, rebuilt by tests/test_acquire_instrument_screen.py's own `project_rows` before this file was written: the inferred parent map answers the read's own parent links for **49/49 visible controls** and for 35/224 of the hidden ones — a hidden panel in these reads overlaps other panels arbitrarily (one window child is painted inside another panel's rect), so the projection places the hidden rows among the **visible** controls the resolver's enumeration yields, and no hidden row is ever the parent of a visible one (checked) — and the **tree's own fields** are what the projection round-trips: the panels at the same rects, 49 visible controls, the strip's row, the slider and the view as the read recorded them. What the *pre-fix* resolver answered from this same tree is the state the plan's §2.2 table measures and the identity pass corrects: then `strip.panel_rect` was `[343,414,713,537]` in view `store` and `open_popup` read **True** — the cursor info box's own caption-less button, not a menu — so a screen with nothing blocking it refused its run. The row's captions quoted here are the **mapped** roles `STRIP_BUTTON_ORDER` names for this state: where the painted captions differ, the pixels are the evidence and plan §2.2's table names them (the index-0 role name is not corrected by this change, plan §3), and the third button relabels `Clear and restart` ↔ `Clear all` with the state (measured 12:29).",
+  "strip_view": "store",
+  "controls": [
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        908,
+        466,
+        1057,
+        525
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        916,
+        475,
+        1045,
+        514
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        917,
+        578,
+        997,
+        598
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        343,
+        414,
+        713,
+        537
+      ]
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        429,
+        506,
+        474,
+        527
+      ]
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        563,
+        506,
+        608,
+        527
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        703,
+        423,
+        874,
+        443
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        409,
+        467,
+        453,
+        482
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        350,
+        467,
+        401,
+        482
+      ]
+    },
+    {
+      "cls": "TSp_Sliding_Bar",
+      "text": "",
+      "rect": [
+        465,
+        449,
+        716,
+        499
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        353,
+        424,
+        444,
+        444
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        442,
+        424,
+        527,
+        444
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        454,
+        423,
+        545,
+        443
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        555,
+        423,
+        693,
+        443
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        406,
+        55,
+        658,
+        215
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        420,
+        60,
+        616,
+        100
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        422,
+        130,
+        584,
+        170
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        420,
+        95,
+        627,
+        135
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        772,
+        490,
+        1164,
+        622
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1079,
+        587,
+        1154,
+        612
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1000,
+        587,
+        1069,
+        612
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        526,
+        55,
+        919,
+        481
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        550,
+        267,
+        870,
+        299
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        739,
+        131,
+        893,
+        149
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        536,
+        58,
+        658,
+        88
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        781,
+        244,
+        826,
+        265
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "1",
+      "rect": [
+        784,
+        247,
+        806,
+        262
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TPanel",
+      "text": "",
+      "rect": [
+        685,
+        165,
+        908,
+        204
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        880,
+        168,
+        895,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        861,
+        168,
+        876,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        840,
+        168,
+        855,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        819,
+        168,
+        834,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        797,
+        168,
+        812,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        776,
+        168,
+        791,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        756,
+        168,
+        771,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        734,
+        168,
+        749,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        713,
+        168,
+        728,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        693,
+        168,
+        708,
+        201
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        780,
+        210,
+        886,
+        234
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1",
+      "rect": [
+        784,
+        214,
+        844,
+        230
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        537,
+        336,
+        909,
+        471
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        734,
+        387,
+        884,
+        407
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        782,
+        349,
+        832,
+        370
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "1",
+      "rect": [
+        785,
+        352,
+        812,
+        367
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        566,
+        387,
+        716,
+        407
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        786,
+        439,
+        892,
+        463
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "0.02",
+      "rect": [
+        790,
+        443,
+        830,
+        459
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        615,
+        436,
+        772,
+        460
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1",
+      "rect": [
+        619,
+        440,
+        659,
+        456
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        535,
+        91,
+        664,
+        123
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TPanel",
+      "text": "",
+      "rect": [
+        680,
+        62,
+        903,
+        102
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        877,
+        65,
+        892,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        856,
+        65,
+        871,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        834,
+        65,
+        849,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        814,
+        65,
+        829,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        792,
+        65,
+        807,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        770,
+        65,
+        785,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        750,
+        65,
+        765,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        729,
+        65,
+        744,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        708,
+        65,
+        723,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        687,
+        65,
+        702,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        606,
+        55,
+        801,
+        190
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        616,
+        140,
+        731,
+        180
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        616,
+        60,
+        751,
+        100
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        616,
+        100,
+        750,
+        140
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        466,
+        55,
+        676,
+        275
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        475,
+        225,
+        622,
+        265
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        473,
+        145,
+        617,
+        185
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        474,
+        185,
+        653,
+        225
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        474,
+        65,
+        588,
+        105
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        474,
+        105,
+        615,
+        145
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        334,
+        55,
+        567,
+        234
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        542,
+        151,
+        557,
+        166
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        484,
+        124,
+        499,
+        139
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        522,
+        95,
+        537,
+        110
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        344,
+        167,
+        376,
+        199
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        344,
+        144,
+        376,
+        176
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        344,
+        117,
+        376,
+        149
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        341,
+        85,
+        373,
+        117
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        341,
+        199,
+        493,
+        224
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        341,
+        62,
+        465,
+        87
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        258,
+        55,
+        645,
+        305
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        468,
+        127,
+        630,
+        167
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        468,
+        95,
+        615,
+        135
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        468,
+        63,
+        625,
+        103
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        468,
+        224,
+        628,
+        264
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        191,
+        459,
+        231
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        223,
+        404,
+        263
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        255,
+        469,
+        295
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        468,
+        159,
+        621,
+        199
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        127,
+        360,
+        167
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        272,
+        159,
+        413,
+        199
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        95,
+        348,
+        135
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        273,
+        63,
+        355,
+        103
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        655,
+        364,
+        1282,
+        748
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1077,
+        660,
+        1204,
+        680
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        808,
+        653,
+        1067,
+        685
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "0",
+      "rect": [
+        989,
+        661,
+        1059,
+        677
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        862,
+        712,
+        1059,
+        737
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        663,
+        712,
+        857,
+        737
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1091,
+        703,
+        1171,
+        728
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        1083,
+        373,
+        1128,
+        394
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        862,
+        596,
+        1065,
+        628
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1.776",
+      "rect": [
+        984,
+        600,
+        1062,
+        621
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        987,
+        604,
+        1057,
+        620
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        727,
+        561,
+        866,
+        593
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "40",
+      "rect": [
+        788,
+        569,
+        858,
+        585
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        1120,
+        518,
+        1265,
+        550
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "medium",
+      "rect": [
+        1184,
+        522,
+        1262,
+        543
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        1187,
+        526,
+        1257,
+        542
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        869,
+        483,
+        1065,
+        515
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1",
+      "rect": [
+        987,
+        491,
+        1057,
+        507
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        710,
+        484,
+        864,
+        516
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "4",
+      "rect": [
+        783,
+        488,
+        861,
+        509
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "4",
+      "rect": [
+        786,
+        491,
+        841,
+        506
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        786,
+        492,
+        856,
+        508
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        697,
+        522,
+        864,
+        554
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Medium",
+      "rect": [
+        783,
+        526,
+        861,
+        547
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "Medium",
+      "rect": [
+        786,
+        529,
+        841,
+        544
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        786,
+        530,
+        856,
+        546
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        670,
+        446,
+        864,
+        478
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "4000",
+      "rect": [
+        786,
+        454,
+        856,
+        470
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        1101,
+        480,
+        1265,
+        512
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "0",
+      "rect": [
+        1187,
+        488,
+        1257,
+        504
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        1088,
+        443,
+        1265,
+        475
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "20",
+      "rect": [
+        1187,
+        451,
+        1257,
+        467
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        892,
+        558,
+        1065,
+        590
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1.850",
+      "rect": [
+        987,
+        566,
+        1057,
+        582
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        1077,
+        594,
+        1265,
+        626
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1480",
+      "rect": [
+        1187,
+        602,
+        1257,
+        618
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        1072,
+        556,
+        1265,
+        588
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1.00",
+      "rect": [
+        1187,
+        564,
+        1257,
+        580
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        912,
+        521,
+        1065,
+        553
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "50",
+      "rect": [
+        987,
+        529,
+        1057,
+        545
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        926,
+        446,
+        1065,
+        478
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "600",
+      "rect": [
+        987,
+        454,
+        1057,
+        470
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1183,
+        702,
+        1263,
+        727
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        169,
+        55,
+        401,
+        250
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        189,
+        165,
+        344,
+        205
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        188,
+        130,
+        336,
+        170
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        190,
+        95,
+        348,
+        135
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        189,
+        205,
+        345,
+        245
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        190,
+        61,
+        365,
+        101
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        63,
+        55,
+        274,
+        189
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        79,
+        105,
+        195,
+        137
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        79,
+        142,
+        149,
+        174
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        80,
+        73,
+        263,
+        98
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TDop_Plot",
+      "text": "",
+      "rect": [
+        200,
+        65,
+        1910,
+        1006
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        434,
+        349,
+        912,
+        609
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        637,
+        400,
+        682,
+        421
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "",
+      "rect": [
+        640,
+        403,
+        662,
+        418
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        1527,
+        264,
+        1910,
+        808
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TListBox",
+      "text": "",
+      "rect": [
+        1548,
+        333,
+        1625,
+        676
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        455,
+        307,
+        892,
+        648
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Last UDOP state",
+      "rect": [
+        613,
+        583,
+        869,
+        604
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Default factory settings",
+      "rect": [
+        614,
+        371,
+        871,
+        573
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        289,
+        255,
+        829,
+        609
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        478,
+        386,
+        567,
+        410
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        480,
+        528,
+        569,
+        552
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        478,
+        457,
+        567,
+        481
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        479,
+        319,
+        568,
+        343
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        296,
+        311,
+        1050,
+        643
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        835,
+        430,
+        1028,
+        462
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1.776",
+      "rect": [
+        958,
+        435,
+        1022,
+        456
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "1.776",
+      "rect": [
+        961,
+        438,
+        1002,
+        453
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        692,
+        467,
+        827,
+        499
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "medium",
+      "rect": [
+        755,
+        472,
+        819,
+        493
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "medium",
+      "rect": [
+        758,
+        475,
+        799,
+        490
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        681,
+        389,
+        825,
+        421
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "4",
+      "rect": [
+        755,
+        394,
+        819,
+        415
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "4",
+      "rect": [
+        758,
+        397,
+        799,
+        412
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        670,
+        427,
+        827,
+        459
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Medium",
+      "rect": [
+        756,
+        433,
+        820,
+        454
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "Medium",
+      "rect": [
+        759,
+        436,
+        800,
+        451
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        344,
+        43,
+        1124,
+        595
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        354,
+        52,
+        1109,
+        118
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        626,
+        88,
+        896,
+        109
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        489,
+        89,
+        529,
+        110
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        727,
+        138,
+        1107,
+        577
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Memo_Comments\r\n",
+      "rect": [
+        732,
+        468,
+        1102,
+        564
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        673,
+        466,
+        1263,
+        550
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        782,
+        488,
+        1024,
+        541
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Sliding_Bar",
+      "text": "",
+      "rect": [
+        807,
+        490,
+        993,
+        540
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        1013,
+        471,
+        1053,
+        492
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        1128,
+        487,
+        1258,
+        536
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        1208,
+        511,
+        1257,
+        532
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        198,
+        59,
+        394,
+        753
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        208,
+        394,
+        351,
+        418
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Low",
+      "rect": [
+        211,
+        397,
+        275,
+        418
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "Low",
+      "rect": [
+        214,
+        400,
+        255,
+        415
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        208,
+        361,
+        329,
+        385
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "medium",
+      "rect": [
+        209,
+        363,
+        273,
+        384
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        0,
+        55,
+        190,
+        1016
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        325,
+        105,
+        349
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "40",
+      "rect": [
+        14,
+        329,
+        54,
+        345
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        300,
+        130,
+        324
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "0",
+      "rect": [
+        14,
+        304,
+        54,
+        320
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        375,
+        153,
+        399
+      ]
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Medium",
+      "rect": [
+        12,
+        377,
+        76,
+        398
+      ]
+    },
+    {
+      "cls": "Edit",
+      "text": "Medium",
+      "rect": [
+        15,
+        380,
+        56,
+        395
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        14,
+        379,
+        74,
+        395
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        275,
+        143,
+        299
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "20",
+      "rect": [
+        14,
+        279,
+        54,
+        295
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        350,
+        131,
+        374
+      ]
+    },
+    {
+      "cls": "TComboBox",
+      "text": "medium",
+      "rect": [
+        12,
+        352,
+        76,
+        373
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "89",
+      "rect": [
+        14,
+        354,
+        74,
+        370
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        250,
+        159,
+        274
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1.00",
+      "rect": [
+        14,
+        254,
+        54,
+        270
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        225,
+        139,
+        249
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "1.850",
+      "rect": [
+        14,
+        229,
+        54,
+        245
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        200,
+        119,
+        224
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "50",
+      "rect": [
+        14,
+        204,
+        54,
+        220
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        175,
+        105,
+        199
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "600",
+      "rect": [
+        14,
+        179,
+        54,
+        195
+      ]
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        10,
+        150,
+        160,
+        173
+      ]
+    },
+    {
+      "cls": "TSp_Edit",
+      "text": "4000",
+      "rect": [
+        14,
+        154,
+        54,
+        169
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        400,
+        168,
+        850,
+        288
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        429,
+        177,
+        544,
+        209
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "Uniform",
+      "rect": [
+        434,
+        182,
+        498,
+        203
+      ],
+      "visible": false
+    },
+    {
+      "cls": "Edit",
+      "text": "Uniform",
+      "rect": [
+        437,
+        185,
+        478,
+        200
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        224,
+        149,
+        421,
+        261
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        238,
+        198,
+        406,
+        230
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        243,
+        204,
+        307,
+        225
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        774,
+        627,
+        1106,
+        702
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Press \"Next\" to continue the demo\r\n",
+      "rect": [
+        794,
+        638,
+        1012,
+        694
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        0,
+        1016,
+        1920,
+        1050
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1840,
+        1025,
+        1900,
+        1045
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        502,
+        356,
+        845,
+        599
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": " 1.  Define the starting depth of the cell by a left mouse click \r\n      inside the left display (velocity or echo). A red cursor is\r\n      associated to this depth).\r\n \r\n 2.  Define the ending depth of the cell by a right mouse \r\nclick \r\n      inside the",
+      "rect": [
+        519,
+        389,
+        822,
+        558
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        32,
+        316,
+        152,
+        347
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        409,
+        318,
+        938,
+        637
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Memo_Comments\r\n",
+      "rect": [
+        451,
+        381,
+        898,
+        577
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        298,
+        233,
+        685,
+        418
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Memo_Comments\r\n",
+      "rect": [
+        320,
+        245,
+        667,
+        373
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        0,
+        27,
+        115,
+        73
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        80,
+        29,
+        110,
+        49
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        80,
+        49,
+        110,
+        69
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        381,
+        312,
+        965,
+        642
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Memo_Comments\r\n",
+      "rect": [
+        405,
+        440,
+        946,
+        559
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        434,
+        296,
+        913,
+        659
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "TR0205",
+      "rect": [
+        464,
+        617,
+        544,
+        638
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "TR0214",
+      "rect": [
+        613,
+        580,
+        693,
+        601
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        432,
+        286,
+        915,
+        669
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "TR0205",
+      "rect": [
+        463,
+        633,
+        543,
+        654
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "TR0214",
+      "rect": [
+        575,
+        585,
+        655,
+        606
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        418,
+        285,
+        929,
+        669
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "1",
+      "rect": [
+        816,
+        300,
+        861,
+        321
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        672,
+        435,
+        821,
+        457
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        490,
+        435,
+        637,
+        457
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        453,
+        542,
+        590,
+        572
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        372,
+        320,
+        975,
+        634
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TComboBox",
+      "text": "",
+      "rect": [
+        382,
+        513,
+        482,
+        534
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        0,
+        23,
+        1920,
+        55
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        526,
+        28,
+        596,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        1850,
+        28,
+        1880,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        466,
+        28,
+        516,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        334,
+        28,
+        394,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        406,
+        27,
+        456,
+        52
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        169,
+        28,
+        239,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        258,
+        28,
+        328,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        8,
+        28,
+        58,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        606,
+        28,
+        676,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Button",
+      "text": "",
+      "rect": [
+        63,
+        28,
+        153,
+        53
+      ]
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        299,
+        202,
+        883,
+        530
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        324,
+        243,
+        856,
+        348
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TRichEdit",
+      "text": "Update all binary UDOP data files from a previous software version to the current version\r\n\r\nPlace all the files to be updated in an empty directory. After execution, all the updated files are placed \r\nin the destination directory.\r\n\r\nWARNING: It is recom",
+      "rect": [
+        334,
+        249,
+        851,
+        340
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        489,
+        350,
+        858,
+        604
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Udop can't follow the acquisition rate:\r\n\r\nWhat to do?  Below suggested solutions\r\n\r\n1. reduce the UDOP window size\r\n2. reduce the number of displayed curves\r\n3. reduce the number of gates\r\n",
+      "rect": [
+        512,
+        367,
+        837,
+        545
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        421,
+        182,
+        925,
+        517
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        429,
+        479,
+        903,
+        722
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TMemo",
+      "text": "Memo_Comments\r\n",
+      "rect": [
+        446,
+        576,
+        867,
+        659
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Panel",
+      "text": "",
+      "rect": [
+        632,
+        286,
+        916,
+        470
+      ],
+      "visible": false
+    },
+    {
+      "cls": "TSp_Value_Button",
+      "text": "",
+      "rect": [
+        787,
+        326,
+        859,
+        350
+      ],
+      "visible": false
+    }
+  ]
+}

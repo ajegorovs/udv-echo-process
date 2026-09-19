@@ -56,6 +56,7 @@ from udv_echo_process.acquire.ui.dialog import (
     text_at,
 )
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
+from udv_echo_process.acquire.ui.identity import PanelIdentity
 from udv_echo_process.acquire.ui.layout import (
     observation_of,
     panel_mode,
@@ -357,13 +358,16 @@ class ParametersSurface:
                 still_up = {}
             if still_up.get("open_popup"):
                 # **And the popup is the reference's own, not every panel that hosts buttons.**
-                # ``open_popup`` is true for the ``Define TGC`` overlay and for every measured
-                # warning box (392/397/353 px, docs/16 §8) while zero dialog panels resolved, so a
-                # note written from it alone would name a stranded ``Parameters`` menu — and hand
-                # the operator a restart — for a warning they clear with ``Continue``. The panel
-                # is therefore the one :func:`parameters_overlay` finds on this fresh map, by the
-                # rectangle ``recon/41`` recorded; and when that panel is not up, the panel that
-                # is gets named for what it is: not this menu.
+                # ``open_popup`` *was* true for the ``Define TGC`` overlay and for every measured
+                # warning box (392/397/353 px, docs/16 §8) while zero dialog panels resolved — that
+                # was the defect ``ui/identity.py`` closed, and the key is now the ``Parameters``
+                # menu's own identity and nothing else. The panel is still taken from
+                # :func:`parameters_overlay` on this fresh map, by the rectangle ``recon/41``
+                # recorded, rather than inferred from the key: the guard has to answer a map that
+                # states no identities too (a fake, a fixture, a caller's own dict), and a note
+                # written from the key alone would name a stranded menu — and hand the operator a
+                # restart — for a warning they clear with ``Continue``. When that panel is not up,
+                # the panel that is gets named for what it is: not this menu.
                 overlay = parameters_overlay(self._panel_map(still_up), self._is_visible)
                 if overlay is not None:
                     rect = tuple(overlay["rect"])
@@ -847,16 +851,31 @@ class ParametersSurface:
         Fullest first, the way the reference chose when several matched
         (``len(kids) > len(children(best, roles))``), then widest, so a warning strip
         cannot win over a real dialog.
+
+        **A map that carries the classification is read by it** (``roles["identities"]``): only a
+        panel the classifier called :attr:`…ui.identity.PanelIdentity.APPLICATION_DIALOG` is
+        returned, so the recording strip's own panel — admitted by the ``> 400 px`` predicate in
+        the grown states, each of which directly owns the ``Show block`` combo (plan §2.2) — is
+        never handed to a cleanup's ``bottom_row[-2]``, which on the measured 453x40 row is
+        ``Do store`` and on the 502/551 rows is a state-changing strip control too (plan §3.1).
+        A map that states no identities is read by the predicate alone, so every fixture and fake
+        keeps the behaviour it had.
         """
         roles = self._resolve() if roles is None else roles
+        identities: Mapping = roles.get("identities") or {}
         left = roles.get("left_panel")
         out: list[dict] = []
         for panel in roles.get("panels") or []:
             if left is not None and panel["hwnd"] == left["hwnd"]:
                 continue
             kids = self._children_of(panel["hwnd"], roles)
-            if _is_dialog_panel(panel, kids):
-                out.append(panel)
+            identity = identities.get(panel["hwnd"])
+            if identity is None:
+                if not _is_dialog_panel(panel, kids):
+                    continue
+            elif identity is not PanelIdentity.APPLICATION_DIALOG:
+                continue
+            out.append(panel)
         return sorted(
             out,
             key=lambda p: (
