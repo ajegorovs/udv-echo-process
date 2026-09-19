@@ -343,6 +343,16 @@ So what is missing is the decode, not the word identification — every identity
 above now comes from a labelled recording rather than from the manual's table
 ([`udop-automation.md`](udop-automation.md) §9).
 
+**One of the four is measurable anyway.** `Emissions per profile` is word 14 and word 14 is not
+decoded — but C5 turns the *recorded* profile interval into that number: `dt / T_prf` is **37.3 on
+all forty** committed mixer points (22.4 ms at 600 µs, 15.0 ms at 400 µs, 29.8 ms at 800 µs), which
+is `16 + N_PRF` with 0.6–1.0 ms of transit overhead, i.e. `N_PRF` = 20 — the value the run's own note
+states. A recording at a second `N_PRF` would separate the application's constant from that overhead
+and make the axis readable from the file alone, which the committed set does not yet contain. The
+operator reads the parameter as **time averaging** and may move it to the instrument's smallest (~8)
+for the sweep: that would shorten the stored step to ~15 ms at 600 µs, so it is a declared axis value
+the time base of every other point would then disagree with, not a problem.
+
 Word 84's *name* comes from the manual's parameter table ("skip profile"); no
 narrative chapter describes its behaviour, so its exact semantics (skip N
 between acquisitions vs. discard N at start) must be confirmed on the
