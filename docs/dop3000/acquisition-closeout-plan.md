@@ -21,32 +21,46 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
-**Resume here — end of the 2026-09-19 session.** Two **documents-only** pull requests carry everything that
-session produced and they are **not on `master` yet**: [PR #12](https://github.com/ajegorovs/udv-echo-process/pull/12)
-(sitting A — the V2 bracket on the merge head, the `89` rule read off the pixels, the cursor info box
-answered) stacked under [PR #13](https://github.com/ajegorovs/udv-echo-process/pull/13) (sitting B — the
-strip's whole state tree, the block/buffer model, the two destructive guards, the misdiagnosis chain). **Merge
-`#12` first, then retarget `#13` onto `master` *before* deleting `#12`'s branch** — deleting a merged base
-branch closes its dependents, which is the landing lesson recorded in §1.1. Until that happens, `master`'s copy
-of `device-verification.md` does not carry either sitting's record.
+**Resume here — after 2026-09-19's sessions, with nothing left stacked.** Everything those sessions
+produced is on `master`: the sittings' records ([#12](https://github.com/ajegorovs/udv-echo-process/pull/12),
+[#13](https://github.com/ajegorovs/udv-echo-process/pull/13)), the landing lessons (§1.1), the
+stale-claim reconciliation ([#15](https://github.com/ajegorovs/udv-echo-process/pull/15)), the identity
+plan and its corrections
+([#14](https://github.com/ajegorovs/udv-echo-process/pull/14),
+[#16](https://github.com/ajegorovs/udv-echo-process/pull/16)), **the identity change itself**
+([#17](https://github.com/ajegorovs/udv-echo-process/pull/17) — slices 1+2, cloud-green and
+**device-pending**), and the mixer point set
+([#18](https://github.com/ajegorovs/udv-echo-process/pull/18), forty `.BDD` recordings whose rig and
+geometry are in [`../../data/mixer-sensitivity-analysis/README.md`](../../data/mixer-sensitivity-analysis/README.md)).
 
-Then, in this order:
+**The next thing to do is the identity change's device ladder** —
+[`identity-classification-plan.md`](identity-classification-plan.md) §5 — operator-attended, read-only,
+in its order: the clean screen, V3 with `Define TGC` open (the overlay clause first in
+`layout_shape_reasons`, `layout_evidence` reading `overlay`, no input sent), the cursor info box, a
+grown strip, a raised warning guard, and only then the bounded cleanup probe
+(`PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py`). **Nothing in that change is
+device-verified yet**, and two of its readings want the operator's own eyes:
 
-1. **Sitting C is complete** (§3, `device-verification.md`): V1 passed and restored cleanly; V3 refused
-   safely but failed its diagnosis by calling `Define TGC` a dialog and then blaming the strip; V5 was not
-   run because `compile` invokes the channel-dialog `Accept` before comparing the declaration, so it moves
-   beside that authorised write in sitting D.
-2. **The identity fix this session made concrete — planned in
-   [`identity-classification-plan.md`](identity-classification-plan.md).** The strip panel, `Define TGC`, the
-   cursor info box and *both* destructive guards are misclassified by one chain: the `>400 px` dialog
-   predicate admits the strip (551/502/453 px) and `Define TGC` (450 px) and **misses both guards** (392 px),
-   the strip resolver's decoy panel moves with the panel set (info box -> guard -> nothing at all), and the
-   popup test fires only when the other two resolve and the info box is up. The plan names panel identity
-   **once** before dialog/strip/popup consumers, pins the 453x40 cleanup hazard, and requires read-only device
-   reruns before sitting D. Three symptom patches are explicitly out of scope.
-3. **Sitting D** — the writes (`ensure_channel`, V6's six-point campaign on the instrument, V7/V8), unchanged.
-4. **The one operator question** that unblocks the experiment: is
-   `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment?
+- the grown **370x123 / 502x123 / 551x123 strip rows are pressable again** — they were refused only
+  because their panel was misread as a dialog (502/551) or because the cursor info box made the screen
+  report a menu (370), and §3 of the plan ratifies the change; the ambiguous four-button 453x40 row
+  keeps `ui/strip.py`'s own refusal;
+- a **warning screen now reports the identity `WARNING`** while its `SurfaceKind` still reads
+  `overlay` (the kind vocabulary has no `WARNING` member) — the clause wording and
+  `blocking_surface` are what name it.
+
+Any changed clean-screen fingerprint, unknown modal, attempted strip press, Confirm press or
+unverified state stops the session: the operator restores, automation does not improvise.
+
+Then, unchanged, and behind it:
+
+1. **Sitting D** — the writes: `ensure_channel`, V5's two compiles on that already-authorised write
+   path, V6's six-point campaign on the instrument, V7/V8.
+2. **The matrix question §4 carries** is answered in substance by the operator's own sweep tree: the
+   experiment is the mixer sensitivity analysis at 4 MHz / 500 RPM, its axes are those folders, and
+   the set plus the rig's geometry are now committed (#18). A first sparse matrix is being re-derived
+   around the reference point, so §4's follow-on — which writers are funded — waits on that
+   re-derivation rather than on more reconnaissance.
 
 ## 1. Where the work stands
 
