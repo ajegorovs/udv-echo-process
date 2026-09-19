@@ -23,21 +23,40 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ## 1. Where the work stands
 
-Three open pull requests carry everything not on `master`, and their relationship is not guessable from the
-PR list, so it is stated rather than implied:
+The three pull requests that carried everything not on `master` **landed on 2026-09-19**, in the order §2
+recommended; their relationship is not guessable from the PR list, so it is stated rather than implied:
 
-| PR | branch | commits past `master` | what it is | review state |
+| PR | branch | commits past the `master` it was written against | what it was | as landed |
 |---|---|---|---|---|
-| [#8](https://github.com/ajegorovs/udv-echo-process/pull/8) | `feat/acquire-stated-process-mode-layout-shape` | 1 (`8edd589`) | the stated process mode and the layout gate (§24): a shape check that needs no total, `--expect-mode` on every record path | one finding posted on it (the absent column, 2026-09-18 15:07); no review submitted yet |
-| [#9](https://github.com/ajegorovs/udv-echo-process/pull/9) | `agent-context-handoff` | 9 (`aec22dd`..`db9656a`) | docs, skills and tools: the forked skill reconciled and renamed, the crop set indexed, its checker added | no comments on the PR |
-| [#10](https://github.com/ajegorovs/udv-echo-process/pull/10) | `refactor/acquire-foundation` | 53 | the refactor, plus the ten device-driven corrections it forced | independent review PASS; `1843 passed, 22 skipped` (re-run at `b007278`), ruff clean |
+| [#8](https://github.com/ajegorovs/udv-echo-process/pull/8) | `feat/acquire-stated-process-mode-layout-shape` | 1 (`8edd589`) | the stated process mode and the layout gate (§24): a shape check that needs no total, `--expect-mode` on every record path | **merged second** — `e8fe2ac`, with both live findings disclosed in [a comment](https://github.com/ajegorovs/udv-echo-process/pull/8#issuecomment-5740415089) that names each finding's fixing commit |
+| [#9](https://github.com/ajegorovs/udv-echo-process/pull/9) | `agent-context-handoff` | 9 (`aec22dd`..`db9656a`) | docs, skills and tools: the forked skill reconciled and renamed, the crop set indexed, its checker added | **merged first** — `b2f74ea` |
+| [#10](https://github.com/ajegorovs/udv-echo-process/pull/10) | `refactor/acquire-foundation` | 53 | the refactor, plus the ten device-driven corrections it forced | **merged last** — `5f74b8f`, after `9260d9c` merged `master` into it |
 
-**Two facts about that stack carry the landing decision.**
+**Two facts about that stack carried the landing decision.**
 
-- **`#10` is based on `#9`, not on `master`** (`bfbbb10`'s parent is `db9656a`), so merging `#9` is what
-  makes `#10` retarget to `master`.
+- **`#10` was based on `#9`, not on `master`** (`bfbbb10`'s parent is `db9656a`), so merging `#9` is what
+  made `#10` belong on `master`.
 - **`#10`'s history contains `#8`'s head as a merge commit** — `bfbbb10`, *merge(acquire): PR #8 head
-  (stated process mode + layout gate) as the refactor base*. `8edd589` is an ancestor of `b007278`.
+  (stated process mode + layout gate) as the refactor base*. `8edd589` is an ancestor of `b007278`, which
+  is what made it safe to land `#8` first with its findings fixed only downstream.
+
+### 1.1 As landed — and the two things the platform did that this plan did not predict
+
+The recommendation held end to end: the gate landed as its own reviewed slice with its findings **disclosed
+rather than carried silently**, and nothing was backported into the code the refactor replaced. Two platform
+behaviours are worth keeping, because both cost time and neither is about this repository's code:
+
+- **Deleting a merged base branch *closes* its dependent PR; it does not retarget it.** Merging `#9` with
+  its branch deleted left `#10` in state `CLOSED` — not `MERGED` — instead of moving it onto `master`. The
+  recovery: recreate the base ref at its own commit (`db9656a`, already an ancestor of `master`), reopen
+  `#10`, retarget it to `master`, then delete the resurrected ref again. **The rule this yields: retarget a
+  dependent PR before deleting the base branch it points at** — which is why `#11`'s base was moved to
+  `master` before `#10`'s branch was deleted.
+- **A reported merge conflict can be stale.** Right after `#8` landed, the API reported `#10` as
+  *conflicting*; a local `git merge --no-commit --no-ff origin/master` into that branch was **clean**, with
+  nothing to resolve. The branch took the merge commit (`9260d9c`), the API recomputed `MERGEABLE/CLEAN`,
+  and the merge went through unchanged. **Check a reported conflict locally before engineering around it** —
+  here, a rebase or a hand resolution would have been work done to satisfy a race.
 
 **What is verified, and at which revision** (the distinction the whole page exists to keep):
 
@@ -61,8 +80,8 @@ repo still asserts. Nothing here has been run in the other build.
 
 ## 2. Landing the stack — the one decision this plan makes
 
-**Recommended order: `#9` → `#8` → retarget `#10` → `#10`**, with one disclosure comment posted on `#8`
-first.
+**Recommended order: `#9` → `#8` → retarget `#10` → `#10`** — executed on 2026-09-19 (§1.1 records what the
+platform did that this plan did not predict) — with one disclosure comment posted on `#8` before it merged.
 
 - **`#9` first** because it is independent, unreviewed-but-mechanical (docs, skills, tools), and it is
   `#10`'s base — merging it is what retargets `#10` onto `master`.
@@ -79,9 +98,10 @@ first.
   **One measured correction to carry into that comment.** `acquisition-campaign-compilation-plan.md` §11.1
   says *two* live findings are posted on `#8`; read from the repository's own API on 2026-09-19, `#8` carries
   **one** issue comment (the absent column, 2026-09-18 15:07) and **no** review submission, and the
-  overlay-open clause order is recorded only in `#10`'s body and in that bullet. The disclosure comment has
-  to state both findings rather than link the one that is there — otherwise `#8` merges under a
-  reviewed-sounding summary with an empty discussion behind it.
+  overlay-open clause order is recorded only in `#10`'s body and in that bullet. The disclosure comment had
+  to state both findings rather than link the one that was there — otherwise `#8` would have merged under a
+  reviewed-sounding summary with an empty discussion behind it. It was posted before the merge:
+  [`#8`'s second comment](https://github.com/ajegorovs/udv-echo-process/pull/8#issuecomment-5740415089).
 - **`#10` last**, as one reviewed change: it already contains `#8`'s commit, so nothing is lost by the
   order, and `#10`'s diff shrinks by one commit when `#8` lands first.
 
