@@ -13,7 +13,10 @@ Expected outputs, in work-plan order:
 | `qc-summary.json` | WP0 | file counts, invariants and decode/timestamp/data-quality checks |
 | `reference-repeat.csv` | WP1 | same-settings repeatability/drift bound versus depth |
 | `figures/reference-repeat.*` | WP1 | reviewer-visible repeat comparison |
-| `figures/resolution-*` | WP2 | spatial-pitch evidence on native and common grids |
+| `resolution-levels.csv` | WP2 | one row per decoded pitch, on its own native gate grid |
+| `resolution-pairs.csv` | WP2 | every level pair on common knots, against the WP1 envelope |
+| `resolution-ladder.provenance.json` | WP2 | binding, definitions, views, alignment and findings |
+| `figures/resolution-ladder.*` | WP2 | reviewer-visible resolution decision figure |
 | `figures/burst-*` | WP2 | burst transition and smoothing evidence |
 | `figures/prf-*` | WP2 | alias margin and temporal-bandwidth evidence |
 | `figures/energy-*` | WP2 | velocity-only TGC/power diagnostics and their limits |
@@ -112,3 +115,94 @@ Definitions the table cannot be read without, all restated in the provenance doc
   0.5194 Hz at a 22.33 Hz Nyquist limit.
 - **500 RPM = 8.33 Hz is a marker only** — there is no tachometer in these files, so the setpoint is
   never a phase reference, and neither gates nor profiles are independent experimental replicates.
+
+## WP2 — the resolution axis
+
+The `res` folder is a 13-point ladder of **decoded gate pitches** over the same window — 0.247 mm
+(`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates) — and it carries the plan's first
+question: *does 0.247 mm add information over 0.617 mm, and which measured pitch is the coarsest that
+preserves structure beyond the repeatability floor?* The resolution artefacts are:
+
+| Path | What it is |
+|---|---|
+| `resolution-levels.csv` | 13 rows, one per decoded pitch: common-duration mean, robust spread (IQR), RMS, zero fraction and gate-level temporal IQR inside the common support, plus the native-grid gradient spread and the native spatial correlation length |
+| `resolution-pairs.csv` | 78 rows, every unordered pair of levels: the signed `fine - coarse` per-gate mean difference on the coarser grid's own knots, the knots that clear the WP1 envelope and the depth ranges where they do, and the drift-free detail the finer pitch adds below the coarse knot spacing |
+| `resolution-ladder.provenance.json` | the binding (manifest hash, all 13 source hashes, the WP1 envelope's path and hash, generator commit), the metric definitions, both views, the alignment rule, the findings and the figure caption |
+| `figures/resolution-ladder.png` | two panels, the minimum the decision needs: native correlation length versus pitch, and the plan's pair with its difference against the envelope band (the gradient spread stays in `resolution-levels.csv`) |
+
+They are written by:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder
+```
+
+The command selects **every `res` row of `manifest.csv`** (never a filename list), orders the ladder by
+decoded pitch, re-checks all 13 source SHA-256 values against the bytes together with the decoded
+settings and grid of each recording, reads the decision threshold from the committed WP1 provenance and
+refuses to run when that artefact was generated against another manifest. A malformed, duplicated,
+undecodable or stale inventory exits 1 with a named reason and writes nothing. As with WP0/WP1, the bare
+command records the current HEAD; the committed artefacts are reproduced byte for byte only by passing
+the commit the committed provenance already records:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder \
+    --analysis-commit <the analysis_commit recorded in resolution-ladder.provenance.json>
+```
+
+Definitions the tables cannot be read without, all restated in the provenance document:
+
+- **common-duration view** — the largest integer number of nominal 500-RPM revolutions (0.12 s each)
+  fitting *every* resolution recording: 93 revolutions = 11.16 s, truncated per file by the recorded
+  timestamps (493–499 profiles each). Every distributional metric uses that window and nothing else.
+- **common physical support** — the intersection of the 13 decoded depth ranges,
+  10.1626666667–96.7426666667 mm; every cross-level summary uses it, and the provenance records that it
+  matches the plan's "approximately 10.163–96.743 mm". The coarse levels' own windows extend past it
+  and are not compared there.
+- **pitch** — the mean step of a level's decoded gate depths, re-checked against the manifest's
+  `resolution_mm` cell: the realised pitch, not the requested rung label.
+- **native grid** — every level keeps its own decoded gates. The gradient (`|mean[k+1] - mean[k]| /
+  pitch`, attributed to the interval midpoint) and the correlation length (first lag where the
+  normalized biased autocovariance of the mean-removed profile drops below 1/e, capped at half the
+  profile) are computed per level *before* any alignment, and no level is resampled to produce them.
+- **common knots** — a pair's knots are the *coarser* participant's native gate depths inside the common
+  support, so the knot spacing is the coarser pitch and never finer than the coarsest participating
+  pitch. The finer profile is sampled at those knots by its nearest native gate (offset at most half its
+  own pitch): no interpolation, no upsampling, and no claim about structure between the knots.
+- **repeatability envelope** — the committed WP1 value, 19.37008103465545 mm/s
+  (`max_gate_abs_mean_difference_mm_s`), read from `reference-repeat.provenance.json` and bound to this
+  manifest's hash. It is a bound on repeatability *plus* uncontrolled drift, and it is the threshold
+  every resolution effect is compared to.
+- **detail below the coarse knots** — measured inside the finer recording *alone*, so no drift enters
+  it: its supported native mean profile minus that same profile sampled at the coarse knots. It is the
+  spatial variance the finer pitch adds, and so the honest ceiling on the information a finer pitch can
+  carry here.
+
+### What the committed files measure
+
+Every number below is copied from the artefacts above (the same values are restated in the provenance's
+`findings` block, and each pair row carries its own):
+
+- **No measured level differs from any other by more than the envelope.** Across all 78 unordered pairs
+  the largest absolute per-knot mean-profile difference is **17.37 mm/s** (`res/1-2.BDD` vs
+  `res/1-6.BDD` at 43.83 mm), **0.897** of the 19.37 mm/s envelope, and **not one of the 78 pairs puts a
+  single knot above the envelope** anywhere in the common support.
+- **0.247 mm adds no demonstrated information over 0.617 mm.** `res/0-2.BDD` vs `res/0-6.BDD` on 141
+  knots spaced 0.6167 mm: mean `|diff|` **1.974 mm/s**, max `|diff|` **6.114 mm/s** at 44.70 mm (0.316
+  of the envelope), 0 knots above the envelope. The coarse knots retain **99.15 %** of the finer
+  profile's spatial variance, and the structure below them carries **0.0722 %** of it (RMS
+  **0.5814 mm/s**, peak **2.738 mm/s**). The evidence therefore cannot support a claim that 0.247 mm
+  adds information — and it equally cannot exclude a real effect smaller than the repeat-plus-drift
+  bound, which one same-settings repeat cannot resolve.
+- **The coarsest measured pitch preserves the structure the finer pitches show.** The native
+  correlation length of the depth-resolved mean profile is **9.62–18.99 mm** at every level (4–41 gate
+  pitches), so the structure lives on a scale of order tens of millimetres. `res/3-0.BDD` at 2.96 mm
+  (30 supported gates) still samples it **4** times per correlation length, and differs from every other
+  level by at most **10.43 mm/s** (0.539 of the envelope). That is a statement about the 13 recorded
+  pitches only: nothing finer than 0.247 mm or coarser than 2.96 mm was measured, and an effect smaller
+  than the drift-inclusive envelope would be invisible in this dataset.
+
+Reviewer path: `resolution-pairs.csv` (the focus-pair row `res/0-2.BDD` → `res/0-6.BDD`, and the
+`knots_above_envelope` / `depth_ranges_above_envelope_mm` columns), then `resolution-levels.csv` for the
+per-pitch distributional and spatial numbers, then `figures/resolution-ladder.png`, then the `findings`
+and `definitions` blocks of `resolution-ladder.provenance.json` for the binding, the alignment rule and
+the limitations.

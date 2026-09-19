@@ -12,7 +12,9 @@ form the analysis plan's verification section names) carry the report-writing
 commands alongside ``acquire``: ``sweep-inventory`` writes the WP0 mixer-sweep
 manifest and QC summary from the committed BDD files, ``reference-repeat``
 writes the WP1 reference-repeatability table, provenance document and figure
-from that manifest, and neither touches an instrument.
+from that manifest, ``resolution-ladder`` writes the WP2 resolution axis —
+levels, pairs and figure — against the WP1 envelope, and none of them touches an
+instrument.
 """
 
 from __future__ import annotations
@@ -29,7 +31,11 @@ from udv_echo_process.acquire import campaign, driver, live
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
-from udv_echo_process.analysis import reference_repeat, sweep_inventory
+from udv_echo_process.analysis import (
+    reference_repeat,
+    resolution_ladder,
+    sweep_inventory,
+)
 from udv_echo_process.io import load
 from udv_echo_process.io.dop.bdd import sniff_bdd
 from udv_echo_process.parser import MAGIC_PREFIX, extract
@@ -300,6 +306,119 @@ def reference_repeat_main(argv: list[str] | None = None) -> None:
     print(f"provenance  : {report_dir / reference_repeat.PROVENANCE_NAME}")
     print(
         f"figure      : {report_dir / reference_repeat.FIGURES_DIRNAME / reference_repeat.FIGURE_NAME}"
+    )
+    print(f"commit      : {model.analysis_commit}")
+    raise SystemExit(0)
+
+
+def resolution_ladder_main(argv: list[str] | None = None) -> None:
+    """``resolution-ladder`` — write the WP2 resolution-axis artefacts.
+
+    Selects every ``res`` recording from the WP0 manifest, re-checks each source
+    hash and decoded setting, and writes ``resolution-levels.csv``,
+    ``resolution-pairs.csv``, ``resolution-ladder.provenance.json`` and
+    ``figures/resolution-ladder.png`` into the report directory, comparing every
+    pair to the committed WP1 repeatability envelope. Exits 0 on success and 1
+    with the named reason on stderr when the selection, the bytes, the envelope or
+    the alignment cannot be trusted (never a traceback, and never a half-written
+    artefact). It touches nothing but those four files: no instrument, no cache.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-resolution-ladder",
+        description=(
+            "Analyse the committed mixer sweep's resolution ladder: depth-resolved "
+            "metrics per decoded pitch, every level pair on common knots, and the "
+            "effect against the WP1 repeatability envelope"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=resolution_ladder.DATASET_ROOT.as_posix(),
+        help="directory of <axis>/<label>.BDD points",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=resolution_ladder.REPORT_DIR.as_posix(),
+        help="directory to write the WP2 artefacts into",
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help=(
+            "WP0 manifest the ladder is selected from (default: "
+            "<report-dir>/manifest.csv)"
+        ),
+    )
+    parser.add_argument(
+        "--envelope",
+        default=None,
+        help=(
+            "WP1 provenance the repeatability envelope is read from (default: "
+            "<report-dir>/reference-repeat.provenance.json)"
+        ),
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record (default: the checkout's short git SHA; pass the "
+            "recorded commit to reproduce the committed artefacts byte for byte)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    try:
+        model = resolution_ladder.write_resolution_ladder(
+            Path(args.dataset_root),
+            report_dir,
+            manifest_path=None if args.manifest is None else Path(args.manifest),
+            envelope_path=None if args.envelope is None else Path(args.envelope),
+            analysis_commit=args.analysis_commit,
+        )
+    except resolution_ladder.ResolutionLadderError as exc:
+        print(f"udv-resolution-ladder: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    findings = resolution_ladder.provenance_document(model)["findings"]
+    gate = findings["envelope_gate"]
+    information = findings["information"]
+    coarsest = findings["coarsest_pitch"]
+    print(
+        f"levels      : {model.common.levels} decoded pitches "
+        f"{model.levels[0].pitch_mm:.4g}-{model.levels[-1].pitch_mm:.4g} mm, "
+        f"{len(model.pairs)} pairs"
+    )
+    print(
+        f"common view : {model.common.revolutions} rev = "
+        f"{model.common.window_s:.4g} s; support "
+        f"{model.common.support_min_mm:.6g}-{model.common.support_max_mm:.6g} mm"
+    )
+    print(
+        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s "
+        f"({model.envelope.metric}, {model.envelope.path}); "
+        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
+        f"{gate['max_ratio_to_envelope']:.3g} x"
+    )
+    print(
+        f"focus pair  : {information['fine_path']} ({information['fine_pitch_mm']:.4g} mm) "
+        f"vs {information['coarse_path']} "
+        f"({information['coarse_pitch_mm']:.4g} mm): max |diff| "
+        f"{information['max_abs_difference_mm_s']:.4g} mm/s at "
+        f"{information['max_abs_difference_depth_mm']:.4g} mm = "
+        f"{information['max_abs_difference_mm_s'] / model.envelope.value_mm_s:.3g} x "
+        f"envelope; sub-knot detail peak "
+        f"{information['detail_max_abs_mm_s']:.4g} mm/s"
+    )
+    print(
+        f"coarsest    : {coarsest['label']} at {coarsest['pitch_mm']:.4g} mm, "
+        f"correlation length {coarsest['correlation_length_mm']:.4g} mm = "
+        f"{coarsest['correlation_length_over_pitch']:.3g} pitches"
+    )
+    print(f"levels table: {report_dir / resolution_ladder.LEVELS_NAME}")
+    print(f"pairs table : {report_dir / resolution_ladder.PAIRS_NAME}")
+    print(f"provenance  : {report_dir / resolution_ladder.PROVENANCE_NAME}")
+    print(
+        f"figure      : {report_dir / resolution_ladder.FIGURES_DIRNAME / resolution_ladder.FIGURE_NAME}"
     )
     print(f"commit      : {model.analysis_commit}")
     raise SystemExit(0)
@@ -896,6 +1015,7 @@ _COMMANDS = {
     "acquire": acquire_main,
     "inspect": inspect_main,
     "reference-repeat": reference_repeat_main,
+    "resolution-ladder": resolution_ladder_main,
     "run-all": run_all_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
