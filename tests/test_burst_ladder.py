@@ -52,11 +52,9 @@ MANIFEST = ROOT / RELATIVE_MANIFEST
 ENVELOPE = ROOT / RELATIVE_ENVELOPE
 COMMIT = "0123456789abcdef0123456789abcdef01234567"  # test-local, never the checkout
 
-#: The burst ladder in decoded-cycle order, as ``manifest.csv`` records it.
-CYCLES = (2, 4, 6, 8, 12, 14, 16, 18, 20, 24, 28, 32)
-#: 92 nominal revolutions at 500 RPM fit every burst recording (the shortest is
-#: burst_len/16.BDD at 11.1051 s); every file carries the identical 50-gate 1.85 mm grid, so
-#: the common support is that whole grid.
+CYCLES = (2, 4, 6, 8, 12, 14, 16, 18, 20, 24, 28, 32)  # decoded order, as manifest.csv
+#: 92 nominal revolutions at 500 RPM fit every recording (the shortest is burst_len/16.BDD at
+#: 11.1051 s); every file carries the same 50-gate 1.85 mm grid, so the support is that grid.
 COMMON_REVOLUTIONS, COMMON_WINDOW_S, WINDOW_PROFILES = 92, 11.04, 494
 SUPPORT_MIN_MM, SUPPORT_MAX_MM, GATES_IN_SUPPORT = 10.1626666667, 100.8126666667, 50
 ENVELOPE_MM_S = 19.37008103465545

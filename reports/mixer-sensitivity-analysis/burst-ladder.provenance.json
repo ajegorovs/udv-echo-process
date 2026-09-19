@@ -1,0 +1,705 @@
+{
+  "artefact": "burst-ladder",
+  "axis": "burst_len",
+  "analysis_commit": "fc91881",
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "manifest": {
+    "path": "reports/mixer-sensitivity-analysis/manifest.csv",
+    "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
+  },
+  "envelope": {
+    "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "metric": "max_gate_abs_mean_difference_mm_s",
+    "units": "mm/s",
+    "value_mm_s": 19.37008103465545,
+    "gate_index": 39,
+    "depth_mm": 82.31266666666666,
+    "median_abs_mean_difference_mm_s": 8.908740794548184,
+    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
+    "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "inputs": [
+    {
+      "relative_path": "burst_len/2.BDD",
+      "axis": "burst_len",
+      "requested_label": "2",
+      "cycles": 2,
+      "source_sha256": "bc5804498dd734dbe4acc72bcd2a3028b0581a3c88bc2a424bc0e7a97e47ef5c",
+      "profiles": 529,
+      "gates": 50,
+      "duration_s": 11.8215,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/4.BDD",
+      "axis": "burst_len",
+      "requested_label": "4",
+      "cycles": 4,
+      "source_sha256": "dd38dc77ed3d442852e48a8d18e1019e95ce48d9008d6ed47c6d9534ac9b9482",
+      "profiles": 536,
+      "gates": 50,
+      "duration_s": 11.9783,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/6.BDD",
+      "axis": "burst_len",
+      "requested_label": "6",
+      "cycles": 6,
+      "source_sha256": "d493b9cdea2d818323969ef4455a5ef387eb715ecab979180bf61674ff504a32",
+      "profiles": 512,
+      "gates": 50,
+      "duration_s": 11.440900000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/8.BDD",
+      "axis": "burst_len",
+      "requested_label": "8",
+      "cycles": 8,
+      "source_sha256": "48e5b680a9b78da74038b63e90ed79bc950ae58a88d683544517516d0097f170",
+      "profiles": 517,
+      "gates": 50,
+      "duration_s": 11.552800000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/12.BDD",
+      "axis": "burst_len",
+      "requested_label": "12",
+      "cycles": 12,
+      "source_sha256": "8b3f7b91932b65a1c82da122db3bb2160f286d7aa8e5f0fa7b35eb108acf6c56",
+      "profiles": 521,
+      "gates": 50,
+      "duration_s": 11.6424,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/14.BDD",
+      "axis": "burst_len",
+      "requested_label": "14",
+      "cycles": 14,
+      "source_sha256": "7644a56d24b2c13b8d1b96abd53c672a3e33adea7acaa21ee3113895877b2b09",
+      "profiles": 585,
+      "gates": 50,
+      "duration_s": 13.0754,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/16.BDD",
+      "axis": "burst_len",
+      "requested_label": "16",
+      "cycles": 16,
+      "source_sha256": "86ff4f89738f35d458d6a4176e0f4a87880f46722eeda520b9c1fbcb28f2f493",
+      "profiles": 497,
+      "gates": 50,
+      "duration_s": 11.1051,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/18.BDD",
+      "axis": "burst_len",
+      "requested_label": "18",
+      "cycles": 18,
+      "source_sha256": "e1598263277fa58b4802dd3779ddb29ee6dc034e0cb0853083327ddb050e85dc",
+      "profiles": 524,
+      "gates": 50,
+      "duration_s": 11.7096,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/20.BDD",
+      "axis": "burst_len",
+      "requested_label": "20",
+      "cycles": 20,
+      "source_sha256": "a7aa7814f5832d34a33538ad4745718bacca5c0af0d5ab8979094a8e23b48abd",
+      "profiles": 518,
+      "gates": 50,
+      "duration_s": 11.5752,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/24.BDD",
+      "axis": "burst_len",
+      "requested_label": "24",
+      "cycles": 24,
+      "source_sha256": "9786ebfaf5fea60108552af761e41d7eb9480ed4453580a2e476341451d214b6",
+      "profiles": 545,
+      "gates": 50,
+      "duration_s": 12.1797,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/28.BDD",
+      "axis": "burst_len",
+      "requested_label": "28",
+      "cycles": 28,
+      "source_sha256": "cc8156ac2287ac20de9c2e3850885e5cca020c87851e9cfb05c72ff03dfdb6aa",
+      "profiles": 510,
+      "gates": 50,
+      "duration_s": 11.396,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/32.BDD",
+      "axis": "burst_len",
+      "requested_label": "32",
+      "cycles": 32,
+      "source_sha256": "a29e78dc6dcfc890d49e7c14d8f525675a67c19ae8f7b5f7f0aa68b66bdcf2fe",
+      "profiles": 520,
+      "gates": 50,
+      "duration_s": 11.620000000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    }
+  ],
+  "views": {
+    "time": {
+      "common_duration": {
+        "nominal_rpm": 500.0,
+        "revolution_s": 0.12,
+        "revolutions": 92,
+        "window_s": 11.04,
+        "profiles_window": {
+          "burst_len/2.BDD": 494,
+          "burst_len/4.BDD": 494,
+          "burst_len/6.BDD": 494,
+          "burst_len/8.BDD": 494,
+          "burst_len/12.BDD": 494,
+          "burst_len/14.BDD": 494,
+          "burst_len/16.BDD": 494,
+          "burst_len/18.BDD": 494,
+          "burst_len/20.BDD": 494,
+          "burst_len/24.BDD": 494,
+          "burst_len/28.BDD": 494,
+          "burst_len/32.BDD": 494
+        },
+        "rule": "largest integer number of nominal revolutions fitting every burst recording, truncated per file by the recorded timestamps"
+      }
+    },
+    "depth": {
+      "common_support": {
+        "min_mm": 10.162666666666668,
+        "max_mm": 100.81266666666667,
+        "plan_declared_mm": [
+          10.163,
+          96.743
+        ],
+        "contains_plan_window": true,
+        "gates_in_support": {
+          "burst_len/2.BDD": 50,
+          "burst_len/4.BDD": 50,
+          "burst_len/6.BDD": 50,
+          "burst_len/8.BDD": 50,
+          "burst_len/12.BDD": 50,
+          "burst_len/14.BDD": 50,
+          "burst_len/16.BDD": 50,
+          "burst_len/18.BDD": 50,
+          "burst_len/20.BDD": 50,
+          "burst_len/24.BDD": 50,
+          "burst_len/28.BDD": 50,
+          "burst_len/32.BDD": 50
+        },
+        "rule": "the intersection of the decoded depth ranges, used by every summary"
+      },
+      "native_grid": "each level keeps its own decoded gate grid for the distributional metrics, the gradient and the correlation length; nothing is resampled"
+    },
+    "temporal": {
+      "grid": {
+        "profile_period_s": 0.022389223879352174,
+        "profile_rate_hz": 44.664344123255724,
+        "period_spread_relative": 1.721927845525e-05,
+        "wp1_period_relative_difference": 2.565597043939484e-06,
+        "segment_profiles": 86,
+        "segment_duration_s": 1.9030840297449347,
+        "frequency_resolution_hz": 0.5193528386425084,
+        "nyquist_hz": 22.332172061627862,
+        "band_hz": [
+          0.5,
+          20.0
+        ],
+        "levels": 12,
+        "profiles_analysed": {
+          "burst_len/2.BDD": 516,
+          "burst_len/4.BDD": 516,
+          "burst_len/6.BDD": 430,
+          "burst_len/8.BDD": 516,
+          "burst_len/12.BDD": 516,
+          "burst_len/14.BDD": 516,
+          "burst_len/16.BDD": 430,
+          "burst_len/18.BDD": 516,
+          "burst_len/20.BDD": 516,
+          "burst_len/24.BDD": 516,
+          "burst_len/28.BDD": 430,
+          "burst_len/32.BDD": 516
+        },
+        "segments": {
+          "burst_len/2.BDD": 6,
+          "burst_len/4.BDD": 6,
+          "burst_len/6.BDD": 5,
+          "burst_len/8.BDD": 6,
+          "burst_len/12.BDD": 6,
+          "burst_len/14.BDD": 6,
+          "burst_len/16.BDD": 5,
+          "burst_len/18.BDD": 6,
+          "burst_len/20.BDD": 6,
+          "burst_len/24.BDD": 6,
+          "burst_len/28.BDD": 5,
+          "burst_len/32.BDD": 6
+        },
+        "acf_estimator": "biased (divide-by-N) autocovariance of the mean-removed segment",
+        "psd_window": "hann",
+        "psd_detrend": "constant",
+        "psd_scaling": "density"
+      },
+      "mixer_setpoint_hz": 8.333333333333334,
+      "mixer_setpoint_role": "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference",
+      "rule": "every file's full record in non-overlapping segments of the identical profile count on one shared profile period, so the segment duration, lag grid, frequency grid and frequency resolution are identical for all 12 files; each level's ensemble ACF/PSD is summarised in burst-levels.csv",
+      "floor": {
+        "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+        "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+        "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
+        "source_paths": [
+          "prf/600.BDD",
+          "res/1-8.BDD"
+        ],
+        "source_hashes": [
+          "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+          "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de"
+        ],
+        "profile_period_s": 0.022389281321078775,
+        "band_hz": [
+          0.5,
+          20.0
+        ],
+        "band_max_abs_level_difference_db": 3.5316513237090668,
+        "e_folding_lag_s": [
+          0.11194640660539387,
+          0.0895571252843151
+        ],
+        "e_folding_lag_difference_s": 0.02238928132107877,
+        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
+        "hf_share": [
+          0.07202236344557275,
+          0.09990761745914685
+        ],
+        "hf_share_difference": 0.0278852540135741,
+        "centroid_hz": [
+          2.93324120675563,
+          3.734821991704059
+        ],
+        "centroid_hz_difference": 0.8015807849484289,
+        "bandwidth_hz": [
+          3.85573595700905,
+          4.301416958210061
+        ],
+        "bandwidth_hz_difference": 0.4456810012010113
+      }
+    },
+    "alignment": {
+      "knot_rule": "the longer pulse's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid",
+      "short_sampling_rule": "the shorter pulse's profile is sampled at each knot by its nearest native gate (offset at most half its own pitch); no interpolation",
+      "upsampled": false,
+      "max_knot_offset_over_all_pairs_mm": 0.0,
+      "focus_pair": {
+        "short_path": "burst_len/18.BDD",
+        "long_path": "burst_len/20.BDD",
+        "selection": "selected by decoded cycle count from the manifest ladder: the plan's question names 18 and 20 cycles, not a filename"
+      }
+    }
+  },
+  "definitions": {
+    "cycles": "decoded burst length, re-checked against the manifest burst_length cell",
+    "robust_spread": "IQR p75 - p25 across supported gates of the per-gate time means",
+    "rms": "root mean square about zero over the common window and support, mm/s; not a sigma",
+    "zero_fraction": "samples exactly 0.0 over the common window and support: dropout",
+    "gradient": "median and maximum |mean[k+1] - mean[k]| / native pitch, mm/s per mm",
+    "correlation_length": "first native lag whose normalized autocovariance < 1/e, mm",
+    "difference": "signed short - long per-gate time mean at every common knot, mm/s",
+    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "figure": "both panels carry this document's caption and the generating commit",
+    "knee": "the largest one-step change of a metric along the ladder, with monotonicity",
+    "temporal_bandwidth": "per level, from its full-record ensemble PSD inside 0.5-20 Hz: the spectral centroid and RMS bandwidth, the share of in-band power above 10 Hz, and the e-folding lag of the ensemble autocorrelation",
+    "temporal_floor": "the same temporal metrics for the two committed WP1 same-settings recordings, from the curves reference-repeat.provenance.json already records; their difference bounds repeatability plus uncontrolled drift for those metrics",
+    "replicates": "no profile and no gate is an independent experimental replicate",
+    "time_view": "whole 500-RPM revolutions for every level; the full record for ACF/PSD",
+    "depth_view": "each level on its own gate grid inside the common support",
+    "comparability": "only the decoded burst length may differ across the ladder"
+  },
+  "findings": {
+    "envelope_gate": {
+      "pairs": 66,
+      "envelope_mm_s": 19.37008103465545,
+      "pairs_above_envelope": 21,
+      "clearances_involving_the_longest_bursts": 16,
+      "max_abs_difference_mm_s": 44.03130014799165,
+      "max_abs_difference_paths": [
+        "burst_len/4.BDD",
+        "burst_len/28.BDD"
+      ],
+      "max_abs_difference_depth_mm": 10.162666666666668,
+      "max_ratio_to_envelope": 2.2731603481273135,
+      "statement": "Effect gate: over the 66 pairs the largest absolute per-knot mean difference is 44.03 mm/s (4 vs 28 cycles) = 2.27 of the WP1 envelope 19.37 mm/s; 21 pairs put a knot above it, 16 of those at the longest bursts, and none covers the support."
+    },
+    "focus_18_vs_20": {
+      "short_path": "burst_len/18.BDD",
+      "long_path": "burst_len/20.BDD",
+      "short_cycles": 18,
+      "long_cycles": 20,
+      "knots": 50,
+      "knots_above_envelope": 0,
+      "mean_abs_difference_mm_s": 5.502559621882552,
+      "max_abs_difference_mm_s": 11.751918176021,
+      "max_abs_difference_depth_mm": 91.56266666666666,
+      "ratio_to_envelope": 0.6067046469756827,
+      "statement": "Plan question, 18 versus 20 cycles: the largest absolute per-knot mean difference is 11.75 mm/s at 91.56 mm = 0.607 of the 19.37 mm/s envelope, with 0 of 50 knots above it. Verdict: this evidence cannot support choosing 18 cycles over 20 or the reverse \u2014 the difference sits inside the repeat-plus-drift bound and no level in the 16-20-cycle region clears the envelope against any other. Unidentifiable from this dataset: any burst effect smaller than the envelope, and the pitch x burst interaction, because the two ladders meet only at the reference. What would overturn it: two recordings per cycle count in this region, which would separate the level effect from drift."
+    },
+    "focus_window_16_20": {
+      "cycles": [
+        16,
+        20
+      ],
+      "pairs": 3,
+      "pairs_above_envelope": 0,
+      "max_ratio_to_envelope": 0.6503732867808196,
+      "statement": "16-20-cycle region: 3 unordered pairs, 0 of them clearing the envelope, so no level differs from another by more than repeat-plus-drift there."
+    },
+    "knees": {
+      "zero_fraction": {
+        "metric": "zero_fraction",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 28,
+        "knee_value": 0.02117408906882591,
+        "knee_change": 0.010931174089068825,
+        "net_change": 0.0014574898785425089,
+        "monotone_decreasing": false,
+        "statement": "zero_fraction: largest one-step change +0.01093 across 2-32 cycles, reached at 28 cycles (value 0.02117), net +0.001457; the sequence does not fall monotonically"
+      },
+      "robust_spread_mm_s": {
+        "metric": "robust_spread_mm_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 4,
+        "knee_value": 34.378199966070206,
+        "knee_change": 12.87567554568409,
+        "net_change": 8.088737292591173,
+        "monotone_decreasing": false,
+        "statement": "robust_spread_mm_s: largest one-step change +12.88 across 2-32 cycles, reached at 4 cycles (value 34.38), net +8.089; the sequence does not fall monotonically"
+      },
+      "rms_mm_s": {
+        "metric": "rms_mm_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 24,
+        "knee_value": 35.30730460610344,
+        "knee_change": -4.84257228558868,
+        "net_change": -0.990929572111753,
+        "monotone_decreasing": false,
+        "statement": "rms_mm_s: largest one-step change -4.843 across 2-32 cycles, reached at 24 cycles (value 35.31), net -0.9909; the sequence does not fall monotonically"
+      },
+      "correlation_length_mm": {
+        "metric": "correlation_length_mm",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 4,
+        "knee_value": 12.950000000000001,
+        "knee_change": 1.8499999999999996,
+        "net_change": 1.8499999999999996,
+        "monotone_decreasing": false,
+        "statement": "correlation_length_mm: largest one-step change +1.85 across 2-32 cycles, reached at 4 cycles (value 12.95), net +1.85; the sequence does not fall monotonically"
+      },
+      "gradient_max_abs_mm_s_per_mm": {
+        "metric": "gradient_max_abs_mm_s_per_mm",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 28,
+        "knee_value": 16.139888633409193,
+        "knee_change": 9.510794036733408,
+        "net_change": 1.2148728320681732,
+        "monotone_decreasing": false,
+        "statement": "gradient_max_abs_mm_s_per_mm: largest one-step change +9.511 across 2-32 cycles, reached at 28 cycles (value 16.14), net +1.215; the sequence does not fall monotonically"
+      },
+      "psd_hf_share": {
+        "metric": "psd_hf_share",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 6,
+        "knee_value": 0.09591963648750212,
+        "knee_change": -0.02757892044789048,
+        "net_change": -0.022270774725695414,
+        "monotone_decreasing": false,
+        "statement": "psd_hf_share: largest one-step change -0.02758 across 2-32 cycles, reached at 6 cycles (value 0.09592), net -0.02227; the sequence does not fall monotonically"
+      },
+      "acf_e_folding_lag_s": {
+        "metric": "acf_e_folding_lag_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 32,
+        "knee_value": 0.11194611939676087,
+        "knee_change": 0.022389223879352174,
+        "net_change": 0.022389223879352174,
+        "monotone_decreasing": false,
+        "statement": "acf_e_folding_lag_s: largest one-step change +0.02239 across 2-32 cycles, reached at 32 cycles (value 0.1119), net +0.02239; the sequence does not fall monotonically"
+      }
+    },
+    "temporal_bandwidth": {
+      "band_hz": [
+        0.5,
+        20.0
+      ],
+      "hf_above_hz": 10.0,
+      "levels": 12,
+      "segment_profiles": 86,
+      "frequency_resolution_hz": 0.5193528386425084,
+      "nyquist_hz": 22.332172061627862,
+      "hf_share_min": 0.0787238054101207,
+      "hf_share_max": 0.1234985569353926,
+      "centroid_hz_min": 3.1970491411547575,
+      "centroid_hz_max": 4.064985745504256,
+      "bandwidth_hz_min": 3.952299497929861,
+      "bandwidth_hz_max": 4.638697836300465,
+      "floor_paths": [
+        "prf/600.BDD",
+        "res/1-8.BDD"
+      ],
+      "floor_hf_share_difference": 0.0278852540135741,
+      "floor_centroid_difference_hz": 0.8015807849484289,
+      "floor_bandwidth_difference_hz": 0.4456810012010113,
+      "floor_e_folding_lag_difference_s": 0.02238928132107877,
+      "floor_band_level_difference_db": 3.5316513237090668,
+      "statement": "Temporal bandwidth: the share of in-band power above 10 Hz ranges 0.07872-0.1235 (spread 0.04477) over the 12 levels, the centroid 3.197-4.065 Hz and the RMS bandwidth 3.952-4.639 Hz, against a same-settings repeat floor of 0.02789 in the same share and 0.4457 Hz in the bandwidth: a smaller bandwidth loss is not separable from repeat-plus-drift. The shortest bursts carry the largest share and the longest the smallest, the direction a longer pulse predicts, at a magnitude inside the floor."
+    },
+    "spatial_smoothing": {
+      "levels": 12,
+      "correlation_length_min_mm": 11.100000000000001,
+      "correlation_length_max_mm": 14.8,
+      "longest_path": "burst_len/32.BDD",
+      "longest_cycles": 32,
+      "longest_correlation_length_over_pitch": 7.0,
+      "gradient_max_abs_mm_s_per_mm": 16.139888633409193,
+      "statement": "Spatial smoothing: the native correlation length of the depth-resolved mean profile is 11.1-14.8 mm over 2-32 cycles (6-8 gate pitches), so the longer pulse is not shown to smooth the profile within this ladder."
+    },
+    "limitations": [
+      "The only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s): the levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the burst length. No level is replicated.",
+      "Temporal metrics are bounded by the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), and one pair cannot estimate that floor's own spread.",
+      "The file carries the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the ensemble PSD is per gate, and nothing here separates a burst effect from aliased temporal noise or one recording's dropout.",
+      "This module owns the burst-length axis only: resolution, PRF, TGC, emitting power and emissions per profile are neither analysed nor decided here, and the pitch x burst interaction is not estimable from this dataset."
+    ]
+  },
+  "tables": {
+    "levels": {
+      "path": "burst-levels.csv",
+      "rows": 12
+    },
+    "pairs": {
+      "path": "burst-pairs.csv",
+      "rows": 66
+    }
+  },
+  "figure": {
+    "path": "figures/burst-ladder.png",
+    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the envelope, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit fc91881 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "panels": [
+      "dropout (zero fraction) and variance (robust spread, RMS) versus cycle count, with the plan's 16-20-cycle region shaded",
+      "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 envelope band"
+    ]
+  },
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit fc91881",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}
