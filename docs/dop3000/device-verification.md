@@ -224,8 +224,7 @@ state that was left behind — never attempt a speculative recovery gesture.
   established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant. V0, V1, V2 and V4
     have device evidence; V3's device-measured safe failure was **closed by the identity change's ladder**
     (2026-09-19) and V3 now passes; **V5, V6, V7 and V8 pass** as of sitting D (2026-09-19: the compile in
-    four directions, the six-point campaign `6/6 ok`, the resume, and post-run recovery — V7's TGC item
-    structurally, its live half not taken).
+    four directions, the six-point campaign `6/6 ok`, the resume, and post-run recovery — V7's TGC item taken live as well).
 
 ## Session record
 
@@ -1247,6 +1246,17 @@ produced a log or a manifest.
    `797/399/199/797/100/797`, each carrying the wrap note (*"366 profiles at 0.032800 s/profile … covers only
    its last 8.430 s"*).
 
+**Where the tooling stops, and why a hand appears in this sitting.** The compile's inputs are five fixed
+facts, and the committed write paths cover three of them: `Win32Actuator.write_parameter` writes the sidebar
+column by role — resolution, gates, **PRF**, **emissions/profile**, Doppler angle, velocity scale — and
+refuses `sound_speed_ms`/`first_gate_mm` by name as dialog-only; `probes/dialog_write.py` writes **one**
+dialog knob per run (`--burst`, `--volume`). **Sound speed and first gate have no writer**: the campaign plan's
+own cell table has sound speed's write *unexercised* and unswept (matrix group S), and first gate keeps its
+documented deferral — "funded by an axis, not by the knob's existence" (§11.1 item 5) — while §9.1's stop
+condition forbids adding one during a verification session. So the frame was set by hand in item 4 above, and
+that is a reading of the tooling rather than of the operator: **the frame the campaign *declares* is the part
+of it the write path does not yet own.**
+
 **V6 — the six-point campaign, on the instrument (21:16:19 to 21:18:09, 110 s).**
 `acquire campaign --definition examples/campaign-single-channel.json --store-dir
 C:/Repos/udv-echo-process/outputs/live/store --log outputs/live/ladder/10c-campaign.jsonl --channel 1
@@ -1288,9 +1298,23 @@ proved before the todo set shrank rather than after. The compared identity carri
 `channel`, `mode`, `process_mode`, `prf_us`, `emissions_per_profile`, `burst_length`, `sound_speed_ms`,
 `first_gate_mm`, `max_profiles_per_block`, `class_name`, `panels`, `strip_view`, `strip_has_slider` — and
 **no visible-control count and no TGC field**, which is ledger B02's rule implemented rather than asserted.
-That item's live half (the operator moves TGC and the resume still skips) was **not** taken: the change has
-no TGC writer by design, the operator's configuration was left alone, and the structural evidence above is
-the assertion. Stated rather than implied.
+That item's live half **was** taken, and it needed no frame edit at all: the operator's own frame
+(`600 / 20 / 4 / 1480 / 1`) is exactly what the scratch definition declares, so the instrument's *current*
+state became the baseline instead of the campaign's. One one-point job was recorded with `Tgc [dB]` at
+`30` — `1/1 ok`, gates `50/50`, resolution `1.850/1.85`, cap `257`, target `0.013 s` / achieved `0.0224 s`,
+file `c1i-c1i-current-20260919T212956.BDD` — the operator then changed TGC again (30 dB, then back to their
+own 20 dB), and **the resume of that job reports `0/1 point(s) ok; 1 skipped as already recorded`** with
+`skipped: ['c1i-c1i-current']`, `declared_only: false`, **`skipped_without_evidence: []`**, no log errors and
+the stored file's mtime still the job's. So a TGC change alone does not invalidate a resume, live, with
+everything else identical. The visible-control count read 44 in 4 panels on both sides of the change, and the
+mode was left `Uniform`: the `Auto` count (`42`) was **not** provoked, because ledger B11 warns that `Auto`
+plus emitting power raises a warning with side effects — coverage was not worth that press.
+
+One datum arrived for free from the first attempt, which ran the *other* way round: resuming the six-point
+campaign while the instrument again stood on the operator's frame **refused** — `prf_us: the campaign
+declares 212.0, the instrument states '600' (tolerance 1); sound_speed_ms: … '1480'; first_gate_mm: … '1'` —
+exit 2, nothing stored, the six files' mtimes untouched. A frame change *does* invalidate a resume, named fact
+by fact with both sides: the same identity check, seen from its other side.
 
 **V8 — post-run recovery (21:19:16, and 21:20:45 for the pointer).** The intended frame is still active —
 the resume's own snapshot re-read `channel 1 routed`, `manual`, `instrument`, `212 / 150 / 4 / 1460 / 2`,
@@ -1306,8 +1330,7 @@ which the driver releases after every gesture, twice per run in these logs) is r
 as it found it; the compile accepts this machine's own frame and refuses a deliberate declaration-only
 mismatch before any recording; the six-point campaign stores exactly the expected six files, whose own words
 agree; the resume skips exactly what was already proven and says it had evidence for it; and the application
-returns to the clean measurement surface with its frame intact. **V5, V6, V7 and V8 pass** (V7's TGC item
-structurally — its live half not taken), and the acquisition architecture did not change: no new code, no new
+returns to the clean measurement surface with its frame intact. **V5, V6, V7 and V8 pass** — V7's TGC item taken live as well (a one-point job on the instrument's own frame, TGC changed, the resume still skipped), and the acquisition architecture did not change: no new code, no new
 probe, one dispatch per item. The instrument is left on the frame the campaign declares
 (`212 / 150 / 1460 / 2`); the operator's own frame before this sitting was `600 / 20 / 1480 / 1`, theirs to
 restore.

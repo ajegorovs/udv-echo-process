@@ -381,8 +381,7 @@ operator had set the instrument by hand to what the ladder declares (`212 / 150 
 six-point campaign ran **`6/6 point(s) ok`** in 110 s with the stored `.BDD` files' own words agreeing with
 the request; the resume afterwards reported `0/6 point(s) ok; 6 skipped as already recorded` with
 `skipped_without_evidence: []`; and recovery found the intended frame still active, no popup/dialog/overlay,
-the expected store directory and an unclipped pointer. **V5, V6, V7 and V8 pass** — V7's TGC item
-structurally, its live half not taken — and nothing in the acquisition architecture changed: no new code, no
+the expected store directory and an unclipped pointer. **V5, V6, V7 and V8 pass** — V7's TGC item taken live as well — and nothing in the acquisition architecture changed: no new code, no
 new probe. Readings, times, quoted fields and artifact names:
 [`device-verification.md`](device-verification.md), *sitting D*. The instrument is left on the frame the
 campaign declares; the operator's frame before the sitting (`600 / 20 / 1480 / 1`) is theirs to restore.

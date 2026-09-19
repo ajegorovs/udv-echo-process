@@ -216,8 +216,7 @@ profiles in one fixture and 4193–4927 in another.
 > once the operator set the instrument to what the ladder declares; the six-point campaign ran **6/6 ok**
 > with the stored `.BDD` files' own words agreeing; the resume skipped all six with
 > `skipped_without_evidence: []`; and recovery found the frame intact, no popup/dialog/overlay, the expected
-> store directory and an unclipped pointer. **V5–V8 pass** (V7's TGC item structurally — its live half was
-> not taken), so nothing left in this workstream is device-pending.
+> store directory and an unclipped pointer. **V5–V8 pass** (V7's TGC item taken live too: a one-point job recorded, TGC changed, and the resume still skipped), so nothing left in this workstream is device-pending.
 >
 > What remains is the **matrix question**
 > ([`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) §4): is
