@@ -321,9 +321,12 @@ class InstrumentSnapshot(ValueModel):
     :class:`CompilationIdentity`, which is a different question.
 
     The six facts named by :data:`FIXED_FACT_FIELDS` are present whatever happened: one that was
-    read carries the application's text, one nothing could read carries the reason. ``channel``
-    and ``mode`` are facts too, for the same reason — the run's record has to say which channel
-    and which mode were active, and has to say on what authority.
+    read carries the application's text, one nothing could read carries the reason. ``channel``,
+    ``mode`` and ``process_mode`` are facts too, for the same reason — the run's record has to say
+    which channel, which channel mode and which **process** (simulator or instrument) were active,
+    and has to say on what authority. Only the caption states the process mode, and reading it
+    presses nothing, so this reading establishes it itself rather than being handed it
+    (``driver.Win32Actuator._process_mode_fact``).
     """
 
     fingerprint: ScreenFingerprint
@@ -337,6 +340,10 @@ class InstrumentSnapshot(ValueModel):
     #: Which of the two parameter surfaces the application built for that channel
     #: (:class:`~udv_echo_process.acquire.actuator.ChannelMode`).
     mode: InstrumentFact
+    #: Which **process** the top-level window's caption states
+    #: (:class:`~udv_echo_process.acquire.actuator.ProcessMode`) — the axis the channel mode is
+    #: not, and the only one that separates the simulator from the instrument (plan §22.1).
+    process_mode: InstrumentFact
     prf_us: InstrumentFact
     emissions_per_profile: InstrumentFact
     burst_length: InstrumentFact
@@ -374,12 +381,13 @@ class CompilationIdentity(ValueModel):
 
     In it, because a campaign can disagree with it or a read depends on it: the channel and its
     mode (an assisted channel has its own parameter surface entirely, so a manual campaign
-    against it has nothing to write), every fixed fact *with its provenance* — a :class:`Provenance`,
-    value and source, never the prose that explains it (the provenance belongs in the identity: a
-    fact that moved from ``read`` to ``unreadable`` between two runs is a weaker claim about the
-    same instrument, and a resume that ignored that would be comparing evidence it no longer has)
-    — and the layout signature: the window class, the panel and visible-control counts, and the
-    strip's view.
+    against it has nothing to write), the **process** the caption states (the axis that separates
+    the simulator from the instrument — plan §24.4), every fixed fact *with its provenance* — a
+    :class:`Provenance`, value and source, never the prose that explains it (the provenance
+    belongs in the identity: a fact that moved from ``read`` to ``unreadable`` between two runs is
+    a weaker claim about the same instrument, and a resume that ignored that would be comparing
+    evidence it no longer has) — and the layout signature: the window class, the panel count and
+    the strip's view.
 
     Out of it, deliberately: ``hwnd``, ``rect``, ``maximized``, ``screen``, ``cursor``,
     ``is_foreground`` and ``layout_note`` (true only of a session: a restart or a drag must not
@@ -392,6 +400,16 @@ class CompilationIdentity(ValueModel):
     whether a leftover block is held (``actuator.STRIP_BUTTON_ORDER`` documents both rows, and
     ``classify_strip_view`` puts both in the same ``READY`` view).
 
+    The **visible-control total is out too** (plan §24.5, D6), and it is the same ruling as the
+    strip's button count rather than a new one: once the count is not a cleanliness fact — the
+    reference install's clean screen is 43 in 4, the instrument's own is 44 in 4, and the ``Tgc
+    [dB]`` row that makes the difference may be session state — then two runs on one instrument in
+    one mode could differ by that single control and be refused as *a different instrument*. The
+    count stays in the reading and in its note (:class:`ScreenFingerprint.visible_controls`,
+    ``layout_evidence``), where a drift is visible to whoever reads a report; the mode states the
+    difference that matters, and ``panels``/``strip_view`` stay because a press is bound against
+    them.
+
     What the count classifies *into* stays in, and it is the half the driving needs: the view.
     A press is bound to a control's position in the live row, and the driver resolves that row at
     press time from the count it has *just* read (:func:`~udv_echo_process.acquire.actuator.
@@ -402,6 +420,23 @@ class CompilationIdentity(ValueModel):
 
     channel: Provenance
     mode: Provenance
+    # DEVIATION: D6 names ``campaign._IDENTITY_LAYOUT_FIELDS``, and §24.6's row requires that
+    # ``visible_controls`` no longer move ``identity_digest``. A field left on this model would
+    # still move it — the digest is the canonical dump of the model — so the field comes out of the
+    # *model* too, exactly as the strip's ``button_count`` was taken out (``a7e9172``) and left in
+    # the reading. ``from_snapshot`` below is where the projection shows it.
+    #: Which process the caption stated, as read
+    #: (:class:`~udv_echo_process.acquire.actuator.ProcessMode`).
+    #:
+    #: **Optional at parse time with a default, deliberately** (plan §24.5, D2): every manifest
+    #: written before this slice carries a ``compilation_identity`` that has no such field, and a
+    #: *required* one would make ``read_manifest`` report a valid W4 manifest as *"not a job
+    #: manifest"* (``campaign.py``'s ``_explain_validation``) — a misdiagnosis where a refusal is
+    #: wanted. So ``None`` means "this identity was written before the field existed", while an
+    #: ``unreadable`` provenance means "the caption was read and stated nothing"; the resume
+    #: comparison refuses **both**, each by name and with the way out
+    #: (``campaign._identity_disagreements``).
+    process_mode: Provenance | None = None
     prf_us: Provenance
     emissions_per_profile: Provenance
     burst_length: Provenance
@@ -410,7 +445,6 @@ class CompilationIdentity(ValueModel):
     max_profiles_per_block: Provenance
     class_name: str
     panels: int = Field(ge=0)
-    visible_controls: int = Field(ge=0)
     #: The view the strip was in: a press is bound to a button's **position in that row**
     #: (:func:`~udv_echo_process.acquire.actuator.press_index`), so a view the run did not bind
     #: against is a screen whose presses would land elsewhere.
@@ -426,17 +460,20 @@ class CompilationIdentity(ValueModel):
         left out of every resume comparison. Each fact goes through
         :meth:`InstrumentFact.provenance`, so the identity keeps the value and the source and
         cannot inherit the explanation.
+
+        The layout half is ``class_name``, ``panels``, ``strip_view`` and ``strip_has_slider``:
+        the visible-control total is deliberately **not** projected (plan §24.5, D6 — see the
+        class docstring), while the process mode is, with its provenance.
         """
         fingerprint = snapshot.fingerprint
         strip = fingerprint.strip
         return cls(
             **{
                 name: getattr(snapshot, name).provenance()
-                for name in ("channel", "mode", *FIXED_FACT_FIELDS)
+                for name in ("channel", "mode", "process_mode", *FIXED_FACT_FIELDS)
             },
             class_name=fingerprint.class_name,
             panels=fingerprint.panels,
-            visible_controls=fingerprint.visible_controls,
             strip_view=strip.view,
             strip_has_slider=strip.has_slider,
         )

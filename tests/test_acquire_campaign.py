@@ -50,7 +50,7 @@ from test_acquire_runner import (
 )
 
 from udv_echo_process.acquire import campaign, driver, live
-from udv_echo_process.acquire.actuator import ChannelMode
+from udv_echo_process.acquire.actuator import ChannelMode, ProcessMode
 from udv_echo_process.acquire.config import ParameterSet, RecordSettings
 from udv_echo_process.acquire.log import (
     PointStatus,
@@ -64,6 +64,7 @@ from udv_echo_process.acquire.snapshot import (
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
+    unreadable,
 )
 from udv_echo_process.cli import acquire_main
 
@@ -207,7 +208,13 @@ def campaign_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **overrides: o
 
 
 def run_job(job: Job, **kwargs: object) -> campaign.JobManifest:
-    """Run the fixture job through the fake, with the paths it was built with."""
+    """Run the fixture job through the fake, with the paths it was built with.
+
+    ``expected_mode`` defaults to :attr:`ProcessMode.INSTRUMENT` because the fake *is* the
+    measurement application — its caption says so — and every record path must declare one
+    (plan §24.4). A case about the mode rung passes the other one.
+    """
+    kwargs.setdefault("expected_mode", ProcessMode.INSTRUMENT)
     return campaign.run_campaign(
         job.definition,
         job.fake,
@@ -883,7 +890,13 @@ def test_no_store_directory_is_refused_by_the_library(tmp_path: Path, monkeypatc
     job = campaign_job(tmp_path, monkeypatch)
 
     with pytest.raises(campaign.CampaignError, match="no store directory"):
-        campaign.run_campaign(job.definition, job.fake, store_dir=None, log_path=job.log_path)
+        campaign.run_campaign(
+            job.definition,
+            job.fake,
+            store_dir=None,
+            log_path=job.log_path,
+            expected_mode=ProcessMode.INSTRUMENT,
+        )
 
 
 # ------------------------------- 7b. the run path: route, read, compile — then the resume
@@ -1054,6 +1067,160 @@ def test_a_resume_against_a_legacy_manifest_refuses_until_told_to_proceed(
     assert [record.key for record in point_records(read_entries(job.log_path))] == [1, 2]
 
 
+# ------------------------------------- 24.5 D2: the W4-shaped identity, and D3's two halves
+
+
+def test_a_w4_identity_loads_and_the_resume_refuses_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§24.5 D2: an identity with no ``process_mode`` is a *refusal*, never a parse failure.
+
+    Every manifest written before this slice already carries a ``compilation_identity`` — so a
+    *required* ``process_mode`` would make ``read_manifest`` report a valid W4 manifest as "not a
+    job manifest", which is a misdiagnosis rather than a refusal. The field is therefore optional
+    at parse time, and the **resume comparison** is what refuses: it says the previous job's mode
+    is not proven, and ``--resume-declaration-only`` is the documented way past it.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    first = run_job(job)
+    assert first.compilation_identity is not None
+
+    path = campaign.manifest_path_for(job.log_path)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    # The W4 shape, made by hand: the identity exists and the field is simply absent, which is
+    # exactly what a manifest written before this slice looks like.
+    del payload["compilation_identity"]["process_mode"]
+    payload.pop("expected_process_mode", None)
+    payload.pop("observed_process_mode", None)
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    # (a) it parses — no ``ValidationError``, and nothing calls it "not a job manifest".
+    loaded = campaign.read_manifest(path)
+    assert loaded.compilation_identity is not None
+    assert loaded.compilation_identity.process_mode is None
+    assert loaded.expected_process_mode is None
+    assert loaded.observed_process_mode is None
+
+    # (b) the resume refuses *by name*, and says which side carries no mode.
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+    message = str(excinfo.value)
+    assert "not a job manifest" not in message, message
+    assert "process_mode" in message, message
+    assert "carries no process mode" in message, message
+    assert "resume-declaration-only" in message, message
+
+    # (c) and the documented escape still works, marking the skips as unproven.
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, resume_declaration_only=True, notes=notes)
+    assert resumed.skipped == ("c1-k1", "c1-k2")
+    assert resumed.skipped_without_evidence == ("c1-k1", "c1-k2")
+    assert any("declaration" in note for note in notes), notes
+
+
+def test_the_manifest_carries_both_halves_of_the_process_mode(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§24.5 D3: the execution contract outlives the shell history that produced it.
+
+    ``expected_process_mode`` is what the operator declared (``--expect-mode``) and
+    ``observed_process_mode`` is what the instrument's own caption stated — both on the run's
+    record, so a past job is reconstructable offline by someone with no instrument in front of
+    them.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    manifest = run_job(job, expected_mode=ProcessMode.INSTRUMENT)
+
+    assert manifest.expected_process_mode is ProcessMode.INSTRUMENT
+    assert manifest.observed_process_mode is ProcessMode.INSTRUMENT
+    # It survives the round trip a report reads it back through...
+    written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert written.expected_process_mode is ProcessMode.INSTRUMENT
+    assert written.observed_process_mode is ProcessMode.INSTRUMENT
+
+
+def test_a_no_snapshot_run_records_the_declaration_and_no_observation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing was read, so nothing was observed: the record says so rather than echoing itself."""
+    job = campaign_job(tmp_path, monkeypatch)
+    manifest = run_job(job, expected_mode=ProcessMode.SIMULATION, no_snapshot=True)
+
+    assert manifest.declared_only is True
+    assert manifest.expected_process_mode is ProcessMode.SIMULATION
+    assert manifest.observed_process_mode is None
+    assert job.fake.snapshot_checks == 0
+
+
+def test_a_run_declared_against_the_other_process_refuses_before_anything_is_stored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """§24.4: the acceptance path is where the mode rung bites, and it names the caption it read.
+
+    The fake's caption is the *instrument's*, so a run that declares the simulator is refused —
+    before the compile, before the runner exists and long before a recording is spent.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, expected_mode=ProcessMode.SIMULATION)
+
+    message = str(excinfo.value)
+    assert "the process mode is 'instrument'" in message, message
+    assert "simulation" in message, message
+    assert "UDOP DOP3010.43" in message, message  # the caption itself, quoted
+    assert job.fake.stored == []
+    assert stored_names(job.directory) == []
+    assert not job.log_path.exists()
+    assert not campaign.manifest_path_for(job.log_path).exists()
+
+
+def test_a_reading_that_states_no_process_mode_is_refused_by_name() -> None:
+    """The ``None`` case at the compile's own rung: a refusal, not a default (§12.1's precedent)."""
+    reading = expected_snapshot(routed_channel=1)
+    campaign.refuse_process_mode(reading, ProcessMode.INSTRUMENT)  # the agreeing reading passes
+
+    silent = reading.model_copy(
+        update={
+            "process_mode": unreadable(
+                "nothing stated the mode: the top-level window's caption is '', which names "
+                "none of ['UDOP Simul', 'UDOP DOP3010']"
+            )
+        }
+    )
+    for declared in (ProcessMode.SIMULATION, ProcessMode.INSTRUMENT):
+        with pytest.raises(campaign.CampaignError) as excinfo:
+            campaign.refuse_process_mode(silent, declared)
+        assert "nothing stated the process mode" in str(excinfo.value)
+
+
+def test_the_cli_campaign_declared_against_the_other_process_exits_two_naming_the_caption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """§24.7 step 3's second half, as a test: the declared mode reaches the run and its refusal."""
+    job = campaign_job(tmp_path, monkeypatch)
+    monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
+
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(
+            [
+                "campaign",
+                "--definition",
+                str(job.definition_path),
+                "--store-dir",
+                str(job.directory),
+                "--expect-mode",
+                "simulation",
+            ]
+        )
+
+    assert exit_info.value.code == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "UDOP DOP3010.43" in captured.err, captured.err
+    assert stored_names(job.directory) == []
+
+
 def test_a_resume_against_a_changed_definition_refuses_even_when_told_to_proceed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1082,6 +1249,7 @@ def test_a_resume_against_a_changed_definition_refuses_even_when_told_to_proceed
             log_path=job.log_path,
             resume=True,
             resume_declaration_only=True,
+            expected_mode=ProcessMode.INSTRUMENT,
         )
 
     message = str(excinfo.value)
@@ -1230,7 +1398,7 @@ def test_the_cli_compile_reports_a_driver_refusal_in_one_line_and_exits_two(
     _refuse_routing(job, monkeypatch)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["compile", "--definition", str(job.definition_path)])
+        acquire_main(["compile", "--definition", str(job.definition_path), "--expect-mode", "instrument"])
 
     assert exit_info.value.code == 2
     captured = capsys.readouterr()
@@ -1260,6 +1428,8 @@ def test_the_cli_campaign_reports_a_driver_refusal_in_one_line_and_exits_two(
                 str(job.definition_path),
                 "--store-dir",
                 str(job.directory),
+                "--expect-mode",
+                "instrument",
             ]
         )
 
@@ -1358,7 +1528,7 @@ def test_the_cli_compile_prints_the_plan_and_records_nothing(
     monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["compile", "--definition", str(job.definition_path)])
+        acquire_main(["compile", "--definition", str(job.definition_path), "--expect-mode", "instrument"])
 
     assert exit_info.value.code == 0
     out = capsys.readouterr().out
@@ -1390,7 +1560,7 @@ def test_the_cli_compile_exits_two_and_names_the_fact_it_refused(
     monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["compile", "--definition", str(job.definition_path), "--json"])
+        acquire_main(["compile", "--definition", str(job.definition_path), "--expect-mode", "instrument", "--json"])
 
     assert exit_info.value.code == 2
     captured = capsys.readouterr()
@@ -1419,7 +1589,7 @@ def test_the_cli_compile_json_is_one_document_with_the_unproven_facts(
     monkeypatch.setattr(live, "live_actuator", lambda *args, **kwargs: job.fake)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["compile", "--definition", str(job.definition_path), "--json"])
+        acquire_main(["compile", "--definition", str(job.definition_path), "--expect-mode", "instrument", "--json"])
 
     assert exit_info.value.code == 0
     captured = capsys.readouterr()
@@ -1457,7 +1627,7 @@ def test_the_cli_compile_hands_the_channel_flag_to_the_actuator(
     monkeypatch.setattr(live, "live_actuator", spy)
 
     with pytest.raises(SystemExit) as exit_info:
-        acquire_main(["compile", "--definition", str(job.definition_path), "--channel", "1"])
+        acquire_main(["compile", "--definition", str(job.definition_path), "--expect-mode", "instrument", "--channel", "1"])
 
     assert exit_info.value.code == 0
     assert seen == [1]
@@ -1480,6 +1650,8 @@ def test_the_cli_campaign_runs_a_definition_through_the_live_actuator(
                 str(job.definition_path),
                 "--store-dir",
                 str(job.directory),
+                "--expect-mode",
+                "instrument",
             ]
         )
 
@@ -1516,6 +1688,8 @@ def test_the_cli_campaign_exits_one_when_a_point_is_refused(
                 str(job.definition_path),
                 "--store-dir",
                 str(job.directory),
+                "--expect-mode",
+                "instrument",
             ]
         )
 
@@ -1538,6 +1712,8 @@ def test_the_cli_campaign_resume_says_how_many_it_skipped(
         str(job.definition_path),
         "--store-dir",
         str(job.directory),
+        "--expect-mode",
+        "instrument",
     ]
     with pytest.raises(SystemExit):
         acquire_main(argv)
@@ -1577,6 +1753,8 @@ def test_the_cli_campaign_no_snapshot_flag_reaches_the_run(
                 str(job.definition_path),
                 "--store-dir",
                 str(job.directory),
+                "--expect-mode",
+                "instrument",
                 "--no-snapshot",
                 "--json",
             ]
@@ -1620,6 +1798,8 @@ def test_the_cli_campaign_resume_declaration_only_flag_reaches_the_run(
         str(job.definition_path),
         "--store-dir",
         str(job.directory),
+        "--expect-mode",
+        "instrument",
         "--log",
         str(job.log_path),
         "--resume",

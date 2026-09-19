@@ -10,9 +10,10 @@ the next slice compiles against, and it pins them on the plan's own criteria:
   nameless ``None`` is indistinguishable from a fact somebody forgot.
 - **criterion 3, in both directions** — the identity moves with every fact campaign
   compatibility depends on (each of the six, by value *and* by provenance, plus the channel, the
-  mode and the layout signature), and it does **not** move with anything a restart changes
-  (``hwnd``, rect, maximised state, screen, cursor, foreground) or with the store slider's
-  maximum, which is the selected block's profile count rather than the layout.
+  channel's mode, the **process** the caption states and the layout signature), and it does
+  **not** move with anything a restart changes (``hwnd``, rect, maximised state, screen, cursor,
+  foreground), with the store slider's maximum, which is the selected block's profile count, or
+  with the visible-control total, which is 43 on one clean screen and 44 on another (§24.5 D6).
 - **the projection is values and sources, never wording** — a ``reason`` rewritten for a human
   reader does not move the identity, because a documentation improvement must not re-run a point
   that was already measured.
@@ -29,6 +30,7 @@ from pydantic import ValidationError
 
 from udv_echo_process.acquire.actuator import (
     ChannelMode,
+    ProcessMode,
     ScreenFingerprint,
     StripState,
     StripView,
@@ -58,6 +60,10 @@ CLEAN_RECT = (-8, -8, 1928, 1058)
 CLEAN_SCREEN = (1920, 1080)
 CLEAN_PANELS = 4
 CLEAN_CONTROLS = 43
+#: The instrument's own caption, as `WM_GETTEXT` reads it: the one surface that states which
+#: process is on the screen (`ProcessMode`), version and all — the mode is prefix-matched
+#: against it, never the whole string (plan §22.1).
+CLEAN_CAPTION = "UDOP DOP3010.43"
 
 #: Why the four facts nothing can read yet are unreadable — the driver's own reasons, reproduced
 #: here because a reason is part of the fact, not decoration.
@@ -84,6 +90,8 @@ def fingerprint(**overrides: object) -> ScreenFingerprint:
         "strip": StripState(button_count=3),
         "overlay": None,
         "layout_note": None,
+        "caption": CLEAN_CAPTION,
+        "process_mode": ProcessMode.INSTRUMENT,
         "cursor": (33, 77),
         "is_foreground": True,
     }
@@ -104,6 +112,7 @@ def snapshot(**overrides: object) -> InstrumentSnapshot:
             "1", reason="the configured channel, routed before this read"
         ),
         "mode": read(ChannelMode.MANUAL.value),
+        "process_mode": read(ProcessMode.INSTRUMENT.value),
         "prf_us": read(PRF_TEXT),
         "emissions_per_profile": read(EMISSIONS_TEXT),
         "burst_length": unreadable(DIALOG_ONLY_REASON.format(name="burst_length")),
@@ -297,9 +306,13 @@ def test_every_fixed_fact_moves_the_identity_by_value_and_by_provenance(
         ),
         ("an assisted channel", {"mode": read(ChannelMode.ASSISTED.value)}),
         ("no mode could be read", {"mode": unreadable("a dialog is up")}),
+        (
+            "the run measured against the simulator",
+            {"process_mode": read(ProcessMode.SIMULATION.value)},
+        ),
+        ("no process mode could be read", {"process_mode": unreadable("nothing stated the mode")}),
         ("a different window class", {"fingerprint": fingerprint(class_name="TOther")}),
         ("another panel count", {"fingerprint": fingerprint(panels=3)}),
-        ("another control count", {"fingerprint": fingerprint(visible_controls=21)}),
         (
             "the strip is recording rather than ready",
             {"fingerprint": fingerprint(strip=StripState(button_count=1))},
@@ -324,17 +337,18 @@ def test_the_identity_holds_the_table_and_nothing_of_a_session() -> None:
     assert set(CompilationIdentity.model_fields) == {
         "channel",
         "mode",
+        "process_mode",
         *FIXED_FACT_FIELDS,
         "class_name",
         "panels",
-        "visible_controls",
         "strip_view",
         "strip_has_slider",
     }
     reading = snapshot()
     identity = CompilationIdentity.from_snapshot(reading)
     assert identity.class_name == CLEAN_CLASS
-    assert identity.visible_controls == CLEAN_CONTROLS
+    assert identity.process_mode is not None
+    assert identity.process_mode.value == ProcessMode.INSTRUMENT.value
     assert identity.panels == CLEAN_PANELS
     assert identity.strip_view is StripView.READY
     assert not identity.strip_has_slider
@@ -349,8 +363,31 @@ def test_the_identity_holds_the_table_and_nothing_of_a_session() -> None:
         "overlay",
         "slider_max",
         "strip_button_count",
+        # D6: the visible-control total is a reading, not a compatibility fact — 43 and 44 are
+        # both clean layouts, and whether the extra row is session state is still open.
+        "visible_controls",
+        # The caption is what the mode fact was read from; the version in it moves on its own
+        # schedule, and a session that read no caption is not a different instrument.
+        "caption",
     ):
         assert volatile not in CompilationIdentity.model_fields, volatile
+
+
+def test_the_control_count_does_not_move_the_identity() -> None:
+    """D6: the count is evidence a reader compares, never a resume's compatibility fact.
+
+    The reference install's clean screen is 43 visible controls in 4 panels and the instrument's
+    own is 44 in 4 (the parameter column paints one more row), and §22.6 leaves open whether that
+    row follows a *setting* or the session's history. Either way a resume keyed on the count could
+    refuse a legitimate job **on the instrument it was measured on** — so the count stays in the
+    reading (``fingerprint.visible_controls`` and its evidence line) and out of the identity,
+    which is the fix the strip's own button count already had (``a7e9172``).
+    """
+    assert digest(snapshot(fingerprint=fingerprint(visible_controls=44))) == digest(snapshot())
+    for count in (21, 42, 45, 200):
+        assert digest(snapshot(fingerprint=fingerprint(visible_controls=count))) == digest(
+            snapshot()
+        )
 
 
 def test_the_digest_is_stable_and_names_a_change() -> None:

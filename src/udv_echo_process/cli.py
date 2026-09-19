@@ -19,6 +19,7 @@ from pathlib import Path
 
 from udv_echo_process import run_all
 from udv_echo_process.acquire import campaign, driver, live
+from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.io import load
@@ -288,9 +289,13 @@ def _campaign_compile(args: argparse.Namespace, notes: list[str], as_json: bool)
     path can store, and no store directory, log or manifest is named here.
 
     Unlike ``plan`` it drives the instrument, and step 3 is a *write* whenever the dialog is
-    not already on the channel — so the note names the channel that it routed. Exit 0 when the
-    definition and the instrument agree, 2 when the file or the compile refuses, with the
-    refusal's own words on stderr: it already names the fact or the state that stopped the
+    not already on the channel — so the note names the channel that it routed. It also takes the
+    declaration the record paths take (``--expect-mode``) and checks the reading's own process
+    mode against it (:func:`campaign.refuse_process_mode`, step 4a): a compile against the wrong
+    process would reconcile a definition with another machine's instrument, so it refuses by
+    naming the caption it read — §24.7's third live step, and it still records nothing.
+    Exit 0 when the definition and the instrument agree, 2 when the file or the compile refuses,
+    with the refusal's own words on stderr: it already names the fact or the state that stopped the
     job, and re-wrapping it would give one cause two diagnoses.
     """
     try:
@@ -310,6 +315,10 @@ def _campaign_compile(args: argparse.Namespace, notes: list[str], as_json: bool)
             routed_channel=routed,
             dialog_parameters=actuator.read_dialog_parameters(),
         )
+        # (4a) the mode rung, before the compile: the declared process is compared with what the
+        # caption states, and a mismatch is exit 2 naming the caption — records nothing (plan
+        # §24.7 step 3 is the live check of exactly this).
+        campaign.refuse_process_mode(snapshot, ProcessMode(args.expect_mode))
         compiled = campaign.compile_campaign(definition, snapshot)
     # CampaignError is a ValueError; a driver refusal is named here because it is not (§16.2).
     except (driver.AcquisitionError, ValueError, OSError) as exc:
@@ -361,6 +370,7 @@ def _campaign_run(
             channel=channel,
             definition_path=Path(args.definition),
             notes=notes,
+            expected_mode=ProcessMode(args.expect_mode),
         )
     # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
     # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
@@ -515,6 +525,30 @@ def acquire_main(argv: list[str] | None = None) -> None:
             help="measurement channel (default: the UDV_CHANNEL setting)",
         )
 
+    def expect_mode_argument(target: argparse.ArgumentParser) -> None:
+        """``--expect-mode``: the process one of the **record** paths declares.
+
+        Required, with a fixed vocabulary of two (plan §24.5 D1/D3): the process is a property of
+        the machine the operator stands at, so it is declared at the command line and never
+        inferred from whatever happens to be running. Only the commands that record take it —
+        ``status``, ``plan``, ``report`` and ``decode`` refuse nothing, and a diagnostic that
+        refused would be useless.
+        """
+        # DEVIATION: §24.4's own list names only the record path and the runner's gate, and this
+        # flag is on `compile` too — which records nothing. §24.7 step 3 is why: the live check of
+        # this slice is "compile twice on the instrument: the declared mode exits 0, the other mode
+        # exits 2 naming the caption", and a compile that could not hear the declaration could not
+        # run that check. `plan`/`report`/`status`/`decode` still refuse nothing.
+        target.add_argument(
+            "--expect-mode",
+            required=True,
+            choices=[mode.value for mode in ProcessMode],
+            help=(
+                "the process this run was measured against; the top-level window's caption is "
+                "compared with it before anything is recorded"
+            ),
+        )
+
     status_parser = subcommands.add_parser("status", help="read the screen, pressing nothing")
     channel_argument(status_parser)
     status_parser.add_argument("--json", action="store_true")
@@ -536,6 +570,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     point_parser.add_argument("name")
     point_parser.add_argument("--seconds", type=float, required=True)
     channel_argument(point_parser)
+    expect_mode_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
 
@@ -545,6 +580,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     sweep_parser.add_argument("--seconds", type=float, required=True)
     sweep_parser.add_argument("--rungs", required=True, help="1-based ladder indices, e.g. 1,2")
     channel_argument(sweep_parser)
+    expect_mode_argument(sweep_parser)
     sweep_parser.add_argument("--store-dir", default=None)
     sweep_parser.add_argument("--name-prefix", default="sweep")
     sweep_parser.add_argument("--log", default=None, help="JSONL log (default: <store-dir>/sweep.jsonl)")
@@ -586,6 +622,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     compile_parser.add_argument("--definition", required=True)
     channel_argument(compile_parser)
+    expect_mode_argument(compile_parser)
     compile_parser.add_argument("--json", action="store_true")
 
     campaign_parser = subcommands.add_parser(
@@ -618,6 +655,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
     channel_argument(campaign_parser)
+    expect_mode_argument(campaign_parser)
     campaign_parser.add_argument("--json", action="store_true")
 
     report_parser = subcommands.add_parser(
@@ -660,6 +698,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 _acquire_store_directory(args.store_dir),
                 args.channel,
                 notes,
+                expected_mode=ProcessMode(args.expect_mode),
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
@@ -670,6 +709,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 directory,
                 [int(key) for key in args.rungs.split(",")],
                 args.channel,
+                expected_mode=ProcessMode(args.expect_mode),
                 name_prefix=args.name_prefix,
                 log_path=Path(args.log) if args.log else directory / "sweep.jsonl",
                 notes=notes,

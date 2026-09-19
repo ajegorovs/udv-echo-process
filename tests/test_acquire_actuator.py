@@ -35,6 +35,7 @@ from udv_echo_process.acquire.actuator import (
     DialogControl,
     OverlayKind,
     ParamRole,
+    ProcessMode,
     StripControl,
     StripState,
     StripView,
@@ -370,6 +371,7 @@ class FakeActuator:
         duration_s: float,
         directory: Path,
         *,
+        expected_mode: ProcessMode,
         timeout_s: float = 60.0,
     ) -> Path:
         if not self.state.is_startable:
@@ -411,7 +413,9 @@ def test_a_pure_python_fake_satisfies_the_interface() -> None:
 
 def test_the_fake_drives_a_point_cycle_through_the_tables() -> None:
     actuator = FakeActuator()
-    path = actuator.record_and_store("sw100-k1-161738", 4.0, Path("capture"))
+    path = actuator.record_and_store(
+        "sw100-k1-161738", 4.0, Path("capture"), expected_mode=ProcessMode.INSTRUMENT
+    )
     assert actuator.presses == [(1, StripControl.RECORD), (0, StripControl.STOP)]
     assert actuator.commits == 1
     assert path.name == "sw100-k1-161738.BDD"
@@ -420,7 +424,9 @@ def test_the_fake_drives_a_point_cycle_through_the_tables() -> None:
 def test_a_store_view_is_dismissed_before_the_next_point() -> None:
     actuator = FakeActuator()
     actuator.state = STORE_FOUR
-    actuator.record_and_store("sw100-k2-161738", 4.0, Path("capture"))
+    actuator.record_and_store(
+        "sw100-k2-161738", 4.0, Path("capture"), expected_mode=ProcessMode.INSTRUMENT
+    )
     assert actuator.presses[0] == (0, StripControl.NEW_ACQUISITION)
     assert actuator.presses[1] == (1, StripControl.RECORD)
 
@@ -430,7 +436,9 @@ def test_the_fake_refuses_to_start_from_a_recording() -> None:
     actuator = FakeActuator()
     actuator.state = RECORDING_ONE
     with pytest.raises(RuntimeError, match="recording"):
-        actuator.record_and_store("sw100-k1-161738", 4.0, Path("capture"))
+        actuator.record_and_store(
+            "sw100-k1-161738", 4.0, Path("capture"), expected_mode=ProcessMode.INSTRUMENT
+        )
     assert actuator.presses == []
 
 
