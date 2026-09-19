@@ -1057,6 +1057,26 @@ every application field is identical. Evidence:
 V5 remains unattempted. Acquisition continued throughout, and the application is restored to the clean
 measurement surface.
 
+### 2026-09-19 — sitting C, V5 stops before execution on a plan conflict
+
+No V5 command was sent to the live application. The pre-run code-path audit found that the proposed
+“declaration-only mismatch without touching the instrument” does not exist on the current CLI path:
+`_campaign_compile` loads the declaration, then calls `ensure_channel` **before** `compile_campaign` compares
+fixed facts. `ensure_channel` unconditionally presses the Operating parameters dialog's `Accept` end even
+when channel `1` already matches; the `burst_length` disagreement is checked only afterwards. The compile
+verb cannot press `Record` or write a `.BDD` — it has no store path — but it has already exercised V2's
+write half before it can refuse the declaration.
+
+Running `acquire plan` instead would be a false substitute: it touches nothing precisely because it has no
+instrument snapshot, and therefore cannot detect a declared burst differing from the instrument. The
+matching and mismatching compiles move together to sitting D, immediately after the already-authorised
+`ensure_channel` verification. V5's cap remains **explicitly unproven**: it is still a painted Preference,
+not a validated read path.
+
+**Outcome:** sitting C is complete. V1 passes; V3 failed safely and supplied another identity-chain datum;
+V5 was not run because its stated no-touch precondition contradicts the implemented ordering. The app
+remains on the clean measurement surface and acquisition was not interrupted.
+
 ## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency

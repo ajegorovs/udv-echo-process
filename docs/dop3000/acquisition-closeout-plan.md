@@ -314,18 +314,27 @@ the four-button strip, block-held*.
    incident (§26.12) measured this state **and its recovery** by accident, so the item's cost is two
    `Preferences` interactions and its risk is bounded — and it is now the *only* item that requires
    deliberately reproducing a configuration this experiment otherwise forbids touching.
-3. **V5's declaration-only half.** Compile the matching definition and make one **declaration-only** mismatch
-   without touching the instrument: the run must refuse before `Record` and write no `.BDD`. Confirm the
-   block cap stays **explicitly unproven** — it is a `Preferences` value, not a parameter, so a painted
-   number is evidence, not a read path.
+3. **V5's declaration-only half — deferred to sitting D by the live path's actual ordering.** A code-path
+   audit before this item found that `acquire compile` always calls `ensure_channel` first, and
+   `ensure_channel` unconditionally presses the Operating parameters dialog's **Accept** end even when the
+   channel is already `1`; only afterwards does compilation compare `burst_length`. The mismatch can never
+   write a `.BDD` (the compile verb has no store path), but it cannot satisfy this sitting's “without touching
+   the instrument” boundary either. Do not run a weaker offline substitute: `acquire plan` cannot see an
+   instrument/declaration mismatch. Run the matching and mismatching compiles immediately after sitting D's
+   already-planned `ensure_channel` verification, where that Accept press belongs. Keep the block cap
+   **explicitly unproven** — it is a `Preferences` value, not a parameter, so a painted number is evidence,
+   not a read path.
 
 ### Sitting D — the writes, and the milestone
 
-1. **V2's write half: `ensure_channel`.** The routing route presses the dialog's **accept** end and writes
-   the channel before it reads — a different path from the read the `7de790c` session ran. Run it on the
-   channel the instrument already stands on, or with the operator standing by to restore the channel; the
-   pass criterion is that the dialog's own channel, the routed channel and the run's configuration agree
-   afterwards, and that the screen reads clean.
+1. **V2's write half: `ensure_channel`, then V5's two compiles on that already-authorised write path.** The
+   routing route presses the dialog's **accept** end and writes the channel before it reads — a different path
+   from the read the `7de790c` session ran. Run it on the channel the instrument already stands on, or with
+   the operator standing by to restore the channel; the pass criterion is that the dialog's own channel, the
+   routed channel and the run's configuration agree afterwards, and that the screen reads clean. Then compile
+   `examples/campaign-single-channel.json` once matching and once with a declaration-only `burst_length: 5`:
+   the first must pass, the second must refuse before `Record`, neither can write a `.BDD`, and the block cap
+   remains explicitly unproven.
 2. **V6 — the six-point campaign through the compiled path, on the instrument.** This is the milestone, not a
    verification chore: the same campaign the simulation run already passed, now with the instrument's own
    frame declared and compiled. Pass: exactly the expected files, every point verified (channel,
