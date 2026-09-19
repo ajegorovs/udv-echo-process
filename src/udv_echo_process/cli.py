@@ -6,6 +6,11 @@ Console scripts (defined in ``[project.scripts]``):
     udv-viz       — per-channel heatmaps + gate profiles
     udv-run-all   — batch RPM analysis + visualizations
     udv-acquire   — drive the running UDOP application (live path; see tools/live/README.md)
+
+The module-invoked verbs (``python -m udv_echo_process.cli <name> ...``, the
+form the analysis plan's verification section names) carry the report-writing
+commands alongside ``acquire``: ``sweep-inventory`` writes the WP0 mixer-sweep
+manifest and QC summary from the committed BDD files and touches no instrument.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from udv_echo_process.acquire import campaign, driver, live
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
+from udv_echo_process.analysis import sweep_inventory
 from udv_echo_process.io import load
 from udv_echo_process.io.dop.bdd import sniff_bdd
 from udv_echo_process.parser import MAGIC_PREFIX, extract
@@ -157,6 +163,61 @@ def run_all_main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     run_all.main(data_dir=args.data_dir, output_dir=args.output_dir)
+
+
+def sweep_inventory_main(argv: list[str] | None = None) -> None:
+    """``sweep-inventory`` — write the WP0 mixer-sweep manifest and QC summary.
+
+    Reads the committed ``.BDD`` points through the public reader and writes
+    ``manifest.csv`` and ``qc-summary.json`` into the report directory, then
+    exits 0 when every WP0 gate check holds and 1 otherwise, naming the failed
+    checks on stderr. It touches nothing but those two files: no instrument, no
+    cache, no analysis beyond the inventory.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-sweep-inventory",
+        description=(
+            "Inventory the committed mixer sensitivity sweep: one manifest row "
+            "per BDD file plus the WP0 QC summary"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=sweep_inventory.DATASET_ROOT.as_posix(),
+        help="directory of <axis>/<label>.BDD points",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=sweep_inventory.REPORT_DIR.as_posix(),
+        help="directory to write manifest.csv and qc-summary.json into",
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record in the QC summary (default: the checkout's "
+            "short git SHA)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    inventory = sweep_inventory.write_sweep_inventory(
+        Path(args.dataset_root),
+        report_dir,
+        analysis_commit=args.analysis_commit,
+    )
+    print(
+        f"{inventory.files} / {inventory.expected_files} files, axes "
+        f"{dict(sorted(inventory.axis_counts.items()))}"
+    )
+    print(f"manifest : {report_dir / sweep_inventory.MANIFEST_NAME}")
+    print(f"summary  : {report_dir / sweep_inventory.QC_NAME}")
+    print(f"commit   : {inventory.analysis_commit}")
+    failed = [name for name, ok in sorted(inventory.checks.items()) if not ok]
+    for name in failed:
+        print(f"udv-sweep-inventory: check failed: {name}", file=sys.stderr)
+    raise SystemExit(0 if inventory.ok else 1)
 
 
 def _acquire_report(value: object, as_json: bool) -> None:
@@ -750,6 +811,7 @@ _COMMANDS = {
     "acquire": acquire_main,
     "inspect": inspect_main,
     "run-all": run_all_main,
+    "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
 }
 

@@ -1,0 +1,47 @@
+{
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "analysis_commit": "7fff78d",
+  "manifest": "manifest.csv",
+  "manifest_rows": 40,
+  "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
+  "files": 40,
+  "expected_files": 40,
+  "axis_counts": {
+    "burst_len": 12,
+    "em_pow": 2,
+    "prf": 5,
+    "res": 13,
+    "tgc": 8
+  },
+  "expected_axis_counts": {
+    "burst_len": 12,
+    "em_pow": 2,
+    "prf": 5,
+    "res": 13,
+    "tgc": 8
+  },
+  "decode_failures": 0,
+  "decode_failure_files": [],
+  "nan_cells": 0,
+  "non_monotone_files": [],
+  "invariant_words": {
+    "14": 20,
+    "27": 4,
+    "84": 0
+  },
+  "expected_invariant_words": {
+    "14": 20,
+    "27": 4,
+    "84": 0
+  },
+  "checks": {
+    "analysis_commit": true,
+    "axis_counts": true,
+    "decode_failures": true,
+    "file_count": true,
+    "invariant_words": true,
+    "nan_cells": true,
+    "timestamps_monotone": true
+  },
+  "ok": true
+}

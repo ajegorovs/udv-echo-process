@@ -19,6 +19,20 @@ Expected outputs, in work-plan order:
 | `figures/energy-*` | WP2 | velocity-only TGC/power diagnostics and their limits |
 | `decision-table.md` | WP3 | candidate-level keep/defer/replace/diagnostic verdicts |
 
+The WP0 artefacts are regenerated with the committed reader and nothing else:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli sweep-inventory
+```
+
+It writes `manifest.csv` and `qc-summary.json` in this directory from
+`data/mixer-sensitivity-analysis/4MHz/0500RPM/001` (both overridable with
+`--dataset-root` / `--report-dir`). Manifest paths are dataset-relative, both files use LF endings and
+one trailing newline, and floats carry 12 significant digits, so a regeneration from the same revision
+is byte-identical. `qc-summary.json` records the revision it was generated against and the manifest's
+own SHA-256, and the command exits non-zero when any WP0 gate check fails
+(`--analysis-commit` overrides the recorded revision).
+
 Every generated table or figure must carry or sit beside:
 
 - the analysis git commit;

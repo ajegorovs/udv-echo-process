@@ -386,7 +386,14 @@ def test_the_module_dispatcher_names_every_command() -> None:
     """`python -m udv_echo_process.cli <command>` is the form the live dispatcher uses."""
     from udv_echo_process import cli
 
-    assert set(cli._COMMANDS) == {"acquire", "inspect", "run-all", "viz"}
+    # WP0 adds the read-only analysis verb alongside the four live ones.
+    assert set(cli._COMMANDS) == {
+        "acquire",
+        "inspect",
+        "run-all",
+        "sweep-inventory",
+        "viz",
+    }
 
 
 def test_the_module_dispatcher_refuses_an_unknown_command() -> None:
