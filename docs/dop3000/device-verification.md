@@ -498,105 +498,136 @@ crop, because it is the one piece of evidence a reviewer cannot reconstruct by r
 ### 2026-09-19 — the four-button strip, block-held: the role map, two false diagnoses, and the cursor info box
 
 **Operator-driven, and the automation pressed nothing.** The operator reached the block-held state by hand
-(acquire → `Record` → `Pause` → `New acquisition` → `Pause`), left the monitor **paused**, and placed a
-cursor at **45 mm**. Application `UDOP DOP3010.43`, instrument variant, 1920x1080 maximized, main hwnd
-**3935144** — **the same process as the V2 bracket above**, which is what makes the handle comparison below
-a measurement rather than an inference. Two read-only probes, neither of which presses anything:
-`main_geometry.py` (11:41:54, geometry plus a same-moment full-screen frame) and the new
-`top_level_windows.py` (11:43:40, this process's top-level windows).
+(`Record` -> `Pause` -> `New acquisition` -> `Pause`), left the monitor **paused**, and placed a cursor at
+**45 mm**; later in the same session they cleared the block and reached the intermediate state below. All
+three reads are the **same process**, main hwnd **3935144** — the process the V2 bracket above read two
+minutes before the first of them — which is what makes the handle comparison below a measurement rather
+than an inference. Read-only probes only, pressing nothing: `main_geometry.py` (11:22's state was read by
+`w1_fixed_facts.py` for the V2 bracket; 11:41:54 and 11:55:34 are `main_geometry.py` plus its same-moment
+frame) and the new `top_level_windows.py` (11:43:40).
 
-**The strip in this state, measured.** The panel is `TSp_Panel 3149132` `[343,414,894,537]` — 551x123,
-visible, ten direct children — at the same top-left corner the `ready` strip occupied (`[343,414,695,454]`,
-352x40): it grew in both dimensions. Its visible row (y 423-444) is four `TSp_Button`s, and the captions are
-bound to handles **by position** (each caption's start falling inside its own rect, each read off the frame
-at x5-x6):
+### The role map: the row is drawn from a pool of five buttons
 
-| handle | rect | caption painted |
-|---|---|---|
-| `1574908` | `[353,424,444,444]` | `Resume` |
-| `2821164` | `[454,423,545,443]` | `Do store` |
-| `1641666` | `[555,423,693,443]` | `Clear and restart` |
-| `7867344` | `[703,423,874,443]` | `Remove current block` |
+The panel is `TSp_Panel 3149132`, and it is the same control in every state — at the same top-left corner,
+sized by the state:
 
-**The one question a crop could not settle — and the answer is not one rule for the row.** Slot 0 **is one
-control that relabels**: `1574908` carried `Pause` in the `ready` state at 11:22 (rect then
-`[353,424,432,444]`) and paints `Resume` now, twelve pixels wider. Slot 1 **is two different controls**:
-`4787852` — the `ready` state's second button, `[442,424,527,444]` — is **hidden** here, and `2821164`
-occupies the same slot. So the application **replaces** the second button rather than relabelling it, and
-`ui-element-index.md`'s finding 20 ("the strip's grown row relabels its first two buttons") is **half right
-and corrected here**: the first relabels, the second is swapped, and only a handle read inside one process
-can tell the two mechanisms apart. `1641666` also survives by handle (`Clear and restart` in both states,
-`[537,423,675,443]` → `[555,423,693,443]`, moved 18 px right).
+| state (time) | panel rect | size | visible row (left to right) | slider |
+|---|---|---|---|---|
+| `ready` (11:22) | `[343,414,695,454]` | 352x40 | `Pause`, `Record`, `Clear and restart` | absent |
+| intermediate (11:55) | `[343,414,796,454]` | 453x40 | `Pause`, `Record`, `Do store`, `Clear and restart` | present, **hidden** |
+| block-held (11:41) | `[343,414,894,537]` | 551x123 | `Resume`, `Do store`, `Clear and restart`, `Remove current block` | present, visible |
 
-**The slider, and where it is.** `TSp_Sliding_Bar 3344390` `[465,449,897,499]`, visible, a **direct child
-of the strip panel** — so the grown row *does* report a slider, and the read's own `has_slider: false` is
-not a fact about the strip (see the mis-resolution below). It paints a two-handle range over the history:
-`1513` at the left end, `8297` at the right, `6785` under the track, the left portion filled green with a
-red segment at the right end. A **second, hidden** `TSp_Sliding_Bar` (`5573538`) sits in a hidden panel
+Those captions are bound to handles **by position** (each caption's start falls inside its own rect, read
+off the frame at x5-x6), and the handles say what the captions alone cannot:
+
+| handle | its caption | `ready` (11:22) | intermediate (11:55) | block-held (11:41) |
+|---|---|---|---|---|
+| `1574908` | `Pause` -> `Resume` — **the one control that relabels** | visible, `[353,424,432,444]` | visible, same rect | visible, `[353,424,444,444]` |
+| `4787852` | `Record` | visible, `[442,424,527,444]` | visible, same rect | **hidden**, same rect |
+| `2821164` | `Do store` | hidden | visible, `[537,423,628,443]` | visible, `[454,423,545,443]` |
+| `1641666` | `Clear and restart` | visible, `[537,423,675,443]` | visible, `[638,423,776,443]` | visible, `[555,423,693,443]` |
+| `7867344` | `Remove current block` | hidden | **hidden** | visible, `[703,423,874,443]` |
+
+**So the answer to the question a crop could never settle is a pool, not a slot.** Exactly one button
+relabels (`1574908`: `Pause` <-> `Resume`); every other change to the row is **visibility and position**,
+and the row's slots shift with it — `Do store` is the second visible button in the block-held state and the
+third in the intermediate one, and the intermediate state shows `Record` **and** `Do store` side by side,
+so the two are not competing for one slot at all. `ui-element-index.md`'s finding 20 ("the strip's grown
+row relabels its first two buttons") is therefore **wrong in its second half, corrected here**: one control
+relabels, and the rest of the row is a subset of a five-button pool.
+
+### The slider, and where it is
+
+`TSp_Sliding_Bar 3344390`, a **direct child of the strip panel**, painted as a two-handle range over the
+history: `1513` at the left end and `8297` at the right with `6785` under the track in the block-held state,
+the left portion filled green with a red segment at the right end. Its own width is a property of the state
+too (`[465,449,897,499]` block-held, `[465,449,716,499]` intermediate), and in the intermediate state it is
+present and **hidden**. A **second, hidden** `TSp_Sliding_Bar` (`5573538`) sits in a hidden panel
 `[782,488,1024,541]`, so the class is not unique to the strip: a resolver keying on the class alone would
 find the wrong one.
 
-Also in the panel, and **app-readable**: the visible combo `1967830` `[429,506,474,527]` reading **`2`** — the
-`Show block` selector (painted caption `Show block`; a hidden sibling `1249874` reads `1`). It is the one
-control in this state whose *value* says which block is held without any pixels; the slider's `1513` /
-`8297` / `6785` are paint only.
+The combo `1967830` at `[429,506,474,527]` is the `Show block` selector (painted caption `Show block`,
+which is the value that states *which* block: **`2`** block-held, **`1`** in the intermediate state, with a
+hidden sibling `1249874` reading `1` in both). It is the one control here whose *value* is readable without
+pixels; the slider's numbers are paint only.
 
-**The two caption-less buttons below the strip — identified.** `2690436` `[350,467,401,482]` and `1967842`
-`[409,467,453,482]`, visible, direct children of the strip panel; the band they sit in paints
-`Profiles history in` `second` `✓` `profile` (read at x8), the green tick standing at the left edge of the
+### The two caption-less buttons below the row — identified
+
+`2690436` `[350,467,401,482]` and `1967842` `[409,467,453,482]`, direct children of the strip panel; the band
+they sit in paints `Profiles history in` `second` `✓` `profile` (read at x8), the green tick standing on the
 second control's rect. So the pair §22.2 carried as "13 px below the panel, painting nothing" is the
-**`second` / `profile` history-unit selector**, and the read `ui-element-index.md` said it wanted ("what
-settles it is a tree read in the state that paints them, not a photograph") is this one. The tick also says
-which unit the history is counted in here: **profiles**, not seconds.
+**`second` / `profile` history-unit selector**, and the read `ui-element-index.md` asked for ("what settles
+it is a tree read in the state that paints them, not a photograph") is this one. The tick also says which
+unit the history is counted in here: **profiles**, not seconds.
 
-**Two false diagnoses on this state — both safe, both wrong.**
+### `visible: true` is not paint — measured three ways in one session
 
-1. **The strip resolver resolved the *cursor info box* as the strip**, and refused:
-   `view: "unknown"`, `button_count: 0`, `panel_rect [908,466,1057,525]`,
+In the **intermediate** state the panel is only 40 px tall and **nothing is painted below the row**: the
+same-moment frame shows the plot's white field and its grid rules where the block-held state paints
+`Profiles history in`, the slider and `Show block`. Yet the tree reports the toggle pair and the `Show block`
+combo **visible** in that state (their rects lie *outside* the panel's own rect, and the panel's height is
+the reason nothing of them is painted). The same trap appears twice more in this session: `TSp_Button
+131918` `[917,578,997,598]` is reported visible while the frame paints nothing there, and the four `89`
+edits of the V2 record above carry text no pixel shows. So a control's `visible`, its `rect` and its `text`
+are each a claim about the tree — **only the frame says what is painted.**
+
+### Two refusals on the state — both safe, both misdiagnosed
+
+1. **The strip resolver names the cursor info box as the strip.** In both the block-held and the
+   intermediate read it returns `view: "unknown"`, `button_count: 0`, `panel_rect [908,466,1057,525]`,
    `row_meanings_error: "no known button row for view 'unknown' with 0 button(s); the view must be
-   re-resolved, not guessed"`. That rect is the cursor info box (below), not the strip. The refusal is the
-   designed behaviour (`d04a88c`: a four-button row without a slider binds nothing and refuses) and nothing
-   was pressed — but the *diagnosis* is wrong, and it matters: the strip is `3149132`, it has four buttons
-   and a slider, and a caller reading this report would be told a different button panel sits in the plot's
-   middle band.
-2. **The layout classifier calls the grown strip a dialog.** `layout_note` opens *"a dialog is up: 1
-   panel(s) of this screen are application dialogs and not the measurement layout ([((343, 414, 894, 537),
-   'TSp_Panel')]), so nothing below them is the surface these roles were bound to"*, the active surface
-   reads **`dialog`**, and the count reads **50 visible controls in 5 panels** against the clean 44 in 4.
-   The panel it names is the strip's own grown panel. So the canonical `>400 px` dialog predicate admits the
-   grown strip exactly as it admits the `Define TGC` overlay — and PR #10's one deliberately-open item is
-   therefore not about an exotic panel: **the panel that trips the predicate is the strip itself, in the very
-   state the experiment will be in when a block is held.**
+   re-resolved, not guessed"`. That rect is the **cursor info box**, not the strip, and the same
+   `has_slider: false` in the same report is not a fact about the strip (its slider is `3344390`).
+   Refusing is the designed behaviour (`d04a88c`, a row it cannot map binds nothing) and nothing was
+   pressed — but the *diagnosis* misdirects: a caller reading this report is told a different button panel
+   sits in the plot's middle band.
+2. **The layout classifier calls the strip's own panel a dialog.** `layout_note` opens *"a dialog is up: 1
+   panel(s) of this screen are application dialogs and not the measurement layout"*, naming
+   `((343, 414, 894, 537), 'TSp_Panel')` in the block-held state and `((343, 414, 796, 454), 'TSp_Panel')` in
+   the intermediate one — the strip panel in both — with the active surface reading **`dialog`** and the
+   count 50 visible controls in 5 panels (block-held) / 49 in 5 (intermediate) against the clean 44 in 4. So
+   the canonical `>400 px` dialog predicate admits the strip itself — twice, at two different widths — and
+   PR #10's one deliberately-open item (`_close_any_dialog` could treat an operator-opened panel in that
+   class as a dialog) is therefore about **the strip**, in the state a running block leaves the screen in,
+   not about an exotic panel. Nothing in this sitting pressed it; what the cleanup path would *do* with it
+   is still the open question.
 
-**The cursor info box: in the tree, but its numbers are paint only** — this closes sitting A's third item.
-The box is `TSp_Panel 131916` `[908,466,1057,525]` with one child, `TSp_Panel 131920` `[916,475,1045,514]`,
-both visible, both caption-less, and that child has no children of its own. The same-moment frame paints
-`Depth = 45.0 mm` and `Velocity = 0.0 mm/s` inside a red rectangle (read at x4) — the operator's cursor at
-45 mm against a paused monitor reading 0.0. **No control in the tree carries either number**: the
-top-level enumeration lists 46 windows for this process, of which the only *visible* one that is not the main
-window is the application's own `TApplication` message window at `(960,540,960,540)` with no children, and no
-child control of any window carries a depth or a velocity string. An app-side readout of the tracked cursor
-therefore **does not exist**: the analysis stays post-processing, which is where §26.11 already put it, and
-those two numbers can only come from pixels.
+### The cursor info box: in the tree, but its numbers are paint only
 
-**A visible control that paints nothing.** `TSp_Button 131918` `[917,578,997,598]` is reported visible by the
-tree, and the same-moment frame paints *nothing* at that rect — the plot's white field with one grid rule.
-So the tree's `visible` is not evidence of paint: the converse of the `89` rule above (an edit's text is not
-a displayed value), and the same warning from the other side.
+This closes sitting A's third item. The box is `TSp_Panel 131916` `[908,466,1057,525]` with one child,
+`TSp_Panel 131920` `[916,475,1045,514]`, both visible, both caption-less, and that child has no children of
+its own. The same-moment frame paints `Depth = 45.0 mm` and `Velocity = 0.0 mm/s` inside a red rectangle
+(read at x4) — one cursor at 45 mm against a paused monitor. **No control in the tree carries either
+number**: the top-level enumeration lists 46 windows for this process, of which the only *visible* one that
+is not the main window is the application's own `TApplication` message window at `(960,540,960,540)` with no
+children, and no child control of any window carries a depth or a velocity string.
 
-**What this sitting does not close.** The intermediate state the operator documented with a new crop
-(`Record` → `Pause` → `New acquisition` → **UI-STRIP-03**) is **photographed, not read**: the handles
-carrying `Pause` / `Record` / `Do store` / `Clear and restart` in *that* state are unmeasured, so the role
-map above is complete for the `ready` and block-held states only, and one more read with that state on
-screen finishes it. `Show block = 2` says a block is held; V5's cap, and the `STORE` versus `READY`-with-block
-naming, stay the plan's own items.
+**This is a one-cursor measurement of a surface out of scope.** The operator states the box depends on the
+monitor's state and would change, and likely multiply, with a second cursor added — and that the experiment
+does not use this feature. It is recorded here for the **strip mis-resolution it causes** (refusal 1 above),
+not as a readout: an app-side readout of the tracked cursor does not exist, so the analysis stays
+post-processing, which is where §26.11 already put it, and those two numbers can come only from pixels.
 
-**Evidence.** As always `outputs/live/` is git-ignored and the readings are quoted here with their times:
-`main-geometry.json` (`keep/main-geometry-2026-09-19-blockheld.json`, 11:41:54, `exit=0`) and
-`top_level-windows-blockheld.log` (11:43:40, `exit=0`), plus the same-moment frame
-`main-geometry-full.png` and `top-level-windows-full-a.png` (`stable: true`, `non_blank: true`, 232 distinct
-greys). The committed artefacts are the operator's **new strip crop** (`ui-crops/overlay-record-stop-new-acquisition.png`,
-UI-STRIP-03) and the panel's measured rects above.
+### The fourth combination is cropped but not read
+
+The operator's second new crop (`ui-crops/overlay-pause.png`, UI-STRIP-04) shows a state one step earlier —
+reached by pressing `Pause` while the strip reads `Pause` / `Record` / `Clear and restart` — painting
+**three** buttons (`Resume` / `Do store` / `Clear and restart`), the `Profiles history in second / profile`
+row, a slider whose ends read `1` ... `392`, and `Show block` = `1`. Its handles are **unmeasured** (that
+state was photographed, not read). Its row is consistent with the pool above — `1574908` / `2821164` /
+`1641666` visible, `4787852` and `7867344` hidden — but that is a **prediction from the pool, not a
+reading**, and it is recorded as a prediction.
+
+### Evidence
+
+`outputs/live/` is git-ignored, so the readings are quoted here with their times: the three reads are kept
+beside each other as `keep/main-geometry-2026-09-19-blockheld.json` (11:41:54) and
+`keep/main-geometry-2026-09-19-intermediate.json` (11:55:34), with `top-level-windows-blockheld.log`
+(11:43:40) and the `ready` state's row from the V2 bracket's own gesture log (11:22:33) — all `exit=0`. The
+same-moment frames are `main-geometry-full.png` (two of them, 11:41 and 11:55) and
+`top-level-windows-full-a.png` (`stable: true`, `non_blank: true`). Committed artefacts: the operator's
+**two new strip crops** (`overlay-record-stop-new-acquisition.png` = UI-STRIP-03,
+`overlay-pause.png` = UI-STRIP-04) and the measured rects above.
 
 ## What these records may **not** claim
 

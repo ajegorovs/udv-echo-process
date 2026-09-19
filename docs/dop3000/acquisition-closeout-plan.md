@@ -190,10 +190,12 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   551x123, ten direct children — against the `ready` strip's `[343,414,695,454]`, 352x40): `1574908`
   `Resume`, `2821164` `Do store`, `1641666` `Clear and restart`, `7867344` `Remove current block`, each
   caption bound to its handle by position.
-- **Slot 1 is two different controls, not one relabelling** — `4787852` (the `ready` state's second button)
-  is **hidden**, with `2821164` visible in its place — while **slot 0 does relabel** (`1574908`,
-  `Pause` → `Resume`) and slot 2 survives unchanged (`1641666`, moved 18 px right). The row therefore mixes
-  both mechanisms, and `ui-element-index.md`'s finding 20 is corrected accordingly.
+- **The row is drawn from a pool of five button controls, not one slot per position** — measured across
+  three states in one process: `1574908` is the **one** control that relabels (`Pause` → `Resume`);
+  `4787852` keeps `Record` and is hidden when a block is held; `2821164` keeps `Do store`; `1641666`
+  keeps `Clear and restart` in every state; `7867344` (`Remove current block`) appears only with a held
+  block. The intermediate state shows `Record` **and** `Do store` side by side, so the two are not
+  competing for one slot, and `ui-element-index.md`'s finding 20 is corrected accordingly.
 - **The grown row does report a slider**: `TSp_Sliding_Bar 3344390` `[465,449,897,499]`, a direct child of
   the strip panel, painted as a two-handle range (`1513` … `8297`, `6785` under the track) — with a second,
   hidden one elsewhere in the tree, so the class alone does not identify it. The combo `1967830`
@@ -213,10 +215,12 @@ a measurement rather than an inference. Nothing on the strip was pressed by the 
   (`131916` + `131920`), and no control text in any of the process's 46 top-level windows carries a depth or
   a velocity. Sitting A's third item **closes** on that: the analysis stays post-processing, as §26.11
   decided, and those two numbers come from pixels or not at all.
-- **Left open by this sitting:** the intermediate state (`Record` → `Pause` → `New acquisition`, the
-  operator's new crop, UI-STRIP-03) was **photographed, not read**, so the map covers `ready` and block-held
-  only — one more read with that state on screen finishes it; and the `STORE` versus `READY`-with-block
-  naming, plus V5's cap, stay this sitting's items.
+- **The intermediate state was read too** (11:55, same process): panel 453x40, four buttons — `Pause` /
+  `Record` / `Do store` / `Clear and restart` — and it paints nothing below the row while the tree still
+  reports the slider hidden and the `Show block` combo and the toggle pair `visible`; the `Show block`
+  value is **`1`**, i.e. no block held. **Left open:** the fourth combination (UI-STRIP-04, three buttons
+  and a slider) is **cropped but not read**, so its handle row is a prediction from the pool; and the
+  `STORE` versus `READY`-with-block naming, plus V5's cap, stay this sitting's items.
 
 Full record, with the rects, the handles and the two refusal texts: `device-verification.md`, *2026-09-19 —
 the four-button strip, block-held*.

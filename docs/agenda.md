@@ -310,8 +310,11 @@ merely hidden — while slot 0 genuinely relabels; the row does carry a slider (
 strip resolver named *the cursor info box* as the strip, and the layout classifier reported **"a dialog is
 up"** naming the strip's own grown panel — so the `>400 px` predicate admits the strip itself when a block is
 held. The cursor info box is in the tree but its `Depth` / `Velocity` numbers are **paint only**, which closes
-sitting A's third item. The intermediate state (UI-STRIP-03) is photographed, not read: one more read with it
-on screen finishes the map.
+sitting A's third item. The intermediate state was read too (11:55, same process): four buttons —
+`Pause` / `Record` / `Do store` / `Clear and restart` — painting nothing below the row, with `Show block`
+= `1`; and the row turns out to be drawn from a **pool of five button controls** of which one
+(`Pause`/`Resume`) relabels, the rest being visibility. One combination (UI-STRIP-04, three buttons) is
+cropped but not read.
 
 Binding outcomes:
 
