@@ -1004,6 +1004,39 @@ Committed artefacts are the operator's strip crops (`overlay-record-stop-new-acq
 `overlay-pause.png` = UI-STRIP-04), both warning crops (`warning-remove-current-block.png` and
 `warning-clear-all.png`), and the measured rects above.
 
+### 2026-09-19 — sitting C, V3 stops on the `Define TGC` identity failure
+
+Application: **`UDOP DOP3010.43`**, instrument variant, main hwnd **3935144**, still acquiring the
+new block 1 that the preceding sitting opened; the operator reported it had passed 20,000 profiles and
+nothing in the application had been touched. Revision under test: `master` at **`6db6899`**, the merge head
+of PRs #12 and #13.
+
+The precondition read at 12:51:47 was clean: 44 visible controls in 4 panels, `ready` three-button strip,
+7 of 7 parameter roles, `measurement`, fast-access panel `present_complete`, no popup, no dialog and no
+layout reason. The operator then opened **Tools -> Define TGC** by hand, changed nothing (`Uniform` remained
+selected), and left the overlay up. `acquire status` at 12:53:25 pressed nothing and refused, but **V3 fails
+its diagnosis requirement**:
+
+- the visible `Define TGC` panel at `[400,168,850,288]` is reported as *"a dialog is up"* and the active
+  surface is `dialog`, while the `overlay` field is `None`;
+- after that misclassification, the second refusal blames the strip — *"no recording strip panel
+  resolved"*, `view 'unknown'`, 0 buttons — rather than naming the non-measurement overlay before resolving
+  measurement targets;
+- the refusal is safe: status sends no input, resolves no press target and changes no parameter. The compile
+  half was not run after status had already failed the item; another route could add no evidence to V3's
+  required ordering and the sitting's stop condition forbids probing past a device-found failure.
+
+The operator pressed the overlay's **Cancel** by hand. The 12:54:02 post-read returned to the same clean
+44-control / 4-panel measurement state. A literal diff of the pre- and post-status logs changes only the
+running timestamp and cursor (`[21,0]` -> `[0,349]`); every application field is identical. The logs are
+`outputs/live/sittingC-v3-pre-status.log`, `sittingC-v3-overlay-status.log` and
+`sittingC-v3-post-status.log` (all `exit=0`).
+
+**Outcome:** V3 is safe but **not passed**. Its measured failure is another instance of the identity chain
+already assigned a plan before code: an understood overlay is admitted by the dialog predicate, then its
+absence from the measurement layout is restated as a strip failure. V1 and V5 remain unattempted; the live
+instrument is back on the clean measurement surface and continued acquiring throughout.
+
 ## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency
