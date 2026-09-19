@@ -1,8 +1,9 @@
 # The first sparse measurement set — draft for review
 
 > **Status:** proposal for review. This PR carries a **document**, not code and not a campaign
-> definition: the intended outcome is agreement on a small explicit list of complete parameter sets.
-> Encoding that list and adding whatever writers it needs is the *next* PR.
+> definition. Its candidate levels are hypotheses until the committed velocity arrays pass the
+> [`existing-sweep-analysis-plan.md`](existing-sweep-analysis-plan.md) evidence gate; that plan's
+> decision table, not this draft list by itself, determines the small explicit set to encode.
 >
 > **What it answers.** [`acquisition-closeout-plan.md`](acquisition-closeout-plan.md) §4 makes the
 > matrix question the gate for the next stretch: *is
