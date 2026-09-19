@@ -1052,12 +1052,13 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
     app's block is a ring, so they are the only honest answer to "how long was this
     observation".
 
-    Two words the canonical reader does not expose are filled differently.
     ``resolution_index`` stays unset (the reader reports the pitch, and this module
     never derives a check quantity from the file it is checking).
-    ``emissions_per_profile`` *is* read, through ``acquire/verify.py``'s word reader
-    and only for the record — see :func:`_stored_emissions`; the same value decides
-    nothing here.
+    ``emissions_per_profile`` is read twice over: the canonical reader publishes
+    word 14 on ``ChannelConfig``, and this module *also* reads the raw operation
+    word through ``acquire/verify.py`` — see :func:`_stored_emissions` — as
+    independent corroboration of the record's own number. Neither reading decides
+    anything here.
     """
     name = Path(path).name
     streams = tuple(_read_bdd(Path(path)).recording.streams)
@@ -1116,9 +1117,10 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
         "achieved_period_s": achieved_period_s,
         "median_interval_s": median_interval_s,
         "interval_deviation": interval_deviation,
-        # Word 14: read here because `bdd.ChannelConfig` has no field for it (the
-        # canonical reader's docstring says so), and the variance axis is worth having
-        # in the record.
+        # Word 14: the canonical reader publishes the same field on
+        # `ChannelConfig.emissions_per_profile`; the record carries this independent
+        # raw-word read (`_stored_emissions`) as its corroboration, and the variance
+        # axis is worth having in the record.
         "emissions_per_profile": _stored_emissions(Path(path), channel_read),
     }
     try:
@@ -1130,9 +1132,11 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
 def _stored_emissions(path: Path, channel: int) -> int | None:
     """Word 14 of the channel that measured, or ``None`` when it cannot be read.
 
-    Read through ``acquire/verify.py``'s word reader because the canonical reader has
-    no field for it (``io/dop/bdd.py``'s docstring lists word 14 among the words it
-    verifies but does not decode). ``read_words`` addresses the operation table's own
+    **Independent raw-word corroboration**, not the only source of the number: the
+    canonical reader publishes word 14 on
+    ``ChannelConfig.emissions_per_profile``, and this reads the operation table
+    itself through ``acquire/verify.py``'s word reader so the record carries a
+    second, independently obtained value. ``read_words`` addresses the operation table's own
     channel slot, which is what a manual-mode acquisition's channel means — see its
     docstring for what it is not: on a multiplexed recording those slots do not
     describe the recording's channels.

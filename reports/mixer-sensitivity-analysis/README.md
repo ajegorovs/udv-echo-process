@@ -30,8 +30,26 @@ It writes `manifest.csv` and `qc-summary.json` in this directory from
 `--dataset-root` / `--report-dir`). Manifest paths are dataset-relative, both files use LF endings and
 one trailing newline, and floats carry 12 significant digits, so a regeneration from the same revision
 is byte-identical. `qc-summary.json` records the revision it was generated against and the manifest's
-own SHA-256, and the command exits non-zero when any WP0 gate check fails
-(`--analysis-commit` overrides the recorded revision).
+own SHA-256, and the command exits non-zero when any WP0 gate check fails.
+
+**Provenance: which revision a run records.** The bare command above records the
+**current HEAD** of the checkout it runs in, so running it on a later commit
+regenerates the two files with a different `analysis_commit` and therefore
+*different bytes* — that field is a provenance statement about the run, not a
+constant. The committed `manifest.csv` and `qc-summary.json` are reproduced byte
+for byte only by passing the generator commit that the committed
+`qc-summary.json` already records:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli sweep-inventory \
+    --analysis-commit <the analysis_commit recorded in the committed qc-summary.json>
+```
+
+`--analysis-commit` therefore has two legitimate uses: reproduce a committed
+artefact exactly (pass its recorded commit), or label a fresh run with the
+revision whose reader produced it (pass that revision). The equivalent
+`analysis.sweep_inventory.write_sweep_inventory(..., analysis_commit=...)`
+keyword does the same for callers.
 
 Every generated table or figure must carry or sit beside:
 

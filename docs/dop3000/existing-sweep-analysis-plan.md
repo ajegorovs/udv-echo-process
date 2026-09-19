@@ -42,8 +42,10 @@ These are verified properties of the committed payload, not conclusions about th
 - profile arrays range from 418–669 profiles and 31–365 gates; durations range from 8.15–16.03 s;
 - physical windows share a first gate near 10.163 mm, but the resolution ladder ends between
   96.743 and 100.813 mm;
-- operation word 14 is `20`, word 27 is `4`, and word 84 is `0` in every file; these values exist in
-  the payload even though the current public `ChannelConfig` does not expose all three;
+- operation word 14 is `20`, word 27 is `4`, and word 84 is `0` in every file; the public reader
+  publishes all three as the **stored integers** `ChannelConfig.emissions_per_profile` (20),
+  `sampling_volume_index` (4) and `skipped_profiles` (0), while `sampling_volume_mm` stays unset —
+  word 27 is the instrument's bandwidth-list index, not a length;
 - TGC word 23 is `0`, word 25 is fixed at `255`, and only word 24 moves in the TGC folder. The
   reader currently labels word 23 value `0` as `uniform`; do not reinterpret this ladder as a simple
   scalar gain until the representation has been settled;
@@ -99,8 +101,10 @@ Deliver:
   operation words, shape, duration, timing, depth range, velocity range, zero fraction and source hash;
 - `qc-summary.json`: expected file/axis counts, decode failures, NaN/timestamp checks and invariant-word
   checks;
-- public reader fields for word 14 (emissions/profile), word 27 (sampling-volume index) and word 84
-  (skipped profiles), each fixture-tested before the manifest relies on it.
+- the public reader fields for word 14 (emissions/profile), word 27 (sampling-volume **index**) and
+  word 84 (skipped profiles), each fixture-tested before the manifest relies on it — delivered as the
+  stored integers `emissions_per_profile` / `sampling_volume_index` / `skipped_profiles`; word 27 is an
+  index into the instrument's bandwidth list, so `sampling_volume_mm` stays unset.
 
 Gate:
 

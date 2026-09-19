@@ -304,11 +304,12 @@ value the reader decodes: `f_e` = 4000 kHz, `T_prf` = 1666.67 Hz (600 µs), burs
 `emit_power` / `sensitivity` *medium*, gate 1 = 10.16 mm with 50 gates at 1.85 mm, `c` = 1480 m/s,
 TCG *uniform* 19.9 → 40 dB, `V_max` = ±154.14 mm/s, 669 profiles over 14.96 s.
 
-**One base-state value the file cannot state is `Emissions/profile` = 20.** Word 14 is exactly the
-decode §9 lists as missing, so this point cannot be identified from its own file alone — the reader
-gap measured on a real sweep point rather than argued from the manual. The PRF axis as recorded
-beside it is 400 / 500 / 600 / 700 / 800 µs: 100 µs steps around this point, finer than §5 row 5's
-×2 ladder.
+**`Emissions/profile` = 20 is stated by the file itself.** Word 14 now decodes into
+`ChannelConfig.emissions_per_profile` (§9), so this point is identified from its own file alone. The
+recorded time base corroborates the word independently: `dt / T_prf` = 37.3 on all forty points, i.e.
+C5's `16 + N_PRF` with 0.6–1.0 ms of transit overhead, which agrees with 20 rather than standing in
+for it. The PRF axis as recorded beside it is 400 / 500 / 600 / 700 / 800 µs: 100 µs steps around this
+point, finer than §5 row 5's ×2 ladder.
 
 **And the set it belongs to is committed.** The same visit produced five *sparse* sweeps around
 this reference point — `prf` 400…800 µs, `burst_len` 2…32, `res` on the instrument's rung labels
@@ -327,31 +328,36 @@ while Ch. 8.1 recommends ≥ 50 % — a first, cheap Tier-0 improvement.
 
 ---
 
-## 9. Reader gaps (what this repo must add before the sweep can be analysed)
+## 9. Reader coverage of the sweep parameters (resolved)
 
-`src/udv_echo_process/io/dop/bdd.py::_OP_PARAM` decodes 12 of the 15 sweep
-parameters. Missing, and needed to identify a sweep point from the file alone:
+`src/udv_echo_process/io/dop/bdd.py::_OP_PARAM` decodes 14 of the 15 sweep
+parameters. Words 14, 27 and 84 are published as the **stored integers** their
+operation-table cells carry, so a sweep point is identified from its file alone:
 
 | Parameter | Word | Status |
 |---|---|---|
-| Emissions per profile (`N_PRF`) | 14 | not decoded — the primary variance axis; **identity measured** (it tracks `Emissions/profile`, 100 → 44) |
-| Sampling volume / bandwidth | 27 | declared as `ChannelConfig.sampling_volume_mm`, never populated; **identity measured** as an index into the physics-driven bandwidth list (index 3 = 0.900 mm at `c` = 1500) |
-| Number of skipped profiles | 84 | not decoded — **identity measured** (`Number of skipped profiles` in `Operating parameters`); its semantics are still unconfirmed (see below) |
-| (also) wall filter | 16 | declared as `ChannelConfig.wall_filter`, never populated |
+| Emissions per profile (`N_PRF`) | 14 | **decoded** into `ChannelConfig.emissions_per_profile` — the primary variance axis; **identity measured** (it tracks `Emissions/profile`, 100 → 44) |
+| Sampling volume / bandwidth | 27 | **decoded** into `ChannelConfig.sampling_volume_index`, the **index** into the physics-driven bandwidth list (**identity measured**: index 3 = 0.900 mm at `c` = 1500). It is an index, not a length, so `sampling_volume_mm` stays unset — the index → mm relation is medium- and burst-dependent and measured at one sound speed only |
+| Number of skipped profiles | 84 | **decoded** into `ChannelConfig.skipped_profiles`; **identity measured** (`Number of skipped profiles` in `Operating parameters`); its semantics are still unconfirmed (see below) |
+| (also) wall filter | 16 | still not decoded; declared as `ChannelConfig.wall_filter`, never populated |
 
-So what is missing is the decode, not the word identification — every identity
-above now comes from a labelled recording rather than from the manual's table
-([`udop-automation.md`](udop-automation.md) §9).
+The word *identities* above come from a labelled recording rather than from the
+manual's table ([`udop-automation.md`](udop-automation.md) §9), and the decode is
+pinned against the committed captures by `tests/test_bdd_verified_map.py`.
 
-**One of the four is measurable anyway.** `Emissions per profile` is word 14 and word 14 is not
-decoded — but C5 turns the *recorded* profile interval into that number: `dt / T_prf` is **37.3 on
-all forty** committed mixer points (22.4 ms at 600 µs, 15.0 ms at 400 µs, 29.8 ms at 800 µs), which
-is `16 + N_PRF` with 0.6–1.0 ms of transit overhead, i.e. `N_PRF` = 20 — the value the run's own note
-states. A recording at a second `N_PRF` would separate the application's constant from that overhead
-and make the axis readable from the file alone, which the committed set does not yet contain. The
-operator reads the parameter as **time averaging** and may move it to the instrument's smallest (~8)
-for the sweep: that would shorten the stored step to ~15 ms at 600 µs, so it is a declared axis value
-the time base of every other point would then disagree with, not a problem.
+**The recorded time base corroborates word 14 rather than standing in for it.**
+C5 turns the *recorded* profile interval into the same number: `dt / T_prf` is
+**37.3 on all forty** committed mixer points (22.4 ms at 600 µs, 15.0 ms at
+400 µs, 29.8 ms at 800 µs), which is `16 + N_PRF` with 0.6–1.0 ms of transit
+overhead — i.e. `N_PRF` = 20, the value word 14 also decodes to. Timing is an
+independent path to the same answer and the check that would catch a wrong word
+identity; a recording at a second `N_PRF` would still separate the application's
+constant from that overhead, so the path stays worth having. The operator reads
+the parameter as **time averaging** and may move it to the instrument's smallest
+(~8) for the sweep: that would shorten the stored step to ~15 ms at 600 µs, so it
+is a declared axis value the time base of every other point would then disagree
+with, not a problem — and it is now visible in the manifest's
+`emissions_per_profile` column either way.
 
 Word 84's *name* comes from the manual's parameter table ("skip profile"); no
 narrative chapter describes its behaviour, so its exact semantics (skip N
