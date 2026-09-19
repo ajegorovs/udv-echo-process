@@ -12,9 +12,10 @@ form the analysis plan's verification section names) carry the report-writing
 commands alongside ``acquire``: ``sweep-inventory`` writes the WP0 mixer-sweep
 manifest and QC summary from the committed BDD files, ``reference-repeat``
 writes the WP1 reference-repeatability table, provenance document and figure
-from that manifest, ``resolution-ladder`` writes the WP2 resolution axis and
-``burst-ladder`` the WP2 burst-length axis — levels, pairs and figure — both
-against the WP1 envelope, and none of them touches an instrument.
+from that manifest, ``resolution-ladder`` writes the WP2 resolution axis,
+``burst-ladder`` the WP2 burst-length axis and ``prf-ladder`` the WP2
+pulse-repetition-frequency axis — levels, pairs and figure — all against the WP1
+envelope, and none of them touches an instrument.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.analysis import (
     burst_ladder,
+    prf_ladder,
     reference_repeat,
     resolution_ladder,
     sweep_inventory,
@@ -532,6 +534,123 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
     print(
         f"figure      : {report_dir / burst_ladder.FIGURES_DIRNAME / burst_ladder.FIGURE_NAME}"
     )
+    print(f"commit      : {model.analysis_commit}")
+    raise SystemExit(0)
+
+
+def prf_ladder_main(argv: list[str] | None = None) -> None:
+    """``prf-ladder`` — write the WP2 PRF-axis artefacts.
+
+    Selects every ``prf`` recording from the WP0 manifest, orders the ladder by decoded
+    pulse-repetition period, re-checks each source hash, every shared decoded cell and the two
+    cells the key derives (the PRF in Hz and the ±Nyquist velocity scale), refuses a ladder where
+    anything other than the key moved, and writes ``prf-levels.csv``, ``prf-pairs.csv``,
+    ``prf-ladder.provenance.json`` and ``figures/prf-ladder.png`` into the report directory:
+    per-level velocity metrics, the actual profile rate from the timestamps, the ``|v| / Vmax``
+    load fractions, the wrap-like discontinuities, the matched-physical-duration temporal view
+    with its repeat floor, every level pair against the committed WP1 envelope, and the plan's
+    400-us versus 250-us decision. Exits 0 on success and 1 with the named reason on stderr when
+    the selection, the bytes, the envelope, the temporal floor or the key's scaling cannot be
+    trusted (never a traceback, never a half-written artefact). It touches nothing but those four
+    files: no instrument, no cache.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-prf-ladder",
+        description=(
+            "Analyse the committed mixer sweep's PRF ladder: velocity headroom and usable "
+            "temporal bandwidth per decoded pulse-repetition period, every level pair on the "
+            "shared knots and bands, and every effect against the WP1 repeatability envelope"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=prf_ladder.inventory.DATASET_ROOT.as_posix(),
+        help="directory of <axis>/<label>.BDD points",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=prf_ladder.inventory.REPORT_DIR.as_posix(),
+        help="directory to write the WP2 PRF artefacts into",
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="WP0 manifest the ladder is selected from (default: <report-dir>/manifest.csv)",
+    )
+    parser.add_argument(
+        "--envelope",
+        default=None,
+        help=(
+            "WP1 provenance the repeatability envelope and temporal floor are read from "
+            "(default: <report-dir>/reference-repeat.provenance.json)"
+        ),
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record (default: the checkout's short git SHA; pass the recorded commit "
+            "to reproduce the committed artefacts byte for byte)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    try:
+        model = prf_ladder.write_prf_ladder(
+            Path(args.dataset_root),
+            report_dir,
+            manifest_path=None if args.manifest is None else Path(args.manifest),
+            envelope_path=None if args.envelope is None else Path(args.envelope),
+            analysis_commit=args.analysis_commit,
+        )
+    except prf_ladder.PrfLadderError as exc:
+        print(f"udv-prf-ladder: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    findings = prf_ladder.provenance_document(model)["findings"]
+    gate = findings["effect_gate"]
+    headroom = findings["velocity_headroom"]
+    bandwidth = findings["temporal_bandwidth"]
+    decision = findings["focus_decision"]
+    periods = [row["prf_period_us"] for row in model.levels]
+    print(
+        f"levels      : {len(model.levels)} decoded PRF periods {periods[0]:g}-{periods[-1]:g} "
+        f"us, {len(model.pairs)} pairs, clean OFAT ladder with a scaled velocity range"
+    )
+    print(
+        f"common view : {model.common['revolutions']} rev = {model.common['window_s']:.4g} s; "
+        f"support {model.common['support_min_mm']:.6g}-{model.common['support_max_mm']:.6g} mm; "
+        f"matched {model.common['segment_target_s']:g} s segments, nominal resolution "
+        f"{model.temporal['nominal_resolution_hz']:.4g} Hz"
+    )
+    print(
+        f"rate/band   : profile rate {min(bandwidth['profile_rate_hz'].values()):.4g}-"
+        f"{max(bandwidth['profile_rate_hz'].values()):.4g} Hz; usable bandwidth "
+        f"{min(bandwidth['usable_bandwidth_hz']):.4g}-{max(bandwidth['usable_bandwidth_hz']):.4g} "
+        f"Hz; spectra compared in {bandwidth['band_hz'][0]:.4g}-{bandwidth['band_hz'][1]:.4g} Hz, "
+        f"mixer marker {bandwidth['mixer_marker_hz']:.4g} Hz (a marker, not a phase reference)"
+    )
+    print(
+        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}); "
+        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
+        f"{gate['max_ratio_to_envelope']:.3g} x at {gate['max_abs_difference_mm_s']:.4g} mm/s"
+    )
+    print(
+        f"headroom    : at {headroom['focus_prf_period_us']:g} us the peak load is "
+        f"{headroom['focus_load_max_over_velo_max']:.4g} of "
+        f"{headroom['focus_velo_max_mm_s']:.4g} mm/s, "
+        f"{headroom['focus_samples_beyond_limit']} sample(s) beyond it, "
+        f"{headroom['focus_wrap_like_events']} wrap-like step(s)"
+    )
+    print(
+        f"decision    : {decision['focus_setting_us']:g} vs {decision['candidate_setting_us']:g} "
+        f"us - headroom adequate {decision['velocity_headroom_adequate']}, bandwidth adequate "
+        f"{decision['temporal_bandwidth_adequate']}"
+    )
+    print(f"levels table: {report_dir / prf_ladder.LEVELS_NAME}")
+    print(f"pairs table : {report_dir / prf_ladder.PAIRS_NAME}")
+    print(f"provenance  : {report_dir / prf_ladder.PROVENANCE_NAME}")
+    print(f"figure      : {report_dir / prf_ladder.FIGURES_DIRNAME / prf_ladder.FIGURE_NAME}")
     print(f"commit      : {model.analysis_commit}")
     raise SystemExit(0)
 
@@ -1127,6 +1246,7 @@ _COMMANDS = {
     "acquire": acquire_main,
     "burst-ladder": burst_ladder_main,
     "inspect": inspect_main,
+    "prf-ladder": prf_ladder_main,
     "reference-repeat": reference_repeat_main,
     "resolution-ladder": resolution_ladder_main,
     "run-all": run_all_main,

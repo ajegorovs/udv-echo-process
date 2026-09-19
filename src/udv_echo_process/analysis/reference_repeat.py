@@ -705,15 +705,26 @@ def _ensemble(per_gate: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]
 
 
 def temporal_series(
-    entry: RepeatInput, values: np.ndarray, profile_period_s: float
+    entry: RepeatInput,
+    values: np.ndarray,
+    profile_period_s: float,
+    *,
+    segment_profiles: int = SEGMENT_PROFILES,
 ) -> TemporalSeries:
     """Per-gate autocorrelation and PSD of one recording, on ``profile_period_s``.
 
     Args:
         entry: the recording's manifest-bound record (path, hash, gate count).
         values: the recording's full ``(profiles, gates)`` velocity array.
-        profile_period_s: the shared analysis period (see
+        profile_period_s: the analysis period (see
             :func:`shared_profile_period_s`).
+        segment_profiles: the segment length in profiles. The committed
+            default is :data:`SEGMENT_PROFILES`, which every caller on a
+            shared profile rate uses — WP1, resolution and burst pass nothing
+            and their artefacts are unchanged. The PRF ladder's files do *not*
+            share a profile rate, so it passes the per-file length its matched
+            physical segment duration implies; the reported
+            ``frequency_resolution_hz`` is then ``1 / segment_duration_s``.
 
     Returns:
         The ensemble curves: every value is the mean over the identical 50 gates
@@ -721,21 +732,27 @@ def temporal_series(
         the across-gate 10th and 90th percentiles beside it.
 
     Raises:
-        ReferenceRepeatError: when no whole segment fits the record or a gate is
-            constant over a segment (its normalized autocorrelation is undefined).
+        ReferenceRepeatError: when the segment is shorter than two profiles, no
+            whole segment fits the record, or a gate is constant over a segment
+            (its normalized autocorrelation is undefined).
     """
+    if segment_profiles < 2:
+        raise ReferenceRepeatError(
+            f"a segment needs at least two profiles, got {segment_profiles}"
+        )
+    max_lag = segment_profiles // 2
     gates = int(values.shape[1])
-    segments = int(values.shape[0] // SEGMENT_PROFILES)
+    segments = int(values.shape[0] // segment_profiles)
     if segments < 1:
         raise ReferenceRepeatError(
             f"{entry.relative_path}: {values.shape[0]} profiles do not hold one "
-            f"{SEGMENT_PROFILES}-profile segment"
+            f"{segment_profiles}-profile segment"
         )
-    blocks = values[: segments * SEGMENT_PROFILES].reshape(
-        segments, SEGMENT_PROFILES, gates
+    blocks = values[: segments * segment_profiles].reshape(
+        segments, segment_profiles, gates
     )
     rate_hz = 1.0 / profile_period_s
-    acf_per_gate = np.empty((gates, ACF_MAX_LAG_PROFILES + 1))
+    acf_per_gate = np.empty((gates, max_lag + 1))
     # One segment defines the grid; every later segment must land on it, which a
     # shared segment length guarantees.
     frequency, _ = periodogram(
@@ -747,11 +764,11 @@ def temporal_series(
     )
     psd_per_gate = np.empty((gates, frequency.size))
     for gate in range(gates):
-        acf = np.zeros(ACF_MAX_LAG_PROFILES + 1)
+        acf = np.zeros(max_lag + 1)
         psd = np.zeros(frequency.size)
         for segment in range(segments):
             block = blocks[segment, :, gate]
-            acf += _segment_acf(block, ACF_MAX_LAG_PROFILES) / segments
+            acf += _segment_acf(block, max_lag) / segments
             bins, density = periodogram(
                 block,
                 fs=rate_hz,
@@ -770,16 +787,16 @@ def temporal_series(
     acf_mean, acf_p10, acf_p90 = _ensemble(acf_per_gate)
     psd_mean, psd_p10, psd_p90 = _ensemble(psd_per_gate)
     below = np.flatnonzero(acf_mean < 1.0 / math.e)
-    e_folding = int(below[0]) if below.size else ACF_MAX_LAG_PROFILES
-    lag_s = np.arange(ACF_MAX_LAG_PROFILES + 1) * profile_period_s
+    e_folding = int(below[0]) if below.size else max_lag
+    lag_s = np.arange(max_lag + 1) * profile_period_s
     return TemporalSeries(
         relative_path=entry.relative_path,
         source_sha256=entry.source_sha256,
         profiles=int(values.shape[0]),
-        profiles_analysed=int(segments * SEGMENT_PROFILES),
+        profiles_analysed=int(segments * segment_profiles),
         segments=segments,
-        segment_profiles=SEGMENT_PROFILES,
-        segment_duration_s=(SEGMENT_PROFILES - 1) * profile_period_s,
+        segment_profiles=segment_profiles,
+        segment_duration_s=(segment_profiles - 1) * profile_period_s,
         gates=gates,
         lag_s=tuple(float(value) for value in lag_s),
         lag_revolutions=tuple(

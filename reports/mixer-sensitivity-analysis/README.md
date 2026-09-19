@@ -21,7 +21,10 @@ Expected outputs, in work-plan order:
 | `burst-pairs.csv` | WP2 | every level pair on the shared knots, against the WP1 envelope |
 | `burst-ladder.provenance.json` | WP2 | binding, definitions, both views, temporal floor and findings |
 | `figures/burst-ladder.*` | WP2 | reviewer-visible burst dropout/variance and 18-vs-20 decision figure |
-| `figures/prf-*` | WP2 | alias margin and temporal-bandwidth evidence |
+| `prf-levels.csv` | WP2 | one row per decoded PRF period: velocity load, wrap-like counts, matched-segment temporal metrics |
+| `prf-pairs.csv` | WP2 | every level pair on the shared knots and bands, against the WP1 envelope |
+| `prf-ladder.provenance.json` | WP2 | binding, definitions, both views, the key's scaled velocity range and findings |
+| `figures/prf-ladder.*` | WP2 | reviewer-visible velocity-headroom and usable-bandwidth decision figure |
 | `figures/energy-*` | WP2 | velocity-only TGC/power diagnostics and their limits |
 | `decision-table.md` | WP3 | candidate-level keep/defer/replace/diagnostic verdicts |
 
@@ -319,3 +322,139 @@ Reviewer path: `burst-pairs.csv` (the focus-pair row `burst_len/18.BDD` -> `burs
 `burst-levels.csv` for the per-level distributional, spatial and temporal numbers, then
 `figures/burst-ladder.png`, then the `findings`, `definitions` and `views` blocks of
 `burst-ladder.provenance.json` for the binding, the temporal floor and the limitations.
+
+## WP2 — the PRF axis
+
+The `prf` folder is a five-point ladder of **decoded pulse-repetition periods** over the same window
+on the same 1.85 mm gate grid — 400 µs (`prf/400.BDD`) to 800 µs (`prf/800.BDD`) — and it carries
+the plan's third question: *does the committed 400-µs setting have inadequate velocity or
+temporal-bandwidth headroom, and is a 250-µs acquisition therefore justified?* The artefacts are:
+
+| Path | What it is |
+|---|---|
+| `prf-levels.csv` | 5 rows, one per decoded period: common-duration mean, robust spread, RMS, zero fraction, native-grid gradient and correlation length, the actual profile rate from the timestamps, the `|v| / Vmax` load with its warning fractions, the wrap-like discontinuity count and step scale, and the matched-segment temporal metrics (segment length, resolution, usable bandwidth, ACF e-folding lag, share of in-band power below the 8.33 Hz marker) |
+| `prf-pairs.csv` | 10 rows, every unordered pair: the signed `faster - slower` per-gate mean difference at the shared knots, the knots that clear the WP1 envelope and the depth ranges where they do, the load/wrap/zero-fraction change, and the band-mean spectral level difference on the shared comparison bands |
+| `prf-ladder.provenance.json` | the binding (manifest hash, all 5 source hashes, the WP1 envelope's path and hash, generator commit), the audit of the key's scaled velocity range, the metric definitions, both views, the decision findings and the figure caption |
+| `figures/prf-ladder.png` | two panels, the minimum the decision needs: the peak load of each level against the unambiguous limit with the samples beyond it and the wrap-like steps, and each level's ensemble PSD against the frequencies it supports |
+
+They are written by:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder
+```
+
+The command selects **every `prf` row of `manifest.csv`** (never a filename list), orders the ladder
+by decoded PRF period, re-checks all five source SHA-256 values against the bytes together with
+every decoded setting, the gate grid *and the two cells the key derives* (`prf_hz` and
+`velo_max_ms`), reads the decision threshold and the temporal floor from the committed WP1
+provenance, and refuses to run when that artefact was generated against another manifest. It also
+refuses a ladder in which a decoded setting other than the key moved (plan §2's clean-OFAT
+requirement) and a ladder whose velocity scale did **not** move with the key: `velo_max_ms` is the
+reader's ±Nyquist velocity, so `velo_max_ms × prf_period_us` must be invariant, and here it is
+constant to 4.3e-12 relative. A malformed, duplicated, undecodable, stale, coupled or unscaled
+inventory exits 1 with a named reason and writes nothing. As with WP0/WP1/resolution/burst, the bare
+command records the current HEAD; the committed artefacts are reproduced byte for byte only by
+passing the commit the committed provenance already records:
+
+```text
+.venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder \
+    --analysis-commit <the analysis_commit recorded in prf-ladder.provenance.json>
+```
+
+Definitions the tables cannot be read without, all restated in the provenance document:
+
+- **common-duration view** — the largest integer number of nominal 500-RPM revolutions (0.12 s each)
+  fitting *every* PRF recording: 67 revolutions = 8.04 s, truncated per file by the recorded
+  timestamps (537/431/360/309/270 profiles), because the profile rate differs across the ladder and
+  the profile *count* therefore cannot be the common quantity.
+- **common physical support** — the intersection of the five decoded depth ranges,
+  10.1626666667-100.812666667 mm, which *contains* the plan's declared ~10.163-96.743 mm window.
+- **`Vmax` (the `velo_max_mm_s` column)** — the reader's ±Nyquist velocity, the velocity at
+  full-scale count. It is the only physically distinguished scale the files carry, and every load
+  fraction is normalised by *that file's own* value: 231.206375266 mm/s at 400 µs falling to
+  115.603187633 mm/s at 800 µs, with `Vmax × prf_period` constant.
+- **load and warning fractions** — the share of windowed, supported samples at or above 0.5, 0.75,
+  0.9 and 1.0 of that file's `Vmax`. `1.0` is the unambiguous limit; the inner three are declared
+  margins below it, not instrument flags — these files carry no warning channel and the decoded
+  array is not clamped, so a sample beyond `Vmax` is either a wrapped estimate or an estimator
+  excursion past full scale and this report does not separate the two.
+- **wrap-like discontinuity** — a consecutive-profile change at one gate of at least `Vmax` in
+  magnitude *with a sign reversal*: a wrap moves the estimate across the whole ±`Vmax` span in one
+  profile interval, about 2 `Vmax`, so the criterion is the conservative half-span. The largest
+  observed step in units of `Vmax` is published beside the count.
+- **matched temporal view** — the files do **not** share a profile rate (66.72 Hz at 400 µs down to
+  33.57 Hz at 800 µs), so a profile count would give five different durations. The shared quantity
+  is the *physical* segment duration: the largest 0.1 s multiple that fits five whole segments in
+  the shortest record (8.1535 s) is **1.6 s**, and each file takes the whole number of profiles
+  inside it — 106/85/71/61/53 profiles, spans 1.5737-1.5490 s (1.6 % apart), frequency resolutions
+  0.6284-0.6334 Hz against a stated nominal 0.625 Hz, 5-10 segments each.
+- **usable bandwidth** — the highest frequency a file's matched segment supports, half its profile
+  rate: 33.360/26.439/22.018/18.851/16.468 Hz. The full-record Nyquist limit is published beside it
+  and is *not* used for the comparison.
+- **comparison bands** — identical bands from the nominal resolution up to the narrowest usable
+  bandwidth in the ladder (0.625-16.25 Hz, 25 bands); a level's density is its band power over the
+  band width, so no spectrum is compared where another has no support. Only band-integrated
+  densities are differenced: the frequency grids themselves are not identical, because the sample
+  rates are not.
+- **mixer marker** — 500 RPM = 8.333 Hz is a marker only. There is no tachometer in these files, so
+  it is never a phase reference, and no spectral peak is attributed to it or to a harmonic; its
+  second multiple (16.67 Hz) lies above the shared comparison band in any case.
+- **repeatability envelope** — the committed WP1 value, 19.37008103465545 mm/s
+  (`max_gate_abs_mean_difference_mm_s`), read from `reference-repeat.provenance.json` and bound to
+  this manifest's hash. It is a bound on repeatability *plus* uncontrolled drift, and it is the
+  threshold every mean-profile effect here is compared to.
+- **temporal repeat floor** — the same-settings WP1 pair (`prf/600.BDD` vs `res/1-8.BDD`) through
+  its committed curves, resummarised in the bands this ladder shares: their band-mean spectral
+  levels differ by up to 3.532 dB and their share of in-band power below the 8.333 Hz marker by
+  0.01806, so a cross-level spectral difference smaller than that is not separable either.
+
+### What the committed files measure
+
+Every number below is copied from the artefacts above (the same values are restated in the
+provenance's `findings` block, and each pair row carries its own):
+
+- **The 400-µs setting has the *most* velocity headroom of the five, not the least.** In its
+  common window and support the largest `|v|` is **167.99 mm/s = 0.7266 of the 231.206 mm/s**
+  unambiguous limit, **0** samples are at or beyond the limit and **0** consecutive-profile step is
+  a wrap-like discontinuity (the largest step anywhere in that file is 0.6953 `Vmax`). The load
+  grows as the period lengthens: 0.9219 at 600 µs, **1.0625** at 500 µs, **1.2109** at 800 µs, where
+  the recording also carries 1 sample beyond the limit, 3 wrap-like steps and a largest step of
+  1.4531 `Vmax`. The pressure on the velocity scale is therefore a *long-period* problem, and it is
+  visible as a diagnostic load in this ladder, not as a proven alias of a particular sample.
+- **The 400-µs setting also has the widest usable temporal bandwidth of the five.** Its profile rate
+  is 66.72 Hz and its matched-segment usable bandwidth 33.36 Hz, against 16.47 Hz at 800 µs; the
+  spectra of all five are compared only inside the 0.625-16.25 Hz band every recording supports,
+  with the 8.333 Hz marker inside it (0.8355-0.8959 of each level's in-band power lies below the
+  marker). The ACF e-folding lag takes only 0.0783-0.1119 s across the ladder — one lag step is
+  0.015-0.030 s — so nothing about the fluctuation time scale separates the levels either.
+- **A 250-µs acquisition is not justified by this evidence.** Both counts the plan names are
+  answered the same way at 400 µs: peak load 0.7266 with no sample at the limit, and the widest
+  usable bandwidth in the ladder. A 250-µs setting would move the unambiguous limit to
+  ~369.93 mm/s, which nothing in this dataset needs: the largest `|v|` seen in *any* of the five
+  recordings is 196.53 mm/s (`prf/500.BDD`), still 0.85 of the 400-µs limit. Unidentifiable here: a
+  wrap that leaves no step of half the span (a slowly drifting alias), the peak velocity of a flow
+  whose setpoint differs from this 500-RPM one, and the profile rate a future 250-µs setting would
+  actually run at — these files cannot fix it, because their own rate is not an exact multiple of
+  the PRF (its ratio varies by 0.00625 relative across the ladder).
+- **Eight of the ten pairs clear the WP1 envelope somewhere, and the clearances are local.** The
+  largest absolute per-knot mean-profile difference is **37.5148 mm/s** (`prf/400.BDD` vs
+  `prf/500.BDD` at 13.8627 mm) = **1.937** of the 19.37 mm/s envelope, over 7 knots in three runs
+  (10.1627, 13.8627-15.7127, 34.2127-39.7627 mm). The other clearances sit at 1-8 knots: 400 vs 600
+  (2 knots, 13.86-15.71 mm), 400 vs 700 (1 knot), 400 vs 800 (2 knots), 500 vs 600 (3 knots),
+  500 vs 800 (5 knots), 600 vs 700 (2), 600 vs 800 (8, in three runs out to 71.21 mm). Only
+  `prf/500.BDD` vs `prf/700.BDD` and `prf/700.BDD` vs `prf/800.BDD` are inside the bound at every
+  knot. None of these runs spans the support, so the evidence is a *localised* signal (near-field and
+  a few mid/minor-depth knots), not a global velocity bias — and with one recording per level and no
+  acquisition order, that localised signal cannot be separated from drift.
+- **The spectra themselves are not separable at this resolution either.** Band-mean spectral level
+  differences between levels run 1.22-3.46 dB in magnitude, while the same-settings WP1 pair differs
+  by 3.532 dB in the same resummarisation; the direction (the shorter period's density slightly
+  below the longer's in 8 of 10 pairs) is not larger than the floor, and with 5-10 segments per level
+  a band level is a coarse magnitude.
+
+Reviewer path: `prf-levels.csv` for the per-level load, warning fractions, wrap-like counts, profile
+rate and usable bandwidth, `prf-pairs.csv` for the envelope comparison and the band level
+differences, `figures/prf-ladder.png` for the headroom and bandwidth decision panels, then the
+`findings`, `views`, `definitions` and `derived_scale` blocks of `prf-ladder.provenance.json` for
+the binding, the matched-physical-duration rule, the key's scaled velocity range and the
+limitations.

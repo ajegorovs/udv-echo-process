@@ -391,6 +391,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
         "acquire",
         "burst-ladder",
         "inspect",
+        "prf-ladder",
         "reference-repeat",
         "resolution-ladder",
         "run-all",
