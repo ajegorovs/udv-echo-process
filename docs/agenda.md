@@ -210,9 +210,19 @@ profiles in one fixture and 4193–4927 in another.
 > [`dop3000/device-verification.md`](dop3000/device-verification.md), *the identity change's device
 > ladder*.
 >
-> Next is **sitting D's writes** — `ensure_channel`, V5's two compiles, V6's six-point campaign on the
-> instrument, V7/V8 — ordered in
-> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md).
+> **Sitting D has since run, and its writes are verified (2026-09-19).** `ensure_channel` left the screen as
+> it found it; the compile accepted this machine's own frame, refused a declaration-only `burst_length: 5`
+> before any recording, refused the committed ladder against a frame it does not declare, and accepted it
+> once the operator set the instrument to what the ladder declares; the six-point campaign ran **6/6 ok**
+> with the stored `.BDD` files' own words agreeing; the resume skipped all six with
+> `skipped_without_evidence: []`; and recovery found the frame intact, no popup/dialog/overlay, the expected
+> store directory and an unclipped pointer. **V5–V8 pass** (V7's TGC item taken live too: a one-point job recorded, TGC changed, and the resume still skipped), so nothing left in this workstream is device-pending.
+>
+> What remains is the **matrix question**
+> ([`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) §4): is
+> `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment this work is for?
+> The first sparse matrix is still being re-derived around the reference point, and the writers it funds
+> wait on that answer.
 
 An independent repository-wide review of the acquisition subsystem was assessed
 against the checkout on 2026-09-18: **all eight findings verified, the direction
