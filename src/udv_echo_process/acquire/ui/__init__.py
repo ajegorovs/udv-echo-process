@@ -18,6 +18,7 @@ package can be split without touching a call site.
 | ``ui/strip.py`` | pure strip observation and classification — the row, the state, and the ambiguous four-button row that binds nothing (ledger B10) | landed by Patch 2 (widget slice) |
 | ``ui/dialog.py`` | the ``Operating parameters`` table binding, the widget-aware extraction (a combo's own value, never the edit beside it — ledger B09) and the channel comparison (ledger B17) | landed by Patch 2 (widget slice) |
 | ``ui/menu.py`` | the ``Parameters`` anchor and its expected popup, and nothing generic — no name is assigned to a menubar button by position (ledger B03) | landed by Patch 2 (widget slice) |
+| ``ui/identity.py`` | one identity per panel, decided once from the panel's own shape and the screen's context — the panel-identity plan (§2, §2.1) | landed by the identity slice |
 
 Two rules the package exists to enforce, both quoted from the architecture document:
 
@@ -34,4 +35,4 @@ claim it — see ``docs/dop3000/device-verification.md``).
 
 from __future__ import annotations
 
-__all__ = ["dialog", "layout", "menu", "model", "strip"]
+__all__ = ["dialog", "identity", "layout", "menu", "model", "strip"]

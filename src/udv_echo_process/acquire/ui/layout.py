@@ -15,7 +15,8 @@ What the module owns, and why each piece is here rather than in the driver:
   of :func:`surface_clauses`): which surface is this — measurement, overlay, dialog, popup,
   replacement or unknown — decided **before** any press target is resolved, so an overlay cannot
   be read as the strip (ledger B06) and a whole-screen replacement surface is never read as a
-  channel mode (ledger B08);
+  channel mode (ledger B08). What a panel *is* comes from the shared classifier
+  (:mod:`udv_echo_process.acquire.ui.identity`), read here and never re-decided;
 - the **stated process mode** clause (:func:`process_mode_clause`) — the one thing that cannot
   be checked structurally, because only the caption states it;
 - the **channel mode** reading (:func:`screen_mode`), which reads a mode out of the panel that
@@ -68,6 +69,10 @@ from udv_echo_process.acquire.ui.dialog import (
     _contains,
     _is_dialog_panel,
 )
+from udv_echo_process.acquire.ui.identity import (
+    PanelIdentity,
+    with_identities,
+)
 from udv_echo_process.acquire.ui.menu import (
     MEASURED_BAR,
     MENU_ORDER,
@@ -97,6 +102,7 @@ __all__ = [
     "_DIALOG_INPUT_CLASSES",
     "_DIALOG_MIN_CHILDREN",
     "_DIALOG_MIN_W",
+    "PanelIdentity",
     "_column_bands",
     "_contains",
     "_inside",
@@ -156,9 +162,14 @@ def observation_of(roles: Mapping) -> ScreenObservation:
 
     One line on purpose: the projection itself lives on the model
     (:meth:`~udv_echo_process.acquire.ui.model.ScreenObservation.from_roles`), written down once
-    so the pure rules below cannot read a second, differently-typed view of the same tree.
+    so the pure rules below cannot read a second, differently-typed view of the same tree — and
+    the panels' identities are attached at the same moment
+    (:func:`~udv_echo_process.acquire.ui.identity.with_identities`), so every rule below reads the
+    *classified* inventory of this tree: the resolver's own answer when the map carries it
+    (``roles["identities"]``), and otherwise the classifier's pass over this same projection,
+    which is what makes a captured fixture and a live read answer by one rule.
     """
-    return ScreenObservation.from_roles(roles)
+    return with_identities(ScreenObservation.from_roles(roles))
 
 
 # ------------------------------------------------------------------------ the moved geometry
@@ -210,12 +221,12 @@ def normalized_path(text: str) -> str:
     return cleaned.casefold()
 
 
-#: The plot's middle band, as a fraction of its height: the strip floats inside the monitor and
-#: the resolver scores a **strip candidate** by the centre of its button row falling in here
-#: (``_resolve``'s own ``0.30 <= frac <= 0.70``). The surface classifier applies the *same*
-#: rule to every panel rather than to the winner, which is what makes a second button panel in
-#: this band visible as an overlay instead of being silently accepted (ledger B06).
-_STRIP_BAND = (0.30, 0.70)
+# The plot's middle band (``0.30 <= frac <= 0.70`` of the plot's height) is now part of the
+# classifier's strip warrant rather than a clause of its own: ``ui/identity.py`` asks it of every
+# panel — not of the vote's winner — which is what makes a button panel over the monitor visible
+# as an overlay instead of being silently accepted as the strip (ledger B06). The band is stated
+# once, in that module, so the vote and the classification cannot disagree about where a strip's
+# row may sit.
 
 
 def _same_node(one: UiNode, other: UiNode | None) -> bool:
@@ -333,45 +344,70 @@ def _replacement_evidence(observation: ScreenObservation) -> bool:
     )
 
 
-def _overlay_candidates(observation: ScreenObservation) -> tuple[UiNode, ...]:
-    """Panels **besides the resolved strip** that host a button row inside the plot's band.
+def _classified(observation: ScreenObservation, kinds: tuple[PanelIdentity, ...]) -> tuple[UiNode, ...]:
+    """The panels this observation classified as any of ``kinds`` — in the map's own panel order.
 
-    The resolver scores a strip candidate by the *centre of its button row* falling in the plot's
-    0.30-0.70 band and takes the panel hosting the most buttons, so a button panel sitting in that
-    band's middle wins the vote — which is the live incident B06 records, where an open
-    ``Define TGC`` panel (``UI-OVERLAY-01``..``UI-OVERLAY-04``, 453x123, caption-less, movable)
-    was bound as the strip and the run then diagnosed *its* button row, calling it a known
-    ``ready`` row of ``Pause / Record / Clear and restart``.
-
-    This is that same rule applied to every panel rather than to the winner: a panel inside the
-    plot, hosting its own ``TSp_Button`` row whose centre falls in the same band, while the strip
-    was bound somewhere else — two candidates where a measurement screen has exactly one. The
-    candidate is reported, never pressed: the finding is that the panel the resolver bound may be
-    an overlay's button panel rather than the recording strip, and that is a refusal.
+    One lookup, keyed on the inventory the observation carries
+    (``roles["identities"]`` / :func:`…ui.identity.with_identities`), so a pure rule reads the same
+    classification the resolver published instead of deciding panel meaning a second time. A tree
+    that states no identity at all answers with none, which is the refusal these clauses exist for.
     """
-    strip, plot = observation.strip.panel, observation.plot
-    if strip is None or plot is None or plot.rect is None:
-        return ()
-    band_low, band_high = _STRIP_BAND
-    candidates: list[UiNode] = []
-    for panel in observation.panels:
-        if (
-            _same_node(panel, strip)
-            or _same_node(panel, observation.menu.band)
-            or any(_same_node(panel, dialog) for dialog in observation.dialogs)
-        ):
-            continue
-        if panel.rect is None or not plot.rect.holds_centre_of(panel.rect):
-            continue
-        buttons = observation.tree.inside(panel, cls="TSp_Button")
-        centres = [button.rect.centre for button in buttons if button.rect is not None]
-        if not centres:
-            continue
-        centre_y = sum(y for _x, y in centres) / len(centres)
-        fraction = (centre_y - plot.rect.top) / max(1, plot.rect.height)
-        if band_low <= fraction <= band_high:
-            candidates.append(panel)
-    return tuple(candidates)
+    wanted = {kind.value for kind in kinds}
+    return tuple(
+        panel
+        for panel in observation.panels
+        if (identity := observation.identity_of(panel)) is not None and identity in wanted
+    )
+
+
+def _warning_panels(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """The panels this screen classifies as a warning guard (``ui/identity.py`` item 3).
+
+    A warning is a panel **over** the measurement screen whose own bottom band holds the measured
+    two-button pair, so it is part of the surface question and not of the strip's: measured
+    2026-09-19, the reused destructive guard (392x132) is admitted by no dialog predicate at all,
+    which is why it went unnamed while the strip behind it was reported as "a dialog is up".
+    """
+    return _classified(observation, (PanelIdentity.WARNING,))
+
+
+def _overlay_panels(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """The panels this screen classifies as a non-measurement overlay (``ui/identity.py`` item 7).
+
+    The identity is the panel's own — over the monitor, with a button row of its own that is not
+    the strip's top row — so this is *not* the retired ``_overlay_candidates``, which compared
+    every panel against the panel the resolver had bound as the strip and returned empty whenever
+    no strip resolved. Measured on ``Define TGC`` (``[400,168,850,288]``, 450x120, its buttons
+    46-89 px below its own top): the real strip panel is absent from that read's visible panel
+    set, so a rule that needed the strip could name nothing — and the run diagnosed a strip
+    instead of the surface (ledger B06, V3).
+    """
+    return _classified(observation, (PanelIdentity.OVERLAY,))
+
+
+def _strip_panels(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """The panels this screen classifies as a recording strip (``ui/identity.py`` item 4).
+
+    A measurement screen paints exactly **one** — the strip floats inside the monitor and only one
+    panel hosts its row — so more than one is a finding of its own: the classifications are
+    independent per-panel claims, and two of them together say a *second* button panel is over the
+    monitor, which is the reading ledger B06 was written from. That is why
+    :func:`…ui.identity.blocking_surface` answers ``OVERLAY`` for such a screen and why the clause
+    below is part of the overlay group rather than of the strip's own diagnosis.
+    """
+    return _classified(observation, (PanelIdentity.MEASUREMENT_STRIP,))
+
+
+def _second_strip_panels(observation: ScreenObservation) -> tuple[UiNode, ...]:
+    """The strip-warrant panels of a screen that has more than one — empty for a real screen.
+
+    The resolver's own binding is deliberately not consulted: which of the two the resolve *bound*
+    is a consequence of the screen's ambiguity, never a way to resolve it, and a clause that read
+    the binding would be the circle this classification removed (the plan §2: one pass, before any
+    exclusion or vote).
+    """
+    strips = _strip_panels(observation)
+    return strips if len(strips) > 1 else ()
 
 
 def surface_kind(observation: ScreenObservation) -> SurfaceKind:
@@ -381,16 +417,26 @@ def surface_kind(observation: ScreenObservation) -> SurfaceKind:
     resolver's own vote can hand an overlay over as the strip candidate, and a diagnosis that
     then starts from the button row blames the strip for a surface problem — the run refused, but
     for the wrong reason, which costs a live slot. The order of the tests is the order of the
-    evidence's strength:
+    evidence's strength, and every one of them reads the observation's **classified inventory**
+    (:func:`…ui.identity.with_identities`) rather than re-deciding panel meaning here:
 
     1. a window class that is not the measurement screen's — nothing else about the tree is
        trustworthy, so ``UNKNOWN``;
     2. an application dialog panel is up — ``DIALOG``;
-    3. the menubar's own popup is open — ``POPUP`` (it is the strip resolver's decoy);
+    3. the menubar's own popup is open — ``POPUP`` (it is the strip resolver's decoy, and
+       ``popup_open`` is now a real menu popup and nothing else);
     4. the measurement skeleton is gone while the client area hosts a widget band —
        ``REPLACEMENT`` (B08: ``Compare profiles`` / ``Measure US field`` replace the client
-       area, so "no sidebar and no strip" is another *surface* and not a channel mode);
-    5. a second button panel sits in the plot's middle band — ``OVERLAY`` (B06);
+       area, so "no sidebar and no strip" is another *surface* and not a channel mode). It stays
+       **ahead** of the overlay clause: a replacement screen is not a measurement screen with
+       something over it;
+    5. a warning guard or a non-measurement overlay is over the measurement screen — ``OVERLAY``
+       (B06). A warning is one of these on purpose: it is a panel drawn *over* the surface, its
+       identity is :attr:`…ui.identity.PanelIdentity.WARNING`, and the kind vocabulary is
+       unchanged — the identity is what names it, and ``blocking_surface`` is what answers
+       "which surface is it" without the kind. So is a screen on which the strip's own warrant is
+       satisfied **twice**: a measurement screen paints one strip, and the second panel is a button
+       panel over the monitor (``_second_strip_panels``);
     6. the measurement anchors all resolved — ``MEASUREMENT``;
     7. otherwise ``UNKNOWN``: the refusal state, which has no binding and no mode.
 
@@ -406,7 +452,11 @@ def surface_kind(observation: ScreenObservation) -> SurfaceKind:
         return SurfaceKind.POPUP
     if _replacement_evidence(observation):
         return SurfaceKind.REPLACEMENT
-    if _overlay_candidates(observation):
+    if (
+        _warning_panels(observation)
+        or _overlay_panels(observation)
+        or _second_strip_panels(observation)
+    ):
         return SurfaceKind.OVERLAY
     if (
         not _menubar_resolved(observation)
@@ -437,6 +487,13 @@ def surface_clauses(observation: ScreenObservation) -> tuple[str, ...]:
     evidence it rests on and where it was read, so the refusal is diagnosable from the log alone
     (plan §24.5 D5).
 
+    The order is the plan §3's: a **replacement** surface first (it stays ahead of the overlay,
+    B08), then a **warning**, then a non-measurement **overlay**, then a **dialog**, then a real
+    menu **popup** — every one of them before any strip or sidebar clause the gate adds after this
+    group. Under ``Define TGC`` the strip is genuinely absent from the visible panel set, so the
+    "no recording strip panel resolved" clause follows as a *consequence*: the diagnosis the
+    operator reads first is the surface, never the strip (V3).
+
     ``UNKNOWN`` contributes nothing: it is the absence of a classification, and the structural
     clauses of :func:`layout_shape_reasons` (the window class, the menubar band, the plot, the
     status band) already state exactly what was missing.
@@ -452,16 +509,23 @@ def surface_clauses(observation: ScreenObservation) -> tuple[str, ...]:
             "and no strip' is another surface here and not a channel mode, and no press may be "
             "bound against it"
         )
-    for panel in _overlay_candidates(observation):
-        strip = observation.strip.panel
+    for panel in _warning_panels(observation):
         clauses.append(
-            "an overlay is over the measurement screen: "
-            f"{_rect_text(panel)} hosts its own button row inside the plot's 0.30-0.70 band "
-            "besides the panel the resolver bound as the strip "
-            f"({_rect_text(strip) if strip is not None else 'none'}), so that binding may be an "
-            "overlay's button panel rather than the recording strip — the strip's own rule (the "
-            "button panel in the middle of the plot) is ambiguous on this tree and nothing may "
-            "be pressed out of it"
+            "a warning guard is over the measurement screen: "
+            f"{_rect_text(panel)} is a compact panel whose own bottom band holds a two-button "
+            "pair, which is the family this application reuses for its destructive guards "
+            "(measured 392x132, 397x135, 353x155) — the tree does not state which warning text "
+            "is painted, so nothing below it is the surface these roles were bound to, nothing "
+            "may be pressed out of it, and the one path that answers it presses its left/safe "
+            "end and never its Confirm end"
+        )
+    for panel in _overlay_panels(observation):
+        clauses.append(
+            "a non-measurement overlay is over the measurement screen: "
+            f"{_rect_text(panel)} sits over the monitor and hosts a button row of its own that "
+            "is not the recording strip's top row (the strip's row lies inside its panel's own "
+            "top 30 px), so nothing below it is the surface these roles were bound to and no "
+            "press may be bound against it"
         )
     if observation.dialogs:
         doors = [
@@ -477,6 +541,25 @@ def surface_clauses(observation: ScreenObservation) -> tuple[str, ...]:
         clauses.append(
             "a menu popup is open: the parameter roles below it would bind to the popup's own "
             "controls (a popup is never dismissed by WM_CLOSE here)"
+        )
+    strips = _second_strip_panels(observation)
+    if strips:
+        # Two independent per-panel classifications, and both say "recording strip". A measurement
+        # screen paints exactly one, so the second is a button panel over the monitor — the finding
+        # ledger B06 was written from, as an *overlay* clause (it was one before this work too) and
+        # one that reads the classifications only: which of the two the resolver bound is a
+        # consequence of the ambiguity, never a way to resolve it. The live reads each carry one
+        # strip-shaped panel, so this is the synthetic and future case; it is refused rather than
+        # resolved, which is what "nothing may be pressed out of a binding the screen cannot
+        # settle" means (the four-button row's own refusal, one level up: ``ui/strip.py`` owns it).
+        clauses.append(
+            "an overlay is over the measurement screen: "
+            f"{len(strips)} panels of this screen satisfy the recording strip's own warrant "
+            f"({', '.join(_rect_text(panel) for panel in strips)}) where a measurement screen "
+            "paints exactly one — a second button panel sits over the monitor, so the panel the "
+            "resolver bound as the strip may be an overlay's button panel rather than the "
+            "recording strip, and nothing may be pressed out of a binding the screen cannot "
+            "settle"
         )
     return tuple(clauses)
 
@@ -570,8 +653,9 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     :data:`STRIP_BUTTON_ORDER` (:func:`…ui.strip.strip_clauses` — the silent case §21.3 item 3
     names, *a different button panel in the plot's middle band*, and the ambiguous four-button
     no-slider row of ledger B10, which is refused rather than gated on); and nothing is over it —
-    no menu popup and no dialog panel (both of which the surface group has already named). The
-    manual shape: that column resolves with its seven :data:`PARAM_COLUMN_ORDER` roles.
+    no warning guard, no non-measurement overlay, no dialog panel and no real menu popup (every
+    one of which the surface group has already named). The manual shape: that column resolves with
+    its seven :data:`PARAM_COLUMN_ORDER` roles.
 
     **No total count is a gate here** (plan §24.5, D4): 43 and 44 are two legitimate layouts, so
     the counts are evidence carried by :func:`layout_evidence` and refused on by nothing.
@@ -582,9 +666,10 @@ def layout_shape_reasons(roles: Mapping) -> tuple[str, ...]:
     """
     # DEVIATION: the plan lists `_find_overlay(roles)` among the asserted resolvers, but that
     # finder walks parent handles through `win32gui` and cannot be called from a pure function
-    # over a resolved tree. The popup and dialog clauses therefore come from the tree's own
-    # resolved sets (`open_popup`, `_dialog_panels`' two halves), and the driver's own note adds
-    # the `_find_overlay` clause on top (`layout_refusal`, whose `overlay=` is that result).
+    # over a resolved tree. The popup, dialog, warning and overlay clauses therefore come from the
+    # tree's own classified inventory (`roles["identities"]`, or the classifier's pass over this
+    # same projection), and the driver's own note adds the `_find_overlay` clause on top
+    # (`layout_refusal`, whose `overlay=` is that result).
     observation = observation_of(roles)
     reasons: list[str] = list(surface_clauses(observation))
     panels = list(observation.panels)

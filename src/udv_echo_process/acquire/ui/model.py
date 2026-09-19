@@ -225,10 +225,45 @@ class UiTree(ValueModel):
     resolver binds roles against — and the raw rows beyond it (the pre-created, hidden panels a
     ``_hidden_panels`` walk finds) stay diagnostics: they are *named* in a refusal and never
     bound, because a hidden panel's rect is where a press would land on nothing.
+
+    ``parent_of`` is the projection's own **parent links** (``roles["parent_of"]``), carried so
+    "this panel's own children" is a question a pure rule can ask of a captured tree as well as of
+    a live one (``Win32Actuator._resolve`` reads the same relationship live, from ``GetParent``).
+    A tree that states no links is read by containment instead (:meth:`children`), which is what a
+    partial fixture — every widget hanging off the window — is asking for.
     """
 
     window: int | None = None
     nodes: tuple[UiNode, ...] = ()
+    #: ``hwnd → parent hwnd``, exactly as the resolver published it: the tree's own structure, and
+    #: never an identity — a handle is an action reference for the resolve that produced it.
+    parent_of: tuple[tuple[int, int], ...] = ()
+
+    def parent(self, hwnd: int | None) -> int | None:
+        """The parent this projection states for ``hwnd``, or ``None`` when it states none."""
+        if hwnd is None:
+            return None
+        return dict(self.parent_of).get(hwnd)
+
+    def children(self, panel: UiNode | None) -> tuple[UiNode, ...]:
+        """The panel's **own** children — by the projection's parent links, else by containment.
+
+        The links are asked first because they are the stronger statement: a panel's own children
+        are what the application gave it, and the resolver binds against exactly that relationship
+        (``GetParent``). Only a tree that states no child for this panel falls back to
+        :meth:`inside` — the rows whose centre lies inside its rect — so a fixture whose widgets
+        all hang off the window is still read as the screen it depicts. A panel that states no
+        rect hosts nothing either way, which is the same refusal :meth:`inside` makes.
+        """
+        if panel is None or panel.rect is None:
+            return ()
+        links = dict(self.parent_of)
+        own = tuple(
+            node
+            for node in self.nodes
+            if node is not panel and node.hwnd is not None and links.get(node.hwnd) == panel.hwnd
+        )
+        return own or self.inside(panel)
 
     def node(self, hwnd: int | None) -> UiNode | None:
         """The projected node holding ``hwnd``, or ``None`` — a handle is a lookup, not a role."""
@@ -324,6 +359,14 @@ class ScreenObservation(ValueModel):
     the parameter column with its roles, and the visible-control total — the last of which is
     **evidence and never a gate** (plan §24.5 D4: the reference install's clean screen reads 43
     in 4 and the instrument's own 44 in 4, and both are legitimate layouts).
+
+    ``identities`` is the classified inventory (``roles["identities"]`` — one
+    :class:`~udv_echo_process.acquire.ui.identity.PanelIdentity` per panel the resolver
+    considered) and ``blocking_surface`` the surface that blocks a press when one is up. Both are
+    carried as the **values** of the identity vocabulary rather than as its members, because this
+    module is the model the interpreter modules are written against and importing the classifier
+    here would close a cycle (``ui/identity.py`` imports ``ui/menu.py``, which imports this
+    module). :func:`…ui.identity.with_identities` completes them for a map that states none.
     """
 
     class_name: str | None = None
@@ -341,6 +384,25 @@ class ScreenObservation(ValueModel):
     parameter_roles: tuple[str, ...] = ()
     parameter_rows: int = 0
     control_count: int = 0
+    #: The classified inventory: ``(panel hwnd, PanelIdentity value)`` for every panel the
+    #: resolver considered — one classification, taken before any consumer excludes or votes on a
+    #: panel, and read here rather than re-derived.
+    identities: tuple[tuple[int, str], ...] = ()
+    #: The identity of the surface that blocks an action while it is up (``WARNING`` / ``OVERLAY``
+    #: / ``APPLICATION_DIALOG`` / ``MENU_POPUP``), or ``None``. It is what ``popup_open`` never
+    #: was: ``open_popup`` asked whether *any* panel besides the bands hosted a button, which was
+    #: true of the ``Define TGC`` overlay, of every warning box and of the cursor info box.
+    blocking_surface: str | None = None
+
+    def identity_of(self, panel: UiNode | None) -> str | None:
+        """The identity value this observation classified for ``panel``, or ``None``.
+
+        A handle is a lookup here, exactly as it is in :meth:`UiTree.node`: the identity belongs to
+        the panel the resolve considered, not to a handle that survives it.
+        """
+        if panel is None or panel.hwnd is None:
+            return None
+        return dict(self.identities).get(panel.hwnd)
 
     @classmethod
     def from_roles(cls, roles: Mapping) -> ScreenObservation:
@@ -353,7 +415,17 @@ class ScreenObservation(ValueModel):
         refusal says about it.
         """
         nodes = tuple(UiNode.from_row(row) for row in (roles.get("raw") or ()))
-        tree = UiTree(window=roles.get("window"), nodes=nodes)
+        tree = UiTree(
+            window=roles.get("window"),
+            nodes=nodes,
+            # The projection's parent links, as the resolver published them: ``{hwnd: parent}``.
+            # A map that states none leaves the tree read by containment (``UiTree.children``).
+            parent_of=tuple(
+                (int(hwnd), int(parent))
+                for hwnd, parent in (roles.get("parent_of") or {}).items()
+                if hwnd is not None and parent is not None
+            ),
+        )
         by_hwnd = {node.hwnd: node for node in nodes if node.hwnd is not None}
 
         def project(row: Mapping | None) -> UiNode | None:
@@ -433,6 +505,20 @@ class ScreenObservation(ValueModel):
             ),
             parameter_rows=len(rows),
             control_count=len(nodes),
+            # The classified inventory, as the map states it: values, in the map's own order (the
+            # resolver publishes its panels top-down). A map that states none carries none, and
+            # ``ui/identity.with_identities`` — which the one projection, ``ui.layout.observation_of``,
+            # always runs — classifies that same tree by the same rules.
+            identities=tuple(
+                (int(hwnd), str(getattr(kind, "value", kind)))
+                for hwnd, kind in (roles.get("identities") or {}).items()
+                if isinstance(hwnd, int)
+            ),
+            blocking_surface=(
+                None
+                if roles.get("blocking_surface") is None
+                else str(getattr(roles["blocking_surface"], "value", roles["blocking_surface"]))
+            ),
         )
 
 

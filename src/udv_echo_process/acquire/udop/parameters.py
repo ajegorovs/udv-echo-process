@@ -56,6 +56,7 @@ from udv_echo_process.acquire.ui.dialog import (
     text_at,
 )
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
+from udv_echo_process.acquire.ui.identity import PanelIdentity
 from udv_echo_process.acquire.ui.layout import (
     observation_of,
     panel_mode,
@@ -847,16 +848,31 @@ class ParametersSurface:
         Fullest first, the way the reference chose when several matched
         (``len(kids) > len(children(best, roles))``), then widest, so a warning strip
         cannot win over a real dialog.
+
+        **A map that carries the classification is read by it** (``roles["identities"]``): only a
+        panel the classifier called :attr:`…ui.identity.PanelIdentity.APPLICATION_DIALOG` is
+        returned, so the recording strip's own panel — admitted by the ``> 400 px`` predicate in
+        the grown states, each of which directly owns the ``Show block`` combo (plan §2.2) — is
+        never handed to a cleanup's ``bottom_row[-2]``, which on the measured 453x40 row is
+        ``Do store`` and on the 502/551 rows is a state-changing strip control too (plan §3.1).
+        A map that states no identities is read by the predicate alone, so every fixture and fake
+        keeps the behaviour it had.
         """
         roles = self._resolve() if roles is None else roles
+        identities: Mapping = roles.get("identities") or {}
         left = roles.get("left_panel")
         out: list[dict] = []
         for panel in roles.get("panels") or []:
             if left is not None and panel["hwnd"] == left["hwnd"]:
                 continue
             kids = self._children_of(panel["hwnd"], roles)
-            if _is_dialog_panel(panel, kids):
-                out.append(panel)
+            identity = identities.get(panel["hwnd"])
+            if identity is None:
+                if not _is_dialog_panel(panel, kids):
+                    continue
+            elif identity is not PanelIdentity.APPLICATION_DIALOG:
+                continue
+            out.append(panel)
         return sorted(
             out,
             key=lambda p: (
