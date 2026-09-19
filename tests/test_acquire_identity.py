@@ -236,6 +236,62 @@ def test_a_compact_two_button_panel_with_no_store_dialog_is_a_warning() -> None:
         ), rect
 
 
+def test_a_value_table_of_its_own_keeps_a_panel_out_of_the_warning_family() -> None:
+    """A command dialog is not a destructive guard, however narrow its bottom band is.
+
+    Found by this change's own adversarial review, and it is a false *negative* of the family rule
+    rather than a false positive: the measured guards carry their two buttons and nothing else,
+    while the values-dialog class (``Operating parameters``, ``Record settings``) is exactly the
+    class that holds ``TSp_Value_Button``s directly — the same discriminator
+    ``driver._resolve`` splits its dialogs by. Without this clause a compact command dialog whose
+    bottom band happened to hold two buttons was claimed as ``WARNING``, left the dialog union for
+    good, and answered as a guard to the caller that asked to *read* it.
+
+    The second half bounds the consequence: a values dialog **full** of controls stays
+    :attr:`…PanelIdentity.APPLICATION_DIALOG` even with a two-button band, because item 7's
+    "not full of controls" clause (``ui.dialog._DIALOG_MIN_CHILDREN``) is what keeps it out of the
+    overlay item — the measured operating dialog is 21 direct children. What remains open is
+    narrower than the finding: a *compact* (fewer than 15 children) non-store command dialog is not
+    yet distinguishable from a non-measurement overlay, so it is classified as one and refused as a
+    blocking surface rather than read. No such panel is measured, and the plan records the limit
+    where the rule is stated.
+    """
+    panel = _row_of(3, "TSp_Panel", (600, 300, 1200, 500))
+    kids = [
+        _row_of(400, "TSp_Button", (700, 440, 780, 465)),
+        _row_of(401, "TSp_Button", (800, 440, 890, 465)),
+        _row_of(410, "TSp_Value_Button", (620, 330, 1000, 360)),
+        _row_of(411, "TComboBox", (1010, 330, 1180, 350)),
+    ]
+
+    assert _is_dialog_panel(panel, kids), (
+        "the case is about a panel the dialog predicate still claims — it is wider than 400 px and "
+        "holds input controls of its own"
+    )
+    identity = panel_identity(panel, kids, context=MONITOR)
+    assert identity is not PanelIdentity.WARNING, (
+        "a panel with a value table of its own is not the warning family: reading it as one takes "
+        "it out of the dialog union and answers a read as a destructive guard"
+    )
+    assert blocking_surface({3: identity}) is not None, (
+        "whatever it is, it is still a surface a press must not be posted behind"
+    )
+
+    full = _row_of(3, "TSp_Panel", (655, 364, 1282, 748))
+    full_kids = [
+        _row_of(400, "TSp_Button", (1000, 700, 1070, 725)),
+        _row_of(401, "TSp_Button", (1080, 700, 1160, 725)),
+        _row_of(410, "TComboBox", (700, 380, 900, 400)),
+        *[
+            _row_of(500 + index, "TSp_Value_Button", (660, 410 + 20 * index, 1270, 428 + 20 * index))
+            for index in range(15)
+        ],
+    ]
+    assert (
+        panel_identity(full, full_kids, context=MONITOR) is PanelIdentity.APPLICATION_DIALOG
+    ), "a values dialog full of controls stays the dialog it is, two-button band or not"
+
+
 def test_a_strip_panel_is_never_a_warning_and_a_warning_is_never_a_strip() -> None:
     """The two families cannot wear each other's shape, in either direction.
 

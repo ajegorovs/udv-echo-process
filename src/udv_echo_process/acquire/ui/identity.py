@@ -370,7 +370,18 @@ def _is_warning(panel: Mapping, kids: Sequence[Mapping]) -> bool:
     70 px — and asking for exactly two buttons there is what keeps this rule off the strip's own
     panel: the 453x40 row resolves six entries in that band, the grown 502/551 rows resolve none,
     and ``Define TGC``'s panel resolves three.
+
+    **A value table of its own disqualifies it.** Every measured guard carries its two buttons and
+    nothing else, while the values dialog class (``Operating parameters``, ``Record settings``) is
+    exactly the class that holds ``TSp_Value_Button``s *directly* — the same discriminator
+    :meth:`…driver.Win32Actuator._resolve` splits the dialogs by. Without this clause a compact
+    command dialog whose bottom band happens to hold two buttons would be claimed as a warning and
+    would then leave the dialog union entirely, so the panel a caller asked to read would answer as
+    a destructive guard instead. Found by the change's own adversarial review; no measured warning
+    carries a value button, so the clause is bounded by the evidence rather than by a guess.
     """
+    if any(kid["cls"] == "TSp_Value_Button" for kid in kids):
+        return False
     return (
         len(bottom_row(panel, kids)) == _WARNING_BUTTONS
         and panel["w"] > _WARNING_MIN_W
