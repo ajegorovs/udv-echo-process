@@ -275,6 +275,19 @@ PR rather than an expansion. §16.4 is the experiment that follows — a scienti
 operator's input, with the W6 predicted-timing caveat flagged as experimentally relevant.
 
 
+**Next work is planned, ordered, and pinned to a revision:**
+[`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) (2026-09-19). It lands the
+open stack — `#9`, then `#8` (whose two live findings are fixed **only** on the refactor branch, so they go
+to `#8` as a disclosure comment naming the fixing commits), then `#10` retargeted onto `master` — and runs
+the refactor's remaining device items as **four sittings**: the read-only V2 bracket on the final head, then
+V4's four-button role map (the row already refuses, so the sitting converts a refusal into a map), then the
+refusal paths (V3's overlay, V1's sidebar preference, V5's declaration-only mismatch), then the writes (V2's
+`ensure_channel`, V6's six-point campaign on the instrument, V7/V8). It also puts the one question only the
+operator can answer — is `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the
+experiment? — in front of every later decision. It adds no architecture (§9.1 binds) and carries no
+checklist ([`dop3000/device-verification.md`](dop3000/device-verification.md) owns the items and their pass
+criteria).
+
 Binding outcomes:
 
 - **The acquisition stop condition** (from the review of the batch, now recorded in the plan's
