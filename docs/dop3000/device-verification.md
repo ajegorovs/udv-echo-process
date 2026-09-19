@@ -222,8 +222,9 @@ state that was left behind — never attempt a speculative recovery gesture.
   rather than quietly leaving the text (Patch 6).
 - Record the exact verified application/version/device scope on this page when it is
   established — **see §Session record below**: `UDOP DOP3010.43`, instrument variant. V0, V1, V2 and V4
-  now have device evidence; V3 has a device-measured safe diagnostic failure; V5–V8 remain pending, with
-  V5's compile half moved beside sitting D's authorised channel-dialog write.
+    have device evidence; V3's device-measured safe failure was **closed by the identity change's ladder**
+    (2026-09-19) and V3 now passes; **V5, V6, V7 and V8 pass** as of sitting D (2026-09-19: the compile in
+    four directions, the six-point campaign `6/6 ok`, the resume, and post-run recovery — V7's TGC item taken live as well).
 
 ## Session record
 
@@ -1203,6 +1204,146 @@ Evidence under `outputs/live/ladder/` is git-ignored, as this page's rule has it
 are quoted, the run times and commands are named, and the one-off inventory script
 (`outputs/live/ladder/peek_identities.py`) is described by the fields it printed rather than
 committed.
+
+### 2026-09-19 — sitting D, the writes: the compile's four directions, the six-point campaign, the resume, recovery
+
+Application: **`UDOP DOP3010.43`**, instrument variant, main hwnd **3935144** — the same process the ladder
+above used. Revision under test: `master` at **`665573d`** (code head: the identity change `4644abf`). The
+gestures were dispatched (`tools/live/dispatch.sh`, the documented route for anything that presses) and the
+status reads were taken directly, as above. Sitting D's own order was kept: the channel write, then the
+compile's directions, then the campaign, then the resume, then recovery.
+
+**The channel write — `acquire channel 1` (21:12:30, exit 0).** `verified channel: 1`, and the screen after
+it is the one it started from: 44 visible controls in 4 panels, `ready` three-button strip, no layout clause,
+no note. The pre/post status pair differs only in the cursor field. Three statements agree afterwards — the
+run's configuration (`DEFAULT_CHANNEL = 1`, no `UDV_CHANNEL` in the environment), the routed channel it
+verified, and the dialog's own channel the attribution check compares it against — and the dispatcher's own
+notes record the application's popup clip being released (`ClipCursor(NULL)`) because the operator's cursor
+lay outside the popup rectangle.
+
+**The compile, four directions.** Nothing here stores: the verb has no store path, and none of the four runs
+produced a log or a manifest.
+
+1. **This machine's own frame** (`outputs/live/instrument-definition.json`, the uncommitted scratch
+   definition the campaign plan's §23.4 describes; the instrument stood on `600 / 20 / 4 / 1480 / 1`) —
+   21:12:50, **exit 0**: `prf_us 600`, `emissions_per_profile 20`, `burst_length 4`, `sound_speed_ms 1480`
+   and `first_gate_mm 1` all `agreed: True`; the block cap `unreadable`, `agreed: null`, carried as a
+   declaration with its reason; `channel ('1','routed')`, `mode ('manual','read')`,
+   `process_mode ('instrument','read')`. Its plan note named that frame's own cost: *"924 profiles at
+   0.013000 s/profile is above the block cap of 257: the block wraps and the stored file covers only its
+   last 3.341 s"*.
+2. **A declaration-only mismatch** — the same file with `"burst_length": 5` — 21:13:14, **exit 2**:
+   *"the instrument disagrees with the campaign before the first recording, so nothing was stored and the
+   application is untouched: burst_length: the campaign declares 5, the instrument states '4'"*.
+3. **The committed ladder against that frame** — 21:13:25, **exit 2**, naming three facts: *"prf_us: the
+   campaign declares 212.0, the instrument states '600' (tolerance 1); sound_speed_ms: the campaign declares
+   1460.0, the instrument states '1480'; first_gate_mm: the campaign declares 2.0, the instrument states
+   '1'"*.
+4. **The committed ladder against the intended frame.** The operator set the instrument by hand to the frame
+   the campaign declares — **PRF 212 us, emissions/profile 150, sound speed 1460 m/s, first gate 2 mm**,
+   burst `4` and channel `1` unchanged — and at 21:16:05 the same definition compiled **exit 0**: five facts
+   read and agreeing, the cap declared-not-verified, six points planned with the ladder's own gates
+   `797/399/199/797/100/797`, each carrying the wrap note (*"366 profiles at 0.032800 s/profile … covers only
+   its last 8.430 s"*).
+
+**Where the tooling stops, and why a hand appears in this sitting.** The compile's inputs are five fixed
+facts, and the committed write paths cover three of them: `Win32Actuator.write_parameter` writes the sidebar
+column by role — resolution, gates, **PRF**, **emissions/profile**, Doppler angle, velocity scale — and
+refuses `sound_speed_ms`/`first_gate_mm` by name as dialog-only; `probes/dialog_write.py` writes **one**
+dialog knob per run (`--burst`, `--volume`). **Sound speed and first gate have no writer**: the campaign plan's
+own cell table has sound speed's write *unexercised* and unswept (matrix group S), and first gate keeps its
+documented deferral — "funded by an axis, not by the knob's existence" (§11.1 item 5) — while §9.1's stop
+condition forbids adding one during a verification session. So the frame was set by hand in item 4 above, and
+that is a reading of the tooling rather than of the operator: **the frame the campaign *declares* is the part
+of it the write path does not yet own.**
+
+**V6 — the six-point campaign, on the instrument (21:16:19 to 21:18:09, 110 s).**
+`acquire campaign --definition examples/campaign-single-channel.json --store-dir
+C:/Repos/udv-echo-process/outputs/live/store --log outputs/live/ladder/10c-campaign.jsonl --channel 1
+--expect-mode instrument` → **`6/6 point(s) ok`**, exit 0, and `acquire report` reads the job back as
+`planned 6 point(s), 0 skipped, 0 not ok`:
+
+| point | status | gates asked/read | resolution asked/read | cap | target/achieved period | file bytes |
+|---|---|---|---|---|---|---|
+| `c1-c1460-k1-a` | ok | 797/797 | 0.121667/0.122 | 257 | 0.0328 s/0.0358 s | 319297 |
+| `c1-c1460-k2` | ok | 399/399 | 0.243333/0.243 | 257 | 0.0328 s/0.0357 s | 179221 |
+| `c1-c1460-k4` | ok | 199/199 | 0.486667/0.487 | 257 | 0.0328 s/0.0356 s | 108639 |
+| `c1-c1460-k1-b` | ok | 797/797 | 0.121667/0.122 | 257 | 0.0328 s/0.0358 s | 318481 |
+| `c1-c1460-k8` | ok | 100/100 | 0.973333/0.973 | 257 | 0.0328 s/0.0356 s | 73494 |
+| `c1-c1460-k1-c` | ok | 797/797 | 0.121667/0.122 | 257 | 0.0328 s/0.0358 s | 318481 |
+
+Every point enforced the fixed covariates (`sound_speed_ms`, `prf_us`, `burst_length`); `emissions_per_profile`
+is the advisory one and raised no advisory. **The third verify rung held on all six** — the stored `.BDD`'s
+own operation words agree with the request (`channel 1`, `n_gates` the declared count, `resolution_mm` the
+declared value, `sound_speed_ms 1460`, `prf_us 212`, `burst_length 4`, `emissions_per_profile 150`,
+`source_freq_khz 4000`, and its own `size_bytes` equal to the size the log reports). The manifest carries
+`declared_only: false`, `skipped: []`, `skipped_without_evidence: []`, and the compiled identity
+(`prf_us ('212','read')`, `sound_speed_ms ('1460','read')`, `first_gate_mm ('2','read')`,
+`channel ('1','routed')`, `mode ('manual','read')`, `process_mode ('instrument','read')`, cap
+`(None,'unreadable')`).
+
+**The retained window is the file's number, not the note's.** Each point's note predicted truncation at
+`8.430 s` (366 profiles at the declared 0.0328 s/profile, against a declared cap of 257). The files' own
+words say otherwise: `n_profiles 351`, `span_s 12.54`, `median_interval_s 0.0358` — the whole 12 s hold, at
+an achieved period above the declared target. So the declared cap stays **explicitly unproven** (ledger B13)
+and the stored file, decoded from itself, is the authority (ledger B16) — while the plan's truncation
+prediction is recorded as a prediction that did not appear in the file.
+
+**V7 — the resume (21:18:46, exit 0, 8 s).** The same command with `--resume`:
+`0/6 point(s) ok; 6 skipped as already recorded`, the note *"resume: 6 of 6 point(s) are already recorded in
+10c-campaign.jsonl; 0 to run"*, and the manifest rewritten with `skipped: [all six labels]`,
+`declared_only: false` and **`skipped_without_evidence: []`** — every skip rests on instrument evidence. The
+six `.BDD` mtimes are still the campaign's (21:16-21:18): nothing recorded again, and the identity was
+proved before the todo set shrank rather than after. The compared identity carries thirteen named fields —
+`channel`, `mode`, `process_mode`, `prf_us`, `emissions_per_profile`, `burst_length`, `sound_speed_ms`,
+`first_gate_mm`, `max_profiles_per_block`, `class_name`, `panels`, `strip_view`, `strip_has_slider` — and
+**no visible-control count and no TGC field**, which is ledger B02's rule implemented rather than asserted.
+That item's live half **was** taken, and it needed no frame edit at all: the operator's own frame
+(`600 / 20 / 4 / 1480 / 1`) is exactly what the scratch definition declares, so the instrument's *current*
+state became the baseline instead of the campaign's. One one-point job was recorded with `Tgc [dB]` at
+`30` — `1/1 ok`, gates `50/50`, resolution `1.850/1.85`, cap `257`, target `0.013 s` / achieved `0.0224 s`,
+file `c1i-c1i-current-20260919T212956.BDD` — the operator then changed TGC again (30 dB, then back to their
+own 20 dB), and **the resume of that job reports `0/1 point(s) ok; 1 skipped as already recorded`** with
+`skipped: ['c1i-c1i-current']`, `declared_only: false`, **`skipped_without_evidence: []`**, no log errors and
+the stored file's mtime still the job's. So a TGC change alone does not invalidate a resume, live, with
+everything else identical. The visible-control count read 44 in 4 panels on both sides of the change, and the
+mode was left `Uniform`: the `Auto` count (`42`) was **not** provoked, because ledger B11 warns that `Auto`
+plus emitting power raises a warning with side effects — coverage was not worth that press.
+
+One datum arrived for free from the first attempt, which ran the *other* way round: resuming the six-point
+campaign while the instrument again stood on the operator's frame **refused** — `prf_us: the campaign
+declares 212.0, the instrument states '600' (tolerance 1); sound_speed_ms: … '1480'; first_gate_mm: … '1'` —
+exit 2, nothing stored, the six files' mtimes untouched. A frame change *does* invalidate a resume, named fact
+by fact with both sides: the same identity check, seen from its other side.
+
+**V8 — post-run recovery (21:19:16, and 21:20:45 for the pointer).** The intended frame is still active —
+the resume's own snapshot re-read `channel 1 routed`, `manual`, `instrument`, `212 / 150 / 4 / 1460 / 2`,
+cap `unreadable`. No popup, dialog or overlay remains: 44 visible controls in 4 panels, `ready` three-button
+strip, `overlay None`, `0 dialog panel(s)`, no layout clause — and the pre-campaign read (21:15:54) and the
+post-run read differ only in the cursor field. The store directory is the one expected,
+`outputs/live/store`, with the six files in it. The cursor is **not clipped**: the operator moved the pointer
+clear of the application, the read reports `[1918, 1078]` — outside the window's own rect
+`(-8,-8,1928,1058)` — and `is_foreground` stays `True`, so the clip the application sets on its popup (and
+which the driver releases after every gesture, twice per run in these logs) is really off.
+
+**Outcome.** Sitting D's writes are verified end to end on the instrument: the channel write leaves the screen
+as it found it; the compile accepts this machine's own frame and refuses a deliberate declaration-only
+mismatch before any recording; the six-point campaign stores exactly the expected six files, whose own words
+agree; the resume skips exactly what was already proven and says it had evidence for it; and the application
+returns to the clean measurement surface with its frame intact. **V5, V6, V7 and V8 pass** — V7's TGC item taken live as well (a one-point job on the instrument's own frame, TGC changed, the resume still skipped), and the acquisition architecture did not change: no new code, no new
+probe, one dispatch per item. The instrument is left on the frame the campaign declares
+(`212 / 150 / 1460 / 2`); the operator's own frame before this sitting was `600 / 20 / 1480 / 1`, theirs to
+restore.
+
+Evidence, all under `outputs/live/` (git-ignored) and named by run: the channel bracket
+`ladder/09-pre-channel.log`, `ladder/09b-channel.log`, `ladder/09c-post-channel.log`; the four compiles
+`ladder/09d-compile-instrument.log`, `ladder/09e-compile-burst5.log`, `ladder/09f-compile-example.log`,
+`ladder/10b-compile-ladder-match.log`; the campaign `ladder/10-pre-campaign.log`, `ladder/10c-campaign.log`
+and `ladder/10c-campaign.jsonl` plus `ladder/10c-campaign.manifest.json` (the V6 copies are kept as
+`keep/10c-campaign-v6.jsonl` and `keep/10c-campaign-v6.manifest.json`, because the resume rewrote the
+manifest); the resume `ladder/11b-resume.log`; recovery `ladder/11-post-campaign.log`, `ladder/12-v8-post.log`
+and `ladder/13-v8-cursor.log`; and the six stored recordings in `outputs/live/store/`
+(`c1-c1460-k{1-a,k2,k4,k1-b,k8,k1-c}-20260919T211627.BDD`).
 
 ## What these records may **not** claim
 
