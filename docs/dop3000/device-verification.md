@@ -1078,6 +1078,132 @@ not a validated read path.
 V5 was not run because its stated no-touch precondition contradicts the implemented ordering. The app
 remains on the clean measurement surface and acquisition was not interrupted.
 
+### 2026-09-19 — the identity change's device ladder, rung by rung
+
+Application: **`UDOP DOP3010.43`**, instrument variant, main hwnd **3935144** — the same process the
+sittings above read, and the one `main-geometry.json` has been measuring all day. Revision under
+test: `master` at **`665573d`**, whose code-bearing head is the identity change
+([#17](https://github.com/ajegorovs/udv-echo-process/pull/17), **`4644abf`**); everything landed
+after it added data and documents only, so this ladder ran on the change's final code. Every rung is
+read-only — the operator reached each state by hand and the automation pressed nothing — and the
+reads were taken with the supported command
+(`./.venv/Scripts/python.exe -m udv_echo_process.cli acquire status`), invoked directly in the shell
+that owns this desktop session except where rung 6 says otherwise. The pre-change readings this
+sitting compares against are sitting C's, at `master` **`6db6899`**.
+
+**Rung 1, the clean screen — passes (20:43:32).** 44 visible controls in 4 panels, strip
+`{3 buttons, no slider}` in view `'ready'`, `overlay` `None`, `layout_note` `None`,
+`layout_shape_reasons` `[]`, `is_foreground` `True`, caption and `process_mode` as before. A literal
+diff against the pre-change clean read of this same process (`sittingC-v3-pre-status.log`, 12:51:47)
+changes **only** the cursor field: every application field is identical field for field. Evidence:
+`ladder/01-clean.log` and `ladder/01-clean.json`.
+
+**Rung 2, `Define TGC` open — passes, and it is the sitting C failure inverted (20:46:58).** The
+operator opened **Tools -> Define TGC** by hand and changed nothing. `acquire status` pressed nothing
+and read 50 visible controls in 4 panels, `0 dialog panel(s)`, with:
+
+- `layout_shape_reasons[0]` = *"a non-measurement overlay is over the measurement screen:
+  (400, 168, 850, 288) sits over the monitor and hosts a button row of its own that is not the
+  recording strip's top row … so nothing below it is the surface these roles were bound to and no
+  press may be bound against it"*;
+- `layout_evidence` = *"… the active surface reads `'overlay'` … no menu popup; 0 dialog panel(s)"*.
+
+Against the 12:53:25 read of the identical screen at the pre-change head, the first clause was
+*"a dialog is up: 1 panel(s) … [((400, 168, 850, 288), 'TSp_Panel')]"*, the surface read `'dialog'`
+and the count read `1 dialog panel(s)`. The strip clause still follows the surface clause — the order
+the plan requires — and it is there on the merits: the strip is genuinely absent under the overlay
+(`view 'unknown'`, 0 buttons). The operator pressed the overlay's **Cancel**; the 20:47:27 restore
+read is identical to rung 1's apart from the cursor. Evidence: `ladder/02-v3-overlay.log`,
+`ladder/03-v3-restored.log`.
+
+**Rung 3, the cursor info box — not reached, operator-dispositioned.** The box is incidental paint of
+the cursor feature; the operator has **cursors disabled** and states the experiment does not use that
+feature (the position this page already records from the block-held sitting). So the `CURSOR_INFO`
+identity is **not** re-verified on this head: its device evidence remains the 11:41 block-held read
+that first measured the mis-resolution, plus the cloud tests the change landed for it. Nothing was
+pressed to provoke it.
+
+**Rung 4, the grown strip — passes on both measured grown rows.** The operator's own route is
+`reset all` -> `Record` -> `Stop` -> `New acquisition` -> `Pause`, and one transition in it is worth
+recording because the ladder text did not state it: pressing `Record` from the `ready` row turns the
+strip into a **one-button `[Stop]`** row, independent of how many blocks exist (operator-stated; this
+sitting did not read that intermediate view).
+
+- **`store`, three buttons (20:55:41):** 46 visible controls in 4 panels, strip `{3 buttons, slider}`
+  in view `'store'`, `layout_shape_reasons` `[]`, `layout_note` `None`, surface `'measurement'`. The
+  same moment's probe read the panel as `[343,414,756,537]` = **413x123**, id `3149132`, 7 children,
+  slider present, row `1574908` / `2821164` / `1641666` at tops 423-424 — 10 px inside the panel's own
+  top, which is the strip warrant — mapped `new_acquisition` / `do_store` / `clear_and_restart`. The
+  413x123 width is the morph the driver already documents (`98x40 -> 352x40 -> 413x123`); the
+  370/453/502 widths stay as measured earlier, because the family rule and not a rect is what carries
+  them.
+- **`store`, four buttons (21:02:14):** 47 visible controls in 4 panels, strip `{4 buttons, slider}` in
+  view `'store'`, no clause. Panel `[343,414,894,537]` = **551x123**, id `3149132`, 8 children, row
+  `1574908` / `2821164` / `1641666` / `7867344` mapped `new_acquisition` / `do_store` /
+  `clear_and_restart` / `remove_current_block` — the four handles the block-held sitting mapped.
+
+  Both are states the old head refused, and neither is refused here: the 12:19:47 block-held read of
+  that same `[343,414,894,537]` panel said *"a dialog is up"* and read the surface as `'dialog'`,
+  and the same state read with the info box up had named the info box as the strip. Neither
+  happened, and no panel was named a dialog in either read.
+
+Evidence: `ladder/04-recording-stop.log`, `ladder/04b-geometry-store.log`, `ladder/05-held4.log`,
+`ladder/05b-geometry-held4.log`.
+
+**Rung 5, a raised warning guard — passes, and the mismatch the plan predicted is measured
+(21:03:19).** From the four-button state the operator pressed **`Clear and restart`** and left the
+guard up, unconfirmed:
+
+- `layout_shape_reasons[0]` is the warning clause, naming `(772, 490, 1164, 622)` — **392x132**, the
+  measured family (392x132 / 397x135 / 353x155) — and it says nothing below the guard is the surface
+  these roles were bound to and no press may come out of it;
+- `layout_note` adds the driver's own *"an overlay is up (`'warning'`)"* and the `overlay` field reads
+  `warning`;
+- `layout_evidence` still reads *"the active surface reads `'overlay'`"*, with the strip underneath
+  identified as the strip (`4 button(s)` in view `'store'`). **So the identity is `warning` while the
+  surface kind is `overlay`** — the mismatch the closeout plan names: the kind vocabulary has no
+  `WARNING` member, and the clause wording plus `blocking_surface` are what name it;
+- a read-only one-off through the driver's own resolver printed the inventory for the same moment:
+  `3149132 -> measurement_strip`, `4393476 -> warning`, three further panels `other`, and
+  **`blocking_surface -> warning`**.
+
+The operator pressed the guard's **Cancel**; the 21:05:28 restore read is identical to the
+four-button read apart from the cursor. The operator's own observation is part of the finding: the
+guard is an **overlay, not a modal** — it covered the strip only partially — which is exactly why the
+driver reads `an overlay is up ('warning')` while the identity pass calls it a warning. Nothing below
+it lost its identity, and no strip/dialog/popup clause precedes the warning clause. Evidence:
+`ladder/06-warning.log`, `ladder/06b-geometry-warning.log`, `ladder/06c-identities-warning.log`,
+`ladder/07-held-restored.log`.
+
+**Rung 6, the cleanup probe — passes (21:06:33).** Run as the plan requires: application foreground,
+no popup open, operator present —
+`PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py` finished in 14 s of polling with
+`=== exit=0 ===`. Its opening snapshot was the clean screen (44 visible controls in 4 panels, `ready`
+three-button strip, no clause, `popup_open_at_start: false`). It opened and read the real
+`Operating parameters` dialog — `read_path_panel` `TSp_Panel 4853508` `[655,364,1282,748]` = 627x384,
+21 children, 15 `TSp_Value_Button`, `dialog_reading` `burst_length` `4`, `first_gate_mm` `1`,
+`sound_speed_ms` `1480`, channel `1` — and closed it: `dialog_closed: true`. **The cleanup pressed
+only that dialog's left/Safe end:** nothing was misidentified as a dialog, no strip row was pressed,
+and the pre/post status pair (`08-pre-clean.log` 21:06:32, `08c-post-clean.log` 21:06:53) differs
+only in the cursor field, both reading 44 visible controls in 4 panels, `ready`, no clause. Evidence:
+`ladder/08-pre-clean.log`, `ladder/08b-w1-fixed-facts.log` (the dispatcher's own log, copied aside
+before the next run could overwrite it) and `ladder/08c-post-clean.log`.
+
+**Outcome.** The identity change is **device-verified on its final merged code** for the clean screen,
+the `Define TGC` overlay, both grown `store` rows and a raised warning guard, and the cleanup route
+that used to lean on the dialog predicate still closes only the real dialog. Rung 3 was not taken
+(cursors off by the operator's configuration), so the `CURSOR_INFO` identity stays verified by the
+11:41 read and the cloud tests rather than by this sitting — stated, not claimed. **V3 now passes**,
+the sitting C failure is closed, and V1 still passes. The ladder's stop condition was never reached:
+the clean-screen fingerprint never changed, no unknown modal appeared, no strip button was pressed by
+automation and no Confirm end was pressed at all, and every state was restored to the one before it.
+Sitting D's writes (`ensure_channel`, V5's two compiles, V6, V7/V8) are next.
+
+Evidence under `outputs/live/ladder/` is git-ignored, as this page's rule has it: the readings above
+are quoted, the run times and commands are named, and the one-off inventory script
+(`outputs/live/ladder/peek_identities.py`) is described by the fields it printed rather than
+committed.
+
 ## What these records may **not** claim
 
 - That a green cloud suite implies working live behaviour. Tests assert self-consistency
