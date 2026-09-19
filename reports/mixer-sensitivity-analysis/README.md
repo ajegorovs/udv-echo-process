@@ -41,6 +41,13 @@ one trailing newline, and floats carry 12 significant digits, so a regeneration 
 is byte-identical. `qc-summary.json` records the revision it was generated against and the manifest's
 own SHA-256, and the command exits non-zero when any WP0 gate check fails.
 
+The artefacts are line-ending-pinned: the repository-root `.gitattributes` sets `text eol=lf` on this
+directory's `*.csv` and `*.json` files (and `binary` on `figures/*.png`), so the committed bytes
+— and with them the `manifest.csv` SHA-256 that every axis re-checks (`064a289b…`) — survive a
+fresh clone on a host with `core.autocrlf=true`. Without the pin a Windows checkout rewrites
+`manifest.csv` with CRLF, its hash becomes `2ff7c3f7…`, and WP1, resolution, burst and PRF all
+refuse to run.
+
 **Provenance: which revision a run records.** The bare command above records the
 **current HEAD** of the checkout it runs in, so running it on a later commit
 regenerates the two files with a different `analysis_commit` and therefore
