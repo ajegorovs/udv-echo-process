@@ -33,24 +33,29 @@ plan and its corrections
 ([#18](https://github.com/ajegorovs/udv-echo-process/pull/18), forty `.BDD` recordings whose rig and
 geometry are in [`../../data/mixer-sensitivity-analysis/README.md`](../../data/mixer-sensitivity-analysis/README.md)).
 
-**The next thing to do is the identity change's device ladder** —
-[`identity-classification-plan.md`](identity-classification-plan.md) §5 — operator-attended, read-only,
-in its order: the clean screen, V3 with `Define TGC` open (the overlay clause first in
-`layout_shape_reasons`, `layout_evidence` reading `overlay`, no input sent), the cursor info box, a
-grown strip, a raised warning guard, and only then the bounded cleanup probe
-(`PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py`). **Nothing in that change is
-device-verified yet**, and two of its readings want the operator's own eyes:
+**The identity change's device ladder has been run, and it passed on the change's final merged code**
+(`master` `665573d`, the identity change `4644abf`) —
+[`identity-classification-plan.md`](identity-classification-plan.md) §5, operator-attended and
+read-only: the clean read is identical field for field to the pre-change one; `Define TGC` puts the
+overlay clause first in `layout_shape_reasons` with `layout_evidence` reading `'overlay'` where the old
+head said `'dialog'`; both grown `store` rows resolve as the strip (413x123 three-button, 551x123
+four-button) with no dialog clause and no input sent; a raised warning guard reports the identity
+`warning` with `blocking_surface` **`warning`** while its `SurfaceKind` still reads `'overlay'` (the
+kind vocabulary has no `WARNING` member — the clause wording is what names it, and the driver's own
+`an overlay is up ('warning')` is why); and the bounded cleanup probe
+(`PROBE_TIMEOUT_S=240 ./tools/live/dispatch.sh w1_fixed_facts.py`) closed only the real
+`Operating parameters` dialog, leaving its pre/post status pair identical apart from the cursor. The
+ambiguous four-button no-slider 453x40 row keeps `ui/strip.py`'s own refusal; it was not reached.
 
-- the grown **370x123 / 502x123 / 551x123 strip rows are pressable again** — they were refused only
-  because their panel was misread as a dialog (502/551) or because the cursor info box made the screen
-  report a menu (370), and §3 of the plan ratifies the change; the ambiguous four-button 453x40 row
-  keeps `ui/strip.py`'s own refusal;
-- a **warning screen now reports the identity `WARNING`** while its `SurfaceKind` still reads
-  `overlay` (the kind vocabulary has no `WARNING` member) — the clause wording and
-  `blocking_surface` are what name it.
+**One rung was not taken, and the record says so rather than implying a pass:** the cursor info box
+needs cursors enabled, the operator has them **disabled** and states the experiment does not use that
+feature, so `CURSOR_INFO` stays verified by the block-held read that first measured the
+mis-resolution and by the cloud tests, not by this ladder. **V3 now passes** (the sitting C failure is
+closed) and V1 still passes. Readings, times, commands and artifact names:
+[`device-verification.md`](device-verification.md), *the identity change's device ladder*.
 
-Any changed clean-screen fingerprint, unknown modal, attempted strip press, Confirm press or
-unverified state stops the session: the operator restores, automation does not improvise.
+The ladder's stop condition was never reached: no changed clean-screen fingerprint, no unknown modal,
+no strip press by automation, no Confirm press at all, and every state restored to the one before it.
 
 Then, unchanged, and behind it:
 
