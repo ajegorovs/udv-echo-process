@@ -25,7 +25,12 @@ Expected outputs, in work-plan order:
 | `prf-pairs.csv` | WP2 | every level pair on the shared knots and bands, against the WP1 envelope |
 | `prf-ladder.provenance.json` | WP2 | binding, definitions, both views, the key's scaled velocity range and findings |
 | `figures/prf-ladder.*` | WP2 | reviewer-visible velocity-headroom and usable-bandwidth decision figure |
-| `figures/energy-*` | WP2 | velocity-only TGC/power diagnostics and their limits |
+| `gain-power-levels.csv` | WP2 | one row per screened TGC/emitting-power level: key, common window and support, dropout/spread screening |
+| `gain-power-pairs.csv` | WP2 | every within-axis pair on common knots, against the WP1 envelope, with the depth ranges where it clears |
+| `gain-power-depths.csv` | WP2 | one row per level per supported gate: zero fraction, robust spread, mean and std by depth |
+| `gain-power-screen.provenance.json` | WP2 | binding, definitions, both axes' views, the TGC representation and the velocity-only findings |
+| `figures/gain-power-screen.*` | WP2 | reviewer-visible dropout-by-depth and focus-pair-against-envelope decision figure |
+| `figures/energy-*` | WP2 | not produced here: the higher-sensitivity/echo-energy diagnostic this screen asks for |
 | `decision-table.md` | WP3 | candidate-level keep/defer/replace/diagnostic verdicts |
 
 The WP0 artefacts are regenerated with the committed reader and nothing else:
@@ -465,3 +470,86 @@ differences, `figures/prf-ladder.png` for the headroom and bandwidth decision pa
 `findings`, `views`, `definitions` and `derived_scale` blocks of `prf-ladder.provenance.json` for
 the binding, the matched-physical-duration rule, the key's scaled velocity range and the
 limitations.
+
+## WP2 — the TGC and emitting-power axes (velocity-only)
+
+`.venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen`
+
+Both axes are screened in one command and one evidence set, from the WP0 manifest and never from a
+filename list: `tgc` (8 levels, `tgc/0.BDD` … `tgc/40.BDD`, keyed by the decoded TGC start in dB) and
+`em_pow` (2 levels, `em_pow/low.BDD` and `em_pow/high.BDD`, keyed by the instrument's own
+`low` < `medium` < `high` steps). Each level's hash, every shared decoded cell and the two TGC cells
+are re-checked, each axis is required to be a clean one-factor-at-a-time ladder on its own key
+(coupled settings refused separately per axis), and both are measured against the committed WP1
+envelope of **19.37 mm/s**.
+
+Two facts about the sweep decide how far this can reach:
+
+- **TGC is screened through the committed representation, not a gain ladder.** Op word 23 stays `0`
+  and the reader labels that mode `uniform`; word 25 stays `255` and decodes to a fixed 40 dB end;
+  only word 24 / `tgc_start_db` moves. That is the representation this screen is ordered by and
+  refuses when it moves — it is **not** a validated scalar gain set point, and no wider TGC ladder
+  should be designed on such a reading. The invariant is asserted from the raw words of all 10 files
+  (8 distinct word-24 values on the TGC axis, one shared value on the power axis).
+- **Sensitivity is fixed at `medium` in all 40 manifest rows and neither axis varies it.** The axis
+  is absent from the sweep, so its effect is unidentifiable from it; no amplitude-to-velocity
+  conversion of any kind is available here.
+
+Per-axis common views are recomputed inside each axis, not shared across them: `tgc` runs 77
+nominal 500-RPM revolutions = **9.24 s** (413 profiles per file) and `em_pow` 96 = **11.52 s**
+(515 profiles), both on the common support of **10.1627-100.8127 mm** (50 gates per file), which
+contains the plan's 10.163-96.743 mm window. Both axes bracket the base state rather than sampling
+it: the other rows carry TGC start 19.92 dB / emitting power `medium`, and neither is a level of its
+axis, so each axis's focus pair is the two levels that straddle it.
+
+What the velocity-only screen found:
+
+- **Two of the ten levels are flagged, both on the TGC axis.** `tgc/0.BDD` is dropout-limited:
+  0.2437 of its window samples are exactly 0.0 at 10 of 50 gates, covering 84.16-100.81 mm, up to
+  **0.8111** blank at one gate. `tgc/40.BDD` is dropout- **and** spread-limited: 0.0388 overall (1
+  majority-blank gate at 69.36 mm) and a largest per-gate robust spread of **148.12 mm/s** at
+  73.06 mm — **4.97×** the axis's median per-gate spread. Both are single-segment facts: one
+  recording per setting, no acquisition order, and no way here to tell the gain from the flow, from
+  drift or from one bad recording.
+- **The power axis is unremarkable in velocity.** `em_pow/low.BDD` vs `high.BDD` differ by at most
+  **10.41 mm/s** at 47.16 mm = **0.537** of the envelope, with **0** of 50 knots above it; neither
+  level carries a majority-blank gate or a disproportionate per-gate spread.
+- **14 of the 28 TGC pairs clear the envelope somewhere, locally.** The largest absolute per-knot
+  mean-profile difference in the screen is **47.10 mm/s** (`tgc/30.BDD` vs `tgc/40.BDD` at 73.06 mm)
+  = **2.432** of the envelope, over 2 knots in one run (73.06-74.91 mm). Most clearances are 1-3
+  knots and none spans the support, so this is a localised mid/near-depth signal against a
+  single-recording, orderless ladder — not a global velocity bias.
+- **The base state's own bracketing pair is inside the bound.** `tgc/15.BDD` vs `tgc/25.BDD`
+  (carrying 14.90 dB and 24.94 dB around the 19.92 dB base state) differ by at most **11.69 mm/s**
+  at 63.81 mm = **0.604** of the envelope over 0 of 50 knots. The `em_pow` focus pair is the whole
+  power ladder, at **0.537** of the envelope.
+
+Not measured, and not inferred: **echo SNR, receiver saturation, a safe plateau and acoustic
+energy are absent from these files.** Only one axial-velocity channel exists per recording, so this
+screen reports depth-resolved dropout (the share of window samples exactly 0.0 per gate), bias (the
+signed `low - high` per-gate mean difference per knot) and variance/robust spread (per-gate IQR and
+standard deviation by level and depth) — and stops there. A blank or erratic gate is a property of
+the recorded velocity array, not evidence that a gain, a power or the receiver saturated. No
+p-values are produced (one recording per setting, no replicates, no acquisition order).
+
+**Diagnostic conclusion.** The velocity-only evidence justifies exactly **one**
+higher-sensitivity/echo-energy diagnostic before any wider TGC, power *or* sensitivity ladder — and
+no wider ladder first — because two of ten levels already fail the dropout/spread screen for reasons
+this data cannot attribute, and because a fixed sensitivity is the axis that an echo/energy
+measurement is the only way to make identifiable at all. This module does not predict that
+diagnostic's outcome, and `findings.diagnostic` records the verdict as
+`justified: true, wider_ladder_justified: false, outcome_claimed: false`. The resolution, burst and
+PRF verdicts are not revisited here; they belong to their own modules.
+
+Reviewer path: `gain-power-levels.csv` for the per-level key, window, support and screening flags,
+`gain-power-depths.csv` for the per-gate dropout and spread by depth, `gain-power-pairs.csv` for
+every within-axis pair against the envelope and the depth ranges where it clears,
+`figures/gain-power-screen.png` for the dropout-by-depth screen and the focus-pair panel, then the
+`findings`, `definitions`, `axis_blocks` and `tables` blocks of
+`gain-power-screen.provenance.json` for the binding, the representation, the views and the
+limitations. Regenerate byte for byte with:
+
+```bash
+.venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen \
+    --analysis-commit <the analysis_commit recorded in gain-power-screen.provenance.json>
+```

@@ -13,8 +13,9 @@ commands alongside ``acquire``: ``sweep-inventory`` writes the WP0 mixer-sweep
 manifest and QC summary from the committed BDD files, ``reference-repeat``
 writes the WP1 reference-repeatability table, provenance document and figure
 from that manifest, ``resolution-ladder`` writes the WP2 resolution axis,
-``burst-ladder`` the WP2 burst-length axis and ``prf-ladder`` the WP2
-pulse-repetition-frequency axis — levels, pairs and figure — all against the WP1
+``burst-ladder`` the WP2 burst-length axis, ``prf-ladder`` the WP2
+pulse-repetition-frequency axis and ``gain-power-screen`` the velocity-only
+TGC and emitting-power screening — levels, pairs and figure — all against the WP1
 envelope, and none of them touches an instrument.
 """
 
@@ -34,6 +35,7 @@ from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.analysis import (
     burst_ladder,
+    gain_power_screen,
     prf_ladder,
     reference_repeat,
     resolution_ladder,
@@ -1239,12 +1241,113 @@ def acquire_main(argv: list[str] | None = None) -> None:
     raise SystemExit(code)
 
 
+def gain_power_screen_main(argv: list[str] | None = None) -> None:
+    """``gain-power-screen`` — write the WP2 TGC/emitting-power screening artefacts.
+
+    Selects every ``tgc`` and ``em_pow`` recording from the WP0 manifest, orders each axis by its
+    decoded key (the TGC start in dB, the instrument's own power steps), re-checks each source hash,
+    every shared decoded cell *and* the two TGC cells (op words 24 and 25), refuses any axis where a
+    setting other than its own key moved or the committed TGC representation (word 23 = 0, word 25 =
+    255) no longer holds, and writes ``gain-power-levels.csv``, ``gain-power-pairs.csv``,
+    ``gain-power-depths.csv``, ``gain-power-screen.provenance.json`` and
+    ``figures/gain-power-screen.png`` into the report directory: depth-resolved dropout, bias and
+    spread per level, every within-axis pair against the committed WP1 envelope with the depth ranges
+    where it clears, and the sensitivity/echo-energy statement. Exits 0 on success and 1 with the
+    named reason on stderr when the selection, the bytes, the envelope or an invariant cannot be
+    trusted (never a traceback, never a half-written artefact). It touches nothing but those files.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-gain-power-screen",
+        description=(
+            "Screen the committed mixer sweep's TGC and emitting-power axes on velocity alone: "
+            "depth-resolved dropout, bias and spread per decoded level, every within-axis pair "
+            "against the committed WP1 repeatability envelope, and what still needs echo/energy"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=gain_power_screen.inventory.DATASET_ROOT.as_posix(),
+        help="directory of <axis>/<label>.BDD points",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=gain_power_screen.inventory.REPORT_DIR.as_posix(),
+        help="directory to write the screening artefacts into",
+    )
+    parser.add_argument(
+        "--manifest",
+        default=None,
+        help="WP0 manifest both axes are selected from (default: <report-dir>/manifest.csv)",
+    )
+    parser.add_argument(
+        "--envelope",
+        default=None,
+        help=(
+            "WP1 provenance the repeatability envelope is read from (default: "
+            "<report-dir>/reference-repeat.provenance.json)"
+        ),
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record (default: the checkout's short git SHA; pass the recorded commit to "
+            "reproduce the committed artefacts byte for byte)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    try:
+        model = gain_power_screen.write_gain_power_screen(
+            Path(args.dataset_root),
+            report_dir,
+            manifest_path=None if args.manifest is None else Path(args.manifest),
+            envelope_path=None if args.envelope is None else Path(args.envelope),
+            analysis_commit=args.analysis_commit,
+        )
+    except gain_power_screen.GainPowerScreenError as exc:
+        print(f"udv-gain-power-screen: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    findings = gain_power_screen.provenance_document(model)["findings"]
+    screen, diagnostic = findings["screen_summary"], findings["diagnostic"]
+    for axis in model.axes:
+        gate = findings["axes"][axis.axis]["effect_gate"]
+        print(
+            f"{axis.axis:<8}: {len(axis.levels)} levels, {len(axis.pairs)} pairs, "
+            f"{len(axis.depths)} depth rows; window {axis.common['revolutions']} rev = "
+            f"{axis.common['window_s']:.4g} s; support {axis.common['support_min_mm']:.6g}-"
+            f"{axis.common['support_max_mm']:.6g} mm; flagged "
+            f"{axis.screen['flagged_paths'] or 'none'}; worst pair "
+            f"{gate['max_abs_difference_mm_s']:.4g} mm/s = {gate['max_ratio_to_envelope']:.3g} "
+            f"envelope over {gate['knots_above_envelope']} of {gate['pairs']} pair(s) clearing"
+        )
+    print(
+        f"screen  : {screen['levels']} levels, {screen['levels_flagged']} flagged, "
+        f"{screen['pairs_above_envelope']} of {screen['pairs']} pairs clear the "
+        f"{model.envelope.value_mm_s:.6g} mm/s envelope"
+    )
+    print(f"diagnostic: justified={diagnostic['justified']} "
+          f"wider_ladder_justified={diagnostic['wider_ladder_justified']} "
+          f"outcome_claimed={diagnostic['outcome_claimed']}")
+    print(f"levels      : {report_dir / gain_power_screen.LEVELS_NAME}")
+    print(f"pairs       : {report_dir / gain_power_screen.PAIRS_NAME}")
+    print(f"depths      : {report_dir / gain_power_screen.DEPTHS_NAME}")
+    print(f"provenance  : {report_dir / gain_power_screen.PROVENANCE_NAME}")
+    print(
+        f"figure      : {report_dir / gain_power_screen.FIGURES_DIRNAME / gain_power_screen.FIGURE_NAME}"
+    )
+    print(f"commit      : {model.analysis_commit}")
+    raise SystemExit(0)
+
+
 #: The command a module-level invocation names first: `python -m udv_echo_process.cli <name> ...`
 #: — the form the live path uses, because a command that drives the GUI has to be started in the
 #: session that owns the screen and a dispatcher can only name a module (`tools/live/README.md`).
 _COMMANDS = {
     "acquire": acquire_main,
     "burst-ladder": burst_ladder_main,
+    "gain-power-screen": gain_power_screen_main,
     "inspect": inspect_main,
     "prf-ladder": prf_ladder_main,
     "reference-repeat": reference_repeat_main,

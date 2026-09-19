@@ -390,6 +390,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
     assert set(cli._COMMANDS) == {
         "acquire",
         "burst-ladder",
+        "gain-power-screen",
         "inspect",
         "prf-ladder",
         "reference-repeat",
