@@ -294,6 +294,21 @@ and evidence that none of Tier 1 has been explored yet:
 | `data/4-sensor-velocity/200RPM.BDD` (ch 6–9, velocity) | 4 MHz | 600 µs | 12 cycles | 20.00 → 79.13 mm, 55 gates @ 1.095 mm | 1460 | low / medium / uniform 40 dB |
 | `data/echo/*.BDD` (ch 4, echo) | 10 MHz | 125 µs | 8 cycles | 42.97 → 54.39 mm, 26 gates @ 0.457 mm | 2740 | medium / medium / uniform 40 dB |
 | `data/echo-4-sensors-2x2/` BDD (ch 9, echo) | 4 MHz | 250 µs | 2 cycles | 45.43 → 70.25 mm, 35 gates @ 0.73 mm | 1460 | medium / medium / 24.9 → 40 dB |
+| `data/mixer-sensitivity-analysis/4MHz/0500RPM/001/prf/600.BDD` (ch 1, velocity) | 4 MHz | 600 µs | 10 cycles | 10.16 → 100.81 mm, 50 gates @ 1.85 mm | 1480 | medium / medium / uniform 19.9 → 40 dB |
+
+The fourth row is the **reference point of the sensitivity analysis** — the base state that `001`'s
+axis folders hold while varying one parameter at a time (recorded 2026-09-16). The run's own note
+states that base state — *sensitivity medium, emitting power medium, TCG 20, emissions/profile 20,
+resolution 1.85 mm, gates 50, PRF 600, burst length 10* — and the file's header agrees on every
+value the reader decodes: `f_e` = 4000 kHz, `T_prf` = 1666.67 Hz (600 µs), burst length 10,
+`emit_power` / `sensitivity` *medium*, gate 1 = 10.16 mm with 50 gates at 1.85 mm, `c` = 1480 m/s,
+TCG *uniform* 19.9 → 40 dB, `V_max` = ±154.14 mm/s, 669 profiles over 14.96 s.
+
+**One base-state value the file cannot state is `Emissions/profile` = 20.** Word 14 is exactly the
+decode §9 lists as missing, so this point cannot be identified from its own file alone — the reader
+gap measured on a real sweep point rather than argued from the manual. The PRF axis as recorded
+beside it is 400 / 500 / 600 / 700 / 800 µs: 100 µs steps around this point, finer than §5 row 5's
+×2 ladder.
 
 Implied by C2 at the velocity baseline: `V_max = 152 mm/s`, quantisation step
 `V_max·s/128 ≈ 1.19 mm/s` at `s = 1`. Measured values sit around 30 % of scale,
