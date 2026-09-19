@@ -704,6 +704,44 @@ does not use this feature. It is recorded here for the **strip mis-resolution it
 not as a readout: an app-side readout of the tracked cursor does not exist, so the analysis stays
 post-processing, which is where §26.11 already put it, and those two numbers can come only from pixels.
 
+### The fourth step, and the block-adding loop
+
+The prediction for `[Resume]` from the block-held state was written before the press, and **all of it held**
+in the 12:14:34 read: the row back on `1574908` / `4787852` / `2821164` / `1641666` at `[353,424,432,444]`,
+`[442,424,527,444]`, `[537,423,628,443]`, `[638,423,776,443]`, panel `[343,414,796,454]` (453x40), the slider
+hidden, nothing painted below the row, the resolver naming the info box, the layout saying "a dialog is up"
+naming the strip panel, `open_popup` `False`, 49 visible controls in 5 panels — **and the discriminating
+line: `Show block` stayed `2`**, so resuming does not reset the selection.
+
+**The operator's own eye then found what no tree can state.** The bottom band — painted, never a control —
+read in that same moment:
+
+```
+Profile : 22955   CH: 1   Block : 3   Memory : Filling   Time bewteen profile = 22.4 ms   [22.3 22.4]
+```
+
+So **the selected block and the acquired block are different numbers**: the `Show block` combo says `2` while
+the instrumentation fills **block 3**, with the profile counter at `22955`. Put beside the slider's ranges,
+that gives the **block-adding loop** the operator named:
+
+| block | profile range | length | how it was established |
+|---|---|---|---|
+| 1 | `1` … `4772` | 4772 | slider, store state 12:03 |
+| 2 | `4773` … `16381` | 11609 | slider, block-held 12:11 |
+| 3 | `16382` … `22955` and still filling | 6574 so far | bottom band 12:14, starting one past block 2's end |
+
+**The ranges are contiguous** — each block begins exactly one profile after the previous one ends — and every
+`Resume` after a `Pause` opens a **new** block rather than continuing the old one, which is what "the
+block-adding loop" means operationally: one pause/resume cycle costs one block. `Memory : Filling` is the
+band's own word for the state, and its spelling `Time bewteen profile` is the application's, kept as printed.
+
+**One number does not reconcile, and it is recorded rather than smoothed.** The band paints a per-profile
+interval of `22.4 ms` — about 44.6 profiles per second — while the observed rate between the 12:11:03 and
+12:14:34 reads is `6574` profiles in `211` s = **31.2 profiles/s, i.e. 32.1 ms per profile**. So either the
+counter counts something other than every acquired profile, or acquisition was not filling for the whole
+window, or the painted interval is not the acquisition interval. It needs its own check and belongs with the
+plan's timing caveat (§16.4), not with the strip.
+
 ### The third step, and what the slider's numbers actually mean
 
 The prediction for `[Pause]` from the intermediate state was written before the press, and ten of its eleven
