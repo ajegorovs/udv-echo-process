@@ -187,3 +187,31 @@ sampling-volume read-out, not the parameter.
   the points, so the two files differ only in the parameter under study.
 - Print the field names and types of an unfamiliar model when construction fails; it turns a
   guess into one exact fix (`rungs` being 1-based multipliers was found this way).
+
+## A pass: several jobs, one order (the run plan) — measured 2026-09-20
+
+- **A definition is one job; a *pass* is several.** `acquire/run_plan.py` + a run plan JSON
+  (`examples/sparse-mixer-first-pass/`) carry the three things no single definition can: the job
+  order, each job's **within-job** control placement, and a cross-job record. A job's own log must be
+  its own file (`<store_dir>/<plan>-<job>.jsonl`): `run_campaign` proves a resume against the manifest
+  beside the log it was given, so nine jobs sharing one log is a resume that refuses.
+- **Run-wide values are per job, and set by hand between jobs.** `burst_length`,
+  `emissions_per_profile` and `prf_us` live on `CampaignDefinition` and a point cannot write them, so a
+  pass of nine jobs is nine manual setups and the automation must move nothing. The sheet
+  (`run-plan --sheet`) states what to set; the *compile* is what refuses a wrong setup.
+- **Stored names carry the job:** a pass declares one root and each job stores under `<root>-<job>`, so
+  labels may repeat from job to job (`ctrl-begin`, `cc1`) without colliding on identity.
+- **Two acceptance gaps to know before trusting a run-wide value.** `burst_length`, `prf_us`,
+  `sound_speed_ms` and `first_gate_mm` are read and a disagreement refuses; **`emissions_per_profile`
+  is advisory** (`verify.py::ADVISORY_COVARIATES`) — it is read from the column, but a disagreement is
+  recorded and the run proceeds, which matters when the emissions value *is* the axis under study: the
+  stored file's own word 14 is then the authority, not the compile.
+- **The block cap is an input, declared.** No reader here reaches the application preference, so a plan
+  declares its own requirement: the achieved profile period is never shorter than `emissions × PRF`, so
+  `ceil(T / (emissions × PRF))` over the pass cannot wrap any point whatever the transfer term is. The
+  plan's own per-point note fires instead when a *point* overrides `duration_s` past the cap.
+- **Declare the frame from the files, and expect the dialog to speak last.** The reference frame is
+  requested as the committed recordings' own decoded values (c = 1480 m/s, first gate 10.1626666667 mm),
+  and the pre-run check compares numerically against the *dialog's* text with zero tolerance for the
+  first gate: a last-decimal difference refuses before any recording, and the dialog's rendering is then
+  the number that belongs in the plan.
