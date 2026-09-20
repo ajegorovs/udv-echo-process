@@ -960,21 +960,21 @@
       ]
     }
   },
-  "envelope": {
+  "screening_threshold": {
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
     "gate_index": 39,
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
-    "scope": "upper bound on same-settings repeatability plus uncontrolled drift"
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either"
   },
   "figure": {
     "path": "figures/reference-repeat.png",
-    "caption": "WP1 reference repeat: prf/600.BDD vs res/1-8.BDD (identical operating settings). Common-duration view: 96 nominal 500-RPM revolutions = 11.52 s, 515 / 515 profiles of the two recordings. Difference = prf/600.BDD minus res/1-8.BDD (signed, mm/s), field by field. Declared repeatability envelope = 19.37 mm/s: the largest absolute per-gate mean difference over depth, an upper bound on same-settings repeatability plus uncontrolled drift, not a repeatability estimate on its own. Temporal view: full record in 86-profile non-overlapping segments (7 / 6 segments, 1.903 s each, identical for both files); frequency resolution 0.5194 Hz, Nyquist 22.33 Hz, PSD hann window, constant detrend, density scaling. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. Generated at commit 2c70976 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139); profiles and gates are not independent replicates and the difference is an upper bound.",
+    "caption": "WP1 reference repeat: prf/600.BDD vs res/1-8.BDD (identical operating settings). Common-duration view: 96 nominal 500-RPM revolutions = 11.52 s, 515 / 515 profiles of the two recordings. Difference = prf/600.BDD minus res/1-8.BDD (signed, mm/s), field by field. Declared sole-pair observed-discrepancy screening threshold = 19.37 mm/s: the largest absolute per-gate mean difference over depth, the threshold every mean-profile effect is screened against \u2014 a non-causal screening outcome, not a bound on same-settings repeatability or uncontrolled drift. Temporal view: full record in 86-profile non-overlapping segments (7 / 6 segments, 1.903 s each, identical for both files); frequency resolution 0.5194 Hz, Nyquist 22.33 Hz, PSD hann window, constant detrend, density scaling. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. Generated at commit 2c70976 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139); profiles and gates are not independent replicates, and the difference is a screening outcome, not a bound.",
     "panels": [
       "depth profiles: per-gate median with a median +/- IQR/2 band, both recordings (common-duration view)",
-      "signed difference prf/600 - res/1-8 versus depth with the declared envelope",
+      "signed difference prf/600 - res/1-8 versus depth with the declared screening_threshold",
       "ensemble autocorrelation over the identical 50 gates versus lag, both recordings",
       "ensemble PSD over the identical 50 gates versus frequency, both recordings"
     ]

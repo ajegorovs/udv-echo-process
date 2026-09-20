@@ -125,8 +125,8 @@ def _manifest(tmp_path: Path, mutator=None, name: str = "manifest.csv") -> Path:
     return path
 
 
-def _rebound_envelope(tmp_path: Path, manifest: Path) -> Path:
-    """The committed WP1 envelope re-bound to a copied manifest's own hash."""
+def _rebound_screening_threshold(tmp_path: Path, manifest: Path) -> Path:
+    """The committed WP1 screening_threshold re-bound to a copied manifest's own hash."""
     document = json.loads(ENVELOPE.read_text(encoding="utf-8"))
     document["manifest"]["sha256"] = f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
     path = tmp_path / "reference-repeat.provenance.json"
@@ -144,7 +144,7 @@ def _write(tmp_path: Path, name: str = "a"):
 
     return write_prf_ladder(
         DATASET_ROOT, tmp_path / name, manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT,
+        screening_threshold_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT,
     )
 
 
@@ -249,22 +249,22 @@ def test_a_same_settings_recording_in_another_folder_is_not_excluded(tmp_path) -
     assert [float(row["prf_period_us"]) for row in select_level_rows(MANIFEST)] == list(PERIODS)
 
 
-def test_build_refuses_stale_hash_derived_cells_coupling_or_unbound_envelope(tmp_path) -> None:
+def test_build_refuses_stale_hash_derived_cells_coupling_or_unbound_screening_threshold(tmp_path) -> None:
     for cell, value in (("gates", "49"), ("velo_max_ms", "231.206375266"), ("prf_hz", "2500")):
         stale = _manifest(tmp_path, lambda rows, c=cell, v=value: _replace(rows, PATHS[4], **{c: v}))
         with pytest.raises(PrfLadderError, match="stale inventory|does not match the decoded"):
             build_prf_ladder(
-                DATASET_ROOT, stale, _rebound_envelope(tmp_path, stale), analysis_commit=COMMIT
+                DATASET_ROOT, stale, _rebound_screening_threshold(tmp_path, stale), analysis_commit=COMMIT
             )
     wrong = _manifest(tmp_path, lambda rows: _replace(rows, PATHS[3], source_sha256="0" * 64))
     with pytest.raises(PrfLadderError, match="sha256 mismatch"):
         build_prf_ladder(
-            DATASET_ROOT, wrong, _rebound_envelope(tmp_path, wrong), analysis_commit=COMMIT
+            DATASET_ROOT, wrong, _rebound_screening_threshold(tmp_path, wrong), analysis_commit=COMMIT
         )
-    with pytest.raises(PrfLadderError, match="cannot read the WP1 envelope"):
+    with pytest.raises(PrfLadderError, match="cannot read the WP1 screening_threshold"):
         build_prf_ladder(DATASET_ROOT, RELATIVE_MANIFEST, tmp_path / "absent.json",
                          analysis_commit=COMMIT)
-    # The committed envelope records the committed manifest's hash: another inventory must not be
+    # The committed screening_threshold records the committed manifest's hash: another inventory must not be
     # able to borrow its threshold.
     changed = _manifest(tmp_path, lambda rows: _replace(rows, PATHS[1], gates="49"))
     with pytest.raises(PrfLadderError, match="records manifest"):
@@ -276,9 +276,9 @@ def test_build_refuses_stale_hash_derived_cells_coupling_or_unbound_envelope(tmp
     temporal = json.loads(ENVELOPE.read_text(encoding="utf-8"))["views"]["temporal"]
     assert floor["source_sha256"] == hashlib.sha256(ENVELOPE.read_bytes()).hexdigest()
     assert floor["source_paths"] == [s["relative_path"] for s in temporal["series"]]
-    assert floor["role"].startswith("upper bound on same-settings repeatability")
-    assert ladder.envelope.value_mm_s == pytest.approx(ENVELOPE_MM_S)
-    assert ladder.envelope.metric == "max_gate_abs_mean_difference_mm_s"
+    assert floor["role"].startswith("sole-pair observed-discrepancy screening threshold")
+    assert ladder.screening_threshold.value_mm_s == pytest.approx(ENVELOPE_MM_S)
+    assert ladder.screening_threshold.metric == "max_gate_abs_mean_difference_mm_s"
 
 
 def test_the_ladder_audits_that_only_the_key_and_its_scale_moved() -> None:
@@ -459,7 +459,7 @@ def test_the_spectra_are_summarised_only_where_every_recording_has_support(ladde
         assert row["psd_band_median_level_difference_db"] == pytest.approx(float(np.median(levels)))
 
 
-def test_pair_differences_are_compared_to_the_committed_repeatability_envelope(ladder) -> None:
+def test_pair_differences_are_compared_to_the_committed_repeatability_screening_threshold(ladder) -> None:
     # Every unordered pair, on the slower level's own knots, with nothing interpolated: all five
     # files share the identical 1.85 mm grid, so the knot offset is exactly zero.
     total = len(PERIODS) * (len(PERIODS) - 1) // 2
@@ -479,31 +479,31 @@ def test_pair_differences_are_compared_to_the_committed_repeatability_envelope(l
         assert (row["mean_abs_difference_mm_s"], row["max_abs_difference_mm_s"]) == pytest.approx(
             (float(np.abs(difference).mean()), float(np.abs(difference).max()))
         )
-        assert row["knots_above_envelope"] == int(np.count_nonzero(flagged))
-        assert row["max_abs_difference_over_envelope"] == pytest.approx(
+        assert row["knots_above_screening_threshold"] == int(np.count_nonzero(flagged))
+        assert row["max_abs_difference_over_screening_threshold"] == pytest.approx(
             row["max_abs_difference_mm_s"] / ENVELOPE_MM_S
         )
-        assert bool(row["depth_ranges_above_envelope_mm"]) == bool(np.count_nonzero(flagged))
+        assert bool(row["depth_ranges_above_screening_threshold_mm"]) == bool(np.count_nonzero(flagged))
         # The ranges name the runs of flagged knots on the slower level's own gate grid.
-        if row["depth_ranges_above_envelope_mm"]:
+        if row["depth_ranges_above_screening_threshold_mm"]:
             assert re.fullmatch(
                 r"\d+(\.\d+)?\.\.\d+(\.\d+)?(; \d+(\.\d+)?\.\.\d+(\.\d+)?)*",
-                row["depth_ranges_above_envelope_mm"],
+                row["depth_ranges_above_screening_threshold_mm"],
             )
     worst = max(ladder.pairs, key=lambda row: row["max_abs_difference_mm_s"])
     assert (worst["faster_label"], worst["slower_label"]) == ("400", "500")
     assert worst["max_abs_difference_mm_s"] == pytest.approx(WORST_PAIR_ABS_MM_S)
-    assert worst["max_abs_difference_over_envelope"] == pytest.approx(
+    assert worst["max_abs_difference_over_screening_threshold"] == pytest.approx(
         WORST_PAIR_ABS_MM_S / ENVELOPE_MM_S
     )
     assert worst["max_abs_difference_depth_mm"] == pytest.approx(13.862666666666666)
-    above = [row for row in ladder.pairs if row["knots_above_envelope"]]
+    above = [row for row in ladder.pairs if row["knots_above_screening_threshold"]]
     # Eight of ten pairs clear the bound somewhere, always on a handful of local knots.
     assert len(above) == 8
-    assert all(row["knots_above_envelope"] <= 8 for row in above)
+    assert all(row["knots_above_screening_threshold"] <= 8 for row in above)
     assert all(
-        len([run for run in row["depth_ranges_above_envelope_mm"].split(";") if run])
-        <= row["knots_above_envelope"]
+        len([run for run in row["depth_ranges_above_screening_threshold_mm"].split(";") if run])
+        <= row["knots_above_screening_threshold"]
         for row in above
     )
 
@@ -541,7 +541,7 @@ def test_the_decision_answers_whether_250_us_is_justified(tmp_path) -> None:
     assert "250" in decision["statement"] and "400" in decision["statement"]
     assert "p-value" not in decision["statement"] and "significant" not in decision["statement"]
     # The numbers the verdict rests on, so the wording cannot be re-tuned into an assertion.
-    assert findings["effect_gate"]["pairs_above_envelope"] == 8
+    assert findings["effect_gate"]["pairs_above_screening_threshold"] == 8
     assert len(findings["limitations"]) >= 4
     joined = " ".join(findings["limitations"])
     assert "drift" in joined and "replicate" in joined and "marker" in joined
@@ -580,7 +580,7 @@ def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) 
     assert views["alignment"]["max_knot_offset_over_all_pairs_mm"] == 0.0
     assert {
         "prf_period_us", "velo_max_mm_s", "velocity_scale", "profile_rate_hz",
-        "load_over_velo_max", "warning_fractions", "wrap_like_discontinuity", "envelope",
+        "load_over_velo_max", "warning_fractions", "wrap_like_discontinuity", "screening_threshold",
         "matched_segment", "comparison_bands", "mixer_marker", "replicates", "views",
     } <= set(document["definitions"])
     figure = document["figure"]
@@ -633,7 +633,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(tmp_pat
     with pytest.raises(SystemExit) as ok:
         prf_ladder_main([
             "--dataset-root", str(DATA_ROOT), "--report-dir", str(tmp_path),
-            "--manifest", str(MANIFEST), "--envelope", str(ENVELOPE),
+            "--manifest", str(MANIFEST), "--screening-threshold", str(ENVELOPE),
             "--analysis-commit", COMMIT,
         ])
     assert ok.value.code == 0
@@ -645,7 +645,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(tmp_pat
     assert re.fullmatch(r"[0-9a-f]{7,40}", recorded or ""), recorded
     write_prf_ladder(
         DATASET_ROOT, tmp_path / "regenerated", manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE, analysis_commit=recorded,
+        screening_threshold_path=RELATIVE_ENVELOPE, analysis_commit=recorded,
     )
     levels_text = (tmp_path / LEVELS_NAME).read_text(encoding="utf-8").splitlines()
     pairs_text = (tmp_path / PAIRS_NAME).read_text(encoding="utf-8").splitlines()
@@ -682,7 +682,7 @@ def test_cli_refuses_a_stale_unscaled_or_absent_inventory_with_named_reasons(tmp
             prf_ladder_main(
                 [
                     "--dataset-root", str(DATA_ROOT), "--report-dir", str(target),
-                    "--manifest", str(broken), "--envelope", str(_rebound_envelope(tmp_path, broken)),
+                    "--manifest", str(broken), "--screening-threshold", str(_rebound_screening_threshold(tmp_path, broken)),
                     "--analysis-commit", COMMIT,
                 ]
             )

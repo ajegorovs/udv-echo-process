@@ -1,4 +1,4 @@
-"""WP2, PRF axis — the measured pulse-repetition ladder against the repeatability bound.
+"""WP2, PRF axis — the measured pulse-repetition ladder against the sole-pair screening threshold.
 
 The committed sweep holds a five-point PRF ladder — one base-state recording per requested
 pulse-repetition period, 400 µs (``prf/400.BDD``) to 800 µs (``prf/800.BDD``), over the same
@@ -8,9 +8,9 @@ question from the ``prf`` rows of the WP0 manifest, never a filename list (plan 
 is a 250-µs acquisition therefore justified?* One build produces the common views (plan §3.1, §3.2), the per-level native-grid metrics, the
 actual profile rate the timestamps imply, the ``|v| / Vmax`` load distributions with their warning
 fractions, the wrap-like temporal discontinuities, the matched full-record temporal view with its
-repeat floor, and every unordered pair against the committed WP1 envelope with the depth ranges
+repeat floor, and every unordered pair against the committed WP1 screening_threshold with the depth ranges
 where it clears it. The manifest selection, decode and its hash/cell/grid re-checks, the clean-OFAT
-audit, the common views, the native-grid metrics, the knot alignment, the committed WP1 envelope
+audit, the common views, the native-grid metrics, the knot alignment, the committed WP1 screening_threshold
 and temporal-floor readers and the writers belong to the shared layer
 (:mod:`udv_echo_process.analysis._native_grid`), which this axis drives with its own axis name, key
 cell, settings and columns.
@@ -57,7 +57,7 @@ from udv_echo_process.provenance.models import current_revision
 AXIS = "prf"
 LEVELS_NAME, PAIRS_NAME = "prf-levels.csv", "prf-pairs.csv"
 PROVENANCE_NAME, FIGURE_NAME = "prf-ladder.provenance.json", "prf-ladder.png"
-FIGURES_DIRNAME, ENVELOPE_NAME = "figures", "reference-repeat.provenance.json"
+FIGURES_DIRNAME, SCREENING_THRESHOLD_NAME = "figures", "reference-repeat.provenance.json"
 
 #: The plan's question: the committed setting, and the acquisition its answer decides.
 FOCUS_SETTING_US = 400.0
@@ -118,7 +118,7 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "faster_path", "faster_label", "faster_prf_hz", "slower_path", "slower_label",
     "slower_prf_hz", "prf_gap_hz", "knots", "knot_spacing_mm", "max_knot_offset_mm",
     "mean_abs_difference_mm_s", "max_abs_difference_mm_s", "max_abs_difference_depth_mm",
-    "knots_above_envelope", "max_abs_difference_over_envelope", "depth_ranges_above_envelope_mm",
+    "knots_above_screening_threshold", "max_abs_difference_over_screening_threshold", "depth_ranges_above_screening_threshold_mm",
     "load_max_change", "warning_fraction_at_limit_change", "wrap_like_events_change",
     "zero_fraction_change", "psd_band_max_abs_level_difference_db",
     "psd_band_difference_frequency_hz", "psd_band_median_level_difference_db",
@@ -146,7 +146,7 @@ class PrfLadder(ValueModel):
     dataset_root: str
     manifest_path: str
     manifest_sha256: str
-    envelope: grid.EnvelopeBinding
+    screening_threshold: grid.ScreeningThresholdBinding
     axis: str = AXIS
     analysis_commit: str | None = None
     eligibility: grid.AxisEligibility = ELIGIBILITY
@@ -174,8 +174,8 @@ class PrfLadder(ValueModel):
             raise ValueError(f"expected every unordered pair ({expected}), got {len(self.pairs)}")
         if self.focus_path not in {row["relative_path"] for row in self.levels}:
             raise ValueError(f"focus level {self.focus_path} must be one of the levels")
-        if self.envelope.value_mm_s <= 0.0:
-            raise ValueError("the repeatability envelope must be positive")
+        if self.screening_threshold.value_mm_s <= 0.0:
+            raise ValueError("the repeatability screening_threshold must be positive")
         return self
 
 
@@ -423,7 +423,7 @@ def pair_row(
     slower_density: np.ndarray,
     *,
     support: tuple[float, float],
-    envelope: grid.EnvelopeBinding,
+    screening_threshold: grid.ScreeningThresholdBinding,
     edges: np.ndarray,
 ) -> dict[str, object]:
     """Compare a shorter-period level with a longer-period one on the shared knots and bands.
@@ -444,7 +444,7 @@ def pair_row(
     aligned = grid.align_on_knots(
         faster_depths, faster_mean, slower_depths, slower_mean,
         path=str(faster["relative_path"]), support=support,
-        threshold_mm_s=envelope.value_mm_s,
+        threshold_mm_s=screening_threshold.value_mm_s,
     )
     absolute, worst = aligned.absolute, aligned.worst
     levels = 10.0 * np.log10(np.asarray(faster_density) / np.asarray(slower_density))
@@ -458,9 +458,9 @@ def pair_row(
         "max_knot_offset_mm": aligned.offset_mm, "mean_abs_difference_mm_s": float(absolute.mean()),
         "max_abs_difference_mm_s": float(absolute[worst]),
         "max_abs_difference_depth_mm": float(aligned.knots[worst]),
-        "knots_above_envelope": int(np.count_nonzero(aligned.flagged)),
-        "max_abs_difference_over_envelope": float(absolute[worst] / envelope.value_mm_s),
-        "depth_ranges_above_envelope_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
+        "knots_above_screening_threshold": int(np.count_nonzero(aligned.flagged)),
+        "max_abs_difference_over_screening_threshold": float(absolute[worst] / screening_threshold.value_mm_s),
+        "depth_ranges_above_screening_threshold_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
         "load_max_change": slower["load_max_over_velo_max"] - faster["load_max_over_velo_max"],
         "warning_fraction_at_limit_change": (
             slower["warning_fraction_at_limit"] - faster["warning_fraction_at_limit"]
@@ -474,14 +474,14 @@ def pair_row(
 
 
 def _build(
-    dataset_root: Path, manifest_path: Path, envelope_path: Path, analysis_commit: str | None
+    dataset_root: Path, manifest_path: Path, screening_threshold_path: Path, analysis_commit: str | None
 ) -> tuple[
     PrfLadder, dict[str, tuple[np.ndarray, np.ndarray]], dict[str, tuple[np.ndarray, np.ndarray]]
 ]:
     """Build the ladder and return it beside each level's profile and spectral curve."""
     rows = select_level_rows(manifest_path)  # a missing manifest is refused by name here
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
-    envelope = grid.read_envelope(Path(envelope_path), manifest_sha256)
+    screening_threshold = grid.read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
     decoded = [_read_level(Path(dataset_root), row) for row in rows]
     entries = [entry for entry, *_ in decoded]
     _require_clean_ofat(entries)
@@ -526,14 +526,14 @@ def _build(
         pair_row(
             faster, profiles[faster["relative_path"]], f_density,
             slower, profiles[slower["relative_path"]], s_density,
-            support=support, envelope=envelope, edges=edges,
+            support=support, screening_threshold=screening_threshold, edges=edges,
         )
         for (faster, _fs, f_density), (slower, _ss, s_density) in itertools.combinations(
             zip(levels, series, densities, strict=True), 2
         )
     )
     floor = grid.read_temporal_floor(
-        Path(envelope_path), manifest_sha256, band_hz=(float(edges[0]), float(edges[-1])),
+        Path(screening_threshold_path), manifest_sha256, band_hz=(float(edges[0]), float(edges[-1])),
         hf_above_hz=MIXER_MARKER_HZ,
     )
     matches = [
@@ -552,7 +552,7 @@ def _build(
     model = PrfLadder(
         dataset_root=Path(dataset_root).as_posix(),
         manifest_path=Path(manifest_path).as_posix(), manifest_sha256=manifest_sha256,
-        envelope=envelope,
+        screening_threshold=screening_threshold,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
         eligibility=ELIGIBILITY,
         inputs=tuple(entries),
@@ -593,17 +593,17 @@ def _build(
 def build_prf_ladder(
     dataset_root: Path = inventory.DATASET_ROOT,
     manifest_path: Path = inventory.REPORT_DIR / inventory.MANIFEST_NAME,
-    envelope_path: Path = inventory.REPORT_DIR / ENVELOPE_NAME,
+    screening_threshold_path: Path = inventory.REPORT_DIR / SCREENING_THRESHOLD_NAME,
     *,
     analysis_commit: str | None = None,
 ) -> PrfLadder:
     """Build the WP2 PRF ladder from the manifest-selected recordings.
 
     ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA once.
-    A manifest, a WP1 envelope, a coupled or unscaled setting or a recording that contradicts its
+    A manifest, a WP1 screening_threshold, a coupled or unscaled setting or a recording that contradicts its
     row is refused by name before anything is written.
     """
-    return _build(dataset_root, Path(manifest_path), Path(envelope_path), analysis_commit)[0]
+    return _build(dataset_root, Path(manifest_path), Path(screening_threshold_path), analysis_commit)[0]
 
 
 #: Metric definitions, recorded verbatim in the provenance document (WP0's rule for its tables).
@@ -616,7 +616,7 @@ DEFINITIONS: dict[str, str] = {
     "warning_fractions": "share of windowed, supported samples at or above 0.5, 0.75, 0.9 and 1.0 of that recording's velo_max_ms; the inner three are declared margins below the limit, not instrument flags, and these files carry no warning channel",
     "wrap_like_discontinuity": "a consecutive-profile change at one gate of at least velo_max_ms with a sign reversal: a wrap moves the estimate across the whole +/-velo_max_ms span in one profile interval, about 2 x velo_max_ms, so the criterion is the conservative half-span",
     "difference": "signed faster - slower per-gate time mean at every common knot, mm/s; a negative value means the shorter period is slower there",
-    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a PRF effect and not a bound on repeatability or uncontrolled drift",
     "matched_segment": "the physical segment duration every file is analysed in, the largest multiple of 0.1 s that fits five whole segments in the shortest record; each file takes the whole number of profiles inside it, so segment duration and resolution agree rather than being equal",
     "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, so spectra are compared only where every recording has support",
     "usable_bandwidth": "the highest frequency a file's matched segment supports, half its profile rate; the full-record Nyquist limit is published beside it",
@@ -664,8 +664,8 @@ def _findings(model: PrfLadder) -> dict[str, object]:
     here is a p-value, an acquisition-order inference, an alias verdict this data cannot support, or
     a decision about an axis this module does not own.
     """
-    envelope = model.envelope.value_mm_s
-    above = [row for row in model.pairs if row["knots_above_envelope"]]
+    screening_threshold = model.screening_threshold.value_mm_s
+    above = [row for row in model.pairs if row["knots_above_screening_threshold"]]
     worst = max(model.pairs, key=lambda row: row["max_abs_difference_mm_s"])
     focus = next(row for row in model.levels if row["relative_path"] == model.focus_path)
     loudest = max(model.levels, key=lambda row: row["load_max_over_velo_max"])
@@ -677,17 +677,17 @@ def _findings(model: PrfLadder) -> dict[str, object]:
     candidate_limit = focus["velo_max_mm_s"] * FOCUS_SETTING_US / CANDIDATE_SETTING_US
     return {
         "effect_gate": {
-            "pairs": len(model.pairs), "envelope_mm_s": envelope,
-            "pairs_above_envelope": len(above),
+            "pairs": len(model.pairs), "screening_threshold_mm_s": screening_threshold,
+            "pairs_above_screening_threshold": len(above),
             "max_abs_difference_mm_s": worst["max_abs_difference_mm_s"],
-            "max_ratio_to_envelope": worst["max_abs_difference_over_envelope"],
+            "max_ratio_to_screening_threshold": worst["max_abs_difference_over_screening_threshold"],
             "statement": (
                 f"Effect gate: over the {len(model.pairs)} pairs the largest absolute per-knot mean "
                 f"difference is {worst['max_abs_difference_mm_s']:.4g} mm/s ({worst['faster_label']} "
                 f"vs {worst['slower_label']} us at {worst['max_abs_difference_depth_mm']:.4g} mm; "
-                f"depth ranges above the envelope {worst['depth_ranges_above_envelope_mm']}) = "
-                f"{worst['max_abs_difference_over_envelope']:.3g} of the WP1 envelope "
-                f"{envelope:.4g} mm/s, and {len(above)} pairs clear it somewhere."
+                f"depth ranges above the screening_threshold {worst['depth_ranges_above_screening_threshold_mm']}) = "
+                f"{worst['max_abs_difference_over_screening_threshold']:.3g} of the WP1 screening_threshold "
+                f"{screening_threshold:.4g} mm/s, and {len(above)} pairs clear it somewhere."
             ),
         },
         "velocity_headroom": {
@@ -751,9 +751,9 @@ def _findings(model: PrfLadder) -> dict[str, object]:
             ),
         },
         "limitations": [
-            f"The only repeat bounds repeatability plus uncontrolled drift ({envelope:.4g} mm/s per gate, {model.envelope.metric}): the levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
+            f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per gate ({model.screening_threshold.metric}): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
             f"The velocity scale is the key's own consequence (Vmax x prf_period is constant across the ladder to the audited tolerance), but the profile rate is not: it rises from {min(rates.values()):.4g} to {max(rates.values()):.4g} Hz while its ratio to the PRF period varies by {ratio_spread:.3g} relative, so the rate is a separate measured property and nothing here claims a future setting would scale it.",
-            f"The temporal metrics are bounded by the same-settings WP1 pair through its committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), resummarised in {band[0]:.4g}-{band[1]:.4g} Hz on the bands this ladder shares; one pair cannot estimate that floor's own spread, and 5-10 segments per level make a band level a coarse magnitude.",
+            f"The temporal metrics are screened against the same-settings WP1 pair through its committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), resummarised in {band[0]:.4g}-{band[1]:.4g} Hz on the bands this ladder shares; one pair cannot estimate that floor's own spread, and 5-10 segments per level make a band level a coarse magnitude.",
             "The files carry the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the spectra are per gate, and a wrap-like step is counted as a discontinuity of the recorded estimate, never as proof that a particular sample aliased. This module owns the PRF axis only: resolution, burst, TGC, emitting power and emissions per profile are neither analysed nor decided here.",
         ],
     }
@@ -762,7 +762,7 @@ def _findings(model: PrfLadder) -> dict[str, object]:
 def figure_caption(model: PrfLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
-    It names the ladder, both time views, the common support, the alignment rule, the envelope and
+    It names the ladder, both time views, the common support, the alignment rule, the screening_threshold and
     the temporal floor with their sources, and the 400-us decision numbers.
     """
     findings = _findings(model)
@@ -781,8 +781,8 @@ def figure_caption(model: PrfLadder) -> str:
         f"differs ({min(temporal['profile_rate_hz'].values()):.4g}-"
         f"{max(temporal['profile_rate_hz'].values()):.4g} Hz), nominal resolution "
         f"{model.temporal['nominal_resolution_hz']:.4g} Hz. Decision threshold: the committed WP1 "
-        f"envelope {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}, from "
-        f"{model.envelope.path}, {model.envelope.source_sha256[:12]}...). Plan decision "
+        f"screening_threshold {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}, from "
+        f"{model.screening_threshold.path}, {model.screening_threshold.source_sha256[:12]}...). Plan decision "
         f"{decision['focus_setting_us']:g} vs {decision['candidate_setting_us']:g} us: peak load "
         f"{headroom['focus_load_max_over_velo_max']:.4g} of the "
         f"{headroom['focus_velo_max_mm_s']:.4g} mm/s limit at {decision['focus_setting_us']:g} us "
@@ -804,7 +804,7 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
     return {
         "artefact": "prf-ladder", "axis": model.axis, "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
-        "envelope": dict(model.envelope.model_dump()) | {"source_path": model.envelope.path},
+        "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
         "derived_scale": {
             "invariant": "velo_max_ms x prf_period_us", "tolerance_relative": VELO_SCALE_RTOL,
             "values": [e.velo_max_ms * e.prf_period_us for e in model.inputs],
@@ -966,7 +966,7 @@ def write_prf_ladder(
     report_dir: Path = inventory.REPORT_DIR,
     *,
     manifest_path: Path | None = None,
-    envelope_path: Path | None = None,
+    screening_threshold_path: Path | None = None,
     analysis_commit: str | None = None,
 ) -> PrfLadder:
     """Build the ladder and write the four reviewer-visible artefacts.
@@ -976,8 +976,8 @@ def write_prf_ladder(
     """
     directory = Path(report_dir)
     manifest = Path(manifest_path or directory / inventory.MANIFEST_NAME)
-    envelope = Path(envelope_path or directory / ENVELOPE_NAME)
-    model, _profiles, curves = _build(dataset_root, manifest, envelope, analysis_commit)
+    screening_threshold = Path(screening_threshold_path or directory / SCREENING_THRESHOLD_NAME)
+    model, _profiles, curves = _build(dataset_root, manifest, screening_threshold, analysis_commit)
     grid.write_text_artefacts(directory, {
         LEVELS_NAME: levels_csv_text(model),
         PAIRS_NAME: pairs_csv_text(model),

@@ -19,7 +19,7 @@ The tests pin the *definitions* the resolution axis must not drift on:
   native gate) — never interpolated, never upsampled;
 - gradients and the spatial correlation length are computed on each native grid
   before any alignment;
-- every effect is stated against the committed WP1 repeatability envelope read
+- every effect is stated against the committed WP1 repeatability screening_threshold read
   from ``reference-repeat.provenance.json``, and the focus pair is the plan's own
   0.247 mm vs 0.617 mm question, selected by pitch from the manifest.
 """
@@ -96,7 +96,7 @@ COMMON_WINDOW_S = 11.16
 #: support (~10.163–96.743 mm)".
 SUPPORT_MIN_MM = 10.1626666667
 SUPPORT_MAX_MM = 96.7426666667
-#: The committed WP1 envelope: the largest absolute per-gate mean difference.
+#: The committed WP1 screening_threshold: the largest absolute per-gate mean difference.
 ENVELOPE_MM_S = 19.37008103465545
 
 
@@ -127,12 +127,12 @@ def _manifest(tmp_path: Path, mutator=None) -> Path:
     return path
 
 
-def _rebound_envelope(tmp_path: Path, manifest: Path) -> Path:
-    """The committed WP1 envelope re-bound to a copied manifest's own hash.
+def _rebound_screening_threshold(tmp_path: Path, manifest: Path) -> Path:
+    """The committed WP1 screening_threshold re-bound to a copied manifest's own hash.
 
-    A manifest copied into ``tmp_path`` has different bytes, so the envelope's
+    A manifest copied into ``tmp_path`` has different bytes, so the screening_threshold's
     recorded ``manifest.sha256`` no longer matches it. Tests that mutate a manifest
-    and expect a *decoding* refusal rebind the envelope first, so the refusal they
+    and expect a *decoding* refusal rebind the screening_threshold first, so the refusal they
     assert is the one they provoke.
     """
     document = json.loads(ENVELOPE.read_text(encoding="utf-8"))
@@ -195,7 +195,7 @@ def test_the_axis_the_pitches_and_the_artefact_names_are_the_resolution_ladder()
     assert module.PAIRS_NAME == "resolution-pairs.csv"
     assert module.PROVENANCE_NAME == "resolution-ladder.provenance.json"
     assert module.FIGURE_NAME == "resolution-ladder.png"
-    assert module.ENVELOPE_NAME == "reference-repeat.provenance.json"
+    assert module.SCREENING_THRESHOLD_NAME == "reference-repeat.provenance.json"
 
 
 def test_select_level_rows_reads_every_resolution_row_from_the_manifest() -> None:
@@ -339,10 +339,10 @@ def test_build_refuses_a_stale_manifest_cell(tmp_path) -> None:
         ]
 
     manifest = _manifest(tmp_path, stale)
-    envelope = _rebound_envelope(tmp_path, manifest)
+    screening_threshold = _rebound_screening_threshold(tmp_path, manifest)
     with pytest.raises(ResolutionLadderError, match="stale"):
         build_resolution_ladder(
-            DATASET_ROOT, manifest, envelope, analysis_commit=COMMIT
+            DATASET_ROOT, manifest, screening_threshold, analysis_commit=COMMIT
         )
 
 
@@ -356,17 +356,17 @@ def test_build_refuses_a_source_hash_that_is_not_the_bytes(tmp_path) -> None:
         ]
 
     manifest = _manifest(tmp_path, corrupt)
-    envelope = _rebound_envelope(tmp_path, manifest)
+    screening_threshold = _rebound_screening_threshold(tmp_path, manifest)
     with pytest.raises(ResolutionLadderError, match="sha256"):
         build_resolution_ladder(
-            DATASET_ROOT, manifest, envelope, analysis_commit=COMMIT
+            DATASET_ROOT, manifest, screening_threshold, analysis_commit=COMMIT
         )
 
 
-def test_build_refuses_an_envelope_that_is_missing_or_bound_to_another_manifest(
+def test_build_refuses_an_screening_threshold_that_is_missing_or_bound_to_another_manifest(
     tmp_path,
 ) -> None:
-    with pytest.raises(ResolutionLadderError, match="cannot read the WP1 envelope"):
+    with pytest.raises(ResolutionLadderError, match="cannot read the WP1 screening_threshold"):
         build_resolution_ladder(
             DATASET_ROOT, RELATIVE_MANIFEST, tmp_path / "absent.json", analysis_commit=COMMIT
         )
@@ -568,7 +568,7 @@ def test_the_ladder_spans_the_plan_s_two_named_pitches(ladder) -> None:
         assert any(row.pitch_mm == pytest.approx(pitch, rel=1e-6) for row in ladder.levels)
 
 
-# ── slice 4: alignment on common knots and the envelope comparison ──────────
+# ── slice 4: alignment on common knots and the screening_threshold comparison ──────────
 
 
 def test_nearest_gate_indices_pick_the_closest_native_gate_of_each_knot() -> None:
@@ -629,39 +629,39 @@ def test_pair_rows_align_on_the_coarser_native_knots_and_never_upsample(
         assert by_path[row.fine_path].pitch_mm == row.fine_pitch_mm
 
 
-def test_pair_differences_are_compared_to_the_committed_repeatability_envelope(
+def test_pair_differences_are_compared_to_the_committed_repeatability_screening_threshold(
     ladder,
 ) -> None:
-    envelope = ladder.envelope
-    assert envelope.metric == "max_gate_abs_mean_difference_mm_s"
-    assert envelope.value_mm_s == pytest.approx(ENVELOPE_MM_S)
-    assert envelope.path.endswith("reference-repeat.provenance.json")
-    assert len(envelope.source_sha256) == 64
-    assert envelope.scope.startswith("upper bound")
+    screening_threshold = ladder.screening_threshold
+    assert screening_threshold.metric == "max_gate_abs_mean_difference_mm_s"
+    assert screening_threshold.value_mm_s == pytest.approx(ENVELOPE_MM_S)
+    assert screening_threshold.path.endswith("reference-repeat.provenance.json")
+    assert len(screening_threshold.source_sha256) == 64
+    assert screening_threshold.scope.startswith("sole-pair observed-discrepancy screening threshold")
     for row in ladder.pairs:
-        assert row.max_abs_difference_over_envelope == pytest.approx(
-            row.max_abs_difference_mm_s / envelope.value_mm_s, rel=1e-9
+        assert row.max_abs_difference_over_screening_threshold == pytest.approx(
+            row.max_abs_difference_mm_s / screening_threshold.value_mm_s, rel=1e-9
         )
-        assert row.fraction_above_envelope == pytest.approx(
-            row.knots_above_envelope / row.knots, rel=1e-9, abs=1e-12
+        assert row.fraction_above_screening_threshold == pytest.approx(
+            row.knots_above_screening_threshold / row.knots, rel=1e-9, abs=1e-12
         )
-        assert row.knots_above_envelope <= row.knots
+        assert row.knots_above_screening_threshold <= row.knots
 
 
-def test_pair_rows_flatten_the_depths_where_a_difference_clears_the_envelope(
+def test_pair_rows_flatten_the_depths_where_a_difference_clears_the_screening_threshold(
     native,
 ) -> None:
-    """Synthetic pair: the range formatting and the envelope flag are defined."""
-    from udv_echo_process.analysis.resolution_ladder import EnvelopeBinding
+    """Synthetic pair: the range formatting and the screening_threshold flag are defined."""
+    from udv_echo_process.analysis.resolution_ladder import ScreeningThresholdBinding
 
     fine_depths = 10.0 + 0.5 * np.arange(21)
     coarse_depths = 10.0 + 2.0 * np.arange(6)
     fine_means = 12.0 + 0.05 * np.arange(21)
     coarse_means = np.full(6, 12.0)
-    coarse_means[3] = 40.0  # the knot at 16 mm clears the envelope
+    coarse_means[3] = 40.0  # the knot at 16 mm clears the screening_threshold
     entry_fine = _entry("res/fine.BDD", "fine", 0.5, fine_depths.size)
     entry_coarse = _entry("res/coarse.BDD", "coarse", 2.0, coarse_depths.size)
-    envelope = EnvelopeBinding(
+    screening_threshold = ScreeningThresholdBinding(
         path="reference-repeat.provenance.json",
         source_sha256="0" * 64,
         metric="max_gate_abs_mean_difference_mm_s",
@@ -670,7 +670,7 @@ def test_pair_rows_flatten_the_depths_where_a_difference_clears_the_envelope(
         gate_index=0,
         depth_mm=0.0,
         median_abs_mean_difference_mm_s=0.0,
-        scope="upper bound on same-settings repeatability plus uncontrolled drift",
+        scope="sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     )
     row = pair_row(
         entry_fine,
@@ -680,12 +680,12 @@ def test_pair_rows_flatten_the_depths_where_a_difference_clears_the_envelope(
         coarse_means,
         coarse_depths,
         support=(10.0, 20.0),
-        envelope=envelope,
+        screening_threshold=screening_threshold,
     )
     assert row.knots == 6
-    assert row.knots_above_envelope == 1
-    assert row.depth_ranges_above_envelope_mm == "16..16"
-    assert row.fraction_above_envelope == pytest.approx(1.0 / 6.0)
+    assert row.knots_above_screening_threshold == 1
+    assert row.depth_ranges_above_screening_threshold_mm == "16..16"
+    assert row.fraction_above_screening_threshold == pytest.approx(1.0 / 6.0)
     assert row.max_abs_difference_depth_mm == pytest.approx(16.0)
     assert row.max_abs_difference_mm_s == pytest.approx(40.0 - float(fine_means[12]))
     assert row.fine_detail_rms_mm_s > 0.0
@@ -725,13 +725,13 @@ def test_the_focus_pair_is_the_plan_s_0_247_mm_versus_0_617_mm_question(ladder) 
     assert row.fine_detail_variance_share < 0.01
 
 
-def test_no_measured_level_pair_clears_the_envelope(ladder) -> None:
-    """The ladder's own verdict input: every pair's worst knot is inside the bound."""
+def test_no_measured_level_pair_clears_the_screening_threshold(ladder) -> None:
+    """The ladder's own verdict input: every pair's worst knot sits below the sole-pair observed-discrepancy screening threshold."""
     assert all(
-        row.max_abs_difference_over_envelope <= 1.0 for row in ladder.pairs
-    ), max(row.max_abs_difference_over_envelope for row in ladder.pairs)
-    assert all(row.knots_above_envelope == 0 for row in ladder.pairs)
-    assert all(row.depth_ranges_above_envelope_mm == "" for row in ladder.pairs)
+        row.max_abs_difference_over_screening_threshold <= 1.0 for row in ladder.pairs
+    ), max(row.max_abs_difference_over_screening_threshold for row in ladder.pairs)
+    assert all(row.knots_above_screening_threshold == 0 for row in ladder.pairs)
+    assert all(row.depth_ranges_above_screening_threshold_mm == "" for row in ladder.pairs)
 
 
 def test_the_tables_are_written_with_the_declared_columns(ladder) -> None:
@@ -765,7 +765,7 @@ def _write(tmp_path: Path, name: str = "a", **kwargs):
         DATASET_ROOT,
         tmp_path / name,
         manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE,
+        screening_threshold_path=RELATIVE_ENVELOPE,
         analysis_commit=COMMIT,
         **kwargs,
     )
@@ -810,11 +810,11 @@ def test_provenance_records_definitions_views_alignment_and_binding(tmp_path) ->
     assert document["manifest"]["sha256"] == (
         f"sha256:{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}"
     )
-    envelope = document["envelope"]
-    assert envelope["metric"] == "max_gate_abs_mean_difference_mm_s"
-    assert envelope["value_mm_s"] == pytest.approx(ENVELOPE_MM_S)
-    assert envelope["source_sha256"] == hashlib.sha256(ENVELOPE.read_bytes()).hexdigest()
-    assert envelope["source_path"] == RELATIVE_ENVELOPE.as_posix()
+    screening_threshold = document["screening_threshold"]
+    assert screening_threshold["metric"] == "max_gate_abs_mean_difference_mm_s"
+    assert screening_threshold["value_mm_s"] == pytest.approx(ENVELOPE_MM_S)
+    assert screening_threshold["source_sha256"] == hashlib.sha256(ENVELOPE.read_bytes()).hexdigest()
+    assert screening_threshold["source_path"] == RELATIVE_ENVELOPE.as_posix()
     assert len(document["inputs"]) == len(LABELS)
     assert {item["relative_path"] for item in document["inputs"]} == {
         row["relative_path"] for row in select_level_rows(MANIFEST)
@@ -845,7 +845,7 @@ def test_provenance_records_definitions_views_alignment_and_binding(tmp_path) ->
         "correlation_length",
         "knots",
         "difference",
-        "envelope",
+        "screening_threshold",
         "detail",
         "replicates",
         "time_view",
@@ -872,18 +872,18 @@ def test_findings_answer_the_plan_s_resolution_questions_from_the_numbers(tmp_pa
     _write(tmp_path)
     document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
     findings = document["findings"]
-    gate = findings["envelope_gate"]
+    gate = findings["screening_threshold_gate"]
     assert gate["pairs"] == 78
-    assert gate["envelope_mm_s"] == pytest.approx(ENVELOPE_MM_S)
-    assert gate["pairs_above_envelope"] == 0
+    assert gate["screening_threshold_mm_s"] == pytest.approx(ENVELOPE_MM_S)
+    assert gate["pairs_above_screening_threshold"] == 0
     assert gate["max_abs_difference_mm_s"] == pytest.approx(
         max(row.max_abs_difference_mm_s for row in _model_pairs())
     )
-    assert gate["max_ratio_to_envelope"] <= 1.0
+    assert gate["max_ratio_to_screening_threshold"] <= 1.0
     information = findings["information"]
     assert information["fine_path"] == FOCUS_FINE
     assert information["coarse_path"] == FOCUS_COARSE
-    assert information["knots_above_envelope"] == 0
+    assert information["knots_above_screening_threshold"] == 0
     assert information["mean_abs_difference_mm_s"] < ENVELOPE_MM_S
     assert information["max_abs_difference_mm_s"] < ENVELOPE_MM_S
     assert information["detail_max_abs_mm_s"] < ENVELOPE_MM_S
@@ -945,7 +945,7 @@ def test_cli_writes_the_four_artefacts_and_exits_zero(tmp_path, capsys) -> None:
                 str(tmp_path),
                 "--manifest",
                 str(MANIFEST),
-                "--envelope",
+                "--screening-threshold",
                 str(ENVELOPE),
                 "--analysis-commit",
                 COMMIT,
@@ -975,7 +975,7 @@ def test_cli_refuses_a_stale_manifest_and_writes_nothing(tmp_path, capsys) -> No
             for row in rows
         ],
     )
-    envelope = _rebound_envelope(tmp_path, manifest)
+    screening_threshold = _rebound_screening_threshold(tmp_path, manifest)
     with pytest.raises(SystemExit) as excinfo:
         resolution_ladder_main(
             [
@@ -985,8 +985,8 @@ def test_cli_refuses_a_stale_manifest_and_writes_nothing(tmp_path, capsys) -> No
                 str(tmp_path / "reports"),
                 "--manifest",
                 str(manifest),
-                "--envelope",
-                str(envelope),
+                "--screening-threshold",
+                str(screening_threshold),
                 "--analysis-commit",
                 COMMIT,
             ]
@@ -1025,7 +1025,7 @@ def test_committed_artefacts_match_a_regeneration(tmp_path) -> None:
         DATASET_ROOT,
         tmp_path,
         manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE,
+        screening_threshold_path=RELATIVE_ENVELOPE,
         analysis_commit=recorded,
     )
 

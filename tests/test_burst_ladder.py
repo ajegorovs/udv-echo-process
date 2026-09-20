@@ -9,7 +9,7 @@ The tests pin the definitions the burst axis must not drift on: the ladder is th
 one common physical support serve every cross-level summary; native-grid gradient and
 correlation length are computed before any alignment and pairs sample the shorter pulse's
 grid at the longer pulse's own knots; every mean-profile effect is stated against the
-committed WP1 envelope; the full-record temporal view is matched across all 12 files and
+committed WP1 screening_threshold; the full-record temporal view is matched across all 12 files and
 compared to the temporal repeat floor the committed WP1 curves imply; and the
 18-versus-20-cycle question is answered from the numbers rather than asserted.
 """
@@ -88,8 +88,8 @@ def _manifest(tmp_path: Path, mutator=None) -> Path:
     return path
 
 
-def _rebound_envelope(tmp_path: Path, manifest: Path) -> Path:
-    """The committed WP1 envelope re-bound to a copied manifest's own hash."""
+def _rebound_screening_threshold(tmp_path: Path, manifest: Path) -> Path:
+    """The committed WP1 screening_threshold re-bound to a copied manifest's own hash."""
     document = json.loads(ENVELOPE.read_text(encoding="utf-8"))
     document["manifest"]["sha256"] = (
         f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
@@ -127,7 +127,7 @@ def _write(tmp_path: Path, name: str = "a"):
 
     return write_burst_ladder(
         DATASET_ROOT, tmp_path / name, manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT,
+        screening_threshold_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT,
     )
 
 
@@ -245,20 +245,20 @@ def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder
     assert "realizations" not in json.dumps(provenance_document(ladder))
 
 
-def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_envelope(
+def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_screening_threshold(
     tmp_path,
 ) -> None:
     stale = _manifest(
         tmp_path, lambda rows: _replace(rows, "burst_len/18.BDD", gates="49")
     )
     with pytest.raises(BurstLadderError, match="stale inventory"):
-        build_burst_ladder(DATASET_ROOT, stale, _rebound_envelope(tmp_path, stale), analysis_commit=COMMIT)
+        build_burst_ladder(DATASET_ROOT, stale, _rebound_screening_threshold(tmp_path, stale), analysis_commit=COMMIT)
     wrong = _manifest(
         tmp_path, lambda rows: _replace(rows, "burst_len/20.BDD", source_sha256="0" * 64)
     )
     with pytest.raises(BurstLadderError, match="sha256 mismatch"):
-        build_burst_ladder(DATASET_ROOT, wrong, _rebound_envelope(tmp_path, wrong), analysis_commit=COMMIT)
-    with pytest.raises(BurstLadderError, match="cannot read the WP1 envelope"):
+        build_burst_ladder(DATASET_ROOT, wrong, _rebound_screening_threshold(tmp_path, wrong), analysis_commit=COMMIT)
+    with pytest.raises(BurstLadderError, match="cannot read the WP1 screening_threshold"):
         build_burst_ladder(
             DATASET_ROOT, RELATIVE_MANIFEST, tmp_path / "absent.json",
             analysis_commit=COMMIT,
@@ -266,7 +266,7 @@ def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_envelope(
     changed = _manifest(
         tmp_path, lambda rows: _replace(rows, "burst_len/18.BDD", gates="49")
     )
-    # The committed envelope records the committed manifest's hash: an inventory with other
+    # The committed screening_threshold records the committed manifest's hash: an inventory with other
     # bytes must not be able to borrow its threshold.
     with pytest.raises(BurstLadderError, match="records manifest"):
         build_burst_ladder(DATASET_ROOT, changed, ENVELOPE, analysis_commit=COMMIT)
@@ -395,7 +395,7 @@ def test_the_temporal_metrics_are_the_acf_and_psd_of_the_full_record(ladder) -> 
     assert row["psd_bandwidth_hz"] > 0.0 and 0.0 < row["psd_hf_share"] < 1.0
 
 
-def test_the_temporal_floor_and_envelope_come_from_the_committed_wp1(ladder) -> None:
+def test_the_temporal_floor_and_screening_threshold_come_from_the_committed_wp1(ladder) -> None:
     floor = ladder.temporal["floor"]
     temporal = json.loads(ENVELOPE.read_text(encoding="utf-8"))["views"]["temporal"]
     assert floor["source_path"] == RELATIVE_ENVELOPE.as_posix()
@@ -413,11 +413,11 @@ def test_the_temporal_floor_and_envelope_come_from_the_committed_wp1(ladder) -> 
     assert floor["hf_share_difference"] == pytest.approx(
         abs(floor["hf_share"][0] - floor["hf_share"][1])
     )
-    assert floor["role"].startswith("upper bound on same-settings repeatability")
+    assert floor["role"].startswith("sole-pair observed-discrepancy screening threshold")
     # The decision threshold is the same committed artefact, and it is positive.
-    assert ladder.envelope.value_mm_s == pytest.approx(ENVELOPE_MM_S)
-    assert ladder.envelope.metric == "max_gate_abs_mean_difference_mm_s"
-    assert ladder.envelope.source_sha256 == floor["source_sha256"]
+    assert ladder.screening_threshold.value_mm_s == pytest.approx(ENVELOPE_MM_S)
+    assert ladder.screening_threshold.metric == "max_gate_abs_mean_difference_mm_s"
+    assert ladder.screening_threshold.source_sha256 == floor["source_sha256"]
 
 
 def test_pairs_cover_the_ladder_on_the_shared_knots_without_upsampling(ladder) -> None:
@@ -439,7 +439,7 @@ def test_pairs_cover_the_ladder_on_the_shared_knots_without_upsampling(ladder) -
         )
 
 
-def test_pair_differences_are_compared_to_the_committed_repeatability_envelope(ladder) -> None:
+def test_pair_differences_are_compared_to_the_committed_repeatability_screening_threshold(ladder) -> None:
     means = {r["cycles"]: _window(r["relative_path"]).mean(axis=0) for r in ladder.levels}
     for row in ladder.pairs:
         above = int(
@@ -448,21 +448,21 @@ def test_pair_differences_are_compared_to_the_committed_repeatability_envelope(l
                 > ENVELOPE_MM_S
             )
         )
-        assert row["knots_above_envelope"] == above
-        assert row["max_abs_difference_over_envelope"] == pytest.approx(
+        assert row["knots_above_screening_threshold"] == above
+        assert row["max_abs_difference_over_screening_threshold"] == pytest.approx(
             row["max_abs_difference_mm_s"] / ENVELOPE_MM_S
         )
-        assert bool(row["depth_ranges_above_envelope_mm"]) == (above > 0)
-    above = [row for row in ladder.pairs if row["knots_above_envelope"]]
+        assert bool(row["depth_ranges_above_screening_threshold_mm"]) == (above > 0)
+    above = [row for row in ladder.pairs if row["knots_above_screening_threshold"]]
     worst = max(ladder.pairs, key=lambda row: row["max_abs_difference_mm_s"])
     assert (worst["short_label"], worst["long_label"]) == ("4", "28")
     assert worst["max_abs_difference_mm_s"] == pytest.approx(WORST_PAIR_ABS_MM_S)
-    assert worst["max_abs_difference_over_envelope"] == pytest.approx(
+    assert worst["max_abs_difference_over_screening_threshold"] == pytest.approx(
         WORST_PAIR_ABS_MM_S / ENVELOPE_MM_S
     )
-    assert worst["max_abs_difference_over_envelope"] > 2.0
+    assert worst["max_abs_difference_over_screening_threshold"] > 2.0
     # The clearances are a handful of gates, and the longest bursts carry almost all of them.
-    assert all(row["knots_above_envelope"] <= 5 for row in above)
+    assert all(row["knots_above_screening_threshold"] <= 5 for row in above)
     assert sum(
         1 for row in above if {row["short_label"], row["long_label"]} & {"28", "32"}
     ) >= 16
@@ -499,21 +499,21 @@ def test_the_focus_pair_is_the_plans_18_versus_20_cycle_question(ladder) -> None
         r for r in ladder.pairs if (r["short_path"], r["long_path"]) == ladder.focus_pair
     )
     assert (row["short_cycles"], row["long_cycles"]) == FOCUS_PAIR_CYCLES
-    assert row["knots_above_envelope"] == 0
-    assert row["depth_ranges_above_envelope_mm"] == ""
+    assert row["knots_above_screening_threshold"] == 0
+    assert row["depth_ranges_above_screening_threshold_mm"] == ""
     assert row["max_abs_difference_mm_s"] == pytest.approx(FOCUS_ABS_MM_S)
-    assert row["max_abs_difference_over_envelope"] == pytest.approx(
+    assert row["max_abs_difference_over_screening_threshold"] == pytest.approx(
         FOCUS_ABS_MM_S / ENVELOPE_MM_S
     )
-    # Nothing in the 16-20-cycle region clears the envelope either.
+    # Nothing in the 16-20-cycle region clears the screening_threshold either.
     window = [
         r for r in ladder.pairs
         if FOCUS_WINDOW_CYCLES[0] <= r["short_cycles"] <= r["long_cycles"]
         <= FOCUS_WINDOW_CYCLES[1]
     ]
     assert len(window) == 3
-    assert all(r["knots_above_envelope"] == 0 for r in window)
-    assert all(r["max_abs_difference_over_envelope"] < 0.7 for r in window)
+    assert all(r["knots_above_screening_threshold"] == 0 for r in window)
+    assert all(r["max_abs_difference_over_screening_threshold"] < 0.7 for r in window)
 
 
 def test_written_artefacts_reproduce_the_declared_columns_and_bytes(tmp_path) -> None:
@@ -574,7 +574,7 @@ def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) 
     assert views["temporal"]["floor"]["source_path"] == RELATIVE_ENVELOPE.as_posix()
     assert {
         "cycles", "robust_spread", "zero_fraction", "gradient", "correlation_length",
-        "difference", "envelope", "knee", "temporal_bandwidth", "temporal_floor",
+        "difference", "screening_threshold", "knee", "temporal_bandwidth", "temporal_floor",
         "replicates", "time_view", "depth_view",
     } <= set(document["definitions"])
     figure = document["figure"]
@@ -593,17 +593,17 @@ def test_findings_answer_the_plans_burst_questions_from_the_numbers(tmp_path) ->
     findings = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))[
         "findings"
     ]
-    gate = findings["envelope_gate"]
-    assert (gate["pairs"], gate["pairs_above_envelope"]) == (66, 21)
-    assert gate["max_ratio_to_envelope"] == pytest.approx(WORST_PAIR_ABS_MM_S / ENVELOPE_MM_S)
+    gate = findings["screening_threshold_gate"]
+    assert (gate["pairs"], gate["pairs_above_screening_threshold"]) == (66, 21)
+    assert gate["max_ratio_to_screening_threshold"] == pytest.approx(WORST_PAIR_ABS_MM_S / ENVELOPE_MM_S)
     focus = findings["focus_18_vs_20"]
     assert (focus["short_cycles"], focus["long_cycles"]) == FOCUS_PAIR_CYCLES
-    assert focus["knots_above_envelope"] == 0
-    assert focus["ratio_to_envelope"] == pytest.approx(FOCUS_ABS_MM_S / ENVELOPE_MM_S)
+    assert focus["knots_above_screening_threshold"] == 0
+    assert focus["ratio_to_screening_threshold"] == pytest.approx(FOCUS_ABS_MM_S / ENVELOPE_MM_S)
     assert "not" in focus["statement"]
     window = findings["focus_window_16_20"]
-    assert (window["pairs"], window["pairs_above_envelope"]) == (3, 0)
-    assert window["max_ratio_to_envelope"] < 0.7
+    assert (window["pairs"], window["pairs_above_screening_threshold"]) == (3, 0)
+    assert window["max_ratio_to_screening_threshold"] < 0.7
     assert set(findings["knees"]) >= {
         "zero_fraction", "robust_spread_mm_s", "rms_mm_s", "correlation_length_mm",
         "psd_hf_share",
@@ -653,7 +653,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
         burst_ladder_main(
             [
                 "--dataset-root", str(DATA_ROOT), "--report-dir", str(tmp_path),
-                "--manifest", str(MANIFEST), "--envelope", str(ENVELOPE),
+                "--manifest", str(MANIFEST), "--screening-threshold", str(ENVELOPE),
                 "--analysis-commit", COMMIT,
             ]
         )
@@ -667,7 +667,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
     assert re.fullmatch(r"[0-9a-f]{7,40}", recorded or ""), recorded
     write_burst_ladder(
         DATASET_ROOT, tmp_path / "regenerated", manifest_path=RELATIVE_MANIFEST,
-        envelope_path=RELATIVE_ENVELOPE, analysis_commit=recorded,
+        screening_threshold_path=RELATIVE_ENVELOPE, analysis_commit=recorded,
     )
     for name in ("levels", "pairs", "provenance"):
         actual = (tmp_path / "regenerated" / committed[name].name).read_bytes()
@@ -690,7 +690,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
             [
                 "--dataset-root", str(DATA_ROOT), "--report-dir", str(tmp_path / "reports"),
                 "--manifest", str(stale),
-                "--envelope", str(_rebound_envelope(tmp_path, stale)),
+                "--screening-threshold", str(_rebound_screening_threshold(tmp_path, stale)),
                 "--analysis-commit", COMMIT,
             ]
         )

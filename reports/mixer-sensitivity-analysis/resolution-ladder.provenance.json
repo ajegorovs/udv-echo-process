@@ -7,16 +7,16 @@
     "path": "reports/mixer-sensitivity-analysis/manifest.csv",
     "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
   },
-  "envelope": {
+  "screening_threshold": {
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
     "gate_index": 39,
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
-    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift"
   },
   "inputs": [
@@ -288,24 +288,24 @@
     "correlation_length": "first lag where the normalized biased autocovariance of the mean-removed supported native mean profile falls below 1/e, in mm (gates x pitch); capped at floor((gates - 1) / 2) gates, where a cap is a lower bound (correlation_reaches_floor false)",
     "knots": "a pair's common depth knots: the coarser participant's native gate depths in the common support, so the spacing equals the coarser pitch, never finer than the coarsest participating pitch",
     "difference": "signed fine - coarse per-gate time mean at every knot, mm/s; mean/median/max absolute values and the knot of the maximum are reported beside it",
-    "envelope": "the committed WP1 repeatability envelope, max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability *plus* uncontrolled drift, not a repeatability estimate, and the threshold of every effect here",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold, max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every effect here is screened against, one observed realization of repeatability *plus* uncontrolled drift and not a bound on either",
     "detail": "inside the finer recording alone, so drift-free: its supported native mean profile minus that profile sampled at the coarse knots, as RMS, peak and share of the spatial variance; fine_variance_share_at_coarse_knots is what the coarse knots retain (1.0 = coarsening loses nothing)",
     "replicates": "no profile and no gate is an independent experimental replicate: each level is one recording, the levels carry no acquisition order, and their differences hold drift as well as pitch",
     "time_view": "the common-duration view of every distributional metric: the largest integer number of nominal 500-RPM revolutions (0.12 s) fitting every level, truncated per file by the recorded timestamps",
     "depth_view": "each level on its own decoded gate grid, restricted to the common physical support; gradient and correlation length are native-grid quantities and nothing is upsampled in this report"
   },
   "findings": {
-    "envelope_gate": {
+    "screening_threshold_gate": {
       "pairs": 78,
-      "envelope_mm_s": 19.37008103465545,
-      "envelope_source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
-      "pairs_above_envelope": 0,
+      "screening_threshold_mm_s": 19.37008103465545,
+      "screening_threshold_source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+      "pairs_above_screening_threshold": 0,
       "max_abs_difference_mm_s": 17.367988923598926,
       "max_abs_difference_fine_path": "res/1-2.BDD",
       "max_abs_difference_coarse_path": "res/1-6.BDD",
       "max_abs_difference_depth_mm": 43.83266666666667,
-      "max_ratio_to_envelope": 0.8966399723638463,
-      "statement": "Effect gate: the largest absolute per-knot mean-profile difference over the 78 pairs is 17.37 mm/s (1-2 vs 1-6 at 43.83 mm) = 0.897 of the WP1 envelope 19.37 mm/s; not one of the 78 pairs puts a knot above the envelope, so no level differs from another by more than repeat-plus-drift anywhere in the common support."
+      "max_ratio_to_screening_threshold": 0.8966399723638463,
+      "statement": "Effect gate: the largest absolute per-knot mean-profile difference over the 78 pairs is 17.37 mm/s (1-2 vs 1-6 at 43.83 mm) = 0.897 of the WP1 screening_threshold 19.37 mm/s; not one of the 78 pairs puts a knot above the screening_threshold, so no level differs from another by more than repeat-plus-drift anywhere in the common support."
     },
     "information": {
       "fine_path": "res/0-2.BDD",
@@ -314,7 +314,7 @@
       "coarse_pitch_mm": 0.6166666666666667,
       "knot_spacing_mm": 0.6166666666666667,
       "knots": 141,
-      "knots_above_envelope": 0,
+      "knots_above_screening_threshold": 0,
       "mean_abs_difference_mm_s": 1.9741170190804878,
       "max_abs_difference_mm_s": 6.113552614489791,
       "max_abs_difference_depth_mm": 44.696000000000005,
@@ -322,7 +322,7 @@
       "detail_max_abs_mm_s": 2.7381502141820704,
       "detail_variance_share": 0.0007219264317894629,
       "variance_share_at_coarse_knots": 0.991513079637173,
-      "statement": "Plan question: 0-2 at 0.2467 mm versus 0-6 at 0.6167 mm on 141 knots spaced 0.6167 mm - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm = 0.316 of the 19.37 mm/s envelope, 0 knots above it. The coarse knots keep 99.15 % of the finer profile's spatial variance; the detail below them carries 0.0722 % (RMS 0.5814 mm/s, peak 2.738 mm/s = 0.141 of the envelope). Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - both the level difference and the structure the extra gates add sit inside the repeat-plus-drift envelope, so this evidence cannot support that claim; it equally cannot exclude a real effect smaller than the bound, which one same-settings repeat cannot resolve."
+      "statement": "Plan question: 0-2 at 0.2467 mm versus 0-6 at 0.6167 mm on 141 knots spaced 0.6167 mm - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm = 0.316 of the 19.37 mm/s screening_threshold, 0 knots above it. The coarse knots keep 99.15 % of the finer profile's spatial variance; the detail below them carries 0.0722 % (RMS 0.5814 mm/s, peak 2.738 mm/s = 0.141 of the screening_threshold). Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - both the level difference and the structure the extra gates add sit inside the repeat-plus-drift screening_threshold, so this evidence cannot support that claim; it equally cannot exclude a real effect smaller than the bound, which one same-settings repeat cannot resolve."
     },
     "coarsest_pitch": {
       "path": "res/3-0.BDD",
@@ -332,11 +332,11 @@
       "correlation_length_mm": 11.84,
       "correlation_length_over_pitch": 3.9999999999999996,
       "max_abs_difference_to_any_other_level_mm_s": 10.43237683989414,
-      "max_ratio_to_envelope": 0.5385819925703634,
-      "statement": "Coarsest measured pitch: the native correlation length of the depth-resolved mean profile is 9.62-18.99 mm at every one of the 13 levels (4-41 gate pitches), so the structure lives on a scale of order tens of millimetres. 3-0 at 2.96 mm (30 supported gates) still samples it 4 times per correlation length and differs from every other level by at most 10.43 mm/s (0.539 of the envelope). On this evidence the coarsest *measured* pitch preserves the structure the finer pitches show, and no measured pitch is shown to lose it - a statement about the 13 recorded pitches only: nothing finer or coarser was measured, and a resolution effect smaller than the drift-inclusive envelope would be invisible here."
+      "max_ratio_to_screening_threshold": 0.5385819925703634,
+      "statement": "Coarsest measured pitch: the native correlation length of the depth-resolved mean profile is 9.62-18.99 mm at every one of the 13 levels (4-41 gate pitches), so the structure lives on a scale of order tens of millimetres. 3-0 at 2.96 mm (30 supported gates) still samples it 4 times per correlation length and differs from every other level by at most 10.43 mm/s (0.539 of the screening_threshold). On this evidence the coarsest *measured* pitch preserves the structure the finer pitches show, and no measured pitch is shown to lose it - a statement about the 13 recorded pitches only: nothing finer or coarser was measured, and a resolution effect smaller than the drift-inclusive screening_threshold would be invisible here."
     },
     "limitations": [
-      "The only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s). The levels are separate recordings with no acquisition order, so an effect smaller than that bound cannot be separated from drift, and a difference that clears it could still be drift rather than pitch. No level is replicated: every difference is one measurement against another and estimates no pitch effect repeatably.",
+      "The screening threshold is the only repeat, at 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s): one observed realization of repeatability plus uncontrolled drift. The levels are separate recordings with no acquisition order, so an effect smaller than it cannot be separated from drift, and a difference that falls above the screening threshold could still be drift rather than pitch \u2014 screening is not attribution. No level is replicated: every difference is one measurement against another and estimates no pitch effect repeatably.",
       "The spatial metrics describe the depth-resolved *mean* profile over the common window; they do not separate spatial structure from temporal noise aliased across gates, and neither gates nor profiles are independent replicates.",
       "Alignment samples the finer profile at the coarser knots by nearest native gate: nothing is interpolated or upsampled, and the tables say nothing about structure between the coarser knots.",
       "This module owns the resolution axis only: burst length, PRF, TGC, emitting power and emissions per profile are neither analysed nor decided here, and pitch x burst interaction is not estimable from this dataset. What would overturn the reading: two recordings per pitch, which would separate pitch from drift and show whether the sub-knot detail measured here is structure or noise."
@@ -354,10 +354,10 @@
   },
   "figure": {
     "path": "figures/resolution-ladder.png",
-    "caption": "WP2 resolution ladder: 13 decoded pitches 0.2467-2.96 mm (0-2..3-0). Common-duration view: 93 nominal 500-RPM revolutions = 11.16 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-96.7427 mm. Gradients and correlation lengths are native-grid quantities; pairs use the coarser participant's own gate depths as knots (spacing = the coarser pitch) with the finer profile sampled there by nearest native gate - nothing is interpolated or upsampled. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, read from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...), an upper bound on same-settings repeatability plus uncontrolled drift. Focus pair: res/0-2.BDD (0.2467 mm) vs res/0-6.BDD (0.6167 mm) - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm, 0 of 141 knots above the envelope. Coarsest measured pitch 2.96 mm (3-0) samples the 11.84 mm correlation length 4 times. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. no gate and no profile is an independent experimental replicate - gates and profiles are not independent samples, and the levels carry no acquisition order. Generated at commit 3a4c55a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 resolution ladder: 13 decoded pitches 0.2467-2.96 mm (0-2..3-0). Common-duration view: 93 nominal 500-RPM revolutions = 11.16 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-96.7427 mm. Gradients and correlation lengths are native-grid quantities; pairs use the coarser participant's own gate depths as knots (spacing = the coarser pitch) with the finer profile sampled there by nearest native gate - nothing is interpolated or upsampled. Decision threshold: the committed sole-pair observed-discrepancy screening threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, read from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...), one observed realization of same-settings repeatability plus uncontrolled drift that screens an effect without bounding it. Focus pair: res/0-2.BDD (0.2467 mm) vs res/0-6.BDD (0.6167 mm) - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm, 0 of 141 knots above the screening_threshold. Coarsest measured pitch 2.96 mm (3-0) samples the 11.84 mm correlation length 4 times. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. no gate and no profile is an independent experimental replicate - gates and profiles are not independent samples, and the levels carry no acquisition order. Generated at commit 3a4c55a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "native-grid spatial correlation length versus gate pitch, with the 1:1 line where a correlation length would equal one gate",
-      "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the signed difference at the 0.617 mm knots and the WP1 envelope band; the native gradient spread stays in resolution-levels.csv"
+      "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the signed difference at the 0.617 mm knots and the WP1 screening_threshold band; the native gradient spread stays in resolution-levels.csv"
     ]
   },
   "regeneration": {

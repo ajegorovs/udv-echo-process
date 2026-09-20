@@ -7,16 +7,16 @@
     "path": "reports/mixer-sensitivity-analysis/manifest.csv",
     "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
   },
-  "envelope": {
+  "screening_threshold": {
     "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
     "gate_index": 39,
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
-    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
   },
@@ -366,7 +366,7 @@
       "rule": "every file's full record in non-overlapping segments of the identical profile count on one shared profile period, so the segment duration, lag grid, frequency grid and frequency resolution are identical for all 12 files; each level's ensemble ACF/PSD is summarised in burst-levels.csv",
       "floor": {
         "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-        "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+        "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
         "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
         "source_paths": [
           "prf/600.BDD",
@@ -387,7 +387,7 @@
           0.0895571252843151
         ],
         "e_folding_lag_difference_s": 0.02238928132107877,
-        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
+        "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
         "hf_share": [
           0.07202236344557275,
           0.09990761745914685
@@ -425,21 +425,21 @@
     "gradient": "median and maximum |mean[k+1] - mean[k]| / native pitch, mm/s per mm",
     "correlation_length": "first native lag whose normalized autocovariance < 1/e, mm",
     "difference": "signed short - long per-gate time mean at every common knot, mm/s",
-    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a burst effect and not a bound on repeatability or uncontrolled drift",
     "figure": "both panels carry this document's caption and the generating commit",
     "knee": "the largest one-step change of a metric along the ladder, with monotonicity",
     "temporal_bandwidth": "per level, from its full-record ensemble PSD inside 0.5-20 Hz: the spectral centroid and RMS bandwidth, the share of in-band power above 10 Hz, and the e-folding lag of the ensemble autocorrelation",
-    "temporal_floor": "the same temporal metrics for the two committed WP1 same-settings recordings, from the curves reference-repeat.provenance.json already records; their difference bounds repeatability plus uncontrolled drift for those metrics",
+    "temporal_floor": "the same temporal metrics for the two committed WP1 same-settings recordings, from the curves reference-repeat.provenance.json already records; their difference is the temporal screening threshold for those metrics \u2014 one observed realization of repeatability plus uncontrolled drift, not a bound on either",
     "replicates": "no profile and no gate is an independent experimental replicate",
     "time_view": "whole 500-RPM revolutions for every level; the full record for ACF/PSD",
     "depth_view": "each level on its own gate grid inside the common support",
     "comparability": "only the decoded burst length may differ across the ladder"
   },
   "findings": {
-    "envelope_gate": {
+    "screening_threshold_gate": {
       "pairs": 66,
-      "envelope_mm_s": 19.37008103465545,
-      "pairs_above_envelope": 21,
+      "screening_threshold_mm_s": 19.37008103465545,
+      "pairs_above_screening_threshold": 21,
       "clearances_involving_the_longest_bursts": 16,
       "max_abs_difference_mm_s": 44.03130014799165,
       "max_abs_difference_paths": [
@@ -447,8 +447,8 @@
         "burst_len/28.BDD"
       ],
       "max_abs_difference_depth_mm": 10.162666666666668,
-      "max_ratio_to_envelope": 2.2731603481273135,
-      "statement": "Effect gate: over the 66 pairs the largest absolute per-knot mean difference is 44.03 mm/s (4 vs 28 cycles) = 2.27 of the WP1 envelope 19.37 mm/s; 21 pairs put a knot above it, 16 of those at the longest bursts, and none covers the support."
+      "max_ratio_to_screening_threshold": 2.2731603481273135,
+      "statement": "Effect gate: over the 66 pairs the largest absolute per-knot mean difference is 44.03 mm/s (4 vs 28 cycles) = 2.27 of the WP1 screening_threshold 19.37 mm/s; 21 pairs put a knot above it, 16 of those at the longest bursts, and none covers the support."
     },
     "focus_18_vs_20": {
       "short_path": "burst_len/18.BDD",
@@ -456,12 +456,12 @@
       "short_cycles": 18,
       "long_cycles": 20,
       "knots": 50,
-      "knots_above_envelope": 0,
+      "knots_above_screening_threshold": 0,
       "mean_abs_difference_mm_s": 5.502559621882552,
       "max_abs_difference_mm_s": 11.751918176021,
       "max_abs_difference_depth_mm": 91.56266666666666,
-      "ratio_to_envelope": 0.6067046469756827,
-      "statement": "Plan question, 18 versus 20 cycles: the largest absolute per-knot mean difference is 11.75 mm/s at 91.56 mm = 0.607 of the 19.37 mm/s envelope, with 0 of 50 knots above it. Verdict: this evidence cannot support choosing 18 cycles over 20 or the reverse \u2014 the difference sits inside the repeat-plus-drift bound and no level in the 16-20-cycle region clears the envelope against any other. Unidentifiable from this dataset: any burst effect smaller than the envelope, and the pitch x burst interaction, because the two ladders meet only at the reference. What would overturn it: two recordings per cycle count in this region, which would separate the level effect from drift."
+      "ratio_to_screening_threshold": 0.6067046469756827,
+      "statement": "Plan question, 18 versus 20 cycles: the largest absolute per-knot mean difference is 11.75 mm/s at 91.56 mm = 0.607 of the 19.37 mm/s screening_threshold, with 0 of 50 knots above it. Verdict: this evidence cannot support choosing 18 cycles over 20 or the reverse \u2014 the difference sits below the screening threshold and no level in the 16-20-cycle region falls above it against any other, so the screening outcome is that nothing is separated. Unidentifiable from this dataset: any burst effect smaller than the screening_threshold, and the pitch x burst interaction, because the two ladders meet only at the reference. What would overturn it: two recordings per cycle count in this region, which would separate the level effect from drift."
     },
     "focus_window_16_20": {
       "cycles": [
@@ -469,9 +469,9 @@
         20
       ],
       "pairs": 3,
-      "pairs_above_envelope": 0,
-      "max_ratio_to_envelope": 0.6503732867808196,
-      "statement": "16-20-cycle region: 3 unordered pairs, 0 of them clearing the envelope, so no level differs from another by more than repeat-plus-drift there."
+      "pairs_above_screening_threshold": 0,
+      "max_ratio_to_screening_threshold": 0.6503732867808196,
+      "statement": "16-20-cycle region: 3 unordered pairs, 0 of them clearing the screening_threshold, so no level differs from another by more than repeat-plus-drift there."
     },
     "knees": {
       "zero_fraction": {
@@ -674,8 +674,8 @@
       "statement": "Spatial smoothing: the native correlation length of the depth-resolved mean profile is 11.1-14.8 mm over 2-32 cycles (6-8 gate pitches), so the longer pulse is not shown to smooth the profile within this ladder."
     },
     "limitations": [
-      "The only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s): the levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the burst length. No level is replicated.",
-      "Temporal metrics are bounded by the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), and one pair cannot estimate that floor's own spread.",
+      "The screening threshold is the only repeat, 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the burst length. No level is replicated.",
+      "Temporal metrics are screened against the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), and one pair cannot estimate that floor's own spread.",
       "The file carries the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the ensemble PSD is per gate, and nothing here separates a burst effect from aliased temporal noise or one recording's dropout.",
       "This module owns the burst-length axis only: resolution, PRF, TGC, emitting power and emissions per profile are neither analysed nor decided here, and the pitch x burst interaction is not estimable from this dataset."
     ]
@@ -692,10 +692,10 @@
   },
   "figure": {
     "path": "figures/burst-ladder.png",
-    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the envelope, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit 4cb2522 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the screening_threshold, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit 4cb2522 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "dropout (zero fraction) and variance (robust spread, RMS) versus cycle count, with the plan's 16-20-cycle region shaded",
-      "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 envelope band"
+      "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 screening_threshold band"
     ]
   },
   "regeneration": {

@@ -244,19 +244,19 @@ def test_rows_are_depth_resolved_and_the_difference_is_signed() -> None:
     assert min(diffs) < 0.0 < max(diffs)
 
 
-def test_envelope_bounds_every_gate_and_names_where_it_is_worst() -> None:
+def test_screening_threshold_bounds_every_gate_and_names_where_it_is_worst() -> None:
     model = build_reference_repeat(DATA_ROOT, MANIFEST, analysis_commit=COMMIT)
-    envelope = model.envelope
-    assert envelope.metric == "max_gate_abs_mean_difference_mm_s"
-    assert envelope.value_mm_s > 0.0
+    screening_threshold = model.screening_threshold
+    assert screening_threshold.metric == "max_gate_abs_mean_difference_mm_s"
+    assert screening_threshold.value_mm_s > 0.0
     worst = max(model.rows, key=lambda row: abs(row.diff_mean_mm_s))
-    assert envelope.value_mm_s == pytest.approx(abs(worst.diff_mean_mm_s))
-    assert envelope.gate_index == worst.gate_index
-    assert envelope.depth_mm == pytest.approx(worst.depth_mm)
+    assert screening_threshold.value_mm_s == pytest.approx(abs(worst.diff_mean_mm_s))
+    assert screening_threshold.gate_index == worst.gate_index
+    assert screening_threshold.depth_mm == pytest.approx(worst.depth_mm)
     assert all(
-        abs(row.diff_mean_mm_s) <= envelope.value_mm_s + 1e-12 for row in model.rows
+        abs(row.diff_mean_mm_s) <= screening_threshold.value_mm_s + 1e-12 for row in model.rows
     )
-    assert envelope.median_abs_mean_difference_mm_s == pytest.approx(
+    assert screening_threshold.median_abs_mean_difference_mm_s == pytest.approx(
         float(np.median([abs(row.diff_mean_mm_s) for row in model.rows]))
     )
 
@@ -519,10 +519,10 @@ def test_provenance_records_the_binding_definitions_and_views(tmp_path, monkeypa
     assert temporal["segments"] == {"prf/600.BDD": 7, "res/1-8.BDD": 6}
     assert temporal["mixer_setpoint_hz"] == pytest.approx(500.0 / 60.0)
     assert "marker" in temporal["mixer_setpoint_role"]
-    envelope = document["envelope"]
-    assert envelope["metric"] == "max_gate_abs_mean_difference_mm_s"
-    assert envelope["value_mm_s"] > 0.0
-    assert envelope["scope"].startswith("upper bound")
+    screening_threshold = document["screening_threshold"]
+    assert screening_threshold["metric"] == "max_gate_abs_mean_difference_mm_s"
+    assert screening_threshold["value_mm_s"] > 0.0
+    assert screening_threshold["scope"].startswith("sole-pair observed-discrepancy screening threshold")
     # The caption a reviewer reads beside the figure states the caveats.
     caption = document["figure"]["caption"]
     assert COMMIT in caption

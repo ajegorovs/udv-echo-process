@@ -6,7 +6,7 @@ so this module failed at import. The tests pin what the screen must not drift on
 common-duration window, common support and clean-OFAT audit; the TGC axis is screened through the
 *committed representation* (op word 23 = 0 / ``uniform``, word 25 = 255 / 40 dB, only word 24 moves)
 and refused when it moves; the power axis holds that representation fixed; every within-axis pair is
-compared to the committed WP1 envelope with the depth ranges where it clears; and the findings state
+compared to the committed WP1 screening_threshold with the depth ranges where it clears; and the findings state
 what velocity-only data cannot say — no echo SNR, no receiver saturation, no safe plateau, no
 acoustic energy, and a sensitivity axis that is absent from the sweep.
 """
@@ -109,8 +109,8 @@ def _inventory(tmp_path: Path, change, name: str = "inventory.csv") -> Path:
     return path
 
 
-def _rebound_envelope(tmp_path: Path, manifest: Path) -> Path:
-    """The committed WP1 envelope re-bound to a copied manifest's own hash."""
+def _rebound_screening_threshold(tmp_path: Path, manifest: Path) -> Path:
+    """The committed WP1 screening_threshold re-bound to a copied manifest's own hash."""
     document = json.loads(ENVELOPE.read_text(encoding="utf-8"))
     document["manifest"]["sha256"] = f"sha256:{hashlib.sha256(manifest.read_bytes()).hexdigest()}"
     path = tmp_path / "reference-repeat.provenance.json"
@@ -142,7 +142,7 @@ def artefact_dir(tmp_path_factory):
 
     directory = tmp_path_factory.mktemp("gain-power-screen")
     write_gain_power_screen(DATASET_ROOT, directory, manifest_path=RELATIVE_MANIFEST,
-                            envelope_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT)
+                            screening_threshold_path=RELATIVE_ENVELOPE, analysis_commit=COMMIT)
     return directory
 
 
@@ -237,10 +237,10 @@ def test_an_unknown_power_label_is_refused_rather_than_ordered() -> None:
 # --------------------------------------------------------------------------- refusals
 
 
-def test_build_refuses_a_stale_hash_a_stale_cell_and_an_unbound_envelope(tmp_path) -> None:
+def test_build_refuses_a_stale_hash_a_stale_cell_and_an_unbound_screening_threshold(tmp_path) -> None:
     wrong = _inventory(tmp_path, lambda body: _replace(body, "tgc/0.BDD", source_sha256="0" * 64))
     with pytest.raises(GainPowerScreenError, match="sha256 mismatch"):
-        build_gain_power_screen(DATA_ROOT, wrong, _rebound_envelope(tmp_path, wrong),
+        build_gain_power_screen(DATA_ROOT, wrong, _rebound_screening_threshold(tmp_path, wrong),
                                 analysis_commit=COMMIT)
 
     # A cell the screen is keyed by or holds fixed must not be stale against the decoder.
@@ -253,13 +253,13 @@ def test_build_refuses_a_stale_hash_a_stale_cell_and_an_unbound_envelope(tmp_pat
             tmp_path,
             lambda body, c=changed: _replace(body, "tgc/10.BDD", **c), name="cell.csv")
         with pytest.raises(GainPowerScreenError, match=reason):
-            build_gain_power_screen(DATA_ROOT, stale, _rebound_envelope(tmp_path, stale),
+            build_gain_power_screen(DATA_ROOT, stale, _rebound_screening_threshold(tmp_path, stale),
                                     analysis_commit=COMMIT)
 
-    with pytest.raises(GainPowerScreenError, match="cannot read the WP1 envelope"):
+    with pytest.raises(GainPowerScreenError, match="cannot read the WP1 screening_threshold"):
         build_gain_power_screen(DATA_ROOT, RELATIVE_MANIFEST, tmp_path / "absent.json",
                                 analysis_commit=COMMIT)
-    # The committed envelope records the committed manifest's hash: another inventory may not
+    # The committed screening_threshold records the committed manifest's hash: another inventory may not
     # borrow its threshold.
     changed = _inventory(tmp_path, lambda body: _replace(body, "tgc/10.BDD", gates="49"),
                          name="other.csv")
@@ -270,7 +270,7 @@ def test_build_refuses_a_stale_hash_a_stale_cell_and_an_unbound_envelope(tmp_pat
     # Every cell the screen holds fixed is re-checked against the decode, so a moved sensitivity
     # is refused by the comparison before the sweep-level sensitivity statement could run.
     with pytest.raises(GainPowerScreenError, match="does not match the decoded"):
-        build_gain_power_screen(DATA_ROOT, moved, _rebound_envelope(tmp_path, moved),
+        build_gain_power_screen(DATA_ROOT, moved, _rebound_screening_threshold(tmp_path, moved),
                                 analysis_commit=COMMIT)
 
 
@@ -401,24 +401,24 @@ def test_the_depth_rows_carry_dropout_and_spread_at_every_supported_gate(axis_ro
 # --------------------------------------------------------------------------- pairs
 
 
-def test_every_pair_is_compared_to_the_committed_envelope_and_its_depth_ranges(screen) -> None:
+def test_every_pair_is_compared_to_the_committed_screening_threshold_and_its_depth_ranges(screen) -> None:
     tgc = next(axis for axis in screen.axes if axis.axis == "tgc")
     low_path, high_path, absolute, depth, ratio, ranges = WORST_PAIR
     worst = max(tgc.pairs, key=lambda row: row["max_abs_difference_mm_s"])
     assert (worst["low_path"], worst["high_path"]) == (low_path, high_path)
     assert worst["max_abs_difference_mm_s"] == pytest.approx(absolute, rel=1e-4)
     assert worst["max_abs_difference_depth_mm"] == pytest.approx(depth)
-    assert worst["max_abs_difference_over_envelope"] == pytest.approx(ratio, rel=1e-4)
-    assert worst["depth_ranges_above_envelope_mm"] == ranges
-    assert worst["knots_above_envelope"] == 2 and worst["knots"] == 50
+    assert worst["max_abs_difference_over_screening_threshold"] == pytest.approx(ratio, rel=1e-4)
+    assert worst["depth_ranges_above_screening_threshold_mm"] == ranges
+    assert worst["knots_above_screening_threshold"] == 2 and worst["knots"] == 50
     assert worst["max_knot_offset_mm"] == 0.0  # identical 1.85 mm grids: no resampling anywhere
-    clearing = [row for row in tgc.pairs if row["knots_above_envelope"]]
+    clearing = [row for row in tgc.pairs if row["knots_above_screening_threshold"]]
     assert len(clearing) == TGC_PAIRS_ABOVE and len(tgc.pairs) == TGC_PAIRS
-    assert all(row["max_abs_difference_over_envelope"] <= ratio for row in tgc.pairs)
+    assert all(row["max_abs_difference_over_screening_threshold"] <= ratio for row in tgc.pairs)
     assert all(
         row["mean_abs_difference_mm_s"] <= row["max_abs_difference_mm_s"] for row in tgc.pairs
     )
-    assert screen.envelope.value_mm_s == ENVELOPE_MM_S
+    assert screen.screening_threshold.value_mm_s == ENVELOPE_MM_S
 
 
 def test_each_axis_reports_the_pair_that_brackets_the_base_state(screen, axis_rows) -> None:
@@ -428,8 +428,8 @@ def test_each_axis_reports_the_pair_that_brackets_the_base_state(screen, axis_ro
         low_path, high_path, absolute, knots, ratio = expected
         assert (focus["low_path"], focus["high_path"]) == (low_path, high_path)
         assert focus["max_abs_difference_mm_s"] == pytest.approx(absolute, rel=1e-4)
-        assert focus["knots_above_envelope"] == knots
-        assert focus["max_abs_difference_over_envelope"] == pytest.approx(ratio, rel=1e-4)
+        assert focus["knots_above_screening_threshold"] == knots
+        assert focus["max_abs_difference_over_screening_threshold"] == pytest.approx(ratio, rel=1e-4)
     assert tgc.base_state["decoded_key"] == "19.9215686275"
     assert tgc.base_state["in_ladder"] is False
     assert tuple(tgc.base_state["straddling_pair"]) == FOCUS_TGC[:2]
@@ -479,7 +479,7 @@ def test_the_diagnostic_verdict_asks_for_one_measurement_not_a_ladder(findings) 
     assert diagnostic["wider_ladder_justified"] is False
     assert diagnostic["outcome_claimed"] is False
     assert diagnostic["flagged_levels"] == 2
-    assert diagnostic["pairs_above_envelope"] == TGC_PAIRS_ABOVE
+    assert diagnostic["pairs_above_screening_threshold"] == TGC_PAIRS_ABOVE
     assert set(diagnostic["focus_pair_ratios"]) == set(AXES)
     assert "echo/energy" in diagnostic["statement"]
     assert "does not predict that diagnostic's outcome" in diagnostic["statement"]
@@ -487,7 +487,7 @@ def test_the_diagnostic_verdict_asks_for_one_measurement_not_a_ladder(findings) 
     assert (summary["levels"], summary["pairs"], summary["levels_flagged"]) == (10, 29, 2)
     assert [row["relative_path"] for row in summary["flagged"]] == list(TGC_FLAGGED)
     assert findings["axes"]["tgc"]["effect_gate"]["pairs"] == TGC_PAIRS
-    assert findings["axes"]["em_pow"]["effect_gate"]["knots_above_envelope"] == 0
+    assert findings["axes"]["em_pow"]["effect_gate"]["knots_above_screening_threshold"] == 0
 
 
 def test_provenance_records_bindings_definitions_views_and_the_caption(screen) -> None:
@@ -499,7 +499,7 @@ def test_provenance_records_bindings_definitions_views_and_the_caption(screen) -
     assert document["analysis_commit"] == COMMIT
     assert document["axes"] == list(AXES)
     assert document["manifest"]["sha256"] == f"sha256:{digest}"
-    assert document["envelope"]["value_mm_s"] == ENVELOPE_MM_S
+    assert document["screening_threshold"]["value_mm_s"] == ENVELOPE_MM_S
     assert document["sensitivity"]["values_in_manifest"] == (SENSITIVITY_VALUE,)
     assert [block["axis"] for block in document["axis_blocks"]] == list(AXES)
     assert [block["key"]["column"] for block in document["axis_blocks"]] == [
@@ -510,7 +510,7 @@ def test_provenance_records_bindings_definitions_views_and_the_caption(screen) -
     assert document["axis_blocks"][0]["views"]["alignment"]["upsampled"] is False
     assert document["axis_blocks"][0]["views"]["depths"]["rows"] == 400
     assert set(document["definitions"]) >= {
-        "key", "tgc_representation", "difference", "envelope", "velocity_only", "base_state"}
+        "key", "tgc_representation", "difference", "screening_threshold", "velocity_only", "base_state"}
     assert document["tables"]["levels"]["rows"] == 10
     assert document["tables"]["pairs"]["rows"] == 29
     assert document["tables"]["depths"]["rows"] == 500
@@ -521,7 +521,7 @@ def test_provenance_records_bindings_definitions_views_and_the_caption(screen) -
     for token in (COMMIT, "19.37", "gain-power-screen", TGC_MODE_LABEL, "medium",
                   "op word 23"):
         assert token in caption
-    assert document["findings"]["envelope"]["value_mm_s"] == ENVELOPE_MM_S
+    assert document["findings"]["screening_threshold"]["value_mm_s"] == ENVELOPE_MM_S
 
 
 def test_the_inputs_block_keeps_every_rechecked_cell_and_the_source_hash(screen) -> None:
@@ -563,7 +563,7 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
     with pytest.raises(SystemExit) as exit_info:
         gain_power_screen_main([
             "--dataset-root", DATASET_ROOT.as_posix(), "--report-dir", second.as_posix(),
-            "--manifest", RELATIVE_MANIFEST.as_posix(), "--envelope", RELATIVE_ENVELOPE.as_posix(),
+            "--manifest", RELATIVE_MANIFEST.as_posix(), "--screening-threshold", RELATIVE_ENVELOPE.as_posix(),
             "--analysis-commit", COMMIT])
     assert exit_info.value.code == 0
     printed = capsys.readouterr().out
@@ -581,12 +581,12 @@ def test_cli_refuses_a_stale_or_coupled_inventory_with_named_reasons(tmp_path, c
     from udv_echo_process.cli import gain_power_screen_main
 
     stale = _inventory(tmp_path, lambda body: _replace(body, "em_pow/high.BDD", source_sha256="0" * 64))
-    envelope = _rebound_envelope(tmp_path, stale)
+    screening_threshold = _rebound_screening_threshold(tmp_path, stale)
     out = tmp_path / "report"
     with pytest.raises(SystemExit) as exit_info:
         gain_power_screen_main([
             "--dataset-root", DATASET_ROOT.as_posix(), "--report-dir", out.as_posix(),
-            "--manifest", stale.as_posix(), "--envelope", envelope.as_posix(),
+            "--manifest", stale.as_posix(), "--screening-threshold", screening_threshold.as_posix(),
             "--analysis-commit", COMMIT])
     assert exit_info.value.code == 1
     captured = capsys.readouterr()

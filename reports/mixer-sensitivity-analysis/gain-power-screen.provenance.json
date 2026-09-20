@@ -20,16 +20,16 @@
     "path": "reports/mixer-sensitivity-analysis/manifest.csv",
     "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
   },
-  "envelope": {
+  "screening_threshold": {
     "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
     "gate_index": 39,
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
-    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
   },
@@ -527,18 +527,18 @@
     "spread_ratio": "a level's largest per-gate robust spread divided by its own axis's median per-gate robust spread: the screen's second aggregate, with the declared limit 3.0, and every ratio is published so the margin can be moved",
     "screen": "one word from the two declared margins: usable, dropout-limited, spread-limited, or both; it says a setting cannot carry a wider ladder, never that a gain or a power setting caused the dropout",
     "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
-    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a gain or power effect and not a bound on repeatability or uncontrolled drift",
     "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
     "base_state": "the level each axis does not hold: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis), and the two ladder-adjacent levels whose keys bracket it",
     "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit"
   },
   "findings": {
-    "envelope": {
+    "screening_threshold": {
       "value_mm_s": 19.37008103465545,
       "metric": "max_gate_abs_mean_difference_mm_s",
       "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
       "median_abs_mean_difference_mm_s": 8.908740794548184,
-      "statement": "Threshold: the committed WP1 envelope 19.3701 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json) bounds same-settings repeatability plus uncontrolled drift, and every mean-profile effect in both axes is compared to it."
+      "statement": "Threshold: the committed WP1 screening_threshold 19.3701 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json) is the sole-pair observed-discrepancy screening threshold: one observed realization of same-settings repeatability plus uncontrolled drift, and not a bound on either. Every mean-profile effect in both axes is screened against it, above or below, without that outcome proving a gain or power effect."
     },
     "axes": {
       "tgc": {
@@ -560,9 +560,9 @@
         },
         "effect_gate": {
           "pairs": 28,
-          "envelope_mm_s": 19.37008103465545,
-          "knots_above_envelope": 14,
-          "pairs_above_envelope": 14,
+          "screening_threshold_mm_s": 19.37008103465545,
+          "knots_above_screening_threshold": 14,
+          "pairs_above_screening_threshold": 14,
           "clearing_pairs": [
             [
               "tgc/0.BDD",
@@ -649,14 +649,14 @@
               "73.0627..74.9127; 78.6127..78.6127; 82.3127..86.0127"
             ]
           ],
-          "max_ratio_to_envelope": 2.4317786964690544,
+          "max_ratio_to_screening_threshold": 2.4317786964690544,
           "max_abs_difference_mm_s": 47.10375040895438,
           "max_abs_difference_paths": [
             "tgc/30.BDD",
             "tgc/40.BDD"
           ],
           "max_abs_difference_depth_mm": 73.06266666666666,
-          "statement": "Effect gate (tgc): the largest absolute per-knot mean difference over the 28 pair(s) is 47.1 mm/s (tgc/30.BDD / tgc/40.BDD at 73.06 mm) = 2.43 of the 19.37 mm/s WP1 envelope; 14 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+          "statement": "Effect gate (tgc): the largest absolute per-knot mean difference over the 28 pair(s) is 47.1 mm/s (tgc/30.BDD / tgc/40.BDD at 73.06 mm) = 2.43 of the 19.37 mm/s WP1 screening_threshold; 14 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
         },
         "focus_pair": {
           "low_path": "tgc/15.BDD",
@@ -664,12 +664,12 @@
           "low_key": 14.901960784313726,
           "high_key": 24.941176470588236,
           "knots": 50,
-          "ratio_to_envelope": 0.6036169961523308,
-          "knots_above_envelope": 0,
+          "ratio_to_screening_threshold": 0.6036169961523308,
+          "knots_above_screening_threshold": 0,
           "mean_signed_difference_mm_s": 0.41805854123403735,
           "max_abs_difference_mm_s": 11.692110129365954,
           "max_abs_difference_depth_mm": 63.812666666666665,
-          "statement": "Focus pair (tgc): the base state's own tgc_start_db (19.9215686275) is no level of this axis; the levels bracketing it \u2014 tgc/15.BDD (14.902) and tgc/25.BDD (24.9412) \u2014 differ by at most 11.69 mm/s at 63.81 mm = 0.604 of the 19.37 mm/s envelope, 0 of 50 knots above it (mean signed +0.4181 mm/s)."
+          "statement": "Focus pair (tgc): the base state's own tgc_start_db (19.9215686275) is no level of this axis; the levels bracketing it \u2014 tgc/15.BDD (14.902) and tgc/25.BDD (24.9412) \u2014 differ by at most 11.69 mm/s at 63.81 mm = 0.604 of the 19.37 mm/s screening_threshold, 0 of 50 knots above it (mean signed +0.4181 mm/s)."
         },
         "base_state": {
           "label": "20",
@@ -700,18 +700,18 @@
         },
         "effect_gate": {
           "pairs": 1,
-          "envelope_mm_s": 19.37008103465545,
-          "knots_above_envelope": 0,
-          "pairs_above_envelope": 0,
+          "screening_threshold_mm_s": 19.37008103465545,
+          "knots_above_screening_threshold": 0,
+          "pairs_above_screening_threshold": 0,
           "clearing_pairs": [],
-          "max_ratio_to_envelope": 0.5374215354901027,
+          "max_ratio_to_screening_threshold": 0.5374215354901027,
           "max_abs_difference_mm_s": 10.409898692212249,
           "max_abs_difference_paths": [
             "em_pow/low.BDD",
             "em_pow/high.BDD"
           ],
           "max_abs_difference_depth_mm": 47.16266666666666,
-          "statement": "Effect gate (em_pow): the largest absolute per-knot mean difference over the 1 pair(s) is 10.41 mm/s (em_pow/low.BDD / em_pow/high.BDD at 47.16 mm) = 0.537 of the 19.37 mm/s WP1 envelope; 0 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+          "statement": "Effect gate (em_pow): the largest absolute per-knot mean difference over the 1 pair(s) is 10.41 mm/s (em_pow/low.BDD / em_pow/high.BDD at 47.16 mm) = 0.537 of the 19.37 mm/s WP1 screening_threshold; 0 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
         },
         "focus_pair": {
           "low_path": "em_pow/low.BDD",
@@ -719,12 +719,12 @@
           "low_key": "low",
           "high_key": "high",
           "knots": 50,
-          "ratio_to_envelope": 0.5374215354901027,
-          "knots_above_envelope": 0,
+          "ratio_to_screening_threshold": 0.5374215354901027,
+          "knots_above_screening_threshold": 0,
           "mean_signed_difference_mm_s": -3.017982084914264,
           "max_abs_difference_mm_s": 10.409898692212249,
           "max_abs_difference_depth_mm": 47.16266666666666,
-          "statement": "Focus pair (em_pow): the base state's own emit_power (medium) is no level of this axis; the levels bracketing it \u2014 em_pow/low.BDD (low) and em_pow/high.BDD (high) \u2014 differ by at most 10.41 mm/s at 47.16 mm = 0.537 of the 19.37 mm/s envelope, 0 of 50 knots above it (mean signed -3.018 mm/s)."
+          "statement": "Focus pair (em_pow): the base state's own emit_power (medium) is no level of this axis; the levels bracketing it \u2014 em_pow/low.BDD (low) and em_pow/high.BDD (high) \u2014 differ by at most 10.41 mm/s at 47.16 mm = 0.537 of the 19.37 mm/s screening_threshold, 0 of 50 knots above it (mean signed -3.018 mm/s)."
         },
         "base_state": {
           "label": "medium",
@@ -746,7 +746,7 @@
       "levels": 10,
       "pairs": 29,
       "levels_flagged": 2,
-      "pairs_above_envelope": 14,
+      "pairs_above_screening_threshold": 14,
       "flagged": [
         {
           "relative_path": "tgc/0.BDD",
@@ -773,7 +773,7 @@
           "axis": "tgc"
         }
       ],
-      "statement": "Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the envelope anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow."
+      "statement": "Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the screening_threshold anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow."
     },
     "sensitivity": {
       "column": "sensitivity",
@@ -805,15 +805,15 @@
       "wider_ladder_justified": false,
       "outcome_claimed": false,
       "flagged_levels": 2,
-      "pairs_above_envelope": 14,
+      "pairs_above_screening_threshold": 14,
       "focus_pair_ratios": {
         "tgc": 0.6036169961523308,
         "em_pow": 0.5374215354901027
       },
-      "statement": "Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the envelope, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show."
+      "statement": "Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the screening_threshold, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show."
     },
     "limitations": [
-      "One recording per setting and no acquisition order: the only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s), no level is replicated, no p-value is produced and no replicate claim is made.",
+      "One recording per setting and no acquisition order: the only repeat is the sole-pair observed-discrepancy screening threshold, 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s), one observed realization of repeatability plus uncontrolled drift and not a bound on either: no level is replicated, no p-value is produced and no replicate claim is made.",
       "Velocity only: these files carry one axial-velocity channel in mm/s and no echo or energy profile, so echo SNR, receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred here. A majority-blank gate or a disproportionate per-gate spread is a property of the recorded velocity array, not evidence that a gain, a power or the receiver saturated.",
       "TGC representation: the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. Reading word 24 as a calibrated gain set point is reading something these files do not establish, and no wider TGC ladder can be designed on that reading.",
       "Both axes bracket the base state rather than sampling it (tgc: 14.901960784313726 and 24.941176470588236; em_pow: low and high), and that state's sensitivity is medium like every other row, so neither axis can be compared with the committed reference recording from inside its own ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it \u2014 no pair in this screen varies it, and its effect on dropout, bias or spread is not estimable from the committed sweep."
@@ -880,9 +880,9 @@
         "mean_abs_difference_mm_s",
         "max_abs_difference_mm_s",
         "max_abs_difference_depth_mm",
-        "knots_above_envelope",
-        "max_abs_difference_over_envelope",
-        "depth_ranges_above_envelope_mm",
+        "knots_above_screening_threshold",
+        "max_abs_difference_over_screening_threshold",
+        "depth_ranges_above_screening_threshold_mm",
         "robust_spread_change_mm_s",
         "zero_fraction_change",
         "focus_pair"
@@ -913,10 +913,10 @@
   },
   "figure": {
     "path": "figures/gain-power-screen.png",
-    "caption": "gain-power-screen: the velocity-only screening of 10 committed levels over two axes \u2014 tgc 8 (0, 5, 10, 15, 25, 30, 35, 40) and em_pow 2 (low, high). Common-duration view per axis: 77 nominal 500-RPM revolutions = 9.24 s for tgc and 96 = 11.52 s for em_pow, truncated per file by the recorded timestamps. Common support: 10.1627-100.813 mm on each axis's own 1.85 mm grid, which contains the plan's declared 10.163-96.743 mm window; pairs use the higher key's own gate depths as knots, so nothing is interpolated or upsampled. Threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Screening margins: a gate blank in more than 0.5 of the window, and a per-gate robust spread past 3x the axis's median. Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the envelope anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow. Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the envelope, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show. Spread and bias by depth are in gain-power-depths.csv. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. one recording per setting and no acquisition order: no gate and no profile is an independent experimental replicate, a level effect cannot be separated from drift, and no p-value is produced. the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it. Generated at commit 71b7906 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "gain-power-screen: the velocity-only screening of 10 committed levels over two axes \u2014 tgc 8 (0, 5, 10, 15, 25, 30, 35, 40) and em_pow 2 (low, high). Common-duration view per axis: 77 nominal 500-RPM revolutions = 9.24 s for tgc and 96 = 11.52 s for em_pow, truncated per file by the recorded timestamps. Common support: 10.1627-100.813 mm on each axis's own 1.85 mm grid, which contains the plan's declared 10.163-96.743 mm window; pairs use the higher key's own gate depths as knots, so nothing is interpolated or upsampled. Threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...). Screening margins: a gate blank in more than 0.5 of the window, and a per-gate robust spread past 3x the axis's median. Screen: 10 levels over two axes and 29 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 14 of the 29 pairs clear the screening_threshold anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow. Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 10 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.537 of the screening_threshold, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show. Spread and bias by depth are in gain-power-depths.csv. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. one recording per setting and no acquisition order: no gate and no profile is an independent experimental replicate, a level effect cannot be separated from drift, and no p-value is produced. the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it. Generated at commit 71b7906 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "dropout by depth: every level's per-gate zero fraction against depth with the declared majority-blank limit (the per-gate robust spread is tabulated in gain-power-depths.csv)",
-      "each axis's focus pair against the envelope: the signed low - high per-gate mean difference of the two levels bracketing the base state's own key, at the shared knots, against the WP1 envelope band"
+      "each axis's focus pair against the screening_threshold: the signed low - high per-gate mean difference of the two levels bracketing the base state's own key, at the shared knots, against the WP1 screening_threshold band"
     ]
   },
   "regeneration": {

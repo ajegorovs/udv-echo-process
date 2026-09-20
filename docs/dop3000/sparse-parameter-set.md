@@ -49,15 +49,15 @@ achieved values, and nothing below is assumed where the file can be read.
 ## 2. What the committed evidence settles — the design rules this set obeys
 
 1. **Do not reacquire 0.247 mm merely for finer pitch.** No measured resolution effect ever cleared the
-   drift-inclusive bound: the focus pair `res/0-2.BDD` vs `res/0-6.BDD` differs by at most 6.1136 mm/s =
-   **0.3156** of the 19.3701 mm/s envelope on 141 knots with **0** above it, the extra gates carry
-   **0.0722 %** of the spatial variance, and **not one of the 78 pairs** puts a knot above the envelope. The
+   sole-pair observed-discrepancy screening threshold: the focus pair `res/0-2.BDD` vs `res/0-6.BDD` differs by at most 6.1136 mm/s =
+   **0.3156** of the 19.3701 mm/s screening threshold on 141 knots with **0** above it, the extra gates carry
+   **0.0722 %** of the spatial variance, and **not one of the 78 pairs** puts a knot above the screening threshold. The
    coarsest measured pitch, 2.960 mm, still samples the measured structure **4** times per correlation
    length. So only the resolution settings needed as reference/interaction corners are retained — **0.617 mm**
    and **2.960 mm**, crossed against burst corners (rule 6, §3.1) — and 1.233 mm is deferred rather than
    reacquired.
 2. **18 versus 20 cycles is unresolvable, and no monotonic knee exists.** The focus pair differs by
-   **0.6067** of the envelope with **0 of 50** knots above it, the whole 16-20-cycle region is inside the
+   **0.6067** of the screening threshold with **0 of 50** knots above it, the whole 16-20-cycle region is inside the
    bound (16-18 = 0.6504, 16-20 = 0.2560, 0 clearing), and no metric along the 2-32-cycle ladder falls
    monotonically — the largest dropout and gradient steps land on **28** cycles and the largest spread step
    is a *rise* at 4, each from a single recording. The augmentation therefore carries **18 cycles**, chosen
@@ -76,9 +76,9 @@ achieved values, and nothing below is assumed where the file can be read.
    wider sensitivity, TGC or power ladder — the committed screen flags 2 of 10 levels for a dropout/spread it
    cannot attribute, and echo SNR, receiver saturation, a safe plateau and acoustic energy are not measurable
    in the committed files at all.
-6. **Independent reference controls at the beginning, middle and end of each randomized or blocked run, and
+6. **Within-run reference controls at the beginning, middle and end of each randomized or blocked run, and
    no Cartesian product.** The only committed same-settings repeat is one pair, which is why every verdict in
-   the decision table is bounded rather than replicated. The crossing below is **2 pitches x 2 burst levels =
+   the decision table is screened rather than replicated. The crossing below is **2 pitches x 2 burst levels =
    4 cells**; no other axis moves in any condition.
 
 ## 3. The first measured augmentation
@@ -109,13 +109,13 @@ Nothing in this set may be identified by a folder name or a label.
 
 **`E128` — the one conditional condition** (emissions/profile 128, everything else as E8/E64). See §3.4.
 
-### 3.2 Reference controls
+### 3.2 Within-run reference controls
 
-Three independent recordings of the **reference condition** (§1) at the **beginning, middle and end of each
+Three recordings of the **reference condition** (§1) at the **beginning, middle and end of each
 randomized or blocked run**. They are repeats of one condition, not new conditions, and are counted
 separately everywhere. They are the design's own answer to the single committed repeat: three same-settings
-recordings in one run bound within-run drift with two independent differences instead of one, and they are
-the direct check that the committed 19.3701 mm/s envelope transfers to the new run.
+recordings in one run form one minimum within-run drift diagnostic with two adjacent, correlated differences instead of one, and they are
+the direct check that the committed 19.3701 mm/s sole-pair observed-discrepancy screening threshold transfers to the new run.
 
 ### 3.3 Already satisfied by existing data vs what actually needs acquisition
 
@@ -160,10 +160,10 @@ artifact fixes either number:
   500-RPM revolutions — so every new record can be truncated to the same common-duration window as its
   comparand. Revised by: a temporal view needing more than the window provides (WP1's needs 6-7 whole 1.9031 s
   segments; the PRF ladder needed 8.1535 s for five whole 1.6 s segments), or a control spread above the
-  envelope.
+  screening threshold.
 - **Reference replication count.** Assumption: **3 controls per run** (beginning/middle/end), which is the
-  smallest count that gives an independent within-run difference. Revised by: a control set whose per-gate
-  mean difference exceeds **19.3701 mm/s** at any gate, which raises the count (a control at every block
+  smallest count that gives a within-run drift difference — one minimum diagnostic whose adjacent differences are correlated. Revised by: a control set whose per-gate
+  mean difference falls above the screening threshold (**19.3701 mm/s**) at any gate, which raises the count (a control at every block
   boundary, or a repeated run) and is checked before any scientific verdict from the run is read.
 
 Both are properties of the run, not of the physics, and neither is a substitute for the replication the
@@ -184,8 +184,8 @@ dataset lacks: the augmentation is still one recording per new condition.
 - **PRF beyond 600 µs** — the whole augmentation holds 600 µs. 250 µs is deferred (rule 3), and 400/800 µs
   are already measured.
 - **Dense TGC and emitting-power sweeps** — not reacquired. Both axes are already screened from the committed
-  levels: 14 of 28 TGC pairs clear the envelope locally and 2 of 10 levels fail the dropout/spread screen
-  (unattributable without echo/energy), while the whole power ladder sits at 0.5374 of the envelope with no
+  levels: 14 of 28 TGC pairs clear the screening threshold locally and 2 of 10 levels fail the dropout/spread screen
+  (unattributable without echo/energy), while the whole power ladder sits at 0.5374 of the screening threshold with no
   flagged level. A wider TGC ladder is **not** justified before the echo/energy diagnostic, and the TGC
   representation itself is unsettled — word 23 stays 0 (`uniform`), word 25 stays 255 and only word 24 moves,
   so the axis is not a validated scalar gain set point and nothing here is designed on such a reading.
@@ -213,12 +213,12 @@ that method rather than inventing a new one:
 
 | Question | Status before the new block |
 |---|---|
-| velocity bias and reference consistency | committed: WP1 `reference-repeat.csv` envelope **19.3701 mm/s**, the threshold every effect is compared to |
+| velocity bias and reference consistency | committed: WP1 `reference-repeat.csv` screening threshold **19.3701 mm/s**, the threshold every effect is compared to |
 | velocity variance versus depth, zero/rejected fraction | committed: per-axis `*-levels.csv` and `gain-power-depths.csv` |
 | aliasing margin, achieved profile interval and count | committed: `prf-levels.csv` (`load_max_over_velo_max`, warning fractions, wrap-like counts, profile rate) |
 | temporal spectra / autocorrelation | committed: WP1 and the matched temporal view of the burst and PRF ladders, with their floors |
 | spatial smoothness and resolved-gradient behaviour | committed: native-grid gradient and correlation length per level |
-| sensitivity to reference-drift | committed as a bound only; the new block's controls are what turn it into a within-run measurement |
+| sensitivity to reference-drift | committed as a screening threshold only; the new block's within-run reference controls are what turn it into a within-run measurement |
 | echo amplitude / saturation | **not available**: no committed file carries an echo/energy channel; D1 is the measurement that would start it |
 | pitch x burst interaction | **not estimable** before this block; CC1-CC4 are the four missing corners |
 
@@ -229,13 +229,13 @@ was shown inadequate.
 
 ## 8. Limitations this design carries
 
-One same-settings repeat only, so the committed bound is repeatability *plus* uncontrolled drift and a
+One same-settings repeat only, so the committed screening threshold is one observed realization of repeatability *plus* uncontrolled drift and a
 clearance can still be drift. No acquisition order, so no time drift is reconstructed from the old set. One
 recording per level, so no old verdict is a replicated one and no p-value is produced. Velocity only: echo
 SNR, receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred. The TGC axis
 is screened through an unsettled representation, not a validated gain ladder. The pitch x burst interaction is
 not estimable from the committed set, which is exactly why CC1-CC4 are new measurements rather than a
-re-reading. A new condition with one recording is still one recording: the reference controls bound drift
+re-reading. A new condition with one recording is still one recording: the within-run reference controls screen drift
 within a run, they do not replicate a condition.
 
 ## 9. Intended outcome and next step

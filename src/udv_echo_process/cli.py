@@ -16,7 +16,7 @@ from that manifest, ``resolution-ladder`` writes the WP2 resolution axis,
 ``burst-ladder`` the WP2 burst-length axis, ``prf-ladder`` the WP2
 pulse-repetition-frequency axis and ``gain-power-screen`` the velocity-only
 TGC and emitting-power screening — levels, pairs and figure — all against the WP1
-envelope, and none of them touches an instrument.
+screening_threshold, and none of them touches an instrument.
 """
 
 from __future__ import annotations
@@ -247,7 +247,7 @@ def reference_repeat_main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="udv-reference-repeat",
         description=(
-            "Quantify the reference-repeatability bound of the committed mixer "
+            "Quantify the sole-pair observed-discrepancy screening threshold of the committed mixer "
             "sweep: the prf/600 vs res/1-8 repeat, depth-resolved"
         ),
     )
@@ -290,7 +290,7 @@ def reference_repeat_main(argv: list[str] | None = None) -> None:
     except reference_repeat.ReferenceRepeatError as exc:
         print(f"udv-reference-repeat: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
-    envelope = model.envelope
+    screening_threshold = model.screening_threshold
     print(
         f"{reference_repeat.DIFFERENCE_DEFINITION} "
         f"({model.input_a.profiles} / {model.input_b.profiles} profiles, "
@@ -302,10 +302,10 @@ def reference_repeat_main(argv: list[str] | None = None) -> None:
         f"({model.common.profiles_a} / {model.common.profiles_b} profiles)"
     )
     print(
-        f"envelope    : {envelope.value_mm_s:.4g} mm/s "
-        f"({envelope.metric}, gate {envelope.gate_index} at "
-        f"{envelope.depth_mm:.4g} mm); median |per-gate mean| "
-        f"{envelope.median_abs_mean_difference_mm_s:.4g} mm/s"
+        f"threshold   : {screening_threshold.value_mm_s:.4g} mm/s "
+        f"({screening_threshold.metric}, gate {screening_threshold.gate_index} at "
+        f"{screening_threshold.depth_mm:.4g} mm); median |per-gate mean| "
+        f"{screening_threshold.median_abs_mean_difference_mm_s:.4g} mm/s"
     )
     print(f"table       : {report_dir / reference_repeat.CSV_NAME}")
     print(f"provenance  : {report_dir / reference_repeat.PROVENANCE_NAME}")
@@ -323,8 +323,9 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
     hash and decoded setting, and writes ``resolution-levels.csv``,
     ``resolution-pairs.csv``, ``resolution-ladder.provenance.json`` and
     ``figures/resolution-ladder.png`` into the report directory, comparing every
-    pair to the committed WP1 repeatability envelope. Exits 0 on success and 1
-    with the named reason on stderr when the selection, the bytes, the envelope or
+    pair to the committed WP1 sole-pair observed-discrepancy screening threshold. Exits 0 on
+    success and 1 with the named reason on stderr when the selection, the bytes, the
+    screening threshold or
     the alignment cannot be trusted (never a traceback, and never a half-written
     artefact). It touches nothing but those four files: no instrument, no cache.
     """
@@ -333,7 +334,7 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         description=(
             "Analyse the committed mixer sweep's resolution ladder: depth-resolved "
             "metrics per decoded pitch, every level pair on common knots, and the "
-            "effect against the WP1 repeatability envelope"
+            "effect against the WP1 sole-pair observed-discrepancy screening threshold"
         ),
     )
     parser.add_argument(
@@ -355,10 +356,10 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         ),
     )
     parser.add_argument(
-        "--envelope",
+        "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the repeatability envelope is read from (default: "
+            "WP1 provenance the sole-pair observed-discrepancy screening threshold is read from (default: "
             "<report-dir>/reference-repeat.provenance.json)"
         ),
     )
@@ -378,14 +379,14 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            envelope_path=None if args.envelope is None else Path(args.envelope),
+            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except resolution_ladder.ResolutionLadderError as exc:
         print(f"udv-resolution-ladder: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
     findings = resolution_ladder.provenance_document(model)["findings"]
-    gate = findings["envelope_gate"]
+    gate = findings["screening_threshold_gate"]
     information = findings["information"]
     coarsest = findings["coarsest_pitch"]
     print(
@@ -399,10 +400,11 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         f"{model.common.support_min_mm:.6g}-{model.common.support_max_mm:.6g} mm"
     )
     print(
-        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s "
-        f"({model.envelope.metric}, {model.envelope.path}); "
-        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
-        f"{gate['max_ratio_to_envelope']:.3g} x"
+        f"threshold   : {model.screening_threshold.value_mm_s:.4g} mm/s "
+        f"({model.screening_threshold.metric}, {model.screening_threshold.path}); "
+        f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
+    "screening count, not proof of an effect), worst "
+        f"{gate['max_ratio_to_screening_threshold']:.3g} x"
     )
     print(
         f"focus pair  : {information['fine_path']} ({information['fine_pitch_mm']:.4g} mm) "
@@ -410,8 +412,8 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         f"({information['coarse_pitch_mm']:.4g} mm): max |diff| "
         f"{information['max_abs_difference_mm_s']:.4g} mm/s at "
         f"{information['max_abs_difference_depth_mm']:.4g} mm = "
-        f"{information['max_abs_difference_mm_s'] / model.envelope.value_mm_s:.3g} x "
-        f"envelope; sub-knot detail peak "
+        f"{information['max_abs_difference_mm_s'] / model.screening_threshold.value_mm_s:.3g} x "
+        f"the screening threshold; sub-knot detail peak "
         f"{information['detail_max_abs_mm_s']:.4g} mm/s"
     )
     print(
@@ -436,9 +438,10 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
     and decoded setting, refuses a ladder where a setting other than the burst length moved,
     and writes ``burst-levels.csv``, ``burst-pairs.csv``, ``burst-ladder.provenance.json``
     and ``figures/burst-ladder.png`` into the report directory, comparing every level pair to
-    the committed WP1 repeatability envelope and the matched temporal view to the temporal
-    repeat floor the committed WP1 curves imply. Exits 0 on success and 1 with the named
-    reason on stderr when the selection, the bytes, the envelope or the temporal floor cannot
+    the committed WP1 sole-pair observed-discrepancy screening threshold and the matched temporal
+    view to the temporal repeat floor the committed WP1 curves imply. Exits 0 on success and 1
+    with the named reason on stderr when the selection, the bytes, the screening threshold or the
+    temporal floor cannot
     be trusted (never a traceback, never a half-written artefact). It touches nothing but
     those four files: no instrument, no cache.
     """
@@ -447,7 +450,7 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
         description=(
             "Analyse the committed mixer sweep's burst-length ladder: depth-resolved metrics "
             "and matched full-record temporal metrics per decoded cycle count, every level "
-            "pair on the shared knots, and every effect against the WP1 repeatability envelope"
+            "pair on the shared knots, and every effect against the WP1 sole-pair screening threshold"
         ),
     )
     parser.add_argument(
@@ -466,10 +469,10 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
         help="WP0 manifest the ladder is selected from (default: <report-dir>/manifest.csv)",
     )
     parser.add_argument(
-        "--envelope",
+        "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the repeatability envelope and temporal floor are read from "
+            "WP1 provenance the sole-pair screening threshold and temporal floor are read from "
             "(default: <report-dir>/reference-repeat.provenance.json)"
         ),
     )
@@ -489,14 +492,14 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            envelope_path=None if args.envelope is None else Path(args.envelope),
+            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except burst_ladder.BurstLadderError as exc:
         print(f"udv-burst-ladder: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
     findings = burst_ladder.provenance_document(model)["findings"]
-    gate = findings["envelope_gate"]
+    gate = findings["screening_threshold_gate"]
     focus = findings["focus_18_vs_20"]
     window = findings["focus_window_16_20"]
     temporal = findings["temporal_bandwidth"]
@@ -513,17 +516,19 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
         f"({model.temporal['frequency_resolution_hz']:.4g} Hz resolution)"
     )
     print(
-        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}); "
-        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
-        f"{gate['max_ratio_to_envelope']:.3g} x, "
+        f"screening_threshold    : {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}); "
+        f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
+    "screening count, not proof of an effect), worst "
+        f"{gate['max_ratio_to_screening_threshold']:.3g} x, "
         f"{gate['clearances_involving_the_longest_bursts']} of them at the longest bursts"
     )
     print(
         f"focus 18/20 : max |diff| {focus['max_abs_difference_mm_s']:.4g} mm/s at "
-        f"{focus['max_abs_difference_depth_mm']:.4g} mm = {focus['ratio_to_envelope']:.3g} x "
-        f"envelope, {focus['knots_above_envelope']} of {focus['knots']} knots above it; "
+        f"{focus['max_abs_difference_depth_mm']:.4g} mm = {focus['ratio_to_screening_threshold']:.3g} x "
+        f"the screening threshold, {focus['knots_above_screening_threshold']} of {focus['knots']} "
+        f"knots above it (screening only); "
         f"16-20-cycle region {window['pairs']} pairs, "
-        f"{window['pairs_above_envelope']} clearing it"
+        f"{window['pairs_above_screening_threshold']} clearing it"
     )
     print(
         f"bandwidth   : in-band power above 10 Hz {temporal['hf_share_min']:.4g}-"
@@ -550,9 +555,10 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     ``prf-ladder.provenance.json`` and ``figures/prf-ladder.png`` into the report directory:
     per-level velocity metrics, the actual profile rate from the timestamps, the ``|v| / Vmax``
     load fractions, the wrap-like discontinuities, the matched-physical-duration temporal view
-    with its repeat floor, every level pair against the committed WP1 envelope, and the plan's
-    400-us versus 250-us decision. Exits 0 on success and 1 with the named reason on stderr when
-    the selection, the bytes, the envelope, the temporal floor or the key's scaling cannot be
+    with its repeat floor, every level pair against the committed WP1 sole-pair screening
+    threshold, and the plan's 400-us versus 250-us decision. Exits 0 on success and 1 with the
+    named reason on stderr when the selection, the bytes, the screening threshold, the temporal
+    floor or the key's scaling cannot be
     trusted (never a traceback, never a half-written artefact). It touches nothing but those four
     files: no instrument, no cache.
     """
@@ -561,7 +567,7 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
         description=(
             "Analyse the committed mixer sweep's PRF ladder: velocity headroom and usable "
             "temporal bandwidth per decoded pulse-repetition period, every level pair on the "
-            "shared knots and bands, and every effect against the WP1 repeatability envelope"
+            "shared knots and bands, and every effect against the WP1 sole-pair screening threshold"
         ),
     )
     parser.add_argument(
@@ -580,10 +586,10 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
         help="WP0 manifest the ladder is selected from (default: <report-dir>/manifest.csv)",
     )
     parser.add_argument(
-        "--envelope",
+        "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the repeatability envelope and temporal floor are read from "
+            "WP1 provenance the sole-pair screening threshold and temporal floor are read from "
             "(default: <report-dir>/reference-repeat.provenance.json)"
         ),
     )
@@ -603,7 +609,7 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            envelope_path=None if args.envelope is None else Path(args.envelope),
+            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except prf_ladder.PrfLadderError as exc:
@@ -633,9 +639,10 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
         f"mixer marker {bandwidth['mixer_marker_hz']:.4g} Hz (a marker, not a phase reference)"
     )
     print(
-        f"envelope    : {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}); "
-        f"{gate['pairs_above_envelope']} / {gate['pairs']} pairs above it, worst "
-        f"{gate['max_ratio_to_envelope']:.3g} x at {gate['max_abs_difference_mm_s']:.4g} mm/s"
+        f"screening_threshold    : {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}); "
+        f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
+    "screening count, not proof of an effect), worst "
+        f"{gate['max_ratio_to_screening_threshold']:.3g} x at {gate['max_abs_difference_mm_s']:.4g} mm/s"
     )
     print(
         f"headroom    : at {headroom['focus_prf_period_us']:g} us the peak load is "
@@ -1251,9 +1258,11 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
     255) no longer holds, and writes ``gain-power-levels.csv``, ``gain-power-pairs.csv``,
     ``gain-power-depths.csv``, ``gain-power-screen.provenance.json`` and
     ``figures/gain-power-screen.png`` into the report directory: depth-resolved dropout, bias and
-    spread per level, every within-axis pair against the committed WP1 envelope with the depth ranges
-    where it clears, and the sensitivity/echo-energy statement. Exits 0 on success and 1 with the
-    named reason on stderr when the selection, the bytes, the envelope or an invariant cannot be
+    spread per level, every within-axis pair against the committed WP1 sole-pair screening threshold
+    with the depth ranges where it falls above the screening threshold, and the sensitivity/echo-energy
+    statement. Exits 0
+    on success and 1 with the named reason on stderr when the selection, the bytes, the screening
+    threshold or an invariant cannot be
     trusted (never a traceback, never a half-written artefact). It touches nothing but those files.
     """
     parser = argparse.ArgumentParser(
@@ -1261,7 +1270,7 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
         description=(
             "Screen the committed mixer sweep's TGC and emitting-power axes on velocity alone: "
             "depth-resolved dropout, bias and spread per decoded level, every within-axis pair "
-            "against the committed WP1 repeatability envelope, and what still needs echo/energy"
+            "against the committed WP1 sole-pair screening threshold, and what still needs echo/energy"
         ),
     )
     parser.add_argument(
@@ -1280,10 +1289,10 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
         help="WP0 manifest both axes are selected from (default: <report-dir>/manifest.csv)",
     )
     parser.add_argument(
-        "--envelope",
+        "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the repeatability envelope is read from (default: "
+            "WP1 provenance the sole-pair observed-discrepancy screening threshold is read from (default: "
             "<report-dir>/reference-repeat.provenance.json)"
         ),
     )
@@ -1303,7 +1312,7 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            envelope_path=None if args.envelope is None else Path(args.envelope),
+            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except gain_power_screen.GainPowerScreenError as exc:
@@ -1319,13 +1328,14 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
             f"{axis.common['window_s']:.4g} s; support {axis.common['support_min_mm']:.6g}-"
             f"{axis.common['support_max_mm']:.6g} mm; flagged "
             f"{axis.screen['flagged_paths'] or 'none'}; worst pair "
-            f"{gate['max_abs_difference_mm_s']:.4g} mm/s = {gate['max_ratio_to_envelope']:.3g} "
-            f"envelope over {gate['knots_above_envelope']} of {gate['pairs']} pair(s) clearing"
+            f"{gate['max_abs_difference_mm_s']:.4g} mm/s = {gate['max_ratio_to_screening_threshold']:.3g} "
+            f"of the screening threshold over {gate['knots_above_screening_threshold']} of "
+            f"{gate['pairs']} pair(s) above it"
         )
     print(
         f"screen  : {screen['levels']} levels, {screen['levels_flagged']} flagged, "
-        f"{screen['pairs_above_envelope']} of {screen['pairs']} pairs clear the "
-        f"{model.envelope.value_mm_s:.6g} mm/s envelope"
+        f"{screen['pairs_above_screening_threshold']} of {screen['pairs']} pairs fall above the "
+        f"{model.screening_threshold.value_mm_s:.6g} mm/s screening threshold (screening only)"
     )
     print(f"diagnostic: justified={diagnostic['justified']} "
           f"wider_ladder_justified={diagnostic['wider_ladder_justified']} "

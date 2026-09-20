@@ -1,11 +1,13 @@
-"""WP1 — the reference-repeatability bound (plan ``WP1``).
+"""WP1 — the sole-pair observed-discrepancy screening threshold (plan ``WP1``).
 
 The committed sweep holds exactly one same-settings repeat: the base state
 recorded twice as ``prf/600.BDD`` (669 profiles, 14.956 s) and
-``res/1-8.BDD`` (517 profiles, 11.5529 s). Their difference is an **upper
-bound** on same-setting repeatability, because duration and unknown acquisition
-time also differ — file metadata does not recover acquisition order, so the
-drift component can be bounded but never reconstructed (plan §2–§3.3).
+``res/1-8.BDD`` (517 profiles, 11.5529 s). Their difference is the **sole-pair
+observed-discrepancy screening threshold**: one observed realization of
+repeatability plus uncontrolled drift, because duration and unknown acquisition
+time also differ — file metadata does not recover acquisition order, so a level
+effect smaller than it cannot be separated from drift and a larger one is still
+screened, not proved (plan §2–§3.3).
 
 What this module computes, from the manifest-selected files only:
 
@@ -21,10 +23,12 @@ What this module computes, from the manifest-selected files only:
   experimental replicate and no p-value family is produced (plan §3.3).
 - **The pairwise difference**, signed ``prf/600.BDD - res/1-8.BDD`` at every
   gate, field by field — orientation is a definition, not an inference.
-- **The declared repeatability envelope**: the largest absolute per-gate mean
-  difference over depth, with the gate and depth where it occurs and the median
-  absolute per-gate difference beside it. Later axis verdicts must state
-  whether an effect exceeds this envelope (plan §4 WP1 gate).
+- **The declared sole-pair observed-discrepancy screening threshold**: the largest
+  absolute per-gate mean difference over depth, with the gate and depth where it
+  occurs and the median absolute per-gate difference beside it. Later axis verdicts
+  screen every effect against the sole-pair observed-discrepancy screening threshold and
+  say only whether that effect falls above or below it — a non-causal screening outcome,
+  not proof of an axis effect and not a bound on drift (plan §4 WP1 gate).
 - **Temporal autocorrelation and PSD** per gate, on the identical 50-gate grid,
   from non-overlapping segments of one shared duration and therefore one shared
   frequency resolution for both recordings.
@@ -145,7 +149,7 @@ class ReferenceRepeatError(ValueError):
 def select_repeat_rows(manifest_path: Path) -> tuple[dict[str, str], dict[str, str]]:
     """Return the two ``REPEAT_PAIR`` manifest rows, in pair order.
 
-    The pair is bound to the WP0 manifest rather than to a hand-maintained
+    The pair is pinned to the WP0 manifest rather than to a hand-maintained
     filename list: the file being compared is the one the inventory decoded, and
     its ``source_sha256`` is the content identity
     :func:`build_reference_repeat` then re-checks against the bytes.
@@ -296,7 +300,7 @@ class GateRow(ValueModel):
 
 
 class RepeatInput(ValueModel):
-    """One recording of the repeat pair, as decoded and bound to the manifest."""
+    """One recording of the repeat pair, as decoded and pinned to the manifest."""
 
     relative_path: str
     axis: str
@@ -332,12 +336,13 @@ class CommonView(ValueModel):
     gates: int
 
 
-class RepeatEnvelope(ValueModel):
-    """The declared upper bound on same-setting repeatability.
+class ObservedDiscrepancyScreeningThreshold(ValueModel):
+    """The declared sole-pair observed-discrepancy screening threshold.
 
     ``value_mm_s`` is the largest absolute per-gate mean difference over depth —
-    a bound that combines true repeatability with uncontrolled drift, because
-    the two recordings also differ in duration and acquisition time (plan §3.3).
+    the threshold every axis screens an effect against. It is *not* a bound: it
+    combines true repeatability with uncontrolled drift, because the two
+    recordings also differ in duration and acquisition time (plan §3.3).
     """
 
     metric: str = "max_gate_abs_mean_difference_mm_s"
@@ -347,7 +352,7 @@ class RepeatEnvelope(ValueModel):
     depth_mm: float
     median_abs_mean_difference_mm_s: float
     scope: str = (
-        "upper bound on same-settings repeatability plus uncontrolled drift"
+        "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either"
     )
 
 
@@ -443,7 +448,7 @@ class TemporalComparison(ValueModel):
 
 
 class ReferenceRepeat(ValueModel):
-    """The WP1 result: the pair, the common window, the rows and the envelope."""
+    """The WP1 result: the pair, the common window, the rows and the screening_threshold."""
 
     dataset_root: str
     manifest_path: str
@@ -452,7 +457,7 @@ class ReferenceRepeat(ValueModel):
     input_a: RepeatInput
     input_b: RepeatInput
     common: CommonView
-    envelope: RepeatEnvelope
+    screening_threshold: ObservedDiscrepancyScreeningThreshold
     rows: tuple[GateRow, ...]
     temporal: TemporalComparison
 
@@ -632,7 +637,7 @@ def _require_same_settings(a: RepeatInput, b: RepeatInput) -> None:
 def _window(values: np.ndarray, time_s: np.ndarray, window_s: float) -> np.ndarray:
     """The leading ``window_s`` of a recording, as ``(profiles, gates)`` samples.
 
-    The bound is the recorded timestamp, so both recordings are cut at the same
+    The cut is the recorded timestamp, so both recordings are cut at the same
     *duration* even though their profile counts differ; a 1 ns tolerance keeps
     the last sample on the boundary from depending on float rounding.
     """
@@ -714,7 +719,7 @@ def temporal_series(
     """Per-gate autocorrelation and PSD of one recording, on ``profile_period_s``.
 
     Args:
-        entry: the recording's manifest-bound record (path, hash, gate count).
+        entry: the recording's manifest-pinned record (path, hash, gate count).
         values: the recording's full ``(profiles, gates)`` velocity array.
         profile_period_s: the analysis period (see
             :func:`shared_profile_period_s`).
@@ -876,7 +881,7 @@ def build_reference_repeat(
 
     Returns:
         The pair, the common-duration view, one :class:`GateRow` per gate and the
-        declared envelope.
+        declared screening_threshold.
 
     Raises:
         ReferenceRepeatError: for a manifest that does not select exactly this
@@ -953,7 +958,7 @@ def build_reference_repeat(
             profiles_b=int(window_b.shape[0]),
             gates=entry_a.gates,
         ),
-        envelope=RepeatEnvelope(
+        screening_threshold=ObservedDiscrepancyScreeningThreshold(
             value_mm_s=float(absolute[worst]),
             gate_index=int(gate_rows[worst].gate_index),
             depth_mm=float(gate_rows[worst].depth_mm),
@@ -1071,7 +1076,7 @@ def figure_caption(model: ReferenceRepeat) -> str:
 
     It names the pair, the signed difference orientation with its units, both
     time views, the temporal segment length and frequency resolution, the
-    declared envelope, the generator commit and the two caveats that keep the
+    declared screening_threshold, the generator commit and the two caveats that keep the
     plots honest: the setpoint is not a phase reference, and profiles/gates are
     not independent replicates.
     """
@@ -1085,10 +1090,11 @@ def figure_caption(model: ReferenceRepeat) -> str:
         f"{model.common.profiles_a} / {model.common.profiles_b} profiles of the two "
         "recordings. "
         f"Difference = {DIFFERENCE_DEFINITION} (signed, mm/s), field by field. "
-        f"Declared repeatability envelope = {model.envelope.value_mm_s:.4g} mm/s: the "
-        "largest absolute per-gate mean difference over depth, an upper bound on "
-        "same-settings repeatability plus uncontrolled drift, not a repeatability "
-        "estimate on its own. "
+        "Declared sole-pair observed-discrepancy screening threshold = "
+        f"{model.screening_threshold.value_mm_s:.4g} mm/s: the largest absolute per-gate "
+        "mean difference over depth, the threshold every mean-profile effect is "
+        "screened against — a non-causal screening outcome, not a bound on "
+        "same-settings repeatability or uncontrolled drift. "
         f"Temporal view: full record in {temporal.segment_profiles}-profile "
         f"non-overlapping segments ({series_a.segments} / {series_b.segments} "
         f"segments, {temporal.segment_duration_s:.4g} s each, identical for both "
@@ -1098,7 +1104,7 @@ def figure_caption(model: ReferenceRepeat) -> str:
         f"{MIXER_SETPOINT_ROLE}. "
         f"Generated at commit {model.analysis_commit or 'unknown'} from "
         f"{model.manifest_path} ({model.manifest_sha256}); profiles and gates are "
-        "not independent replicates and the difference is an upper bound."
+        "not independent replicates, and the difference is a screening outcome, not a bound."
     )
 
 
@@ -1203,16 +1209,16 @@ def provenance_document(model: ReferenceRepeat) -> dict[str, object]:
                 ],
             },
         },
-        "envelope": {
-            "metric": model.envelope.metric,
-            "units": model.envelope.units,
-            "value_mm_s": model.envelope.value_mm_s,
-            "gate_index": model.envelope.gate_index,
-            "depth_mm": model.envelope.depth_mm,
+        "screening_threshold": {
+            "metric": model.screening_threshold.metric,
+            "units": model.screening_threshold.units,
+            "value_mm_s": model.screening_threshold.value_mm_s,
+            "gate_index": model.screening_threshold.gate_index,
+            "depth_mm": model.screening_threshold.depth_mm,
             "median_abs_mean_difference_mm_s": (
-                model.envelope.median_abs_mean_difference_mm_s
+                model.screening_threshold.median_abs_mean_difference_mm_s
             ),
-            "scope": model.envelope.scope,
+            "scope": model.screening_threshold.scope,
         },
         "figure": {
             "path": f"{FIGURES_DIRNAME}/{FIGURE_NAME}",
@@ -1224,7 +1230,7 @@ def provenance_document(model: ReferenceRepeat) -> dict[str, object]:
                 ),
                 (
                     "signed difference prf/600 - res/1-8 versus depth with the "
-                    "declared envelope"
+                    "declared screening_threshold"
                 ),
                 (
                     "ensemble autocorrelation over the identical 50 gates versus "
@@ -1273,7 +1279,7 @@ def render_figure(
     """Write the four-panel WP1 figure, deterministically, and return its path.
 
     Panels: the two depth profiles (median ± IQR/2 over the common-duration
-    view), their signed difference with the declared envelope, and the two
+    view), their signed difference with the declared screening_threshold, and the two
     temporal comparisons — ensemble autocorrelation and ensemble PSD over the
     identical 50 gates on the one shared segment grid. The caption is part of
     the image, so the figure cannot be separated from its caveats.
@@ -1327,9 +1333,9 @@ def render_figure(
     profiles.grid(alpha=0.2)
     profiles.legend(loc="upper left", fontsize=6.5, framealpha=0.9)
 
-    # (2) the signed difference and the declared envelope
-    envelope = model.envelope.value_mm_s
-    difference_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.2, linewidth=0)
+    # (2) the signed difference and the declared screening_threshold
+    screening_threshold = model.screening_threshold.value_mm_s
+    difference_ax.axvspan(-screening_threshold, screening_threshold, color="#999999", alpha=0.2, linewidth=0)
     difference_ax.plot(
         [row.diff_mean_mm_s for row in model.rows],
         depth,
@@ -1347,15 +1353,15 @@ def render_figure(
     )
     for sign in (-1.0, 1.0):
         difference_ax.axvline(
-            sign * envelope, color="#555555", linewidth=0.8, linestyle=":"
+            sign * screening_threshold, color="#555555", linewidth=0.8, linestyle=":"
         )
     difference_ax.axvline(0.0, color="#bbbbbb", linewidth=0.8)
     difference_ax.set_xlabel("difference [mm/s]")
     difference_ax.set_ylabel("depth from transducer face [mm]")
     difference_ax.set_title(
         f"signed difference {DIFFERENCE_DEFINITION}\n"
-        f"declared envelope ±{envelope:.4g} mm/s "
-        f"(worst at {model.envelope.depth_mm:.4g} mm)",
+        f"declared screening_threshold ±{screening_threshold:.4g} mm/s "
+        f"(worst at {model.screening_threshold.depth_mm:.4g} mm)",
         fontsize=9.5,
     )
     difference_ax.invert_yaxis()
@@ -1453,7 +1459,7 @@ def render_figure(
     )
 
     figure.suptitle(
-        "WP1 reference-repeatability bound — the only same-settings repeat in the "
+        "WP1 sole-pair observed-discrepancy screening threshold — the only same-settings repeat in the "
         "committed mixer sweep",
         fontsize=11,
     )

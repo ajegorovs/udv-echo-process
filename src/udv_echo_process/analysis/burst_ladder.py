@@ -1,4 +1,4 @@
-"""WP2, burst-length axis — the measured cycle ladder against the repeatability bound.
+"""WP2, burst-length axis — the measured cycle ladder against the sole-pair screening threshold.
 
 The committed sweep holds a 12-point burst-length ladder — one base-state recording per
 requested cycle count, 2 (`burst_len/2.BDD`) to 32 (`burst_len/32.BDD`), over the same ~100 mm
@@ -8,12 +8,12 @@ where the empirical transition is, and whether 18 can be separated from 20 cycle
 
 One build produces the common views (plan §3.1, §3.2), the per-level native-grid metrics, the
 matched full-record temporal view with its repeat floor, every unordered pair against the
-committed WP1 envelope (with the depth ranges where a difference clears it), the knees of the
+committed WP1 screening_threshold (with the depth ranges where a difference clears it), the knees of the
 dropout/variance/smoothing/bandwidth metrics, and the four artefacts.
 
 The input binding is **not** written here: the manifest selection, the decode with its
 hash/cell/grid re-checks, the clean-OFAT audit, the common views, the native-grid metrics, the
-knot alignment, the committed WP1 envelope and temporal-floor readers, the knees and the writers
+knot alignment, the committed WP1 screening_threshold and temporal-floor readers, the knees and the writers
 belong to the shared layer (:mod:`udv_echo_process.analysis._native_grid`), which this axis
 drives with its own axis name, key cell, settings and columns — and which the resolution, PRF and
 TGC/power axes drive with theirs, so no axis can drift from the inventory contract its siblings
@@ -54,7 +54,7 @@ from udv_echo_process.provenance.models import current_revision
 AXIS = "burst_len"
 LEVELS_NAME, PAIRS_NAME = "burst-levels.csv", "burst-pairs.csv"
 PROVENANCE_NAME, FIGURE_NAME = "burst-ladder.provenance.json", "burst-ladder.png"
-FIGURES_DIRNAME, ENVELOPE_NAME = "figures", "reference-repeat.provenance.json"
+FIGURES_DIRNAME, SCREENING_THRESHOLD_NAME = "figures", "reference-repeat.provenance.json"
 
 #: The plan's two questions — the region to highlight and the decision to make — both selected
 #: from the manifest by decoded cycle count, never by filename.
@@ -99,8 +99,8 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "short_path", "short_label", "short_cycles", "long_path", "long_label",
     "long_cycles", "cycle_gap", "knots", "knot_spacing_mm", "max_knot_offset_mm",
     "mean_abs_difference_mm_s", "max_abs_difference_mm_s", "max_abs_difference_depth_mm",
-    "knots_above_envelope", "max_abs_difference_over_envelope",
-    "depth_ranges_above_envelope_mm", "correlation_length_change_mm",
+    "knots_above_screening_threshold", "max_abs_difference_over_screening_threshold",
+    "depth_ranges_above_screening_threshold_mm", "correlation_length_change_mm",
     "gradient_median_change_mm_s_per_mm", "robust_spread_change_mm_s",
     "zero_fraction_change", "hf_share_change", "acf_e_folding_lag_change_s",
 )
@@ -112,7 +112,7 @@ KNEE_METRICS: tuple[str, ...] = (
 )
 
 #: The error class of every message this module raises; the shared helpers raise the same class,
-#: so one name covers a helper refusal and an axis refusal. The manifest-bound level record is
+#: so one name covers a helper refusal and an axis refusal. The manifest-pinned level record is
 #: the shape WP1 already binds, so the WP1 temporal estimator is reused.
 BurstLadderError = grid.NativeGridError
 LevelInput = wp1.RepeatInput
@@ -136,7 +136,7 @@ class BurstLadder(ValueModel):
     dataset_root: str
     manifest_path: str
     manifest_sha256: str
-    envelope: grid.EnvelopeBinding
+    screening_threshold: grid.ScreeningThresholdBinding
     axis: str = AXIS
     analysis_commit: str | None = None
     eligibility: grid.AxisEligibility = ELIGIBILITY
@@ -163,8 +163,8 @@ class BurstLadder(ValueModel):
             raise ValueError(f"expected every unordered pair, got {len(self.pairs)} pairs")
         if self.focus_pair not in {(row["short_path"], row["long_path"]) for row in self.pairs}:
             raise ValueError(f"focus pair {self.focus_pair} must be one of the pairs")
-        if self.envelope.value_mm_s <= 0.0:
-            raise ValueError("the repeatability envelope must be positive")
+        if self.screening_threshold.value_mm_s <= 0.0:
+            raise ValueError("the repeatability screening_threshold must be positive")
         return self
 
 
@@ -218,7 +218,7 @@ def _read_level(
 ) -> tuple[LevelInput, np.ndarray, np.ndarray, np.ndarray]:
     """Decode one manifest-selected level, returning ``(entry, values, time_s, depths)``.
 
-    The entry is the manifest-bound WP1 record the temporal estimator takes, and every check on
+    The entry is the manifest-pinned WP1 record the temporal estimator takes, and every check on
     the arrays is the shared axis-input layer's, against :data:`VERIFIED_CELLS`.
     """
     level = grid.read_decoded_level(Path(dataset_root), row, cells=VERIFIED_CELLS)
@@ -297,7 +297,7 @@ def pair_row(
     long_profile: tuple[np.ndarray, np.ndarray],
     *,
     support: tuple[float, float],
-    envelope: grid.EnvelopeBinding,
+    screening_threshold: grid.ScreeningThresholdBinding,
 ) -> dict[str, object]:
     """Compare a short-burst level with a longer-burst one on the shared knots.
 
@@ -314,7 +314,7 @@ def pair_row(
     long_depths, long_mean = (np.asarray(part, dtype=float) for part in long_profile)
     aligned = grid.align_on_knots(
         short_depths, short_mean, long_depths, long_mean, path=str(short["relative_path"]),
-        support=support, threshold_mm_s=envelope.value_mm_s,
+        support=support, threshold_mm_s=screening_threshold.value_mm_s,
     )
     absolute, worst = aligned.absolute, aligned.worst
     return {
@@ -327,9 +327,9 @@ def pair_row(
         "mean_abs_difference_mm_s": float(absolute.mean()),
         "max_abs_difference_mm_s": float(absolute[worst]),
         "max_abs_difference_depth_mm": float(aligned.knots[worst]),
-        "knots_above_envelope": int(np.count_nonzero(aligned.flagged)),
-        "max_abs_difference_over_envelope": float(absolute[worst] / envelope.value_mm_s),
-        "depth_ranges_above_envelope_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
+        "knots_above_screening_threshold": int(np.count_nonzero(aligned.flagged)),
+        "max_abs_difference_over_screening_threshold": float(absolute[worst] / screening_threshold.value_mm_s),
+        "depth_ranges_above_screening_threshold_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
         "correlation_length_change_mm": long["correlation_length_mm"]
         - short["correlation_length_mm"],
         "gradient_median_change_mm_s_per_mm": long["gradient_median_abs_mm_s_per_mm"]
@@ -360,12 +360,12 @@ def _focus_pair(levels: Sequence[Mapping[str, object]]) -> tuple[str, str]:
 
 
 def _build(
-    dataset_root: Path, manifest_path: Path, envelope_path: Path, analysis_commit: str | None
+    dataset_root: Path, manifest_path: Path, screening_threshold_path: Path, analysis_commit: str | None
 ) -> tuple[BurstLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
     """Build the ladder and return it beside each level's native mean profile."""
     rows = select_level_rows(manifest_path)  # a missing manifest is refused by name here
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
-    envelope = grid.read_envelope(Path(envelope_path), manifest_sha256)
+    screening_threshold = grid.read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
     decoded = [_read_level(Path(dataset_root), row) for row in rows]
     entries = [entry for entry, *_ in decoded]
     _require_clean_ofat(entries)
@@ -391,12 +391,12 @@ def _build(
     pairs = tuple(
         pair_row(
             short, profiles[short["relative_path"]], long, profiles[long["relative_path"]],
-            support=support, envelope=envelope,
+            support=support, screening_threshold=screening_threshold,
         )
         for short, long in itertools.combinations(levels, 2)
     )
     floor = grid.read_temporal_floor(
-        Path(envelope_path), manifest_sha256, band_hz=PSD_BAND_HZ, hf_above_hz=PSD_HF_ABOVE_HZ
+        Path(screening_threshold_path), manifest_sha256, band_hz=PSD_BAND_HZ, hf_above_hz=PSD_HF_ABOVE_HZ
     )
     counts = {
         entry.relative_path: (own.profiles_window, own.supported_gates)
@@ -406,7 +406,7 @@ def _build(
     model = BurstLadder(
         dataset_root=Path(dataset_root).as_posix(),
         manifest_path=Path(manifest_path).as_posix(), manifest_sha256=manifest_sha256,
-        envelope=envelope,
+        screening_threshold=screening_threshold,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
         eligibility=ELIGIBILITY,
         inputs=tuple(entries),
@@ -443,17 +443,17 @@ def _build(
 def build_burst_ladder(
     dataset_root: Path = inventory.DATASET_ROOT,
     manifest_path: Path = inventory.REPORT_DIR / inventory.MANIFEST_NAME,
-    envelope_path: Path = inventory.REPORT_DIR / ENVELOPE_NAME,
+    screening_threshold_path: Path = inventory.REPORT_DIR / SCREENING_THRESHOLD_NAME,
     *,
     analysis_commit: str | None = None,
 ) -> BurstLadder:
     """Build the WP2 burst ladder from the manifest-selected recordings.
 
     ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA once
-    (never blocking). A manifest, a WP1 envelope, a coupled setting or a recording that contradicts
+    (never blocking). A manifest, a WP1 screening_threshold, a coupled setting or a recording that contradicts
     its row is refused by name before anything is written.
     """
-    return _build(dataset_root, Path(manifest_path), Path(envelope_path), analysis_commit)[0]
+    return _build(dataset_root, Path(manifest_path), Path(screening_threshold_path), analysis_commit)[0]
 
 
 #: Metric definitions, recorded verbatim in the provenance document (WP0's rule for its tables).
@@ -465,10 +465,12 @@ DEFINITIONS: dict[str, str] = {
     "gradient": "median and maximum |mean[k+1] - mean[k]| / native pitch, mm/s per mm",
     "correlation_length": "first native lag whose normalized autocovariance < 1/e, mm",
     "difference": "signed short - long per-gate time mean at every common knot, mm/s",
-    "envelope": (
-        "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from "
-        "reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on "
-        "repeatability plus uncontrolled drift, and the threshold of every mean-profile effect"
+    "screening_threshold": (
+        "the committed sole-pair observed-discrepancy screening threshold "
+        "max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and "
+        "pinned to this manifest's hash: the threshold every mean-profile effect is "
+        "screened against. An effect above or below it is a screening outcome, not proof "
+        "of a burst effect and not a bound on repeatability or uncontrolled drift"
     ),
     "figure": "both panels carry this document's caption and the generating commit",
     "knee": "the largest one-step change of a metric along the ladder, with monotonicity",
@@ -479,8 +481,9 @@ DEFINITIONS: dict[str, str] = {
     ),
     "temporal_floor": (
         "the same temporal metrics for the two committed WP1 same-settings recordings, from the "
-        "curves reference-repeat.provenance.json already records; their difference bounds "
-        "repeatability plus uncontrolled drift for those metrics"
+        "curves reference-repeat.provenance.json already records; their difference is the "
+        "temporal screening threshold for those metrics — one observed realization of "
+        "repeatability plus uncontrolled drift, not a bound on either"
     ),
     "replicates": "no profile and no gate is an independent experimental replicate",
     "time_view": "whole 500-RPM revolutions for every level; the full record for ACF/PSD",
@@ -500,9 +503,10 @@ REPLICATE_ROLE = (
 )
 _FOCUS_VERDICT = (
     "Verdict: this evidence cannot support choosing 18 cycles over 20 or the reverse — the "
-    "difference sits inside the repeat-plus-drift bound and no level in the 16-20-cycle region "
-    "clears the envelope against any other. Unidentifiable from this dataset: any burst effect "
-    "smaller than the envelope, and the pitch x burst interaction, because the two ladders meet "
+    "difference sits below the screening threshold and no level in the 16-20-cycle region "
+    "falls above it against any other, so the screening outcome is that nothing is separated. "
+    "Unidentifiable from this dataset: any burst effect "
+    "smaller than the screening_threshold, and the pitch x burst interaction, because the two ladders meet "
     "only at the reference. What would overturn it: two recordings per cycle count in this "
     "region, which would separate the level effect from drift."
 )
@@ -515,7 +519,7 @@ FIGURE_PANELS: tuple[str, ...] = (
     ),
     (
         "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 "
-        "cycles at the shared knots against the WP1 envelope band"
+        "cycles at the shared knots against the WP1 screening_threshold band"
     ),
 )
 
@@ -536,8 +540,8 @@ def _findings(model: BurstLadder) -> dict[str, object]:
     Every statement is composed from those values, so a regeneration says what it wrote. Nothing
     here is a p-value, a significance claim, or a decision about an axis this module does not own.
     """
-    envelope = model.envelope.value_mm_s
-    above = [row for row in model.pairs if row["knots_above_envelope"]]
+    screening_threshold = model.screening_threshold.value_mm_s
+    above = [row for row in model.pairs if row["knots_above_screening_threshold"]]
     worst = max(model.pairs, key=lambda row: row["max_abs_difference_mm_s"])
     focus = next(
         row for row in model.pairs if (row["short_path"], row["long_path"]) == model.focus_pair
@@ -546,7 +550,7 @@ def _findings(model: BurstLadder) -> dict[str, object]:
         row for row in model.pairs if FOCUS_WINDOW_CYCLES[0] <= row["short_cycles"]
         and row["long_cycles"] <= FOCUS_WINDOW_CYCLES[1]
     ]
-    window_above = sum(1 for row in window if row["knots_above_envelope"])
+    window_above = sum(1 for row in window if row["knots_above_screening_threshold"])
     floor = model.temporal["floor"]
     lengths = [row["correlation_length_mm"] for row in model.levels]
     shares = [row["psd_hf_share"] for row in model.levels]
@@ -556,47 +560,47 @@ def _findings(model: BurstLadder) -> dict[str, object]:
     longest = model.levels[-1]
     at_the_longest = sum(1 for row in above if {row["short_label"], row["long_label"]} & {"28", "32"})
     return {
-        "envelope_gate": {
-            "pairs": len(model.pairs), "envelope_mm_s": envelope,
-            "pairs_above_envelope": len(above),
+        "screening_threshold_gate": {
+            "pairs": len(model.pairs), "screening_threshold_mm_s": screening_threshold,
+            "pairs_above_screening_threshold": len(above),
             "clearances_involving_the_longest_bursts": at_the_longest,
             "max_abs_difference_mm_s": worst["max_abs_difference_mm_s"],
             "max_abs_difference_paths": [worst["short_path"], worst["long_path"]],
             "max_abs_difference_depth_mm": worst["max_abs_difference_depth_mm"],
-            "max_ratio_to_envelope": worst["max_abs_difference_over_envelope"],
+            "max_ratio_to_screening_threshold": worst["max_abs_difference_over_screening_threshold"],
             "statement": (
                 f"Effect gate: over the {len(model.pairs)} pairs the largest absolute per-knot "
                 f"mean difference is {worst['max_abs_difference_mm_s']:.4g} mm/s "
                 f"({worst['short_label']} vs {worst['long_label']} cycles) = "
-                f"{worst['max_abs_difference_over_envelope']:.3g} of the WP1 envelope "
-                f"{envelope:.4g} mm/s; {len(above)} pairs put a knot above it, "
+                f"{worst['max_abs_difference_over_screening_threshold']:.3g} of the WP1 screening_threshold "
+                f"{screening_threshold:.4g} mm/s; {len(above)} pairs put a knot above it, "
                 f"{at_the_longest} of those at the longest bursts, and none covers the support."
             ),
         },
         "focus_18_vs_20": {
             "short_path": focus["short_path"], "long_path": focus["long_path"],
             "short_cycles": focus["short_cycles"], "long_cycles": focus["long_cycles"],
-            "knots": focus["knots"], "knots_above_envelope": focus["knots_above_envelope"],
+            "knots": focus["knots"], "knots_above_screening_threshold": focus["knots_above_screening_threshold"],
             "mean_abs_difference_mm_s": focus["mean_abs_difference_mm_s"],
             "max_abs_difference_mm_s": focus["max_abs_difference_mm_s"],
             "max_abs_difference_depth_mm": focus["max_abs_difference_depth_mm"],
-            "ratio_to_envelope": focus["max_abs_difference_over_envelope"],
+            "ratio_to_screening_threshold": focus["max_abs_difference_over_screening_threshold"],
             "statement": (
                 f"Plan question, 18 versus 20 cycles: the largest absolute per-knot mean "
                 f"difference is {focus['max_abs_difference_mm_s']:.4g} mm/s at "
                 f"{focus['max_abs_difference_depth_mm']:.4g} mm = "
-                f"{focus['max_abs_difference_over_envelope']:.3g} of the {envelope:.4g} mm/s "
-                f"envelope, with {focus['knots_above_envelope']} of {focus['knots']} knots above "
+                f"{focus['max_abs_difference_over_screening_threshold']:.3g} of the {screening_threshold:.4g} mm/s "
+                f"screening_threshold, with {focus['knots_above_screening_threshold']} of {focus['knots']} knots above "
                 f"it. {_FOCUS_VERDICT}"
             ),
         },
         "focus_window_16_20": {
             "cycles": list(FOCUS_WINDOW_CYCLES), "pairs": len(window),
-            "pairs_above_envelope": window_above,
-            "max_ratio_to_envelope": max(row["max_abs_difference_over_envelope"] for row in window),
+            "pairs_above_screening_threshold": window_above,
+            "max_ratio_to_screening_threshold": max(row["max_abs_difference_over_screening_threshold"] for row in window),
             "statement": (
                 f"16-20-cycle region: {len(window)} unordered pairs, {window_above} of them "
-                "clearing the envelope, so no level differs from another by more than "
+                "clearing the screening_threshold, so no level differs from another by more than "
                 "repeat-plus-drift there."
             ),
         },
@@ -646,16 +650,17 @@ def _findings(model: BurstLadder) -> dict[str, object]:
         },
         "limitations": [
             (
-                f"The only repeat bounds repeatability plus uncontrolled drift ({envelope:.4g} "
-                f"mm/s per gate, {model.envelope.metric}): the levels are separate recordings with "
-                "no acquisition order, so a smaller effect cannot be separated from drift and a "
-                "larger one could still be drift or one recording rather than the burst length. No "
-                "level is replicated."
+                f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per "
+                f"gate ({model.screening_threshold.metric}): one observed realization of "
+                "repeatability plus uncontrolled drift, not a bound on either. The levels are "
+                "separate recordings with no acquisition order, so a smaller effect cannot be "
+                "separated from drift and a larger one could still be drift or one recording "
+                "rather than the burst length. No level is replicated."
             ),
             (
-                f"Temporal metrics are bounded by the same-settings WP1 pair through its committed "
-                f"curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), and one pair "
-                "cannot estimate that floor's own spread."
+                f"Temporal metrics are screened against the same-settings WP1 pair through its "
+                f"committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), and "
+                "one pair cannot estimate that floor's own spread."
             ),
             (
                 "The file carries the velocity-time index only: the 500-RPM setpoint is a marker "
@@ -674,7 +679,7 @@ def _findings(model: BurstLadder) -> dict[str, object]:
 def figure_caption(model: BurstLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
-    It names the ladder, both time views, the common support, the alignment rule, the envelope and
+    It names the ladder, both time views, the common support, the alignment rule, the screening_threshold and
     the temporal floor with their sources, and the 18-versus-20 numbers.
     """
     findings = _findings(model)
@@ -693,16 +698,16 @@ def figure_caption(model: BurstLadder) -> str:
         f"{temporal['segment_profiles']}-profile segments on one shared "
         f"{model.temporal['profile_period_s']:.6g} s profile period, frequency resolution "
         f"{temporal['frequency_resolution_hz']:.4g} Hz, Nyquist {temporal['nyquist_hz']:.4g} Hz. "
-        f"Decision threshold: the committed WP1 envelope {model.envelope.value_mm_s:.4g} mm/s "
-        f"({model.envelope.metric}, from {model.envelope.path}, "
-        f"{model.envelope.source_sha256[:12]}...). Temporal floor: {temporal['floor_paths'][0]} "
+        f"Decision threshold: the committed WP1 screening_threshold {model.screening_threshold.value_mm_s:.4g} mm/s "
+        f"({model.screening_threshold.metric}, from {model.screening_threshold.path}, "
+        f"{model.screening_threshold.source_sha256[:12]}...). Temporal floor: {temporal['floor_paths'][0]} "
         f"vs {temporal['floor_paths'][1]}, in-band power above {PSD_HF_ABOVE_HZ:g} Hz differing "
         f"by {temporal['floor_hf_share_difference']:.4g}. Plan question 18 vs 20 cycles: max "
         f"|diff| {focus['max_abs_difference_mm_s']:.4g} mm/s at "
-        f"{focus['max_abs_difference_depth_mm']:.4g} mm = {focus['ratio_to_envelope']:.3g} of the "
-        f"envelope, {focus['knots_above_envelope']} of {focus['knots']} knots above it "
+        f"{focus['max_abs_difference_depth_mm']:.4g} mm = {focus['ratio_to_screening_threshold']:.3g} of the "
+        f"screening_threshold, {focus['knots_above_screening_threshold']} of {focus['knots']} knots above it "
         f"({window['pairs']} pairs in the 16-20-cycle region, "
-        f"{window['pairs_above_envelope']} clearing it). {MIXER_SETPOINT_ROLE}. "
+        f"{window['pairs_above_screening_threshold']} clearing it). {MIXER_SETPOINT_ROLE}. "
         f"{REPLICATE_ROLE}. Generated at commit {model.analysis_commit or 'unknown'} from "
         f"{model.manifest_path} ({model.manifest_sha256})."
     )
@@ -718,7 +723,7 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
         "artefact": "burst-ladder", "axis": model.axis,
         "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
-        "envelope": dict(model.envelope.model_dump()) | {"source_path": model.envelope.path},
+        "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
         "inputs": [
             {
                 "relative_path": entry.relative_path, "axis": entry.axis,
@@ -834,10 +839,10 @@ def render_figure(
     """Write the two-panel burst figure, deterministically, and return it.
 
     Panel 1 is dropout and variance against cycle count with the plan's 16-20-cycle region shaded;
-    panel 2 the plan's own 18-versus-20 difference at the shared knots against the WP1 envelope band.
+    panel 2 the plan's own 18-versus-20 difference at the shared knots against the WP1 screening_threshold band.
     The frame is the shared writer's, so this module owns the panels only.
     """
-    envelope = model.envelope.value_mm_s
+    screening_threshold = model.screening_threshold.value_mm_s
     cycles = np.asarray([row["cycles"] for row in model.levels])
     focus = next(
         row for row in model.pairs if (row["short_path"], row["long_path"]) == model.focus_pair
@@ -874,28 +879,28 @@ def render_figure(
         difference = (
             short_mean[grid.nearest_gate_indices(short_depths, knots)] - long_mean[inside]
         )
-        focus_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.25, linewidth=0)
+        focus_ax.axvspan(-screening_threshold, screening_threshold, color="#999999", alpha=0.25, linewidth=0)
         for sign in (-1.0, 1.0):
-            focus_ax.axvline(sign * envelope, color="#555555", linewidth=0.8, linestyle=":")
+            focus_ax.axvline(sign * screening_threshold, color="#555555", linewidth=0.8, linestyle=":")
         focus_ax.plot(
             difference, knots, color="#111111", linewidth=1.2,
             label="18 - 20 cycles per-gate mean at the shared knots",
         )
-        focus_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
-        focus_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope")
+        focus_ax.set_xlim(-1.25 * screening_threshold, 1.25 * screening_threshold)
+        focus_ax.set_xlabel("difference [mm/s]; grey band = WP1 screening_threshold")
         focus_ax.set_ylabel("depth from transducer face [mm]")
         focus_ax.invert_yaxis()
         focus_ax.set_title(
             f"plan's pair: {focus['knots']} knots, max |diff| "
             f"{focus['max_abs_difference_mm_s']:.4g} mm/s = "
-            f"{focus['max_abs_difference_over_envelope']:.3g} envelope", fontsize=9.5,
+            f"{focus['max_abs_difference_over_screening_threshold']:.3g} screening_threshold", fontsize=9.5,
         )
         focus_ax.grid(alpha=0.2)
         focus_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
 
     return grid.panel_figure(
         "WP2 burst-length ladder — "
-        f"{len(model.levels)} cycle counts against the WP1 repeatability bound",
+        f"{len(model.levels)} cycle counts against the WP1 sole-pair screening threshold",
         figure_caption(model), draw, path, caption_width=150, dpi=dpi,
         adjust={"top": 0.80, "bottom": 0.32, "wspace": 0.30},
     )
@@ -906,7 +911,7 @@ def write_burst_ladder(
     report_dir: Path = inventory.REPORT_DIR,
     *,
     manifest_path: Path | None = None,
-    envelope_path: Path | None = None,
+    screening_threshold_path: Path | None = None,
     analysis_commit: str | None = None,
 ) -> BurstLadder:
     """Build the ladder and write the four reviewer-visible artefacts.
@@ -918,8 +923,8 @@ def write_burst_ladder(
     manifest = (
         Path(manifest_path) if manifest_path is not None else directory / inventory.MANIFEST_NAME
     )
-    envelope = Path(envelope_path) if envelope_path is not None else directory / ENVELOPE_NAME
-    model, profiles = _build(dataset_root, manifest, envelope, analysis_commit)
+    screening_threshold = Path(screening_threshold_path) if screening_threshold_path is not None else directory / SCREENING_THRESHOLD_NAME
+    model, profiles = _build(dataset_root, manifest, screening_threshold, analysis_commit)
     grid.write_text_artefacts(directory, {
         LEVELS_NAME: levels_csv_text(model),
         PAIRS_NAME: pairs_csv_text(model),

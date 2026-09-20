@@ -26,7 +26,7 @@ restated in the provenance document and in the limitations it carries:
   pair is the two ladder-adjacent levels that bracket it.
 
 The input binding, the common views, the native-grid metrics, the knot alignment, the committed WP1
-envelope reader and the table/caption/figure writers are the shared layer's
+screening_threshold reader and the table/caption/figure writers are the shared layer's
 (:mod:`udv_echo_process.analysis._native_grid`), driven here with this screen's own axes, key cells,
 settings and columns; no second helper module is added. Each axis is selected by decoded
 **scientific fingerprint** (:data:`ELIGIBILITY`), never by folder (plan §8.3 step 2, R1/R4): its key
@@ -66,7 +66,7 @@ ARTEFACT = "gain-power-screen"
 LEVELS_NAME, PAIRS_NAME, DEPTHS_NAME = (
     "gain-power-levels.csv", "gain-power-pairs.csv", "gain-power-depths.csv")
 PROVENANCE_NAME, FIGURE_NAME = "gain-power-screen.provenance.json", "gain-power-screen.png"
-FIGURES_DIRNAME, ENVELOPE_NAME = "figures", "reference-repeat.provenance.json"
+FIGURES_DIRNAME, SCREENING_THRESHOLD_NAME = "figures", "reference-repeat.provenance.json"
 
 #: The cell each axis's ladder is keyed by, what it is, and the level each axis does **not** hold. The
 #: base state is the dataset README's note of 2026-09-16 — TCG 20, emitting power medium, sensitivity
@@ -132,8 +132,8 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "low_path", "low_label", "low_key", "high_path", "high_label", "high_key", "key_gap",
     "knots", "knot_spacing_mm", "max_knot_offset_mm", "mean_signed_difference_mm_s",
     "mean_abs_difference_mm_s", "max_abs_difference_mm_s",
-    "max_abs_difference_depth_mm", "knots_above_envelope", "max_abs_difference_over_envelope",
-    "depth_ranges_above_envelope_mm", "robust_spread_change_mm_s", "zero_fraction_change",
+    "max_abs_difference_depth_mm", "knots_above_screening_threshold", "max_abs_difference_over_screening_threshold",
+    "depth_ranges_above_screening_threshold_mm", "robust_spread_change_mm_s", "zero_fraction_change",
     "focus_pair")
 DEPTH_COLUMNS: tuple[str, ...] = (
     "axis", "relative_path", "requested_label", "key_name", "key_value", "gate_index", "depth_mm",
@@ -161,7 +161,7 @@ DATASET_ROOT, MANIFEST_NAME, REPORT_DIR = (
 
 
 class ScreenInput(wp1.RepeatInput):
-    """One screened recording: WP1's manifest-bound level record plus the two TGC cells."""
+    """One screened recording: WP1's manifest-pinned level record plus the two TGC cells."""
 
     tgc_start_db: float
     tgc_end_db: float
@@ -223,15 +223,15 @@ class ScreenAxis(ValueModel):
 
 
 class GainPowerScreen(ValueModel):
-    """The velocity-only TGC/power screen: both axes, one evidence set, one threshold. ``envelope`` is
-    the committed WP1 bound both axes are measured against; ``sensitivity`` records that the axis is
+    """The velocity-only TGC/power screen: both axes, one evidence set, one threshold. ``screening_threshold`` is
+    the committed WP1 screening threshold both axes are measured against; ``sensitivity`` records that the axis is
     absent from the sweep.
     """
 
     dataset_root: str
     manifest_path: str
     manifest_sha256: str
-    envelope: grid.EnvelopeBinding
+    screening_threshold: grid.ScreeningThresholdBinding
     analysis_commit: str | None = None
     axes: tuple[ScreenAxis, ...]
     sensitivity: dict[str, object]
@@ -240,8 +240,8 @@ class GainPowerScreen(ValueModel):
     def _check_the_screen_is_coherent(self) -> GainPowerScreen:
         if tuple(axis.axis for axis in self.axes) != AXES:
             raise ValueError(f"the screen must carry both axes in order {list(AXES)}")
-        if self.envelope.value_mm_s <= 0.0:
-            raise ValueError("the repeatability envelope must be positive")
+        if self.screening_threshold.value_mm_s <= 0.0:
+            raise ValueError("the repeatability screening_threshold must be positive")
         if tuple(self.sensitivity.get("values_in_manifest", ())) != (SENSITIVITY_VALUE,):
             raise ValueError("this screen is only truthful where sensitivity is fixed at medium")
         return self
@@ -525,7 +525,7 @@ def _gate_means(
 def _pair_row(
     axis: str, low: Mapping[str, object], low_profile: tuple[np.ndarray, np.ndarray],
     high: Mapping[str, object], high_profile: tuple[np.ndarray, np.ndarray], *,
-    support: tuple[float, float], envelope: grid.EnvelopeBinding, focus: bool
+    support: tuple[float, float], screening_threshold: grid.ScreeningThresholdBinding, focus: bool
 ) -> dict[str, object]:
     """Compare two levels of one axis on the higher key's own knots: the knots are that level's native
     gate depths inside the common support, the lower profile is sampled there by the shared
@@ -534,7 +534,7 @@ def _pair_row(
     high_depths, high_mean = high_profile
     aligned = grid.align_on_knots(
         low_depths, low_mean, high_depths, high_mean, path=str(low["relative_path"]),
-        support=support, threshold_mm_s=envelope.value_mm_s)
+        support=support, threshold_mm_s=screening_threshold.value_mm_s)
     signed = low_mean[aligned.indices] - high_mean[grid.in_support(high_depths, support)]
     absolute, worst = aligned.absolute, aligned.worst
     return {
@@ -547,9 +547,9 @@ def _pair_row(
         "mean_abs_difference_mm_s": float(absolute.mean()),
         "max_abs_difference_mm_s": float(absolute[worst]),
         "max_abs_difference_depth_mm": float(aligned.knots[worst]),
-        "knots_above_envelope": int(np.count_nonzero(aligned.flagged)),
-        "max_abs_difference_over_envelope": float(absolute[worst] / envelope.value_mm_s),
-        "depth_ranges_above_envelope_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
+        "knots_above_screening_threshold": int(np.count_nonzero(aligned.flagged)),
+        "max_abs_difference_over_screening_threshold": float(absolute[worst] / screening_threshold.value_mm_s),
+        "depth_ranges_above_screening_threshold_mm": grid.depth_ranges(aligned.knots, aligned.flagged),
         "robust_spread_change_mm_s": float(low["robust_spread_mm_s"])
         - float(high["robust_spread_mm_s"]),
         "zero_fraction_change": float(low["zero_fraction"]) - float(high["zero_fraction"]),
@@ -557,7 +557,7 @@ def _pair_row(
 
 
 def _build_axis(
-    dataset_root: Path, manifest_path: Path, axis: str, envelope: grid.EnvelopeBinding
+    dataset_root: Path, manifest_path: Path, axis: str, screening_threshold: grid.ScreeningThresholdBinding
 ) -> ScreenAxis:
     """Build one axis: its levels, its pairs, its depth-resolved rows and its screen."""
     rows = select_level_rows(manifest_path, axis)  # a missing manifest is refused by name here
@@ -584,7 +584,7 @@ def _build_axis(
         levels=levels, depths=depths, base_state=base,
         pairs=tuple(
             _pair_row(axis, low, means[str(low["relative_path"])], high,
-                      means[str(high["relative_path"])], support=support, envelope=envelope,
+                      means[str(high["relative_path"])], support=support, screening_threshold=screening_threshold,
                       focus=(str(low["relative_path"]), str(high["relative_path"])) == focus)
             for low, high in itertools.combinations(levels, 2)),
         common={
@@ -625,22 +625,22 @@ def _sensitivity_document(manifest_path: Path) -> dict[str, object]:
 def build_gain_power_screen(
     dataset_root: Path = inventory.DATASET_ROOT,
     manifest_path: Path = inventory.REPORT_DIR / inventory.MANIFEST_NAME,
-    envelope_path: Path = inventory.REPORT_DIR / ENVELOPE_NAME,
+    screening_threshold_path: Path = inventory.REPORT_DIR / SCREENING_THRESHOLD_NAME,
     *,
     analysis_commit: str | None = None
 ) -> GainPowerScreen:
     """Build the velocity-only TGC/power screen from the manifest-selected recordings:
     ``analysis_commit`` is the revision to record, ``None`` probes the checkout's short git SHA once.
-    A manifest, a WP1 envelope, a coupled setting, a moved TGC word, an absent base-state level or a
+    A manifest, a WP1 screening_threshold, a coupled setting, a moved TGC word, an absent base-state level or a
     recording that contradicts its row is refused by name before anything is written.
     """
     root, manifest = Path(dataset_root), Path(manifest_path)
     manifest_sha256 = f"sha256:{grid.sha256_file(manifest)}"
-    envelope = grid.read_envelope(Path(envelope_path), manifest_sha256)
-    axes = tuple(_build_axis(root, manifest, axis, envelope) for axis in AXES)
+    screening_threshold = grid.read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
+    axes = tuple(_build_axis(root, manifest, axis, screening_threshold) for axis in AXES)
     return GainPowerScreen(
         dataset_root=root.as_posix(), manifest_path=manifest.as_posix(),
-        manifest_sha256=manifest_sha256, envelope=envelope, axes=axes,
+        manifest_sha256=manifest_sha256, screening_threshold=screening_threshold, axes=axes,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
         sensitivity=_sensitivity_document(manifest) | {
             "levels_screened": sum(len(axis.levels) for axis in axes)})
@@ -659,7 +659,7 @@ DEFINITIONS: dict[str, str] = {
     "spread_ratio": "a level's largest per-gate robust spread divided by its own axis's median per-gate robust spread: the screen's second aggregate, with the declared limit 3.0, and every ratio is published so the margin can be moved",
     "screen": "one word from the two declared margins: usable, dropout-limited, spread-limited, or both; it says a setting cannot carry a wider ladder, never that a gain or a power setting caused the dropout",
     "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
-    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a gain or power effect and not a bound on repeatability or uncontrolled drift",
     "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
     "base_state": "the level each axis does not hold: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis), and the two ladder-adjacent levels whose keys bracket it",
     "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit",
@@ -689,9 +689,9 @@ VELOCITY_ONLY_ROLE = (
 FIGURE_PANELS: tuple[str, ...] = (
     ("dropout by depth: every level's per-gate zero fraction against depth with the declared "
      "majority-blank limit (the per-gate robust spread is tabulated in " + DEPTHS_NAME + ")"),
-    ("each axis's focus pair against the envelope: the signed low - high per-gate mean difference of "
+    ("each axis's focus pair against the screening_threshold: the signed low - high per-gate mean difference of "
      "the two levels bracketing the base state's own key, at the shared knots, against the WP1 "
-     "envelope band"))
+     "screening_threshold band"))
 
 
 def csv_texts(model: GainPowerScreen) -> dict[str, str]:
@@ -705,10 +705,10 @@ def csv_texts(model: GainPowerScreen) -> dict[str, str]:
             DEPTH_COLUMNS, [row for axis in model.axes for row in axis.depths])}
 
 
-def _axis_findings(screen: ScreenAxis, envelope_mm_s: float) -> dict[str, object]:
-    """One axis's screen, its pairs against the envelope, its focus pair and its base state."""
+def _axis_findings(screen: ScreenAxis, screening_threshold_mm_s: float) -> dict[str, object]:
+    """One axis's screen, its pairs against the screening_threshold, its focus pair and its base state."""
     levels, pairs = screen.levels, screen.pairs
-    above = [row for row in pairs if row["knots_above_envelope"]]
+    above = [row for row in pairs if row["knots_above_screening_threshold"]]
     worst = max(pairs, key=lambda row: row["max_abs_difference_mm_s"])
     focus = next(row for row in pairs if row["focus_pair"])
     base = screen.base_state
@@ -739,11 +739,11 @@ def _axis_findings(screen: ScreenAxis, envelope_mm_s: float) -> dict[str, object
                 f"per-gate spread past {SPREAD_RATIO_LIMIT:g}x the axis median ({spread_text}). A flag "
                 "rules a setting out of a wider ladder, not a cause.")},
         "effect_gate": {
-            "pairs": len(pairs), "envelope_mm_s": envelope_mm_s, "knots_above_envelope": len(above),
-            "pairs_above_envelope": len(above), "clearing_pairs": [
-                [row["low_path"], row["high_path"], row["knots_above_envelope"],
-                 row["depth_ranges_above_envelope_mm"]] for row in above],
-            "max_ratio_to_envelope": worst["max_abs_difference_over_envelope"],
+            "pairs": len(pairs), "screening_threshold_mm_s": screening_threshold_mm_s, "knots_above_screening_threshold": len(above),
+            "pairs_above_screening_threshold": len(above), "clearing_pairs": [
+                [row["low_path"], row["high_path"], row["knots_above_screening_threshold"],
+                 row["depth_ranges_above_screening_threshold_mm"]] for row in above],
+            "max_ratio_to_screening_threshold": worst["max_abs_difference_over_screening_threshold"],
             "max_abs_difference_mm_s": worst["max_abs_difference_mm_s"],
             "max_abs_difference_paths": [worst["low_path"], worst["high_path"]],
             "max_abs_difference_depth_mm": worst["max_abs_difference_depth_mm"],
@@ -752,14 +752,14 @@ def _axis_findings(screen: ScreenAxis, envelope_mm_s: float) -> dict[str, object
                 f"{len(pairs)} pair(s) is {worst['max_abs_difference_mm_s']:.4g} mm/s "
                 f"({worst['low_path']} / {worst['high_path']} at "
                 f"{worst['max_abs_difference_depth_mm']:.4g} mm) = "
-                f"{worst['max_abs_difference_over_envelope']:.3g} of the {envelope_mm_s:.4g} mm/s WP1 "
-                f"envelope; {len(above)} pair(s) clear it somewhere, each with its knots, depth ranges "
+                f"{worst['max_abs_difference_over_screening_threshold']:.3g} of the {screening_threshold_mm_s:.4g} mm/s WP1 "
+                f"screening_threshold; {len(above)} pair(s) clear it somewhere, each with its knots, depth ranges "
                 "and bias in the pairs table and in this block.")},
         "focus_pair": {
             "low_path": focus["low_path"], "high_path": focus["high_path"],
             "low_key": focus["low_key"], "high_key": focus["high_key"], "knots": focus["knots"],
-            "ratio_to_envelope": focus["max_abs_difference_over_envelope"],
-            "knots_above_envelope": focus["knots_above_envelope"],
+            "ratio_to_screening_threshold": focus["max_abs_difference_over_screening_threshold"],
+            "knots_above_screening_threshold": focus["knots_above_screening_threshold"],
             "mean_signed_difference_mm_s": focus["mean_signed_difference_mm_s"],
             "max_abs_difference_mm_s": focus["max_abs_difference_mm_s"],
             "max_abs_difference_depth_mm": focus["max_abs_difference_depth_mm"],
@@ -770,8 +770,8 @@ def _axis_findings(screen: ScreenAxis, envelope_mm_s: float) -> dict[str, object
                 f"({_key_text(focus['high_key'])}) — differ by at most "
                 f"{focus['max_abs_difference_mm_s']:.4g} mm/s at "
                 f"{focus['max_abs_difference_depth_mm']:.4g} mm = "
-                f"{focus['max_abs_difference_over_envelope']:.3g} of the {envelope_mm_s:.4g} mm/s "
-                f"envelope, {focus['knots_above_envelope']} of {focus['knots']} knots above it (mean "
+                f"{focus['max_abs_difference_over_screening_threshold']:.3g} of the {screening_threshold_mm_s:.4g} mm/s "
+                f"screening_threshold, {focus['knots_above_screening_threshold']} of {focus['knots']} knots above it (mean "
                 f"signed {focus['mean_signed_difference_mm_s']:+.4g} mm/s).")},
         "base_state": {
             "label": base["label"], "decoded_key": base["decoded_key"],
@@ -789,13 +789,13 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
     """The plan's TGC/power questions answered from the numbers the tables already carry: every
     statement is composed from those values, and nothing here is a p-value, an acquisition-order
     inference, a claim about echo SNR or saturation, a safe plateau, or another axis's verdict."""
-    envelope, sensitivity = model.envelope.value_mm_s, model.sensitivity
-    axes = {axis.axis: _axis_findings(axis, envelope) for axis in model.axes}
+    screening_threshold, sensitivity = model.screening_threshold.value_mm_s, model.sensitivity
+    axes = {axis.axis: _axis_findings(axis, screening_threshold) for axis in model.axes}
     levels = [row for axis in model.axes for row in axis.levels]
     pairs = [row for axis in model.axes for row in axis.pairs]
     flagged = [(axis.axis, row) for axis in model.axes for row in axis.levels
                if row["screen"] != "usable"]
-    above = sum(f["effect_gate"]["pairs_above_envelope"] for f in axes.values())
+    above = sum(f["effect_gate"]["pairs_above_screening_threshold"] for f in axes.values())
     focus = {name: f["focus_pair"] for name, f in axes.items()}
     power, rows = focus["em_pow"], sensitivity["rows_in_manifest"]
     flagged_text = "; ".join(f"{name} {row['relative_path']}: {row['screen']}"
@@ -803,24 +803,26 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
     base_text = "; ".join(f"{name}: {row['low_key']} and {row['high_key']}"
                           for name, row in focus.items())
     return {
-        "envelope": {
-            "value_mm_s": envelope, "metric": model.envelope.metric,
-            "source_path": model.envelope.path,
-            "median_abs_mean_difference_mm_s": model.envelope.median_abs_mean_difference_mm_s,
+        "screening_threshold": {
+            "value_mm_s": screening_threshold, "metric": model.screening_threshold.metric,
+            "source_path": model.screening_threshold.path,
+            "median_abs_mean_difference_mm_s": model.screening_threshold.median_abs_mean_difference_mm_s,
             "statement": (
-                f"Threshold: the committed WP1 envelope {envelope:.6g} mm/s "
-                f"({model.envelope.metric}, from {model.envelope.path}) bounds same-settings "
-                "repeatability plus uncontrolled drift, and every mean-profile effect in both axes is "
-                "compared to it.")},
+                f"Threshold: the committed WP1 screening_threshold {screening_threshold:.6g} mm/s "
+                f"({model.screening_threshold.metric}, from {model.screening_threshold.path}) is the "
+                "sole-pair observed-discrepancy screening threshold: one observed realization of "
+                "same-settings repeatability plus uncontrolled drift, and not a bound on either. "
+                "Every mean-profile effect in both axes is screened against it, above or below, "
+                "without that outcome proving a gain or power effect.")},
         "axes": axes, "screen_summary": {
             "levels": len(levels), "pairs": len(pairs), "levels_flagged": len(flagged),
-            "pairs_above_envelope": above, "flagged": [
+            "pairs_above_screening_threshold": above, "flagged": [
                 {**{cell: row[cell] for cell in FLAGGED_CELLS}, "axis": name}
                 for name, row in flagged],
             "statement": (
                 f"Screen: {len(levels)} levels over two axes and {len(pairs)} pairs; {len(flagged)} "
                 f"levels are flagged under the two declared margins ({flagged_text}) and {above} of "
-                f"the {len(pairs)} pairs clear the envelope anywhere. A flag rules a setting out of a "
+                f"the {len(pairs)} pairs clear the screening_threshold anywhere. A flag rules a setting out of a "
                 "wider ladder; it is not a statement about gain, power or the flow.")},
         "sensitivity": dict(sensitivity) | {"statement": (
             f"Sensitivity: every one of the {rows} committed manifest rows carries "
@@ -841,8 +843,8 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
                 "to gain.")},
         "diagnostic": {
             "justified": True, "wider_ladder_justified": False, "outcome_claimed": False,
-            "flagged_levels": len(flagged), "pairs_above_envelope": above,
-            "focus_pair_ratios": {name: row["ratio_to_envelope"] for name, row in focus.items()},
+            "flagged_levels": len(flagged), "pairs_above_screening_threshold": above,
+            "focus_pair_ratios": {name: row["ratio_to_screening_threshold"] for name, row in focus.items()},
             "statement": (
                 "Diagnostic: the velocity-only evidence justifies exactly one "
                 "higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity "
@@ -852,14 +854,15 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
                 f"{SENSITIVITY_VALUE!r} in all {rows} rows, so an echo/energy measurement is the only "
                 "thing that would make that axis identifiable at all. A wider ladder is not justified "
                 "first: the TGC representation is unsettled for the very cell a ladder would step, and "
-                f"the power axis is unremarkable in velocity ({power['ratio_to_envelope']:.3g} of the "
-                f"envelope, {power['knots_above_envelope']} knots above it). This module does not "
+                f"the power axis is unremarkable in velocity ({power['ratio_to_screening_threshold']:.3g} of the "
+                f"screening_threshold, {power['knots_above_screening_threshold']} knots above it). This module does not "
                 "predict that diagnostic's outcome and claims nothing about what it would show.")},
         "limitations": [
-            (f"One recording per setting and no acquisition order: the only repeat bounds "
-             f"repeatability plus uncontrolled drift ({envelope:.4g} mm/s per gate, "
-             f"{model.envelope.metric}), no level is replicated, no p-value is produced and no "
-             "replicate claim is made."),
+            (f"One recording per setting and no acquisition order: the only repeat is the "
+             f"sole-pair observed-discrepancy screening threshold, {screening_threshold:.4g} mm/s "
+             f"per gate ({model.screening_threshold.metric}), one observed realization of "
+             f"repeatability plus uncontrolled drift and not a bound on either: no level is "
+             f"replicated, no p-value is produced and no replicate claim is made."),
             ("Velocity only: " + VELOCITY_ONLY_ROLE + ". A majority-blank gate or a disproportionate "
              "per-gate spread is a property of the recorded velocity array, not evidence that a gain, "
              "a power or the receiver saturated."),
@@ -875,7 +878,7 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
 
 def figure_caption(model: GainPowerScreen) -> str:
     """The caption the committed figure and the provenance document both carry: both axes, both common
-    views, the envelope, the screening margins, the focus pairs and the diagnostic sentence, so a
+    views, the screening_threshold, the screening margins, the focus pairs and the diagnostic sentence, so a
     reader of the figure alone cannot miss the caveats."""
     findings = _findings(model)
     summary, diagnostic = findings["screen_summary"], findings["diagnostic"]
@@ -892,8 +895,8 @@ def figure_caption(model: GainPowerScreen) -> str:
         f"{first.common['support_max_mm']:.6g} mm on each axis's own 1.85 mm grid, which contains the "
         f"plan's declared {PLAN_SUPPORT_MM[0]:g}-{PLAN_SUPPORT_MM[1]:g} mm window; pairs use the "
         "higher key's own gate depths as knots, so nothing is interpolated or upsampled. Threshold: "
-        f"the committed WP1 envelope {model.envelope.value_mm_s:.4g} mm/s ({model.envelope.metric}, "
-        f"from {model.envelope.path}, {model.envelope.source_sha256[:12]}...). Screening margins: a "
+        f"the committed WP1 screening_threshold {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}, "
+        f"from {model.screening_threshold.path}, {model.screening_threshold.source_sha256[:12]}...). Screening margins: a "
         f"gate blank in more than {DROPOUT_GATE_LIMIT:g} of the window, and a per-gate robust spread "
         f"past {SPREAD_RATIO_LIMIT:g}x the axis's median. {summary['statement']} "
         f"{diagnostic['statement']} Spread and bias by depth are in {DEPTHS_NAME}. "
@@ -958,7 +961,7 @@ def provenance_document(model: GainPowerScreen) -> dict[str, object]:
         "artefact": ARTEFACT, "axes": list(AXES), "analysis_commit": model.analysis_commit,
         "dataset_root": model.dataset_root, "sensitivity": model.sensitivity,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
-        "envelope": dict(model.envelope.model_dump()) | {"source_path": model.envelope.path},
+        "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
         "axis_blocks": [_axis_document(axis) for axis in model.axes],
         "definitions": dict(DEFINITIONS), "findings": _findings(model),
         "tables": {name: {"path": path, "columns": list(columns),
@@ -976,7 +979,7 @@ def provenance_document(model: GainPowerScreen) -> dict[str, object]:
 def render_figure(model: GainPowerScreen, path: Path, *, dpi: int = 150) -> Path:
     """Write the two-panel screening figure, deterministically, and return it: all 10 levels'
     dropout against depth with the declared majority-blank limit, and each axis's focus pair against
-    the WP1 envelope band. The frame is the shared writer's, so this module owns the panels only.
+    the WP1 screening_threshold band. The frame is the shared writer's, so this module owns the panels only.
     """
     series = {str(level["relative_path"]): (
         np.asarray([r["depth_mm"] for r in axis.depths
@@ -987,7 +990,7 @@ def render_figure(model: GainPowerScreen, path: Path, *, dpi: int = 150) -> Path
     means = {path_: profile for axis in model.axes
              for path_, profile in _gate_means(axis.levels, axis.depths).items()}
     focus_rows = [next(row for row in axis.pairs if row["focus_pair"]) for axis in model.axes]
-    envelope_mm_s = model.envelope.value_mm_s
+    screening_threshold_mm_s = model.screening_threshold.value_mm_s
     supports = {axis.axis: (axis.common["support_min_mm"], axis.common["support_max_mm"])
                 for axis in model.axes}
 
@@ -1013,21 +1016,21 @@ def render_figure(model: GainPowerScreen, path: Path, *, dpi: int = 150) -> Path
             inside = grid.in_support(high_depths, supports[row["axis"]])
             knots = high_depths[inside]
             signed = low_mean[grid.nearest_gate_indices(low_depths, knots)] - high_mean[inside]
-            focus_ax.plot(np.asarray(signed, dtype=float) / envelope_mm_s, knots, linewidth=1.2,
+            focus_ax.plot(np.asarray(signed, dtype=float) / screening_threshold_mm_s, knots, linewidth=1.2,
                           label=(f"{row['axis']}: {row['low_label']} - {row['high_label']} "
-                                 f"(max {row['max_abs_difference_over_envelope']:.3g})"))
+                                 f"(max {row['max_abs_difference_over_screening_threshold']:.3g})"))
         focus_ax.set_xlim(-1.6, 1.6)
-        focus_ax.set_xlabel("signed low - high difference / WP1 envelope")
+        focus_ax.set_xlabel("signed low - high difference / WP1 screening_threshold")
         focus_ax.set_ylabel("depth from transducer face [mm]")
         focus_ax.invert_yaxis()
         focus_ax.grid(alpha=0.2)
         focus_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
-        focus_ax.set_title("focus pairs bracketing the base state, against the WP1 envelope band",
+        focus_ax.set_title("focus pairs bracketing the base state, against the WP1 screening_threshold band",
                            fontsize=9.5)
 
     return grid.panel_figure(
         f"{ARTEFACT} — {sum(len(axis.levels) for axis in model.axes)} TGC and emitting-power "
-        "settings screened against the WP1 repeatability bound",
+        "settings screened against the WP1 sole-pair observed-discrepancy screening threshold",
         figure_caption(model), draw, path, caption_width=150, dpi=dpi,
         adjust={"top": 0.80, "bottom": 0.36, "wspace": 0.34})
 
@@ -1037,7 +1040,7 @@ def write_gain_power_screen(
     report_dir: Path = inventory.REPORT_DIR,
     *,
     manifest_path: Path | None = None,
-    envelope_path: Path | None = None,
+    screening_threshold_path: Path | None = None,
     analysis_commit: str | None = None
 ) -> GainPowerScreen:
     """Build the screen and write the four reviewer-visible artefacts: the text artefacts use LF
@@ -1045,8 +1048,8 @@ def write_gain_power_screen(
     produce identical bytes, and nothing is written when the build raises."""
     directory = Path(report_dir)
     manifest = Path(manifest_path) if manifest_path is not None else directory / MANIFEST_NAME
-    envelope = Path(envelope_path) if envelope_path is not None else directory / ENVELOPE_NAME
-    model = build_gain_power_screen(dataset_root, manifest, envelope,
+    screening_threshold = Path(screening_threshold_path) if screening_threshold_path is not None else directory / SCREENING_THRESHOLD_NAME
+    model = build_gain_power_screen(dataset_root, manifest, screening_threshold,
                                    analysis_commit=analysis_commit)
     grid.write_text_artefacts(directory, csv_texts(model) | {PROVENANCE_NAME:
         json.dumps(provenance_document(model), indent=2) + "\n"})

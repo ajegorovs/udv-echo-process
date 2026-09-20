@@ -300,7 +300,7 @@ The correction is complete only when all of the following are executable tests o
 - provenance-schema tests: `reference-repeat`, burst and PRF temporal artifacts each carry median Δt, Δt IQR, RMS deviation, maximum deviation, the quantitative criterion and the estimator decision;
 - resolution tests and repository text check: the residual is named as a normalized reconstruction residual and correlation length as descriptive only;
 - decision-table validation: the selected emissions design is exactly one of the two allowed alternatives, contains its rationale, never infers plateau from E64 versus E20 alone, and its counts agree with the condition rows;
-- R9 text check over `docs/`, `src/` and `reports/`: the beginning/middle/end controls are named `within-run reference controls` for the single reference condition, and no live text calls them or their differences “independent references” or independent observations; the decision table and sparse set describe adjacent control differences as correlated;
+- R9 text check over `docs/`, `src/` and `reports/`: the beginning/middle/end controls are named `within-run reference controls` for the single reference condition, and no live text calls them or their differences “independent references” or independent observations; the decision table and sparse set describe adjacent control differences as correlated (the retired phrases are quoted here, not used);
 - the baseline/rebinding validator: regenerated artifact hashes, row counts, generator revisions, correction IDs and decision-table bindings agree programmatically.
 
 ### 8.5 Commit boundaries

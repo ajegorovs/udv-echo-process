@@ -13,7 +13,7 @@ What it carries: the scientific-fingerprint layer (:data:`FINGERPRINT_FIELDS`,
 common views (:func:`window`, :func:`common_support`), the native-grid metrics
 (:func:`level_metrics`, :func:`spatial_gradient`, :func:`correlation_length`), the
 pairwise alignment (:func:`align_on_knots`, :func:`depth_ranges`), the committed WP1
-envelope and temporal-floor readers (:func:`read_envelope`,
+screening_threshold and temporal-floor readers (:func:`read_screening_threshold`,
 :func:`read_temporal_floor`), the ladder shape (:func:`largest_step`, :func:`knees`)
 and the deterministic writers (:func:`csv_text`, :func:`wrap_caption`,
 :func:`write_text_artefacts`, :func:`panel_figure`).
@@ -77,10 +77,11 @@ class CorrelationStats(ValueModel):
     reaches_floor: bool
 
 
-class EnvelopeBinding(ValueModel):
-    """The committed WP1 repeatability envelope an axis is measured against:
+class ScreeningThresholdBinding(ValueModel):
+    """The committed sole-pair observed-discrepancy screening threshold an axis screens against:
     ``value_mm_s`` is the largest absolute per-gate mean difference of the only same-settings
-    repeat, an upper bound on repeatability plus uncontrolled drift.
+    repeat: the screening threshold every mean-profile effect is compared with. It does not bound
+    repeatability and does not bound uncontrolled drift.
     """
 
     path: str
@@ -106,7 +107,7 @@ class NativeGridError(ValueError):
 
 
 class DecodedLevel(NamedTuple):
-    """One manifest-selected recording: its bound row, arrays and decoded cells.
+    """One manifest-selected recording: its manifest-pinned row, arrays and decoded cells.
 
     ``pitch_mm`` is the recording's own realised pitch; ``observed`` holds the decoded value of
     every :data:`DECODED_CELLS` key, which the row's cells are re-checked against.
@@ -162,8 +163,8 @@ CORRELATION_FLOOR = 1.0 / math.e
 GRID_UNIFORMITY_RTOL = 1e-6
 TOLERANCE_S = 1e-9
 
-#: The WP1 envelope metric every axis compares to, as its provenance records it.
-ENVELOPE_METRIC = "max_gate_abs_mean_difference_mm_s"
+#: The WP1 screening_threshold metric every axis compares to, as its provenance records it.
+SCREENING_THRESHOLD_METRIC = "max_gate_abs_mean_difference_mm_s"
 
 #: A recording's **scientific fingerprint**: the independent decoded configuration settings the
 #: WP0 inventory publishes, in manifest column order (plan §8.3 step 2, R4). The shape, duration
@@ -759,7 +760,7 @@ def require_clean_ofat(
             )
 
 
-def read_manifest_bound_document(
+def read_manifest_pinned_document(
     path: Path, manifest_sha256: str, what: str
 ) -> dict[str, object]:
     """Read a committed artefact and refuse one generated against another manifest.
@@ -781,42 +782,42 @@ def read_manifest_bound_document(
     return document
 
 
-def read_envelope(envelope_path: Path, manifest_sha256: str) -> EnvelopeBinding:
-    """Read the committed WP1 envelope and bind it to this manifest.
+def read_screening_threshold(screening_threshold_path: Path, manifest_sha256: str) -> ScreeningThresholdBinding:
+    """Read the committed sole-pair observed-discrepancy screening threshold and pin it to this manifest.
 
     The threshold is *read*, not recomputed: the comparison must use the number the WP1 gate
     declared. Refuses a missing document, one from another manifest, another metric, or a value
     that is not positive and finite.
     """
-    path = Path(envelope_path)
-    document = read_manifest_bound_document(path, manifest_sha256, "WP1 envelope")
-    envelope = document.get("envelope") or {}
-    metric = str(envelope.get("metric") or "")
-    if metric != ENVELOPE_METRIC:
+    path = Path(screening_threshold_path)
+    document = read_manifest_pinned_document(path, manifest_sha256, "WP1 screening_threshold")
+    screening_threshold = document.get("screening_threshold") or {}
+    metric = str(screening_threshold.get("metric") or "")
+    if metric != SCREENING_THRESHOLD_METRIC:
         raise NativeGridError(
-            f"the WP1 envelope {path} records metric {metric!r}, expected "
-            f"{ENVELOPE_METRIC!r}"
+            f"the WP1 screening_threshold {path} records metric {metric!r}, expected "
+            f"{SCREENING_THRESHOLD_METRIC!r}"
         )
-    value = float(envelope.get("value_mm_s") or 0.0)
+    value = float(screening_threshold.get("value_mm_s") or 0.0)
     if not math.isfinite(value) or value <= 0.0:
         raise NativeGridError(
-            f"the WP1 envelope {path} records value_mm_s="
-            f"{envelope.get('value_mm_s')!r}; the threshold must be positive"
+            f"the WP1 screening_threshold {path} records value_mm_s="
+            f"{screening_threshold.get('value_mm_s')!r}; the threshold must be positive"
         )
-    return EnvelopeBinding(
+    return ScreeningThresholdBinding(
         path=path.as_posix(),
         source_sha256=sha256_file(path),
         metric=metric,
-        units=str(envelope.get("units") or "mm/s"),
+        units=str(screening_threshold.get("units") or "mm/s"),
         value_mm_s=value,
-        gate_index=int(envelope.get("gate_index") or 0),
-        depth_mm=float(envelope.get("depth_mm") or 0.0),
+        gate_index=int(screening_threshold.get("gate_index") or 0),
+        depth_mm=float(screening_threshold.get("depth_mm") or 0.0),
         median_abs_mean_difference_mm_s=float(
-            envelope.get("median_abs_mean_difference_mm_s") or 0.0
+            screening_threshold.get("median_abs_mean_difference_mm_s") or 0.0
         ),
         scope=str(
-            envelope.get("scope")
-            or "upper bound on same-settings repeatability plus uncontrolled drift"
+            screening_threshold.get("scope")
+            or "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either"
         ),
     )
 
@@ -851,7 +852,7 @@ def psd_band_summary(
 
 
 def read_temporal_floor(
-    envelope_path: Path,
+    screening_threshold_path: Path,
     manifest_sha256: str,
     *,
     band_hz: tuple[float, float],
@@ -864,13 +865,13 @@ def read_temporal_floor(
     one from another manifest, one without two temporal series, or curves with no power in the
     band.
     """
-    path = Path(envelope_path)
-    document = read_manifest_bound_document(path, manifest_sha256, "WP1 envelope")
+    path = Path(screening_threshold_path)
+    document = read_manifest_pinned_document(path, manifest_sha256, "WP1 screening_threshold")
     temporal = document.get("views", {}).get("temporal") or {}
     series = temporal.get("series") or []
     if len(series) != 2:
         raise NativeGridError(
-            f"the WP1 envelope {path} records {len(series)} temporal series; the floor "
+            f"the WP1 screening_threshold {path} records {len(series)} temporal series; the floor "
             "needs two"
         )
     summaries = [
@@ -892,7 +893,7 @@ def read_temporal_floor(
             temporal.get("band_max_abs_level_difference_db") or 0.0
         ),
         "e_folding_lag_s": lags, "e_folding_lag_difference_s": abs(lags[0] - lags[1]),
-        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
+        "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
     }
     for name in ("hf_share", "centroid_hz", "bandwidth_hz"):
         pair = [float(item[name]) for item in summaries]

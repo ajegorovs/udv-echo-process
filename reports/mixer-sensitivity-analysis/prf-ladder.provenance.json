@@ -7,16 +7,16 @@
     "path": "reports/mixer-sensitivity-analysis/manifest.csv",
     "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
   },
-  "envelope": {
+  "screening_threshold": {
     "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
     "gate_index": 39,
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
-    "scope": "upper bound on same-settings repeatability plus uncontrolled drift",
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
   },
@@ -239,7 +239,7 @@
       "mixer_setpoint_role": "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it",
       "floor": {
         "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-        "source_sha256": "a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+        "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
         "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
         "source_paths": [
           "prf/600.BDD",
@@ -260,7 +260,7 @@
           0.0895571252843151
         ],
         "e_folding_lag_difference_s": 0.02238928132107877,
-        "role": "upper bound on same-settings repeatability plus uncontrolled drift (temporal)",
+        "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
         "hf_share": [
           0.10130398654814897,
           0.11936241554550668
@@ -297,7 +297,7 @@
     "warning_fractions": "share of windowed, supported samples at or above 0.5, 0.75, 0.9 and 1.0 of that recording's velo_max_ms; the inner three are declared margins below the limit, not instrument flags, and these files carry no warning channel",
     "wrap_like_discontinuity": "a consecutive-profile change at one gate of at least velo_max_ms with a sign reversal: a wrap moves the estimate across the whole +/-velo_max_ms span in one profile interval, about 2 x velo_max_ms, so the criterion is the conservative half-span",
     "difference": "signed faster - slower per-gate time mean at every common knot, mm/s; a negative value means the shorter period is slower there",
-    "envelope": "the committed WP1 envelope max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and bound to this manifest's hash: an upper bound on repeatability plus uncontrolled drift, and the threshold of every mean-profile effect",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a PRF effect and not a bound on repeatability or uncontrolled drift",
     "matched_segment": "the physical segment duration every file is analysed in, the largest multiple of 0.1 s that fits five whole segments in the shortest record; each file takes the whole number of profiles inside it, so segment duration and resolution agree rather than being equal",
     "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, so spectra are compared only where every recording has support",
     "usable_bandwidth": "the highest frequency a file's matched segment supports, half its profile rate; the full-record Nyquist limit is published beside it",
@@ -309,11 +309,11 @@
   "findings": {
     "effect_gate": {
       "pairs": 10,
-      "envelope_mm_s": 19.37008103465545,
-      "pairs_above_envelope": 8,
+      "screening_threshold_mm_s": 19.37008103465545,
+      "pairs_above_screening_threshold": 8,
       "max_abs_difference_mm_s": 37.514761734905456,
-      "max_ratio_to_envelope": 1.936737469904589,
-      "statement": "Effect gate: over the 10 pairs the largest absolute per-knot mean difference is 37.51 mm/s (400 vs 500 us at 13.86 mm; depth ranges above the envelope 10.1627..10.1627; 13.8627..15.7127; 34.2127..39.7627) = 1.94 of the WP1 envelope 19.37 mm/s, and 8 pairs clear it somewhere."
+      "max_ratio_to_screening_threshold": 1.936737469904589,
+      "statement": "Effect gate: over the 10 pairs the largest absolute per-knot mean difference is 37.51 mm/s (400 vs 500 us at 13.86 mm; depth ranges above the screening_threshold 10.1627..10.1627; 13.8627..15.7127; 34.2127..39.7627) = 1.94 of the WP1 screening_threshold 19.37 mm/s, and 8 pairs clear it somewhere."
     },
     "velocity_headroom": {
       "focus_prf_period_us": 400.0,
@@ -365,9 +365,9 @@
       "statement": "Plan decision, 400 vs 250 us: at 400 us the window's peak load is 0.7266 of a 231.2 mm/s limit (0 sample(s) beyond it, 0 wrap-like step(s)) with the widest usable bandwidth in the ladder (33.36 Hz of 33.36-16.47 Hz), while a 250 us setting would raise the limit to 369.9 mm/s, which nothing here needs. Verdict: this evidence does not show the 400 us setting to be inadequate on either count, so it does not justify a 250 us acquisition. Unidentifiable here: a wrap that leaves no step of half the span (a slowly drifting alias), the peak velocity of a flow whose setpoint differs from this 500-RPM one, and the rate a future 250 us setting would run at, which these files cannot fix because their own rate is not an exact multiple of the PRF. What would overturn it: a recording whose |v| reaches the 400 us unambiguous limit, or a stated question needing temporal content above the 400 us bandwidth."
     },
     "limitations": [
-      "The only repeat bounds repeatability plus uncontrolled drift (19.37 mm/s per gate, max_gate_abs_mean_difference_mm_s): the levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
+      "The screening threshold is the only repeat, 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
       "The velocity scale is the key's own consequence (Vmax x prf_period is constant across the ladder to the audited tolerance), but the profile rate is not: it rises from 33.57 to 66.72 Hz while its ratio to the PRF period varies by 0.00625 relative, so the rate is a separate measured property and nothing here claims a future setting would scale it.",
-      "The temporal metrics are bounded by the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), resummarised in 0.625-16.25 Hz on the bands this ladder shares; one pair cannot estimate that floor's own spread, and 5-10 segments per level make a band level a coarse magnitude.",
+      "The temporal metrics are screened against the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), resummarised in 0.625-16.25 Hz on the bands this ladder shares; one pair cannot estimate that floor's own spread, and 5-10 segments per level make a band level a coarse magnitude.",
       "The files carry the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the spectra are per gate, and a wrap-like step is counted as a discontinuity of the recorded estimate, never as proof that a particular sample aliased. This module owns the PRF axis only: resolution, burst, TGC, emitting power and emissions per profile are neither analysed nor decided here."
     ]
   },
@@ -383,7 +383,7 @@
   },
   "figure": {
     "path": "figures/prf-ladder.png",
-    "caption": "WP2 PRF ladder: 5 decoded pulse-repetition periods 400-800 us. Common-duration view: 67 nominal 500-RPM revolutions = 8.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm; gradients and correlation lengths are native-grid quantities and pairs use the slower level's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: every full record in matched 1.6 s segments, one profile length per file because the rate differs (33.57-66.72 Hz), nominal resolution 0.625 Hz. Decision threshold: the committed WP1 envelope 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, a58a83a28b66...). Plan decision 400 vs 250 us: peak load 0.7266 of the 231.2 mm/s limit at 400 us with none beyond it, and the widest usable bandwidth in the ladder (33.36 Hz of 33.36-16.47 Hz). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it. no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, so a level effect cannot be separated from drift. Generated at commit 1de828e from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 PRF ladder: 5 decoded pulse-repetition periods 400-800 us. Common-duration view: 67 nominal 500-RPM revolutions = 8.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm; gradients and correlation lengths are native-grid quantities and pairs use the slower level's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: every full record in matched 1.6 s segments, one profile length per file because the rate differs (33.57-66.72 Hz), nominal resolution 0.625 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...). Plan decision 400 vs 250 us: peak load 0.7266 of the 231.2 mm/s limit at 400 us with none beyond it, and the widest usable bandwidth in the ladder (33.36 Hz of 33.36-16.47 Hz). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it. no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, so a level effect cannot be separated from drift. Generated at commit 1de828e from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "velocity headroom: the largest |v| / Vmax per level against the unambiguous limit at 1.0, with the samples beyond the limit and the wrap-like discontinuities beside it",
       "usable temporal bandwidth: each level's ensemble PSD against the frequencies it supports, with the shared comparison band, each file's usable bandwidth and the 8.33 Hz marker"

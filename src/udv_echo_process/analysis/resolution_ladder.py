@@ -1,4 +1,4 @@
-"""WP2, resolution axis — the measured pitch ladder against the repeatability bound.
+"""WP2, resolution axis — the measured pitch ladder against the sole-pair screening threshold.
 
 The committed sweep holds a 13-point resolution ladder: one base-state recording per gate pitch,
 0.247 mm (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates), over the same ~100 mm
@@ -20,7 +20,7 @@ produces:
   spatial correlation length, both computed *before* any comparison (plan §3.2);
 - **pairs on common knots** — every unordered pair on the coarser participant's own gate depths
   inside the support, the finer level *sampled* there by nearest native gate: no interpolation,
-  no upsampling, and the knots that clear the committed WP1 envelope, where in depth and by what
+  no upsampling, and the knots that clear the committed WP1 screening_threshold, where in depth and by what
   ratio (plan §4 WP1 gate);
 - the **detail below the coarse knots**, measured inside the finer recording alone so no drift
   enters it: its native mean profile minus that same profile sampled at the coarse knots.
@@ -52,10 +52,10 @@ from udv_echo_process.analysis import _native_grid as grid
 from udv_echo_process.analysis._native_grid import (
     CORRELATION_FLOOR,
     AxisEligibility,
-    EnvelopeBinding,
     LevelGroup,
     LevelMetrics,
     NativeGridError,
+    ScreeningThresholdBinding,
     align_on_knots,
     common_support,
     correlation_length,  # noqa: F401 - re-exported for the focused resolution tests
@@ -66,7 +66,7 @@ from udv_echo_process.analysis._native_grid import (
     nearest_gate_indices,
     panel_figure,
     read_decoded_level,
-    read_envelope,
+    read_screening_threshold,
     select_axis_rows,
     sha256_file,
     spatial_gradient,  # noqa: F401 - re-exported for the focused resolution tests
@@ -102,7 +102,7 @@ ELIGIBILITY = AxisEligibility(
 )
 
 #: The committed WP1 artefact the decision threshold is read from.
-ENVELOPE_NAME = "reference-repeat.provenance.json"
+SCREENING_THRESHOLD_NAME = "reference-repeat.provenance.json"
 
 #: The two pitches the plan's question names (0.247 mm, 0.617 mm): the focus pair
 #: is selected by *pitch* from the manifest, in the same way every row is.
@@ -132,8 +132,8 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "support_min_mm", "support_max_mm", "max_knot_offset_mm",
     "mean_abs_difference_mm_s", "median_abs_difference_mm_s",
     "max_abs_difference_mm_s", "max_abs_difference_depth_mm",
-    "knots_above_envelope", "fraction_above_envelope",
-    "max_abs_difference_over_envelope", "depth_ranges_above_envelope_mm",
+    "knots_above_screening_threshold", "fraction_above_screening_threshold",
+    "max_abs_difference_over_screening_threshold", "depth_ranges_above_screening_threshold_mm",
     "fine_variance_share_at_coarse_knots", "fine_detail_rms_mm_s",
     "fine_detail_max_abs_mm_s", "fine_detail_variance_share",
 )
@@ -149,7 +149,7 @@ ResolutionLadderError = NativeGridError
 
 
 class LevelInput(ValueModel):
-    """One resolution level, as decoded and bound to its manifest row."""
+    """One resolution level, as decoded and pinned to its manifest row."""
 
     relative_path: str
     axis: str
@@ -231,10 +231,10 @@ class PairRow(ValueModel):
     median_abs_difference_mm_s: float
     max_abs_difference_mm_s: float
     max_abs_difference_depth_mm: float
-    knots_above_envelope: int
-    fraction_above_envelope: float
-    max_abs_difference_over_envelope: float
-    depth_ranges_above_envelope_mm: str
+    knots_above_screening_threshold: int
+    fraction_above_screening_threshold: float
+    max_abs_difference_over_screening_threshold: float
+    depth_ranges_above_screening_threshold_mm: str
     fine_variance_share_at_coarse_knots: float
     fine_detail_rms_mm_s: float
     fine_detail_max_abs_mm_s: float
@@ -252,10 +252,10 @@ class PairRow(ValueModel):
                 f"knot spacing {self.knot_spacing_mm} must be the coarser pitch "
                 f"{self.coarse_pitch_mm}"
             )
-        if self.knots < 2 or self.knots_above_envelope > self.knots:
+        if self.knots < 2 or self.knots_above_screening_threshold > self.knots:
             raise ValueError(
-                f"{self.knots} knots cannot carry {self.knots_above_envelope} "
-                "above-envelope flags; a pair needs at least two knots"
+                f"{self.knots} knots cannot carry {self.knots_above_screening_threshold} "
+                "above-screening_threshold flags; a pair needs at least two knots"
             )
         return self
 
@@ -272,7 +272,7 @@ class ResolutionLadder(ValueModel):
     dataset_root: str
     manifest_path: str
     manifest_sha256: str
-    envelope: EnvelopeBinding
+    screening_threshold: ScreeningThresholdBinding
     axis: str = AXIS
     analysis_commit: str | None = None
     eligibility: AxisEligibility = ELIGIBILITY
@@ -302,8 +302,8 @@ class ResolutionLadder(ValueModel):
             (row.fine_path, row.coarse_path) for row in self.pairs
         }:
             raise ValueError(f"focus pair {self.focus_pair} must be one of the pairs")
-        if self.envelope.value_mm_s <= 0.0:
-            raise ValueError("the repeatability envelope must be positive")
+        if self.screening_threshold.value_mm_s <= 0.0:
+            raise ValueError("the repeatability screening_threshold must be positive")
         representatives = [group.primary_path for group in self.groups if group.in_ladder]
         if representatives and representatives != paths:
             raise ValueError(
@@ -349,7 +349,7 @@ def _row_pitch(row: Mapping[str, str], manifest_path: Path) -> float:
 
 
 def _order_key(manifest_path: Path):
-    """This axis's ordering key: the row's decoded pitch, bound to the manifest path.
+    """This axis's ordering key: the row's decoded pitch, pinned to the manifest path.
     """
     return lambda row: _row_pitch(row, manifest_path)
 
@@ -357,7 +357,7 @@ def _order_key(manifest_path: Path):
 def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
     """Return the representative row of every ``res`` level the axis itself requested, by pitch.
 
-    The ladder is bound to the WP0 manifest rather than to a hand-maintained filename list: the
+    The ladder is pinned to the WP0 manifest rather than to a hand-maintained filename list: the
     selection, the ordering and the refusals are the shared axis-input layer's
     (:func:`_native_grid.select_axis_rows`), driven here with this axis's own contract. A recording
     of the same decoded settings sitting in another folder is *eligible*
@@ -391,7 +391,7 @@ def _read_level(
     Returns ``(entry, values, time_s, gate_depths_mm)`` — the manifest record and the
     ``(profiles, gates)`` velocity array in ``mm/s`` with its two axes. The decode and every check on
     it are the shared axis-input layer's, so this axis and the burst axis cannot disagree about what
-    a bound recording is.
+    a pinned recording is.
     """
     level = read_decoded_level(Path(dataset_root), row)
     observed = level.observed
@@ -472,7 +472,7 @@ def pair_row(
     coarse_depths_mm: np.ndarray,
     *,
     support: tuple[float, float],
-    envelope: EnvelopeBinding,
+    screening_threshold: ScreeningThresholdBinding,
 ) -> PairRow:
     """Compare a fine level with a coarse one on the coarser grid's own knots.
 
@@ -499,7 +499,7 @@ def pair_row(
         np.asarray(coarse_mean_mm_s, dtype=float),
         path=fine.relative_path,
         support=support,
-        threshold_mm_s=envelope.value_mm_s,
+        threshold_mm_s=screening_threshold.value_mm_s,
     )
     knots, absolute, flagged = aligned.knots, aligned.absolute, aligned.flagged
     fine_at_knots = fine_mean[aligned.indices]
@@ -523,10 +523,10 @@ def pair_row(
         median_abs_difference_mm_s=float(np.median(absolute)),
         max_abs_difference_mm_s=float(absolute[aligned.worst]),
         max_abs_difference_depth_mm=float(knots[aligned.worst]),
-        knots_above_envelope=int(np.count_nonzero(flagged)),
-        fraction_above_envelope=float(np.count_nonzero(flagged) / flagged.size),
-        max_abs_difference_over_envelope=float(absolute[aligned.worst] / envelope.value_mm_s),
-        depth_ranges_above_envelope_mm=depth_ranges(knots, flagged),
+        knots_above_screening_threshold=int(np.count_nonzero(flagged)),
+        fraction_above_screening_threshold=float(np.count_nonzero(flagged) / flagged.size),
+        max_abs_difference_over_screening_threshold=float(absolute[aligned.worst] / screening_threshold.value_mm_s),
+        depth_ranges_above_screening_threshold_mm=depth_ranges(knots, flagged),
         fine_variance_share_at_coarse_knots=float(
             np.var(fine_at_knots) / aligned.sampled_variance
         ),
@@ -563,14 +563,14 @@ def _focus_pair(levels: Sequence[LevelRow]) -> tuple[str, str]:
 def _build(
     dataset_root: Path,
     manifest_path: Path,
-    envelope_path: Path,
+    screening_threshold_path: Path,
     analysis_commit: str | None,
 ) -> tuple[ResolutionLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
     """Build the ladder and return it beside each level's native mean profile."""
     rows = select_level_rows(manifest_path)
     groups = level_groups(manifest_path)
     manifest_sha256 = f"sha256:{sha256_file(Path(manifest_path))}"
-    envelope = read_envelope(Path(envelope_path), manifest_sha256)
+    screening_threshold = read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
     root = Path(dataset_root)
     decoded = [_read_level(root, row) for row in rows]
     revolutions = common_revolution_count([entry.duration_s for entry, *_ in decoded])
@@ -601,7 +601,7 @@ def _build(
             profiles[coarse.relative_path][1],
             profiles[coarse.relative_path][0],
             support=support,
-            envelope=envelope,
+            screening_threshold=screening_threshold,
         )
         for (fine, *_), (coarse, *_) in itertools.combinations(decoded, 2)
     )
@@ -610,7 +610,7 @@ def _build(
         dataset_root=root.as_posix(),
         manifest_path=Path(manifest_path).as_posix(),
         manifest_sha256=manifest_sha256,
-        envelope=envelope,
+        screening_threshold=screening_threshold,
         analysis_commit=commit,
         eligibility=ELIGIBILITY,
         inputs=tuple(entry for entry, *_ in decoded),
@@ -643,7 +643,7 @@ def _build(
 def build_resolution_ladder(
     dataset_root: Path = DATASET_ROOT,
     manifest_path: Path = REPORT_DIR / MANIFEST_NAME,
-    envelope_path: Path = REPORT_DIR / ENVELOPE_NAME,
+    screening_threshold_path: Path = REPORT_DIR / SCREENING_THRESHOLD_NAME,
     *,
     analysis_commit: str | None = None,
 ) -> ResolutionLadder:
@@ -651,11 +651,11 @@ def build_resolution_ladder(
 
     ``analysis_commit`` is the revision to record; ``None`` probes the checkout's short git SHA once
     (never blocking), and passing the recorded commit reproduces a committed artefact. A manifest, a
-    WP1 envelope or a recording that contradicts its row is refused by name before anything is
+    WP1 screening_threshold or a recording that contradicts its row is refused by name before anything is
     written.
     """
     return _build(
-        dataset_root, Path(manifest_path), Path(envelope_path), analysis_commit
+        dataset_root, Path(manifest_path), Path(screening_threshold_path), analysis_commit
     )[0]
 
 
@@ -703,11 +703,12 @@ DEFINITIONS: dict[str, str] = {
         "signed fine - coarse per-gate time mean at every knot, mm/s; mean/median/max "
         "absolute values and the knot of the maximum are reported beside it"
     ),
-    "envelope": (
-        "the committed WP1 repeatability envelope, max_gate_abs_mean_difference_mm_s, "
-        "read from reference-repeat.provenance.json and bound to this manifest's hash: "
-        "an upper bound on repeatability *plus* uncontrolled drift, not a repeatability "
-        "estimate, and the threshold of every effect here"
+    "screening_threshold": (
+        "the committed sole-pair observed-discrepancy screening threshold, "
+        "max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and "
+        "pinned to this manifest's hash: the threshold every effect here is screened "
+        "against, one observed realization of repeatability *plus* uncontrolled drift and "
+        "not a bound on either"
     ),
     "detail": (
         "inside the finer recording alone, so drift-free: its supported native mean "
@@ -748,7 +749,7 @@ REPLICATE_ROLE = (
 _FOCUS_VERDICT = (
     "Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - "
     "both the level difference and the structure the extra gates add sit inside the "
-    "repeat-plus-drift envelope, so this evidence cannot support that claim; it "
+    "repeat-plus-drift screening_threshold, so this evidence cannot support that claim; it "
     "equally cannot exclude a real effect smaller than the bound, which one "
     "same-settings repeat cannot resolve."
 )
@@ -756,7 +757,7 @@ _COARSEST_VERDICT = (
     "On this evidence the coarsest *measured* pitch preserves the structure the finer "
     "pitches show, and no measured pitch is shown to lose it - a statement about the "
     "13 recorded pitches only: nothing finer or coarser was measured, and a resolution "
-    "effect smaller than the drift-inclusive envelope would be invisible here."
+    "effect smaller than the drift-inclusive screening_threshold would be invisible here."
 )
 
 #: Panels of the reviewer-visible figure.
@@ -767,7 +768,7 @@ FIGURE_PANELS: tuple[str, ...] = (
     ),
     (
         "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the "
-        "signed difference at the 0.617 mm knots and the WP1 envelope band; the native "
+        "signed difference at the 0.617 mm knots and the WP1 screening_threshold band; the native "
         "gradient spread stays in resolution-levels.csv"
     ),
 )
@@ -794,9 +795,9 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
     Every statement is composed from those values, so a regeneration says what it wrote. Nothing here
     is a p-value, a significance claim, or a decision about an axis this module does not own.
     """
-    envelope = model.envelope.value_mm_s
+    screening_threshold = model.screening_threshold.value_mm_s
     pairs = model.pairs
-    above = [row for row in pairs if row.knots_above_envelope]
+    above = [row for row in pairs if row.knots_above_screening_threshold]
     worst = max(pairs, key=lambda row: row.max_abs_difference_mm_s)
     focus = next(
         row for row in pairs if (row.fine_path, row.coarse_path) == model.focus_pair
@@ -807,35 +808,35 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
 
     coarse_pairs = [row for row in pairs if row.coarse_path == coarsest.relative_path]
     coarse_worst = max(row.max_abs_difference_mm_s for row in coarse_pairs)
-    coarse_ratio = max(row.max_abs_difference_over_envelope for row in coarse_pairs)
+    coarse_ratio = max(row.max_abs_difference_over_screening_threshold for row in coarse_pairs)
     gate_tail = (
-        f"{len(above)} of {len(pairs)} pairs put a knot above the envelope, named with "
+        f"{len(above)} of {len(pairs)} pairs put a knot above the screening_threshold, named with "
         "their depth ranges in resolution-pairs.csv"
         if above
         else (
-            f"not one of the {len(pairs)} pairs puts a knot above the envelope, so no "
+            f"not one of the {len(pairs)} pairs puts a knot above the screening_threshold, so no "
             "level differs from another by more than repeat-plus-drift anywhere in the "
             "common support"
         )
     )
     return {
-        "envelope_gate": {
+        "screening_threshold_gate": {
             "pairs": len(pairs),
-            "envelope_mm_s": envelope,
-            "envelope_source_sha256": model.envelope.source_sha256,
-            "pairs_above_envelope": len(above),
+            "screening_threshold_mm_s": screening_threshold,
+            "screening_threshold_source_sha256": model.screening_threshold.source_sha256,
+            "pairs_above_screening_threshold": len(above),
             "max_abs_difference_mm_s": worst.max_abs_difference_mm_s,
             "max_abs_difference_fine_path": worst.fine_path,
             "max_abs_difference_coarse_path": worst.coarse_path,
             "max_abs_difference_depth_mm": worst.max_abs_difference_depth_mm,
-            "max_ratio_to_envelope": worst.max_abs_difference_over_envelope,
+            "max_ratio_to_screening_threshold": worst.max_abs_difference_over_screening_threshold,
             "statement": (
                 f"Effect gate: the largest absolute per-knot mean-profile difference "
                 f"over the {len(pairs)} pairs is {worst.max_abs_difference_mm_s:.4g} "
                 f"mm/s ({worst.fine_label} vs {worst.coarse_label} at "
                 f"{worst.max_abs_difference_depth_mm:.4g} mm) = "
-                f"{worst.max_abs_difference_over_envelope:.3g} of the WP1 envelope "
-                f"{envelope:.4g} mm/s; {gate_tail}."
+                f"{worst.max_abs_difference_over_screening_threshold:.3g} of the WP1 screening_threshold "
+                f"{screening_threshold:.4g} mm/s; {gate_tail}."
             ),
         },
         "information": {
@@ -845,7 +846,7 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
             "coarse_pitch_mm": focus.coarse_pitch_mm,
             "knot_spacing_mm": focus.knot_spacing_mm,
             "knots": focus.knots,
-            "knots_above_envelope": focus.knots_above_envelope,
+            "knots_above_screening_threshold": focus.knots_above_screening_threshold,
             "mean_abs_difference_mm_s": focus.mean_abs_difference_mm_s,
             "max_abs_difference_mm_s": focus.max_abs_difference_mm_s,
             "max_abs_difference_depth_mm": focus.max_abs_difference_depth_mm,
@@ -860,14 +861,14 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                 f"|diff| {focus.mean_abs_difference_mm_s:.4g} mm/s, max |diff| "
                 f"{focus.max_abs_difference_mm_s:.4g} mm/s at "
                 f"{focus.max_abs_difference_depth_mm:.4g} mm = "
-                f"{focus.max_abs_difference_over_envelope:.3g} of the {envelope:.4g} "
-                f"mm/s envelope, {focus.knots_above_envelope} knots above it. The coarse "
+                f"{focus.max_abs_difference_over_screening_threshold:.3g} of the {screening_threshold:.4g} "
+                f"mm/s screening_threshold, {focus.knots_above_screening_threshold} knots above it. The coarse "
                 f"knots keep {100.0 * focus.fine_variance_share_at_coarse_knots:.4g} % of "
                 f"the finer profile's spatial variance; the detail below them carries "
                 f"{100.0 * focus.fine_detail_variance_share:.3g} % (RMS "
                 f"{focus.fine_detail_rms_mm_s:.4g} mm/s, peak "
                 f"{focus.fine_detail_max_abs_mm_s:.4g} mm/s = "
-                f"{focus.fine_detail_max_abs_mm_s / envelope:.3g} of the envelope). "
+                f"{focus.fine_detail_max_abs_mm_s / screening_threshold:.3g} of the screening_threshold). "
                 f"{_FOCUS_VERDICT}"
             ),
         },
@@ -879,7 +880,7 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
             "correlation_length_mm": coarsest.correlation_length_mm,
             "correlation_length_over_pitch": coarsest.correlation_length_over_pitch,
             "max_abs_difference_to_any_other_level_mm_s": coarse_worst,
-            "max_ratio_to_envelope": coarse_ratio,
+            "max_ratio_to_screening_threshold": coarse_ratio,
             "statement": (
                 f"Coarsest measured pitch: the native correlation length of the "
                 f"depth-resolved mean profile is {min(lengths):.4g}-{max(lengths):.4g} "
@@ -890,19 +891,21 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                 f"({coarsest.gates_in_support} supported gates) still samples it "
                 f"{coarsest.correlation_length_over_pitch:.3g} times per correlation "
                 f"length and differs from every other level by at most "
-                f"{coarse_worst:.4g} mm/s ({coarse_ratio:.3g} of the envelope). "
+                f"{coarse_worst:.4g} mm/s ({coarse_ratio:.3g} of the screening_threshold). "
                 f"{_COARSEST_VERDICT}"
             ),
         },
         "limitations": [
             (
-                f"The only repeat bounds repeatability plus uncontrolled drift "
-                f"({envelope:.4g} mm/s per gate, {model.envelope.metric}). The levels are "
+                f"The screening threshold is the only repeat, at {screening_threshold:.4g} "
+                f"mm/s per gate ({model.screening_threshold.metric}): one observed "
+                "realization of repeatability plus uncontrolled drift. The levels are "
                 "separate recordings with no acquisition order, so an effect smaller than "
-                "that bound cannot be separated from drift, and a difference that clears "
-                "it could still be drift rather than pitch. No level is replicated: every "
-                "difference is one measurement against another and estimates no pitch "
-                "effect repeatably."
+                "it cannot be separated from drift, and a difference that falls above the screening "
+                "threshold "
+                "could still be drift rather than pitch — screening is not attribution. No "
+                "level is replicated: every difference is one measurement against another "
+                "and estimates no pitch effect repeatably."
             ),
             (
                 "The spatial metrics describe the depth-resolved *mean* profile over the "
@@ -930,7 +933,7 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
 def figure_caption(model: ResolutionLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
-    It names the ladder, both views, the alignment rule, the envelope with its source, and the plan's
+    It names the ladder, both views, the alignment rule, the screening_threshold with its source, and the plan's
     two named pitches with their numbers.
     """
     findings = _findings(model)
@@ -948,17 +951,19 @@ def figure_caption(model: ResolutionLadder) -> str:
         "coarser participant's own gate depths as knots (spacing = the coarser pitch) "
         "with the finer profile sampled there by nearest native gate - nothing is "
         "interpolated or upsampled. Decision "
-        f"threshold: the committed WP1 envelope {model.envelope.value_mm_s:.4g} mm/s "
-        f"({model.envelope.metric}, read from {model.envelope.path}, "
-        f"{model.envelope.source_sha256[:12]}...), an upper bound on same-settings "
-        "repeatability plus uncontrolled drift. Focus pair: "
+        f"threshold: the committed sole-pair observed-discrepancy screening threshold "
+        f"{model.screening_threshold.value_mm_s:.4g} mm/s "
+        f"({model.screening_threshold.metric}, read from {model.screening_threshold.path}, "
+        f"{model.screening_threshold.source_sha256[:12]}...), one observed realization of "
+        "same-settings repeatability plus uncontrolled drift that screens an effect "
+        "without bounding it. Focus pair: "
         f"{information['fine_path']} ({information['fine_pitch_mm']:.4g} mm) vs "
         f"{information['coarse_path']} ({information['coarse_pitch_mm']:.4g} mm) - mean "
         f"|diff| {information['mean_abs_difference_mm_s']:.4g} mm/s, max |diff| "
         f"{information['max_abs_difference_mm_s']:.4g} mm/s at "
         f"{information['max_abs_difference_depth_mm']:.4g} mm, "
-        f"{information['knots_above_envelope']} of {information['knots']} knots above the "
-        f"envelope. Coarsest measured pitch {coarsest['pitch_mm']:.4g} mm "
+        f"{information['knots_above_screening_threshold']} of {information['knots']} knots above the "
+        f"screening_threshold. Coarsest measured pitch {coarsest['pitch_mm']:.4g} mm "
         f"({coarsest['label']}) samples the {coarsest['correlation_length_mm']:.4g} mm "
         f"correlation length {coarsest['correlation_length_over_pitch']:.3g} times. "
         f"{MIXER_SETPOINT_ROLE}. {REPLICATE_ROLE}. Generated at commit "
@@ -983,19 +988,19 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
         "analysis_commit": model.analysis_commit,
         "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
-        "envelope": {
-            "source_path": model.envelope.path,
-            "source_sha256": model.envelope.source_sha256,
-            "metric": model.envelope.metric,
-            "units": model.envelope.units,
-            "value_mm_s": model.envelope.value_mm_s,
-            "gate_index": model.envelope.gate_index,
-            "depth_mm": model.envelope.depth_mm,
+        "screening_threshold": {
+            "source_path": model.screening_threshold.path,
+            "source_sha256": model.screening_threshold.source_sha256,
+            "metric": model.screening_threshold.metric,
+            "units": model.screening_threshold.units,
+            "value_mm_s": model.screening_threshold.value_mm_s,
+            "gate_index": model.screening_threshold.gate_index,
+            "depth_mm": model.screening_threshold.depth_mm,
             "median_abs_mean_difference_mm_s": (
-                model.envelope.median_abs_mean_difference_mm_s
+                model.screening_threshold.median_abs_mean_difference_mm_s
             ),
-            "scope": model.envelope.scope,
-            "role": model.envelope.role,
+            "scope": model.screening_threshold.scope,
+            "role": model.screening_threshold.role,
         },
         "inputs": [
             {
@@ -1125,13 +1130,13 @@ def render_figure(
 
     Panels: the native correlation length against pitch (with the 1:1 line where a correlation length
     would be one gate), and the plan's focus pair — both aligned profiles against depth with the
-    signed difference at the coarse knots against the WP1 envelope band. The gradient spread stays in
+    signed difference at the coarse knots against the WP1 screening_threshold band. The gradient spread stays in
     ``resolution-levels.csv``. The frame is the shared writer's, so this module owns the panels only,
     and the caption is part of the image.
     """
     from matplotlib.ticker import NullFormatter
 
-    envelope = model.envelope.value_mm_s
+    screening_threshold = model.screening_threshold.value_mm_s
     pitch = np.asarray([row.pitch_mm for row in model.levels])
     focus = next(
         row for row in model.pairs if (row.fine_path, row.coarse_path) == model.focus_pair
@@ -1192,17 +1197,17 @@ def render_figure(
         pair_ax.set_ylabel("depth from transducer face [mm]")
         pair_ax.invert_yaxis()
         difference_ax = pair_ax.twiny()
-        difference_ax.axvspan(-envelope, envelope, color="#999999", alpha=0.18, linewidth=0)
+        difference_ax.axvspan(-screening_threshold, screening_threshold, color="#999999", alpha=0.18, linewidth=0)
         for sign in (-1.0, 1.0):
             difference_ax.axvline(
-                sign * envelope, color="#555555", linewidth=0.8, linestyle=":"
+                sign * screening_threshold, color="#555555", linewidth=0.8, linestyle=":"
             )
         difference_ax.plot(
             difference, knots, color="#111111", linewidth=1.0,
             label="fine - coarse at the coarse knots",
         )
-        difference_ax.set_xlabel("difference [mm/s]; grey band = WP1 envelope", fontsize=7.5)
-        difference_ax.set_xlim(-1.25 * envelope, 1.25 * envelope)
+        difference_ax.set_xlabel("difference [mm/s]; grey band = WP1 screening_threshold", fontsize=7.5)
+        difference_ax.set_xlim(-1.25 * screening_threshold, 1.25 * screening_threshold)
         pair_ax.set_title(
             f"plan's pair: {focus.knots} knots at {focus.knot_spacing_mm:.4g} mm; "
             f"max |diff| {focus.max_abs_difference_mm_s:.4g} mm/s",
@@ -1213,7 +1218,7 @@ def render_figure(
         difference_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
 
     return panel_figure(
-        "WP2 resolution ladder — 13 measured pitches against the WP1 repeatability bound",
+        "WP2 resolution ladder — 13 measured pitches against the WP1 sole-pair screening threshold",
         figure_caption(model),
         draw,
         path,
@@ -1228,7 +1233,7 @@ def write_resolution_ladder(
     report_dir: Path = REPORT_DIR,
     *,
     manifest_path: Path | None = None,
-    envelope_path: Path | None = None,
+    screening_threshold_path: Path | None = None,
     analysis_commit: str | None = None,
 ) -> ResolutionLadder:
     """Build the ladder and write the four reviewer-visible artefacts.
@@ -1241,10 +1246,10 @@ def write_resolution_ladder(
     manifest = (
         Path(manifest_path) if manifest_path is not None else directory / MANIFEST_NAME
     )
-    envelope = (
-        Path(envelope_path) if envelope_path is not None else directory / ENVELOPE_NAME
+    screening_threshold = (
+        Path(screening_threshold_path) if screening_threshold_path is not None else directory / SCREENING_THRESHOLD_NAME
     )
-    model, profiles = _build(dataset_root, manifest, envelope, analysis_commit)
+    model, profiles = _build(dataset_root, manifest, screening_threshold, analysis_commit)
     write_text_artefacts(directory, {
         LEVELS_NAME: levels_csv_text(model),
         PAIRS_NAME: pairs_csv_text(model),
