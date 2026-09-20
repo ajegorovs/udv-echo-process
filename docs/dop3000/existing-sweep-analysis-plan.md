@@ -184,8 +184,11 @@ pinned by SHA-256 to the 22 committed artifacts it reads, and `tools/validate_de
 every condition/control/job count from its rows. Its earlier claim to meet the gate through
 `sparse-parameter-set.md` §2-§3 — the 17-condition candidate list replaced by 7 unique new conditions, no
 level retained for feasibility reasons — is superseded: the corrected table carries **eight unconditional
-new conditions** (CC1-CC4, E8, E64, E128, D1), **six jobs** and **26 first-pass recordings**, with E128 an
-ordinary sparse point.
+new conditions** (CC1-CC4, E8, E64, E128, D1) and **26 first-pass recordings**, with E128 an ordinary sparse
+point. The job split and the control construction that produced that total were reopened by §9: the executable
+schedule is **five scientific jobs** each repeating its own anchor as block-local controls, plus **four separate
+common-reference jobs**, so the corrected total is **nine executable jobs** and the 26 survives only as a newly
+derived coincidence (§9.2).
 
 ### WP4 — Design only the missing measurements
 
@@ -252,10 +255,13 @@ This plan is complete when:
 
 **Where each condition stands after review.** The 22 generated artifacts plus the hand-written decision table and
 report README remain the 24-item report baseline that §8.3 item 1 recorded; step 8 rebinds it rather than
-replacing it. The corrected design carries **eight unconditional new conditions**, **3 within-run reference
-controls per run** for the single reference condition, **six jobs** and **26 first-pass recordings** — counts
-derived from the condition rows by `tools/validate_decision_layer.py`, with the superseded 7-unique-condition
-(8 with the conditional E128) draft numbers not preserved by construction.
+replacing it. The corrected design carries **eight unconditional new conditions** — seven of them executable in
+**five scientific jobs**, each with **3 block-local control recordings** at that job's own run-wide values, plus
+**four separate common-reference jobs** with one recording each, and the blocked D1 diagnostic — **nine executable
+jobs** and **26 first-pass recordings**, counts derived from the condition rows by
+`tools/validate_decision_layer.py`. The superseded 7-unique-condition (8 with the conditional E128) draft numbers
+are not preserved by construction, and neither is the superseded six-job schedule that reached 26 by placing
+three reference-condition recordings inside every run (§9.2).
 
 ## 8. Review round — required completion of PR #24
 
@@ -428,7 +434,7 @@ count. The design must first describe what today's writer surface can execute:
 | `emissions-8` | E8 | burst = 10; emissions = 8 |
 | `emissions-64` | E64 | burst = 10; emissions = 64 |
 | `emissions-128` | E128 | burst = 10; emissions = 128 |
-| D1 | not executable until §9.3 identifies the sensitivity value and the writer/echo-energy surface exists | reference burst/emissions; sensitivity intentionally non-reference |
+| D1 | not executable: scientifically selected at the operator-approved `high` (§9.3) and blocked until the sensitivity write/read path and the echo/energy surface exist; belongs to no executable job | reference burst/emissions; sensitivity `high`, intentionally non-reference |
 
 Two different controls must remain different in names, rows and analysis:
 
@@ -451,21 +457,23 @@ All totals are reopened. `unique_new_conditions`, executable versus blocked cond
 recordings, common-reference checks, jobs and first-pass recordings must be derived from the revised rows. The
 validator must reject the old `REF-CTRL | every-run` representation and any prose-only total.
 
-### 9.3 D1 value-discovery gate
+### 9.3 D1 value-discovery gate — closed by the operator's own observation
 
-Before D1 can be a row, the operator reads the sensitivity choices from the application's own dialog and records
-the exact canonical value immediately above `medium`; the dialog is then restored without recording data. The
-repository currently establishes only `medium`, so the plan does not invent `high`, an enum, or an index.
+**The gate is closed, and not by a guessed code value.** The operator read the sensitivity choices from the
+application's own sidebar sensitivity dropdown and recorded the exact canonical option immediately above
+`medium` as **`high`**; the dialog was then restored and **no data was recorded**. That is an observation of the
+application's own vocabulary — not an invented enum, index or constant, and not an acquisition — and the
+repository itself still establishes only `medium`.
 
-Once that value is known, both machine-readable documents must encode it identically. The decision-layer
-validator must assert all of the following:
+`high` is therefore the machine-readable D1 value in both documents, and the decision-layer validator asserts all
+of the following:
 
-- `D1.sensitivity != REF-CTRL.sensitivity`;
-- `D1.sensitivity == <operator-approved next value above medium>`;
+- `D1.sensitivity != <reference sensitivity>` (the reference condition stays `medium`);
+- `D1.sensitivity == 'high'` — the operator-approved value may be written no other way, so an unapproved value is
+  refused rather than silently accepted;
 - every non-D1 scientific condition retains `medium`;
-- D1 is counted as scientifically selected but **not executable** until both the sensitivity write/read path and
-  echo/energy recording surface exist; executable-job and first-pass totals exclude it until those prerequisites
-  land.
+- D1 is counted as scientifically selected but **not executable** (`executable = no`, no executable job, no
+  executable total) until both the sensitivity write/read path and the echo/energy recording surface exist.
 
 ### 9.4 Corrected implementation order
 
@@ -483,6 +491,10 @@ validator must assert all of the following:
    inside a non-reference block, D1 at reference sensitivity, unapproved D1 vocabulary, D1 in executable totals,
    and any declared count that differs from the rows. Require explicit control kind (`block-local` or
    `common-reference`) and block/run-wide values.
+Steps 4 and 5 land in one schedule/validator commit (the row schema, both hand-written documents, the validator
+and its focused tests); step 6's final rebinding and the PR body stay coordinator-owned, so no count in this plan
+is authoritative ahead of the rows.
+
 6. **Rebind and request the narrow final review.** Refresh only the affected hand-written hashes and generated
    resolution bindings, update the correction register without rewriting the frozen baseline, run every gate,
    then update the PR body with a finding-to-commit table.
@@ -508,8 +520,9 @@ validator must assert all of the following:
 
 Keep the shared row schema, validator, plan, decision table, sparse set, README, correction register and PR body
 single-writer. The resolution semantics slice owns `resolution_ladder.py`, its focused tests and its four generated
-artifacts. The schedule slice starts only after the exact D1 value is recorded, owns only the two hand-written
-decision documents plus validator/tests, and must not add writers. Final rebinding remains coordinator-owned.
+artifacts. The schedule slice starts only after the exact D1 value is recorded — now recorded as `high` (§9.3), and
+the value stays coordinator-owned — owns only the two hand-written decision documents plus the validator and
+its focused tests, and must not add writers. Final rebinding remains coordinator-owned.
 
 Use one commit for this ruling, one atomic tested resolution source/test/artifact commit, one decision-layer
 schedule/validator commit, and one final rebinding commit. The reviewed head `8ef9b63` remains the comparison

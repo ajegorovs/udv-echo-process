@@ -40,7 +40,7 @@ achieved values, and nothing below is assumed where the file can be read.
 | emissions/profile | 20 | word 14 in all 40 rows, corroborated by the time base |
 | emitting power | medium | all 40 rows |
 | TGC | ≈20 dB uniform: word 23 = 0 (`uniform`), word 25 = 255 (fixed 40 dB end), word 24 start 19.9216 dB | matrix §8; `gain-power-screen.provenance.json` `definitions.tgc_representation` |
-| sensitivity | medium | all 40 rows; the axis is absent from the committed sweep |
+| sensitivity | medium, except the one blocked D1 diagnostic at `high` (§3.1) | all 40 rows; the axis is absent from the committed sweep |
 | velocity scale | 1 | plan; fixed unless quantisation becomes a question |
 | assisted mode / filtering during acquisition / alias auto-correction | OFF | the run's own recorded state |
 | skipped profiles | 0 | word 84 = 0 in all 40 rows |
@@ -83,31 +83,49 @@ condition, it does not replicate a level, so no committed verdict is replicated 
    any wider sensitivity, TGC or power ladder — the corrected screen flags 2 of the 12 screened levels for a
    dropout/spread it cannot attribute, and echo SNR, receiver saturation, a safe plateau and acoustic energy
    are not measurable in the committed files at all.
-6. **Within-run reference controls at the beginning, middle and end of each randomized or blocked run, and
-   no Cartesian product.** The only committed same-settings repeat is one pair, which is why every verdict
-   in the decision table is screened rather than replicated. The crossing below is **2 pitches x 2 burst
-   levels = 4 cells**; no other axis moves in any condition.
+6. **Block-local controls at the beginning, middle and end of each scientific run, four separate
+   common-reference jobs placed between the five scientific jobs, and no Cartesian product.** The only
+   committed same-settings repeat is one pair, which is why every verdict in the decision table is screened
+   rather than replicated. The crossing below is **2 pitches x 2 burst levels = 4 cells**; no other axis
+   moves in any condition.
 
 ## 3. The first measured augmentation
 
-### 3.1 Complete new conditions
+### 3.1 Complete new conditions — the machine-readable rows
 
 Eight unique conditions — sparse points, not a factorial design. Every condition is **unconditional**: there
-is no trigger and no gated condition anywhere in the set. The `job` column names the run each condition needs
-under today's writers (a run-wide field may hold one value per run, so each distinct value is its own job);
-the `recordings` column is the number of recordings the row contributes to its job.
+is no trigger and no gated condition anywhere in the set. This is one **row set**, carried identically by
+[`reports/mixer-sensitivity-analysis/decision-table.md`](../../reports/mixer-sensitivity-analysis/decision-table.md)
+§8.2 and checked by `tools/validate_decision_layer.py`, which refuses the two documents if their rows differ.
+Every column is machine-readable:
 
-| ID | kind | resolution_mm | gates | burst_cycles | emissions_per_profile | sensitivity | conditional | recordings | job |
-|---|---|---|---|---|---|---|---|---|---|
-| CC1 | unique-condition | 0.617 | 145 | 4 | 20 | medium | no | 1 | crossing-burst-4 |
-| CC2 | unique-condition | 0.617 | 145 | 18 | 20 | medium | no | 1 | crossing-burst-18 |
-| CC3 | unique-condition | 2.960 | 31 | 4 | 20 | medium | no | 1 | crossing-burst-4 |
-| CC4 | unique-condition | 2.960 | 31 | 18 | 20 | medium | no | 1 | crossing-burst-18 |
-| E8 | unique-condition | 1.850 | 50 | 10 | 8 | medium | no | 1 | emissions-8 |
-| E64 | unique-condition | 1.850 | 50 | 10 | 64 | medium | no | 1 | emissions-64 |
-| E128 | unique-condition | 1.850 | 50 | 10 | 128 | medium | no | 1 | emissions-128 |
-| D1 | unique-condition | 1.850 | 50 | 10 | 20 | medium | no | 1 | diagnostic-sensitivity |
-| REF-CTRL | reference-control | 1.850 | 50 | 10 | 20 | medium | no | 3 | every-run |
+- `block` — the scientific block the row belongs to, or `common-reference` for the between-job checks;
+- `job` — the run the row is recorded in. `CampaignDefinition` fixes `burst_length` and
+  `emissions_per_profile` once for a whole campaign (`acquire/campaign.py`), so a job is a set of rows that
+  agree on both, and `none` marks the one row that belongs to no executable job;
+- `control_kind` — `block-local`, `common-reference`, or `none` for a scientific condition;
+- `executable` — whether today's writer surface can record the row at all;
+- `recordings` — the number of recordings the row contributes to its job.
+
+| ID | kind | block | job | control_kind | resolution_mm | gates | burst_cycles | emissions_per_profile | sensitivity | conditional | executable | recordings |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CC1 | unique-condition | burst-4 | burst-4 | none | 0.617 | 145 | 4 | 20 | medium | no | yes | 1 |
+| CC3 | unique-condition | burst-4 | burst-4 | none | 2.960 | 31 | 4 | 20 | medium | no | yes | 1 |
+| burst-4-CTRL | block-local-control | burst-4 | burst-4 | block-local | 1.850 | 50 | 4 | 20 | medium | no | yes | 3 |
+| CR1 | common-reference | common-reference | common-reference-1 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| CC2 | unique-condition | burst-18 | burst-18 | none | 0.617 | 145 | 18 | 20 | medium | no | yes | 1 |
+| CC4 | unique-condition | burst-18 | burst-18 | none | 2.960 | 31 | 18 | 20 | medium | no | yes | 1 |
+| burst-18-CTRL | block-local-control | burst-18 | burst-18 | block-local | 1.850 | 50 | 18 | 20 | medium | no | yes | 3 |
+| CR2 | common-reference | common-reference | common-reference-2 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E8 | unique-condition | emissions-8 | emissions-8 | none | 1.850 | 50 | 10 | 8 | medium | no | yes | 1 |
+| emissions-8-CTRL | block-local-control | emissions-8 | emissions-8 | block-local | 1.850 | 50 | 10 | 8 | medium | no | yes | 3 |
+| CR3 | common-reference | common-reference | common-reference-3 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E64 | unique-condition | emissions-64 | emissions-64 | none | 1.850 | 50 | 10 | 64 | medium | no | yes | 1 |
+| emissions-64-CTRL | block-local-control | emissions-64 | emissions-64 | block-local | 1.850 | 50 | 10 | 64 | medium | no | yes | 3 |
+| CR4 | common-reference | common-reference | common-reference-4 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E128 | unique-condition | emissions-128 | emissions-128 | none | 1.850 | 50 | 10 | 128 | medium | no | yes | 1 |
+| emissions-128-CTRL | block-local-control | emissions-128 | emissions-128 | block-local | 1.850 | 50 | 10 | 128 | medium | no | yes | 3 |
+| D1 | unique-condition | sensitivity-diagnostic | none | none | 1.850 | 50 | 10 | 20 | high | no | no | 1 |
 
 The fixed facts of §1 hold in every row; only the columns shown move. "§1" means every fixed fact of §1.
 
@@ -122,15 +140,35 @@ axes.
 `c`-dependent, so every condition must be *requested* in mm and *read back* from word 10.
 Nothing in this set may be identified by a folder name or a label.
 
-**D1 is the one condition no writer can execute today.** Its echo/energy channel does not exist in the
-recording surface yet (§6), so its `job` is recorded for completeness and its acquisition waits on that
-surface.
+**D1 is the one condition no writer can execute today.** Its sensitivity is `high` — the exact canonical
+option immediately above `medium` in the application's own sidebar sensitivity dropdown, read from that
+dialog and then restored without recording (plan §9.3) — and its echo/energy channel does not exist in the
+recording surface yet (§6). It is therefore marked `executable = no`, carries the `none` job marker, belongs
+to no executable job and enters no executable total. It is scientifically selected, not acquired.
 
-### 3.2 Within-run reference controls
+### 3.2 Block-local controls and common-reference checks
 
-Three recordings of the **reference condition** (§1) at the **beginning, middle and end of each randomized
-or blocked run**. They are repeats of one condition, not new conditions, and are counted separately
-everywhere. They are the design's own answer to the single committed repeat: the **within-run reference controls** form one minimum within-run drift diagnostic for the single reference condition, and the two **adjacent** differences they give (beginning→middle and middle→end) are **correlated**, because they share the middle recording; they are not independent, and neither difference is a separate observation of the reference. They are the direct check that the committed 19.3701 mm/s sole-pair observed-discrepancy screening threshold transfers to the new run.
+The single committed repeat is why every verdict in the decision table is a screening comparison, and the
+schedule answers it with two different things that have to stay different in names, rows and analysis:
+
+- **Block-local controls** repeat each scientific job's **own anchor** at that job's run-wide burst and
+  emissions values: three recordings at the beginning, middle and end of the run. For the two burst blocks
+  the anchor is the reference spatial window (1.850 mm, 50 gates) held at burst 4 or 18; for a
+  one-condition emissions block the repeats are repetitions of that emissions condition itself. They
+  diagnose within-block drift only, and **none of them is the common reference condition**: they are never
+  screened as if every one were burst 10 / emissions 20. Their two **adjacent** differences (beginning→middle
+  and middle→end) share the middle recording and are **correlated**, so neither is a separate observation of
+  an anchor level.
+- **Common-reference checks** are the true reference condition (§1) recorded **once** in each of four
+  separate reference-only jobs placed between the five scientific jobs. They are between-job checks of the
+  one common condition, not beginning/middle/end controls inside another run, and §3.1's `common-reference`
+  block, job and control kind say so in machine-readable form.
+
+The name **within-run reference controls** is **no longer** used in this document: it called both types one
+thing, and a job whose run-wide burst or emissions value is not the reference cannot hold reference-condition
+recordings at all (`acquire/campaign.py::CampaignDefinition`). The replacement is exactly the pair of names
+used above — block-local controls for a job's own anchor, common-reference checks for the true common
+condition.
 
 ### 3.3 Counts, derived from the rows
 
@@ -141,16 +179,22 @@ whose declared value disagrees.
 | count | value |
 |---|---|
 | unique_new_conditions | 8 |
-| reference_controls_per_run | 3 |
-| jobs | 6 |
+| blocked_conditions | 1 |
+| executable_scientific_recordings | 7 |
+| block_local_control_recordings | 15 |
+| common_reference_recordings | 4 |
+| executable_jobs | 9 |
 | recordings_first_pass | 26 |
 
-Six jobs under today's writers — two for the crossing (one per burst length, `burst_length` being run-wide),
-three for the emissions series (one per emissions level, `emissions_per_profile` being run-wide), and one for
-the D1 diagnostic. Each job carries its three within-run reference controls, so the first pass is **26
-recordings**: the eight unique conditions once each plus eighteen controls (3 controls x 6 jobs). A per-point
-burst and emissions write would collapse the crossing and the emissions series into fewer runs and cut the
-control count with them; until it exists the six-job structure is what executes.
+Nine executable jobs under today's writers: the five scientific jobs (`burst-4`, `burst-18`,
+`emissions-8`, `emissions-64`, `emissions-128`, one per distinct run-wide value) and the four
+common-reference jobs placed between them. The first pass is **26 recordings** — 7 executable scientific
+recordings (CC1-CC4, E8, E64, E128), 15 block-local controls (3 per scientific job) and 4
+common-reference checks (one per common-reference job) — and that 26 is a coincidence of this derivation,
+never a preserved construction: the superseded six-job schedule reached the same number by placing three
+reference-condition recordings inside every run, which today's writers cannot execute. D1 is the eighth
+unique condition and the one blocked condition: it is counted as scientifically selected and in no
+executable total.
 
 ### 3.4 The emissions design — one unconditional series, no plateau test
 
@@ -163,9 +207,8 @@ condition unconditional.
 **No E20-to-E64 displacement is called a plateau test.** A single recording per level against one reference
 cannot decide whether an axis has levelled off, and the corrected grouped evidence shows no committed
 variation of this axis at all, so the design does not attempt one. What the four points do give is a
-four-level series whose shape is read only against the within-run reference controls of the same run; the
-axis stays one recording per level, and the within-run reference controls screen drift within a run — they do
-not replicate a condition.
+four-level series whose shape is read only against the block-local controls of the same run; the axis stays
+one recording per level, and those controls screen drift within a run — they do not replicate a condition.
 
 ### 3.5 Already satisfied by existing data vs what actually needs acquisition
 
@@ -174,9 +217,9 @@ not replicate a condition.
 | 0.617 mm x 145 gates (`res/0-6.BDD`) | CC1, CC2 — 0.617 mm with burst 4 and 18 cycles |
 | 2.960 mm x 31 gates (`res/3-0.BDD`) | CC3, CC4 — 2.960 mm with burst 4 and 18 cycles |
 | 1.850 mm x 50 gates (`res/1-8.BDD`) and PRF 600 µs (`prf/600.BDD`) | E8, E64, E128 — the emissions axis's first measured points |
-| PRF 400 µs and 800 µs (both measured; 250 µs deferred, not acquired) | D1 — one higher-sensitivity + echo/energy diagnostic |
-| burst 4, 18, 20, 28, 32 cycles at the reference pitch | REF-CTRL — 3 within-run reference controls per run |
-| all 8 TGC levels, both emitting-power levels, emissions 20 | |
+| PRF 400 µs and 800 µs (both measured; 250 µs deferred, not acquired) | D1 — one higher-sensitivity + echo/energy diagnostic, blocked today |
+| burst 4, 18, 20, 28, 32 cycles at the reference pitch | block-local controls — 3 recordings per scientific job, at that job's own run-wide values |
+| all 8 TGC levels, both emitting-power levels, emissions 20 | common-reference checks — 1 recording in each of the 4 reference-only jobs |
 
 ## 4. Protocol assumptions the evidence cannot settle
 
@@ -189,11 +232,12 @@ artifact fixes either number:
   comparand. Revised by: a temporal view needing more than the window provides (WP1's needs 6-7 whole 1.9031 s
   segments; the PRF ladder needed 8.1535 s for five whole 1.6 s segments), or a control spread above the
   screening threshold.
-- **Reference replication count.** Assumption: **3 controls per run** (beginning/middle/end), which is the
-  smallest count that gives a within-run drift difference — one minimum diagnostic whose adjacent
-  differences are correlated. Revised by: a control set whose per-gate mean difference falls above the
-  screening threshold (**19.3701 mm/s**) at any gate, which raises the count (a control at every block
-  boundary, or a repeated run) and is checked before any scientific verdict from the run is read.
+- **Control replication count.** Assumption: **3 block-local controls per scientific job**
+  (beginning/middle/end), which is the smallest count that gives a within-run drift difference — one minimum
+  diagnostic whose adjacent differences are correlated. Revised by: a control set whose per-gate mean
+  difference falls above the screening threshold (**19.3701 mm/s**) at any gate, which raises the count (a
+  control at every block boundary, or a repeated run) and is checked before any scientific verdict from the
+  run is read.
 
 Both are properties of the run, not of the physics, and neither is a substitute for the replication the
 dataset lacks: the augmentation is still one recording per new condition.
@@ -226,15 +270,15 @@ The measurement set is ahead of the per-point writer surface, and the gaps are s
 
 | Needed for | Gap today |
 |---|---|
-| CC1-CC4 plus the reference controls in **one** randomized run | `burst_length` is dialog-only (`acquire/actuator.py::DIALOG_ONLY_PARAMETERS`, `DialogField.BURST_LENGTH`) and run-wide (`campaign.CampaignDefinition.burst_length`); no per-point write exists. Without it the crossing runs as one job per burst length (two jobs of three points each), which is executable today. |
+| CC1-CC4 in **one** randomized run | `burst_length` is dialog-only (`acquire/actuator.py::DIALOG_ONLY_PARAMETERS`, `DialogField.BURST_LENGTH`) and run-wide (`campaign.CampaignDefinition.burst_length`); no per-point write exists. Without it the crossing runs as one job per burst length, each holding that block's three points plus its three block-local controls, and that arrangement is executable today. |
 | E8, E64, E128 in one run | `emissions_per_profile` is run-wide (`campaign.CampaignDefinition.emissions_per_profile`; a point may not disagree) and absent from `PARAMETER_WRITE_ORDER` = `(RESOLUTION, GATES)`, although `ParamRole.EMISSIONS_PER_PROFILE` exists. One job per level needs no new writer. The runner's stored-size guard already derives from the definition's emissions, so it needs no change either. |
 | D1 | No `sensitivity` reader or writer: the operating-parameters dialog carries it as a combo row (`acquire/ui/dialog.py::dialog_value_fields`), but `DialogField` names only sound speed, first gate and burst length. |
 | D1's echo/energy channel | Not a parameter write at all: the stored `.BDD` carries one axial-velocity channel and no echo or energy profile exists in any committed file. The recording surface has to carry the second channel before D1 can be recorded — it is the one condition here that **no** writer can execute today. |
-| already covered | Resolution and gates are per-point writes; `prf_us` is a run-wide field and stays at 600 µs; TGC, emitting power, sound speed, first gate and sampling volume are not varied; the campaign runs the definition's point order literally, so the beginning/middle/end controls are a definition-authoring rule rather than code. |
+| already covered | Resolution and gates are per-point writes; `prf_us` is a run-wide field and stays at 600 µs; TGC, emitting power, sound speed, first gate and sampling volume are not varied; the campaign runs the definition's point order literally, so the beginning/middle/end placement of a job's block-local controls is a definition-authoring rule rather than code. |
 
 Implementation work follows the accepted measured set rather than letting the present automation limit the
-physics experiment; the two axes that can be run with today's writers (the crossing as one job per burst
-length, and the emissions levels as one job each) are the natural first block.
+physics experiment; the axes that can be run with today's writers (the crossing as one job per burst length,
+and the emissions levels as one job each) are the natural first block.
 
 ## 7. Analysis the first block will be read with
 
@@ -248,7 +292,7 @@ inherits that method rather than inventing a new one:
 | aliasing margin, achieved profile interval and count | committed: `prf-levels.csv` (`load_max_over_velo_max`, warning fractions, wrap-like counts, profile rate) |
 | temporal spectra / autocorrelation | committed: WP1 and the matched temporal view of the burst and PRF ladders, screened against the observed same-settings temporal discrepancy |
 | spatial smoothness and resolved-gradient behaviour | committed: native-grid gradient and descriptive profile autocorrelation scale per level; the latter is not a physical scale or primary resolution criterion |
-| sensitivity to reference-drift | committed as a screening threshold only; the new block's within-run reference controls are what turn it into a within-run measurement |
+| sensitivity to reference-drift | committed as a screening threshold only; the new block's block-local controls measure drift inside a job and its common-reference checks test the true common condition between jobs |
 | echo amplitude / saturation | **not available**: no committed file carries an echo/energy channel; D1 is the measurement that would start it |
 | pitch x burst interaction | **not estimable** before this block; CC1-CC4 are the four missing corners |
 
@@ -267,12 +311,13 @@ axis evidence and no p-value is produced. Velocity only: echo SNR, receiver satu
 acoustic energy are neither measured nor inferred. The TGC axis is screened through an unsettled
 representation, not a validated gain ladder. The pitch x burst interaction is not estimable from the
 committed set, which is exactly why CC1-CC4 are new measurements rather than a re-reading. A new condition
-with one recording is still one recording: the within-run reference controls screen drift within a run, they
-do not replicate a condition.
+with one recording is still one recording: a job's block-local controls screen drift within that run, they do
+not replicate a condition, and the common-reference jobs test the one common condition rather than replicating
+any new level.
 
 ## 9. Intended outcome and next step
 
 This document and the decision table are the merged artefacts of the gating work. The next PR encodes the set
-in §3.1 in the campaign-definition format, adds only the writers §6 names, and records the within-run
-reference controls as points in the definition rather than as a convention — the crossing first, since it is
-the one that closes a gap no existing recording can.
+in §3.1 in the campaign-definition format, adds only the writers §6 names, and records the block-local
+controls and the common-reference jobs as points in the definition rather than as a convention — the crossing
+first, since it is the one that closes a gap no existing recording can.

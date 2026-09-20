@@ -108,7 +108,7 @@ recording and the shared 1.850 mm reference level carries both reference recordi
 | **R1 — 0.247 mm x 365 gates** (`res/0-2.BDD`) | Measured. Against 0.617 mm on the coarser level's own 141 knots: mean abs diff **1.974 mm/s**, max **6.1136 mm/s** at 44.696 mm = **0.3156** of the screening threshold, **0 of 141** knots above it (`resolution-pairs.csv`, row `res/0-2.BDD - res/0-6.BDD`; `resolution-ladder.provenance.json` `findings.information`). The normalized reconstruction-residual variance is **0.000722** (sub-knot residual RMS 0.5814 mm/s, peak 2.7382 mm/s = 0.141 of the screening threshold); it is a stand-alone ratio of the finer profile's own variance, not an orthogonal partition of it. Its descriptive profile autocorrelation scale is 10.1133 mm (`resolution-levels.csv`). | **No.** 0 of 141 knots above the screening threshold; 0.3156 x it. The largest of all 78 pairs is **0.8966** (1-2 vs 1-6 at 43.8327 mm, 0 knots above). | None demonstrated for finer pitch. This is the plan's named question and the measured answer is "not demonstrated": the level difference and the normalized reconstruction residual are small relative to the screening threshold. | None — not acquired. | `replace` (measured; dropped) — the fine end of the first augmentation is **0.617 mm**. The instrument accepts the 0.247 mm rung; it is dropped for information, not for feasibility. | Replicated pitch comparisons that establish a finer-pitch effect, or a materially larger normalized reconstruction-residual variance. |
 | **R2 — 0.617 mm x 145 gates** (`res/0-6.BDD`) | Measured. Member of the 78 pairs, none of which clears the screening threshold; its own mean 25.6882 mm/s, robust spread 31.4933 mm/s, zero fraction 0.009661, native correlation length 9.8667 mm (`resolution-levels.csv`). | **No.** No pair of the 78 puts a knot above the screening threshold. | Retained as the **fine pitch corner** of the pitch x burst crossing (§6, CC1/CC2): the interaction is not estimable from the committed set at all (`resolution-ladder.provenance.json` `findings.limitations`: the two ladders meet only at the reference). | Per-point resolution + gates writers already exist (`actuator.PARAMETER_WRITE_ORDER` is `(RESOLUTION, GATES)`); the crossing cells additionally need the burst field — see §6. | `keep` (measured at the reference burst; acquire only *inside* the crossing) | A replicated pitch effect at 0.617 mm against a coarser level, or a replicated loss of structure by 0.617 mm — either would move this corner. |
 | **R3 — 1.233 mm x 74 gates** (`res/1-2.BDD`) | Measured. Participant in the largest pair of the ladder: 1-2 vs 1-6 = **17.368 mm/s** at 43.8327 mm = **0.8966** of the screening threshold, **0 knots above** (`resolution-ladder.provenance.json` `findings.screening_threshold_gate`); own descriptive correlation scale 12.3333 mm. | **No.** | None demonstrated beyond the retained corners: the intermediate rung's largest observed difference remains below the sole-pair screening threshold. That result does not establish equivalence or separability from drift. | None — not acquired. | `defer` (measured; not reacquired) — revisit only against a named scale threshold. | A replicated pitch effect localized between 0.617 and 2.960 mm (structure on a scale between the two corners) — that would put a rung back inside them. |
-| **REF — 1.850 mm x 50 gates** (`res/1-8.BDD`) | Measured. One of the two realizations of the only same-settings level (`prf/600.BDD` vs `res/1-8.BDD`, 669 / 517 profiles, 14.956 / 11.5529 s), so it is the comparand the screening threshold is computed against. | **N/A** — it is the screening threshold's own comparand. | The anchor of every new condition and the **within-run reference controls** that screen drift inside the new run (§6, REF-CTRL). | None: the reference writes nothing but resolution and gates. | `keep` (measured; the controls are acquired) | A control set whose per-gate spread exceeds the committed screening threshold would say it is not transferable to the new run — see §6. |
+| **REF — 1.850 mm x 50 gates** (`res/1-8.BDD`) | Measured. One of the two realizations of the only same-settings level (`prf/600.BDD` vs `res/1-8.BDD`, 669 / 517 profiles, 14.956 / 11.5529 s), so it is the comparand the screening threshold is computed against. | **N/A** — it is the screening threshold's own comparand. | The anchor of every new condition, of each job's **block-local controls** and of the separate **common-reference checks** (§8.2). | None: the reference writes nothing but resolution and gates. | `keep` (measured; the controls are acquired) | A control set whose per-gate spread exceeds the committed screening threshold would say it is not transferable to the new run — see §6. |
 | **R4 — 2.960 mm x 31 gates** (`res/3-0.BDD`) | Measured. The coarsest pitch in the set: 30 supported gates; its largest per-knot difference to any of the other 12 levels is **10.4324 mm/s = 0.5386** of the screening threshold (`resolution-ladder.provenance.json` `findings.coarsest_pitch`). Its 11.84 mm descriptive autocorrelation scale is a description of one profile, not a physical scale or adequacy criterion. | **No.** 0.5386 x the screening threshold; nothing coarser was measured. | Retained as the **coarse pitch corner** of the crossing (CC3/CC4) because its aligned differences remain small relative to the screening threshold, not because of a samples-per-correlation-length rule. | Same as R2: resolution + gates writers exist; the burst field is the gap. | `keep` (measured at the reference burst; acquire only *inside* the crossing) | A replicated difference to a finer level that establishes a pitch effect, or a named scientific requirement outside the measured 0.247-2.960 mm range. |
 
 ## 2. PRF axis
@@ -142,7 +142,7 @@ rows carry `emissions_per_profile` = 20 (word 14), and the recorded time base in
 | Candidate | Existing evidence | Above the screening threshold? (where/depth or N/A; screening only) | Information gained | Automation needed | Verdict | Measurement that overturns it |
 |---|---|---|---|---|---|---|
 | **8** (new) | Not measured. No committed recording varies the axis; every file's word 14 is 20 and every file's time base agrees with it. | **N/A** — no measured variation exists to compare. | The low-averaging end, and the first point that would make the axis **readable from a file's own time base** rather than inferred: at ~15 ms per profile (matrix §9) the stored step itself states the setting. | `emissions_per_profile` is a **run-wide** campaign value today (`campaign.CampaignDefinition.emissions_per_profile`; points may not disagree) and is not in `actuator.PARAMETER_WRITE_ORDER` = `(RESOLUTION, GATES)`, although `ParamRole.EMISSIONS_PER_PROFILE` exists. One job per level needs no new writer; one run with per-point levels does. The runner's size guard already derives from the definition's emissions (`emissions x PRF + ~1 ms`), so it needs no change. | `keep` (acquire) | A control spread above the screening threshold inside the emissions jobs, or a refusal from the app's own period/size law at the shorter stored step — either says the condition cannot carry a bounded comparison yet. |
-| **20** (reference) | Measured — it *is* the reference: 20 in all 40 rows, corroborated by the time base. | **N/A** | The axis's own reference: the comparand for 8, 64 and 128, and the value the within-run reference controls carry. | None. | `keep` (measured; the controls are acquired) | A decoded word 14 that disagrees with the time-base recovery on a new file — that would mean one of the two paths is wrong and the axis is not readable the way this table assumes. |
+| **20** (reference) | Measured — it *is* the reference: 20 in all 40 rows, corroborated by the time base. | **N/A** | The axis's own reference: the comparand for 8, 64 and 128, and the value every common-reference check and every emissions block's own block-local controls carry. | None. | `keep` (measured; the controls are acquired) | A decoded word 14 that disagrees with the time-base recovery on a new file — that would mean one of the two paths is wrong and the axis is not readable the way this table assumes. |
 | **64** (new) | Not measured, as above. | **N/A** | Moderate averaging: the third point of the four-level series, and the one that separates a low-averaging effect from a monotone one. | As for 8 (one job today, or a per-point writer for one run). | `keep` (acquire) | A control spread above the screening threshold inside the emissions jobs; or the axis proving unreadable (see 8). |
 | **128** (new) | Not measured; same rationale. | **N/A** | The high-averaging end of the series, acquired as an **ordinary sparse point** — see §6 and the emissions design below. | As for 8: one job today, or a per-point writer for one run. | `keep` (acquire) | A control spread above the screening threshold inside the emissions jobs; or the axis proving unreadable (see 8). |
 
@@ -165,7 +165,7 @@ at 28).
 | Candidate | Existing evidence | Above the screening threshold? (where/depth or N/A; screening only) | Information gained | Automation needed | Verdict | Measurement that overturns it |
 |---|---|---|---|---|---|---|
 | **4 cycles** (`burst_len/4.BDD`) | Measured. 50 gates, 1.85 mm, mean 24.0755 mm/s, robust spread **34.3782 mm/s** (the ladder's largest one-step change, **+12.88**, and a *rise*), zero fraction 0.007692, descriptive correlation scale 12.95 mm (`burst-levels.csv`; `findings.knees.robust_spread_mm_s`). | **Yes**, as a pairwise fact: 4 vs 28 puts knots above the screening threshold (max **44.03 mm/s** at 10.1627 mm = **2.273** x it); 22 of the 78 pairs clear somewhere and 17 of those involve the two longest bursts. No pair in the 16-20-cycle region clears. | The short-burst corner of the crossing (CC1/CC3): half of the only design in which the pitch x burst interaction can be estimated at all. | `burst_length` is dialog-only and run-wide today (`actuator.DIALOG_ONLY_PARAMETERS`, `DialogField.BURST_LENGTH`; `campaign` carries it as a shared value). With today's writers the crossing runs as one job per burst length; a per-point burst write is needed for one randomized run. | `keep` (measured at the reference pitch; acquire only the crossing cells) | Two recordings at 4 cycles showing the spread rise is a property of the level rather than of one recording — or a replicated interaction contrast that makes the crossing's own cells redundant. |
-| **10 cycles** (reference) | Measured — the reference condition (`res/1-8.BDD`, `prf/600.BDD`, burst 10, 1.85 mm). | **N/A** — it is the comparand of the screening threshold. | The anchor: every new condition and every within-run reference control is defined by not moving it. | None. | `keep` (measured; the controls are acquired) | A control spread above the screening threshold inside the new run. |
+| **10 cycles** (reference) | Measured — the reference condition (`res/1-8.BDD`, `prf/600.BDD`, burst 10, 1.85 mm). | **N/A** — it is the comparand of the screening threshold. | The anchor: every new condition, every block-local control and every common-reference check is defined by not moving it. | None. | `keep` (measured; the controls are acquired) | A control spread above the screening threshold inside the new run. |
 | **20 cycles** (`burst_len/20.BDD`) | Measured. The plan's focus pair against 18 cycles: max abs diff **11.7519 mm/s** at 91.5627 mm = **0.6067** of the screening threshold, **0 of 50** knots above; the whole 16-20 region is below it (3 pairs, 0 clearing, largest 0.6504) (`burst-pairs.csv`; `findings.focus_18_vs_20`, `findings.focus_window_16_20`). | **No** against 18, and **No** anywhere in the 16-20 region. Against other levels it clears only in the long-burst pairs recorded on the 4-cycles and 32-cycles rows. | No 18-versus-20 effect is demonstrated relative to the observed-discrepancy screening threshold; the one observed step changes only below that reference (descriptive correlation scale +1.85 mm, median gradient -0.3215 mm/s/mm, robust spread +2.0610 mm/s, zero fraction -0.00081, >10 Hz share -0.00277, ACF lag 0). | None — not acquired. | `replace` (measured; dropped in favour of **18 cycles**) — chosen on cost, **not** on any claimed effect: see below. | Two recordings per cycle count in the 16-20 region separating the level effect from drift; that would let the pair be decided on evidence instead of on cost. |
 | **18 cycles** — *introduced replacement* (`burst_len/18.BDD`) | Measured at the reference pitch: 50 gates, 1.85 mm, zero fraction 0.009190, descriptive correlation scale 11.1 mm, ACF lag 0.08956 s. Against 20 cycles the observed difference is 0.6067 of the screening threshold with 0 of 50 knots above it; no statistical equivalence is established. | **No** against 20; 0 of 50 knots. | **The information rationale is cost, not effect:** no measured quantity demonstrates a preference for 18 or 20, so the shorter pulse is taken — axial length 3.33 mm against 3.70 mm at c = 1480 m/s, marginally less delivered energy per emission and shorter ring-out at equal measured information; and it brackets the reference (10 cycles, 1.85 mm) at roughly equal log spacing together with 4 cycles (0.74 / 1.85 / 3.33 mm), which keeps the crossing's burst contrast two-sided rather than extreme-vs-reference. | As for 4 cycles. | `keep` (measured at the reference pitch; acquire the crossing cells at CC2/CC4) | Two recordings per cycle count at 18 and 20; or a replicated quantity that separates them — either would replace this cost choice with an evidential one. |
 | **32 cycles** (`burst_len/32.BDD`) | Measured. Largest per-knot difference of the whole ladder region: 4 vs 28 max 44.03 mm/s = 2.273 x the screening threshold; the 28-led step in dropout (+0.0109 reaching 0.021174) and in worst gradient (+9.511 reaching 16.14 mm/s/mm) are the ladder's largest; 32's ACF e-folding lag is 0.11195 s against 0.08956 s at the reference, one profile period (0.02239 s) apart (`burst-levels.csv`, `findings.knees`, `findings.temporal_bandwidth`). | **Yes**, locally, in 17 of the 22 clearing pairs; never across the support, never monotone. | None that the two-sided corners do not already carry: 32 sits more than twice as far above the reference as 4 sits below it and carries the largest measured dropout and the widest bandwidth loss, so a corner there would confound the interaction contrast with the one level whose anomalies are single-recording. | As for 4 cycles. | `defer` (measured; not reacquired) | Two recordings at 28 or 32 cycles that separate the long-burst clearance from drift — the only way to find out whether the one systematically clearing region of the ladder is real. |
@@ -193,10 +193,11 @@ product of the design's axes, and every cell holds the complete fixed facts of �
 | Candidate | Existing evidence | Above the screening threshold? (where/depth or N/A; screening only) | Information gained | Automation needed | Verdict | Measurement that overturns it |
 |---|---|---|---|---|---|---|
 | **CC1 — 0.617 mm x 145 gates x 4 cycles** (new) | No cell measured. Its four sub-design neighbours all exist and are measured: `res/0-6.BDD` (0.617, burst 10), `burst_len/4.BDD` (1.85, 4), `res/1-8.BDD` / `prf/600.BDD` (1.85, 10). | **N/A** — the cell is new; the interaction it measures has no measurement in the committed set at all. | The first pitch x burst interaction contrast at the fine pitch: one corner of a 2x2 whose other corners are already committed. Also the setting where the finest retained pitch meets the shortest pulse. | Resolution + gates writers exist; `burst_length` is dialog-only and run-wide, so today this is one job per burst length (see CC2). No new writer is needed if the crossing runs as two jobs. | `keep` (acquire) | Two recordings of this cell (replication) showing no interaction, or a control spread above the screening threshold inside the job that contains it. |
-| **CC2 — 0.617 mm x 145 gates x 18 cycles** (new) | As CC1. | **N/A** | The same contrast at the level the burst ladder cannot decide against 20 cycles; completes the fine-pitch 2x2 against the committed `res/0-6.BDD` and `burst_len/18.BDD`. | As CC1. To place CC1-CC4 and the within-run reference controls in **one** randomized run, a per-point `burst_length` write is required (dialog row: burst length is a combo whose choice is the value). | `keep` (acquire) | As CC1. |
+| **CC2 — 0.617 mm x 145 gates x 18 cycles** (new) | As CC1. | **N/A** | The same contrast at the level the burst ladder cannot decide against 20 cycles; completes the fine-pitch 2x2 against the committed `res/0-6.BDD` and `burst_len/18.BDD`. | As CC1. To place CC1-CC4 and their block-local controls in **one** randomized run, a per-point `burst_length` write is required (dialog row: burst length is a combo whose choice is the value). | `keep` (acquire) | As CC1. |
 | **CC3 — 2.960 mm x 31 gates x 4 cycles** (new) | No cell measured. Neighbours: `res/3-0.BDD` (2.960, burst 10, descriptive correlation scale 11.84 mm), `burst_len/4.BDD`. | **N/A** | The coarse-pitch end of the interaction: whether the structure the coarse grid still resolves changes when the pulse lengthens past the gate pitch. | As CC1. | `keep` (acquire) | A replicated loss of structure at this pitch that makes the coarse corner indefensible; or replication showing no interaction. |
 | **CC4 — 2.960 mm x 31 gates x 18 cycles** (new) | As CC3. | **N/A** | Completes the coarse 2x2 against `res/3-0.BDD` and `burst_len/18.BDD`. | As CC2. | `keep` (acquire) | As CC3. |
-| **REF-CTRL — the reference condition, within-run reference controls at the beginning/middle/end of each run** (new repeats) | The only committed same-settings level is the WP1 pair — **one** level with two realizations, which is why every verdict above is a screening comparison against a screening threshold rather than a repeatability estimate (`reference-repeat.provenance.json` `screening_threshold.scope`). | **N/A** — this row *is* the new measurement of the screening threshold. | Three same-settings recordings per run in place of one committed repeat: one minimum within-run drift diagnostic whose two **adjacent** differences share the middle recording and are therefore **correlated**, and the direct check that the committed 19.3701 mm/s screening threshold transfers to the new run. | None: the reference writes only resolution and gates, and the campaign runs the definition's point order literally, so the controls are a definition-authoring rule (position), not a code change. | `keep` (acquire, 3 per run) | A control set whose per-gate spread exceeds the screening threshold: that would say the new run is drifting more than the committed dataset and the control count/duration must be raised before any other verdict is read. |
+| **BLOCK-LOCAL-CTRL — each scientific job's own anchor repeated at that job's run-wide values, at the beginning/middle/end of the run** (new repeats) | The only committed same-settings level is the WP1 pair — **one** level with two realizations, which is why every verdict above is a screening comparison against a screening threshold rather than a repeatability estimate (`reference-repeat.provenance.json` `screening_threshold.scope`). | **N/A** — this row is the within-run drift diagnostic, and it is **not** the common reference condition: for a burst block it repeats the reference spatial window (1.850 mm, 50 gates) at burst 4 or 18, and for a one-condition emissions block it repeats that emissions level itself. | Three recordings per scientific job in place of one committed repeat: one minimum within-run drift diagnostic whose two **adjacent** differences share the middle recording and are therefore **correlated**. It says nothing about the common reference condition and is never screened as if it were burst 10 / emissions 20. | None: the anchor writes only resolution and gates, and the campaign runs the definition's point order literally, so the controls are a definition-authoring rule (position), not a code change. | `keep` (acquire, 3 per scientific job) | A control set whose per-gate spread exceeds the screening threshold inside its own job: that would say that run is drifting more than the committed dataset and the control count/duration must be raised before any other verdict is read. |
+| **COMMON-REFERENCE — the true reference condition (1.850 mm, 50 gates, burst 10, emissions 20, sensitivity medium), one recording in each of four separate reference-only jobs placed between the five scientific jobs** (new repeats) | As the reference row above: one committed same-settings level with two realizations, which is why the screening threshold is one observed discrepancy rather than a repeatability estimate. | **N/A** — this is the new measurement of the sole-pair observed-discrepancy screening threshold at the one common condition. | The between-job check the superseded schedule could not execute: `CampaignDefinition` fixes `burst_length` and `emissions_per_profile` once per campaign, so a burst-4/18 or an emissions-8/64/128 job cannot hold a burst-10/emissions-20 point. Four such jobs put the true common condition between the scientific blocks. | None: the reference writes only resolution and gates, and each of these jobs needs no new writer. | `keep` (acquire, 1 per common-reference job) | A common-reference spread whose per-gate mean difference exceeds the screening threshold at any gate: that would say the new run is drifting more than the committed dataset and the control count/duration must be raised before any other verdict is read. |
 
 ## 7. The draft's excluded axes (its own review question 7)
 
@@ -227,7 +228,7 @@ Every value below is either the committed reference's own decoded value (`manife
 | PRF period | **600 µs** (fixed for the whole augmentation) | `prf/600.BDD`; `findings.focus_decision` |
 | emitting power | `medium` | all 40 rows |
 | TGC | the committed representation: word 23 = 0 (`uniform`), word 25 = 255 (fixed 40 dB end), word 24 start = 19.9216 dB | matrix §8; `gain-power-screen.provenance.json` `definitions.tgc_representation` |
-| sensitivity | `medium` — except the single D1 condition | `findings.sensitivity` |
+| sensitivity | `medium` — except the single blocked D1 diagnostic, scientifically selected at the operator-approved `high` (§8.2) | `findings.sensitivity` |
 | velocity scale | 1 | plan; draft's reference table |
 | assisted mode / filtering / alias auto-correction | OFF | the run's own recorded state |
 | skipped profiles | 0 | word 84 = 0 in all 40 rows |
@@ -236,23 +237,38 @@ Every value below is either the committed reference's own decoded value (`manife
 
 ### 8.2 Complete new conditions — the machine-readable rows
 
-**Eight unique conditions, every one unconditional.** The `job` column names the run each condition needs
-under today's writers (a run-wide field may hold one value per run, so each distinct value is its own job); the
-`recordings` column is the number of recordings the row contributes to its job. This is the same table
-[`docs/dop3000/sparse-parameter-set.md`](../../docs/dop3000/sparse-parameter-set.md) §3.1 carries, and the
-validator refuses the two documents if they disagree.
+**Eight unique conditions, every one unconditional, in one executable schedule.** `CampaignDefinition` fixes
+`burst_length` and `emissions_per_profile` once for a whole campaign, so a `job` is a set of rows that agree on
+both and `block` names the scientific block they belong to; `control_kind` is `block-local`,
+`common-reference` or `none` for a scientific condition; `executable` says whether today's writer surface can
+record the row at all; and `recordings` is the number of recordings the row contributes to its job. This is one
+row set, carried identically by [`docs/dop3000/sparse-parameter-set.md`](../../docs/dop3000/sparse-parameter-set.md)
+§3.1 and checked by `tools/validate_decision_layer.py`, which refuses the two documents if their rows differ.
 
-| ID | kind | resolution_mm | gates | burst_cycles | emissions_per_profile | sensitivity | conditional | recordings | job |
-|---|---|---|---|---|---|---|---|---|---|
-| CC1 | unique-condition | 0.617 | 145 | 4 | 20 | medium | no | 1 | crossing-burst-4 |
-| CC2 | unique-condition | 0.617 | 145 | 18 | 20 | medium | no | 1 | crossing-burst-18 |
-| CC3 | unique-condition | 2.960 | 31 | 4 | 20 | medium | no | 1 | crossing-burst-4 |
-| CC4 | unique-condition | 2.960 | 31 | 18 | 20 | medium | no | 1 | crossing-burst-18 |
-| E8 | unique-condition | 1.850 | 50 | 10 | 8 | medium | no | 1 | emissions-8 |
-| E64 | unique-condition | 1.850 | 50 | 10 | 64 | medium | no | 1 | emissions-64 |
-| E128 | unique-condition | 1.850 | 50 | 10 | 128 | medium | no | 1 | emissions-128 |
-| D1 | unique-condition | 1.850 | 50 | 10 | 20 | medium | no | 1 | diagnostic-sensitivity |
-| REF-CTRL | reference-control | 1.850 | 50 | 10 | 20 | medium | no | 3 | every-run |
+| ID | kind | block | job | control_kind | resolution_mm | gates | burst_cycles | emissions_per_profile | sensitivity | conditional | executable | recordings |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| CC1 | unique-condition | burst-4 | burst-4 | none | 0.617 | 145 | 4 | 20 | medium | no | yes | 1 |
+| CC3 | unique-condition | burst-4 | burst-4 | none | 2.960 | 31 | 4 | 20 | medium | no | yes | 1 |
+| burst-4-CTRL | block-local-control | burst-4 | burst-4 | block-local | 1.850 | 50 | 4 | 20 | medium | no | yes | 3 |
+| CR1 | common-reference | common-reference | common-reference-1 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| CC2 | unique-condition | burst-18 | burst-18 | none | 0.617 | 145 | 18 | 20 | medium | no | yes | 1 |
+| CC4 | unique-condition | burst-18 | burst-18 | none | 2.960 | 31 | 18 | 20 | medium | no | yes | 1 |
+| burst-18-CTRL | block-local-control | burst-18 | burst-18 | block-local | 1.850 | 50 | 18 | 20 | medium | no | yes | 3 |
+| CR2 | common-reference | common-reference | common-reference-2 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E8 | unique-condition | emissions-8 | emissions-8 | none | 1.850 | 50 | 10 | 8 | medium | no | yes | 1 |
+| emissions-8-CTRL | block-local-control | emissions-8 | emissions-8 | block-local | 1.850 | 50 | 10 | 8 | medium | no | yes | 3 |
+| CR3 | common-reference | common-reference | common-reference-3 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E64 | unique-condition | emissions-64 | emissions-64 | none | 1.850 | 50 | 10 | 64 | medium | no | yes | 1 |
+| emissions-64-CTRL | block-local-control | emissions-64 | emissions-64 | block-local | 1.850 | 50 | 10 | 64 | medium | no | yes | 3 |
+| CR4 | common-reference | common-reference | common-reference-4 | common-reference | 1.850 | 50 | 10 | 20 | medium | no | yes | 1 |
+| E128 | unique-condition | emissions-128 | emissions-128 | none | 1.850 | 50 | 10 | 128 | medium | no | yes | 1 |
+| emissions-128-CTRL | block-local-control | emissions-128 | emissions-128 | block-local | 1.850 | 50 | 10 | 128 | medium | no | yes | 3 |
+| D1 | unique-condition | sensitivity-diagnostic | none | none | 1.850 | 50 | 10 | 20 | high | no | no | 1 |
+
+**D1 is scientifically selected and blocked.** Its sensitivity is `high`, the exact canonical option immediately
+above `medium` in the application's own sidebar sensitivity dropdown, read from that dialog and then restored
+without recording; its echo/energy channel does not exist in the recording surface yet, so the row carries
+`executable = no`, the `none` job marker and no executable total (§9).
 
 Pitch must be **requested in mm and read back** from the file (word 10): the rung labels are the instrument's and
 the mm value is `c`-dependent, so no condition here may be identified by a folder name or a label.
@@ -261,14 +277,26 @@ the mm value is `c`-dependent, so no condition here may be identified by a folde
 point, not a gated one: **no E20-to-E64 displacement is called a plateau test**, and the design makes every
 condition unconditional.
 
-### 8.3 Within-run reference controls
+### 8.3 Block-local controls and common-reference checks
 
-Three recordings of the **reference condition** (1.850 mm x 50 gates, burst 10, emissions 20, power `medium`,
-TGC as §8.1, sensitivity `medium`) at the **beginning, middle and end of each randomized or blocked run** — the
-design's own answer to the single committed repeat. They are repeats, not unique conditions, and they are
-counted separately below. The **within-run reference controls** form one minimum within-run drift diagnostic for
-the single reference condition: their two **adjacent** differences (beginning→middle and middle→end) share the
-middle recording and are **correlated**, not independent, so neither is a separate observation of the reference.
+Two different things, kept different in names, rows and analysis:
+
+- **Block-local controls** repeat each scientific job's **own anchor** at that job's run-wide burst and emissions
+  values, three recordings at the beginning, middle and end of the run. For the two burst blocks the anchor is the
+  reference spatial window (1.850 mm x 50 gates) held at burst 4 or 18; for a one-condition emissions block the
+  repeats are repetitions of that emissions condition itself. They diagnose within-block drift only, and **none of
+  them is the common reference condition**: they are never screened as if every one were burst 10 / emissions 20.
+  Their two **adjacent** differences (beginning→middle and middle→end) share the middle recording and are
+  **correlated**, not independent, so neither difference is a separate observation of an anchor level.
+- **Common-reference checks** are the true **reference condition** (1.850 mm x 50 gates, burst 10, emissions 20,
+  power `medium`, TGC as §8.1, sensitivity `medium`) recorded **once** in each of four separate reference-only
+  jobs placed between the five scientific jobs. They are between-job checks of the one common condition, not
+  beginning/middle/end controls inside another run, and they are the direct check that the committed 19.3701 mm/s
+  screening threshold transfers to the new run.
+
+The name **within-run reference controls** is **no longer** used in this table: it called both types one thing, and
+`CampaignDefinition` runs a whole campaign at one `burst_length` and one `emissions_per_profile`, so a burst-4/18
+or an emissions-8/64/128 job cannot hold a burst-10/emissions-20 point at all.
 
 ### 8.4 Already satisfied by existing data vs what actually needs acquisition
 
@@ -277,8 +305,8 @@ middle recording and are **correlated**, not independent, so neither is a separa
 | 0.617 mm pitch (`res/0-6.BDD`) at the reference burst | CC1, CC2 — 0.617 mm with burst 4 and 18 |
 | 1.850 mm reference (`res/1-8.BDD`) | CC3, CC4 — 2.960 mm with burst 4 and 18 |
 | 2.960 mm pitch (`res/3-0.BDD`) at the reference burst | E8, E64, E128 — the axis's first measured points |
-| 1.233 mm pitch (`res/1-2.BDD`) — kept only as a deferral, not a rung | D1 — the one higher-sensitivity + echo/energy diagnostic |
-| PRF 400 / 600 / 800 µs (all measured) | REF-CTRL — 3 within-run reference controls per run |
+| 1.233 mm pitch (`res/1-2.BDD`) — kept only as a deferral, not a rung | D1 — the one higher-sensitivity + echo/energy diagnostic, blocked today |
+| PRF 400 / 600 / 800 µs (all measured) | block-local controls — 3 recordings per scientific job, at that job's own run-wide values; common-reference checks — 1 recording in each of the 4 reference-only jobs |
 | burst 4, 18, 20, 28, 32 cycles at the reference pitch | |
 | all 9 TGC levels and all 3 power levels; emissions 20 | |
 
@@ -288,16 +316,22 @@ middle recording and are **correlated**, not independent, so neither is a separa
 | count | value |
 |---|---|
 | unique_new_conditions | 8 |
-| reference_controls_per_run | 3 |
-| jobs | 6 |
+| blocked_conditions | 1 |
+| executable_scientific_recordings | 7 |
+| block_local_control_recordings | 15 |
+| common_reference_recordings | 4 |
+| executable_jobs | 9 |
 | recordings_first_pass | 26 |
 
-Six jobs under today's writers — two for the crossing (one per burst length, `burst_length` being run-wide),
-three for the emissions series (one per emissions level, `emissions_per_profile` being run-wide), and one for
-the D1 diagnostic. Each job carries its three within-run reference controls, so the first pass is **26
-recordings**: the eight unique conditions once each plus eighteen controls (3 controls x 6 jobs). A per-point
-burst and emissions write would collapse the crossing and the emissions series into fewer runs and cut the
-control count with them; until it exists the six-job structure is what executes.
+Nine executable jobs under today's writers: the five scientific jobs (`burst-4`, `burst-18`, `emissions-8`,
+`emissions-64`, `emissions-128`, one per distinct run-wide value — the crossing running as one job per burst
+length and the emissions series as one job per level) and the four common-reference jobs placed between them.
+The first pass is **26 recordings** — 7 executable scientific recordings (CC1-CC4, E8, E64, E128), 15
+block-local controls (3 per scientific job) and 4 common-reference checks (one per common-reference job) — and
+that 26 is a coincidence of this derivation, not a preserved construction: the superseded six-job schedule
+reached the same total by placing three reference-condition recordings inside every run, which
+`CampaignDefinition` cannot execute. D1 is counted as the eighth unique condition and as the one blocked
+condition, in no executable total.
 
 ### 8.5 Protocol assumptions the evidence cannot settle
 
@@ -312,8 +346,8 @@ Both are stated as assumptions with a revising condition, because nothing in the
   `views.temporal`; `prf-ladder.provenance.json` `views.temporal`) — or a control spread above the screening
   threshold.
 - **Reference replication count.** One committed repeat cannot say how many repeats are enough. Smallest
-  defensible assumption: **3 controls per run** (beginning/middle/end), which turns one committed difference into
-  two adjacent, correlated within-run differences. Revised by: a control spread whose per-gate mean difference
+  defensible assumption: **3 block-local controls per scientific job** (beginning/middle/end), which turns one
+  committed difference into two adjacent, correlated within-run differences. Revised by: a control spread whose per-gate mean difference
   falls above the screening threshold (**19.3701 mm/s**) at any gate — that raises the count (a control at each
   block boundary, or a repeated run) and is the first thing to check before any other verdict above is read;
   and by any decision to treat a block as an independent replicate, which no analysis in this PR does.
@@ -325,10 +359,10 @@ carries the same list as the design's prerequisite):
 
 | Needed for | Gap, as the code shows it today |
 |---|---|
-| the crossing as **one** randomized run (CC1-CC4 + controls) | `burst_length` is dialog-only (`acquire/actuator.py::DIALOG_ONLY_PARAMETERS`) and run-wide (`campaign.CampaignDefinition.burst_length`); no per-point write exists. Without it the crossing runs as one job per burst length (2 jobs of 3 points each), which is executable today. |
+| the crossing as **one** randomized run (CC1-CC4 + controls) | `burst_length` is dialog-only (`acquire/actuator.py::DIALOG_ONLY_PARAMETERS`) and run-wide (`campaign.CampaignDefinition.burst_length`); no per-point write exists. Without it the crossing runs as one job per burst length, each holding that block's two points and its three block-local controls, which is executable today. |
 | the emissions levels in one run (E8, E64, E128) | `emissions_per_profile` is run-wide (`campaign.CampaignDefinition.emissions_per_profile`: points may not disagree) and absent from `PARAMETER_WRITE_ORDER` = `(RESOLUTION, GATES)`, although `ParamRole.EMISSIONS_PER_PROFILE` exists. One job per level needs no new writer; one run with per-point levels does. The runner's size guard already derives from the definition's emissions, so it needs no change. |
 | the sensitivity diagnostic (D1) | No `sensitivity` reader or writer: the dialog value table carries it as a combo row (`acquire/ui/dialog.py::dialog_value_fields`) but `DialogField` names only sound speed, first gate and burst length. |
-| the echo/energy channel (D1) | Not a parameter write at all: the stored `.BDD` carries one axial-velocity channel, and no echo or energy profile exists in any committed file (`findings.velocity_only`). The recording surface must carry the second channel before D1 can be recorded. **D1 is therefore the one condition in §8.2 that cannot be executed by any writer today.** |
+| the echo/energy channel (D1) | Not a parameter write at all: the stored `.BDD` carries one axial-velocity channel, and no echo or energy profile exists in any committed file (`findings.velocity_only`). The recording surface must carry the second channel before D1 can be recorded. **D1 is therefore the one condition in §8.2 that cannot be executed by any writer today: it carries `executable = no`, belongs to no executable job and enters no executable total.** |
 | already covered — no work | resolution + gates are per-point writes; `prf_us` is a run-wide field and stays at 600 µs; TGC, emitting power, sound speed, first gate and sampling volume are not varied at all; the campaign already runs the definition's point order literally, so the beginning/middle/end controls are a definition-authoring rule rather than code. |
 
 ## 10. Reviewer path

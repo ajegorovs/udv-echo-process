@@ -1,18 +1,21 @@
-"""Validate the R3/R9 decision layer of the mixer-sensitivity documents.
+"""Validate the WP4 schedule and decision layer of the mixer-sensitivity documents.
 
 Plan ``docs/dop3000/existing-sweep-analysis-plan.md`` §8.3 item 7 (the R3/R9
-redesign) and §8.4 require that the decision layer be rebuilt *only* from the
-corrected grouped artefacts, that the emissions extension be a choice between two
-allowed designs, and that all condition/control/job counts be derived from the
-documents' own rows rather than preserved as prose. This tool is that gate.
+redesign), §8.4, and §9.4 steps 4-5 (the executable-schedule rebuild) require
+that the decision layer be rebuilt *only* from the corrected grouped artefacts,
+that the emissions extension be a choice between two allowed designs, that every
+condition/control/job count be derived from the documents' own rows rather than
+preserved as prose, and that the schedule the rows describe be one today's
+writers can actually execute.
 
 The two documents it checks — ``reports/mixer-sensitivity-analysis/decision-table.md``
 and ``docs/dop3000/sparse-parameter-set.md`` — each carry two machine-readable
 tables:
 
-- the **condition rows**, one row per sparse condition plus the reference-control
-  row, with the columns ``ID · kind · resolution_mm · gates · burst_cycles ·
-  emissions_per_profile · sensitivity · conditional · recordings · job``;
+- the **condition rows**, one row per sparse condition plus one row per control
+  set, with the columns ``ID · kind · block · job · control_kind ·
+  resolution_mm · gates · burst_cycles · emissions_per_profile · sensitivity ·
+  conditional · executable · recordings``;
 - the **counts table**, ``count · value``, which must equal the counts recomputed
   from those rows.
 
@@ -23,14 +26,28 @@ Everything the gate refuses is a ruling this step owns:
   an "only if", a "conditional eighth condition"). Because E128 is unconditional,
   there is no plateau test: the word *plateau* is refused unless the clause
   explicitly negates it, so no E20-to-E64 displacement can be called one.
-- **R9 — the controls are within-run reference controls for the single reference
-  condition**, whose adjacent differences are correlated. Text that calls them or
-  their differences "independent" is refused unless explicitly negated, and both
-  documents must carry the canonical name and a statement that the adjacent
-  differences are correlated.
-- **Counts.** The declared counts must equal the counts derived from the rows, and
-  the two documents' rows must be identical, so neither count nor row set can
-  drift while the prose stays.
+- **R9 — the controls are correlated drift diagnostics**, and the schedule names
+  them apart: **block-local controls** repeat a job's own anchor at that job's
+  run-wide values, and **common-reference checks** are the true reference
+  condition in separate reference-only jobs. Text that calls either type
+  "independent" is refused unless explicitly negated, and the retired schedule
+  name ``within-run reference controls`` survives only inside a clause that
+  retires it.
+- **§9.2/§9.4 — the schedule must be executable.** ``CampaignDefinition`` carries
+  ``burst_length`` and ``emissions_per_profile`` once per campaign, so every row
+  of one job must agree on those run-wide values; a common-reference row cannot
+  sit inside a non-reference block; the reference condition gets its own jobs,
+  one between each pair of scientific jobs; the superseded ``REF-CTRL |
+  every-run`` row is refused outright; each scientific job carries its three
+  block-local control recordings.
+- **§9.3 — D1 is the one scientifically selected, blocked diagnostic.** It must
+  differ from the reference sensitivity, equal the operator-approved value read
+  from the application's own dialog (``high``, restored without recording), carry
+  no executable job, and enter no executable total.
+- **Counts.** The declared counts must equal the counts derived from the rows, no
+  count may be asserted in prose without agreeing with them, and the two
+  documents' rows must be identical, so neither count nor row set can drift while
+  the prose stays.
 - **Corrected evidence.** Both documents must name the quantity the sole-pair
   observed-discrepancy screening threshold and the one duplicated setting must be
   stated to be *not* replicated axis coverage; the decision table must cite the
@@ -61,8 +78,12 @@ DOCUMENTS: tuple[str, ...] = (DECISION_TABLE, SPARSE_SET)
 #: The live name of the sole-pair quantity (§8.2 R2), spelled exactly.
 CANONICAL_TERM = "sole-pair observed-discrepancy screening threshold"
 
-#: The live name of the beginning/middle/end controls (§8.2 R9), spelled exactly.
-CANONICAL_CONTROL_TERM = "within-run reference controls"
+#: The live names of the two control types (§9.2), spelled exactly. They are
+#: different things — a block-local control repeats a job's *own* anchor, a
+#: common-reference check repeats the true reference condition — and the
+#: retired single name (see :data:`RETIRED_CONTROL_NAME_RE`) conflated them.
+CANONICAL_BLOCK_LOCAL_TERM = "block-local controls"
+CANONICAL_COMMON_REFERENCE_TERM = "common-reference checks"
 
 #: The R1 grouped-realization statement both documents must carry.
 DUPLICATED_SETTING_STATEMENT = "one duplicated setting is not replicated axis coverage"
@@ -74,28 +95,49 @@ CORRECTED_RESIDUAL_NAME = "normalized reconstruction-residual variance"
 ROW_COLUMNS: tuple[str, ...] = (
     "ID",
     "kind",
+    "block",
+    "job",
+    "control_kind",
     "resolution_mm",
     "gates",
     "burst_cycles",
     "emissions_per_profile",
     "sensitivity",
     "conditional",
+    "executable",
     "recordings",
-    "job",
 )
 
 #: The machine-readable counts-table columns, in order and no other.
 COUNT_COLUMNS: tuple[str, ...] = ("count", "value")
 
-#: The row kinds: a sparse condition, or the reference-control row.
+#: The row kinds: a sparse condition, a block-local control set, or a
+#: common-reference check.
 CONDITION_KIND = "unique-condition"
-CONTROL_KIND = "reference-control"
-ROW_KINDS: tuple[str, ...] = (CONDITION_KIND, CONTROL_KIND)
+BLOCK_LOCAL_KIND = "block-local-control"
+COMMON_REFERENCE_KIND = "common-reference"
+ROW_KINDS: tuple[str, ...] = (CONDITION_KIND, BLOCK_LOCAL_KIND, COMMON_REFERENCE_KIND)
+
+#: The ``control_kind`` values. ``none`` is the explicit "not a control" value,
+#: so a missing control kind can never be read as one of the two real kinds.
+NO_CONTROL_KIND = "none"
+BLOCK_LOCAL_CONTROL_KIND = "block-local"
+COMMON_REFERENCE_CONTROL_KIND = "common-reference"
+CONTROL_KINDS: tuple[str, ...] = (
+    NO_CONTROL_KIND,
+    BLOCK_LOCAL_CONTROL_KIND,
+    COMMON_REFERENCE_CONTROL_KIND,
+)
 
 #: The two values of the ``conditional`` column. ``yes`` is refused outright.
 CONDITIONAL_VALUES: tuple[str, ...] = ("yes", "no")
 
-#: The eight unique conditions of the unconditional-E128 design, and the control row.
+#: The two values of the ``executable`` column.
+EXECUTABLE_YES = "yes"
+EXECUTABLE_NO = "no"
+EXECUTABLE_VALUES: tuple[str, ...] = (EXECUTABLE_YES, EXECUTABLE_NO)
+
+#: The eight unique conditions of the unconditional-E128 design.
 REQUIRED_CONDITION_IDS: tuple[str, ...] = (
     "CC1",
     "CC2",
@@ -106,12 +148,52 @@ REQUIRED_CONDITION_IDS: tuple[str, ...] = (
     "E128",
     "D1",
 )
-CONTROL_ID = "REF-CTRL"
 
 #: The one condition whose conditionality this gate rules on by name.
 UNCONDITIONAL_ID = "E128"
 
-#: The reference condition's decoded values, which the control row must carry.
+#: The five scientific jobs of the WP4 execution schedule (§9.2). Each holds one
+#: run-wide burst and emissions value and one block's worth of points.
+SCIENTIFIC_JOBS: tuple[str, ...] = (
+    "burst-4",
+    "burst-18",
+    "emissions-8",
+    "emissions-64",
+    "emissions-128",
+)
+
+#: The block and control-kind marker of a common-reference job.
+COMMON_REFERENCE_BLOCK = "common-reference"
+
+#: The job marker of a row that belongs to no executable job (the blocked D1).
+BLOCKED_JOB = "none"
+
+#: One common-reference job sits between each pair of scientific jobs, and each
+#: carries exactly one recording of the reference condition.
+COMMON_REFERENCE_RECORDINGS_PER_JOB = 1
+
+#: Every scientific job repeats its own anchor three times: beginning, middle
+#: and end of the run.
+BLOCK_LOCAL_CONTROLS_PER_JOB = 3
+
+#: The run-wide fields ``CampaignDefinition`` fixes once per campaign, so every
+#: row of one job must agree on them.
+RUN_WIDE_FIELDS: tuple[str, ...] = ("burst_cycles", "emissions_per_profile")
+
+#: The superseded schedule construction: a reference control in every run.
+RETIRED_CONTROL_ID = "REF-CTRL"
+RETIRED_JOB = "every-run"
+
+#: The one condition that is scientifically selected but blocked, and the exact
+#: operator-approved sensitivity value immediately above ``medium`` (§9.3), read
+#: from the application's sidebar sensitivity dropdown and restored without
+#: recording.
+D1_ID = "D1"
+D1_SENSITIVITY = "high"
+D1_BLOCK = "sensitivity-diagnostic"
+
+#: The reference condition's decoded values, which every common-reference row
+#: must carry.
 REFERENCE_PARAMETERS: dict[str, str] = {
     "resolution_mm": "1.850",
     "gates": "50",
@@ -123,8 +205,11 @@ REFERENCE_PARAMETERS: dict[str, str] = {
 #: The counts both documents declare and this gate recomputes from the rows.
 COUNT_KEYS: tuple[str, ...] = (
     "unique_new_conditions",
-    "reference_controls_per_run",
-    "jobs",
+    "blocked_conditions",
+    "executable_scientific_recordings",
+    "block_local_control_recordings",
+    "common_reference_recordings",
+    "executable_jobs",
     "recordings_first_pass",
 )
 
@@ -142,6 +227,10 @@ NEGATION_RE = re.compile(
     r"are not|no longer|no)\b",
     re.IGNORECASE,
 )
+
+#: §9.2: the name that conflated the two control types. It survives only in a
+#: clause that retires it ("no longer", "not").
+RETIRED_CONTROL_NAME_RE = re.compile(r"within-run reference controls?\b", re.IGNORECASE)
 
 #: R3: the forms that name the retired plateau test. Unconditional E128 has none,
 #: so they survive only in a clause that explicitly negates them. Bare "plateau"
@@ -211,6 +300,35 @@ INDISTINGUISHABILITY_RE = re.compile(
 ADJACENT_RE = re.compile(r"\badjacent\b", re.IGNORECASE)
 CORRELATED_RE = re.compile(r"\bcorrelated\b", re.IGNORECASE)
 
+#: §9.2/§9.4: a count asserted in prose must agree with the rows. The marker
+#: keeps the rule on *totals* — "three recordings per job" is a position rule,
+#: not a first-pass total — and the two declarations name the two counts a
+#: schedule can be read for.
+PROSE_TOTAL_MARKER_RE = re.compile(
+    r"\bfirst[- ]pass\b|\bin total\b|\baltogether\b|\bunder today's writers?\b|"
+    r"\bexecutable jobs?\b",
+    re.IGNORECASE,
+)
+_NUMBER = r"\d+|\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b"
+PROSE_JOBS_DECL_RE = re.compile(rf"(?P<n>{_NUMBER})\s+(?:executable\s+)?jobs?\b", re.IGNORECASE)
+PROSE_RECORDINGS_DECL_RE = re.compile(
+    rf"(?P<n>{_NUMBER})\s+(?:first-pass\s+)?recordings?\b", re.IGNORECASE
+)
+NUMBER_WORDS: dict[str, int] = {
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+}
+
 #: The separator cells of a markdown table.
 _SEPARATOR_RE = re.compile(r"^:?-{2,}:?$")
 
@@ -221,18 +339,25 @@ class DecisionLayerError(Exception):
 
 @dataclass(frozen=True)
 class Row:
-    """One machine-readable condition row."""
+    """One machine-readable condition, block-local-control or common-reference row."""
 
     id: str
     kind: str
+    block: str
+    job: str
+    control_kind: str
     resolution_mm: str
     gates: str
     burst_cycles: str
     emissions_per_profile: str
     sensitivity: str
     conditional: str
+    executable: str
     recordings: int
-    job: str
+
+    def run_wide(self) -> tuple[str, ...]:
+        """This row's run-wide values, in :data:`RUN_WIDE_FIELDS` order."""
+        return tuple(getattr(self, field) for field in RUN_WIDE_FIELDS)
 
 
 @dataclass(frozen=True)
@@ -286,7 +411,7 @@ def _table_body(lines: list[str], start: int) -> list[tuple[int, list[str]]]:
 
 
 def parse_rows(text: str, path: str) -> tuple[Row, ...]:
-    """The condition rows of ``text``, or a :class:`DecisionLayerError`."""
+    """The schedule rows of ``text``, or a :class:`DecisionLayerError`."""
     lines = text.splitlines()
     start = _table_start(lines, ROW_COLUMNS)
     if start is None:
@@ -299,23 +424,27 @@ def parse_rows(text: str, path: str) -> tuple[Row, ...]:
             raise DecisionLayerError(
                 f"{path}:{number}: expected {len(ROW_COLUMNS)} cells, got {len(cells)}"
             )
-        recordings = cells[8]
+        recordings = cells[ROW_COLUMNS.index("recordings")]
         if not recordings.isdigit():
             raise DecisionLayerError(
                 f"{path}:{number}: recordings must be an integer, got {recordings!r}"
             )
+        values = dict(zip(ROW_COLUMNS, cells))
         rows.append(
             Row(
-                id=cells[0],
-                kind=cells[1],
-                resolution_mm=cells[2],
-                gates=cells[3],
-                burst_cycles=cells[4],
-                emissions_per_profile=cells[5],
-                sensitivity=cells[6],
-                conditional=cells[7],
+                id=values["ID"],
+                kind=values["kind"],
+                block=values["block"],
+                job=values["job"],
+                control_kind=values["control_kind"],
+                resolution_mm=values["resolution_mm"],
+                gates=values["gates"],
+                burst_cycles=values["burst_cycles"],
+                emissions_per_profile=values["emissions_per_profile"],
+                sensitivity=values["sensitivity"],
+                conditional=values["conditional"],
+                executable=values["executable"],
                 recordings=int(recordings),
-                job=cells[9],
             )
         )
     if not rows:
@@ -351,28 +480,45 @@ def parse_counts(text: str, path: str) -> dict[str, int]:
 def compute_counts(rows: tuple[Row, ...]) -> dict[str, int]:
     """The condition/control/job counts derived from the rows themselves.
 
-    ``jobs`` is the number of distinct runs the unique conditions need under
-    today's writers (each run holds one run-wide field value); the controls are
-    ``reference_controls_per_run`` recordings at the beginning, middle and end of
-    every run, so ``recordings_first_pass`` counts every condition once plus the
-    controls once per run.
+    A blocked row (:data:`EXECUTABLE_NO`) is scientifically selected but belongs
+    to no executable job, so it enters ``unique_new_conditions`` and
+    ``blocked_conditions`` and *no* recording total; ``executable_jobs`` counts
+    the distinct jobs the executable rows need under today's writers; and
+    ``recordings_first_pass`` is the sum of the three recording kinds rather
+    than a number of its own.
     """
     conditions = [row for row in rows if row.kind == CONDITION_KIND]
-    controls = [row for row in rows if row.kind == CONTROL_KIND]
-    jobs = sorted({row.job for row in conditions})
-    controls_per_run = sum(row.recordings for row in controls)
+    blocked = [row for row in conditions if row.executable != EXECUTABLE_YES]
+    executable = [
+        row for row in rows if row.executable == EXECUTABLE_YES and row.job != BLOCKED_JOB
+    ]
+    scientific = [row for row in conditions if row.executable == EXECUTABLE_YES]
+    block_local = [row for row in rows if row.control_kind == BLOCK_LOCAL_CONTROL_KIND]
+    common_reference = [row for row in rows if row.control_kind == COMMON_REFERENCE_CONTROL_KIND]
+    scientific_recordings = sum(row.recordings for row in scientific)
+    block_local_recordings = sum(row.recordings for row in block_local)
+    common_reference_recordings = sum(row.recordings for row in common_reference)
     return {
         "unique_new_conditions": len(conditions),
-        "reference_controls_per_run": controls_per_run,
-        "jobs": len(jobs),
-        "recordings_first_pass": sum(row.recordings for row in conditions)
-        + controls_per_run * len(jobs),
+        "blocked_conditions": len(blocked),
+        "executable_scientific_recordings": scientific_recordings,
+        "block_local_control_recordings": block_local_recordings,
+        "common_reference_recordings": common_reference_recordings,
+        "executable_jobs": len({row.job for row in executable}),
+        "recordings_first_pass": scientific_recordings
+        + block_local_recordings
+        + common_reference_recordings,
     }
 
 
 # --------------------------------------------------------------------------- #
 # the rule engine
 # --------------------------------------------------------------------------- #
+
+
+def _row(path: str, rule: str, message: str) -> Violation:
+    """A row-level violation: no line number, the row itself is the subject."""
+    return Violation(path=path, line=0, rule=rule, message=message, excerpt="")
 
 
 def _negated(line: str, start: int, end: int) -> bool:
@@ -388,99 +534,353 @@ def _negated(line: str, start: int, end: int) -> bool:
     return NEGATION_RE.search(clause) is not None
 
 
-def _row_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
-    """R3: the rows may not make any condition, E128 above all, conditional."""
+def _schedule_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
+    """§9.2/§9.4: the schedule the rows describe must be executable.
+
+    ``CampaignDefinition`` fixes ``burst_length`` and ``emissions_per_profile``
+    once per campaign, so a job is a set of rows that agree on both; a
+    common-reference check is the true reference condition and therefore lives
+    in its own reference-only job, never inside a burst or emissions block; and
+    the retired ``REF-CTRL | every-run`` construction is refused by name.
+    """
     violations: list[Violation] = []
+
+    for row in rows:
+        if row.id == RETIRED_CONTROL_ID or row.job == RETIRED_JOB or row.block == RETIRED_JOB:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-retired-ref-ctrl",
+                    (
+                        f"{row.id}: the {RETIRED_CONTROL_ID} | {RETIRED_JOB} construction is "
+                        "retired: a job whose run-wide burst or emissions value is not the "
+                        "reference cannot hold reference-condition recordings"
+                    ),
+                )
+            )
+
+    for row in rows:
+        is_control = row.kind in (BLOCK_LOCAL_KIND, COMMON_REFERENCE_KIND)
+        expects_block_local = row.kind == BLOCK_LOCAL_KIND
+        expects_common = row.kind == COMMON_REFERENCE_KIND
+        if row.control_kind not in CONTROL_KINDS:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-control-kind",
+                    (
+                        f"{row.id}: control_kind must be one of {CONTROL_KINDS}, "
+                        f"got {row.control_kind!r}"
+                    ),
+                )
+            )
+        elif (row.control_kind == BLOCK_LOCAL_CONTROL_KIND) != expects_block_local or (
+            row.control_kind == COMMON_REFERENCE_CONTROL_KIND
+        ) != expects_common:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-control-kind",
+                    (
+                        f"{row.id}: kind {row.kind!r} and control_kind {row.control_kind!r} "
+                        "disagree; a control row must carry the kind and the control kind of "
+                        "the same control type, and a condition must carry "
+                        f"{NO_CONTROL_KIND!r}"
+                    ),
+                )
+            )
+        if is_control and row.executable != EXECUTABLE_YES:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-control-executable",
+                    f"{row.id}: control recordings are executable first-pass recordings",
+                )
+            )
+
+    jobs: dict[str, list[Row]] = {}
+    for row in rows:
+        if row.job == BLOCKED_JOB:
+            continue
+        jobs.setdefault(row.job, []).append(row)
+    for job, members in sorted(jobs.items()):
+        values = {member.run_wide() for member in members}
+        if len(values) > 1:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-run-wide-mixed",
+                    (
+                        f"{job}: {RUN_WIDE_FIELDS} are run-wide, so every row of the job must "
+                        "agree on them; the rows carry "
+                        + ", ".join(sorted(str(value) for value in values))
+                    ),
+                )
+            )
+
+    scientific_jobs = set(SCIENTIFIC_JOBS)
+    for job in SCIENTIFIC_JOBS:
+        recordings = sum(
+            row.recordings
+            for row in rows
+            if row.job == job and row.control_kind == BLOCK_LOCAL_CONTROL_KIND
+        )
+        if recordings != BLOCK_LOCAL_CONTROLS_PER_JOB:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-block-local-count",
+                    (
+                        f"{job}: every scientific job repeats its own anchor at that job's "
+                        f"run-wide values as "
+                        f"{BLOCK_LOCAL_CONTROLS_PER_JOB} block-local controls "
+                        f"(beginning/middle/end), got {recordings} recording(s)"
+                    ),
+                )
+            )
+
+    for row in rows:
+        is_block_local_row = (
+            row.kind == BLOCK_LOCAL_KIND or row.control_kind == BLOCK_LOCAL_CONTROL_KIND
+        )
+        if is_block_local_row and (row.block not in scientific_jobs or row.job != row.block):
+            violations.append(
+                _row(
+                    path,
+                    "schedule-block-local-job",
+                    (
+                        f"{row.id}: a block-local control belongs to one scientific job "
+                        f"({list(SCIENTIFIC_JOBS)}) and to that job's block, got block "
+                        f"{row.block!r} and job {row.job!r}"
+                    ),
+                )
+            )
+
+    common_jobs = sorted(
+        {
+            row.job
+            for row in rows
+            if row.kind == COMMON_REFERENCE_KIND or row.control_kind == COMMON_REFERENCE_CONTROL_KIND
+        }
+    )
+    expected_common_jobs = len(SCIENTIFIC_JOBS) - 1
+    if len(common_jobs) != expected_common_jobs:
+        violations.append(
+            _row(
+                path,
+                "schedule-common-reference-count",
+                (
+                    "one common-reference job belongs between each pair of scientific jobs: "
+                    f"{expected_common_jobs} expected for {len(SCIENTIFIC_JOBS)} scientific "
+                    f"jobs, got {len(common_jobs)}"
+                ),
+            )
+        )
+    for job in common_jobs:
+        recordings = sum(
+            row.recordings
+            for row in rows
+            if row.job == job and row.kind == COMMON_REFERENCE_KIND
+        )
+        if recordings != COMMON_REFERENCE_RECORDINGS_PER_JOB:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-common-reference-job",
+                    (
+                        f"{job}: a common-reference job is a between-job check of the true "
+                        f"reference condition and carries "
+                        f"{COMMON_REFERENCE_RECORDINGS_PER_JOB} recording, got {recordings}"
+                    ),
+                )
+            )
+    for row in rows:
+        if row.kind != COMMON_REFERENCE_KIND and row.control_kind != COMMON_REFERENCE_CONTROL_KIND:
+            continue
+        if row.block != COMMON_REFERENCE_BLOCK or row.job in scientific_jobs or row.job == BLOCKED_JOB:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-common-reference-block",
+                    (
+                        f"{row.id}: a common-reference check sits in a reference-only job "
+                        f"(block {COMMON_REFERENCE_BLOCK!r}, its own job), not inside the "
+                        f"block {row.block!r} / job {row.job!r}"
+                    ),
+                )
+            )
+        for field, expected in REFERENCE_PARAMETERS.items():
+            if getattr(row, field) != expected:
+                violations.append(
+                    _row(
+                        path,
+                        "schedule-common-reference-settings",
+                        (
+                            f"{row.id}: a common-reference check repeats the reference "
+                            f"condition, so {field} must be {expected!r}, got "
+                            f"{getattr(row, field)!r}"
+                        ),
+                    )
+                )
+    return violations
+
+
+def _row_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
+    """R3 plus §9.3: the rows may not make a condition conditional, and D1 is blocked."""
+    violations: list[Violation] = list(_schedule_rules(rows, path))
     ids = [row.id for row in rows]
     for condition_id in REQUIRED_CONDITION_IDS:
         if condition_id not in ids:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="r3-missing-condition",
-                    message=f"the unconditional-E128 design requires a condition row for {condition_id}",
-                    excerpt="",
+                _row(
+                    path,
+                    "r3-missing-condition",
+                    f"the unconditional-E128 design requires a condition row for {condition_id}",
                 )
             )
-    if CONTROL_ID not in ids:
+    if not any(row.kind == BLOCK_LOCAL_KIND for row in rows):
         violations.append(
-            Violation(
-                path=path,
-                line=0,
-                rule="r3-missing-control-row",
-                message=f"the design requires a {CONTROL_ID} reference-control row",
-                excerpt="",
+            _row(
+                path,
+                "schedule-missing-control",
+                "the WP4 schedule requires at least one block-local-control row",
+            )
+        )
+    if not any(row.kind == COMMON_REFERENCE_KIND for row in rows):
+        violations.append(
+            _row(
+                path,
+                "schedule-missing-control",
+                "the WP4 schedule requires at least one common-reference row",
             )
         )
     for row in rows:
         if row.kind not in ROW_KINDS:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="r3-row-kind",
-                    message=f"{row.id}: kind must be one of {ROW_KINDS}, got {row.kind!r}",
-                    excerpt="",
+                _row(
+                    path,
+                    "r3-row-kind",
+                    f"{row.id}: kind must be one of {ROW_KINDS}, got {row.kind!r}",
                 )
             )
         if row.conditional not in CONDITIONAL_VALUES:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="r3-conditional-value",
-                    message=(
+                _row(
+                    path,
+                    "r3-conditional-value",
+                    (
                         f"{row.id}: conditional must be one of {CONDITIONAL_VALUES}, "
                         f"got {row.conditional!r}"
                     ),
-                    excerpt="",
+                )
+            )
+        if row.executable not in EXECUTABLE_VALUES:
+            violations.append(
+                _row(
+                    path,
+                    "schedule-executable-value",
+                    (
+                        f"{row.id}: executable must be one of {EXECUTABLE_VALUES}, "
+                        f"got {row.executable!r}"
+                    ),
                 )
             )
         if row.kind == CONDITION_KIND and row.conditional != "no":
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="r3-conditional-condition",
-                    message=(
+                _row(
+                    path,
+                    "r3-conditional-condition",
+                    (
                         f"{row.id} is conditional ({row.conditional!r}): the design makes "
                         "every sparse condition unconditional"
                     ),
-                    excerpt="",
                 )
             )
     if UNCONDITIONAL_ID in ids:
         row = next(row for row in rows if row.id == UNCONDITIONAL_ID)
         if row.kind != CONDITION_KIND:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="r3-e128-ordinary-point",
-                    message=(
+                _row(
+                    path,
+                    "r3-e128-ordinary-point",
+                    (
                         f"{UNCONDITIONAL_ID} must be an ordinary sparse point "
                         f"({CONDITION_KIND}), got {row.kind!r}"
                     ),
-                    excerpt="",
                 )
             )
-    control = next((row for row in rows if row.id == CONTROL_ID), None)
-    if control is not None:
-        for field, expected in REFERENCE_PARAMETERS.items():
-            if getattr(control, field) != expected:
-                violations.append(
-                    Violation(
-                        path=path,
-                        line=0,
-                        rule="r9-control-is-reference",
-                        message=(
-                            f"{CONTROL_ID}: the controls repeat the reference condition, so "
-                            f"{field} must be {expected!r}, got {getattr(control, field)!r}"
-                        ),
-                        excerpt="",
-                    )
+
+    d1 = next((row for row in rows if row.id == D1_ID), None)
+    if d1 is not None:
+        if d1.kind != CONDITION_KIND:
+            violations.append(
+                _row(
+                    path,
+                    "d1-kind",
+                    f"{D1_ID} is a scientifically selected sparse condition, got kind {d1.kind!r}",
                 )
+            )
+        if d1.sensitivity == REFERENCE_PARAMETERS["sensitivity"]:
+            violations.append(
+                _row(
+                    path,
+                    "d1-sensitivity-reference",
+                    (
+                        f"{D1_ID}: the diagnostic must differ from the reference sensitivity "
+                        f"{REFERENCE_PARAMETERS['sensitivity']!r}, got {d1.sensitivity!r}"
+                    ),
+                )
+            )
+        if d1.sensitivity != D1_SENSITIVITY:
+            violations.append(
+                _row(
+                    path,
+                    "d1-sensitivity-unapproved",
+                    (
+                        f"{D1_ID}: sensitivity must be exactly the operator-approved value "
+                        f"{D1_SENSITIVITY!r} read from the application's own dialog, got "
+                        f"{d1.sensitivity!r}"
+                    ),
+                )
+            )
+        if d1.executable != EXECUTABLE_NO:
+            violations.append(
+                _row(
+                    path,
+                    "d1-executable",
+                    (
+                        f"{D1_ID}: the diagnostic is scientifically selected but blocked while "
+                        f"the sensitivity write/read path and the echo/energy recording surface "
+                        f"are missing, so executable must be {EXECUTABLE_NO!r}, got "
+                        f"{d1.executable!r}; it may enter no executable total"
+                    ),
+                )
+            )
+        executable_jobs = {
+            row.job for row in rows if row.executable == EXECUTABLE_YES and row.job != BLOCKED_JOB
+        }
+        if d1.job != BLOCKED_JOB and d1.job in executable_jobs:
+            violations.append(
+                _row(
+                    path,
+                    "d1-job",
+                    (
+                        f"{D1_ID}: belongs to no executable job, got job {d1.job!r} of the "
+                        f"executable jobs {sorted(executable_jobs)}"
+                    ),
+                )
+            )
+        if d1.block in executable_jobs:
+            violations.append(
+                _row(
+                    path,
+                    "d1-job",
+                    (
+                        f"{D1_ID}: block {d1.block!r} names an executable job; the blocked "
+                        f"diagnostic is {D1_BLOCK!r} and belongs to no executable job"
+                    ),
+                )
+            )
     return violations
 
 
@@ -493,39 +893,60 @@ def _count_rules(
     for key in COUNT_KEYS:
         if key not in counts:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="count-missing",
-                    message=f"the counts table must declare {key!r}",
-                    excerpt="",
-                )
+                _row(path, "count-missing", f"the counts table must declare {key!r}")
             )
             continue
         if counts[key] != computed[key]:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="count-drift",
-                    message=(
-                        f"{key}: the table declares {counts[key]}, the rows derive "
-                        f"{computed[key]}"
-                    ),
-                    excerpt="",
+                _row(
+                    path,
+                    "count-drift",
+                    f"{key}: the table declares {counts[key]}, the rows derive {computed[key]}",
                 )
             )
     for key in counts:
         if key not in COUNT_KEYS:
             violations.append(
-                Violation(
-                    path=path,
-                    line=0,
-                    rule="count-unknown",
-                    message=f"the counts table declares an unknown count {key!r}",
-                    excerpt="",
+                _row(
+                    path,
+                    "count-unknown",
+                    f"the counts table declares an unknown count {key!r}",
                 )
             )
+    return violations
+
+
+def _prose_total_rules(
+    text: str, computed: dict[str, int], path: str
+) -> list[Violation]:
+    """§9.2: of the counts a schedule can be read for, prose must agree with the rows."""
+    violations: list[Violation] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        if line.strip().startswith("|"):
+            continue
+        if PROSE_TOTAL_MARKER_RE.search(line) is None:
+            continue
+        for pattern, key, label in (
+            (PROSE_JOBS_DECL_RE, "executable_jobs", "executable jobs"),
+            (PROSE_RECORDINGS_DECL_RE, "recordings_first_pass", "first-pass recordings"),
+        ):
+            for found in pattern.finditer(line):
+                raw = found.group("n").lower()
+                declared = int(raw) if raw.isdigit() else NUMBER_WORDS.get(raw)
+                if declared is None or declared == computed[key]:
+                    continue
+                violations.append(
+                    Violation(
+                        path=path,
+                        line=number,
+                        rule="count-prose-total",
+                        message=(
+                            f"the line declares {found.group(0)!r}; the rows derive "
+                            f"{computed[key]} {label}, so the total belongs to the rows"
+                        ),
+                        excerpt=line.strip()[:200],
+                    )
+                )
     return violations
 
 
@@ -536,38 +957,30 @@ def _text_rules(text: str, path: str) -> list[Violation]:
 
     if CANONICAL_TERM not in lowered:
         violations.append(
-            Violation(
-                path=path,
-                line=0,
-                rule="r2-canonical-name",
-                message=f"the quantity must be named {CANONICAL_TERM!r} in this document",
-                excerpt="",
+            _row(
+                path,
+                "r2-canonical-name",
+                f"the quantity must be named {CANONICAL_TERM!r} in this document",
             )
         )
-    if CANONICAL_CONTROL_TERM not in lowered:
-        violations.append(
-            Violation(
-                path=path,
-                line=0,
-                rule="r9-canonical-control-name",
-                message=(
-                    "the beginning/middle/end controls must be named "
-                    f"{CANONICAL_CONTROL_TERM!r} in this document"
-                ),
-                excerpt="",
+    for term in (CANONICAL_BLOCK_LOCAL_TERM, CANONICAL_COMMON_REFERENCE_TERM):
+        if term not in lowered:
+            violations.append(
+                _row(
+                    path,
+                    "r9-control-name",
+                    (
+                        f"the two control types must be named apart; this document does not "
+                        f"name {term!r}"
+                    ),
+                )
             )
-        )
     if DUPLICATED_SETTING_STATEMENT not in lowered:
         violations.append(
-            Violation(
-                path=path,
-                line=0,
-                rule="r1-duplicated-setting",
-                message=(
-                    "the document must state that "
-                    f"{DUPLICATED_SETTING_STATEMENT!r}"
-                ),
-                excerpt="",
+            _row(
+                path,
+                "r1-duplicated-setting",
+                f"the document must state that {DUPLICATED_SETTING_STATEMENT!r}",
             )
         )
     if not any(
@@ -575,19 +988,33 @@ def _text_rules(text: str, path: str) -> list[Violation]:
         for line in text.splitlines()
     ):
         violations.append(
-            Violation(
-                path=path,
-                line=0,
-                rule="r9-correlated-controls",
-                message=(
-                    "the document must state that the adjacent within-run reference "
-                    "control differences are correlated"
+            _row(
+                path,
+                "r9-correlated-controls",
+                (
+                    "the document must state that the adjacent differences of a job's "
+                    "block-local controls are correlated"
                 ),
-                excerpt="",
             )
         )
 
     for number, line in enumerate(text.splitlines(), start=1):
+        found = RETIRED_CONTROL_NAME_RE.search(line)
+        if found is not None and not _negated(line, found.start(), found.end()):
+            violations.append(
+                Violation(
+                    path=path,
+                    line=number,
+                    rule="schedule-retired-control-name",
+                    message=(
+                        "the retired name conflated the two control types: a block-local "
+                        "control repeats its own job's anchor, and only a common-reference "
+                        "job repeats the reference condition"
+                    ),
+                    excerpt=line.strip()[:200],
+                )
+            )
+
         for pattern in PLATEAU_PATTERNS:
             match = pattern.search(line)
             if match is None or _negated(line, match.start(), match.end()):
@@ -607,8 +1034,8 @@ def _text_rules(text: str, path: str) -> list[Violation]:
             break
 
         for pattern in E128_CONDITIONAL_PATTERNS:
-            found = pattern.search(line)
-            if found is None or _negated(line, found.start(), found.end()):
+            match = pattern.search(line)
+            if match is None or _negated(line, match.start(), match.end()):
                 continue
             violations.append(
                 Violation(
@@ -625,8 +1052,8 @@ def _text_rules(text: str, path: str) -> list[Violation]:
             break
 
         for name, pattern in INDEPENDENT_PATTERNS:
-            found = pattern.search(line)
-            if found is None or _negated(line, found.start(), found.end()):
+            match = pattern.search(line)
+            if match is None or _negated(line, match.start(), match.end()):
                 continue
             violations.append(
                 Violation(
@@ -634,7 +1061,7 @@ def _text_rules(text: str, path: str) -> list[Violation]:
                     line=number,
                     rule="r9-independent-control",
                     message=(
-                        f"{name}: the controls are {CANONICAL_CONTROL_TERM} and their "
+                        f"{name}: the controls are correlated drift diagnostics and their "
                         "adjacent differences are correlated"
                     ),
                     excerpt=line.strip()[:200],
@@ -643,8 +1070,8 @@ def _text_rules(text: str, path: str) -> list[Violation]:
             break
 
         for name, pattern in STALE_THRESHOLD_PATTERNS:
-            found = pattern.search(line)
-            if found is None or _negated(line, found.start(), found.end()):
+            match = pattern.search(line)
+            if match is None or _negated(line, match.start(), match.end()):
                 continue
             violations.append(
                 Violation(
@@ -679,7 +1106,7 @@ def _text_rules(text: str, path: str) -> list[Violation]:
 
 
 def scan_document(text: str, path: str) -> list[Violation]:
-    """Every R1/R2/R3/R7/R9 violation in one document's text."""
+    """Every R1/R2/R3/R7/R9 and WP4 schedule violation in one document's text."""
     violations: list[Violation] = []
     try:
         rows = parse_rows(text, path)
@@ -696,18 +1123,17 @@ def scan_document(text: str, path: str) -> list[Violation]:
         ]
     violations.extend(_row_rules(rows, path))
     violations.extend(_count_rules(rows, counts, path))
+    violations.extend(_prose_total_rules(text, compute_counts(rows), path))
     violations.extend(_text_rules(text, path))
     if path == DECISION_TABLE:
         lowered = text.lower()
         for label, fact in REQUIRED_DECISION_FACTS:
             if fact.lower() not in lowered:
                 violations.append(
-                    Violation(
-                        path=path,
-                        line=0,
-                        rule="r2-grouped-evidence",
-                        message=f"the decision table must cite the corrected {label} ({fact!r})",
-                        excerpt="",
+                    _row(
+                        path,
+                        "r2-grouped-evidence",
+                        f"the decision table must cite the corrected {label} ({fact!r})",
                     )
                 )
     return violations
@@ -726,12 +1152,10 @@ def check_repository(root: Path = REPO) -> list[Violation]:
         path = root / relative
         if not path.is_file():
             violations.append(
-                Violation(
-                    path=".",
-                    line=0,
-                    rule="checker-integrity",
-                    message=f"missing decision-layer document: {relative}",
-                    excerpt="",
+                _row(
+                    ".",
+                    "checker-integrity",
+                    f"missing decision-layer document: {relative}",
                 )
             )
             continue
@@ -746,15 +1170,13 @@ def check_repository(root: Path = REPO) -> list[Violation]:
         first, second = DOCUMENTS
         if row_sets[first] != row_sets[second]:
             violations.append(
-                Violation(
-                    path=".",
-                    line=0,
-                    rule="decision-rows-consistent",
-                    message=(
+                _row(
+                    ".",
+                    "decision-rows-consistent",
+                    (
                         f"{first} and {second} must carry identical condition rows, so "
                         "neither can drift from the other"
                     ),
-                    excerpt="",
                 )
             )
     return violations
@@ -765,8 +1187,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="udv-validate-decision-layer",
         description=(
-            "Check the R3/R9 decision layer (plan docs/dop3000/existing-sweep-analysis-plan.md "
-            "§8.3 item 7, §8.4)"
+            "Check the WP4 schedule and the R3/R9 decision layer (plan "
+            "docs/dop3000/existing-sweep-analysis-plan.md §8.3 item 7, §8.4, §9.4)"
         ),
     )
     parser.add_argument("--root", default=str(REPO), help="repository root to check")
@@ -776,9 +1198,10 @@ def main(argv: list[str] | None = None) -> int:
     violations = check_repository(root)
     print(f"documents : {', '.join(DOCUMENTS)}")
     print(f"quantity  : {CANONICAL_TERM}")
-    print(f"controls  : {CANONICAL_CONTROL_TERM}")
+    print(f"controls  : {CANONICAL_BLOCK_LOCAL_TERM} / {CANONICAL_COMMON_REFERENCE_TERM}")
+    print(f"D1        : {D1_ID} at sensitivity {D1_SENSITIVITY!r}, blocked")
     if not violations:
-        print("udv-validate-decision-layer: the decision layer is unconditional and its counts agree")
+        print("udv-validate-decision-layer: the WP4 schedule is executable and its counts agree")
         return 0
     for violation in violations:
         where = f"{violation.path}:{violation.line}" if violation.line else violation.path
