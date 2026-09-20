@@ -6,7 +6,7 @@
   "store_dir": "outputs/live/store",
   "max_profiles_per_block": 2500,
   "sound_speed_ms": 1480.0,
-  "first_gate_mm": 10.1626666667,
+  "first_gate_mm": 10.0,
   "reference_window": {
     "resolution_mm": 1.85,
     "gates": 50

@@ -221,7 +221,12 @@ sampling-volume read-out, not the parameter.
   preference and never inferred from a clean decode. At a 12 s window this is the first thing to check on
   a new configuration, and a short file stops the run rather than being noted.
 - **Declare the frame from the files, and expect the dialog to speak last.** The reference frame is
-  requested as the committed recordings' own decoded values (c = 1480 m/s, first gate 10.1626666667 mm),
-  and the pre-run check compares numerically against the *dialog's* text with zero tolerance for the
-  first gate: a last-decimal difference refuses before any recording, and the dialog's rendering is then
-  the number that belongs in the plan.
+  derived from the committed recordings' own decoded values (c = 1480 m/s, and a first gate of
+  10.1626666667 ± 0.5 mm implied by their depth words), and the pre-run check compares numerically
+  against the *dialog's* text with zero tolerance: a last-decimal difference refuses before any
+  recording, and the dialog's rendering is then the number that belongs in the plan. Measured
+  2026-09-20: this dialog states the first gate as an **integer** — `10.163` commits as `10`, and commas
+  are rejected outright — so the declared frame is `10.0 mm`, and the derived window is what `word 2`
+  confirms after the recording. Before treating the difference as a scientific loss, check whether the
+  rungs in play can see it at all: at 1.85, 0.617 and 2.96 mm the two candidates round to the same
+  stored depth word.

@@ -628,3 +628,12 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   each measurement with what to do when it does not hold, and give a staged way to find out which one
   it is (`references/live-run-bringup.md`). Never let a fallback silently accept a state the run was not
   designed for.
+- **The Store dialog's `Working directory` does not resolve a relative path.** Handed
+  `outputs/live/frame-probe` the application raised its own *"The selected directory does not exists —
+  Do you want to create it?"* warning, and the live cycle stopped on that modal: the recording sat
+  unsaved while the caller waited on a dialog nobody was watching. An absolute path to an existing
+  directory is written and accepted, and the application's own note then says which directory it had
+  and which it wrote — read that line before trusting a store. Pass `--store-dir` absolute on the
+  command line and let a plan keep its portable relative default; answer a stray warning with the
+  driver's own rule, the *left* button of the dialog's bottom pair (`DialogControl.SAFE`), never a
+  guessed handle or a coordinate.

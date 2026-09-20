@@ -22,7 +22,7 @@
 | job definitions | `examples/sparse-mixer-first-pass/jobs/<job>.json` (nine files) |
 | channel | 1 |
 | window | 12 s per recording — §4's assumption of at least 11.52 s, so every record truncates to the common comparison window |
-| frame | sound speed 1480 m/s, first gate 10.1626666667 mm (both dialog-only: set by hand, and a disagreement refuses) |
+| frame | sound speed 1480 m/s, first gate 10 mm (both dialog-only: set by hand, and a disagreement refuses; the field states no decimal — §3 records what that settles) |
 | run-wide | PRF 600 µs for the whole pass (§1); burst and emissions per job |
 | names | `<root>-<job>-<label>-<stamp>` under one root (`sparse1`) |
 | store | `outputs/live/store` |
@@ -128,6 +128,16 @@ number the dialog states is then the number that belongs in the run plan. That i
 not a defect: a declaration is compared with the application's own text, and the file's own words are
 the authority afterwards.
 
+**Settled 2026-09-20 on the live pre-run check.** The dialog states the first gate as an **integer** —
+typing `10.163` and committing leaves `10`, and commas are not accepted at all — so the plan and its
+nine jobs declare **`10.0 mm`** and the compile agrees. The forty committed recordings' own depths
+imply a start of 10.1626666667 ± 0.5 mm, which this field cannot state; at the pass's three
+configurations the two candidates round to the *same* stored word (101 / 99 / 99 mm — checked, not
+assumed), so the trial's files cannot tell them apart either, and the derived window is confirmed
+afterwards by the file check's `word 2`. What the declaration gives up is 0.163 mm — under a tenth of
+the coarsest rung this pass writes. A configuration that *would* separate the two exists in the
+committed set (`res/0-4.BDD`: 99 under 10.16, 98 under 10.0) if the frame is ever pinned exactly.
+
 Also unchanged and still true: the stated process mode is declared per run (`--expect-mode`), the
 block cap stays explicitly unproven, and no pass may move the PRF, emitting power, TGC, sensitivity or
 the velocity scale — §1's fixed facts are listed on the sheet, and the ones no reader reaches are
@@ -202,8 +212,11 @@ uv run udv-acquire run-plan --plan examples/sparse-mixer-first-pass/run-plan.jso
 uv run udv-acquire run-plan --plan examples/sparse-mixer-first-pass/run-plan.json --status
 
 # run the next job (records; declares the process this pass was measured against)
+# the Store dialog's Working directory will not resolve a relative path: pass an absolute, existing
+# one, or the application raises its "selected directory does not exists" warning and the cycle stops
+# on that modal (measured 2026-09-20 — §7)
 uv run udv-acquire run-plan --plan examples/sparse-mixer-first-pass/run-plan.json --next \
-    --store-dir outputs/live/store --expect-mode <process>
+    --store-dir "$PWD/outputs/live/store" --expect-mode <process>
 ```
 
 The pass's raised facts are part of what `--check` and `--sheet` state, and they travel with every job
@@ -232,16 +245,20 @@ disagrees fails the point.
   from a stored file as soon as one exists belongs to the analysis ingest, which is its own step;
   the trial is deliberately not gated on tooling that does not exist yet.
 
-**Open at the pre-run check (2026-09-20), recorded because it stops the trial.** The pass's first
-live step was the pre-run compile for `burst-4` (`uv run udv-acquire compile --definition
+**The pre-run check, and what it settled (2026-09-20).** The pass's first live step was the pre-run
+compile for `burst-4` (`uv run udv-acquire compile --definition
 examples/sparse-mixer-first-pass/jobs/burst-4.json --expect-mode instrument`). It refused, stored
 nothing and left the application untouched, naming **one** fact — *"first_gate_mm: the campaign
-declares 10.1626666667, the instrument states '1'"*, later `'10'`; sound speed, burst, emissions,
-PRF and the channel already agreed. The dialog's first-gate field does not accept a decimal
-(typing `10.163` and committing leaves `10`), while the committed sweep's own depths imply the
-frame was recorded at 10.1626666667. So the pass declares a value this dialog cannot state, and
-the pre-run comparison can never agree. Two ways out, both narrow: declare what the dialog *can*
-state and confirm the derived depth in the stored file (the split this pass already uses for
-`emissions_per_profile`), or teach the comparison that this dialog-only fact carries limited
-precision. Under review; the trial stays stopped until it is settled.
+declares 10.1626666667, the instrument states '1'"*, later `'10'`; sound speed, burst, emissions, PRF
+and the channel already agreed. That is §3's declared loop closing: the frame now declares `10.0 mm`
+— the number the dialog states — and the derived window is confirmed from `word 2` after the
+recording.
+
+The same step produced one further trap, and it is why §6's command passes an absolute `--store-dir`:
+**the Store dialog's `Working directory` does not resolve a relative path.** Given
+`outputs/live/frame-probe` the application raised its own *"The selected directory does not exists —
+Do you want to create it?"* warning, and the cycle stopped on that modal with a two-second recording
+unsaved; given the absolute, existing directory it wrote it and stored the point. The pass's own
+`store_dir` stays relative (`outputs/live/store`, §1) so the plan remains portable — the live run
+passes the absolute form on the command line.
 

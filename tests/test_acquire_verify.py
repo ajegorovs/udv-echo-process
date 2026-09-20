@@ -880,7 +880,10 @@ COARSE_RUNG_DEPTH_CASES = (
 
 #: The committed 40-file mixer sensitivity sweep, and the frame its dialogs held.
 MIXER_SWEEP = REPO_ROOT / "data/mixer-sensitivity-analysis" / "4MHz" / "0500RPM" / "001"
-PASS_FIRST_GATE_MM = 10.1626666667
+#: The committed sweep's 40 files imply this start from their own depth words (the dialog that
+#: recorded them states it as an integer, so the *pass* declares 10.0 and the file's word 2 is what
+#: confirms the derived window — see the case below).
+COMMITTED_FIRST_GATE_MM = 10.1626666667
 
 
 @pytest.mark.parametrize(
@@ -904,15 +907,15 @@ def test_the_stored_depth_is_the_last_gates_depth_not_the_window_end(
     path = MIXER_SWEEP / relative
     facts = read_words(path, 1)
     pitch = facts.resolution_mm
-    last_gate = PASS_FIRST_GATE_MM + (gates - 1) * pitch
-    window_end = PASS_FIRST_GATE_MM + gates * pitch
+    last_gate = COMMITTED_FIRST_GATE_MM + (gates - 1) * pitch
+    window_end = COMMITTED_FIRST_GATE_MM + gates * pitch
 
     assert abs(last_gate - facts.depth_mm) <= 1.5
     assert (abs(window_end - facts.depth_mm) > 1.5) is window_end_separates
 
     params = ParameterSet(
         sound_speed_ms=1480.0,
-        first_gate_mm=PASS_FIRST_GATE_MM,
+        first_gate_mm=COMMITTED_FIRST_GATE_MM,
         resolution_mm=resolution_mm,
         gates=gates,
     )

@@ -223,7 +223,7 @@ def test_every_job_records_at_the_passes_frame() -> None:
     # same common-duration window as its comparand.
     assert run.duration_s >= 11.52
     assert run.sound_speed_ms == 1480.0
-    assert run.first_gate_mm == 10.1626666667
+    assert run.first_gate_mm == 10.0
     assert run.store_dir == "outputs/live/store"
     for job in run.jobs:
         assert job.condition.prf_us == 600.0

@@ -33,7 +33,7 @@ achieved values, and nothing below is assumed where the file can be read.
 | PRF period | 600 µs | `prf/600.BDD`; the period the entire augmentation holds |
 | sound speed | measured/read-back (≈1480 m/s in the committed set) | `sound_speed_ms` 1480 in all 40 rows |
 | Doppler angle | 0 | all 40 rows |
-| first gate | ≈10.163 mm | 10.1626666667 mm in all 40 rows |
+| first gate | ≈10.163 mm | 10.1626666667 mm in all 40 rows (the *file-derived* start; the dialog states it as an integer, so the sparse pass declares `10 mm` — `sparse-run-plan.md` §3) |
 | observation window | ≈10.163-96.743 mm, held while pitch changes and gates compensate | plan §2; `resolution-levels.csv` common support |
 | resolution | 1.850 mm, gates 50 | `res/1-8.BDD` |
 | burst length | 10 cycles | reference; the committed `burst_len` folder has no 10-cycle file |
