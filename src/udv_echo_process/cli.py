@@ -417,9 +417,9 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         f"{information['detail_max_abs_mm_s']:.4g} mm/s"
     )
     print(
-        f"coarsest    : {coarsest['label']} at {coarsest['pitch_mm']:.4g} mm, "
-        f"correlation length {coarsest['correlation_length_mm']:.4g} mm = "
-        f"{coarsest['correlation_length_over_pitch']:.3g} pitches"
+        f"coarsest    : {coarsest['label']} at {coarsest['pitch_mm']:.4g} mm; "
+        f"descriptive profile autocorrelation scale {coarsest['correlation_length_mm']:.4g} mm; "
+        f"max aligned difference {coarsest['max_abs_difference_to_any_other_level_mm_s']:.4g} mm/s"
     )
     print(f"levels table: {report_dir / resolution_ladder.LEVELS_NAME}")
     print(f"pairs table : {report_dir / resolution_ladder.PAIRS_NAME}")

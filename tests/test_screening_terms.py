@@ -142,6 +142,22 @@ def test_temporal_floor_inferences_from_one_pair_are_violations(tool, no_allowli
     assert "r2-temporal-floor-claim" in rules_of(violations)
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "The residual is a share of the spatial variance.\n",
+        "The coarsest pitch samples it 4 times per correlation length.\n",
+    ),
+)
+def test_retired_resolution_interpretations_are_violations(tool, no_allowlist, text):
+    violations = tool.scan_text(
+        text,
+        "src/udv_echo_process/analysis/resolution_ladder.py",
+        allowlist=no_allowlist,
+    )
+    assert "r7-r8-resolution-interpretation" in rules_of(violations)
+
+
 def test_an_explicit_negation_is_not_a_violation(tool, no_allowlist):
     """A statement that the quantity is *not* a bound must survive."""
     for text in (

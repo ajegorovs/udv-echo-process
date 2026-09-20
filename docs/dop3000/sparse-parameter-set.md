@@ -216,15 +216,15 @@ that method rather than inventing a new one:
 | velocity bias and reference consistency | committed: WP1 `reference-repeat.csv` screening threshold **19.3701 mm/s**, the threshold every effect is compared to |
 | velocity variance versus depth, zero/rejected fraction | committed: per-axis `*-levels.csv` and `gain-power-depths.csv` |
 | aliasing margin, achieved profile interval and count | committed: `prf-levels.csv` (`load_max_over_velo_max`, warning fractions, wrap-like counts, profile rate) |
-| temporal spectra / autocorrelation | committed: WP1 and the matched temporal view of the burst and PRF ladders, with their floors |
-| spatial smoothness and resolved-gradient behaviour | committed: native-grid gradient and correlation length per level |
+| temporal spectra / autocorrelation | committed: WP1 and the matched temporal view of the burst and PRF ladders, screened against the observed same-settings temporal discrepancy |
+| spatial smoothness and resolved-gradient behaviour | committed: native-grid gradient and descriptive profile autocorrelation scale per level; the latter is not a physical scale or primary resolution criterion |
 | sensitivity to reference-drift | committed as a screening threshold only; the new block's within-run reference controls are what turn it into a within-run measurement |
 | echo amplitude / saturation | **not available**: no committed file carries an echo/energy channel; D1 is the measurement that would start it |
 | pitch x burst interaction | **not estimable** before this block; CC1-CC4 are the four missing corners |
 
 The second-stage dense sweep should be concentrated around transitions this analysis actually finds, not
 around uniformly filling the parameter domain — and on this evidence there is no measured transition to
-cluster on yet: no resolution effect cleared the bound, no burst metric fell monotonically, and no PRF level
+cluster on yet: no resolution effect cleared the screening threshold, no burst metric fell monotonically, and no PRF level
 was shown inadequate.
 
 ## 8. Limitations this design carries

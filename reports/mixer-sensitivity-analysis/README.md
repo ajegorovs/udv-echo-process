@@ -151,15 +151,15 @@ Definitions the table cannot be read without, all restated in the provenance doc
 
 The `res` folder is a 13-point ladder of **decoded gate pitches** over the same window — 0.247 mm
 (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates) — and it carries the plan's first
-question: *does 0.247 mm add information over 0.617 mm, and which measured pitch is the coarsest that
-preserves structure beyond the repeatability floor?* The resolution artefacts are:
+question: *does 0.247 mm add information over 0.617 mm, and which measured pitch is the coarsest whose
+aligned difference remains small relative to the screening threshold?* The resolution artefacts are:
 
 | Path | What it is |
 |---|---|
-| `resolution-levels.csv` | 13 rows, one per decoded pitch: common-duration mean, robust spread (IQR), RMS, zero fraction and gate-level temporal IQR inside the common support, plus the native-grid gradient spread and the native spatial correlation length |
-| `resolution-pairs.csv` | 78 rows, every unordered pair of levels: the signed `fine - coarse` per-gate mean difference on the coarser grid's own knots, the knots that clear the WP1 screening threshold and the depth ranges where they do, and the drift-free detail the finer pitch adds below the coarse knot spacing |
+| `resolution-levels.csv` | 13 rows, one per decoded pitch: common-duration mean, robust spread (IQR), RMS, zero fraction and gate-level temporal IQR inside the common support, plus the native-grid gradient spread and a descriptive autocorrelation scale of one mean-removed depth profile |
+| `resolution-pairs.csv` | 78 rows, every unordered pair of levels: the signed `fine - coarse` per-gate mean difference on the coarser grid's own knots, the knots that clear the WP1 screening threshold and the depth ranges where they do, and the finer profile's normalized reconstruction-residual variance below the coarse knot spacing |
 | `resolution-ladder.provenance.json` | the binding (manifest hash, all 13 source hashes, the the WP1 screening threshold's path and hash, generator commit), the metric definitions, both views, the alignment rule, the findings and the figure caption |
-| `figures/resolution-ladder.png` | two panels, the minimum the decision needs: native correlation length versus pitch, and the plan's pair with its difference against the screening threshold band (the gradient spread stays in `resolution-levels.csv`) |
+| `figures/resolution-ladder.png` | two panels: the descriptive profile autocorrelation scale versus pitch, and the plan's pair with its difference against the screening threshold band (the gradient spread stays in `resolution-levels.csv`) |
 
 They are written by:
 
@@ -192,9 +192,10 @@ Definitions the tables cannot be read without, all restated in the provenance do
 - **pitch** — the mean step of a level's decoded gate depths, re-checked against the manifest's
   `resolution_mm` cell: the realised pitch, not the requested rung label.
 - **native grid** — every level keeps its own decoded gates. The gradient (`|mean[k+1] - mean[k]| /
-  pitch`, attributed to the interval midpoint) and the correlation length (first lag where the
+  pitch`, attributed to the interval midpoint) and descriptive profile autocorrelation scale (first lag where the
   normalized biased autocovariance of the mean-removed profile drops below 1/e, capped at half the
-  profile) are computed per level *before* any alignment, and no level is resampled to produce them.
+  profile) are computed per level *before* any alignment. The latter is not a physical turbulence scale
+  or a primary resolution criterion, and no level is resampled to produce either metric.
 - **common knots** — a pair's knots are the *coarser* participant's native gate depths inside the common
   support, so the knot spacing is the coarser pitch and never finer than the coarsest participating
   pitch. The finer profile is sampled at those knots by its nearest native gate (offset at most half its
@@ -203,10 +204,9 @@ Definitions the tables cannot be read without, all restated in the provenance do
   (`max_gate_abs_mean_difference_mm_s`), read from `reference-repeat.provenance.json` and pinned to this
   manifest's hash. It is a screening threshold: one observed realization of repeatability *plus* uncontrolled drift, and it is the threshold
   every resolution effect is compared to.
-- **detail below the coarse knots** — measured inside the finer recording *alone*, so no drift enters
-  it: its supported native mean profile minus that same profile sampled at the coarse knots. It is the
-  spatial variance the finer pitch adds, and so the honest ceiling on the information a finer pitch can
-  carry here.
+- **normalized reconstruction-residual variance** — measured inside the finer recording *alone*:
+  `var(fine - nearest-coarse reconstruction) / var(fine)`. It is not an orthogonal share of spatial
+  variance and is not one term of a variance partition.
 
 ### What the committed files measure
 
@@ -219,16 +219,14 @@ Every number below is copied from the artefacts above (the same values are resta
   single knot above the screening threshold** anywhere in the common support.
 - **0.247 mm adds no demonstrated information over 0.617 mm.** `res/0-2.BDD` vs `res/0-6.BDD` on 141
   knots spaced 0.6167 mm: mean `|diff|` **1.974 mm/s**, max `|diff|` **6.114 mm/s** at 44.70 mm (0.316
-  of the screening threshold), 0 knots above the screening threshold. The coarse knots retain **99.15 %** of the finer
-  profile's spatial variance, and the structure below them carries **0.0722 %** of it (RMS
+  of the screening threshold), 0 knots above the screening threshold. The coarse-knot reconstruction variance ratio is **99.15 %** and the normalized reconstruction-residual variance is **0.0722 %** (RMS
   **0.5814 mm/s**, peak **2.738 mm/s**). The evidence therefore cannot support a claim that 0.247 mm
   adds information — and it equally cannot exclude a real effect smaller than the repeat-plus-drift
   screening threshold, which one same-settings repeat cannot resolve.
-- **The coarsest measured pitch preserves the structure the finer pitches show.** The native
-  correlation length of the depth-resolved mean profile is **9.62–18.99 mm** at every level (4–41 gate
-  pitches), so the structure lives on a scale of order tens of millimetres. `res/3-0.BDD` at 2.96 mm
-  (30 supported gates) still samples it **4** times per correlation length, and differs from every other
-  level by at most **10.43 mm/s** (0.539 of the screening threshold). That is a statement about the 13 recorded
+- **The coarsest measured pitch has a small aligned difference on this dataset.** `res/3-0.BDD` at 2.96 mm
+  (30 supported gates) differs from every other level by at most **10.43 mm/s** (0.539 of the screening
+  threshold). Its 11.84 mm profile autocorrelation scale is descriptive only and does not justify the pitch.
+  That is a statement about the 13 recorded
   pitches only: nothing finer than 0.247 mm or coarser than 2.96 mm was measured, and an effect smaller
   than the screening threshold would be invisible in this dataset.
 

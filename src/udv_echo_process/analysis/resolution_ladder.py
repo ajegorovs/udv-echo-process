@@ -21,13 +21,23 @@ allowed to outweigh another (plan §8.3 step 5). One build produces:
   every recording, and the intersection of the decoded depth ranges (plan §3.1, §3.2);
 - **level metrics on each native grid** — mean, robust spread (IQR), RMS about zero, zero fraction
   and gate-level temporal IQR over the common window, plus the gate-to-gate gradient and the
-  spatial correlation length, both computed *before* any comparison (plan §3.2);
+  descriptive autocorrelation scale of the mean-removed depth profile, both computed *before* any
+  comparison (plan §3.2, §8.3 step 6);
 - **pairs on common knots** — every unordered pair on the coarser participant's own gate depths
   inside the support, the finer level *sampled* there by nearest native gate: no interpolation,
   no upsampling, and the knots that clear the committed WP1 screening_threshold, where in depth and by what
   ratio (plan §4 WP1 gate);
 - the **detail below the coarse knots**, measured inside the finer recording alone so no drift
-  enters it: its native mean profile minus that same profile sampled at the coarse knots.
+  enters it: its native mean profile minus its nearest-coarse reconstruction, that is, that same
+  profile resampled at the coarse knots. Against the finer profile's own variance that residual is
+  the **normalized reconstruction-residual variance**,
+  ``var(fine - nearest-coarse reconstruction) / var(fine)``: one profile's own variance measured
+  against itself, not one term of a partition of the spatial variance (plan §8.3 step 6, R7).
+
+The autocorrelation scale of each level's mean-removed depth profile is published beside those
+numbers, and it is descriptive only (plan §8.3 step 6, R8): it says over what distance one profile's
+values stay correlated with themselves, it is not a physical turbulence scale, and no pitch here is
+accepted or rejected by it.
 
 Gates and profiles are not independent replicates, the levels carry no acquisition order (their
 differences hold drift as well as pitch), and no p-value family is produced (plan §3.3). Resolution
@@ -155,6 +165,18 @@ REALIZATION_CELLS: tuple[str, ...] = (
     "correlation_length_mm", "correlation_reaches_floor",
 )
 
+#: R7's live name of the resolution residual (plan §8.2 R7, §8.3 step 6): within the finer
+#: recording alone, ``var(fine - nearest-coarse reconstruction) / var(fine)``. Spelled once here, so
+#: the pair table's column, the model field, the finding key and every definition cannot drift
+#: apart. The nearest-coarse reconstruction is a nearest-gate resampling of the *same* profile, not
+#: an orthogonal component of it, so this ratio is not one term of a variance partition.
+NORMALIZED_RECONSTRUCTION_RESIDUAL_VARIANCE = "normalized_reconstruction_residual_variance"
+
+#: The companion ratio (plan §8.2 R7): ``var(fine sampled at the coarse knots) / var(fine)``, the
+#: same kind of stand-alone ratio read *at* the knots instead of between them. The two ratios are
+#: not complementary and do not sum to one, so neither may be read as a partition of the variance.
+COARSE_KNOT_RECONSTRUCTION_VARIANCE_RATIO = "coarse_knot_reconstruction_variance_ratio"
+
 #: Column order of ``resolution-pairs.csv``; one row per unordered level pair.
 PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "fine_path", "fine_label", "fine_pitch_mm", "coarse_path",
@@ -164,8 +186,8 @@ PAIR_COLUMNS: tuple[str, ...] = (
     "max_abs_difference_mm_s", "max_abs_difference_depth_mm",
     "knots_above_screening_threshold", "fraction_above_screening_threshold",
     "max_abs_difference_over_screening_threshold", "depth_ranges_above_screening_threshold_mm",
-    "fine_variance_share_at_coarse_knots", "fine_detail_rms_mm_s",
-    "fine_detail_max_abs_mm_s", "fine_detail_variance_share",
+    COARSE_KNOT_RECONSTRUCTION_VARIANCE_RATIO, "fine_detail_rms_mm_s",
+    "fine_detail_max_abs_mm_s", NORMALIZED_RECONSTRUCTION_RESIDUAL_VARIANCE,
 )
 
 
@@ -263,7 +285,16 @@ class LevelRow(ValueModel):
 
 
 class PairRow(ValueModel):
-    """One row of ``resolution-pairs.csv``: a fine/coarse pair on common knots."""
+    """One row of ``resolution-pairs.csv``: a fine/coarse pair on common knots.
+
+    The last four cells are measured inside the *finer recording alone*, so no drift enters them:
+    the residual of its supported native mean profile against its nearest-coarse reconstruction
+    (``fine_detail_rms_mm_s``, ``fine_detail_max_abs_mm_s``), and that residual normalized by the
+    finer profile's own variance (``normalized_reconstruction_residual_variance``, R7) beside the
+    same kind of ratio read at the coarse knots (``coarse_knot_reconstruction_variance_ratio``).
+    Neither ratio is a partition term: the reconstruction is a nearest-gate resampling of the same
+    profile, so it is not orthogonal to the residual and the two do not split the variance.
+    """
 
     axis: str
     fine_path: str
@@ -285,10 +316,10 @@ class PairRow(ValueModel):
     fraction_above_screening_threshold: float
     max_abs_difference_over_screening_threshold: float
     depth_ranges_above_screening_threshold_mm: str
-    fine_variance_share_at_coarse_knots: float
+    coarse_knot_reconstruction_variance_ratio: float
     fine_detail_rms_mm_s: float
     fine_detail_max_abs_mm_s: float
-    fine_detail_variance_share: float
+    normalized_reconstruction_residual_variance: float
 
     @model_validator(mode="after")
     def _check_the_pair_is_fine_then_coarse_on_the_coarse_grid(self) -> PairRow:
@@ -558,9 +589,12 @@ def pair_row(
     spacing is the coarser pitch, never finer than the coarsest participating pitch (plan §3.2); the
     fine profile is sampled there by the shared :func:`nearest_gate_indices` — the nearest native
     gate's value, no interpolation. The ``fine_detail_*`` fields are measured inside the *finer
-    recording alone* (its supported native mean profile minus that same profile sampled at the coarse
-    knots), so they carry no drift and bound how much spatial variance the finer pitch adds below the
-    coarse knot spacing.
+    recording alone* (its supported native mean profile minus its nearest-coarse reconstruction, that
+    same profile resampled at the coarse knots), so they carry no drift; the residual normalized by
+    the finer profile's own variance is published as the **normalized reconstruction-residual
+    variance** ``var(fine - nearest-coarse reconstruction) / var(fine)``, beside the same kind of
+    ratio read at the knots. The reconstruction is a nearest-gate resampling of the profile, not an
+    orthogonal component of it, so neither ratio is one term of a variance partition (plan §8.2 R7).
     """
     if fine.pitch_mm >= coarse.pitch_mm:
         raise ResolutionLadderError(
@@ -605,12 +639,14 @@ def pair_row(
         fraction_above_screening_threshold=float(np.count_nonzero(flagged) / flagged.size),
         max_abs_difference_over_screening_threshold=float(absolute[aligned.worst] / screening_threshold.value_mm_s),
         depth_ranges_above_screening_threshold_mm=depth_ranges(knots, flagged),
-        fine_variance_share_at_coarse_knots=float(
+        coarse_knot_reconstruction_variance_ratio=float(
             np.var(fine_at_knots) / aligned.sampled_variance
         ),
         fine_detail_rms_mm_s=float(np.sqrt(np.mean(np.square(detail)))),
         fine_detail_max_abs_mm_s=float(np.abs(detail).max()),
-        fine_detail_variance_share=float(np.var(detail) / aligned.sampled_variance),
+        normalized_reconstruction_residual_variance=float(
+            np.var(detail) / aligned.sampled_variance
+        ),
     )
 
 
@@ -864,10 +900,13 @@ DEFINITIONS: dict[str, str] = {
         "mm/s per mm, before any alignment, at the interval midpoint"
     ),
     "correlation_length": (
-        "first lag where the normalized biased autocovariance of the mean-removed "
-        "supported native mean profile falls below 1/e, in mm (gates x pitch); capped at "
-        "floor((gates - 1) / 2) gates, where a cap is a lower bound "
-        "(correlation_reaches_floor false)"
+        "descriptive autocorrelation scale of one mean-removed depth profile: the first lag where "
+        "the normalized biased autocovariance of the supported native mean profile falls below "
+        "1/e, in mm (gates x pitch); capped at floor((gates - 1) / 2) gates, where a cap is a "
+        "lower bound (correlation_reaches_floor false). It describes how far one profile's values "
+        "stay correlated with themselves: it is not a physical turbulence scale, not a noise "
+        "floor and not a resolution criterion, and no pitch here is judged adequate or "
+        "inadequate by it (plan §8.2 R8)"
     ),
     "knots": (
         "a pair's common depth knots: the coarser participant's native gate depths in "
@@ -886,10 +925,17 @@ DEFINITIONS: dict[str, str] = {
         "not a bound on either"
     ),
     "detail": (
-        "inside the finer recording alone, so drift-free: its supported native mean "
-        "profile minus that profile sampled at the coarse knots, as RMS, peak and share "
-        "of the spatial variance; fine_variance_share_at_coarse_knots is what the coarse "
-        "knots retain (1.0 = coarsening loses nothing)"
+        "inside the finer recording alone, so drift-free: the residual of the supported native "
+        "mean profile against its nearest-coarse reconstruction (that same profile resampled at "
+        "the coarse knots by nearest native gate), as RMS and peak in mm/s. The residual "
+        "normalized by the finer profile's own variance - the normalized reconstruction-residual "
+        f"variance ({NORMALIZED_RECONSTRUCTION_RESIDUAL_VARIANCE}) - is "
+        "var(fine - nearest-coarse reconstruction) / var(fine): a ratio of one profile's variance "
+        "to itself, not an orthogonal share of spatial variance and not one term of a variance "
+        "partition. "
+        f"{COARSE_KNOT_RECONSTRUCTION_VARIANCE_RATIO} is var(fine sampled at the coarse knots) / "
+        "var(fine), the same kind of stand-alone ratio read at the knots rather than between "
+        "them, so the two are not complementary and do not sum to one"
     ),
     "replicates": (
         "no profile and no gate is an independent experimental replicate: the levels carry no "
@@ -912,8 +958,8 @@ DEFINITIONS: dict[str, str] = {
     ),
     "depth_view": (
         "each level on its own decoded gate grid, restricted to the common physical "
-        "support; gradient and correlation length are native-grid quantities and nothing "
-        "is upsampled in this report"
+        "support; the gradient and the descriptive profile autocorrelation scale are "
+        "native-grid quantities and nothing is upsampled in this report"
     ),
 }
 
@@ -932,23 +978,23 @@ REPLICATE_ROLE = (
 #: between the provenance document and the figure caption.
 _FOCUS_VERDICT = (
     "Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - "
-    "both the level difference and the structure the extra gates add sit inside the "
-    "repeat-plus-drift screening_threshold, so this evidence cannot support that claim; it "
-    "equally cannot exclude a real effect smaller than the bound, which one "
-    "same-settings repeat cannot resolve."
+    "both the level difference and the normalized reconstruction-residual variance the extra "
+    "gates leave sit inside the repeat-plus-drift screening_threshold, so this evidence cannot "
+    "support that claim; it equally cannot exclude a real effect smaller than that observed "
+    "discrepancy, which one same-settings repeat cannot resolve."
 )
 _COARSEST_VERDICT = (
-    "On this evidence the coarsest *measured* pitch preserves the structure the finer "
-    "pitches show, and no measured pitch is shown to lose it - a statement about the "
-    "13 recorded pitches only: nothing finer or coarser was measured, and a resolution "
-    "effect smaller than the drift-inclusive screening_threshold would be invisible here."
+    "On this evidence no measured pitch is shown to lose structure the finer pitches show - a "
+    "statement about the 13 recorded pitches only: nothing finer or coarser was measured, and a "
+    "difference smaller than that observed discrepancy would be invisible here."
 )
 
 #: Panels of the reviewer-visible figure.
 FIGURE_PANELS: tuple[str, ...] = (
     (
-        "native-grid spatial correlation length versus gate pitch, with the 1:1 line "
-        "where a correlation length would equal one gate"
+        "descriptive autocorrelation scale of each level's mean-removed depth profile versus "
+        "gate pitch, with the 1:1 line where that scale would equal one gate: a reading "
+        "reference, not a criterion any pitch is judged by"
     ),
     (
         "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the "
@@ -1038,8 +1084,12 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
             "max_abs_difference_depth_mm": focus.max_abs_difference_depth_mm,
             "detail_rms_mm_s": focus.fine_detail_rms_mm_s,
             "detail_max_abs_mm_s": focus.fine_detail_max_abs_mm_s,
-            "detail_variance_share": focus.fine_detail_variance_share,
-            "variance_share_at_coarse_knots": focus.fine_variance_share_at_coarse_knots,
+            NORMALIZED_RECONSTRUCTION_RESIDUAL_VARIANCE: (
+                focus.normalized_reconstruction_residual_variance
+            ),
+            COARSE_KNOT_RECONSTRUCTION_VARIANCE_RATIO: (
+                focus.coarse_knot_reconstruction_variance_ratio
+            ),
             "statement": (
                 f"Plan question: {focus.fine_label} at {focus.fine_pitch_mm:.4g} mm "
                 f"versus {focus.coarse_label} at {focus.coarse_pitch_mm:.4g} mm on "
@@ -1048,13 +1098,15 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                 f"{focus.max_abs_difference_mm_s:.4g} mm/s at "
                 f"{focus.max_abs_difference_depth_mm:.4g} mm = "
                 f"{focus.max_abs_difference_over_screening_threshold:.3g} of the {screening_threshold:.4g} "
-                f"mm/s screening_threshold, {focus.knots_above_screening_threshold} knots above it. The coarse "
-                f"knots keep {100.0 * focus.fine_variance_share_at_coarse_knots:.4g} % of "
-                f"the finer profile's spatial variance; the detail below them carries "
-                f"{100.0 * focus.fine_detail_variance_share:.3g} % (RMS "
-                f"{focus.fine_detail_rms_mm_s:.4g} mm/s, peak "
+                f"mm/s screening_threshold, {focus.knots_above_screening_threshold} knots above it. "
+                f"Normalized by the finer profile's own variance, its nearest-coarse reconstruction "
+                f"carries {focus.coarse_knot_reconstruction_variance_ratio:.4g} and the "
+                f"reconstruction residual below the knots carries "
+                f"{focus.normalized_reconstruction_residual_variance:.3g} - two stand-alone ratios "
+                f"of that variance, not an orthogonal partition of it. The residual is "
+                f"{focus.fine_detail_rms_mm_s:.4g} mm/s RMS with a peak of "
                 f"{focus.fine_detail_max_abs_mm_s:.4g} mm/s = "
-                f"{focus.fine_detail_max_abs_mm_s / screening_threshold:.3g} of the screening_threshold). "
+                f"{focus.fine_detail_max_abs_mm_s / screening_threshold:.3g} of the screening_threshold. "
                 f"{_FOCUS_VERDICT}"
             ),
         },
@@ -1068,16 +1120,16 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
             "max_abs_difference_to_any_other_level_mm_s": coarse_worst,
             "max_ratio_to_screening_threshold": coarse_ratio,
             "statement": (
-                f"Coarsest measured pitch: the native correlation length of the "
-                f"depth-resolved mean profile is {min(lengths):.4g}-{max(lengths):.4g} "
-                f"mm at every one of the {len(model.levels)} levels "
-                f"({min(units):.3g}-{max(units):.3g} gate pitches), so the structure "
-                f"lives on a scale of order tens of millimetres. "
+                f"Coarsest measured pitch: the descriptive autocorrelation scale of each "
+                f"level's mean-removed depth profile - the first lag where its normalized "
+                f"autocovariance drops to 1/e - ranges over {min(lengths):.4g}-{max(lengths):.4g} "
+                f"mm across the {len(model.levels)} levels "
+                f"({min(units):.3g}-{max(units):.3g} gate pitches). That is a description of one "
+                f"profile and not a criterion by which a pitch is judged adequate: the evidence "
+                f"for this level is its own aligned difference. "
                 f"{coarsest.requested_label} at {coarsest.pitch_mm:.4g} mm "
-                f"({coarsest.gates_in_support} supported gates) still samples it "
-                f"{coarsest.correlation_length_over_pitch:.3g} times per correlation "
-                f"length and differs from every other level by at most "
-                f"{coarse_worst:.4g} mm/s ({coarse_ratio:.3g} of the screening_threshold). "
+                f"({coarsest.gates_in_support} supported gates) differs from every other level "
+                f"by at most {coarse_worst:.4g} mm/s ({coarse_ratio:.3g} of the screening_threshold). "
                 f"{_COARSEST_VERDICT}"
             ),
         },
@@ -1167,7 +1219,8 @@ def figure_caption(model: ResolutionLadder) -> str:
         f"{model.common.nominal_rpm:g}-RPM revolutions = {model.common.window_s:.4g} s, "
         "truncated per file by the recorded timestamps. Common physical support: "
         f"{model.common.support_min_mm:.6g}-{model.common.support_max_mm:.6g} mm. "
-        "Gradients and correlation lengths are native-grid quantities; pairs use the "
+        "Gradients and the descriptive profile autocorrelation scale are native-grid "
+        "quantities; pairs use the "
         "coarser participant's own gate depths as knots (spacing = the coarser pitch) "
         "with the finer profile sampled there by nearest native gate - nothing is "
         "interpolated or upsampled. Decision "
@@ -1184,8 +1237,12 @@ def figure_caption(model: ResolutionLadder) -> str:
         f"{information['max_abs_difference_depth_mm']:.4g} mm, "
         f"{information['knots_above_screening_threshold']} of {information['knots']} knots above the "
         f"screening_threshold. Coarsest measured pitch {coarsest['pitch_mm']:.4g} mm "
-        f"({coarsest['label']}) samples the {coarsest['correlation_length_mm']:.4g} mm "
-        f"correlation length {coarsest['correlation_length_over_pitch']:.3g} times. "
+        f"({coarsest['label']}) differs from every other level by at most "
+        f"{coarsest['max_abs_difference_to_any_other_level_mm_s']:.4g} mm/s "
+        f"({coarsest['max_ratio_to_screening_threshold']:.3g} of that screening threshold); the "
+        f"descriptive autocorrelation scale of its mean-removed depth profile is "
+        f"{coarsest['correlation_length_mm']:.4g} mm, a description of one profile and not a "
+        f"criterion any pitch is judged by. "
         f"{MIXER_SETPOINT_ROLE}. {REPLICATE_ROLE}. Generated at commit "
         f"{model.analysis_commit or 'unknown'} from {model.manifest_path} "
         f"({model.manifest_sha256})."
@@ -1345,8 +1402,8 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
                 },
                 "native_grid": (
                     "each level keeps its own decoded gate grid for the distributional "
-                    "metrics, the gradient and the correlation length; no level is "
-                    "resampled to compute a native-grid quantity"
+                    "metrics, the gradient and the descriptive profile autocorrelation "
+                    "scale; no level is resampled to compute a native-grid quantity"
                 ),
             },
             "gradient": {
@@ -1360,6 +1417,12 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
                 "rule": (
                     "first lag of the normalized biased native autocovariance of the "
                     "mean-removed supported native mean profile below 1/e, in mm"
+                ),
+                "role": (
+                    "descriptive autocorrelation scale of one mean-removed depth profile: it "
+                    "describes how far one profile's own values stay correlated with themselves, "
+                    "and it is not a physical turbulence scale, not a noise floor and not a "
+                    "criterion any pitch is judged adequate by (plan §8.2 R8)"
                 ),
                 "floor": float(CORRELATION_FLOOR),
                 "lag_cap": "floor((gates_in_support - 1) / 2) gates, half the profile",
@@ -1424,11 +1487,12 @@ def render_figure(
 ) -> Path:
     """Write the two-panel resolution figure, deterministically, and return it.
 
-    Panels: the native correlation length against pitch (with the 1:1 line where a correlation length
-    would be one gate), and the plan's focus pair — both aligned profiles against depth with the
-    signed difference at the coarse knots against the WP1 screening_threshold band. The gradient spread stays in
-    ``resolution-levels.csv``. The frame is the shared writer's, so this module owns the panels only,
-    and the caption is part of the image.
+    Panels: each level's descriptive profile autocorrelation scale against pitch (with the 1:1 line
+    where that scale would equal one gate, a reading reference only), and the plan's focus pair —
+    both aligned profiles against depth with the signed difference at the coarse knots against the
+    WP1 screening_threshold band. The gradient spread stays in ``resolution-levels.csv``. The frame
+    is the shared writer's, so this module owns the panels only, and the caption is part of the
+    image.
     """
     from matplotlib.ticker import NullFormatter
 
@@ -1457,20 +1521,20 @@ def render_figure(
         )
         length_ax.xaxis.set_minor_formatter(NullFormatter())
 
-        # (1) native-grid correlation length versus pitch
+        # (1) each level's descriptive profile autocorrelation scale versus pitch
         length_ax.plot(
             pitch, [row.correlation_length_mm for row in model.levels], "o-",
             color="#1f77b4", linewidth=1.4, markersize=4,
         )
         length_ax.plot(
             pitch, pitch, ":", color="#777777", linewidth=0.9,
-            label="one gate per correlation length",
+            label="1:1 - scale equals one gate",
         )
         length_ax.set_xlabel("native gate pitch [mm]")
-        length_ax.set_ylabel("native spatial correlation length [mm]")
+        length_ax.set_ylabel("descriptive profile autocorrelation scale [mm]")
         length_ax.set_title(
-            "structure scale versus pitch\n"
-            f"1/e lag of the mean profile, native grid ({len(model.levels)} levels)",
+            "descriptive autocorrelation scale versus pitch\n"
+            f"1/e lag of each mean-removed native mean profile ({len(model.levels)} levels)",
             fontsize=9.5,
         )
         length_ax.grid(alpha=0.2)

@@ -124,6 +124,19 @@ TEMPORAL_FLOOR_CLAIM_RE = re.compile(
     re.IGNORECASE,
 )
 
+RESOLUTION_INTERPRETATION_RE = re.compile(
+    r"\bshare\s+of\s+the\s+spatial\s+variance\b"
+    r"|\bsamples?\s+(?:it\s+)?\d+(?:\.\d+)?\s+times\s+per\s+correlation\s+length\b",
+    re.IGNORECASE,
+)
+
+R7_R8_TEXT_UNITS: tuple[str, ...] = (
+    "src/udv_echo_process/analysis/resolution_ladder.py",
+    "reports/mixer-sensitivity-analysis/README.md",
+    "reports/mixer-sensitivity-analysis/decision-table.md",
+    "docs/dop3000/sparse-parameter-set.md",
+)
+
 #: The framing that keeps an outcome non-causal rather than a proof or a bound.
 NON_CAUSAL_RE = re.compile(
     r"screening|non-causal|not proof|not a proof|no proof|does not prove|do not prove|"
@@ -381,6 +394,20 @@ def _scan_line(path: str, number: int, line: str) -> list[Violation]:
                 message=(
                     "the sole pair supplies an observed same-settings temporal discrepancy, not "
                     "a statistical floor or separability criterion"
+                ),
+                excerpt=line.strip(),
+            )
+        )
+
+    if path in R7_R8_TEXT_UNITS and RESOLUTION_INTERPRETATION_RE.search(line) is not None:
+        violations.append(
+            Violation(
+                path=path,
+                line=number,
+                rule="r7-r8-resolution-interpretation",
+                message=(
+                    "name the ratio normalized reconstruction-residual variance and keep the "
+                    "profile autocorrelation scale descriptive, not an adequacy criterion"
                 ),
                 excerpt=line.strip(),
             )

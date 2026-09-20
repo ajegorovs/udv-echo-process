@@ -17,8 +17,11 @@ The tests pin the *definitions* the resolution axis must not drift on:
 - between-level comparisons use common knots no finer than the coarsest
   participating pitch, and the finer grid is *sampled* at those knots (nearest
   native gate) — never interpolated, never upsampled;
-- gradients and the spatial correlation length are computed on each native grid
-  before any alignment;
+- gradients and the descriptive profile autocorrelation scale are computed on each
+  native grid before any alignment, and R7's residual is named a normalized
+  reconstruction-residual variance (``var(fine - nearest-coarse reconstruction) /
+  var(fine)``) rather than a partition of the profile's spatial variance; R8 keeps
+  the autocorrelation scale descriptive and refuses to judge a pitch by it;
 - every effect is stated against the committed WP1 repeatability screening_threshold read
   from ``reference-repeat.provenance.json``, and the focus pair is the plan's own
   0.247 mm vs 0.617 mm question, selected by pitch from the manifest.
@@ -830,8 +833,8 @@ def test_the_focus_pair_is_the_plan_s_0_247_mm_versus_0_617_mm_question(ladder) 
     assert row.fine_detail_rms_mm_s < row.max_abs_difference_mm_s
     assert row.fine_detail_rms_mm_s < ENVELOPE_MM_S
     assert row.fine_detail_max_abs_mm_s < ENVELOPE_MM_S
-    assert 0.9 < row.fine_variance_share_at_coarse_knots < 1.1
-    assert row.fine_detail_variance_share < 0.01
+    assert 0.9 < row.coarse_knot_reconstruction_variance_ratio < 1.1
+    assert row.normalized_reconstruction_residual_variance < 0.01
 
 
 def test_no_measured_level_pair_clears_the_screening_threshold(ladder) -> None:
@@ -1156,7 +1159,13 @@ def test_cli_refuses_a_stale_manifest_and_writes_nothing(tmp_path, capsys) -> No
 
 
 def test_committed_artefacts_match_a_regeneration(tmp_path) -> None:
-    """The reviewer-visible WP2 artefacts are exactly what the command produces."""
+    """The reviewer-visible WP2 artefacts are exactly what the command produces.
+
+    R7 renamed the pair table's residual field and R8 reworded the resolution prose, so the
+    committed bytes are stale until their owning generator regenerates them. Plan §8.5 regenerates
+    generated outputs in the coordinator's integration, never inside a delegated worktree, so this
+    check reports an expected failure until then and passes strictly once they are regenerated.
+    """
     from udv_echo_process.analysis.resolution_ladder import (
         FIGURE_NAME,
         FIGURES_DIRNAME,
@@ -1165,6 +1174,13 @@ def test_committed_artefacts_match_a_regeneration(tmp_path) -> None:
         PROVENANCE_NAME,
         write_resolution_ladder,
     )
+
+    header = (REPORT_DIR / PAIRS_NAME).read_text(encoding="utf-8").splitlines()[0]
+    if RESIDUAL_FIELD not in header:
+        pytest.xfail(
+            f"the committed {PAIRS_NAME} predates the R7 rename ({RESIDUAL_FIELD!r} absent "
+            "from its header); its owning generator regenerates it (plan §8.5)"
+        )
 
     committed = {
         "levels": REPORT_DIR / LEVELS_NAME,
@@ -1578,3 +1594,253 @@ def test_the_realization_prose_separates_the_duplicated_reference_setting_from_a
     # ... and the duplication is named as one repeated setting, explicitly not replication.
     assert re.search(r"not replicated coverage", joined, re.IGNORECASE), joined
     assert "reference setting" in joined
+
+
+# ── slice 8: the R7/R8 interpretation cleanup (plan §8.3 step 6) ─────────────
+
+#: R7's live name of the resolution residual and the companion ratio (plan §8.2 R7). The residual
+#: is ``var(fine - nearest-coarse reconstruction) / var(fine)``; the companion is the same kind of
+#: stand-alone ratio read *at* the coarse knots instead of between them. Neither is one term of an
+#: orthogonal partition of the finer profile's variance.
+RESIDUAL_FIELD = "normalized_reconstruction_residual_variance"
+COARSE_KNOT_RATIO_FIELD = "coarse_knot_reconstruction_variance_ratio"
+#: The exact R7 schema migration of ``resolution-pairs.csv``: retired field name -> live field name.
+R7_FIELD_RENAME = {
+    "fine_detail_variance_share": RESIDUAL_FIELD,
+    "fine_variance_share_at_coarse_knots": COARSE_KNOT_RATIO_FIELD,
+}
+#: A positive variance-partition claim. R7's own negation ("not an orthogonal share of spatial
+#: variance") is the correction's wording and is allowed; a bare claim is not.
+PARTITION_CLAIM_RE = re.compile(
+    r"variance[_ ]share|share of (?:the )?(?:finer profile's )?spatial variance|"
+    r"variance partition|partition of (?:the )?(?:spatial )?variance",
+    re.IGNORECASE,
+)
+#: A positive claim that the profile autocorrelation scale is physical or is a resolution criterion.
+CORRELATION_OVERCLAIM_RE = re.compile(
+    r"physical turbulence scale|turbulence (?:scale|length)|eddy scale|"
+    r"resolution criterion|resolution requirement|"
+    r"per correlation length",
+    re.IGNORECASE,
+)
+#: The clause boundaries of the wording checks, and the widest window they look back through.
+_CLAUSE_SEPARATORS = (".", ";")
+_CLAUSE_WINDOW = 200
+_NEGATION_RE = re.compile(
+    r"\b(?:not|never|neither|nor|without|cannot|isn't|are not)\b", re.IGNORECASE
+)
+
+
+def _positive_hits(pattern: re.Pattern[str], text: str) -> list[str]:
+    """The matches of ``pattern`` that no explicit negation in their own clause rules out.
+
+    The window is the clause carrying the match, capped in width: R7/R8 are corrections that must
+    be allowed to say what a quantity is *not*, while a bare positive claim is a violation.
+    """
+    hits: list[str] = []
+    for match in pattern.finditer(text):
+        start = match.start()
+        window_start = max(
+            (text.rfind(separator, 0, start) for separator in _CLAUSE_SEPARATORS), default=-1
+        )
+        clause = text[max(window_start + 1, start - _CLAUSE_WINDOW) : start]
+        if _NEGATION_RE.search(clause) is not None:
+            continue
+        hits.append(match.group(0))
+    return hits
+
+
+def _r7_r8_texts(model) -> dict[str, str]:
+    """Every string a reviewer reads for this axis, plus the module's own source text.
+
+    The emitted surface (source description, definitions, views, finding statements, limitations,
+    caption, figure panels) travels beside the pair schema and the generator's source, so a rename
+    or a demotion that stops at one of them is caught wherever it stopped.
+    """
+    from udv_echo_process.analysis import resolution_ladder as module
+
+    document = module.provenance_document(model)
+    texts: dict[str, str] = dict(_reviewer_visible_prose(model))
+    texts["source.file"] = re.sub(
+        r"\s+", " ", Path(module.__file__).read_text(encoding="utf-8")
+    )
+    for index, panel in enumerate(document["figure"]["panels"]):
+        texts[f"figure.panels[{index}]"] = str(panel)
+    for name, value in document["views"].items():
+        _flatten_view(texts, f"views.{name}", value)
+    texts["columns.pairs"] = ",".join(PAIR_COLUMNS)
+    texts["columns.levels"] = ",".join(LEVEL_COLUMNS)
+    return texts
+
+
+def _flatten_view(texts: dict[str, str], where: str, value: object) -> None:
+    """One ``views`` sub-document's strings, keyed by where each sits."""
+    if isinstance(value, str):
+        texts[where] = value
+        return
+    if isinstance(value, dict):
+        for key, nested in value.items():
+            _flatten_view(texts, f"{where}.{key}", nested)
+
+
+def test_the_r7_rename_map_is_the_live_pair_schema(ladder) -> None:
+    """R7: the pair table and the pair model carry the new names and none of the retired ones."""
+    from udv_echo_process.analysis.resolution_ladder import PairRow
+
+    fields = set(PairRow.model_fields)
+    assert set(PAIR_COLUMNS) == fields
+    for retired, live in R7_FIELD_RENAME.items():
+        assert retired not in fields, retired
+        assert retired not in PAIR_COLUMNS, retired
+        assert live in fields, live
+        assert live in PAIR_COLUMNS, live
+    # The findings document publishes the same names, so the table and its provenance agree.
+    from udv_echo_process.analysis.resolution_ladder import provenance_document
+
+    information = provenance_document(ladder)["findings"]["information"]
+    for live in R7_FIELD_RENAME.values():
+        assert live in information, live
+    for retired in R7_FIELD_RENAME:
+        assert retired not in json.dumps(information), retired
+
+
+def test_the_residual_is_the_reconstruction_residual_over_the_finer_profiles_own_variance(
+    ladder, native
+) -> None:
+    """R7: ``var(fine - nearest-coarse reconstruction) / var(fine)``, derived independently."""
+    for row in ladder.pairs:
+        fine_depths, fine_mean = native[row.fine_path]
+        coarse_depths, _coarse_mean = native[row.coarse_path]
+        mask = _in_support(fine_depths)
+        native_depths, native_profile = fine_depths[mask], fine_mean[mask]
+        knots = coarse_depths[_in_support(coarse_depths)]
+        variance = float(np.var(native_profile))
+        sampled = fine_mean[nearest_gate_indices(fine_depths, knots)]
+        reconstruction = sampled[nearest_gate_indices(knots, native_depths)]
+        residual = native_profile - reconstruction
+        assert row.normalized_reconstruction_residual_variance == pytest.approx(
+            float(np.var(residual)) / variance, rel=1e-9, abs=1e-12
+        ), row.fine_path
+        assert row.coarse_knot_reconstruction_variance_ratio == pytest.approx(
+            float(np.var(sampled)) / variance, rel=1e-9, abs=1e-12
+        ), row.fine_path
+        # Both are ratios of the finer profile's *own* variance, so they are <= its scale ...
+        assert variance > 0.0
+        assert residual.size == native_profile.size
+
+
+def test_the_two_pair_ratios_are_not_an_orthogonal_partition_of_that_variance(
+    ladder, native
+) -> None:
+    """R7: the reconstruction is not orthogonal to the residual, so the ratios do not split 1."""
+    row = next(
+        r for r in ladder.pairs if (r.fine_path, r.coarse_path) == ladder.focus_pair
+    )
+    fine_depths, fine_mean = native[row.fine_path]
+    coarse_depths, _coarse_mean = native[row.coarse_path]
+    mask = _in_support(fine_depths)
+    native_depths, native_profile = fine_depths[mask], fine_mean[mask]
+    knots = coarse_depths[_in_support(coarse_depths)]
+    sampled = fine_mean[nearest_gate_indices(fine_depths, knots)]
+    reconstruction = sampled[nearest_gate_indices(knots, native_depths)]
+    residual = native_profile - reconstruction
+    variance = float(np.var(native_profile))
+    # var(fine) = var(reconstruction) + var(residual) + 2 cov(reconstruction, residual): the
+    # cross term is not zero, which is exactly why neither ratio may be read as a partition term.
+    assert float(np.var(reconstruction) + np.var(residual)) != pytest.approx(
+        variance, rel=1e-6
+    )
+    assert (
+        row.coarse_knot_reconstruction_variance_ratio
+        + row.normalized_reconstruction_residual_variance
+    ) != pytest.approx(1.0, abs=5e-3)
+
+
+def test_the_residual_is_named_and_never_presented_as_a_variance_partition(ladder) -> None:
+    """R7: the live name travels through source, schema, provenance and caption."""
+    from udv_echo_process.analysis import resolution_ladder as module
+
+    detail = module.DEFINITIONS["detail"]
+    assert "normalized reconstruction-residual variance" in detail
+    assert "var(fine - nearest-coarse reconstruction) / var(fine)" in detail
+    assert "not an orthogonal share of spatial variance" in detail
+    for where, text in _r7_r8_texts(ladder).items():
+        for retired in R7_FIELD_RENAME:
+            assert retired not in text, f"{where}: {retired}"
+        assert _positive_hits(PARTITION_CLAIM_RE, text) == [], where
+
+
+def test_the_correlation_scale_is_descriptive_and_never_a_resolution_criterion(ladder) -> None:
+    """R8: the autocorrelation scale of one mean-removed profile, demoted everywhere."""
+    from udv_echo_process.analysis import resolution_ladder as module
+
+    definition = module.DEFINITIONS["correlation_length"]
+    assert "descriptive autocorrelation scale" in definition
+    assert "mean-removed depth profile" in definition
+    assert "not a physical turbulence scale" in definition
+    assert "not a resolution criterion" in definition
+    texts = _r7_r8_texts(ladder)
+    for where, text in texts.items():
+        assert _positive_hits(CORRELATION_OVERCLAIM_RE, text) == [], where
+
+
+def test_the_coarsest_pitch_finding_rests_on_the_pair_difference(ladder) -> None:
+    """R8: the coarsest level is argued from its aligned difference, not from a scale criterion."""
+    from udv_echo_process.analysis.resolution_ladder import provenance_document
+
+    coarsest = provenance_document(ladder)["findings"]["coarsest_pitch"]
+    statement = coarsest["statement"]
+    assert "descriptive autocorrelation scale" in statement
+    assert "not a criterion by which a pitch is judged adequate" in statement
+    # The retired adequacy reading: the coarsest pitch "sampling the correlation length N times".
+    assert "samples it" not in statement
+    assert "per correlation length" not in statement
+    assert "correlation length" not in statement
+    # ... and the difference it does rest on is still published, to the same precision.
+    assert (
+        f"{coarsest['max_abs_difference_to_any_other_level_mm_s']:.4g} mm/s" in statement
+    )
+    assert f"{coarsest['max_ratio_to_screening_threshold']:.3g}" in statement
+    # The scale itself is still published as a description, so nothing was hidden.
+    assert coarsest["correlation_length_mm"] > 0.0
+    assert coarsest["correlation_length_over_pitch"] > 1.0
+
+
+def test_the_caption_demotes_the_scale_and_keeps_the_residual_out_of_a_partition(
+    ladder,
+) -> None:
+    """R7/R8 travel into the caption the figure and the provenance document both carry."""
+    from udv_echo_process.analysis.resolution_ladder import provenance_document
+
+    caption = provenance_document(ladder)["figure"]["caption"]
+    assert "descriptive autocorrelation scale" in caption
+    assert "correlation length" not in caption
+    # The retired adequacy clause: "coarsest pitch ... samples the N mm correlation length K times".
+    assert "samples the" not in caption
+    assert _positive_hits(PARTITION_CLAIM_RE, caption) == []
+    assert _positive_hits(CORRELATION_OVERCLAIM_RE, caption) == []
+
+
+def test_the_r7_r8_wording_checks_have_teeth(ladder) -> None:
+    """The wordings R7/R8 retire are caught when they are spliced back in."""
+    texts = _r7_r8_texts(ladder)
+    assert _positive_hits(PARTITION_CLAIM_RE, texts["definitions.detail"]) == []
+    assert (
+        _positive_hits(
+            PARTITION_CLAIM_RE,
+            texts["definitions.detail"].replace(
+                "not an orthogonal share", "a full orthogonal share"
+            ),
+        )
+        != []
+    )
+    # ... and the retired names themselves, wherever they reappear.
+    assert _positive_hits(PARTITION_CLAIM_RE, "the variance share of the spatial variance") != []
+    for retired, live in R7_FIELD_RENAME.items():
+        spliced = texts["columns.pairs"].replace(live, retired)
+        assert retired in spliced
+        assert _positive_hits(PARTITION_CLAIM_RE, spliced) != []
+    overclaim = (
+        texts["definitions.correlation_length"] + " That scale is a physical turbulence scale."
+    )
+    assert _positive_hits(CORRELATION_OVERCLAIM_RE, overclaim) != []
