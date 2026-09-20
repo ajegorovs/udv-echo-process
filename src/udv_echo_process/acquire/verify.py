@@ -455,8 +455,13 @@ def verify_stored_point(
     of its own derivation, and it derives from the snapped rung while the request
     is a 3-decimal display value.
 
-    Never raises: a missing file is ``ok=False`` with a reason, because a point
-    whose parameters cannot be confirmed must not read as fine.
+    Never raises on what it *reads*: a missing file is ``ok=False`` with a reason, because a point
+    whose parameters cannot be confirmed must not read as fine. The one raise is a caller error
+    rather than a file one — ``strict_covariates`` naming a fact outside
+    :data:`STRICTABLE_COVARIATES` raises ``ValueError``, because a fact no stored word can be
+    compared against must never read as enforced. The run plan that supplies the tuple refuses
+    that vocabulary before any recording (``RunPlan._check_strict_facts``), so a pass cannot
+    reach this function with one; a caller reaching it directly can.
     """
     tolerance_mm = abs(float(depth_tolerance_mm))
     mismatches: list[str] = []
