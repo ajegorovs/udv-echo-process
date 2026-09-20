@@ -296,13 +296,21 @@ Two different things, kept different in names, rows and analysis:
   **correlated**, not independent, so neither difference is a separate observation of an anchor level.
 - **Common-reference checks** are the true **reference condition** (1.850 mm x 50 gates, burst 10, emissions 20,
   power `medium`, TGC as §8.1, sensitivity `medium`) recorded **once** in each of four separate reference-only
-  jobs placed between the five scientific jobs. They are between-job checks of the one common condition, not
+  jobs whose intended execution placement is between consecutive scientific jobs (the rows encode membership and
+  count, not sequence — §8.3). They are between-job checks of the one common condition, not
   beginning/middle/end controls inside another run, and they are the direct check that the committed 19.3701 mm/s
   screening threshold transfers to the new run.
 
 The name **within-run reference controls** is **no longer** used in this table: it called both types one thing, and
 `CampaignDefinition` runs a whole campaign at one `burst_length` and one `emissions_per_profile`, so a burst-4/18
 or an emissions-8/64/128 job cannot hold a burst-10/emissions-20 point at all.
+
+**The rows and counts encode membership, run-wide compatibility, control type and count — not execution
+sequence.** The intended within-job order is a block-local control at the beginning of a run, the run's
+scientific points, one around the middle and one at the end; the intended cross-job order places a
+common-reference job between consecutive scientific jobs. The campaign runs a definition's point order literally,
+and a cross-job order cannot be expressed by one definition at all, so both orders are the
+campaign-definition/run-plan PR's to encode and test (`sparse-parameter-set.md` §3.1, §9).
 
 ### 8.4 Already satisfied by existing data vs what actually needs acquisition
 
@@ -331,7 +339,8 @@ or an emissions-8/64/128 job cannot hold a burst-10/emissions-20 point at all.
 
 Nine executable jobs under today's writers: the five scientific jobs (`burst-4`, `burst-18`, `emissions-8`,
 `emissions-64`, `emissions-128`, one per distinct run-wide value — the crossing running as one job per burst
-length and the emissions series as one job per level) and the four common-reference jobs placed between them.
+length and the emissions series as one job per level) and the four common-reference jobs whose intended placement
+is between consecutive scientific jobs.
 The first pass is **26 recordings** — 7 executable scientific recordings (CC1-CC4, E8, E64, E128), 15
 block-local controls (3 per scientific job) and 4 common-reference checks (one per common-reference job) — and
 that 26 is a coincidence of this derivation, not a preserved construction: the superseded six-job schedule

@@ -444,9 +444,18 @@ Two different controls must remain different in names, rows and analysis:
    that emissions condition itself. They are not the common reference condition and must not be screened as
    if all were burst 10 / emissions 20.
 2. **Common-reference checks** use the true reference condition (1.850 mm, 50 gates, burst 10,
-   emissions/profile 20, sensitivity medium) in separate reference-only jobs placed between scientific blocks.
-   They are between-job checks, not beginning/middle/end controls inside another run. Their placement and count
-   must be explicit machine-readable rows before a recording total is declared.
+   emissions/profile 20, sensitivity medium) in separate reference-only jobs, intended to be executed between
+   consecutive scientific jobs. They are between-job checks, not beginning/middle/end controls inside another
+   run. Their count and job identity must be explicit machine-readable rows before a recording total is declared;
+   the intended execution placement is a run-plan requirement that the row table does not encode, and it belongs
+   to the campaign-definition/run-plan PR (see §10).
+
+Neither order is expressed by the rows, and the two are different problems. **Within-job** placement — a
+block-local control at the beginning, one around the middle and one at the end of a run — is a
+definition-authoring rule, because `CampaignDefinition` executes its point order literally. **Cross-job**
+placement spans several jobs, so no single definition can carry it: the run-plan PR must add an explicit
+run-level ordering mechanism (a run plan, a job-sequence manifest or an orchestration document consumed by the
+runner or the operator workflow) and test it.
 
 The committed 19.3701 mm/s quantity remains a historical sole-pair observed-discrepancy screening reference.
 It is not automatically a pass/fail threshold for block-local controls taken at different burst or emissions

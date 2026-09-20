@@ -51,6 +51,12 @@ Everything the gate refuses is a ruling this step owns:
   text may claim the level is recorded once or that the controls do not replicate a
   condition. The two burst jobs are deliberately not repeats — their controls stay
   at the 1.850 mm / 50-gate anchor while CC1-CC4 move resolution and gate count.
+- **§10 — the common-reference rules prove the jobs, not their sequence.** Four
+  distinct reference-only jobs are required for the five scientific jobs and each
+  carries one recording of the reference condition. Their intended execution placement
+  between consecutive scientific jobs, and the beginning/middle/end placement a job's
+  block-local controls are meant to occupy, are run-plan requirements that this row
+  table does not encode — the campaign-definition/run-plan PR owns them.
 - **Counts.** The declared counts must equal the counts derived from the rows, no
   count may be asserted in prose without agreeing with them, and the two
   documents' rows must be identical, so neither count nor row set can drift while
@@ -193,8 +199,11 @@ COMMON_REFERENCE_BLOCK = "common-reference"
 #: The job marker of a row that belongs to no executable job (the blocked D1).
 BLOCKED_JOB = "none"
 
-#: One common-reference job sits between each pair of scientific jobs, and each
-#: carries exactly one recording of the reference condition.
+#: §10: four distinct common-reference jobs are required for the five scientific jobs
+#: — one per pair of neighbours — and each carries exactly one recording of the
+#: reference condition. Their intended execution placement between consecutive
+#: scientific jobs is a run-plan requirement: this table proves the jobs, their count
+#: and their settings, and does not encode sequence.
 COMMON_REFERENCE_RECORDINGS_PER_JOB = 1
 
 #: Every scientific job repeats its own anchor three times: beginning, middle
@@ -614,6 +623,11 @@ def _schedule_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
     common-reference check is the true reference condition and therefore lives
     in its own reference-only job, never inside a burst or emissions block; and
     the retired ``REF-CTRL | every-run`` construction is refused by name.
+
+    §10: what this proves about the common-reference jobs is that four distinct
+    reference-only jobs exist, each carrying one recording of the reference condition.
+    Their intended execution placement between consecutive scientific jobs is a
+    run-plan requirement the rows do not encode.
     """
     violations: list[Violation] = []
 
@@ -772,9 +786,11 @@ def _schedule_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
                 path,
                 "schedule-common-reference-count",
                 (
-                    "one common-reference job belongs between each pair of scientific jobs: "
-                    f"{expected_common_jobs} expected for {len(SCIENTIFIC_JOBS)} scientific "
-                    f"jobs, got {len(common_jobs)}"
+                    f"{expected_common_jobs} distinct reference-only jobs are required for "
+                    f"{len(SCIENTIFIC_JOBS)} scientific jobs, one fewer than the job count; "
+                    "their intended execution placement between consecutive scientific jobs "
+                    "is a run-plan requirement this row table does not encode; got "
+                    f"{len(common_jobs)}"
                 ),
             )
         )

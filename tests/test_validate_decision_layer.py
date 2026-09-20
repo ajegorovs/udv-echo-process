@@ -10,8 +10,8 @@ executable as written:
   ``emissions-64``, ``emissions-128``) each repeat their **own** anchor as
   three block-local controls at that job's run-wide values;
 - the true reference condition occurs only in **four separate
-  common-reference jobs** placed between the scientific jobs, never inside a
-  non-reference block;
+  common-reference jobs**, intended to be executed between the scientific jobs and
+  never inside a non-reference block;
 - D1 is scientifically selected at the operator-approved sensitivity ``high``
   (read from the application's own dropdown, then restored without recording),
   is **blocked** and belongs to no executable job, so it can enter no
@@ -94,9 +94,11 @@ ROW_COLUMNS: tuple[str, ...] = (
 _REFERENCE_SENSITIVITY = "medium"
 _D1_SENSITIVITY = "high"
 
-#: The canonical WP4 rows, in execution order: five scientific jobs each with
-#: their own block-local controls, four common-reference jobs between them, and
-#: the blocked D1 diagnostic that belongs to no executable job.
+#: The canonical WP4 rows: five scientific jobs each with their own block-local
+#: controls, four common-reference jobs, and the blocked D1 diagnostic that belongs to
+#: no executable job. The table lists them block by block — it encodes membership,
+#: settings and counts, not execution sequence (the intended run order is the run
+#: plan's, §10).
 _ROWS = (
     ("CC1", "unique-condition", "burst-4", "burst-4", "none", "0.617", "145", "4", "20", "medium", "no", "yes", "1"),
     ("CC3", "unique-condition", "burst-4", "burst-4", "none", "2.960", "31", "4", "20", "medium", "no", "yes", "1"),
@@ -163,8 +165,8 @@ def _canonical_prose() -> str:
         "The quantity is the sole-pair observed-discrepancy screening threshold.\n"
         "Each scientific job repeats its own anchor as block-local controls at the beginning, "
         "middle and end of its run; their adjacent differences are correlated.\n"
-        "The four common-reference checks sit in separate reference-only jobs between the "
-        "scientific jobs.\n"
+        "The four common-reference checks sit in separate reference-only jobs, intended to "
+        "run between the scientific jobs.\n"
         "one duplicated setting is not replicated axis coverage.\n"
     )
 
@@ -353,7 +355,7 @@ def test_every_scientific_job_carries_three_block_local_controls(tool):
     assert "schedule-block-local-count" in rules_of(violations)
 
 
-def test_one_common_reference_job_sits_between_each_scientific_pair(tool):
+def test_four_distinct_common_reference_jobs_are_required_for_five_scientific_jobs(tool):
     dropped = _without(_ROWS, "CR4")
     violations = tool.scan_document(_document(rows=dropped), tool.SPARSE_SET)
     assert "schedule-common-reference-count" in rules_of(violations)

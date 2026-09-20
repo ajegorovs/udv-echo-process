@@ -84,7 +84,7 @@ condition, it does not replicate a level, so no committed verdict is replicated 
    dropout/spread it cannot attribute, and echo SNR, receiver saturation, a safe plateau and acoustic energy
    are not measurable in the committed files at all.
 6. **Block-local controls at the beginning, middle and end of each scientific run, four separate
-   common-reference jobs placed between the five scientific jobs, and no Cartesian product.** The only
+   common-reference jobs intended to run between the five scientific jobs, and no Cartesian product.** The only
    committed same-settings repeat is one pair, which is why every verdict in the decision table is screened
    rather than replicated. The crossing below is **2 pitches x 2 burst levels = 4 cells**; no other axis
    moves in any condition.
@@ -129,6 +129,13 @@ Every column is machine-readable:
 
 The fixed facts of §1 hold in every row; only the columns shown move. "§1" means every fixed fact of §1.
 
+**These rows encode membership, run-wide compatibility, control type and counts — not execution sequence.** The
+intended within-job order is a block-local control at the beginning of the run, the block's scientific points, a
+block-local control around the middle and one at the end; the intended cross-job order places one
+common-reference job between consecutive scientific jobs. Neither is proved by this table: the campaign runs a
+definition's point order literally, and a cross-job order cannot be expressed by a single definition at all, so
+the campaign-definition/run-plan PR must encode and test both (§6, §9).
+
 **Why the crossing exists.** The resolution and burst ladders intersect **only at the reference**, so the
 pitch x burst interaction is not estimable from the committed set at all. CC1-CC4 are the four corners that
 make it estimable: each one completes a 2x2 whose other three corners are already committed
@@ -168,7 +175,8 @@ schedule answers it with two different things that have to stay different in nam
   reference itself: the four reference-only jobs carry one acquisition each, and §1's two committed
   realizations are the same condition.
 - **Common-reference checks** are the true reference condition (§1) recorded **once** in each of four
-  separate reference-only jobs placed between the five scientific jobs. They are between-job checks of the
+  separate reference-only jobs whose intended execution placement is between consecutive scientific jobs — an
+  ordering requirement the rows do not encode (§3.1). They are between-job checks of the
   one common condition, not beginning/middle/end controls inside another run, and §3.1's `common-reference`
   block, job and control kind say so in machine-readable form.
 
@@ -196,7 +204,8 @@ whose declared value disagrees.
 
 Nine executable jobs under today's writers: the five scientific jobs (`burst-4`, `burst-18`,
 `emissions-8`, `emissions-64`, `emissions-128`, one per distinct run-wide value) and the four
-common-reference jobs placed between them. The first pass is **26 recordings** — 7 executable scientific
+common-reference jobs whose intended placement is between consecutive scientific jobs. The first pass is
+**26 recordings** — 7 executable scientific
 recordings (CC1-CC4, E8, E64, E128), 15 block-local controls (3 per scientific job) and 4
 common-reference checks (one per common-reference job) — and that 26 is a coincidence of this derivation,
 never a preserved construction: the superseded six-job schedule reached the same number by placing three
