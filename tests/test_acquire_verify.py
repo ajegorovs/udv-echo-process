@@ -921,3 +921,62 @@ def test_the_stored_depth_is_the_last_gates_depth_not_the_window_end(
     )
     result = verify_stored_point(path, params, 1)
     assert result.ok, result.mismatches
+
+
+# --------------------------------------------------------------------------- #
+# The declared frame: the chain runs from the dialog's number to a stored file.
+# --------------------------------------------------------------------------- #
+
+#: The first gate the pass actually declares — the number the dialog can state (it is integer-only).
+DECLARED_FIRST_GATE_MM = 10.0
+
+#: (file, resolution_mm, gates, the last gate that declaration predicts, the word the file stores).
+DECLARED_FRAME_CASES = (
+    ("res/1-8.BDD", 1.85, 50, 100.65, 101),
+    ("res/3-0.BDD", 2.96, 31, 98.8, 99),
+    ("res/0-6.BDD", 0.617, 145, 98.8, 99),
+)
+
+
+@pytest.mark.parametrize(
+    ("relative", "resolution_mm", "gates", "predicted_last_gate_mm", "stored_depth_mm"),
+    DECLARED_FRAME_CASES,
+)
+def test_the_declared_first_gate_verifies_the_committed_windows(
+    relative: str,
+    resolution_mm: float,
+    gates: int,
+    predicted_last_gate_mm: float,
+    stored_depth_mm: int,
+) -> None:
+    """The declaration the dialog can state still verifies the files recorded under it.
+
+    The pass declares ``10.0`` mm because that is the number the ``Operating parameters`` dialog
+    states. The cross-check that matters is downstream, and this is it: files the sweep recorded
+    under that setting verify through the corrected last-gate law, so the chain closes end to end —
+    request 10 mm, the pass's own gate count and rung, the file's word 2, the law, accepted geometry.
+
+    The declaration is deliberately *not* what pins the law: predicting the window end at 1.85 mm
+    x 50 gives 102.5 mm against this sweep's 101, exactly the 1.5 mm tolerance, and at 0.617 mm it
+    stays well inside it. The case above, at the frame the files' own depths imply, is the one that
+    separates the two forms — 2 of these 3 rungs do it there.
+    """
+    path = MIXER_SWEEP / relative
+    facts = read_words(path, 1)
+
+    assert (facts.gates, facts.resolution_mm) == (gates, pytest.approx(resolution_mm, abs=5e-3))
+    assert facts.sound_speed_ms == 1480.0
+
+    predicted = DECLARED_FIRST_GATE_MM + (gates - 1) * facts.resolution_mm
+    assert predicted == pytest.approx(predicted_last_gate_mm, abs=1e-6)
+    assert facts.depth_mm == stored_depth_mm
+    assert abs(predicted - facts.depth_mm) <= 1.5
+
+    params = ParameterSet(
+        sound_speed_ms=1480.0,
+        first_gate_mm=DECLARED_FIRST_GATE_MM,
+        resolution_mm=resolution_mm,
+        gates=gates,
+    )
+    result = verify_stored_point(path, params, 1)
+    assert result.ok, result.mismatches
