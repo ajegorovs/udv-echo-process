@@ -16,6 +16,12 @@ executable as written:
   (read from the application's own dropdown, then restored without recording),
   is **blocked** and belongs to no executable job, so it can enter no
   executable total;
+- §10 derives the same-setting repeats from the rows themselves — each of the
+  three one-condition emissions jobs (E8, E64, E128) carries a block-local
+  control at the designated row's own resolution, gates and sensitivity, so that
+  level is acquired four times in one run — and refuses prose that denies them,
+  while the two burst jobs, whose controls stay at 1.850 mm / 50 gates, stay
+  clear of the rule;
 - the retired ``REF-CTRL | every-run`` construction — a reference control in
   every run — is refused outright, and no count may be declared in prose
   without agreeing with the rows.
@@ -439,6 +445,80 @@ def test_a_missing_table_is_a_schema_failure(tool):
 
 
 # --------------------------------------------------------------------------- #
+# §10 — the same-setting repeats the rows derive
+# --------------------------------------------------------------------------- #
+
+
+def test_the_repeated_realizations_are_the_three_emissions_levels(tool):
+    rows = tool.parse_rows(_document(), tool.SPARSE_SET)
+    assert tool.repeated_realizations(rows) == {
+        "E8": ("emissions-8-CTRL",),
+        "E64": ("emissions-64-CTRL",),
+        "E128": ("emissions-128-CTRL",),
+    }
+    # … and nothing for the burst blocks: their controls stay at the anchor while
+    # CC1-CC4 move resolution and gate count.
+    for condition_id in ("CC1", "CC2", "CC3", "CC4", "D1"):
+        assert condition_id not in tool.repeated_realizations(rows)
+
+
+def test_the_repeat_vocabulary_is_the_shared_singular_realization_vocabulary(tool):
+    # The claims list is shared, not copied: a silent second copy is the defect.
+    from udv_echo_process.analysis._native_grid import SINGULAR_REALIZATION_CLAIMS
+
+    assert tool.REALIZATION_FIELDS == ("resolution_mm", "gates", "sensitivity")
+    assert (
+        tool.REPEATED_REALIZATION_CLAIMS[: len(SINGULAR_REALIZATION_CLAIMS)]
+        == SINGULAR_REALIZATION_CLAIMS
+    )
+
+
+def test_a_singular_recording_claim_where_the_rows_repeat_is_refused(tool):
+    prose = "The axis stays one recording per level.\n" + _canonical_prose()
+    violations = tool.scan_document(_document(prose=prose), tool.SPARSE_SET)
+    assert "schedule-repeated-realization-prose" in rules_of(violations)
+    messages = [
+        violation.message
+        for violation in violations
+        if violation.rule == "schedule-repeated-realization-prose"
+    ]
+    # One violation per derived repeat: the three emissions conditions are named.
+    assert len(messages) == 3
+    message = next(message for message in messages if message.startswith("E8: "))
+    assert "emissions-8-CTRL" in message
+    assert "resolution_mm, gates, sensitivity" in message
+    assert "'one recording per level'" in message
+
+
+def test_a_control_denial_is_not_suppressed_as_a_negation(tool):
+    prose = (
+        "The block-local controls screen drift within a run; they do not replicate a "
+        "condition.\n" + _canonical_prose()
+    )
+    violations = tool.scan_document(_document(prose=prose), tool.SPARSE_SET)
+    assert "schedule-repeated-realization-prose" in rules_of(violations)
+    assert any(
+        violation.message.startswith("E64: ") and "emissions-64-CTRL" in violation.message
+        for violation in violations
+    )
+
+
+def test_the_claim_survives_when_no_control_shares_the_condition_settings(tool):
+    rows = _ROWS
+    for row_id in ("emissions-8-CTRL", "emissions-64-CTRL", "emissions-128-CTRL"):
+        rows = _set(rows, row_id, sensitivity="high")
+    assert tool.repeated_realizations(tool.parse_rows(_document(rows=rows), tool.SPARSE_SET)) == {}
+    for claim in (
+        "The axis stays one recording per level.\n",
+        "They do not replicate a condition.\n",
+    ):
+        violations = tool.scan_document(
+            _document(rows=rows, prose=claim + _canonical_prose()), tool.SPARSE_SET
+        )
+        assert "schedule-repeated-realization-prose" not in rules_of(violations), claim
+
+
+# --------------------------------------------------------------------------- #
 # the rule engine's prose rules, unchanged by the schedule
 # --------------------------------------------------------------------------- #
 
@@ -535,6 +615,23 @@ def test_the_two_documents_are_the_decision_layer(tool):
 
 def test_the_committed_tree_passes_the_check(tool):
     """The redesign is the fix: every violation the validator names is ruled on here."""
+    violations = tool.check_repository(REPO)
+    assert violations == [], "\n".join(
+        f"{violation.path}:{violation.line}: {violation.rule}: {violation.message}"
+        for violation in violations
+    )
+
+
+def test_the_corrected_tree_denies_no_repeat_its_rows_derive(tool):
+    """§10's integration case: the corrected documents must come back with nothing.
+
+    The two documents are corrected in the same round as this rule, so this is the
+    gate on that correction, not on the rule's own unit behaviour.
+    """
+    decision = tool.parse_rows(
+        (REPO / tool.DECISION_TABLE).read_text(encoding="utf-8"), tool.DECISION_TABLE
+    )
+    assert set(tool.repeated_realizations(decision)) == {"E8", "E64", "E128"}
     violations = tool.check_repository(REPO)
     assert violations == [], "\n".join(
         f"{violation.path}:{violation.line}: {violation.rule}: {violation.message}"

@@ -44,6 +44,13 @@ Everything the gate refuses is a ruling this step owns:
   differ from the reference sensitivity, equal the operator-approved value read
   from the application's own dialog (``high``, restored without recording), carry
   no executable job, and enter no executable total.
+- **§10 — a same-setting repeat is named, not denied.** Each of the three
+  one-condition emissions jobs carries a block-local control at the designated
+  scientific row's *own* resolution, gates and sensitivity, so E8, E64 and E128 are
+  acquired four times inside one run; where the rows derive such a repeat, no live
+  text may claim the level is recorded once or that the controls do not replicate a
+  condition. The two burst jobs are deliberately not repeats — their controls stay
+  at the 1.850 mm / 50-gate anchor while CC1-CC4 move resolution and gate count.
 - **Counts.** The declared counts must equal the counts derived from the rows, no
   count may be asserted in prose without agreeing with them, and the two
   documents' rows must be identical, so neither count nor row set can drift while
@@ -66,6 +73,11 @@ import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+# The tool is stdlib-only apart from this one shared vocabulary: the singular-coverage
+# claims are the same list the four analysis modules already consume, so importing it
+# keeps a single definition of the banned prose instead of a silent second copy.
+from udv_echo_process.analysis._native_grid import SINGULAR_REALIZATION_CLAIMS
 
 #: Repository root, from this file's own location (``tools/`` is one level down).
 REPO = Path(__file__).resolve().parents[1]
@@ -192,6 +204,25 @@ BLOCK_LOCAL_CONTROLS_PER_JOB = 3
 #: The run-wide fields ``CampaignDefinition`` fixes once per campaign, so every
 #: row of one job must agree on them.
 RUN_WIDE_FIELDS: tuple[str, ...] = ("burst_cycles", "emissions_per_profile")
+
+#: §10: the scientific settings a designated scientific row and a block-local control
+#: must agree on for that control to be an additional realization of the same
+#: condition. ``burst_cycles`` and ``emissions_per_profile`` are *not* in the list:
+#: they are run-wide, and :func:`_schedule_rules` already refuses a job whose rows
+#: disagree on them, so a same-setting repeat is decided by the point settings alone.
+REALIZATION_FIELDS: tuple[str, ...] = ("resolution_mm", "gates", "sensitivity")
+
+#: §10: the claims that can contradict a row-derived repeat. The shared
+#: :data:`SINGULAR_REALIZATION_CLAIMS` vocabulary is the one the analysis modules
+#: already consume; the additions are the control-denial forms the decision documents
+#: use. Deliberately narrow — no global ban on the word "replicate", because the
+#: corrected prose legitimately says "not independent run-level replication".
+REPEATED_REALIZATION_CLAIMS: tuple[re.Pattern[str], ...] = SINGULAR_REALIZATION_CLAIMS + (
+    re.compile(r"\bone recording per condition\b", re.IGNORECASE),
+    re.compile(r"\bcontrols? do not (?:replicate|repeat)\b", re.IGNORECASE),
+    re.compile(r"\bdo not replicate a condition\b", re.IGNORECASE),
+    re.compile(r"\bis still one recording\b", re.IGNORECASE),
+)
 
 #: The superseded schedule construction: a reference control in every run.
 RETIRED_CONTROL_ID = "REF-CTRL"
@@ -522,6 +553,34 @@ def compute_counts(rows: tuple[Row, ...]) -> dict[str, int]:
         + block_local_recordings
         + common_reference_recordings,
     }
+
+
+def repeated_realizations(rows: tuple[Row, ...]) -> dict[str, tuple[str, ...]]:
+    """§10 — designated scientific rows that a block-local control re-acquires at
+    identical settings.
+
+    A block-local control repeats its own job's anchor at that job's run-wide values,
+    so for a one-condition emissions job the control lands on the designated
+    scientific row's own point settings: that level is then acquired once per control
+    recording as well as once for the condition. The burst jobs are deliberately not
+    repeats — their controls stay at 1.850 mm / 50 gates while CC1-CC4 move resolution
+    and gate count — so the comparison is per job and on :data:`REALIZATION_FIELDS`.
+    """
+    repeated: dict[str, tuple[str, ...]] = {}
+    for row in rows:
+        if row.kind != CONDITION_KIND:
+            continue
+        settings = tuple(getattr(row, field) for field in REALIZATION_FIELDS)
+        controls = sorted(
+            other.id
+            for other in rows
+            if other.job == row.job
+            and other.kind == BLOCK_LOCAL_KIND
+            and tuple(getattr(other, field) for field in REALIZATION_FIELDS) == settings
+        )
+        if controls:
+            repeated[row.id] = tuple(controls)
+    return repeated
 
 
 # --------------------------------------------------------------------------- #
@@ -933,6 +992,52 @@ def _row_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
     return violations
 
 
+def _repeated_realization_rules(
+    rows: tuple[Row, ...], text: str, path: str
+) -> list[Violation]:
+    """§10: prose may not deny the same-setting repeats the rows themselves derive.
+
+    The rule is row-derived from end to end: when :func:`repeated_realizations` finds
+    no block-local control that re-acquires a designated scientific row's settings,
+    not one line of the document is read; when it does, a singular-coverage claim is a
+    contradiction of the schedule, and each hit is reported once per derived repeat so
+    every condition and every control recording behind it is named.
+
+    The patterns are deliberately *not* routed through :func:`_negated`: the
+    control-denial form ("the controls do not replicate a condition") is itself a
+    negation, so :func:`_negated` would suppress the very claim this rule exists to
+    catch. That is why the vocabulary is narrow instead — the corrected prose may say
+    "not independent run-level replication" without being refused.
+    """
+    repeated = repeated_realizations(rows)
+    if not repeated:
+        return []
+    fields = ", ".join(REALIZATION_FIELDS)
+    violations: list[Violation] = []
+    for number, line in enumerate(text.splitlines(), start=1):
+        for pattern in REPEATED_REALIZATION_CLAIMS:
+            match = pattern.search(line)
+            if match is None:
+                continue
+            for condition_id, control_ids in sorted(repeated.items()):
+                controls = ", ".join(control_ids)
+                violations.append(
+                    Violation(
+                        path=path,
+                        line=number,
+                        rule="schedule-repeated-realization-prose",
+                        message=(
+                            f"{condition_id}: the rows make this condition a repeated "
+                            f"realization — the block-local control(s) {controls} re-acquire "
+                            f"it at identical {fields} — so {match.group(0)!r} contradicts "
+                            "the schedule §10 derives"
+                        ),
+                        excerpt=line.strip()[:200],
+                    )
+                )
+    return violations
+
+
 def _count_rules(
     rows: tuple[Row, ...], counts: dict[str, int], path: str
 ) -> list[Violation]:
@@ -1155,7 +1260,11 @@ def _text_rules(text: str, path: str) -> list[Violation]:
 
 
 def scan_document(text: str, path: str) -> list[Violation]:
-    """Every R1/R2/R3/R7/R9 and WP4 schedule violation in one document's text."""
+    """Every R1/R2/R3/R7/R9 and WP4 schedule violation in one document's text.
+
+    ``check_repository`` reaches the §10 row-derived rule through this per-document
+    entry point, so both callers see the same rules.
+    """
     violations: list[Violation] = []
     try:
         rows = parse_rows(text, path)
@@ -1171,6 +1280,7 @@ def scan_document(text: str, path: str) -> list[Violation]:
             )
         ]
     violations.extend(_row_rules(rows, path))
+    violations.extend(_repeated_realization_rules(rows, text, path))
     violations.extend(_count_rules(rows, counts, path))
     violations.extend(_prose_total_rules(text, compute_counts(rows), path))
     violations.extend(_text_rules(text, path))

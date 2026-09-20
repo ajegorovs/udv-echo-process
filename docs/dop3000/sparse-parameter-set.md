@@ -152,13 +152,21 @@ The single committed repeat is why every verdict in the decision table is a scre
 schedule answers it with two different things that have to stay different in names, rows and analysis:
 
 - **Block-local controls** repeat each scientific job's **own anchor** at that job's run-wide burst and
-  emissions values: three recordings at the beginning, middle and end of the run. For the two burst blocks
-  the anchor is the reference spatial window (1.850 mm, 50 gates) held at burst 4 or 18; for a
-  one-condition emissions block the repeats are repetitions of that emissions condition itself. They
-  diagnose within-block drift only, and **none of them is the common reference condition**: they are never
+  emissions values: three recordings at the beginning, middle and end of the run. For the two burst blocks the
+  anchor is the reference spatial window (1.850 mm, 50 gates) held at burst 4 or 18 — the conditions the
+  committed sweep already holds as `burst_len/4.BDD` and `burst_len/18.BDD` — so those controls are **not**
+  duplicates of CC1-CC4, which move resolution and gate count: they are new realizations of an already-measured
+  condition, acquired inside the new run. For a one-condition emissions block the three repeats carry **exactly
+  the same settings as that block's designated scientific row**, so E8, E64 and E128 are each acquired **four
+  times inside one run** (1 designated scientific acquisition + 3 block-local acquisitions). That is within-run
+  repeated measurement of each level, never independent run-level replication of the emissions axis, because
+  each level is confined to its own run. They diagnose within-block drift only, and **none of them is the common
+  reference condition**: they are never
   screened as if every one were burst 10 / emissions 20. Their two **adjacent** differences (beginning→middle
   and middle→end) share the middle recording and are **correlated**, so neither is a separate observation of
-  an anchor level.
+  an anchor level. The only condition the first pass observes in more than one distinct run is the common
+  reference itself: the four reference-only jobs carry one acquisition each, and §1's two committed
+  realizations are the same condition.
 - **Common-reference checks** are the true reference condition (§1) recorded **once** in each of four
   separate reference-only jobs placed between the five scientific jobs. They are between-job checks of the
   one common condition, not beginning/middle/end controls inside another run, and §3.1's `common-reference`
@@ -192,7 +200,10 @@ common-reference jobs placed between them. The first pass is **26 recordings** �
 recordings (CC1-CC4, E8, E64, E128), 15 block-local controls (3 per scientific job) and 4
 common-reference checks (one per common-reference job) — and that 26 is a coincidence of this derivation,
 never a preserved construction: the superseded six-job schedule reached the same number by placing three
-reference-condition recordings inside every run, which today's writers cannot execute. D1 is the eighth
+reference-condition recordings inside every run, which today's writers cannot execute. Nine of the 15
+block-local recordings re-acquire the same condition as their own block's designated scientific row (3 each in
+the E8, E64 and E128 jobs); the other six re-acquire the already-committed burst-4 and burst-18 anchors at the
+reference spatial window. D1 is the eighth
 unique condition and the one blocked condition: it is counted as scientifically selected and in no
 executable total.
 
@@ -204,11 +215,15 @@ E20, in the order **E8, E20 (reference), E64, E128** — the second of the two a
 allows. E128 is an ordinary sparse point of the same series, acquired with E8 and E64; the design makes every
 condition unconditional.
 
-**No E20-to-E64 displacement is called a plateau test.** A single recording per level against one reference
-cannot decide whether an axis has levelled off, and the corrected grouped evidence shows no committed
-variation of this axis at all, so the design does not attempt one. What the four points do give is a
-four-level series whose shape is read only against the block-local controls of the same run; the axis stays
-one recording per level, and those controls screen drift within a run — they do not replicate a condition.
+**No E20-to-E64 displacement is called a plateau test.** Each emissions level is confined to one run, so level
+and run are confounded: the within-run repeats of §3.2 characterize within-run variability at each level and are
+not independent run-level replication of the emissions-axis contrast, so a displacement between two levels cannot
+be separated from the difference between the two runs that carry them. The corrected grouped evidence shows no
+committed variation of this axis at all, so the design does not attempt a plateau test. What the four points do
+give is a four-level series whose shape is read only relative to the within-run variation each block's own
+controls measure: for E8, E64 and E128 those controls are additional realizations of that same emissions
+condition (four same-setting acquisitions inside one run each), which sharpens each level's own within-run
+measurement without making the level contrast run-independent.
 
 ### 3.5 Already satisfied by existing data vs what actually needs acquisition
 
@@ -240,7 +255,8 @@ artifact fixes either number:
   run is read.
 
 Both are properties of the run, not of the physics, and neither is a substitute for the replication the
-dataset lacks: the augmentation is still one recording per new condition.
+dataset lacks: every new condition is acquired inside a single run, and the only condition the first pass
+observes in more than one distinct run is the common reference itself.
 
 ## 5. Parameters deliberately excluded from this augmentation
 
@@ -310,10 +326,13 @@ two realizations; **one duplicated setting is not replicated axis coverage**, so
 axis evidence and no p-value is produced. Velocity only: echo SNR, receiver saturation, a safe plateau and
 acoustic energy are neither measured nor inferred. The TGC axis is screened through an unsettled
 representation, not a validated gain ladder. The pitch x burst interaction is not estimable from the
-committed set, which is exactly why CC1-CC4 are new measurements rather than a re-reading. A new condition
-with one recording is still one recording: a job's block-local controls screen drift within that run, they do
-not replicate a condition, and the common-reference jobs test the one common condition rather than replicating
-any new level.
+committed set, which is exactly why CC1-CC4 are new measurements rather than a re-reading. A condition
+acquired only inside its own run is not thereby replicated: a job's block-local controls stay inside that run —
+for E8, E64 and E128 they are three further acquisitions of that same level (four same-setting acquisitions in
+one run), and for the two burst jobs they are new realizations of the already-committed burst-4 and burst-18
+conditions — so they measure within-run repeatability without giving any new level an independent run-level
+realization. The common-reference jobs test the one common condition across separate runs rather than
+replicating any new level.
 
 ## 9. Intended outcome and next step
 
