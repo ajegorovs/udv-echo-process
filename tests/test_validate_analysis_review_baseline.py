@@ -22,8 +22,10 @@ What the tests pin:
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -193,16 +195,33 @@ def test_record_is_the_24_item_baseline(baseline):
     assert [item.path for item in hand_written] == ["decision-table.md", "README.md"]
 
 
-def test_recorded_hashes_are_the_committed_bytes(tool, baseline):
-    """Every recorded SHA-256 equals the bytes on disk."""
+def test_recorded_hashes_are_the_captured_commit_bytes(tool, baseline):
+    """Every frozen SHA-256 equals the bytes at the recorded baseline commit.
+
+    The live worktree is expected to diverge as R1-R9 land; checking it here would
+    make the full suite permanently red after the first correction. ``--check-current``
+    remains the explicit command for asking whether the worktree is still unchanged.
+    """
     assert baseline.report_dir == "reports/mixer-sensitivity-analysis"
-    missing = [item.path for item in baseline.items if not (REPO / baseline.report_dir / item.path).is_file()]
-    assert missing == []
-    mismatched = {
-        item.path: (item.sha256, tool.sha256_id(REPO / baseline.report_dir / item.path))
-        for item in baseline.items
-        if tool.sha256_id(REPO / baseline.report_dir / item.path) != item.sha256
-    }
+    mismatched = {}
+    for item in baseline.items:
+        repository_path = f"{baseline.report_dir}/{item.path}"
+        completed = subprocess.run(
+            ["git", "show", f"{baseline.captured_head}:{repository_path}"],
+            cwd=REPO,
+            check=False,
+            capture_output=True,
+        )
+        assert completed.returncode == 0, completed.stderr.decode(errors="replace")
+        captured_hashes = {
+            f"sha256:{hashlib.sha256(completed.stdout).hexdigest()}",
+            # The baseline was captured from worktree bytes on Windows with
+            # core.autocrlf=true. Markdown has no eol attribute in this tree,
+            # so its historical checkout is CRLF although the Git blob is LF.
+            f"sha256:{hashlib.sha256(completed.stdout.replace(bytes((10,)), bytes((13, 10)))).hexdigest()}",
+        }
+        if item.sha256 not in captured_hashes:
+            mismatched[item.path] = (item.sha256, sorted(captured_hashes))
     assert mismatched == {}
 
 
