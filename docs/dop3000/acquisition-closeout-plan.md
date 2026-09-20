@@ -38,7 +38,8 @@ trial's first gate off the stored file, which belongs to the ingest.
 **What runs next, in order:**
 
 1. **the review of that delta — done.** (`5946185..2f929ea`, no blocking finding; the plan is frozen for the trial.)
-2. **the operator-attended trial: step 1 `burst-4` and step 2 `common-reference-1` only**, with the gates and
+2. **the operator-attended trial — done (2026-09-20): `burst-4` and `common-reference-1` ran and all six
+   §5 gates hold**, with the gates and
    the stop condition in [`sparse-run-plan.md`](sparse-run-plan.md) §5. Its first question is not "did the
    points store" but "does each stored file still cover the ≈12 s window it was asked for" — the block cap is
    an application preference nothing here reads, and the installation once accepted a large cap while a block

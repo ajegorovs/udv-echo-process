@@ -199,6 +199,33 @@ period — then **the trial stops there**: that invalidates the 12 s protocol as
 actually raised, or a different profile period) before the remaining seven jobs are spent. Only if all
 six hold does the plan stay frozen and the remaining jobs run.
 
+**The trial ran (2026-09-20) and all six gates hold.** Step 1 `burst-4` stored five points, step 2
+`common-reference-1` one, and the pass record advanced one step per job (`--status`: 2/9 ok, next step
+3 `burst-18`). Every number below is read from the files the run produced:
+
+- **Retention (1).** 562 / 562 / 562 / 563 / 562 / 562 profiles over spans of 12.545-12.571 s — every
+  file ≥ 11.52 s usable, achieved period 22.36-22.40 ms. No truncation: §4's 12 s assumption survives,
+  and the block cap never became the limiter.
+- **The window (2).** Per point as asked, and equal to the committed set's own words: controls 50 gates /
+  rung 14 / 1.85 mm / depth 101, `cc1` 145 / rung 4 / 0.6167 / 99, `cc3` 31 / rung 23 / 2.96 / 99 —
+  burst 4, emissions 20, PRF 600, c 1480 on every one.
+- **The order and the records (3, 4).** ctrl-begin → cc1 → ctrl-mid → cc3 → ctrl-end, with CR1 placed
+  between `burst-4` and `burst-18`; job logs, job manifests and the pass run manifest written, the
+  definition fingerprint the plan's, and the resume line reporting one point to run rather than
+  re-recording.
+- **The reference condition (5).** `cr1`'s stored words equal the committed reference file's
+  (`res/1-8.BDD`) on all eight fields — 50 gates, rung 14, 1.85 mm, depth 101, c 1480, PRF 600,
+  emissions 20, burst 10.
+- **No advisory for a mandatory fact (6).** Every log entry lists `emissions_per_profile` under
+  `covariates_enforced` with an empty advisory list, so the raised fact is enforced in the stored file
+  itself; no modal or overlay was left up.
+
+Two numbers belong to the ingest rather than to the gates. The achieved period is **22.37 ms**, not the
+12.99 ms the plan assumed, so a point carries ~562 profiles rather than 924 — the per-point estimate is
+~1.6× optimistic, and the declared block cap stays conservative at either rate. And `expected_size_bytes`
+is off by up to 0.54× (`cc1`), because the size signature is calibrated on that nominal period: a number
+to recalibrate, not evidence against the files.
+
 ## 6. Using it
 
 ```text
