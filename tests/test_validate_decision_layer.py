@@ -304,6 +304,37 @@ def test_one_job_cannot_mix_its_run_wide_burst_or_emissions(tool):
         assert "schedule-run-wide-mixed" in rules_of(violations), (row_id, change)
 
 
+def test_each_scientific_job_has_its_planned_run_wide_values(tool):
+    # Mutate the whole job coherently: agreement alone is insufficient.
+    changed = _ROWS
+    for row_id in ("CC1", "CC3", "burst-4-CTRL"):
+        changed = _set(changed, row_id, burst_cycles="18")
+    assert "schedule-block-settings" in rules_of(
+        tool.scan_document(_document(rows=changed), tool.SPARSE_SET)
+    )
+
+
+def test_a_scientific_condition_must_belong_to_its_planned_block_and_job(tool):
+    rows = _set(_ROWS, "CC1", block="emissions-64")
+    assert "schedule-condition-job" in rules_of(
+        tool.scan_document(_document(rows=rows), tool.SPARSE_SET)
+    )
+
+
+def test_a_block_local_control_keeps_the_planned_anchor(tool):
+    rows = _set(_ROWS, "burst-4-CTRL", resolution_mm="0.617", gates="145")
+    assert "schedule-block-local-anchor" in rules_of(
+        tool.scan_document(_document(rows=rows), tool.SPARSE_SET)
+    )
+
+
+def test_every_non_d1_scientific_condition_stays_at_medium(tool):
+    rows = _set(_ROWS, "CC1", sensitivity="high")
+    assert "schedule-scientific-sensitivity" in rules_of(
+        tool.scan_document(_document(rows=rows), tool.SPARSE_SET)
+    )
+
+
 def test_a_block_local_control_must_belong_to_a_scientific_job(tool):
     rows = _set(_ROWS, "emissions-8-CTRL", block="common-reference", job="common-reference-3")
     violations = tool.scan_document(_document(rows=rows), tool.SPARSE_SET)
@@ -360,6 +391,9 @@ def test_d1_must_belong_to_no_executable_job(tool):
     rows = _set(_ROWS, "D1", job="burst-18")
     violations = tool.scan_document(_document(rows=rows), tool.SPARSE_SET)
     assert "d1-job" in rules_of(violations)
+
+    rows = _set(_ROWS, "D1", block="whatever")
+    assert "d1-block" in rules_of(tool.scan_document(_document(rows=rows), tool.SPARSE_SET))
 
 
 def test_a_declared_count_that_disagrees_with_the_rows_is_drift(tool):

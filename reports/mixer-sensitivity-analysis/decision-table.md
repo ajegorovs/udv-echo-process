@@ -45,7 +45,7 @@ rebound in step 8, not here:
 | `reference-repeat.provenance.json` | `b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b` | the sole-pair observed-discrepancy screening threshold, the metric definitions, both time views, the observed same-settings temporal-discrepancy curves |
 | `resolution-levels.csv` | `9a538a2b83b3a2e7c4f969aa00c2b5feb1e907c3748eb2ccfc20f4e4b87a18eb` | per-pitch distributional and native-grid spatial metrics |
 | `resolution-pairs.csv` | `0b75ef17cad20288d04fb6ace223f27a0b49691980d823a306254ca2efa330bb` | all 78 pairs: per-knot difference, knots above the screening threshold, depth ranges, sub-knot detail |
-| `resolution-ladder.provenance.json` | `6b30a17c8b74c67babf2cef7d4ed97f7f5553db5134a1414c28743170a89c8cd` | `findings.screening_threshold_gate`, `findings.information`, `findings.coarsest_pitch`, `findings.realizations`, `findings.limitations` |
+| `resolution-ladder.provenance.json` | `d257ab35d20083fd30abb82e64ecb5c1a0ec39cfb21f855860a0d52bd25a6247` | `findings.screening_threshold_gate`, `findings.information`, `findings.coarsest_pitch`, `findings.realizations`, `findings.limitations` |
 | `burst-levels.csv` | `71312af10046eac5e4e2a2d55887414ea7cf2a87b311ae4513a3894acae1b19f` | per-cycle distributional, spatial and matched-temporal metrics |
 | `burst-pairs.csv` | `6e0ba041355877245e34e10917bb5d6db40a7e8172101dc44fb214938969d720` | all 78 pairs at the shared 1.85 mm knots, including the 18-vs-20 row |
 | `burst-ladder.provenance.json` | `f0e70fe4c70a953b39c61878ee4635b17d376a619cfbc6171441f6f76fb5612c` | `findings.focus_18_vs_20`, `findings.focus_window_16_20`, `findings.knees`, `findings.temporal_bandwidth`, `findings.realizations`, `findings.limitations` |

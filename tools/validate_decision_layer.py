@@ -161,6 +161,19 @@ SCIENTIFIC_JOBS: tuple[str, ...] = (
     "emissions-64",
     "emissions-128",
 )
+SCIENTIFIC_JOB_RUN_WIDE: dict[str, tuple[str, str]] = {
+    "burst-4": ("4", "20"),
+    "burst-18": ("18", "20"),
+    "emissions-8": ("10", "8"),
+    "emissions-64": ("10", "64"),
+    "emissions-128": ("10", "128"),
+}
+CONDITION_JOBS: dict[str, str] = {
+    "CC1": "burst-4", "CC3": "burst-4",
+    "CC2": "burst-18", "CC4": "burst-18",
+    "E8": "emissions-8", "E64": "emissions-64", "E128": "emissions-128",
+}
+BLOCK_LOCAL_ANCHOR: tuple[str, str] = ("1.850", "50")
 
 #: The block and control-kind marker of a common-reference job.
 COMMON_REFERENCE_BLOCK = "common-reference"
@@ -619,6 +632,30 @@ def _schedule_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
             )
 
     scientific_jobs = set(SCIENTIFIC_JOBS)
+    for job, expected in SCIENTIFIC_JOB_RUN_WIDE.items():
+        for row in jobs.get(job, []):
+            if row.run_wide() != expected:
+                violations.append(_row(
+                    path,
+                    "schedule-block-settings",
+                    f"{row.id}: {job} requires run-wide values {expected}, got {row.run_wide()}",
+                ))
+
+    for row in rows:
+        expected_job = CONDITION_JOBS.get(row.id)
+        if expected_job is not None and (row.block != expected_job or row.job != expected_job):
+            violations.append(_row(
+                path,
+                "schedule-condition-job",
+                f"{row.id}: condition belongs to block/job {expected_job!r}, got {row.block!r}/{row.job!r}",
+            ))
+        if row.kind == CONDITION_KIND and row.id != D1_ID and row.sensitivity != REFERENCE_PARAMETERS["sensitivity"]:
+            violations.append(_row(
+                path,
+                "schedule-scientific-sensitivity",
+                f"{row.id}: every non-D1 scientific condition stays at sensitivity 'medium', got {row.sensitivity!r}",
+            ))
+
     for job in SCIENTIFIC_JOBS:
         recordings = sum(
             row.recordings
@@ -655,6 +692,12 @@ def _schedule_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
                     ),
                 )
             )
+        if is_block_local_row and (row.resolution_mm, row.gates) != BLOCK_LOCAL_ANCHOR:
+            violations.append(_row(
+                path,
+                "schedule-block-local-anchor",
+                f"{row.id}: block-local controls use the 1.850 mm / 50-gate anchor, got {row.resolution_mm}/{row.gates}",
+            ))
 
     common_jobs = sorted(
         {
@@ -881,6 +924,12 @@ def _row_rules(rows: tuple[Row, ...], path: str) -> list[Violation]:
                     ),
                 )
             )
+        if d1.block != D1_BLOCK:
+            violations.append(_row(
+                path,
+                "d1-block",
+                f"{D1_ID}: blocked diagnostic must use block {D1_BLOCK!r}, got {d1.block!r}",
+            ))
     return violations
 
 

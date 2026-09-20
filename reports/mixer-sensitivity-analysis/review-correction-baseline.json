@@ -94,7 +94,7 @@
       "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
       "revision_source": "resolution-ladder.provenance.json",
       "correction": "R8",
-      "replacement_sha256": "sha256:6b30a17c8b74c67babf2cef7d4ed97f7f5553db5134a1414c28743170a89c8cd"
+      "replacement_sha256": "sha256:d257ab35d20083fd30abb82e64ecb5c1a0ec39cfb21f855860a0d52bd25a6247"
     },
     {
       "path": "figures/resolution-ladder.png",
@@ -259,7 +259,7 @@
       "generator_command": null,
       "revision_source": null,
       "correction": "R9",
-      "replacement_sha256": "sha256:587ba8659071dc4858d61683fcb6695a9d735291911b6c71469f847032c06cfd"
+      "replacement_sha256": "sha256:301dcc70039e8c3a4b4d70167a785dbac1a82877689d838d323fd96b6c7be0ca"
     },
     {
       "path": "README.md",
@@ -270,7 +270,7 @@
       "generator_command": null,
       "revision_source": null,
       "correction": "R3",
-      "replacement_sha256": "sha256:a0c2089abb5f79b79beaa6c6710092a1913ea2efaaad07524d4e727ececee59e"
+      "replacement_sha256": "sha256:6fe5e035d1138059927e7207f28e0931424727c7a1ff7ce6ef2662a30a7e145e"
     }
   ],
   "corrections": [

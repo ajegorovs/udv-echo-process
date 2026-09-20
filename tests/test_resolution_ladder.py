@@ -1915,6 +1915,11 @@ def test_the_committed_resolution_artefacts_state_no_detection_limit() -> None:
         assert _detection_limit_phrases_in(text) == [], name
 
 
+def test_the_hand_written_report_states_no_resolution_detection_limit() -> None:
+    text = (REPORT_DIR / "README.md").read_text(encoding="utf-8")
+    assert _detection_limit_phrases_in(text) == []
+
+
 def test_each_verdict_replaces_the_limit_claim_with_the_screening_reference(ladder) -> None:
     """R2 replaces the inference rather than deleting the caveat, so the new wording is pinned."""
     texts = _verdict_texts(ladder)

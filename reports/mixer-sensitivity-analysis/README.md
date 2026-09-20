@@ -41,7 +41,7 @@ Expected outputs, in work-plan order:
 | WP1 — the sole-pair observed-discrepancy screening threshold | delivered | `reference-repeat.csv`, `reference-repeat.provenance.json`, `figures/reference-repeat.png` |
 | WP2 — resolution, burst, PRF, TGC and emitting power | delivered, all four axes | the `resolution-*`, `burst-*`, `prf-*` and `gain-power-*` rows above |
 | WP3 — the decision table | delivered | [`decision-table.md`](decision-table.md) — hand-written (nothing regenerates it), pinned by SHA-256 to the 22 artifacts above and to the source hashes of `manifest.csv`; rebuilt from the corrected artifacts at `b3f2ae0` (R3/R9) |
-| WP4 — the first measured augmentation | delivered as design, no acquisition executed | [`docs/dop3000/sparse-parameter-set.md`](../../docs/dop3000/sparse-parameter-set.md) §3 — **eight unconditional new conditions** (CC1-CC4, E8, E64, E128, D1) and the within-run reference controls, **six jobs** and **26 first-pass recordings**, no Cartesian product |
+| WP4 — the first measured augmentation | delivered as design, no acquisition executed | [`docs/dop3000/sparse-parameter-set.md`](../../docs/dop3000/sparse-parameter-set.md) §3 — eight unconditional selected conditions (seven executable; D1 blocked), five scientific jobs with block-local controls, four separate common-reference jobs, and **26 first-pass recordings across nine executable jobs**, derived from the rows; no Cartesian product |
 | `figures/energy-*` | not produced here | the higher-sensitivity/echo-energy diagnostic the gain/power screen asks for: no committed file carries an echo or energy channel, so there is nothing to plot yet |
 
 ### Binding — the committed bytes
@@ -61,7 +61,7 @@ failure rather than a note. Paths are relative to this directory; the repository
 | `figures/reference-repeat.png` | `71bc162e4cd1b6589d0f60fa7a047e535cb057499f9e590cf2ac301c071a7237` |
 | `resolution-levels.csv` | `9a538a2b83b3a2e7c4f969aa00c2b5feb1e907c3748eb2ccfc20f4e4b87a18eb` |
 | `resolution-pairs.csv` | `0b75ef17cad20288d04fb6ace223f27a0b49691980d823a306254ca2efa330bb` |
-| `resolution-ladder.provenance.json` | `6b30a17c8b74c67babf2cef7d4ed97f7f5553db5134a1414c28743170a89c8cd` |
+| `resolution-ladder.provenance.json` | `d257ab35d20083fd30abb82e64ecb5c1a0ec39cfb21f855860a0d52bd25a6247` |
 | `figures/resolution-ladder.png` | `dfc8f545ec77e9f200872f52973a7a40682e7fb05e4c50334da66d8cebbd843f` |
 | `burst-levels.csv` | `71312af10046eac5e4e2a2d55887414ea7cf2a87b311ae4513a3894acae1b19f` |
 | `burst-pairs.csv` | `6e0ba041355877245e34e10917bb5d6db40a7e8172101dc44fb214938969d720` |
@@ -264,14 +264,15 @@ Every number below is copied from the artefacts above (the same values are resta
   knots spaced 0.6167 mm: mean `|diff|` **1.974 mm/s**, max `|diff|` **6.114 mm/s** at 44.70 mm (0.316
   of the screening threshold), 0 knots above the screening threshold. The coarse-knot reconstruction variance ratio is **99.15 %** and the normalized reconstruction-residual variance is **0.0722 %** (RMS
   **0.5814 mm/s**, peak **2.738 mm/s**). The evidence therefore cannot support a claim that 0.247 mm
-  adds information — and it equally cannot exclude a real effect smaller than the repeat-plus-drift
-  screening threshold, which one same-settings repeat cannot resolve.
+  adds information. The sole same-settings repeat is a screening reference for a difference of this size and
+  nothing more: the current single-repeat evidence does not support distinguishing the difference from the
+  observed same-settings discrepancy.
 - **The coarsest measured pitch has a small aligned difference on this dataset.** `res/3-0.BDD` at 2.96 mm
   (30 supported gates) differs from every other level by at most **10.43 mm/s** (0.539 of the screening
   threshold). Its 11.84 mm profile autocorrelation scale is descriptive only and does not justify the pitch.
-  That is a statement about the 13 recorded
-  pitches only: nothing finer than 0.247 mm or coarser than 2.96 mm was measured, and an effect smaller
-  than the screening threshold would be invisible in this dataset.
+  That is a statement about the 13 recorded pitches only: nothing finer than 0.247 mm or coarser than
+  2.96 mm was measured, and the sole same-settings repeat is a screening reference for the size of these
+  differences rather than a criterion any pitch is judged by.
 
 Reviewer path: `resolution-pairs.csv` (the focus-pair row `res/0-2.BDD` → `res/0-6.BDD`, and the
 `knots_above_screening threshold` / `depth_ranges_above_screening threshold_mm` columns), then `resolution-levels.csv` for the
