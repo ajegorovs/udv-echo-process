@@ -21,8 +21,33 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
-**Resume here — after 2026-09-19's sessions, with nothing left stacked.** Everything those sessions
-produced is on `master`: the sittings' records ([#12](https://github.com/ajegorovs/udv-echo-process/pull/12),
+**Resume here — 2026-09-20, after the review of PR #25.** The design branch is on `master` (`#23`, `87fd947`),
+and the encoding of the accepted set is **[PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25)**
+(draft, `feat/acquire-sparse-run-plan`): the first sparse pass as one run plan and nine job definitions, the
+static check of the whole pass, the operator sheet, and the pass's own record. The review asked for five
+changes and they are in the branch: the **emissions per profile acceptance is raised to a refusal for this
+pass** — before the first recording *and* in the stored file's own `word 14` (the review's correctness gap) —
+the block cap is documented as a **declared retention requirement, not verified device capacity**, the trial's
+acceptance gates are stated in advance from the stored files, and the concrete
+`scientific → reference → … → scientific` sequence has its own test.
+
+**What runs next, in order:**
+
+1. **the review of that delta** — nothing else moves until it lands;
+2. **the operator-attended trial: step 1 `burst-4` and step 2 `common-reference-1` only**, with the gates and
+   the stop condition in [`sparse-run-plan.md`](sparse-run-plan.md) §5. Its first question is not "did the
+   points store" but "does each stored file still cover the ≈12 s window it was asked for" — the block cap is
+   an application preference nothing here reads, and the installation once accepted a large cap while a block
+   stopped far short of it. Five of five stored points is not a pass; a short-retention file is a stop;
+3. **the remaining seven jobs** only if that trial is clean, on the same frozen plan;
+4. **the analysis ingest** after the data exists (the user's plan step 4: ingestion and QC of the stored
+   files, per-job drift, the reference checks across runs, the pitch × burst contrast, and a Stage-2
+   recommendation) — deliberately not started, because it reads files that do not exist yet;
+5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
+   surface) and blocks nothing above it.
+
+Everything this workstream produced before that is on `master`: the sittings' records
+([#12](https://github.com/ajegorovs/udv-echo-process/pull/12),
 [#13](https://github.com/ajegorovs/udv-echo-process/pull/13)), the landing lessons (§1.1), the
 stale-claim reconciliation ([#15](https://github.com/ajegorovs/udv-echo-process/pull/15)), the identity
 plan and its corrections

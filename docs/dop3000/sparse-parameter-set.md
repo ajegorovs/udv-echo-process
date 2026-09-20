@@ -352,6 +352,8 @@ first, since it is the one that closes a gap no existing recording can.
 
 **Landed.** The encoding is in `examples/sparse-mixer-first-pass/` — one run plan and one definition per job,
 with the within-job control placement and the cross-job order the rows do not carry — and it needs **no** new
-writer: the pass runs through the writer surface the six-point campaign was verified on. What it checks before
-anything is recorded, what it leaves to the operator and how it is used are
+writer: the pass runs through the writer surface the six-point campaign was verified on. The pass also *raises*
+`emissions_per_profile` to a refusal, on both sides of a recording, because for this set it is an experimental
+factor rather than the derived value the verifier's table treats it as. What it checks before anything is
+recorded, what it declares rather than verifies, and how it is used are
 [`sparse-run-plan.md`](sparse-run-plan.md).

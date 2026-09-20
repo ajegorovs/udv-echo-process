@@ -193,36 +193,26 @@ profiles in one fixture and 4193–4927 in another.
 
 ## Active work — DOP3010 acquisition: stabilize before extending
 
-> **Outstanding — next on this workstream (2026-09-19).** The panel-identity change is merged
-> ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17); planned and corrected in
-> [`dop3000/identity-classification-plan.md`](dop3000/identity-classification-plan.md)) and **its §5
-> device ladder has been run on the merged code** (`master` `665573d`, the change `4644abf`): five of
-> its six rungs pass read-only — the clean read unchanged field for field, `Define TGC` putting the
-> overlay clause first with `layout_evidence` reading `'overlay'` where the old head said `'dialog'`,
-> both grown `store` rows (413x123 three-button, 551x123 four-button) resolving as the strip with no
-> dialog clause, a raised warning guard reporting the identity `warning` and `blocking_surface`
-> `warning` while its `SurfaceKind` reads `'overlay'`, and the cleanup probe closing only the real
-> `Operating parameters` dialog. **V3 now passes** — the sitting C failure is closed — and V1 still
-> does. The sixth rung (the cursor info box) was **not taken**: the operator has cursors disabled and
-> the experiment does not use that feature, so `CURSOR_INFO` rests on the block-held read that first
-> measured the mis-resolution plus the cloud tests, and the record says so instead of implying a pass.
-> Readings, times and artifact names:
-> [`dop3000/device-verification.md`](dop3000/device-verification.md), *the identity change's device
-> ladder*.
+> **Outstanding — next on this workstream (2026-09-20).** The accepted sparse set is **encoded** and in review:
+> [PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25) (draft, `feat/acquire-sparse-run-plan`) carries
+> `examples/sparse-mixer-first-pass/` — the nine jobs in the design's order, each scientific job's three
+> block-local controls at beginning/middle/end, the four reference-only jobs between them — with
+> `acquire/run_plan.py` checking the whole pass statically and the pass keeping its own record (`udv-acquire
+> run-plan --check|--sheet|--status|--next`). Its review asked for five changes, all landed: the pass **raises
+> `emissions_per_profile` to a refusal** (the compile refuses a disagreement, and the stored file's `word 14` is
+> compared into the verdict rather than recorded as an advisory), the block cap is a **declared retention
+> requirement rather than verified device capacity**, the trial's acceptance gates come from the stored files
+> themselves, and the concrete `scientific → reference → … → scientific` sequence has its own test. Description,
+> gates and the stop condition: [`dop3000/sparse-run-plan.md`](dop3000/sparse-run-plan.md).
 >
-> **Sitting D has since run, and its writes are verified (2026-09-19).** `ensure_channel` left the screen as
-> it found it; the compile accepted this machine's own frame, refused a declaration-only `burst_length: 5`
-> before any recording, refused the committed ladder against a frame it does not declare, and accepted it
-> once the operator set the instrument to what the ladder declares; the six-point campaign ran **6/6 ok**
-> with the stored `.BDD` files' own words agreeing; the resume skipped all six with
-> `skipped_without_evidence: []`; and recovery found the frame intact, no popup/dialog/overlay, the expected
-> store directory and an unclipped pointer. **V5–V8 pass** (V7's TGC item taken live too: a one-point job recorded, TGC changed, and the resume still skipped), so nothing left in this workstream is device-pending.
+> **Next:** the review of that delta, then the operator-attended trial — **`burst-4` and `common-reference-1`
+> only** — and the remaining seven jobs only if the stored files still cover the ≈12 s window they were asked
+> for. The analysis ingest follows the data, not the other way round, and D1 (sensitivity read/write plus an
+> echo/energy surface) stays a separate capability project.
 >
-> What remains is the **matrix question**
-> ([`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) §4): is
-> `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment this work is for?
-> The first sparse matrix is still being re-derived around the reference point, and the writers it funds
-> wait on that answer.
+> Everything else in this workstream is closed: the identity change and its device ladder
+> ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17)) passed, the panel-identity work is merged, and
+> sittings A–D verified **V1–V8** on the instrument, so nothing below is device-pending.
 
 An independent repository-wide review of the acquisition subsystem was assessed
 against the checkout on 2026-09-18: **all eight findings verified, the direction

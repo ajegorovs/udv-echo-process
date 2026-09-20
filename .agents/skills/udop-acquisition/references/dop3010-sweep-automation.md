@@ -203,13 +203,23 @@ sampling-volume read-out, not the parameter.
   labels may repeat from job to job (`ctrl-begin`, `cc1`) without colliding on identity.
 - **Two acceptance gaps to know before trusting a run-wide value.** `burst_length`, `prf_us`,
   `sound_speed_ms` and `first_gate_mm` are read and a disagreement refuses; **`emissions_per_profile`
-  is advisory** (`verify.py::ADVISORY_COVARIATES`) — it is read from the column, but a disagreement is
-  recorded and the run proceeds, which matters when the emissions value *is* the axis under study: the
-  stored file's own word 14 is then the authority, not the compile.
+  is advisory by default** (`verify.py::ADVISORY_COVARIATES`) — it is read from the column, but a
+  disagreement is recorded and the run proceeds. That default exists because a definition's value for
+  word 14 used to be *derived* rather than asked for; when the value **is** the axis under study, a run
+  must **raise** it instead of living with the default: `campaign.run_campaign(strict_facts=...)` (and
+  `compile_campaign`, `SweepRunner(strict_covariates=...)`, `verify_stored_point(strict_covariates=...)`
+  for the halves) refuses a disagreement before the first recording *and* compares the stored file's
+  own word into the verdict, so the dataset is self-validating. A run plan declares it as
+  `strict_facts`, and only facts a stored file carries a word for can be raised — the block cap cannot.
 - **The block cap is an input, declared.** No reader here reaches the application preference, so a plan
   declares its own requirement: the achieved profile period is never shorter than `emissions × PRF`, so
   `ceil(T / (emissions × PRF))` over the pass cannot wrap any point whatever the transfer term is. The
   plan's own per-point note fires instead when a *point* overrides `duration_s` past the cap.
+- **Declared ≠ retained.** A large accepted value for *"Do not keep in a block more profiles than"* did
+  not stop an observed block from ending far short of it, so **effective retention is only ever measured
+  from the stored file** — profile count, first→last stamp span, achieved period — never read off the
+  preference and never inferred from a clean decode. At a 12 s window this is the first thing to check on
+  a new configuration, and a short file stops the run rather than being noted.
 - **Declare the frame from the files, and expect the dialog to speak last.** The reference frame is
   requested as the committed recordings' own decoded values (c = 1480 m/s, first gate 10.1626666667 mm),
   and the pre-run check compares numerically against the *dialog's* text with zero tolerance for the
