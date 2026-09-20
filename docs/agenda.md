@@ -205,10 +205,12 @@ profiles in one fixture and 4193–4927 in another.
 > themselves, and the concrete `scientific → reference → … → scientific` sequence has its own test. Description,
 > gates and the stop condition: [`dop3000/sparse-run-plan.md`](dop3000/sparse-run-plan.md).
 >
-> **Next:** the review of that delta, then the operator-attended trial — **`burst-4` and `common-reference-1`
+> **Next:** the operator-attended trial — **`burst-4` and `common-reference-1`
 > only** — and the remaining seven jobs only if the stored files still cover the ≈12 s window they were asked
 > for. The analysis ingest follows the data, not the other way round, and D1 (sensitivity read/write plus an
-> echo/energy surface) stays a separate capability project.
+> echo/energy surface) stays a separate capability project. The delta's own review cleared it — five
+> acceptances, no blocking finding, the plan frozen while the trial runs — and its two non-blocking items are
+> recorded in `sparse-run-plan.md` §7.
 >
 > Everything else in this workstream is closed: the identity change and its device ladder
 > ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17)) passed, the panel-identity work is merged, and

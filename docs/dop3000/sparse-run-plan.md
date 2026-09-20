@@ -209,3 +209,19 @@ The pass's raised facts are part of what `--check` and `--sheet` state, and they
 The analysis of the new data is its own work (ingest and QC of the stored files, per-job drift,
 the reference checks across runs, the pitch × burst contrast), and it is deliberately not part of
 this slice: it reads files that do not exist yet. Nothing here decides the second, denser stage.
+
+Two deferrals came with the review of `5946185..2f929ea` and are recorded here so they are not
+rediscovered later. Neither weakens the pass: enforcement is per point, and a stored `word 14` that
+disagrees fails the point.
+
+- **Why a fact was enforced, not just that it was.** The verifier folds a raised fact into
+  `enforced_covariates`, so a point's log entry lists `emissions_per_profile` as enforced without
+  saying whether the verifier's own table enforced it or this pass raised it. The pass's policy is
+  in `run-plan.json` (`strict_facts`), so nothing is lost while the plan travels with the data;
+  what is missing is the answer *from a point's own record*. That matters only to a later reader
+  auditing a single point without the plan (a per-point certificate), which is when the strict
+  tuple should be copied into the durable point record — not before.
+- **Reading the first trial gate off the file.** Gate 1 of §5 — retained profile count, first→last
+  stamp span and achieved period against the ≈12 s window — is measured by hand today. Measuring it
+  from a stored file as soon as one exists belongs to the analysis ingest, which is its own step;
+  the trial is deliberately not gated on tooling that does not exist yet.

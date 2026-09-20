@@ -29,11 +29,15 @@ changes and they are in the branch: the **emissions per profile acceptance is ra
 pass** — before the first recording *and* in the stored file's own `word 14` (the review's correctness gap) —
 the block cap is documented as a **declared retention requirement, not verified device capacity**, the trial's
 acceptance gates are stated in advance from the stored files, and the concrete
-`scientific → reference → … → scientific` sequence has its own test.
+`scientific → reference → … → scientific` sequence has its own test. That delta was then reviewed itself
+(`5946185..2f929ea`) and **cleared**: five acceptances, no blocking finding, and it allows the bounded trial
+with the plan frozen while it runs. Its two non-blocking items are recorded in
+[`sparse-run-plan.md`](sparse-run-plan.md) §7 — per-point provenance for a *raised* fact, and reading the
+trial's first gate off the stored file, which belongs to the ingest.
 
 **What runs next, in order:**
 
-1. **the review of that delta** — nothing else moves until it lands;
+1. **the review of that delta — done.** (`5946185..2f929ea`, no blocking finding; the plan is frozen for the trial.)
 2. **the operator-attended trial: step 1 `burst-4` and step 2 `common-reference-1` only**, with the gates and
    the stop condition in [`sparse-run-plan.md`](sparse-run-plan.md) §5. Its first question is not "did the
    points store" but "does each stored file still cover the ≈12 s window it was asked for" — the block cap is
