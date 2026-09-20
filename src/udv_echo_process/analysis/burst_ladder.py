@@ -19,12 +19,15 @@ drives with its own axis name, key cell, settings and columns — and which the 
 TGC/power axes drive with theirs, so no axis can drift from the inventory contract its siblings
 honour. Selection is by decoded **scientific fingerprint** (:data:`ELIGIBILITY`), never by folder
 (plan §8.3 step 2, R1/R4): the cycle count is the only setting this axis may move, so every
-recording sharing the rest of the fingerprint is eligible, and the dataset's two reference
+recording sharing the rest of the fingerprint is eligible. The ladder holds **every eligible
+decoded burst length**, and each level's numbers are measured per realization and then summarised
+by the shared, unweighted rule
+(:data:`udv_echo_process.analysis._native_grid.AGGREGATION_RULE`): the dataset's two reference
 recordings — both burst 10, one of them under the ``res`` folder — are two named realizations of
-that one level. No ``burst_len`` row requests burst 10, so the committed ladder does not hold it
-yet and the level is recorded as eligible evidence for the setting-based rebuild of §8.3 step 5.
-What is left here is what is burst-specific: the columns, the rows, the findings, the
-caption and the panels.
+that one level, so burst 10 is a level of this ladder with both of them behind it, and no recording
+is dropped, collapsed into another's path or allowed to outweigh another (plan §8.3 step 5). What
+is left here is what is burst-specific: the columns, the rows, the findings, the caption and the
+panels.
 
 Only the decoded burst length may differ across the files, so a coupled ladder is refused rather
 than analysed (plan §2). No profile or gate is an independent experimental replicate, the levels
@@ -38,6 +41,7 @@ from __future__ import annotations
 
 import itertools
 import json
+import math
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -87,13 +91,34 @@ ELIGIBILITY = grid.AxisEligibility(
 )
 
 #: Column order of the two tables: the dict rows of :class:`BurstLadder` carry exactly these
-#: keys, so a table and its model cannot drift.
+#: keys, so a table and its model cannot drift. ``realizations`` and ``realization_paths`` name the
+#: recordings one level summarises: burst 10 is realized by two of them, and both paths are
+#: published rather than collapsed (plan §8.3 step 5).
 LEVEL_COLUMNS: tuple[str, ...] = (
-    "axis", "relative_path", "requested_label", "cycles", "profiles_window",
+    "axis", "relative_path", "requested_label", "realizations", "realization_paths",
+    "cycles", "profiles_window",
     "gates_in_support", "pitch_mm", "mean_mm_s", "robust_spread_mm_s", "rms_mm_s",
     "zero_fraction", "gradient_median_abs_mm_s_per_mm", "gradient_max_abs_mm_s_per_mm",
     "correlation_length_mm", "correlation_length_over_pitch", "acf_e_folding_lag_s",
     "psd_hf_share", "psd_centroid_hz", "psd_bandwidth_hz",
+)
+
+#: The level cells the shared unweighted rule is applied to (plan §8.3 step 5): every numeric cell
+#: of a level row. ``gates_in_support`` stays a whole number because every realization of one level
+#: measures the one native gate grid the level's shared settings give it.
+AGGREGATED_CELLS: tuple[str, ...] = (
+    "cycles", "profiles_window", "gates_in_support", "pitch_mm", "mean_mm_s", "robust_spread_mm_s",
+    "rms_mm_s", "zero_fraction", "gradient_median_abs_mm_s_per_mm",
+    "gradient_max_abs_mm_s_per_mm", "correlation_length_mm", "correlation_length_over_pitch",
+    "acf_e_folding_lag_s", "psd_hf_share", "psd_centroid_hz", "psd_bandwidth_hz",
+)
+#: Cells that stay whole numbers: one level keeps one native gate grid.
+INTEGRAL_CELLS: tuple[str, ...] = ("gates_in_support",)
+#: The per-realization cells the provenance document publishes beside each level mean.
+REALIZATION_CELLS: tuple[str, ...] = (
+    "cycles", "profiles_window", "gates_in_support", "mean_mm_s", "robust_spread_mm_s", "rms_mm_s",
+    "zero_fraction", "gradient_median_abs_mm_s_per_mm", "correlation_length_mm",
+    "acf_e_folding_lag_s", "psd_hf_share", "psd_centroid_hz", "psd_bandwidth_hz",
 )
 PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "short_path", "short_label", "short_cycles", "long_path", "long_label",
@@ -130,7 +155,9 @@ class BurstLadder(ValueModel):
     """The WP2 burst result: the level rows, the pair rows and the two matched views.
 
     ``levels`` and ``pairs`` are dict rows keyed by the declared column tuples; ``temporal``
-    carries the ``floor`` read from the committed WP1 provenance.
+    carries the ``floor`` read from the committed WP1 provenance. ``inputs`` is every realization of
+    every level - one entry per recording - and ``realizations`` is the per-recording row each level
+    mean was aggregated from (plan §8.3 step 5).
     """
 
     dataset_root: str
@@ -148,16 +175,39 @@ class BurstLadder(ValueModel):
     focus_pair: tuple[str, str]
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
+    #: One row per realization, in input order: the per-recording numbers every level mean was
+    #: aggregated from (plan §8.3 step 5).
+    realizations: tuple[dict[str, object], ...] = ()
 
     @model_validator(mode="after")
     def _check_the_ladder_is_internally_consistent(self) -> BurstLadder:
-        if [row.get("relative_path") for row in self.levels] != [
-            entry.relative_path for entry in self.inputs
-        ]:
-            raise ValueError("every level must appear exactly once, in input order")
         for columns, rows in ((LEVEL_COLUMNS, self.levels), (PAIR_COLUMNS, self.pairs)):
             if any(tuple(row) != columns for row in rows):
                 raise ValueError("a row must carry exactly the declared columns")
+        paths = [row["relative_path"] for row in self.levels]
+        if self.groups and [group.primary_path for group in self.groups] != paths:
+            raise ValueError(
+                "the ladder must be exactly the eligible decoded levels, in their order; got "
+                f"{[group.primary_path for group in self.groups]} beside {paths}"
+            )
+        if [entry.relative_path for entry in self.inputs] != [
+            path for group in self.groups for path in group.realization_paths
+        ]:
+            raise ValueError(
+                "every realization of every level must appear exactly once, in level order"
+            )
+        if self.realizations and [row["relative_path"] for row in self.realizations] != [
+            entry.relative_path for entry in self.inputs
+        ]:
+            raise ValueError(
+                "the per-realization rows must cover every recording once, in input order"
+            )
+        for group, row in zip(self.groups, self.levels, strict=False):
+            if ";".join(group.realization_paths) != row["realization_paths"]:
+                raise ValueError(
+                    f"{row['relative_path']}: the level must name exactly the realizations the "
+                    "selection grouped with it"
+                )
         if any(b <= a for a, b in itertools.pairwise(row["cycles"] for row in self.levels)):
             raise ValueError("levels must be ordered by increasing cycle count")
         if len(self.pairs) != len(self.levels) * (len(self.levels) - 1) // 2:
@@ -172,7 +222,9 @@ class BurstLadder(ValueModel):
             item["relative_path"] for item in self.timestamps["per_input"]  # type: ignore[index]
         ]
         if measured != [entry.relative_path for entry in self.inputs]:
-            raise ValueError("the timestamp measurement must cover every level, in input order")
+            raise ValueError(
+                "the timestamp measurement must cover every recording, in input order"
+            )
         return self
 
 
@@ -221,6 +273,59 @@ def level_groups(manifest_path: Path) -> tuple[grid.LevelGroup, ...]:
     )
 
 
+# ── the level aggregation (plan §8.3 step 5) ───────────────────────────
+
+
+def selected_levels(manifest_path: Path) -> tuple[tuple[grid.LevelGroup, tuple[dict[str, str], ...]], ...]:
+    """Every eligible ``burst`` level beside the rows of *every* recording that realizes it.
+
+    The ladder is the setting-based selection (plan §8.3 step 5): a decoded cycle count is one
+    level, and a recording under another folder that carries the same swept settings realizes it
+    rather than being excluded. Ordered by cycle count, then by the level's primary path.
+    """
+    path = Path(manifest_path)
+    return grid.grouped_level_rows(
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _cycles_of(row, path),
+        order_label="cycle count",
+    )
+
+
+def aggregate_level_row(
+    group: grid.LevelGroup, rows: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
+    """One decoded level's row: its realizations' rows under the shared unweighted rule.
+
+    Every numeric cell is the unweighted mean of its realizations' cells (one realization, one
+    vote), and ``gates_in_support`` is the one native gate grid the level's shared settings give
+    every realization, so no recording is dropped, collapsed into another's path or allowed to
+    outweigh another (plan §8.3 step 5, R1).
+    """
+    if not rows:
+        raise BurstLadderError(
+            f"{group.primary_path}: the decoded level realises no recording, so it cannot be "
+            "measured"
+        )
+    level = group.primary_path
+    cells: dict[str, object] = {
+        cell: grid.aggregate_cell([float(row[cell]) for row in rows], cell=cell, level=level)
+        for cell in AGGREGATED_CELLS
+    }
+    for cell in INTEGRAL_CELLS:
+        mean = cells[cell]
+        if not math.isclose(mean, round(mean), abs_tol=1e-9):
+            raise BurstLadderError(
+                f"{level}: the realizations measure {mean:g} {cell}; one decoded level keeps one "
+                "native gate grid and this build resamples nothing"
+            )
+        cells[cell] = round(mean)
+    primary = next(row for row in rows if row["relative_path"] == level)
+    return {
+        "axis": group.axis, "relative_path": level,
+        "requested_label": primary["requested_label"], "realizations": len(rows),
+        "realization_paths": ";".join(group.realization_paths), **cells,
+    }
+
+
 def _read_level(
     dataset_root: Path, row: dict[str, str]
 ) -> tuple[LevelInput, np.ndarray, np.ndarray, np.ndarray]:
@@ -265,11 +370,12 @@ def _require_clean_ofat(entries: Sequence[LevelInput]) -> None:
 def level_row(
     entry: LevelInput, metrics: grid.LevelMetrics, series: wp1.TemporalSeries
 ) -> dict[str, object]:
-    """One level's row: the common-duration window on its own native grid.
+    """One *realization's* row: the common-duration window on its own native grid.
 
     The distributional and spatial metrics are the shared metric layer's, on the supported native
-    grid and before any alignment; the temporal ones summarise the level's own full-record
-    ensemble ACF/PSD with the same shared band summary the WP1 floor uses.
+    grid and before any alignment; the temporal ones summarise the recording's own full-record
+    ensemble ACF/PSD with the same shared band summary the WP1 floor uses. One level's row is its
+    realizations' rows under :func:`aggregate_level_row` (plan §8.3 step 5).
     """
     psd = grid.psd_band_summary(
         series.frequency_hz, series.psd_mean_mm2_s2_per_hz, PSD_BAND_HZ,
@@ -277,7 +383,8 @@ def level_row(
     )
     return {
         "axis": entry.axis, "relative_path": entry.relative_path,
-        "requested_label": entry.requested_label, "cycles": entry.burst_length,
+        "requested_label": entry.requested_label, "realizations": 1,
+        "realization_paths": entry.relative_path, "cycles": entry.burst_length,
         "profiles_window": metrics.profiles_window,
         "gates_in_support": metrics.supported_gates,
         "pitch_mm": entry.resolution_mm, "mean_mm_s": float(metrics.means.mean()),
@@ -370,20 +477,22 @@ def _focus_pair(levels: Sequence[Mapping[str, object]]) -> tuple[str, str]:
 def _build(
     dataset_root: Path, manifest_path: Path, screening_threshold_path: Path, analysis_commit: str | None
 ) -> tuple[BurstLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
-    """Build the ladder and return it beside each level's native mean profile."""
-    rows = select_level_rows(manifest_path)  # a missing manifest is refused by name here
+    """Build the ladder and return it beside each level's *aggregated* native mean profile."""
+    selected = selected_levels(manifest_path)  # a missing manifest is refused by name here
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
     screening_threshold = grid.read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
-    decoded = [_read_level(Path(dataset_root), row) for row in rows]
-    entries = [entry for entry, *_ in decoded]
+    decoded = [
+        (group, _read_level(Path(dataset_root), row)) for group, rows in selected for row in rows
+    ]
+    entries = [entry for _group, (entry, *_rest) in decoded]
     _require_clean_ofat(entries)
     period = wp1.shared_profile_period_s([entry.profile_period_s for entry in entries])
-    # R6: every level's recorded timestamps are measured against the uniform grid this period
-    # places on them, at that level's own top-of-band frequency; a level over the tolerance stops
+    # R6: every recording's recorded timestamps are measured against the uniform grid this period
+    # places on them, at that recording's own top-of-band frequency; one over the tolerance stops
     # the build by name rather than being analysed on a grid it does not support.
     timestamp_grid = wp1.timestamp_grid([
         wp1.measure_timestamps(entry, time_s, f_max_hz=1.0 / (2.0 * period))
-        for entry, _values, time_s, _depths in decoded
+        for _group, (entry, _values, time_s, _depths) in decoded
     ])
     revolutions = wp1.common_revolution_count([entry.duration_s for entry in entries])
     window_s = revolutions * wp1.NOMINAL_REVOLUTION_S
@@ -392,17 +501,36 @@ def _build(
         grid.level_metrics(
             entry.relative_path, values, time_s, depths, window_s=window_s, support=support
         )
-        for entry, values, time_s, depths in decoded
+        for _group, (entry, values, time_s, depths) in decoded
     ]
-    series = [wp1.temporal_series(entry, values, period) for entry, values, _t, _d in decoded]
-    levels = tuple(
-        level_row(entry, own, own_series)
-        for (entry, *_rest), own, own_series in zip(decoded, metrics, series, strict=True)
-    )
-    profiles = {
-        entry.relative_path: (depths, own.per_gate["mean"])
-        for (entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
+    series = [
+        wp1.temporal_series(entry, values, period)
+        for _group, (entry, values, _t, _d) in decoded
+    ]
+    realization_rows = {
+        entry.relative_path: level_row(entry, own, own_series)
+        for (_group, (entry, *_rest)), own, own_series in zip(
+            decoded, metrics, series, strict=True
+        )
     }
+    means_by_path = {
+        entry.relative_path: own.per_gate["mean"]
+        for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
+    }
+    depths_by_path = {entry.relative_path: d for _group, (entry, _v, _t, d) in decoded}
+    levels: list[dict[str, object]] = []
+    profiles: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for group, rows in selected:
+        paths = group.realization_paths
+        levels.append(
+            aggregate_level_row(group, [realization_rows[path] for path in paths])
+        )
+        profiles[group.primary_path] = (
+            grid.require_one_native_grid(
+                [(path, depths_by_path[path]) for path in paths], where=group.primary_path
+            ),
+            grid.mean_profile([means_by_path[path] for path in paths], where=group.primary_path),
+        )
     pairs = tuple(
         pair_row(
             short, profiles[short["relative_path"]], long, profiles[long["relative_path"]],
@@ -415,7 +543,7 @@ def _build(
     )
     counts = {
         entry.relative_path: (own.profiles_window, own.supported_gates)
-        for (entry, *_rest), own in zip(decoded, metrics, strict=True)
+        for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
     }
     periods = [entry.profile_period_s for entry in entries]
     model = BurstLadder(
@@ -425,7 +553,8 @@ def _build(
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
         eligibility=ELIGIBILITY,
         inputs=tuple(entries),
-        groups=level_groups(manifest_path),
+        groups=tuple(group for group, _rows in selected),
+        realizations=tuple(realization_rows[entry.relative_path] for entry in entries),
         common={
             "nominal_rpm": wp1.NOMINAL_RPM, "revolution_s": wp1.NOMINAL_REVOLUTION_S,
             "revolutions": revolutions, "window_s": window_s,
@@ -445,13 +574,19 @@ def _build(
             "frequency_resolution_hz": (1.0 / period) / wp1.SEGMENT_PROFILES,
             "nyquist_hz": (1.0 / period) / 2.0, "band_hz": list(PSD_BAND_HZ),
             "levels": len(levels),
-            "profiles_analysed": {own.relative_path: own.profiles_analysed for own in series},
-            "segments": {own.relative_path: own.segments for own in series},
+            "profiles_analysed": {
+                entry.relative_path: own.profiles_analysed
+                for (_group, (entry, *_rest)), own in zip(decoded, series, strict=True)
+            },
+            "segments": {
+                entry.relative_path: own.segments
+                for (_group, (entry, *_rest)), own in zip(decoded, series, strict=True)
+            },
             "acf_estimator": wp1.ACF_ESTIMATOR, "psd_window": wp1.PSD_WINDOW,
             "psd_detrend": wp1.PSD_DETREND, "psd_scaling": wp1.PSD_SCALING, "floor": floor,
         },
         timestamps=wp1.timestamp_document(timestamp_grid),
-        focus_pair=_focus_pair(levels), levels=levels, pairs=pairs,
+        focus_pair=_focus_pair(levels), levels=tuple(levels), pairs=pairs,
     )
     return model, profiles
 
@@ -502,6 +637,8 @@ DEFINITIONS: dict[str, str] = {
         "repeatability plus uncontrolled drift, not a bound on either"
     ),
     "replicates": "no profile and no gate is an independent experimental replicate",
+    "realizations": "the recordings that realize one decoded cycle count: the ladder holds every eligible decoded burst length, so `prf/600.BDD` and `res/1-8.BDD` are two named realizations of the burst-10 level rather than one being dropped or standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE,
     "time_view": "whole 500-RPM revolutions for every level; the full record for ACF/PSD",
     "depth_view": "each level on its own gate grid inside the common support",
     "comparability": "only the decoded burst length may differ across the ladder",
@@ -648,6 +785,40 @@ def _findings(model: BurstLadder) -> dict[str, object]:
                 "predicts, at a magnitude inside the floor."
             ),
         },
+        "realizations": {
+            "levels": len(model.levels),
+            "recordings": len(model.inputs),
+            "aggregation": grid.AGGREGATION,
+            "multi_realization_levels": [
+                {
+                    "relative_path": group.primary_path,
+                    "key_display": group.key_display,
+                    "realization_paths": list(group.realization_paths),
+                }
+                for group in model.groups
+                if len(group.realizations) > 1
+            ],
+            "statement": (
+                f"Selection: the {len(model.levels)} decoded burst lengths are the setting-based "
+                f"selection of {len(model.inputs)} recording(s) - every recording whose decoded "
+                "settings put it at a burst length of this ladder, whatever folder requested it, so "
+                "burst 10 is a level of this axis and carries both of the reference recordings. A "
+                "level with more than one recording is one level with that many named realizations, "
+                "each measured on its own and each named in burst-levels.csv and in the provenance "
+                "document: "
+                + (
+                    "; ".join(
+                        f"{group.key_display} realized by "
+                        + " and ".join(group.realization_paths)
+                        for group in model.groups
+                        if len(group.realizations) > 1
+                    )
+                    or "no level here has a second realization"
+                )
+                + ". Each level's numbers are the unweighted mean of its realizations' numbers: "
+                "one realization, one vote."
+            ),
+        },
         "spatial_smoothing": {
             "levels": len(model.levels), "correlation_length_min_mm": min(lengths),
             "correlation_length_max_mm": max(lengths),
@@ -704,7 +875,9 @@ def figure_caption(model: BurstLadder) -> str:
     cycles = [row["cycles"] for row in model.levels]
     return (
         f"WP2 burst ladder: {common['levels']} decoded burst lengths {cycles[0]}-{cycles[-1]} "
-        f"cycles. Common-duration view: {common['revolutions']} nominal "
+        f"cycles. "
+        + findings["realizations"]["statement"] + " "
+        f"Common-duration view: {common['revolutions']} nominal "
         f"{common['nominal_rpm']:g}-RPM revolutions = {common['window_s']:.4g} s, truncated per "
         f"file by the recorded timestamps. Common physical support: "
         f"{common['support_min_mm']:.6g}-{common['support_max_mm']:.6g} mm on the shared 1.85 mm "
@@ -735,15 +908,31 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
     Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
     """
     common, temporal = model.common, model.temporal
+    level_of = {path: group.primary_path for group in model.groups
+                for path in group.realization_paths}
+    cells: dict[str, dict[str, object]] = {
+        field: {row["relative_path"]: row[field] for row in model.realizations}
+        for field in REALIZATION_CELLS
+    }
     return {
         "artefact": "burst-ladder", "axis": model.axis,
         "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
         "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
         "timestamps": dict(model.timestamps),
+        "aggregation": {
+            "rule": grid.AGGREGATION, "statement": grid.AGGREGATION_RULE,
+            "levels": len(model.levels), "recordings": len(model.inputs),
+            "multi_realization_levels": [
+                {"relative_path": group.primary_path,
+                 "realization_paths": list(group.realization_paths)}
+                for group in model.groups if len(group.realizations) > 1
+            ],
+        },
         "inputs": [
             {
-                "relative_path": entry.relative_path, "axis": entry.axis,
+                "relative_path": entry.relative_path, "level_path": level_of[entry.relative_path],
+                "axis": entry.axis,
                 "requested_label": entry.requested_label, "cycles": entry.burst_length,
                 "source_sha256": entry.source_sha256, "profiles": entry.profiles,
                 "gates": entry.gates, "duration_s": entry.duration_s,
@@ -756,6 +945,10 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
                 "gates_in_support": common["gates_in_support"][entry.relative_path],
             }
             for entry in model.inputs
+        ],
+        "levels": [
+            grid.level_realizations_document(group, cells, fields=REALIZATION_CELLS)
+            for group in model.groups
         ],
         "views": {
             "time": {"common_duration": {
@@ -796,8 +989,8 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
                 "rule": (
                     "every file's full record in non-overlapping segments of the identical "
                     "profile count on one shared profile period, so the segment duration, lag "
-                    "grid, frequency grid and frequency resolution are identical for all 12 "
-                    "files; each level's ensemble ACF/PSD is summarised in burst-levels.csv"
+                    "grid, frequency grid and frequency resolution are identical for every "
+                    "recording; each level's ensemble ACF/PSD is summarised in burst-levels.csv"
                 ),
                 "floor": temporal["floor"],
             },

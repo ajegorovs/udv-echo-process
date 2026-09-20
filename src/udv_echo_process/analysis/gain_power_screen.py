@@ -117,17 +117,55 @@ ELIGIBILITY: dict[str, grid.AxisEligibility] = {
 }
 
 #: Column order of the three tables: the dict rows carry exactly these keys, so table and model cannot
-#: drift.
+#: drift. ``realizations``/``realization_paths`` name the recordings one level summarises: the shared
+#: anchor level (TGC ≈19.9216 dB, emitting power ``medium``) is realized by both reference
+#: recordings, and both paths are published rather than collapsed (plan §8.3 step 5).
 LEVEL_COLUMNS: tuple[str, ...] = (
-    "axis", "relative_path", "requested_label", "key_name", "key_value", "tgc_start_db",
+    "axis", "relative_path", "requested_label", "realizations", "realization_paths",
+    "key_name", "key_value", "tgc_start_db",
     "tgc_end_db", "tgc_mode", "emit_power", "sensitivity", "resolution_mm", "prf_period_us",
     "burst_length", "emissions_per_profile", "gates", "profiles", "duration_s", "profiles_window",
-    "gates_in_support", "pitch_mm", "mean_mm_s", "robust_spread_mm_s", "rms_mm_s", "zero_fraction",
-    "median_gate_robust_spread_mm_s", "max_gate_robust_spread_mm_s",
+    "gates_in_support", "pitch_mm", "mean_mm_s", "robust_spread_mm_s", "rms_mm_s",
+    "zero_fraction", "median_gate_robust_spread_mm_s", "max_gate_robust_spread_mm_s",
     "max_gate_robust_spread_depth_mm", "max_gate_spread_ratio_to_axis_median", "max_gate_std_mm_s",
     "worst_gate_zero_fraction", "worst_gate_zero_fraction_depth_mm",
     "majority_blank_gates", "majority_blank_depth_ranges_mm", "dropout_limited", "spread_limited",
     "screen")
+#: The cells after a realization level row's identity, in column order: the aggregator assembles
+#: every level row in exactly this order, so a dict row and its table cannot drift.
+LEVEL_CELL_ORDER: tuple[str, ...] = LEVEL_COLUMNS[5:]
+
+#: The level cells summarised as the **unweighted mean** over realizations (plan §8.3 step 5): what
+#: the level typically measures, and the extent it was measured over. ``gates``/``gates_in_support``
+#: stay whole numbers because every realization of one level measures the one native gate grid the
+#: level's shared settings give it.
+AGGREGATED_CELLS: tuple[str, ...] = (
+    "resolution_mm", "prf_period_us", "burst_length", "emissions_per_profile", "gates", "profiles",
+    "duration_s", "profiles_window", "gates_in_support", "pitch_mm", "mean_mm_s",
+    "robust_spread_mm_s", "rms_mm_s", "zero_fraction", "median_gate_robust_spread_mm_s",
+)
+#: The level cells that assert an **adverse screening outcome**: the worst realization's value, so no
+#: realization's finding is averaged away - a level is dropout- or spread-limited when any of its
+#: recordings is, and the count, depth ranges and depth it publishes are that realization's.
+WORST_CELLS: tuple[str, ...] = (
+    "max_gate_robust_spread_mm_s", "max_gate_robust_spread_depth_mm",
+    "max_gate_spread_ratio_to_axis_median", "max_gate_std_mm_s", "worst_gate_zero_fraction",
+    "worst_gate_zero_fraction_depth_mm", "majority_blank_gates", "majority_blank_depth_ranges_mm",
+)
+#: Cells that stay whole numbers: one level keeps one native gate grid.
+INTEGRAL_CELLS: tuple[str, ...] = ("gates", "gates_in_support", "majority_blank_gates")
+#: The depth-row cells summarised as the unweighted mean over realizations; the gate index, depth,
+#: key and window cells are the level's own.
+AGGREGATED_DEPTH_CELLS: tuple[str, ...] = (
+    "profiles_window", "mean_mm_s", "robust_spread_mm_s", "std_mm_s", "rms_mm_s", "zero_fraction",
+)
+#: The per-realization cells the provenance document publishes beside each level mean.
+REALIZATION_CELLS: tuple[str, ...] = (
+    "key_value", "mean_mm_s", "robust_spread_mm_s", "rms_mm_s", "zero_fraction",
+    "profiles_window", "gates_in_support", "max_gate_robust_spread_mm_s",
+    "max_gate_spread_ratio_to_axis_median", "worst_gate_zero_fraction", "majority_blank_gates",
+    "dropout_limited", "spread_limited", "screen",
+)
 PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "low_path", "low_label", "low_key", "high_path", "high_label", "high_key", "key_gap",
     "knots", "knot_spacing_mm", "max_knot_offset_mm", "mean_signed_difference_mm_s",
@@ -180,6 +218,9 @@ class ScreenAxis(ValueModel):
     inputs: tuple[ScreenInput, ...]
     eligibility: grid.AxisEligibility
     groups: tuple[grid.LevelGroup, ...]
+    #: One row per realization, in input order: the per-recording numbers every level mean was
+    #: aggregated from (plan §8.3 step 5).
+    realizations: tuple[dict[str, object], ...] = ()
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
     depths: tuple[dict[str, object], ...]
@@ -197,12 +238,26 @@ class ScreenAxis(ValueModel):
         if self.eligibility.axis != self.axis:
             raise ValueError(
                 f"the {self.axis} axis carries the {self.eligibility.axis} eligibility contract")
-        representatives = [group.primary_path for group in self.groups if group.in_ladder]
-        if representatives != [r["relative_path"] for r in self.levels]:
+        if [group.primary_path for group in self.groups] != [
+            r["relative_path"] for r in self.levels
+        ]:
             raise ValueError(
-                "the axis must be exactly the representatives of its in-ladder groups, in order")
-        if [r["relative_path"] for r in self.levels] != [e.relative_path for e in self.inputs]:
-            raise ValueError("every level must appear exactly once, in input order")
+                "the axis must be exactly the eligible decoded levels, in order")
+        for group, row in zip(self.groups, self.levels, strict=False):
+            if ";".join(group.realization_paths) != row["realization_paths"]:
+                raise ValueError(
+                    f"{row['relative_path']}: the level must name exactly the realizations the "
+                    "selection grouped with it")
+        if [entry.relative_path for entry in self.inputs] != [
+            path for group in self.groups for path in group.realization_paths
+        ]:
+            raise ValueError(
+                "every realization of every level must appear exactly once, in level order")
+        if self.realizations and [row["relative_path"] for row in self.realizations] != [
+            entry.relative_path for entry in self.inputs
+        ]:
+            raise ValueError(
+                "the per-realization rows must cover every recording once, in input order")
         positions = [_key_position(self.axis, row["key_value"]) for row in self.levels]
         if any(b <= a for a, b in itertools.pairwise(positions)):
             raise ValueError("levels must be ordered by increasing key")
@@ -413,9 +468,14 @@ def _read_level(
 def _base_state(
     axis: str, levels: Sequence[Mapping[str, object]], manifest_path: Path
 ) -> dict[str, object]:
-    """The level this axis does not hold, and the pair of levels that brackets it: the base state is
-    what the manifest's *other* rows carry in this axis's key column, and the focus pair is the two
-    ladder-adjacent levels whose keys bracket it.
+    """The level this axis's own rows do not sample, and the pair the screen focuses on.
+
+    The base state is what the manifest's *other* rows carry in this axis's key column. Where the
+    ladder does not hold it - the TGC ladder straddling 19.9216 dB, the power ladder straddling
+    ``medium`` - the focus pair is the two ladder-adjacent levels whose keys bracket it. Where the
+    ladder *does* hold it (the shared anchor level both reference recordings realize, plan §8.3
+    step 5), the focus pair is that level and its ladder-adjacent level above it, so the reference
+    condition is compared with the next setting the decision could move to.
     """
     key_column = KEY_COLUMN[axis]
     others = {(row.get(key_column) or "").strip() for row in _manifest_rows(Path(manifest_path))
@@ -426,28 +486,49 @@ def _base_state(
             f"the manifest's other rows carry {sorted(others)} in {key_column}; the base state must "
             "be one declared value")
     base = others.pop()
+    base_cell = grid.canonical_cell(base)
     position = _key_position(axis, base)
     positions = [_key_position(axis, row["key_value"]) for row in levels]
-    straddle = [index for index in range(len(positions) - 1)
-                if positions[index] <= position <= positions[index + 1]]
-    if len(straddle) != 1:
+    matches = [
+        at for at, row in enumerate(levels)
+        if grid.canonical_cell(row["key_value"]) == base_cell
+    ]
+    if len(matches) > 1:
         raise GainPowerScreenError(
-            f"the base state {base!r} is bracketed by {len(straddle)} adjacent {axis} pairs; the "
-            "focus pair must be unique")
-    index = straddle[0]
+            f"the base state {base!r} is {len(matches)} levels of this axis; a focus pair needs one")
+    in_ladder = bool(matches)
+    if in_ladder:
+        index = matches[0]
+        pair = (index, index + 1) if index + 1 < len(positions) else (index - 1, index)
+        if pair[0] < 0:
+            raise GainPowerScreenError(
+                f"the base state {base!r} is the axis's only level; a focus pair needs two")
+    else:
+        straddle = [index for index in range(len(positions) - 1)
+                    if positions[index] <= position <= positions[index + 1]]
+        if len(straddle) != 1:
+            raise GainPowerScreenError(
+                f"the base state {base!r} is bracketed by {len(straddle)} adjacent {axis} pairs; the "
+                "focus pair must be unique")
+        pair = (straddle[0], straddle[0] + 1)
+    index = pair[0]
     return {
-        "label": BASE_STATE_LABEL[axis], "decoded_key": base, "in_ladder":
-        any(str(row["key_value"]) == base for row in levels), "straddling_keys":
-        [levels[index]["key_value"], levels[index + 1]["key_value"]], "straddling_pair":
-        [str(levels[index]["relative_path"]), str(levels[index + 1]["relative_path"])]}
+        "label": BASE_STATE_LABEL[axis], "decoded_key": base, "in_ladder": in_ladder,
+        "focus_pair_kind": "base_state_is_a_level" if in_ladder else "bracketing_levels",
+        "straddling_keys": [levels[index]["key_value"], levels[index + 1]["key_value"]],
+        "straddling_pair": [str(levels[index]["relative_path"]),
+                            str(levels[index + 1]["relative_path"])]}
 
 
 def _level_row(
     axis: str, entry: LevelInput, metrics: grid.LevelMetrics, depths: np.ndarray,
     axis_median_spread: float
 ) -> dict[str, object]:
-    """One level's row: its common-window numbers and the two screening aggregates, from WP1's
-    :func:`gate_metrics` on the common window restricted to the common support."""
+    """One *realization's* row: its common-window numbers and the two screening aggregates.
+
+    From WP1's :func:`gate_metrics` on the common window restricted to the common support. One
+    level's row is its realizations' rows under :func:`_aggregate_level_row` (plan §8.3 step 5).
+    """
     if axis_median_spread <= 0.0 or not math.isfinite(axis_median_spread):
         raise GainPowerScreenError(
             f"{axis}: the axis's median per-gate robust spread is {axis_median_spread!r}; a spread "
@@ -459,7 +540,8 @@ def _level_row(
     limited = bool(np.any(blocked))
     return {
         "axis": axis, "relative_path": entry.relative_path,
-        "requested_label": entry.requested_label, "key_name": KEY_COLUMN[axis],
+        "requested_label": entry.requested_label, "realizations": 1,
+        "realization_paths": entry.relative_path, "key_name": KEY_COLUMN[axis],
         "key_value": entry.tgc_start_db if axis == "tgc" else entry.emit_power,
         "tgc_start_db": entry.tgc_start_db, "tgc_end_db": entry.tgc_end_db,
         "tgc_mode": entry.tgc_mode, "emit_power": entry.emit_power,
@@ -556,31 +638,181 @@ def _pair_row(
         "focus_pair": bool(focus)}
 
 
+def selected_levels(
+    manifest_path: Path, axis: str
+) -> tuple[tuple[grid.LevelGroup, tuple[dict[str, str], ...]], ...]:
+    """Every eligible level of one screened axis beside the rows of every recording realizing it.
+
+    The ladder is the setting-based selection (plan §8.3 step 5): a decoded key is one level, and a
+    recording under another folder that carries the same swept settings - including the shared anchor
+    level neither axis's own rows request - realizes it rather than being excluded. Ordered by the
+    axis's declared key order, then by the level's primary path.
+    """
+    path = Path(manifest_path)
+    if axis not in AXES:
+        raise GainPowerScreenError(f"{axis!r} is not one of the screened axes {list(AXES)}")
+    return grid.grouped_level_rows(
+        path, eligibility=ELIGIBILITY[axis], order_key=_order_key(axis, path),
+        order_label=KEY_LABEL[axis])
+
+
+def _aggregate_level_row(
+    axis: str, group: grid.LevelGroup, rows: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
+    """One decoded level's row: its realizations' rows under this screen's two declared rules.
+
+    Cells describing what the level measures are the unweighted mean over its realizations; cells
+    that assert an adverse screening outcome are the worst realization's, so a dropout or a
+    disproportionate spread one recording found is never averaged away. The level's ``screen`` word
+    is recomputed from those two outcomes, so it cannot disagree with them (plan §8.3 step 5).
+    """
+    if not rows:
+        raise GainPowerScreenError(
+            f"{group.primary_path}: the decoded level realises no recording, so it cannot be "
+            "screened")
+    level = group.primary_path
+    primary = next(row for row in rows if row["relative_path"] == level)
+    cells: dict[str, object] = {
+        cell: grid.aggregate_cell([float(row[cell]) for row in rows], cell=cell, level=level)
+        for cell in AGGREGATED_CELLS
+    }
+    for cell in INTEGRAL_CELLS:
+        if cell in cells and not math.isclose(cells[cell], round(cells[cell]), abs_tol=1e-9):
+            raise GainPowerScreenError(
+                f"{level}: the realizations measure {cells[cell]:g} {cell}; one decoded level keeps "
+                "one native gate grid and this screen resamples nothing")
+        if cell in cells:
+            cells[cell] = round(cells[cell])
+    # The two adverse outcomes, each taken from the realization that found it worst, so a dropout
+    # or a disproportionate spread one recording found is never averaged away.
+    dropout = max(rows, key=lambda row: int(row["majority_blank_gates"]))
+    spread = max(rows, key=lambda row: float(row["max_gate_spread_ratio_to_axis_median"]))
+    cells["worst_gate_zero_fraction"] = float(dropout["worst_gate_zero_fraction"])
+    cells["worst_gate_zero_fraction_depth_mm"] = float(dropout["worst_gate_zero_fraction_depth_mm"])
+    cells["majority_blank_gates"] = int(dropout["majority_blank_gates"])
+    cells["majority_blank_depth_ranges_mm"] = str(dropout["majority_blank_depth_ranges_mm"])
+    cells["max_gate_robust_spread_mm_s"] = float(spread["max_gate_robust_spread_mm_s"])
+    cells["max_gate_robust_spread_depth_mm"] = float(spread["max_gate_robust_spread_depth_mm"])
+    cells["max_gate_spread_ratio_to_axis_median"] = float(
+        spread["max_gate_spread_ratio_to_axis_median"])
+    cells["max_gate_std_mm_s"] = float(spread["max_gate_std_mm_s"])
+    for cell in ("key_name", "key_value", "tgc_start_db", "tgc_end_db", "tgc_mode", "emit_power",
+                 "sensitivity"):
+        cells[cell] = primary[cell]
+    dropout_limited = any(bool(row["dropout_limited"]) for row in rows)
+    spread_limited = any(bool(row["spread_limited"]) for row in rows)
+    cells["dropout_limited"] = dropout_limited
+    cells["spread_limited"] = spread_limited
+    cells["screen"] = _screen_verdict(dropout_limited, spread_limited)
+    return {
+        "axis": axis, "relative_path": level, "requested_label": primary["requested_label"],
+        "realizations": len(rows), "realization_paths": ";".join(group.realization_paths),
+        **{cell: cells[cell] for cell in LEVEL_CELL_ORDER},
+    }
+
+
+def _aggregate_depth_rows(
+    axis: str, group: grid.LevelGroup, rows: Sequence[Sequence[Mapping[str, object]]]
+) -> tuple[dict[str, object], ...]:
+    """One level's depth-resolved rows: its realizations' rows under the same two rules.
+
+    Every numeric gate cell is the unweighted mean of the realizations' cells at that gate, while
+    ``majority_blank`` is true when **any** realization found that gate majority-blank: the dropout
+    each recording saw stays visible at the depth it was seen (plan §8.3 step 5).
+    """
+    level = group.primary_path
+    primary_index = list(group.realization_paths).index(level)
+    frame = rows[primary_index]
+    if any(len(item) != len(frame) for item in rows):
+        raise GainPowerScreenError(
+            f"{level}: the realizations' depth rows do not share one native gate grid "
+            f"({[len(item) for item in rows]} rows against {len(frame)}); this screen resamples "
+            "nothing")
+    aggregated: list[dict[str, object]] = []
+    for at, reference in enumerate(frame):
+        cells = {
+            cell: grid.aggregate_cell(
+                [float(item[at][cell]) for item in rows], cell=cell, level=level)
+            for cell in AGGREGATED_DEPTH_CELLS
+        }
+        aggregated.append({
+            "axis": axis, "relative_path": level, "requested_label": reference["requested_label"],
+            "key_name": reference["key_name"], "key_value": reference["key_value"],
+            "gate_index": reference["gate_index"], "depth_mm": reference["depth_mm"],
+            "in_plan_window": reference["in_plan_window"],
+            "profiles_window": round(cells["profiles_window"]),
+            "mean_mm_s": cells["mean_mm_s"], "robust_spread_mm_s": cells["robust_spread_mm_s"],
+            "std_mm_s": cells["std_mm_s"], "rms_mm_s": cells["rms_mm_s"],
+            "zero_fraction": cells["zero_fraction"],
+            "majority_blank": any(bool(item[at]["majority_blank"]) for item in rows),
+        })
+    return tuple(aggregated)
+
+
+def _axis_levels_and_depths(
+    axis: str, manifest_path: Path, decoded, metrics, support, window_s
+) -> tuple[
+    tuple[dict[str, object], ...],
+    tuple[dict[str, object], ...],
+    float,
+    tuple[dict[str, object], ...],
+]:
+    """The axis's ladder: every eligible level aggregated, plus its depth rows and axis median.
+
+    Each realization is measured independently first - the axis's median per-gate robust spread is
+    its own median over those measurements - and each level is then summarised from its
+    realizations (plan §8.3 step 5). The per-realization rows are returned in input order, so the
+    provenance document can publish the numbers every level mean was aggregated from.
+    """
+    axis_median = float(np.median([np.median(own.per_gate["iqr"]) for own in metrics]))
+    realization_levels = {
+        entry.relative_path: _level_row(axis, entry, own, depths, axis_median)
+        for (_group, entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
+    }
+    realization_depths = {
+        entry.relative_path: _depth_rows(axis, entry, own, depths)
+        for (_group, entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
+    }
+    levels: list[dict[str, object]] = []
+    depths: list[dict[str, object]] = []
+    for group, rows in selected_levels(manifest_path, axis):
+        paths = group.realization_paths
+        levels.append(_aggregate_level_row(axis, group, [realization_levels[path] for path in paths]))
+        depths.extend(
+            _aggregate_depth_rows(axis, group, [realization_depths[path] for path in paths]))
+    measured = tuple(
+        realization_levels[entry.relative_path] for _group, entry, *_rest in decoded
+    )
+    return tuple(levels), tuple(depths), axis_median, measured
+
+
 def _build_axis(
     dataset_root: Path, manifest_path: Path, axis: str, screening_threshold: grid.ScreeningThresholdBinding
 ) -> ScreenAxis:
     """Build one axis: its levels, its pairs, its depth-resolved rows and its screen."""
-    rows = select_level_rows(manifest_path, axis)  # a missing manifest is refused by name here
-    decoded = [_read_level(dataset_root, row) for row in rows]
-    entries = [entry for entry, *_ in decoded]
+    selected = selected_levels(manifest_path, axis)  # a missing manifest is refused by name here
+    decoded = [
+        (group, *_read_level(dataset_root, row)) for group, rows in selected for row in rows
+    ]
+    entries = [entry for _group, entry, *_rest in decoded]
     grid.require_clean_ofat(entries, COUPLED_SETTINGS[axis], axis_label=f"{axis}-only")
     revolutions = wp1.common_revolution_count([entry.duration_s for entry in entries])
     window_s = revolutions * wp1.NOMINAL_REVOLUTION_S
     support = grid.common_support([(entry.depth_min_mm, entry.depth_max_mm) for entry in entries])
-    metrics = [grid.level_metrics(e.relative_path, v, t, d, window_s=window_s, support=support)
-               for e, v, t, d in decoded]
-    axis_median = float(np.median([np.median(own.per_gate["iqr"]) for own in metrics]))
-    levels = tuple(_level_row(axis, e, own, d, axis_median)
-                   for (e, _v, _t, d), own in zip(decoded, metrics, strict=True))
+    metrics = [
+        grid.level_metrics(e.relative_path, v, t, d, window_s=window_s, support=support)
+        for _group, e, v, t, d in decoded
+    ]
+    levels, depths, axis_median, measured = _axis_levels_and_depths(
+        axis, manifest_path, decoded, metrics, support, window_s)
     base = _base_state(axis, levels, manifest_path)
     focus = str(base["straddling_pair"][0]), str(base["straddling_pair"][1])
-    depths = tuple(row for (entry, _v, _t, gate_depths), own in zip(decoded, metrics, strict=True)
-                   for row in _depth_rows(axis, entry, own, gate_depths))
     means = _gate_means(levels, depths)
     flagged = [row for row in levels if row["screen"] != "usable"]
     return ScreenAxis(
         axis=axis, inputs=tuple(entries), eligibility=ELIGIBILITY[axis],
-        groups=level_groups(manifest_path, axis),
+        groups=tuple(group for group, _rows in selected),
+        realizations=measured,
         levels=levels, depths=depths, base_state=base,
         pairs=tuple(
             _pair_row(axis, low, means[str(low["relative_path"])], high,
@@ -661,7 +893,9 @@ DEFINITIONS: dict[str, str] = {
     "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
     "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a gain or power effect and not a bound on repeatability or uncontrolled drift",
     "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
-    "base_state": "the level each axis does not hold: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis), and the two ladder-adjacent levels whose keys bracket it",
+    "base_state": "the level each axis's own rows do not sample: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis). Where the ladder holds that level - the shared anchor both reference recordings realize - the focus pair is the base level and the next setting above it; where it does not, the focus pair is the two ladder-adjacent levels whose keys bracket it",
+    "realizations": "the recordings that realize one decoded key: the ladder holds every eligible decoded level, so the shared anchor level (TGC ≈19.9216 dB, emitting power medium) is realized by `prf/600.BDD` and `res/1-8.BDD` rather than being absent, one dropped or one standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE + ". On this screen the cells that assert an adverse screening outcome (the dropout count, the worst zero fraction, the per-gate spread and its ratio) are the worst realization's rather than a mean, and the level's screen word is recomputed from those outcomes",
     "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit",
 }
 
@@ -764,9 +998,16 @@ def _axis_findings(screen: ScreenAxis, screening_threshold_mm_s: float) -> dict[
             "max_abs_difference_mm_s": focus["max_abs_difference_mm_s"],
             "max_abs_difference_depth_mm": focus["max_abs_difference_depth_mm"],
             "statement": (
-                f"Focus pair ({screen.axis}): the base state's own {key} "
-                f"({_key_text(base['decoded_key'])}) is no level of this axis; the levels bracketing "
-                f"it — {focus['low_path']} ({_key_text(focus['low_key'])}) and {focus['high_path']} "
+                f"Focus pair ({screen.axis}): "
+                + (
+                    f"the base state's own {key} ({_key_text(base['decoded_key'])}) "
+                    "is a level of this axis, realized by the reference recordings, so the focus "
+                    "pair compares it with the next setting above it — "
+                    if base["focus_pair_kind"] == "base_state_is_a_level"
+                    else f"the base state's own {key} ({_key_text(base['decoded_key'])}) is no level "
+                    "of this axis; the levels bracketing it — "
+                )
+                + f"{focus['low_path']} ({_key_text(focus['low_key'])}) and {focus['high_path']} "
                 f"({_key_text(focus['high_key'])}) — differ by at most "
                 f"{focus['max_abs_difference_mm_s']:.4g} mm/s at "
                 f"{focus['max_abs_difference_depth_mm']:.4g} mm = "
@@ -775,12 +1016,19 @@ def _axis_findings(screen: ScreenAxis, screening_threshold_mm_s: float) -> dict[
                 f"signed {focus['mean_signed_difference_mm_s']:+.4g} mm/s).")},
         "base_state": {
             "label": base["label"], "decoded_key": base["decoded_key"],
-            "in_ladder": base["in_ladder"], "straddling_pair": list(base["straddling_pair"]),
+            "in_ladder": base["in_ladder"], "focus_pair_kind": base["focus_pair_kind"],
+            "straddling_pair": list(base["straddling_pair"]),
             "straddling_keys": list(base["straddling_keys"]),
             "statement": (
                 f"Base state ({screen.axis}): the manifest's other rows carry {key} = "
-                f"{_key_text(base['decoded_key'])} and no level of this axis does; the ladder straddles "
-                f"it at {_key_text(base['straddling_keys'][0])} and "
+                f"{_key_text(base['decoded_key'])} "
+                + (
+                    "and this ladder holds it, realized by both reference recordings, so the "
+                    "reference condition is one of its levels "
+                    if base["in_ladder"]
+                    else "and no level of this axis does, so the ladder straddles it "
+                )
+                + f"at {_key_text(base['straddling_keys'][0])} and "
                 f"{_key_text(base['straddling_keys'][1])} "
                 f"({base['straddling_pair'][0]} / {base['straddling_pair'][1]}).")}}
 
@@ -819,6 +1067,24 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
             "pairs_above_screening_threshold": above, "flagged": [
                 {**{cell: row[cell] for cell in FLAGGED_CELLS}, "axis": name}
                 for name, row in flagged],
+            "realizations": {
+                "rule": grid.AGGREGATION,
+                "recordings": sum(len(axis.inputs) for axis in model.axes),
+                "multi_realization_levels": [
+                    {"axis": axis.axis, "relative_path": group.primary_path,
+                     "realization_paths": list(group.realization_paths)}
+                    for axis in model.axes for group in axis.groups
+                    if len(group.realizations) > 1
+                ],
+                "statement": (
+                    f"Realizations: the {len(levels)} screened levels are the setting-based "
+                    f"selection of {sum(len(axis.inputs) for axis in model.axes)} recording(s) — "
+                    "every recording whose decoded settings put it at one of these keys, whatever "
+                    "folder requested it — so the shared anchor level is present in both axes and "
+                    "carries both of the reference recordings. Each level's typical cells are the "
+                    "unweighted mean of its realizations' cells; its adverse screening cells are "
+                    "the worst realization's, so no recording's dropout is averaged away."),
+            },
             "statement": (
                 f"Screen: {len(levels)} levels over two axes and {len(pairs)} pairs; {len(flagged)} "
                 f"levels are flagged under the two declared margins ({flagged_text}) and {above} of "
@@ -869,9 +1135,10 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
             ("TGC representation: " + TGC_REPRESENTATION_ROLE
              + ". Reading word 24 as a calibrated gain set point is reading something these files do "
              "not establish, and no wider TGC ladder can be designed on that reading."),
-            ("Both axes bracket the base state rather than sampling it "
-             f"({base_text}), and that state's sensitivity is medium like every other row, so neither "
-             "axis can be compared with the committed reference recording from inside its own ladder. "
+            ("Each axis focuses on the pair that carries its base state "
+             f"({base_text}), and that state's sensitivity is medium like every other row, so the "
+             "screen compares the reference condition from inside its own ladder only where the "
+             "shared anchor level is one of its levels. "
              + SENSITIVITY_ROLE + " — no pair in this screen varies it, and its effect on dropout, "
              "bias or spread is not estimable from the committed sweep.")]}
 
@@ -882,12 +1149,15 @@ def figure_caption(model: GainPowerScreen) -> str:
     reader of the figure alone cannot miss the caveats."""
     findings = _findings(model)
     summary, diagnostic = findings["screen_summary"], findings["diagnostic"]
+    realizations = summary["realizations"]
     first, second = model.axes
     labels = [", ".join(str(row["requested_label"]) for row in axis.levels) for axis in model.axes]
     return (
         f"{ARTEFACT}: the velocity-only screening of {summary['levels']} committed levels over two "
         f"axes — {first.axis} {len(first.levels)} ({labels[0]}) and {second.axis} "
-        f"{len(second.levels)} ({labels[1]}). Common-duration view per axis: "
+        f"{len(second.levels)} ({labels[1]}). "
+        + realizations["statement"] + " "
+        f"Common-duration view per axis: "
         f"{first.common['revolutions']} nominal {first.common['nominal_rpm']:g}-RPM revolutions = "
         f"{first.common['window_s']:.4g} s for {first.axis} and {second.common['revolutions']} = "
         f"{second.common['window_s']:.4g} s for {second.axis}, truncated per file by the recorded "
@@ -908,6 +1178,12 @@ def figure_caption(model: GainPowerScreen) -> str:
 def _axis_document(axis: ScreenAxis) -> dict[str, object]:
     """One axis's block of the provenance document, keys in a fixed order."""
     common = axis.common
+    level_of = {path: group.primary_path for group in axis.groups
+                for path in group.realization_paths}
+    cells: dict[str, dict[str, object]] = {
+        field: {row["relative_path"]: row[field] for row in axis.realizations}
+        for field in REALIZATION_CELLS
+    }
     return {
         "axis": axis.axis, "tgc_representation": axis.tgc_representation,
         "key": {"column": KEY_COLUMN[axis.axis], "label": KEY_LABEL[axis.axis],
@@ -916,13 +1192,37 @@ def _axis_document(axis: ScreenAxis) -> dict[str, object]:
                               "tgc_mode": axis.levels[0]["tgc_mode"],
                               "sensitivity": SENSITIVITY_VALUE},
         "base_state": axis.base_state,
+        "aggregation": {
+            "rule": grid.AGGREGATION, "statement": grid.AGGREGATION_RULE,
+            "levels": len(axis.levels), "recordings": len(axis.inputs),
+            "multi_realization_levels": [
+                {"relative_path": group.primary_path,
+                 "realization_paths": list(group.realization_paths)}
+                for group in axis.groups if len(group.realizations) > 1
+            ],
+            "worst_cells": list(WORST_CELLS),
+            "worst_cells_rule": (
+                "a cell that asserts an adverse screening outcome is the worst realization's "
+                "value, not a mean over realizations, so a dropout or a disproportionate spread "
+                "one recording found is never averaged away; the level's screen word is recomputed "
+                "from those outcomes"),
+        },
         "screening": {key: axis.screen[key] for key in (
             "dropout_gate_limit", "spread_ratio_limit", "levels_screened", "levels_flagged",
             "levels_dropout_limited", "levels_spread_limited", "flagged_paths",
             "axis_median_gate_robust_spread_mm_s")},
-        "inputs": [{**{cell: row[cell] for cell in INPUT_CELLS},
-                    "source_sha256": entry.source_sha256}
-                   for row, entry in zip(axis.levels, axis.inputs, strict=True)],
+        "inputs": [
+            {**{cell: row[cell] for cell in INPUT_CELLS},
+             "relative_path": entry.relative_path,
+             "level_path": level_of[entry.relative_path],
+             "realizations": next(r["realizations"] for r in axis.levels
+                                  if r["relative_path"] == level_of[entry.relative_path]),
+             "source_sha256": entry.source_sha256}
+            for entry, row in zip(axis.inputs, axis.realizations, strict=True)],
+        "levels": [
+            grid.level_realizations_document(group, cells, fields=REALIZATION_CELLS)
+            for group in axis.groups
+        ],
         "views": {
             "time": {
                 "common_duration": {key: common[key] for key in (
@@ -1025,7 +1325,7 @@ def render_figure(model: GainPowerScreen, path: Path, *, dpi: int = 150) -> Path
         focus_ax.invert_yaxis()
         focus_ax.grid(alpha=0.2)
         focus_ax.legend(loc="lower left", fontsize=6.2, framealpha=0.9)
-        focus_ax.set_title("focus pairs bracketing the base state, against the WP1 screening_threshold band",
+        focus_ax.set_title("focus pairs carrying the base state, against the WP1 screening_threshold band",
                            fontsize=9.5)
 
     return grid.panel_figure(

@@ -56,16 +56,29 @@ RELATIVE_ENVELOPE = Path("reports/mixer-sensitivity-analysis/reference-repeat.pr
 COMMIT = "0123456789abcdef0123456789abcdef01234567"  # test-local, never the checkout
 
 TGC_PATHS = tuple(f"tgc/{label}.BDD" for label in ("0", "5", "10", "15", "25", "30", "35", "40"))
-TGC_KEYS = (0.156862745098, 4.86274509804, 9.88235294118, 14.9019607843,
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in (plan §8.2 R1).
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+#: Every recording the TGC ladder screens: the eight ``tgc`` rows plus the shared anchor level's
+#: two recordings, which no ``tgc`` row requests (plan §8.3 step 5).
+TGC_INPUTS = ("tgc/0.BDD", "tgc/5.BDD", "tgc/10.BDD", "tgc/15.BDD",
+              *ANCHOR_PATHS, "tgc/25.BDD", "tgc/30.BDD", "tgc/35.BDD", "tgc/40.BDD")
+#: The decoded TGC start of every level, in ladder order: the eight requested values with the
+#: shared anchor's 19.9216 dB between 15 and 25.
+TGC_KEYS = (0.156862745098, 4.86274509804, 9.88235294118, 14.9019607843, 19.9215686275,
             24.9411764706, 29.9607843137, 34.9803921569, 40.0)
 POWER_PATHS = ("em_pow/low.BDD", "em_pow/high.BDD")  # declared order, not filename order
+#: Every recording the power ladder screens: the two ``em_pow`` rows plus the shared anchor level's
+#: two recordings, which realize ``medium`` (plan §8.3 step 5).
+POWER_INPUTS = ("em_pow/low.BDD", *ANCHOR_PATHS, "em_pow/high.BDD")
 ENVELOPE_MM_S = 19.37008103465545
 SUPPORT_MM = (10.162666666666668, 100.81266666666667)
 #: The two per-axis common-duration views and the profile count each file contributes to them.
 TGC_REVOLUTIONS, TGC_WINDOW_S, TGC_PROFILES = 77, 9.24, 413
 POWER_REVOLUTIONS, POWER_WINDOW_S, POWER_PROFILES = 96, 11.52, 515
-#: The base state the manifest's other rows carry, and the level each axis does not hold.
+#: The base state the manifest's other rows carry: a level of each ladder now that both axes
+#: screen every eligible level (plan §8.3 step 5).
 TGC_BASE_DB, POWER_BASE = 19.9215686275, "medium"
+ANCHOR_TGC_PATH, ANCHOR_POWER_PATH = "prf/600.BDD", "prf/600.BDD"
 #: The two screened levels, with the numbers the tables carry.
 TGC_FLAGGED = ("tgc/0.BDD", "tgc/40.BDD")
 TGC_ZERO_FRACTION = {"tgc/0.BDD": 0.243729, "tgc/40.BDD": 0.0387893}
@@ -73,9 +86,13 @@ TGC_MAJORITY_BLANK = {"tgc/0.BDD": 10, "tgc/40.BDD": 1}
 TGC_BLANK_RANGES = {"tgc/0.BDD": "84.1627..100.813", "tgc/40.BDD": "69.3627..69.3627"}
 TGC_SPREAD_RATIO = 4.9697  # tgc/40.BDD's largest per-gate spread / the axis median
 WORST_PAIR = ("tgc/30.BDD", "tgc/40.BDD", 47.1038, 73.0627, 2.4318, "73.0627..74.9127")
-FOCUS_TGC = ("tgc/15.BDD", "tgc/25.BDD", 11.6921, 0, 0.6036)
-FOCUS_POWER = ("em_pow/low.BDD", "em_pow/high.BDD", 10.4099, 0, 0.5374)
-TGC_PAIRS_ABOVE, TGC_PAIRS = 14, 28
+#: Each axis's focus pair carries its base state: the TGC anchor level (realized by both reference
+#: recordings) against the next setting above it, and ``medium`` against ``high``.
+FOCUS_TGC = ("prf/600.BDD", "tgc/25.BDD", 15.3951, 0, 0.79479)
+FOCUS_POWER = ("prf/600.BDD", "em_pow/high.BDD", 13.3865, 0, 0.69109)
+TGC_PAIRS_ABOVE, TGC_PAIRS = 17, 36
+POWER_PAIRS_ABOVE, POWER_PAIRS = 0, 3
+SCREENED_LEVELS, SCREENED_RECORDINGS = 12, 14
 
 
 def _raw_words(path: Path, channel: int = 1) -> np.ndarray:
@@ -157,7 +174,7 @@ def test_the_screen_declares_both_axes_and_their_artefacts() -> None:
         LEVELS_NAME, PAIRS_NAME, DEPTHS_NAME)
     assert module.PROVENANCE_NAME == "gain-power-screen.provenance.json"
     assert module.FIGURE_NAME == "gain-power-screen.png"
-    assert len(LEVEL_COLUMNS) == len(set(LEVEL_COLUMNS)) == 36
+    assert len(LEVEL_COLUMNS) == len(set(LEVEL_COLUMNS)) == 38
     assert len(PAIR_COLUMNS) == len(set(PAIR_COLUMNS)) == 21
     assert len(DEPTH_COLUMNS) == len(set(DEPTH_COLUMNS)) == 15
     assert set(INPUT_CELLS) <= set(LEVEL_COLUMNS)
@@ -173,7 +190,10 @@ def test_the_screen_declares_both_axes_and_their_artefacts() -> None:
 def test_each_axis_is_selected_from_the_manifest_never_a_filename_list(tmp_path) -> None:
     rows = {axis: select_level_rows(RELATIVE_MANIFEST, axis) for axis in AXES}
     assert tuple(row["relative_path"] for row in rows["tgc"]) == TGC_PATHS
-    assert tuple(float(row["tgc_start_db"]) for row in rows["tgc"]) == TGC_KEYS
+    # ``select_level_rows`` is the axis's own request; the ladder itself holds every eligible
+    # level (plan §8.3 step 5).
+    assert tuple(float(row["tgc_start_db"]) for row in rows["tgc"]) == (
+        TGC_KEYS[:4] + TGC_KEYS[5:])
     assert tuple(row["relative_path"] for row in rows["em_pow"]) == POWER_PATHS
     assert tuple(row["emit_power"] for row in rows["em_pow"]) == ("low", "high")
     assert {row["axis"] for row in rows["tgc"]} == {"tgc"}
@@ -330,13 +350,15 @@ def test_every_screened_level_carries_the_uniform_mode_and_the_fixed_end(screen)
 
 def test_the_power_axis_holds_the_tgc_cells_and_only_its_own_key_moves(axis_rows) -> None:
     power = axis_rows["em_pow"]
-    assert [row["emit_power"] for row in power.levels] == ["low", "high"]
+    assert [row["emit_power"] for row in power.levels] == ["low", "medium", "high"]
     for cell in ("tgc_start_db", "tgc_end_db", "tgc_mode", "sensitivity", "resolution_mm",
                  "prf_period_us", "burst_length", "emissions_per_profile", "gates"):
         assert len({row[cell] for row in power.levels}) == 1, cell
     assert {row["tgc_start_db"] for row in power.levels} == {19.92156862745098}
-    assert [row["requested_label"] for row in power.levels] == ["low", "high"]
-    assert [row["key_value"] for row in power.levels] == ["low", "high"]
+    # The medium level's primary is the reference recording that realizes it, so its label is
+    # that recording's own request rather than one of this axis's.
+    assert [row["requested_label"] for row in power.levels] == ["low", "600", "high"]
+    assert [row["key_value"] for row in power.levels] == ["low", "medium", "high"]
 
 
 # --------------------------------------------------------------------------- common views
@@ -353,7 +375,7 @@ def test_the_two_axes_keep_their_own_common_window_and_support(axis_rows) -> Non
         assert (axis.common["support_min_mm"], axis.common["support_max_mm"]) == SUPPORT_MM
         assert axis.common["contains_plan_window"] is True
         assert len(axis.depths) == 50 * len(axis.levels)
-    assert tgc.common["levels"] == 8 and power.common["levels"] == 2
+    assert tgc.common["levels"] == 9 and power.common["levels"] == 3
 
 
 # --------------------------------------------------------------------------- levels and depths
@@ -430,21 +452,27 @@ def test_each_axis_reports_the_pair_that_brackets_the_base_state(screen, axis_ro
         assert focus["max_abs_difference_mm_s"] == pytest.approx(absolute, rel=1e-4)
         assert focus["knots_above_screening_threshold"] == knots
         assert focus["max_abs_difference_over_screening_threshold"] == pytest.approx(ratio, rel=1e-4)
+    # The base state is a level of both ladders now (§8.3 step 5): the shared anchor is realized
+    # by the two reference recordings, so the focus pair carries it as its lower member.
     assert tgc.base_state["decoded_key"] == "19.9215686275"
-    assert tgc.base_state["in_ladder"] is False
+    assert tgc.base_state["in_ladder"] is True
+    assert tgc.base_state["focus_pair_kind"] == "base_state_is_a_level"
     assert tuple(tgc.base_state["straddling_pair"]) == FOCUS_TGC[:2]
     assert power.base_state["decoded_key"] == POWER_BASE
-    assert power.base_state["in_ladder"] is False
+    assert power.base_state["in_ladder"] is True
+    assert power.base_state["focus_pair_kind"] == "base_state_is_a_level"
     assert tuple(power.base_state["straddling_pair"]) == FOCUS_POWER[:2]
-    assert [row["focus_pair"] for row in power.pairs] == [True]
+    assert [row["focus_pair"] for row in power.pairs] == [False, False, True]
 
 
 def test_the_key_gap_counts_in_the_axis_own_declared_order(screen) -> None:
     tgc = next(axis for axis in screen.axes if axis.axis == "tgc")
     focus = next(row for row in tgc.pairs if row["focus_pair"])
-    assert focus["key_gap"] == pytest.approx(24.941176470588236 - 14.901960784313726)
+    # The focus pair carries the shared anchor level (19.9216 dB) and the next setting above it.
+    assert focus["key_gap"] == pytest.approx(24.941176470588236 - 19.9215686275)
     power = next(axis for axis in screen.axes if axis.axis == "em_pow")
-    assert power.pairs[0]["key_gap"] == 2.0  # low -> high spans the base state's medium
+    assert power.pairs[0]["key_gap"] == 1.0  # low -> medium
+    assert power.pairs[-1]["key_gap"] == 1.0  # medium -> high: one step either side of the base
 
 
 # --------------------------------------------------------------------------- findings
@@ -460,7 +488,7 @@ def test_the_screen_says_what_velocity_only_cannot_say(findings, screen) -> None
     assert "dropout" in measured and "bias" in measured and "spread" in measured
     sensitivity = findings["sensitivity"]
     assert sensitivity["values_in_manifest"] == (SENSITIVITY_VALUE,)
-    assert sensitivity["rows_in_manifest"] == 40 and sensitivity["levels_screened"] == 10
+    assert sensitivity["rows_in_manifest"] == 40 and sensitivity["levels_screened"] == SCREENED_LEVELS
     assert sensitivity["axis_present"] is False and sensitivity["identifiable"] is False
     assert screen.sensitivity["values_in_manifest"] == (SENSITIVITY_VALUE,)
     assert manifest_cell_values(RELATIVE_MANIFEST, "sensitivity") == (SENSITIVITY_VALUE,)
@@ -484,7 +512,13 @@ def test_the_diagnostic_verdict_asks_for_one_measurement_not_a_ladder(findings) 
     assert "echo/energy" in diagnostic["statement"]
     assert "does not predict that diagnostic's outcome" in diagnostic["statement"]
     summary = findings["screen_summary"]
-    assert (summary["levels"], summary["pairs"], summary["levels_flagged"]) == (10, 29, 2)
+    assert (summary["levels"], summary["pairs"], summary["levels_flagged"]) == (
+        SCREENED_LEVELS, TGC_PAIRS + POWER_PAIRS, 2)
+    realizations = summary["realizations"]
+    assert realizations["recordings"] == SCREENED_RECORDINGS
+    assert realizations["multi_realization_levels"] == [
+        {"axis": axis, "relative_path": ANCHOR_PATHS[0], "realization_paths": list(ANCHOR_PATHS)}
+        for axis in ("tgc", "em_pow")]
     assert [row["relative_path"] for row in summary["flagged"]] == list(TGC_FLAGGED)
     assert findings["axes"]["tgc"]["effect_gate"]["pairs"] == TGC_PAIRS
     assert findings["axes"]["em_pow"]["effect_gate"]["knots_above_screening_threshold"] == 0
@@ -508,12 +542,12 @@ def test_provenance_records_bindings_definitions_views_and_the_caption(screen) -
     assert document["axis_blocks"][0]["audited_constants"]["tgc_mode"] == TGC_MODE_LABEL
     assert document["axis_blocks"][0]["tgc_representation"]["key_cell"] == "tgc_start_db"
     assert document["axis_blocks"][0]["views"]["alignment"]["upsampled"] is False
-    assert document["axis_blocks"][0]["views"]["depths"]["rows"] == 400
+    assert document["axis_blocks"][0]["views"]["depths"]["rows"] == 50 * 9
     assert set(document["definitions"]) >= {
         "key", "tgc_representation", "difference", "screening_threshold", "velocity_only", "base_state"}
-    assert document["tables"]["levels"]["rows"] == 10
-    assert document["tables"]["pairs"]["rows"] == 29
-    assert document["tables"]["depths"]["rows"] == 500
+    assert document["tables"]["levels"]["rows"] == SCREENED_LEVELS
+    assert document["tables"]["pairs"]["rows"] == TGC_PAIRS + POWER_PAIRS
+    assert document["tables"]["depths"]["rows"] == 50 * SCREENED_LEVELS
     assert document["figure"]["path"] == "figures/gain-power-screen.png"
     assert len(document["figure"]["panels"]) == 2
     assert "gain-power-screen --analysis-commit" in document["regeneration"]["command"]
@@ -534,7 +568,7 @@ def test_the_inputs_block_keeps_every_rechecked_cell_and_the_source_hash(screen)
         (DATA_ROOT / TGC_PATHS[0]).read_bytes()).hexdigest()
     assert set(INPUT_CELLS) <= set(first)
     assert first["screen"] == "dropout-limited"
-    assert [row["relative_path"] for row in block["inputs"]] == list(TGC_PATHS)
+    assert [row["relative_path"] for row in block["inputs"]] == list(TGC_INPUTS)
 
 
 # --------------------------------------------------------------------------- CLI and artefacts
@@ -553,8 +587,9 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
         assert b"\r\n" not in body
     rows = {name: (artefact_dir / name).read_text(encoding="utf-8").splitlines()
             for name in names}
-    assert len(rows[LEVELS_NAME]) == 11 and len(rows[PAIRS_NAME]) == 30
-    assert len(rows[DEPTHS_NAME]) == 501
+    assert len(rows[LEVELS_NAME]) == SCREENED_LEVELS + 1
+    assert len(rows[PAIRS_NAME]) == TGC_PAIRS + POWER_PAIRS + 1
+    assert len(rows[DEPTHS_NAME]) == 50 * SCREENED_LEVELS + 1
     provenance = json.loads((artefact_dir / "gain-power-screen.provenance.json").read_text())
     assert provenance["analysis_commit"] == COMMIT
     assert (artefact_dir / "figures" / "gain-power-screen.png").is_file()
@@ -758,4 +793,30 @@ def test_the_screen_carries_the_setting_based_selection_beside_its_levels(screen
         assert anchor.realization_paths == ANCHOR_PATHS, axis.axis
         assert anchor.requested_paths == (), axis.axis
         assert anchor.ladder_label == module.KEY_LABEL[axis.axis], axis.axis
-    assert "realizations" not in json.dumps(module.provenance_document(screen))
+        # Step 5: the ladder is the setting-based selection itself, so the shared anchor level is
+        # one of the axis's levels with both of the reference recordings behind it.
+        assert len(axis.groups) == len(axis.levels) == len(axis.common["profiles_window"])
+        assert [row["relative_path"] for row in axis.levels] == [
+            group.primary_path for group in axis.groups
+        ]
+        assert len(axis.pairs) == len(axis.levels) * (len(axis.levels) - 1) // 2
+        assert len(axis.inputs) == sum(len(group.realizations) for group in axis.groups)
+        level = next(row for row in axis.levels if row["realization_paths"] == ";".join(ANCHOR_PATHS))
+        members = [row for row in axis.realizations if row["relative_path"] in ANCHOR_PATHS]
+        assert [row["relative_path"] for row in members] == list(ANCHOR_PATHS)
+        assert level["realizations"] == 2
+        # The level's typical cells are the unweighted mean of its realizations'; its adverse
+        # screening cells are the worst realization's, so no dropout is averaged away.
+        assert level["mean_mm_s"] == pytest.approx(
+            float(np.mean([row["mean_mm_s"] for row in members])))
+        assert level["majority_blank_gates"] == max(
+            row["majority_blank_gates"] for row in members)
+        assert level["dropout_limited"] == any(row["dropout_limited"] for row in members)
+        assert level["spread_limited"] == any(row["spread_limited"] for row in members)
+    document = module.provenance_document(screen)
+    for block in document["axis_blocks"]:
+        assert block["aggregation"]["rule"] == (
+            "unweighted arithmetic mean over the level's realizations")
+        assert block["aggregation"]["recordings"] == len(block["inputs"])
+        assert block["levels"][0]["aggregation"] == block["aggregation"]["rule"]
+    assert "realizations" in json.dumps(document)

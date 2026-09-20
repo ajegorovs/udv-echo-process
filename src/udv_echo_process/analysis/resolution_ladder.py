@@ -9,9 +9,11 @@ their decoded **scientific fingerprint**: :data:`ELIGIBILITY` names the pitch as
 axis may move, so every recording that shares the rest of the fingerprint - including
 `prf/600.BDD`, which sits under another folder - is eligible and realizes the level its own decoded
 pitch names, with the two 1.850 mm recordings recorded as two named realizations of one level
-(plan §8.3 step 2, R1/R4). The committed ladder still holds the levels this axis itself requested;
-the setting-based rebuild of §8.3 step 5 renders the realizations into the artefacts. One build
-produces:
+(plan §8.3 step 2, R1/R4). The ladder holds **every eligible decoded level**, and each level's
+numbers are measured per realization and then summarised by the shared, unweighted rule
+(:data:`udv_echo_process.analysis._native_grid.AGGREGATION_RULE`): one decoded pitch is one level
+however many recordings realize it, and no recording is dropped, collapsed into another's path or
+allowed to outweigh another (plan §8.3 step 5). One build produces:
 
 - the **common views** — the largest whole number of nominal 500-RPM revolutions (0.12 s) fitting
   every recording, and the intersection of the decoded depth ranges (plan §3.1, §3.2);
@@ -114,15 +116,41 @@ PLAN_SUPPORT_MM: tuple[float, float] = (10.163, 96.743)
 PLAN_SUPPORT_TOLERANCE_MM = 0.01
 
 #: Column order of ``resolution-levels.csv``; the field order of :class:`LevelRow` is
-#: the same tuple, so the table and the model cannot drift apart.
+#: the same tuple, so the table and the model cannot drift apart. ``realizations`` and
+#: ``realization_paths`` name the recordings one level summarises: a level with two of them is one
+#: row, and both paths are still published here rather than collapsed (plan §8.3 step 5).
 LEVEL_COLUMNS: tuple[str, ...] = (
-    "axis", "relative_path", "requested_label", "pitch_mm", "gates", "duration_s",
+    "axis", "relative_path", "requested_label", "realizations", "realization_paths",
+    "pitch_mm", "gates", "duration_s",
     "profiles", "profiles_window", "gates_in_support", "depth_min_mm",
     "depth_max_mm", "support_min_mm", "support_max_mm", "mean_mm_s",
     "robust_spread_mm_s", "rms_mm_s", "zero_fraction", "time_iqr_median_mm_s",
     "gradient_median_abs_mm_s_per_mm", "gradient_max_abs_mm_s_per_mm",
     "gradient_max_depth_mm", "correlation_length_mm", "correlation_lag_max_mm",
     "correlation_reaches_floor", "correlation_length_over_pitch",
+)
+
+#: The level cells the shared aggregation rule is applied to (plan §8.3 step 5): everything a level
+#: row carries apart from its identity (``axis``/``relative_path``/``requested_label``), the set it
+#: names (``realizations``/``realization_paths``), the one view it was measured in
+#: (``support_min_mm``/``support_max_mm``) and its one boolean verdict, which aggregates by
+#: conjunction rather than by a mean.
+AGGREGATED_CELLS: tuple[str, ...] = (
+    "pitch_mm", "duration_s", "profiles", "profiles_window", "depth_min_mm", "depth_max_mm",
+    "mean_mm_s", "robust_spread_mm_s", "rms_mm_s", "zero_fraction", "time_iqr_median_mm_s",
+    "gradient_median_abs_mm_s_per_mm", "gradient_max_abs_mm_s_per_mm", "gradient_max_depth_mm",
+    "correlation_length_mm", "correlation_lag_max_mm", "correlation_length_over_pitch",
+)
+#: Cells that stay whole numbers: every realization of one level measures the same native gate grid,
+#: so their gate counts are identical and the mean is one of them. Refused if it is not.
+INTEGRAL_CELLS: tuple[str, ...] = ("gates", "gates_in_support")
+#: The per-realization cells the provenance document publishes beside each level's mean, so every
+#: mean can be audited against the recordings it summarises.
+REALIZATION_CELLS: tuple[str, ...] = (
+    "profiles", "profiles_window", "gates", "gates_in_support", "duration_s", "mean_mm_s",
+    "robust_spread_mm_s", "rms_mm_s", "zero_fraction", "time_iqr_median_mm_s",
+    "gradient_median_abs_mm_s_per_mm", "gradient_max_abs_mm_s_per_mm",
+    "correlation_length_mm", "correlation_reaches_floor",
 )
 
 #: Column order of ``resolution-pairs.csv``; one row per unordered level pair.
@@ -183,16 +211,26 @@ class CommonView(ValueModel):
 
 
 class LevelRow(ValueModel):
-    """One row of ``resolution-levels.csv``: a level on its own native grid."""
+    """One row of ``resolution-levels.csv``: a decoded level on its own native grid.
+
+    A level summarises **every** recording that realizes it (plan §8.3 step 5): every numeric cell is
+    the unweighted mean of its realizations' cells, ``correlation_reaches_floor`` holds only when
+    every realization's own autocovariance reached the 1/e floor, ``profiles``/``profiles_window``/
+    ``duration_s`` are means because two realizations of one setting observe for different lengths,
+    ``gates``/``gates_in_support`` are the one gate grid their shared resolution gives them, and
+    ``realization_paths`` names each recording rather than collapsing them.
+    """
 
     axis: str
     relative_path: str
     requested_label: str
+    realizations: int
+    realization_paths: str
     pitch_mm: float
     gates: int
     duration_s: float
-    profiles: int
-    profiles_window: int
+    profiles: float
+    profiles_window: float
     gates_in_support: int
     depth_min_mm: float
     depth_max_mm: float
@@ -210,6 +248,16 @@ class LevelRow(ValueModel):
     correlation_lag_max_mm: float
     correlation_reaches_floor: bool
     correlation_length_over_pitch: float
+
+    @model_validator(mode="after")
+    def _check_the_level_names_every_realization(self) -> LevelRow:
+        paths = [path for path in self.realization_paths.split(";") if path]
+        if len(paths) != self.realizations or self.relative_path not in paths:
+            raise ValueError(
+                f"a level must name each of its {self.realizations} realization(s), including "
+                f"its own {self.relative_path!r}, got {self.realization_paths!r}"
+            )
+        return self
 
 
 class PairRow(ValueModel):
@@ -265,8 +313,9 @@ class ResolutionLadder(ValueModel):
 
     ``eligibility`` and ``groups`` are the *selection* the levels were drawn from (plan §8.3
     step 2): the axis's fingerprint contract, and every eligible level with all its realizations,
-    including the reference recordings another folder requested. The written artefacts still carry
-    the requested levels; the setting-based rebuild of §8.3 step 5 renders the groups.
+    including the reference recordings another folder requested. ``levels`` is exactly those
+    levels - one row per decoded pitch, each summarising every recording that realizes it - and
+    ``inputs`` is every realization of every level, one entry per recording (plan §8.3 step 5).
     """
 
     dataset_root: str
@@ -282,14 +331,37 @@ class ResolutionLadder(ValueModel):
     focus_pair: tuple[str, str]
     levels: tuple[LevelRow, ...]
     pairs: tuple[PairRow, ...]
+    #: One row per realization, in input order: the per-recording numbers every level mean was
+    #: aggregated from, kept so a reviewer can audit each mean against the recordings behind it
+    #: (plan §8.3 step 5).
+    realizations: tuple[LevelRow, ...] = ()
 
     @model_validator(mode="after")
     def _check_the_ladder_is_internally_consistent(self) -> ResolutionLadder:
         paths = [row.relative_path for row in self.levels]
-        if len(set(paths)) != len(paths) or paths != [
-            entry.relative_path for entry in self.inputs
-        ]:
-            raise ValueError("every level must appear exactly once, in input order")
+        if len(set(paths)) != len(paths):
+            raise ValueError("every level must appear exactly once")
+        if self.groups and [group.primary_path for group in self.groups] != paths:
+            raise ValueError(
+                "the ladder must be exactly the eligible decoded levels, in their order; got "
+                f"{[group.primary_path for group in self.groups]} beside {paths}"
+            )
+        measured = {entry.relative_path for entry in self.inputs}
+        if len(measured) != len(self.inputs):
+            raise ValueError("every realization must appear exactly once, in its level's order")
+        for group, row in zip(self.groups, self.levels, strict=False):
+            if set(group.realization_paths) != set(row.realization_paths.split(";")):
+                raise ValueError(
+                    f"{row.relative_path}: the level must name exactly the realizations the "
+                    "selection grouped with it"
+                )
+        if self.groups and measured != {
+            path for group in self.groups for path in group.realization_paths
+        }:
+            raise ValueError(
+                "every level must be measured on exactly its own realizations, and on no other "
+                "recording"
+            )
         pitches = [row.pitch_mm for row in self.levels]
         if any(b <= a for a, b in itertools.pairwise(pitches)):
             raise ValueError("levels must be ordered by increasing pitch")
@@ -304,12 +376,6 @@ class ResolutionLadder(ValueModel):
             raise ValueError(f"focus pair {self.focus_pair} must be one of the pairs")
         if self.screening_threshold.value_mm_s <= 0.0:
             raise ValueError("the repeatability screening_threshold must be positive")
-        representatives = [group.primary_path for group in self.groups if group.in_ladder]
-        if representatives and representatives != paths:
-            raise ValueError(
-                "the ladder must be exactly the representatives of the in-ladder groups, in "
-                f"their order; got {representatives} beside {paths}"
-            )
         for entry in self.inputs:
             if not (
                 entry.depth_min_mm <= self.common.support_min_mm
@@ -324,6 +390,12 @@ class ResolutionLadder(ValueModel):
                     f"{entry.relative_path} has fewer than two gates in the common "
                     "support; its spatial metrics are undefined"
                 )
+        if self.realizations and [row.relative_path for row in self.realizations] != [
+            entry.relative_path for entry in self.inputs
+        ]:
+            raise ValueError(
+                "the per-realization rows must cover every recording once, in input order"
+            )
         return self
 
 
@@ -421,11 +493,13 @@ def _read_level(
 def level_row(
     entry: LevelInput, metrics: LevelMetrics, *, support: tuple[float, float]
 ) -> LevelRow:
-    """One level's row: the common-duration window on its own native grid.
+    """One *realization's* row: the common-duration window on its own native grid.
 
     Every distributional metric uses the common window and only the gates inside the common support,
     and both spatial metrics use that supported native grid: the shared metric layer's numbers,
-    computed before any alignment.
+    computed before any alignment. One level's row is its realizations' rows under
+    :func:`aggregate_level_row`; this is one recording's own numbers, published per realization so
+    the mean can be audited (plan §8.3 step 5).
     """
     gradient, correlation = metrics.gradient, metrics.correlation
     means = metrics.means
@@ -433,6 +507,8 @@ def level_row(
         axis=entry.axis,
         relative_path=entry.relative_path,
         requested_label=entry.requested_label,
+        realizations=1,
+        realization_paths=entry.relative_path,
         pitch_mm=entry.pitch_mm,
         gates=entry.gates,
         duration_s=entry.duration_s,
@@ -560,38 +636,121 @@ def _focus_pair(levels: Sequence[LevelRow]) -> tuple[str, str]:
     return selected[0], selected[1]
 
 
+# ── the level aggregation (plan §8.3 step 5) ───────────────────────────
+
+
+def selected_levels(manifest_path: Path) -> tuple[tuple[LevelGroup, tuple[dict[str, str], ...]], ...]:
+    """Every eligible ``res`` level beside the rows of *every* recording that realizes it.
+
+    The ladder is the setting-based selection (plan §8.3 step 5): a decoded pitch is one level, and
+    a recording under another folder that carries the same swept settings realizes it rather than
+    being excluded. Ordered by decoded pitch, then by the level's primary path.
+    """
+    path = Path(manifest_path)
+    return grid.grouped_level_rows(
+        path, eligibility=ELIGIBILITY, order_key=_order_key(path), order_label="pitch"
+    )
+
+
+def aggregate_level_row(
+    group: LevelGroup, rows: Sequence[LevelRow], *, support: tuple[float, float]
+) -> LevelRow:
+    """One decoded level's row: its realizations' rows under the shared aggregation rule.
+
+    Every numeric cell is the unweighted mean of its realizations' cells (one realization, one
+    vote), ``gates``/``gates_in_support`` are the one native gate grid the level's shared resolution
+    gives every realization, and ``correlation_reaches_floor`` holds only when every realization's
+    own autocovariance reached 1/e - so no realization is dropped, collapsed into another's path or
+    allowed to outweigh another (plan §8.3 step 5, R1).
+    """
+    if not rows:
+        raise ResolutionLadderError(
+            f"{group.primary_path}: the decoded level realises no recording, so it cannot be "
+            "measured"
+        )
+    level = group.primary_path
+    cells: dict[str, object] = {
+        cell: grid.aggregate_cell(
+            [float(getattr(row, cell)) for row in rows], cell=cell, level=level
+        )
+        for cell in AGGREGATED_CELLS
+    }
+    for cell in INTEGRAL_CELLS:
+        mean = grid.aggregate_cell(
+            [float(getattr(row, cell)) for row in rows], cell=cell, level=level
+        )
+        if not math.isclose(mean, round(mean), abs_tol=1e-9):
+            raise ResolutionLadderError(
+                f"{level}: the realizations measure {mean:g} {cell}; one decoded level keeps one "
+                "native gate grid and this build resamples nothing"
+            )
+        cells[cell] = round(mean)
+    primary = next(row for row in rows if row.relative_path == level)
+    return LevelRow(
+        axis=group.axis,
+        relative_path=level,
+        requested_label=primary.requested_label,
+        realizations=len(rows),
+        realization_paths=";".join(group.realization_paths),
+        support_min_mm=support[0],
+        support_max_mm=support[1],
+        correlation_reaches_floor=grid.aggregate_verdict(
+            [row.correlation_reaches_floor for row in rows], rule="all"
+        ),
+        **cells,
+    )
+
+
 def _build(
     dataset_root: Path,
     manifest_path: Path,
     screening_threshold_path: Path,
     analysis_commit: str | None,
 ) -> tuple[ResolutionLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
-    """Build the ladder and return it beside each level's native mean profile."""
-    rows = select_level_rows(manifest_path)
-    groups = level_groups(manifest_path)
+    """Build the ladder and return it beside each level's *aggregated* native mean profile."""
+    selected = selected_levels(manifest_path)
     manifest_sha256 = f"sha256:{sha256_file(Path(manifest_path))}"
     screening_threshold = read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
     root = Path(dataset_root)
-    decoded = [_read_level(root, row) for row in rows]
-    revolutions = common_revolution_count([entry.duration_s for entry, *_ in decoded])
+    decoded = [
+        (group, _read_level(root, row)) for group, rows in selected for row in rows
+    ]
+    entries = [entry for _group, (entry, *_rest) in decoded]
+    revolutions = common_revolution_count([entry.duration_s for entry in entries])
     window_s = revolutions * NOMINAL_REVOLUTION_S
-    support = common_support(
-        [(entry.depth_min_mm, entry.depth_max_mm) for entry, *_ in decoded]
-    )
+    support = common_support([(entry.depth_min_mm, entry.depth_max_mm) for entry in entries])
     metrics = [
         level_metrics(
             entry.relative_path, values, time_s, depths, window_s=window_s, support=support
         )
-        for entry, values, time_s, depths in decoded
+        for _group, (entry, values, time_s, depths) in decoded
     ]
-    levels = tuple(
-        level_row(entry, own, support=support)
-        for (entry, *_rest), own in zip(decoded, metrics, strict=True)
-    )
-    profiles = {
-        entry.relative_path: (depths, own.per_gate["mean"])
-        for (entry, _values, _time_s, depths), own in zip(decoded, metrics, strict=True)
+    realization_rows = {
+        entry.relative_path: level_row(entry, own, support=support)
+        for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
     }
+    depths_by_path = {
+        entry.relative_path: depths for _group, (entry, _v, _t, depths) in decoded
+    }
+    means_by_path = {
+        entry.relative_path: own.per_gate["mean"]
+        for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
+    }
+    levels: list[LevelRow] = []
+    profiles: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    for group, rows in selected:
+        paths = group.realization_paths
+        levels.append(
+            aggregate_level_row(
+                group, [realization_rows[path] for path in paths], support=support
+            )
+        )
+        profiles[group.primary_path] = (
+            grid.require_one_native_grid(
+                [(path, depths_by_path[path]) for path in paths], where=group.primary_path
+            ),
+            grid.mean_profile([means_by_path[path] for path in paths], where=group.primary_path),
+        )
     pairs = tuple(
         pair_row(
             fine,
@@ -603,7 +762,7 @@ def _build(
             support=support,
             screening_threshold=screening_threshold,
         )
-        for (fine, *_), (coarse, *_) in itertools.combinations(decoded, 2)
+        for fine, coarse in itertools.combinations(levels, 2)
     )
     commit = analysis_commit if analysis_commit is not None else current_revision()
     model = ResolutionLadder(
@@ -613,8 +772,8 @@ def _build(
         screening_threshold=screening_threshold,
         analysis_commit=commit,
         eligibility=ELIGIBILITY,
-        inputs=tuple(entry for entry, *_ in decoded),
-        groups=groups,
+        inputs=tuple(entries),
+        groups=tuple(group for group, _rows in selected),
         common=CommonView(
             nominal_rpm=NOMINAL_RPM,
             revolution_s=NOMINAL_REVOLUTION_S,
@@ -622,19 +781,20 @@ def _build(
             window_s=window_s,
             profiles_window={
                 entry.relative_path: own.profiles_window
-                for (entry, *_rest), own in zip(decoded, metrics, strict=True)
+                for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
             },
             gates_in_support={
                 entry.relative_path: own.supported_gates
-                for (entry, *_rest), own in zip(decoded, metrics, strict=True)
+                for (_group, (entry, *_rest)), own in zip(decoded, metrics, strict=True)
             },
             support_min_mm=support[0],
             support_max_mm=support[1],
             levels=len(levels),
         ),
         focus_pair=_focus_pair(levels),
-        levels=levels,
+        levels=tuple(levels),
         pairs=pairs,
+        realizations=tuple(realization_rows[entry.relative_path] for entry in entries),
     )
     return model, profiles
 
@@ -725,6 +885,16 @@ DEFINITIONS: dict[str, str] = {
         "the common-duration view of every distributional metric: the largest integer "
         "number of nominal 500-RPM revolutions (0.12 s) fitting every level, truncated "
         "per file by the recorded timestamps"
+    ),
+    "realizations": (
+        "the recordings that realize one decoded level: the ladder holds every eligible "
+        "decoded pitch, so `res/1-8.BDD` and `prf/600.BDD` are two named realizations of the "
+        "1.850 mm level rather than one being dropped or standing in for the other; "
+        "realization_paths names each of them and the provenance document carries each one's "
+        "own numbers"
+    ),
+    "aggregation": (
+        "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE
     ),
     "depth_view": (
         "each level on its own decoded gate grid, restricted to the common physical "
@@ -895,6 +1065,39 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                 f"{_COARSEST_VERDICT}"
             ),
         },
+        "realizations": {
+            "levels": len(model.levels),
+            "recordings": len(model.inputs),
+            "aggregation": grid.AGGREGATION,
+            "multi_realization_levels": [
+                {
+                    "relative_path": group.primary_path,
+                    "key_display": group.key_display,
+                    "realization_paths": list(group.realization_paths),
+                }
+                for group in model.groups
+                if len(group.realizations) > 1
+            ],
+            "statement": (
+                f"Selection: the {len(model.levels)} decoded pitches are the setting-based "
+                f"selection of {len(model.inputs)} recording(s) - every recording whose decoded "
+                "settings put it at a pitch of this ladder, whatever folder requested it. A level "
+                "with more than one recording is one level with that many named realizations, each "
+                "measured on its own and each named in resolution-levels.csv and in the provenance "
+                "document: "
+                + (
+                    "; ".join(
+                        f"{group.key_display} realized by "
+                        + " and ".join(group.realization_paths)
+                        for group in model.groups
+                        if len(group.realizations) > 1
+                    )
+                    or "no level here has a second realization"
+                )
+                + ". Each level's numbers are the unweighted mean of its realizations' numbers: "
+                "one realization, one vote."
+            ),
+        },
         "limitations": [
             (
                 f"The screening threshold is the only repeat, at {screening_threshold:.4g} "
@@ -939,10 +1142,12 @@ def figure_caption(model: ResolutionLadder) -> str:
     findings = _findings(model)
     information = findings["information"]
     coarsest = findings["coarsest_pitch"]
+    realizations = findings["realizations"]
     return (
         f"WP2 resolution ladder: {model.common.levels} decoded pitches "
         f"{model.levels[0].pitch_mm:.4g}-{model.levels[-1].pitch_mm:.4g} mm "
         f"({model.levels[0].requested_label}..{model.levels[-1].requested_label}). "
+        + realizations["statement"] + " "
         f"Common-duration view: {model.common.revolutions} nominal "
         f"{model.common.nominal_rpm:g}-RPM revolutions = {model.common.window_s:.4g} s, "
         "truncated per file by the recorded timestamps. Common physical support: "
@@ -972,6 +1177,27 @@ def figure_caption(model: ResolutionLadder) -> str:
     )
 
 
+def _realization_cell_map(model: ResolutionLadder, field: str) -> dict[str, object]:
+    """One per-realization cell of every recording, keyed by its manifest path.
+    """
+    return {row.relative_path: getattr(row, field) for row in model.realizations}
+
+
+def _levels_document(model: ResolutionLadder) -> list[dict[str, object]]:
+    """Every decoded level with its realization evidence, in ladder order.
+
+    One entry per level, each naming the recordings that realize it and publishing each one's own
+    numbers beside the level mean they produced: no path is collapsed and no recording is dropped
+    (plan §8.3 step 5). ``cells`` is read from the model's own per-realization rows, so the document
+    cannot disagree with the table it accompanies.
+    """
+    cells = {field: _realization_cell_map(model, field) for field in REALIZATION_CELLS}
+    return [
+        grid.level_realizations_document(group, cells, fields=REALIZATION_CELLS)
+        for group in model.groups
+    ]
+
+
 def provenance_document(model: ResolutionLadder) -> dict[str, object]:
     """The machine-readable record beside the tables and the figure.
 
@@ -982,6 +1208,8 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
         abs(actual - declared) <= PLAN_SUPPORT_TOLERANCE_MM
         for actual, declared in zip(support, PLAN_SUPPORT_MM, strict=True)
     )
+    level_of = {path: group.primary_path for group in model.groups
+                for path in group.realization_paths}
     return {
         "artefact": "resolution-ladder",
         "axis": model.axis,
@@ -1002,9 +1230,21 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
             "scope": model.screening_threshold.scope,
             "role": model.screening_threshold.role,
         },
+        "aggregation": {
+            "rule": grid.AGGREGATION,
+            "statement": grid.AGGREGATION_RULE,
+            "levels": len(model.levels),
+            "recordings": len(model.inputs),
+            "multi_realization_levels": [
+                {"relative_path": group.primary_path,
+                 "realization_paths": list(group.realization_paths)}
+                for group in model.groups if len(group.realizations) > 1
+            ],
+        },
         "inputs": [
             {
                 "relative_path": entry.relative_path,
+                "level_path": level_of[entry.relative_path],
                 "axis": entry.axis,
                 "requested_label": entry.requested_label,
                 "source_sha256": entry.source_sha256,
@@ -1019,6 +1259,7 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
             }
             for entry in model.inputs
         ],
+        "levels": _levels_document(model),
         "views": {
             "time": {
                 "common_duration": {

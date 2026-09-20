@@ -114,8 +114,12 @@ VELO_SCALE_RTOL = 1e-6
 SEGMENT_STEP_S, MIN_SEGMENTS = 0.1, 5
 
 #: Column order of the two tables: the dict rows of :class:`PrfLadder` carry exactly these keys.
+#: ``realizations`` and ``realization_paths`` name the recordings one level summarises: a level
+#: realized by two recordings is one row, and both paths are published rather than collapsed
+#: (plan §8.3 step 5).
 LEVEL_COLUMNS: tuple[str, ...] = (
-    "axis", "relative_path", "requested_label", "prf_period_us", "prf_hz", "velo_max_mm_s",
+    "axis", "relative_path", "requested_label", "realizations", "realization_paths",
+    "prf_period_us", "prf_hz", "velo_max_mm_s",
     "profiles_window", "gates_in_support", "pitch_mm", "mean_mm_s", "robust_spread_mm_s",
     "rms_mm_s", "zero_fraction", "gradient_max_abs_mm_s_per_mm", "correlation_length_mm",
     "profile_rate_hz", "load_max_over_velo_max", "warning_fraction_half",
@@ -123,6 +127,30 @@ LEVEL_COLUMNS: tuple[str, ...] = (
     "samples_beyond_limit", "wrap_like_events", "wrap_like_fraction", "max_abs_step_over_velo_max",
     "nyquist_hz", "segment_profiles", "segment_duration_s", "frequency_resolution_hz", "segments",
     "usable_bandwidth_hz", "acf_e_folding_lag_s", "psd_share_below_mixer_marker",
+)
+
+#: The level cells the shared unweighted rule is applied to (plan §8.3 step 5): every numeric cell
+#: of a level row. ``gates_in_support`` stays a whole number because every realization of one level
+#: measures the one native gate grid the level's shared settings give it.
+AGGREGATED_CELLS: tuple[str, ...] = (
+    "prf_period_us", "prf_hz", "velo_max_mm_s", "profiles_window", "gates_in_support", "pitch_mm",
+    "mean_mm_s",
+    "robust_spread_mm_s", "rms_mm_s", "zero_fraction", "gradient_max_abs_mm_s_per_mm",
+    "correlation_length_mm", "profile_rate_hz", "load_max_over_velo_max", "warning_fraction_half",
+    "warning_fraction_three_quarter", "warning_fraction_nine_tenths", "warning_fraction_at_limit",
+    "samples_beyond_limit", "wrap_like_events", "wrap_like_fraction", "max_abs_step_over_velo_max",
+    "nyquist_hz", "segment_profiles", "segment_duration_s", "frequency_resolution_hz", "segments",
+    "usable_bandwidth_hz", "acf_e_folding_lag_s", "psd_share_below_mixer_marker",
+)
+#: Cells that stay whole numbers: one level keeps one native gate grid, so its realizations measure
+#: the same gates in the common support.
+INTEGRAL_CELLS: tuple[str, ...] = ("gates_in_support",)
+#: The per-realization cells the provenance document publishes beside each level mean.
+REALIZATION_CELLS: tuple[str, ...] = (
+    "prf_period_us", "profiles_window", "gates_in_support", "mean_mm_s", "robust_spread_mm_s",
+    "rms_mm_s", "zero_fraction", "correlation_length_mm", "profile_rate_hz",
+    "load_max_over_velo_max", "samples_beyond_limit", "wrap_like_events", "segment_profiles",
+    "segments", "usable_bandwidth_hz", "acf_e_folding_lag_s", "psd_share_below_mixer_marker",
 )
 PAIR_COLUMNS: tuple[str, ...] = (
     "axis", "faster_path", "faster_label", "faster_prf_hz", "slower_path", "slower_label",
@@ -150,7 +178,9 @@ class PrfLadder(ValueModel):
 
     ``levels`` and ``pairs`` are dict rows keyed by the declared column tuples; ``temporal``
     carries the ``floor`` read from the committed WP1 provenance, and ``focus_path`` names the
-    manifest-selected level the plan's decision is about.
+    manifest-selected level the plan's decision is about. ``inputs`` is every realization of every
+    level - one entry per recording - and ``realizations`` is the per-recording row each level mean
+    was aggregated from (plan §8.3 step 5).
     """
 
     dataset_root: str
@@ -168,16 +198,39 @@ class PrfLadder(ValueModel):
     focus_path: str
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
+    #: One row per realization, in input order: the per-recording numbers every level mean was
+    #: aggregated from (plan §8.3 step 5).
+    realizations: tuple[dict[str, object], ...] = ()
 
     @model_validator(mode="after")
     def _check_the_ladder_is_internally_consistent(self) -> PrfLadder:
-        if [row.get("relative_path") for row in self.levels] != [
-            entry.relative_path for entry in self.inputs
-        ]:
-            raise ValueError("every level must appear exactly once, in input order")
         for columns, rows in ((LEVEL_COLUMNS, self.levels), (PAIR_COLUMNS, self.pairs)):
             if any(tuple(row) != columns for row in rows):
                 raise ValueError("a row must carry exactly the declared columns")
+        paths = [row["relative_path"] for row in self.levels]
+        if self.groups and [group.primary_path for group in self.groups] != paths:
+            raise ValueError(
+                "the ladder must be exactly the eligible decoded levels, in their order; got "
+                f"{[group.primary_path for group in self.groups]} beside {paths}"
+            )
+        if [entry.relative_path for entry in self.inputs] != [
+            path for group in self.groups for path in group.realization_paths
+        ]:
+            raise ValueError(
+                "every realization of every level must appear exactly once, in level order"
+            )
+        if self.realizations and [row["relative_path"] for row in self.realizations] != [
+            entry.relative_path for entry in self.inputs
+        ]:
+            raise ValueError(
+                "the per-realization rows must cover every recording once, in input order"
+            )
+        for group, row in zip(self.groups, self.levels, strict=False):
+            if ";".join(group.realization_paths) != row["realization_paths"]:
+                raise ValueError(
+                    f"{row['relative_path']}: the level must name exactly the realizations the "
+                    "selection grouped with it"
+                )
         if any(b <= a for a, b in itertools.pairwise(row["prf_period_us"] for row in self.levels)):
             raise ValueError("levels must be ordered by increasing PRF period")
         expected = len(self.levels) * (len(self.levels) - 1) // 2
@@ -193,7 +246,9 @@ class PrfLadder(ValueModel):
             item["relative_path"] for item in self.timestamps["per_input"]  # type: ignore[index]
         ]
         if measured != [entry.relative_path for entry in self.inputs]:
-            raise ValueError("the timestamp measurement must cover every level, in input order")
+            raise ValueError(
+                "the timestamp measurement must cover every recording, in input order"
+            )
         return self
 
 
@@ -328,18 +383,22 @@ def _load_metrics(values: np.ndarray, velo_max_ms: float) -> dict[str, object]:
 
 
 def _temporal_grid(
-    periods_s: Sequence[float], durations_s: Sequence[float]
+    periods_s: Sequence[float], durations_s: Sequence[float], paths: Sequence[str]
 ) -> tuple[dict[str, dict[str, float]], float]:
-    """Each file's matched segment, keyed by its profile period, and the nominal resolution.
+    """Each *recording*'s matched segment, keyed by its manifest path, and the nominal resolution.
 
     The shared quantity is the *physical* segment duration, the largest multiple of
     :data:`SEGMENT_STEP_S` fitting :data:`MIN_SEGMENTS` whole segments in the shortest record; each
     file then takes the whole number of profiles inside it, so its realised duration differs from
     that target by less than one profile period, its resolution is ``1 / realised duration`` and
-    its usable bandwidth half its profile rate.
+    its usable bandwidth half its profile rate. The row is keyed by the recording's path rather than
+    by its profile period, because two recordings of one decoded level may realize slightly
+    different rates and each one's matched segment is its own (plan §8.3 step 5).
     """
     if not durations_s:
         raise PrfLadderError("a matched segment duration needs at least one duration")
+    if not len(periods_s) == len(durations_s) == len(paths):
+        raise PrfLadderError("a matched segment needs one period, duration and path per recording")
     target = math.floor(min(durations_s) / MIN_SEGMENTS / SEGMENT_STEP_S) * SEGMENT_STEP_S
     if target <= 0.0:
         raise PrfLadderError(
@@ -347,15 +406,16 @@ def _temporal_grid(
             f"segments of {SEGMENT_STEP_S:g} s"
         )
     rows: dict[str, dict[str, float]] = {}
-    for period, duration in zip(periods_s, durations_s, strict=True):
+    for path, period, duration in zip(paths, periods_s, durations_s, strict=True):
         profiles = math.floor(target / period)
         segments = math.floor(duration / (profiles * period)) if profiles >= 2 else 0
         if profiles < 2 or segments < 1:
             raise PrfLadderError(
-                f"{duration:.6g} s does not hold one {profiles}-profile segment at a "
+                f"{path}: {duration:.6g} s does not hold one {profiles}-profile segment at a "
                 f"{period:.6g} s profile period inside a {target:g} s target"
             )
-        rows[str(period)] = {
+        rows[str(path)] = {
+            "profile_period_s": period,
             "profiles": profiles, "segments": segments,
             "duration_s": (profiles - 1) * period, "resolution_hz": 1.0 / (profiles * period),
             "usable_bandwidth_hz": (profiles // 2) / (profiles * period),
@@ -399,7 +459,12 @@ def level_row(
     load: Mapping[str, object],
     cell: Mapping[str, float],
 ) -> dict[str, object]:
-    """One level's row: its common-window, native-grid, load and matched-segment metrics."""
+    """One *realization's* row: its common-window, native-grid, load and matched-segment metrics.
+
+    One level's row is its realizations' rows under :func:`aggregate_level_row`; this is one
+    recording's own numbers, published per realization so the mean can be audited (plan §8.3
+    step 5).
+    """
     frequency = np.asarray(series.frequency_hz, dtype=float)
     density = np.asarray(series.psd_mean_mm2_s2_per_hz, dtype=float)
     # Power, not a count of bins: the shares below are integrals over the recording's own grid,
@@ -416,7 +481,9 @@ def level_row(
     means = metrics.means
     return {
         "axis": entry.axis, "relative_path": entry.relative_path,
-        "requested_label": entry.requested_label, "prf_period_us": entry.prf_period_us,
+        "requested_label": entry.requested_label, "realizations": 1,
+        "realization_paths": entry.relative_path,
+        "prf_period_us": entry.prf_period_us,
         "prf_hz": 1e6 / entry.prf_period_us, "velo_max_mm_s": entry.velo_max_ms,
         "profiles_window": metrics.profiles_window, "gates_in_support": metrics.supported_gates,
         "pitch_mm": metrics.gradient.pitch_mm, "mean_mm_s": float(means.mean()),
@@ -493,17 +560,72 @@ def pair_row(
     }
 
 
+# ── the level aggregation (plan §8.3 step 5) ───────────────────────────
+
+
+def selected_levels(manifest_path: Path) -> tuple[tuple[grid.LevelGroup, tuple[dict[str, str], ...]], ...]:
+    """Every eligible ``prf`` level beside the rows of *every* recording that realizes it.
+
+    The ladder is the setting-based selection (plan §8.3 step 5): a decoded period is one level, and
+    a recording under another folder that carries the same swept settings realizes it rather than
+    being excluded. Ordered by decoded period, then by the level's primary path.
+    """
+    path = Path(manifest_path)
+    return grid.grouped_level_rows(
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _period_us_of(row, path),
+        order_label="PRF period",
+    )
+
+
+def aggregate_level_row(
+    group: grid.LevelGroup, rows: Sequence[Mapping[str, object]]
+) -> dict[str, object]:
+    """One decoded level's row: its realizations' rows under the shared unweighted rule.
+
+    Every numeric cell is the unweighted mean of its realizations' cells (one realization, one
+    vote), and ``gates_in_support`` is the one native gate grid the level's shared settings give
+    every realization, so no recording is dropped, collapsed into another's path or allowed to
+    outweigh another (plan §8.3 step 5, R1).
+    """
+    if not rows:
+        raise PrfLadderError(
+            f"{group.primary_path}: the decoded level realises no recording, so it cannot be "
+            "measured"
+        )
+    level = group.primary_path
+    cells: dict[str, object] = {
+        cell: grid.aggregate_cell(
+            [float(row[cell]) for row in rows], cell=cell, level=level
+        )
+        for cell in AGGREGATED_CELLS
+    }
+    for cell in INTEGRAL_CELLS:
+        mean = cells[cell]
+        if not math.isclose(mean, round(mean), abs_tol=1e-9):
+            raise PrfLadderError(
+                f"{level}: the realizations measure {mean:g} {cell}; one decoded level keeps one "
+                "native gate grid and this build resamples nothing"
+            )
+        cells[cell] = round(mean)
+    primary = next(row for row in rows if row["relative_path"] == level)
+    return {
+        "axis": group.axis, "relative_path": level,
+        "requested_label": primary["requested_label"], "realizations": len(rows),
+        "realization_paths": ";".join(group.realization_paths), **cells,
+    }
+
+
 def _build(
     dataset_root: Path, manifest_path: Path, screening_threshold_path: Path, analysis_commit: str | None
 ) -> tuple[
     PrfLadder, dict[str, tuple[np.ndarray, np.ndarray]], dict[str, tuple[np.ndarray, np.ndarray]]
 ]:
-    """Build the ladder and return it beside each level's profile and spectral curve."""
-    rows = select_level_rows(manifest_path)  # a missing manifest is refused by name here
+    """Build the ladder and return it beside each level's profile and each realization's curve."""
+    selected = selected_levels(manifest_path)
     manifest_sha256 = f"sha256:{grid.sha256_file(Path(manifest_path))}"
     screening_threshold = grid.read_screening_threshold(Path(screening_threshold_path), manifest_sha256)
-    decoded = [_read_level(Path(dataset_root), row) for row in rows]
-    entries = [entry for entry, *_ in decoded]
+    decoded = [(group, _read_level(Path(dataset_root), row)) for group, rows in selected for row in rows]
+    entries = [entry for _group, (entry, *_rest) in decoded]
     _require_clean_ofat(entries)
     _require_scaled_velocity_scale(entries)
     revolutions = wp1.common_revolution_count([entry.duration_s for entry in entries])
@@ -511,52 +633,75 @@ def _build(
     support = grid.common_support([(e.depth_min_mm, e.depth_max_mm) for e in entries])
     metrics = [
         grid.level_metrics(e.relative_path, v, t, d, window_s=window_s, support=support)
-        for e, v, t, d in decoded
+        for _group, (e, v, t, d) in decoded
     ]
     loads = [
         _load_metrics(grid.window(v, t, window_s)[:, own.mask], e.velo_max_ms)
-        for (e, v, t, _d), own in zip(decoded, metrics, strict=True)
+        for (_group, (e, v, t, _d)), own in zip(decoded, metrics, strict=True)
     ]
     cell, nominal_resolution = _temporal_grid(
-        [e.profile_period_s for e in entries], [e.duration_s for e in entries]
+        [e.profile_period_s for e in entries], [e.duration_s for e in entries],
+        [e.relative_path for e in entries],
     )
-    # R6: each level's own recorded timestamps are measured against the uniform grid its period
-    # places on them, at its own top-of-band frequency; a level over the tolerance stops the build
-    # by name rather than being analysed on a grid it does not support.
+    # R6: each recording's own recorded timestamps are measured against the uniform grid its period
+    # places on them, at its own top-of-band frequency; one over the tolerance stops the build by
+    # name rather than being analysed on a grid it does not support.
     timestamp_grid = wp1.timestamp_grid([
         wp1.measure_timestamps(entry, time_s, f_max_hz=1.0 / (2.0 * entry.profile_period_s))
-        for entry, _values, time_s, _depths in decoded
+        for _group, (entry, _values, time_s, _depths) in decoded
     ])
     series = [
         wp1.temporal_series(
-            e, v, e.profile_period_s, segment_profiles=int(cell[str(e.profile_period_s)]["profiles"])
+            e, v, e.profile_period_s, segment_profiles=int(cell[e.relative_path]["profiles"])
         )
-        for e, v, _t, _d in decoded
+        for _group, (e, v, _t, _d) in decoded
     ]
-    edges = _band_edges(nominal_resolution, min(r["usable_bandwidth_hz"] for r in cell.values()))
-    densities = [
-        _band_density(
+    edges = _band_edges(
+        nominal_resolution, min(r["usable_bandwidth_hz"] for r in cell.values())
+    )
+    densities = {
+        e.relative_path: _band_density(
             np.asarray(s.frequency_hz, dtype=float),
             np.asarray(s.psd_mean_mm2_s2_per_hz, dtype=float), edges,
         )
-        for s in series
-    ]
-    levels = tuple(
-        level_row(e, own, s, load, cell[str(e.profile_period_s)])
-        for (e, *_rest), own, s, load in zip(decoded, metrics, series, loads, strict=True)
-    )
-    profiles = {
-        e.relative_path: (d, own.per_gate["mean"])
-        for (e, _v, _t, d), own in zip(decoded, metrics, strict=True)
+        for (_group, (e, *_rest)), s in zip(decoded, series, strict=True)
     }
+    realization_rows = {
+        e.relative_path: level_row(e, own, s, load, cell[e.relative_path])
+        for (_group, (e, *_rest)), own, s, load in zip(decoded, metrics, series, loads, strict=True)
+    }
+    means_by_path = {
+        e.relative_path: own.per_gate["mean"]
+        for (_group, (e, *_rest)), own in zip(decoded, metrics, strict=True)
+    }
+    depths_by_path = {e.relative_path: d for _group, (e, _v, _t, d) in decoded}
+    levels: list[dict[str, object]] = []
+    profiles: dict[str, tuple[np.ndarray, np.ndarray]] = {}
+    level_densities: list[np.ndarray] = []
+    for group, rows in selected:
+        paths = group.realization_paths
+        levels.append(
+            aggregate_level_row(group, [realization_rows[path] for path in paths])
+        )
+        profiles[group.primary_path] = (
+            grid.require_one_native_grid(
+                [(path, depths_by_path[path]) for path in paths], where=group.primary_path
+            ),
+            grid.mean_profile([means_by_path[path] for path in paths], where=group.primary_path),
+        )
+        # The level's band density is the unweighted mean of its realizations' densities on the
+        # bands every recording supports: bands are a shared grid, so this needs no resampling.
+        level_densities.append(
+            np.mean(np.stack([densities[path] for path in paths]), axis=0)
+        )
     pairs = tuple(
         pair_row(
-            faster, profiles[faster["relative_path"]], f_density,
-            slower, profiles[slower["relative_path"]], s_density,
+            faster, profiles[faster["relative_path"]], level_densities[at],
+            slower, profiles[slower["relative_path"]], level_densities[other],
             support=support, screening_threshold=screening_threshold, edges=edges,
         )
-        for (faster, _fs, f_density), (slower, _ss, s_density) in itertools.combinations(
-            zip(levels, series, densities, strict=True), 2
+        for (at, faster), (other, slower) in itertools.combinations(
+            list(enumerate(levels)), 2
         )
     )
     floor = grid.read_temporal_floor(
@@ -574,7 +719,7 @@ def _build(
     rates = {e.relative_path: 1.0 / e.profile_period_s for e in entries}
     counts = {
         e.relative_path: (own.profiles_window, own.supported_gates)
-        for (e, *_rest), own in zip(decoded, metrics, strict=True)
+        for (_group, (e, *_rest)), own in zip(decoded, metrics, strict=True)
     }
     model = PrfLadder(
         dataset_root=Path(dataset_root).as_posix(),
@@ -583,7 +728,8 @@ def _build(
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
         eligibility=ELIGIBILITY,
         inputs=tuple(entries),
-        groups=level_groups(manifest_path),
+        groups=tuple(group for group, _rows in selected),
+        realizations=tuple(realization_rows[e.relative_path] for e in entries),
         common={
             "nominal_rpm": wp1.NOMINAL_RPM, "revolution_s": wp1.NOMINAL_REVOLUTION_S,
             "revolutions": revolutions, "window_s": window_s, "levels": len(levels),
@@ -606,7 +752,7 @@ def _build(
             "segment_step_s": SEGMENT_STEP_S, "min_segments": MIN_SEGMENTS,
         },
         timestamps=wp1.timestamp_document(timestamp_grid),
-        focus_path=str(matches[0]["relative_path"]), levels=levels, pairs=pairs,
+        focus_path=str(matches[0]["relative_path"]), levels=tuple(levels), pairs=pairs,
     )
     curves = {
         e.relative_path: (
@@ -651,7 +797,9 @@ DEFINITIONS: dict[str, str] = {
     "acf_e_folding_lag": "the first lag of the mean-removed segment's normalized autocovariance below 1/e, in seconds on that file's own lag grid",
     "mixer_marker": "nominal 500 RPM -> 8.33 Hz marker only: no tachometer in these files, so it is not a phase reference and no peak here is attributed to it or to a harmonic",
     "replicates": "no profile and no gate is an independent experimental replicate",
-    "views": "distributional metrics use the common-duration window on the common support; native-grid gradients and correlation lengths use each level's own grid; the full record is analysed only through the matched temporal view",
+    "realizations": "the recordings that realize one decoded period: the ladder holds every eligible decoded period, so `prf/600.BDD` and `res/1-8.BDD` are two named realizations of the 600 us level rather than one being dropped or standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE,
+    "views": "distributional metrics use the common-duration window on the common support; native-grid gradients and correlation lengths use each level's own grid; the full record is analysed only through the matched temporal view; a level's band density is the unweighted mean of its realizations' densities on the shared comparison bands",
 }
 
 #: The verdict :func:`_findings` records, and the two caveats that travel with every artefact, so they
@@ -778,6 +926,39 @@ def _findings(model: PrfLadder) -> dict[str, object]:
                 f"limit to {candidate_limit:.4g} mm/s, which nothing here needs. {_FOCUS_VERDICT}"
             ),
         },
+        "realizations": {
+            "levels": len(model.levels),
+            "recordings": len(model.inputs),
+            "aggregation": grid.AGGREGATION,
+            "multi_realization_levels": [
+                {
+                    "relative_path": group.primary_path,
+                    "key_display": group.key_display,
+                    "realization_paths": list(group.realization_paths),
+                }
+                for group in model.groups
+                if len(group.realizations) > 1
+            ],
+            "statement": (
+                f"Selection: the {len(model.levels)} decoded periods are the setting-based "
+                f"selection of {len(model.inputs)} recording(s) - every recording whose decoded "
+                "settings put it at a period of this ladder, whatever folder requested it. A level "
+                "with more than one recording is one level with that many named realizations, each "
+                "measured on its own and each named in prf-levels.csv and in the provenance "
+                "document: "
+                + (
+                    "; ".join(
+                        f"{group.key_display} realized by "
+                        + " and ".join(group.realization_paths)
+                        for group in model.groups
+                        if len(group.realizations) > 1
+                    )
+                    or "no level here has a second realization"
+                )
+                + ". Each level's numbers are the unweighted mean of its realizations' numbers: "
+                "one realization, one vote."
+            ),
+        },
         "limitations": [
             f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per gate ({model.screening_threshold.metric}): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
             f"The velocity scale is the key's own consequence (Vmax x prf_period is constant across the ladder to the audited tolerance), but the profile rate is not: it rises from {min(rates.values()):.4g} to {max(rates.values()):.4g} Hz while its ratio to the PRF period varies by {ratio_spread:.3g} relative, so the rate is a separate measured property and nothing here claims a future setting would scale it.",
@@ -799,7 +980,9 @@ def figure_caption(model: PrfLadder) -> str:
     periods = [row["prf_period_us"] for row in model.levels]
     return (
         f"WP2 PRF ladder: {common['levels']} decoded pulse-repetition periods "
-        f"{periods[0]:g}-{periods[-1]:g} us. Common-duration view: {common['revolutions']} nominal "
+        f"{periods[0]:g}-{periods[-1]:g} us. "
+        + findings["realizations"]["statement"] + " "
+        f"Common-duration view: {common['revolutions']} nominal "
         f"{common['nominal_rpm']:g}-RPM revolutions = {common['window_s']:.4g} s, truncated per file "
         "by the recorded timestamps. Common physical support: "
         f"{common['support_min_mm']:.6g}-{common['support_max_mm']:.6g} mm; gradients and correlation "
@@ -822,6 +1005,18 @@ def figure_caption(model: PrfLadder) -> str:
     )
 
 
+def _levels_document(model: PrfLadder) -> list[dict[str, object]]:
+    """Every decoded level with its realization evidence, in ladder order (plan §8.3 step 5)."""
+    cells: dict[str, dict[str, object]] = {
+        field: {row["relative_path"]: row[field] for row in model.realizations}
+        for field in REALIZATION_CELLS
+    }
+    return [
+        grid.level_realizations_document(group, cells, fields=REALIZATION_CELLS)
+        for group in model.groups
+    ]
+
+
 def provenance_document(model: PrfLadder) -> dict[str, object]:
     """The machine-readable record beside the tables and the figure.
 
@@ -829,11 +1024,22 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
     """
     common, temporal, first = model.common, model.temporal, model.inputs[0]
     rates = temporal["profile_rate_hz"]
+    level_of = {path: group.primary_path for group in model.groups
+                for path in group.realization_paths}
     return {
         "artefact": "prf-ladder", "axis": model.axis, "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
         "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
         "timestamps": dict(model.timestamps),
+        "aggregation": {
+            "rule": grid.AGGREGATION, "statement": grid.AGGREGATION_RULE,
+            "levels": len(model.levels), "recordings": len(model.inputs),
+            "multi_realization_levels": [
+                {"relative_path": group.primary_path,
+                 "realization_paths": list(group.realization_paths)}
+                for group in model.groups if len(group.realizations) > 1
+            ],
+        },
         "derived_scale": {
             "invariant": "velo_max_ms x prf_period_us", "tolerance_relative": VELO_SCALE_RTOL,
             "values": [e.velo_max_ms * e.prf_period_us for e in model.inputs],
@@ -847,7 +1053,8 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
         },
         "inputs": [
             {
-                "relative_path": e.relative_path, "axis": e.axis, "requested_label": e.requested_label,
+                "relative_path": e.relative_path, "level_path": level_of[e.relative_path],
+                "axis": e.axis, "requested_label": e.requested_label,
                 "prf_period_us": e.prf_period_us, "prf_hz": 1e6 / e.prf_period_us,
                 "velo_max_mm_s": e.velo_max_ms, "source_sha256": e.source_sha256,
                 "profiles": e.profiles, "profiles_window": common["profiles_window"][e.relative_path],
@@ -860,6 +1067,7 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
             }
             for e in model.inputs
         ],
+        "levels": _levels_document(model),
         "views": {
             "time": {
                 "common_duration": {
@@ -885,7 +1093,7 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
                     "min_segments": temporal["min_segments"],
                     "nominal_resolution_hz": temporal["nominal_resolution_hz"],
                     "per_level": {
-                        e.relative_path: temporal["cell"][str(e.profile_period_s)]
+                        e.relative_path: temporal["cell"][e.relative_path]
                         for e in model.inputs
                     },
                     "profile_rate_hz": rates,
@@ -934,14 +1142,17 @@ def render_figure(
     """Write the two-panel PRF figure, deterministically, and return it.
 
     Panel 1 is the load of each level against the unambiguous limit, with the samples beyond it and
-    the wrap-like discontinuities; panel 2 each level's ensemble PSD against the frequencies it
-    supports, with the shared comparison band, each file's usable bandwidth and the mixer marker.
-    The frame is the shared writer's, so this module owns the panels only.
+    the wrap-like discontinuities; panel 2 each *realization's* ensemble PSD against the frequencies
+    it supports, with the shared comparison band, its usable bandwidth and the mixer marker. Each
+    realization is drawn under its own path, so a level with two recordings shows both rather than
+    an averaged curve that neither one measured (plan §8.3 step 5). The frame is the shared writer's,
+    so this module owns the panels only.
     """
     periods = np.asarray([row["prf_period_us"] for row in model.levels])
     loads = [row["load_max_over_velo_max"] for row in model.levels]
     paths = [row["relative_path"] for row in model.levels]
     band = model.temporal["band_hz"]
+    cells = model.temporal["cell"]
 
     def draw(axes: Sequence[object]) -> None:
         load_ax, psd_ax = axes
@@ -964,19 +1175,22 @@ def render_figure(
         counts_ax.legend(loc="upper right", fontsize=6.2, framealpha=0.9)
         psd_ax.axvspan(band[0], band[1], color="#ffd8a8", alpha=0.35, linewidth=0)
         psd_ax.axvline(MIXER_MARKER_HZ, color="#d62728", linewidth=0.9, linestyle="--")
-        for row in model.levels:
-            frequency, density = curves[row["relative_path"]]
+        for entry in model.inputs:
+            frequency, density = curves[entry.relative_path]
             line = psd_ax.semilogy(
                 frequency, density, linewidth=1.2,
-                label=f"{row['prf_period_us']:g} us ({row['profile_rate_hz']:.1f} Hz rate)",
+                label=f"{entry.prf_period_us:g} us {entry.relative_path} "
+                f"({1.0 / entry.profile_period_s:.1f} Hz rate)",
             )[0]
-            psd_ax.axvline(row["usable_bandwidth_hz"], color=line.get_color(), linewidth=0.7,
-                           linestyle=":", alpha=0.8)
+            psd_ax.axvline(
+                cells[entry.relative_path]["usable_bandwidth_hz"], color=line.get_color(),
+                linewidth=0.7, linestyle=":", alpha=0.8,
+            )
         psd_ax.set_xlim(0.0, float(max(row["nyquist_hz"] for row in model.levels)) * 1.04)
-        psd_ax.set_xlabel("frequency [Hz]; dotted = each level's usable bandwidth")
+        psd_ax.set_xlabel("frequency [Hz]; dotted = each realization's usable bandwidth")
         psd_ax.set_ylabel("ensemble PSD [(mm/s)^2/Hz]")
         psd_ax.grid(alpha=0.2, which="both")
-        psd_ax.legend(loc="upper right", fontsize=6.0, framealpha=0.9)
+        psd_ax.legend(loc="upper right", fontsize=5.4, framealpha=0.9)
         psd_ax.set_title(
             f"shared comparison band {band[0]:.4g}-{band[1]:.4g} Hz, marker {MIXER_MARKER_HZ:.4g} Hz",
             fontsize=9.5,

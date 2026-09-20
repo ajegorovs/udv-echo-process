@@ -53,7 +53,13 @@ MANIFEST = ROOT / RELATIVE_MANIFEST
 ENVELOPE = ROOT / RELATIVE_ENVELOPE
 COMMIT = "0123456789abcdef0123456789abcdef01234567"  # test-local, never the checkout
 
-CYCLES = (2, 4, 6, 8, 12, 14, 16, 18, 20, 24, 28, 32)  # decoded order, as manifest.csv
+CYCLES = (2, 4, 6, 8, 12, 14, 16, 18, 20, 24, 28, 32)  # the cycle counts the sweep itself requested
+#: The ladder §8.3 step 5 builds: every eligible decoded burst length, which is the requested cycle
+#: counts plus burst 10 - the setting both of the reference recordings carry.
+LADDER_CYCLES = (2, 4, 6, 8, 10, 12, 14, 16, 18, 20, 24, 28, 32)
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in (plan §8.2 R1).
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+ANCHOR_CYCLES = "10"  # the decoded key of the shared anchor level, as the manifest records it
 #: 92 nominal revolutions at 500 RPM fit every recording (the shortest is burst_len/16.BDD at
 #: 11.1051 s); every file carries the same 50-gate 1.85 mm grid, so the support is that grid.
 COMMON_REVOLUTIONS, COMMON_WINDOW_S, WINDOW_PROFILES = 92, 11.04, 494
@@ -133,10 +139,30 @@ def _write(tmp_path: Path, name: str = "a"):
 
 @pytest.fixture(scope="module")
 def ladder():
-    """The built ladder: 12 levels, the two matched views and 66 unordered pairs."""
+    """The built ladder: 13 decoded burst lengths and 78 unordered pairs (plan §8.3 step 5)."""
     return build_burst_ladder(
         DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE, analysis_commit=COMMIT
     )
+
+
+_MODEL: dict[str, object] = {}
+
+
+def _model():
+    """The built ladder, cached: the module-scoped model some provenance tests read directly."""
+    if "model" not in _MODEL:
+        _MODEL["model"] = build_burst_ladder(
+            DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE, analysis_commit=COMMIT
+        )
+    return _MODEL["model"]
+
+
+def _model_inputs():
+    return _model().inputs
+
+
+def _model_levels():
+    return _model().levels
 
 
 def test_axis_artefact_names_and_manifest_selection() -> None:
@@ -233,16 +259,46 @@ def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder
     assert [group.key for group in ladder.groups if group.in_ladder] == [
         (str(row["burst_length"]),) for row in select_level_rows(MANIFEST)
     ]
+    # Step 5: the ladder is the setting-based selection itself, so it holds every eligible level -
+    # the requested cycle counts plus burst 10 - with every recording that realizes each one.
+    assert len(ladder.groups) == len(LADDER_CYCLES)
     assert [row["relative_path"] for row in ladder.levels] == [
-        row["relative_path"] for row in select_level_rows(MANIFEST)
+        group.primary_path for group in ladder.groups
     ]
-    # burst 10 is eligible evidence the committed ladder does not yet hold.
+    assert [int(row["cycles"]) for row in ladder.levels] == list(LADDER_CYCLES)
+    assert [entry.relative_path for entry in ladder.inputs] == [
+        "burst_len/2.BDD", "burst_len/4.BDD", "burst_len/6.BDD", "burst_len/8.BDD",
+        ANCHOR_PATHS[0], ANCHOR_PATHS[1], "burst_len/12.BDD", "burst_len/14.BDD",
+        "burst_len/16.BDD", "burst_len/18.BDD", "burst_len/20.BDD", "burst_len/24.BDD",
+        "burst_len/28.BDD", "burst_len/32.BDD",
+    ]
+    # burst 10 is a level of this ladder, realized by both reference recordings and requested by
+    # neither of this axis's own rows.
+    anchor = next(group for group in ladder.groups if group.key == (ANCHOR_CYCLES,))
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert anchor.requested_paths == ()
+    assert anchor.in_ladder is False
     assert [group.key for group in ladder.groups if not group.in_ladder] == [(ANCHOR_CYCLES,)]
     assert all(
         group.key_display == f"{group.key_fields[0]}={group.key[0]}" for group in ladder.groups
     )
     assert [group.ladder_label for group in ladder.groups] == ["burst"] * len(ladder.groups)
-    assert "realizations" not in json.dumps(provenance_document(ladder))
+    # Step 5 renders the selection into the artefacts: the level's own row is the unweighted mean of
+    # its two realizations' rows, and both paths are published rather than collapsed.
+    document = provenance_document(ladder)
+    assert document["aggregation"]["multi_realization_levels"] == [
+        {"relative_path": ANCHOR_PATHS[0], "realization_paths": list(ANCHOR_PATHS)}
+    ]
+    level = next(row for row in ladder.levels if row["relative_path"] == ANCHOR_PATHS[0])
+    members = [row for row in ladder.realizations if row["relative_path"] in ANCHOR_PATHS]
+    assert [row["relative_path"] for row in members] == list(ANCHOR_PATHS)
+    assert level["mean_mm_s"] == pytest.approx(
+        float(np.mean([row["mean_mm_s"] for row in members]))
+    )
+    assert level["mean_mm_s"] != pytest.approx(members[0]["mean_mm_s"])
+    assert level["mean_mm_s"] != pytest.approx(members[1]["mean_mm_s"])
+    assert level["realizations"] == 2 and level["realization_paths"] == ";".join(ANCHOR_PATHS)
+    assert len(ladder.pairs) == len(LADDER_CYCLES) * (len(LADDER_CYCLES) - 1) // 2 == 78
 
 
 def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_screening_threshold(
@@ -368,8 +424,13 @@ def test_the_temporal_grid_is_matched_across_every_file(ladder) -> None:
     periods = [entry.profile_period_s for entry in ladder.inputs]
     assert temporal["period_spread_relative"] < 1e-4
     assert temporal["profile_period_s"] == pytest.approx(sum(periods) / len(periods))
-    assert set(temporal["profiles_analysed"]) == {r["relative_path"] for r in ladder.levels}
-    assert set(temporal["segments"].values()) == {5, 6}
+    # Every realization of every level is analysed: the requested cycle counts plus the res
+    # folder's recording of the same burst 10 setting (plan §8.3 step 5).
+    assert set(temporal["profiles_analysed"]) == {entry.relative_path for entry in ladder.inputs}
+    assert len(temporal["profiles_analysed"]) == len(LADDER_CYCLES) + 1
+    assert set(temporal["segments"].values()) <= {5, 6, 7}
+    for path, analysed in temporal["profiles_analysed"].items():
+        assert temporal["segments"][path] >= 1 and analysed >= temporal["segment_profiles"]
 
 
 def test_the_psd_band_summary_integrates_over_the_actual_frequency_grid() -> None:
@@ -463,15 +524,32 @@ def test_the_temporal_floor_and_screening_threshold_come_from_the_committed_wp1(
     assert ladder.screening_threshold.source_sha256 == floor["source_sha256"]
 
 
+def _level_means(ladder) -> dict[int, np.ndarray]:
+    """Each level's aggregated per-gate window mean profile, keyed by cycle count.
+
+    One level's profile is the unweighted mean of its realizations' profiles (plan §8.3 step 5), so
+    a pair is compared on the level's own profile rather than on one recording's.
+    """
+    return {
+        row["cycles"]: np.mean(
+            np.stack([
+                _window(path).mean(axis=0) for path in row["realization_paths"].split(";")
+            ]),
+            axis=0,
+        )
+        for row in ladder.levels
+    }
+
+
 def test_pairs_cover_the_ladder_on_the_shared_knots_without_upsampling(ladder) -> None:
-    expected = len(CYCLES) * (len(CYCLES) - 1) // 2
-    assert len(ladder.pairs) == expected
+    expected = len(LADDER_CYCLES) * (len(LADDER_CYCLES) - 1) // 2
+    assert len(ladder.pairs) == expected == 78
     assert len({(r["short_path"], r["long_path"]) for r in ladder.pairs}) == expected
     for row in ladder.pairs:
         assert (row["knots"], row["knot_spacing_mm"]) == pytest.approx(
             (GATES_IN_SUPPORT, PITCH_MM)
         )
-    means = {r["cycles"]: _window(r["relative_path"]).mean(axis=0) for r in ladder.levels}
+    means = _level_means(ladder)
     for row in ladder.pairs:
         difference = means[row["short_cycles"]] - means[row["long_cycles"]]
         assert (row["max_knot_offset_mm"], row["max_abs_difference_mm_s"]) == pytest.approx(
@@ -483,7 +561,7 @@ def test_pairs_cover_the_ladder_on_the_shared_knots_without_upsampling(ladder) -
 
 
 def test_pair_differences_are_compared_to_the_committed_repeatability_screening_threshold(ladder) -> None:
-    means = {r["cycles"]: _window(r["relative_path"]).mean(axis=0) for r in ladder.levels}
+    means = _level_means(ladder)
     for row in ladder.pairs:
         above = int(
             np.count_nonzero(
@@ -577,7 +655,10 @@ def test_written_artefacts_reproduce_the_declared_columns_and_bytes(tmp_path) ->
     assert levels[0] == ",".join(LEVEL_COLUMNS)
     assert pairs[0] == ",".join(PAIR_COLUMNS)
     assert (len(levels), len(pairs)) == (len(model.levels) + 1, len(model.pairs) + 1)
-    assert [int(r["cycles"]) for r in csv.DictReader(levels)] == list(CYCLES)
+    assert [int(r["cycles"]) for r in csv.DictReader(levels)] == list(LADDER_CYCLES)
+    anchor = next(r for r in csv.DictReader(levels) if r["realizations"] == "2")
+    assert anchor["relative_path"] == ANCHOR_PATHS[0]
+    assert anchor["realization_paths"] == ";".join(ANCHOR_PATHS)
     for name in (LEVELS_NAME, PAIRS_NAME, PROVENANCE_NAME):
         first = (tmp_path / "a" / name).read_bytes()
         assert first == (tmp_path / "b" / name).read_bytes(), name
@@ -602,7 +683,7 @@ def test_provenance_records_each_level_s_timestamp_jitter_and_the_estimator_deci
     assert timestamps["tolerance_cycles"] == pytest.approx(1.0 / 16.0)
     assert "phase" in timestamps["criterion"] and timestamps["justification"].strip()
     per_input = {item["relative_path"]: item for item in timestamps["per_input"]}
-    assert set(per_input) == {row["relative_path"] for row in select_level_rows(MANIFEST)}
+    assert set(per_input) == {entry.relative_path for entry in _model_inputs()}
     for item in per_input.values():
         assert item["criterion_met"] is True
         assert item["intervals"] == item["profiles"] - 1
@@ -626,8 +707,30 @@ def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) 
         f"sha256:{hashlib.sha256(MANIFEST.read_bytes()).hexdigest()}"
     )
     assert {item["relative_path"] for item in document["inputs"]} == {
-        row["relative_path"] for row in select_level_rows(MANIFEST)
+        entry.relative_path for entry in _model_inputs()
     }
+    assert {item["level_path"] for item in document["inputs"]} == {
+        row["relative_path"] for row in _model_levels()
+    }
+    aggregation = document["aggregation"]
+    assert aggregation["rule"] == "unweighted arithmetic mean over the level's realizations"
+    assert (aggregation["levels"], aggregation["recordings"]) == (13, 14)
+    assert aggregation["multi_realization_levels"] == [
+        {"relative_path": ANCHOR_PATHS[0], "realization_paths": list(ANCHOR_PATHS)}
+    ]
+    levels_block = {entry["primary_path"]: entry for entry in document["levels"]}
+    assert [entry["realizations"] for entry in document["levels"]] == [
+        len(row["realization_paths"].split(";")) for row in _model_levels()
+    ]
+    anchor = levels_block[ANCHOR_PATHS[0]]
+    assert anchor["realization_paths"] == list(ANCHOR_PATHS)
+    assert anchor["requested_paths"] == []
+    assert [item["relative_path"] for item in anchor["per_realization"]] == list(ANCHOR_PATHS)
+    assert [item["own_axis"] for item in anchor["per_realization"]] == [False, False]
+    assert [item["requested_axis"] for item in anchor["per_realization"]] == ["prf", "res"]
+    assert anchor["per_realization"][0]["fingerprint"] == (
+        anchor["per_realization"][1]["fingerprint"]
+    )
     views = document["views"]
     assert views["time"]["common_duration"]["revolutions"] == COMMON_REVOLUTIONS
     assert views["time"]["common_duration"]["window_s"] == pytest.approx(COMMON_WINDOW_S)
@@ -662,7 +765,8 @@ def test_findings_answer_the_plans_burst_questions_from_the_numbers(tmp_path) ->
         "findings"
     ]
     gate = findings["screening_threshold_gate"]
-    assert (gate["pairs"], gate["pairs_above_screening_threshold"]) == (66, 21)
+    # The ladder now holds burst 10 as well (§8.3 step 5), so it pairs 13 levels, not 12.
+    assert (gate["pairs"], gate["pairs_above_screening_threshold"]) == (78, 22)
     assert gate["max_ratio_to_screening_threshold"] == pytest.approx(WORST_PAIR_ABS_MM_S / ENVELOPE_MM_S)
     focus = findings["focus_18_vs_20"]
     assert (focus["short_cycles"], focus["long_cycles"]) == FOCUS_PAIR_CYCLES
@@ -792,8 +896,6 @@ FINGERPRINT_OMISSIONS = (
 )
 #: The two recordings that carry one decoded fingerprint whatever folder they sit in: the
 #: dataset's one repeated setting, at burst length 10.
-ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
-ANCHOR_CYCLES = "10"
 
 
 def _perturbed_cell(field: str, current: str) -> str:

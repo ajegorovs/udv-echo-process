@@ -203,6 +203,25 @@ OBSERVATION_EXTENT_CELLS: tuple[str, ...] = (
     "depth_max_mm",
 )
 
+#: How a decoded level's numbers are summarised from its realizations (plan §8.3 step 5). Every
+#: realization is measured independently with the axis's own metric layer, and the level's reported
+#: value is the unweighted arithmetic mean of its realizations' values.
+AGGREGATION = "unweighted arithmetic mean over the level's realizations"
+AGGREGATION_RULE = (
+    "each realization of a decoded level is measured independently - the same common window, the "
+    "same common physical support, its own native gate grid - and the level's reported value is the "
+    "unweighted arithmetic mean of its realizations' values. Each recording is one realization of "
+    "one decoded setting under repeat, so none is more representative than another and none may "
+    "outvote another: weighting by profiles, gates or duration would let one longer recording speak "
+    "for the level. The estimand is the level's average behaviour under repeat, not the pooled "
+    "behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a "
+    "measurement was made (a correlation length reaches the 1/e floor only when every realization's "
+    "did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or "
+    "spread-limited when any realization is), so no realization's adverse finding is averaged away. "
+    "Every realization's own value is published in the provenance document beside the level's mean, "
+    "so each mean is auditable against the recordings it summarises."
+)
+
 #: Every decoded cell the WP0 inventory publishes for a recording, in row-column order: shape and
 #: timing, the depth support and the acquisition settings (R4 - a fingerprint cell an axis does not
 #: re-check cannot be compared). An axis re-checks the cells it depends on; the full set is the
@@ -390,10 +409,10 @@ class LevelGroup(ValueModel):
     """One decoded level of one axis: its key (the varied cells), the identity every realization
     shares, and every recording that realizes it, in manifest order.
 
-    ``in_ladder`` is True when the axis itself requested at least one realization. The committed
-    ladders are still built from those requested levels; a level realized only elsewhere is recorded
-    here - with both of the reference recordings when they share it - for the setting-based rebuild
-    of plan §8.3 step 5 rather than silently dropped.
+    ``in_ladder`` is True when the axis itself requested at least one realization: since plan §8.3
+    step 5 the ladder holds **every** eligible decoded level, so this marks requested-ness rather
+    than membership, and a level realized only by another axis's rows (the shared anchor) is a
+    level of this ladder like any other.
     """
 
     axis: str
@@ -423,7 +442,10 @@ class LevelGroup(ValueModel):
         if self.primary_path not in paths:
             raise ValueError(f"the primary {self.primary_path!r} must be one of the realizations")
         if self.in_ladder != any(item.own_axis for item in self.realizations):
-            raise ValueError("a level is in the ladder exactly when the axis requested one of it")
+            raise ValueError(
+                "a level is requested by the axis exactly when one of its realizations carries that "
+                "axis's own row"
+            )
         return self
 
     @property
@@ -737,6 +759,163 @@ def select_axis_rows(
         order_label=order_label,
     )
     return tuple(by_path[group.primary_path] for group in groups if group.in_ladder)
+
+
+def grouped_level_rows(
+    manifest_path: Path,
+    *,
+    eligibility: AxisEligibility,
+    order_key: Callable[[Mapping[str, str]], float],
+    order_label: str,
+) -> tuple[tuple[LevelGroup, tuple[dict[str, str], ...]], ...]:
+    """Every eligible decoded level beside the manifest rows of its realizations, in ladder order.
+
+    One call, one selection: :func:`level_groups`'s grouping and the rows it was built from, so an
+    axis that has to *measure* every realization (plan §8.3 step 5) reads the same setting-based
+    selection the grouping declares rather than re-selecting by folder. A level whose recordings
+    another folder requested carries their rows too - that is the point of the setting-based rebuild.
+    """
+    groups, by_path = _level_groups_and_rows(
+        Path(manifest_path),
+        eligibility=eligibility,
+        order_key=order_key,
+        order_label=order_label,
+    )
+    return tuple(
+        (group, tuple(by_path[path] for path in group.realization_paths)) for group in groups
+    )
+
+
+def aggregate_cell(
+    values: Sequence[float], *, cell: str, level: str
+) -> float:
+    """One cell of a decoded level: the unweighted mean over its realizations (plan §8.3 step 5).
+
+    The rule is :data:`AGGREGATION_RULE`; this is where it is applied to a number. Refuses an empty
+    realization set and any non-finite value, so a level can never report a mean over nothing.
+    """
+    numbers = [float(value) for value in values]
+    if not numbers:
+        raise NativeGridError(
+            f"{level}: the level realises no recording, so it has no {cell} to aggregate"
+        )
+    for number in numbers:
+        if not math.isfinite(number):
+            raise NativeGridError(
+                f"{level}: a realization reports {cell}={number!r}; the level mean needs finite "
+                "numbers"
+            )
+    return float(sum(numbers) / len(numbers))
+
+
+def aggregate_verdict(values: Sequence[bool], *, rule: str) -> bool:
+    """One boolean cell of a decoded level, aggregated by the rule the cell's meaning demands.
+
+    ``rule='all'`` for a verdict that asserts a *measurement was made*: its conjunction, so the
+    level claims nothing a realization did not measure. ``rule='any'`` for a verdict that asserts an
+    *adverse screening outcome*: its disjunction, so no realization's adverse finding is averaged
+    away. Refuses an empty realization set and an unknown rule.
+    """
+    if rule not in ("all", "any"):
+        raise NativeGridError(f"an aggregated verdict takes rule 'all' or 'any', got {rule!r}")
+    verdicts = [bool(value) for value in values]
+    if not verdicts:
+        raise NativeGridError("a level realises no recording, so it has no verdict to aggregate")
+    return all(verdicts) if rule == "all" else any(verdicts)
+
+
+def require_one_native_grid(
+    grids: Sequence[tuple[str, np.ndarray]], *, where: str
+) -> np.ndarray:
+    """The native gate grid every realization of one decoded level measured, or a refusal by name.
+
+    A level's realizations share the whole fingerprint, so the decoded resolution - and with it the
+    pitch - is identity rather than key: their gate grids must agree. This build does not resample
+    and does not pick one realization's grid to stand for the others: two grids that disagree are
+    refused, naming the realization that moved, so no level is measured on a grid it did not use.
+    """
+    if not grids:
+        raise NativeGridError(f"{where}: a level with no realization has no native gate grid")
+    path, reference = grids[0]
+    reference = np.asarray(reference, dtype=float).reshape(-1)
+    if reference.size < 2:
+        raise NativeGridError(f"{path}: the native gate grid holds {reference.size} gate(s)")
+    pitch = float(np.diff(reference).mean())
+    tolerance = GRID_UNIFORMITY_RTOL * pitch
+    for other_path, grid in grids[1:]:
+        other = np.asarray(grid, dtype=float).reshape(-1)
+        if other.shape != reference.shape or np.abs(other - reference).max() > tolerance:
+            raise NativeGridError(
+                f"{where}: {other_path} keeps its own native gate grid, which is not the "
+                f"{path} grid the other realization of this level measured "
+                f"({other.size} gates against {reference.size}); realizations of one decoded level "
+                "are measured on the one grid their shared settings give them, and this build "
+                "resamples nothing"
+            )
+    return reference
+
+
+def mean_profile(profiles: Sequence[np.ndarray], *, where: str) -> np.ndarray:
+    """The level's per-gate mean profile: the unweighted mean over its realizations' profiles.
+
+    Every profile is the per-gate time mean of one realization on the level's one native gate grid,
+    so the level's profile is their unweighted mean - the same rule as every other level cell, and
+    the same weighting: one realization, one vote.
+    """
+    arrays = [np.asarray(profile, dtype=float) for profile in profiles]
+    if not arrays:
+        raise NativeGridError(f"{where}: a level with no realization has no mean profile")
+    shape = arrays[0].shape
+    if any(array.shape != shape for array in arrays):
+        raise NativeGridError(
+            f"{where}: the realizations' mean profiles do not share one gate grid "
+            f"({[array.shape for array in arrays]})"
+        )
+    return np.mean(np.stack(arrays), axis=0)
+
+
+def level_realizations_document(
+    group: LevelGroup,
+    cells: Mapping[str, Mapping[str, object]],
+    *,
+    fields: Sequence[str],
+) -> dict[str, object]:
+    """One decoded level's realization evidence, as the provenance document publishes it.
+
+    ``cells`` maps a cell name to that cell's value per realization path, and ``fields`` names the
+    cells to publish beside each realization's own identity: its path and hash, the folder and label
+    that requested it, whether this axis requested it, its full fingerprint and its observation
+    extent. Nothing here is deduplicated: both of the reference recordings appear, under their own
+    paths, beside the level mean their values produced (plan §8.3 step 5).
+    """
+    return {
+        "key_fields": list(group.key_fields),
+        "key": list(group.key),
+        "key_display": group.key_display,
+        "ladder_label": group.ladder_label,
+        "primary_path": group.primary_path,
+        "requested_paths": list(group.requested_paths),
+        "realizations": len(group.realizations),
+        "realization_paths": list(group.realization_paths),
+        "aggregation": AGGREGATION,
+        "per_realization": [
+            {
+                "relative_path": item.relative_path,
+                "source_sha256": item.source_sha256,
+                "requested_axis": item.requested_axis,
+                "requested_label": item.requested_label,
+                "own_axis": item.own_axis,
+                "fingerprint": dict(item.fingerprint),
+                "extent": dict(item.extent),
+                **{
+                    field: cells[field][item.relative_path]
+                    for field in fields
+                    if field in cells
+                },
+            }
+            for item in group.realizations
+        ],
+    }
 
 
 def require_clean_ofat(

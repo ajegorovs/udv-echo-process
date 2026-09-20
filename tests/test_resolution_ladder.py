@@ -51,6 +51,7 @@ from udv_echo_process.analysis.resolution_ladder import (
     build_resolution_ladder,
     common_support,
     correlation_length,
+    levels_csv_text,
     nearest_gate_indices,
     pair_row,
     select_level_rows,
@@ -87,6 +88,28 @@ LABELS = (
 )
 FOCUS_FINE = "res/0-2.BDD"
 FOCUS_COARSE = "res/0-6.BDD"
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in (plan §8.2
+#: R1): the dataset's one repeated setting, both recorded at the 1.850 mm pitch. The ``res``
+#: folder's own recording is the level's primary; the ``prf`` folder's is its second realization.
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+#: Every realization of every eligible resolution level, in ladder order: one recording per decoded
+#: pitch, with the 1.850 mm level carrying both of the reference recordings.
+REALIZATION_PATHS = (
+    "res/0-2.BDD",
+    "res/0-4.BDD",
+    "res/0-6.BDD",
+    "res/0-8.BDD",
+    "res/1-0.BDD",
+    "res/1-2.BDD",
+    "res/1-4.BDD",
+    "res/1-6.BDD",
+    ANCHOR_PATHS[0],
+    ANCHOR_PATHS[1],
+    "res/2-0.BDD",
+    "res/2-2.BDD",
+    "res/2-5.BDD",
+    "res/3-0.BDD",
+)
 
 #: 93 nominal revolutions at 500 RPM fit every resolution recording (the
 #: shortest is res/1-0.BDD at 11.2316 s).
@@ -158,22 +181,77 @@ def ladder():
 
 
 @pytest.fixture(scope="module")
-def native():
-    """Each level's native gate depths and its common-duration per-gate time mean.
+def realization_numbers() -> dict[str, dict[str, object]]:
+    """Every recording of every eligible level, measured independently.
 
-    Decoded here straight from the reader, so the tables are checked against an
-    independent derivation rather than against the module's own intermediate.
+    One entry per realization path of every eligible level: the recording's own window mean
+    profile and every per-recording number the level mean has to be aggregated from. Decoded here
+    straight from the reader, so a level mean is checked against an independent derivation rather
+    than against the module's own intermediate (plan §8.3 step 5).
     """
+    from udv_echo_process.analysis.resolution_ladder import selected_levels
+
+    measured: dict[str, dict[str, object]] = {}
+    for _group, rows in selected_levels(MANIFEST):
+        for row in rows:
+            measured[row["relative_path"]] = _realization_numbers(row["relative_path"])
+    return measured
+
+
+def _realization_numbers(relative_path: str) -> dict[str, object]:
     from udv_echo_process.io import load
 
+    stream = load(DATA_ROOT / relative_path).recording.streams[0]
+    values = np.asarray(stream.data.values, dtype=float)
+    time_s = np.asarray(stream.data.time_s, dtype=float)
+    depths = np.asarray(stream.data.gate_depths_mm, dtype=float)
+    mask = _in_support(depths)
+    window = values[time_s <= time_s[0] + COMMON_WINDOW_S + 1e-9]
+    supported = window[:, mask]
+    means = supported.mean(axis=0)
+    gradient = spatial_gradient(depths[mask], means)
+    correlation = correlation_length(depths[mask], means)
+    time_iqr = np.percentile(supported, 75, axis=0) - np.percentile(supported, 25, axis=0)
+    pitch = float(np.diff(depths).mean())
+    return {
+        "depths": depths,
+        "means": means,
+        # The recording's window mean over its *whole* gate grid: what a pair samples at the
+        # coarser participant's knots (the tables restrict it to the common support there).
+        "window_mean": window.mean(axis=0),
+        "profiles_window": int(window.shape[0]),
+        "gates_in_support": int(np.count_nonzero(mask)),
+        "mean_mm_s": float(means.mean()),
+        "robust_spread_mm_s": float(np.percentile(means, 75.0) - np.percentile(means, 25.0)),
+        "rms_mm_s": float(np.sqrt(np.mean(supported**2))),
+        "zero_fraction": float(np.count_nonzero(supported == 0.0) / supported.size),
+        "time_iqr_median_mm_s": float(np.median(time_iqr)),
+        "gradient_median_abs_mm_s_per_mm": gradient.median_abs_mm_s_per_mm,
+        "gradient_max_abs_mm_s_per_mm": gradient.max_abs_mm_s_per_mm,
+        "gradient_max_depth_mm": gradient.max_depth_mm,
+        "correlation_length_mm": correlation.length_mm,
+        "correlation_lag_max_mm": correlation.lag_max_mm,
+        "correlation_reaches_floor": correlation.reaches_floor,
+        "correlation_length_over_pitch": correlation.length_mm / pitch,
+    }
+
+
+@pytest.fixture(scope="module")
+def native(realization_numbers, ladder) -> dict[str, tuple[np.ndarray, np.ndarray]]:
+    """Each level's native gate depths and its **aggregated** common-window mean profile.
+
+    The level's profile is the unweighted mean of its realizations' window mean profiles, on the one
+    grid the level's shared settings give it - the aggregation rule the tables use (plan §8.3
+    step 5).
+    """
     decoded: dict[str, tuple[np.ndarray, np.ndarray]] = {}
-    for row in select_level_rows(MANIFEST):
-        stream = load(DATA_ROOT / row["relative_path"]).recording.streams[0]
-        values = np.asarray(stream.data.values, dtype=float)
-        time_s = np.asarray(stream.data.time_s, dtype=float)
-        depths = np.asarray(stream.data.gate_depths_mm, dtype=float)
-        window = values[time_s <= time_s[0] + COMMON_WINDOW_S + 1e-9]
-        decoded[row["relative_path"]] = (depths, window.mean(axis=0))
+    for row in ladder.levels:
+        parts = [
+            realization_numbers[path]["window_mean"]
+            for path in row.realization_paths.split(";")
+        ]
+        depths = realization_numbers[row.relative_path]["depths"]
+        decoded[row.relative_path] = (depths, np.mean(np.stack(parts), axis=0))
     return decoded
 
 
@@ -518,43 +596,74 @@ def test_correlation_length_reports_the_cap_when_the_floor_is_unreachable() -> N
 
 
 def test_level_rows_carry_the_native_grid_gradient_and_correlation_length(
-    ladder, native
+    ladder, native, realization_numbers
 ) -> None:
+    """Every level cell is its realizations' cell under the shared unweighted rule (§8.3 step 5)."""
     for row in ladder.levels:
         depths, means = native[row.relative_path]
         mask = _in_support(depths)
         native_depths, native_means = depths[mask], means[mask]
         grid = np.diff(native_depths)
         assert np.allclose(grid, row.pitch_mm, rtol=0.0, atol=1e-9)
-        stats = spatial_gradient(native_depths, native_means)
+        paths = row.realization_paths.split(";")
+        # The spatial metrics of one level are the mean of its *realizations'* own native-grid
+        # metrics, not the metric of the mean profile: one realization, one vote.
+        for cell in (
+            "gradient_median_abs_mm_s_per_mm",
+            "gradient_max_abs_mm_s_per_mm",
+            "gradient_max_depth_mm",
+            "correlation_length_mm",
+            "correlation_lag_max_mm",
+            "correlation_length_over_pitch",
+        ):
+            assert getattr(row, cell) == pytest.approx(
+                float(np.mean([realization_numbers[path][cell] for path in paths])),
+                rel=1e-10,
+                abs=1e-12,
+            ), cell
+        # The one boolean verdict aggregates by conjunction: the level's length is a measurement
+        # only when every realization's own autocovariance crossed 1/e.
+        assert row.correlation_reaches_floor is all(
+            bool(realization_numbers[path]["correlation_reaches_floor"]) for path in paths
+        )
+        for cell in (
+            "mean_mm_s",
+            "robust_spread_mm_s",
+            "rms_mm_s",
+            "zero_fraction",
+            "time_iqr_median_mm_s",
+        ):
+            assert getattr(row, cell) == pytest.approx(
+                float(np.mean([realization_numbers[path][cell] for path in paths])),
+                rel=1e-9,
+                abs=1e-12,
+            ), cell
         gradient = np.abs(np.diff(native_means)) / row.pitch_mm
-        assert row.gradient_median_abs_mm_s_per_mm == pytest.approx(
-            float(np.median(gradient)), rel=1e-10, abs=1e-12
-        )
-        assert row.gradient_max_abs_mm_s_per_mm == pytest.approx(
-            float(np.max(gradient)), rel=1e-10, abs=1e-12
-        )
-        assert row.gradient_max_depth_mm == pytest.approx(
-            float(native_depths[int(np.argmax(gradient))] + row.pitch_mm / 2.0)
-        )
-        assert stats.max_abs_mm_s_per_mm == pytest.approx(
-            row.gradient_max_abs_mm_s_per_mm
-        )
-        # The correlation length is the native e-folding lag of the same profile.
-        correlation_stats = correlation_length(native_depths, native_means)
-        assert correlation_stats.length_mm == pytest.approx(row.correlation_length_mm)
-        centred = native_means - native_means.mean()
-        correlation = np.correlate(centred, centred, mode="full")[centred.size - 1 :]
-        correlation = correlation / correlation[0]
-        cap = (centred.size - 1) // 2
-        below = np.flatnonzero(correlation[: cap + 1] < CORRELATION_FLOOR)
-        lag = int(below[0]) if below.size else cap
-        assert row.correlation_length_mm == pytest.approx(lag * row.pitch_mm)
-        assert row.correlation_reaches_floor is bool(below.size)
-        assert row.correlation_lag_max_mm == pytest.approx(cap * row.pitch_mm)
-        assert row.correlation_length_over_pitch == pytest.approx(
-            row.correlation_length_mm / row.pitch_mm
-        )
+        if len(paths) == 1:
+            stats = spatial_gradient(native_depths, native_means)
+            assert stats.max_abs_mm_s_per_mm == pytest.approx(
+                row.gradient_max_abs_mm_s_per_mm
+            )
+            assert row.gradient_max_depth_mm == pytest.approx(
+                float(native_depths[int(np.argmax(gradient))] + row.pitch_mm / 2.0)
+            )
+            assert stats.median_abs_mm_s_per_mm == pytest.approx(
+                row.gradient_median_abs_mm_s_per_mm
+            )
+            assert row.correlation_length_mm == pytest.approx(
+                correlation_length(native_depths, native_means).length_mm
+            )
+            centred = native_means - native_means.mean()
+            correlation = np.correlate(centred, centred, mode="full")[centred.size - 1 :]
+            correlation = correlation / correlation[0]
+            cap = (centred.size - 1) // 2
+            below = np.flatnonzero(correlation[: cap + 1] < CORRELATION_FLOOR)
+            lag = int(below[0]) if below.size else cap
+            assert row.correlation_length_mm == pytest.approx(lag * row.pitch_mm)
+            assert row.correlation_lag_max_mm == pytest.approx(cap * row.pitch_mm)
+            assert row.correlation_length_over_pitch == pytest.approx(
+                row.correlation_length_mm / row.pitch_mm
+            )
         assert row.pitch_mm == pytest.approx(
             (native_depths[-1] - native_depths[0]) / (native_depths.size - 1)
         )
@@ -799,7 +908,7 @@ def test_written_artefacts_are_byte_for_byte_reproducible(tmp_path) -> None:
         assert b"udv-echo-process" not in blob
 
 
-def test_provenance_records_definitions_views_alignment_and_binding(tmp_path) -> None:
+def test_provenance_records_definitions_views_alignment_and_binding(tmp_path, ladder) -> None:
     from udv_echo_process.analysis.resolution_ladder import PROVENANCE_NAME
 
     _write(tmp_path)
@@ -815,10 +924,56 @@ def test_provenance_records_definitions_views_alignment_and_binding(tmp_path) ->
     assert screening_threshold["value_mm_s"] == pytest.approx(ENVELOPE_MM_S)
     assert screening_threshold["source_sha256"] == hashlib.sha256(ENVELOPE.read_bytes()).hexdigest()
     assert screening_threshold["source_path"] == RELATIVE_ENVELOPE.as_posix()
-    assert len(document["inputs"]) == len(LABELS)
-    assert {item["relative_path"] for item in document["inputs"]} == {
-        row["relative_path"] for row in select_level_rows(MANIFEST)
+    assert len(document["inputs"]) == len(REALIZATION_PATHS)
+    assert {item["relative_path"] for item in document["inputs"]} == set(REALIZATION_PATHS)
+    # Every input names the level it realizes, and every level's recordings are the inputs of that
+    # level: one recording, one input, no folder consulted.
+    assert {item["level_path"] for item in document["inputs"]} == {
+        group.primary_path for group in ladder.groups
     }
+    aggregation = document["aggregation"]
+    assert aggregation["rule"] == "unweighted arithmetic mean over the level's realizations"
+    assert aggregation["levels"] == len(ladder.levels) == len(LABELS)
+    assert aggregation["recordings"] == len(ladder.inputs) == len(REALIZATION_PATHS)
+    assert aggregation["multi_realization_levels"] == [
+        {"relative_path": "res/1-8.BDD", "realization_paths": list(ANCHOR_PATHS)}
+    ]
+    levels = document["levels"]
+    assert [entry["primary_path"] for entry in levels] == [
+        row.relative_path for row in ladder.levels
+    ]
+    assert [entry["realizations"] for entry in levels] == [
+        len(row.realization_paths.split(";")) for row in ladder.levels
+    ]
+    anchor = next(entry for entry in levels if entry["primary_path"] == ANCHOR_PATHS[1])
+    assert anchor["realization_paths"] == list(ANCHOR_PATHS)
+    assert anchor["requested_paths"] == [ANCHOR_PATHS[1]]
+    assert anchor["aggregation"] == aggregation["rule"]
+    assert [item["relative_path"] for item in anchor["per_realization"]] == list(ANCHOR_PATHS)
+    assert [item["own_axis"] for item in anchor["per_realization"]] == [False, True]
+    assert [item["requested_axis"] for item in anchor["per_realization"]] == ["prf", "res"]
+    # Each realization's own numbers travel beside the mean they produced, so the mean is auditable.
+    row = next(r for r in ladder.levels if r.relative_path == ANCHOR_PATHS[1])
+    per_realization = anchor["per_realization"]
+    for cell in ("mean_mm_s", "profiles_window", "gates_in_support", "correlation_length_mm"):
+        assert getattr(row, cell) == pytest.approx(
+            float(np.mean([item[cell] for item in per_realization])), rel=1e-12, abs=1e-12
+        ), cell
+    assert row.mean_mm_s == pytest.approx(
+        float(
+            np.mean(
+                [
+                    item["mean_mm_s"]
+                    for item in per_realization
+                ]
+            )
+        )
+    )
+    assert per_realization[0]["fingerprint"] == per_realization[1]["fingerprint"]
+    assert per_realization[0]["extent"]["profiles"] != per_realization[1]["extent"]["profiles"]
+    assert per_realization[0]["source_sha256"] == hashlib.sha256(
+        (DATA_ROOT / ANCHOR_PATHS[0]).read_bytes()
+    ).hexdigest()
     views = document["views"]
     assert views["time"]["common_duration"]["revolutions"] == COMMON_REVOLUTIONS
     assert views["time"]["common_duration"]["window_s"] == pytest.approx(COMMON_WINDOW_S)
@@ -850,6 +1005,8 @@ def test_provenance_records_definitions_views_alignment_and_binding(tmp_path) ->
         "replicates",
         "time_view",
         "depth_view",
+        "realizations",
+        "aggregation",
     ):
         assert key in document["definitions"], key
     figure = document["figure"]
@@ -1178,9 +1335,13 @@ def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder
     assert [group.key for group in ladder.groups if group.in_ladder] == [
         (row["resolution_mm"],) for row in requested
     ]
+    # Step 5: the ladder is the setting-based selection itself, so it holds every eligible level
+    # (the pitch ladder's own 13) with every recording that realizes each one.
+    assert len(ladder.groups) == len(LABELS)
     assert [row.relative_path for row in ladder.levels] == [
-        row["relative_path"] for row in requested
+        group.primary_path for group in ladder.groups
     ]
+    assert [entry.relative_path for entry in ladder.inputs] == list(REALIZATION_PATHS)
     anchor = next(group for group in ladder.groups if group.key == ("1.85",))
     assert anchor.key_display == "resolution_mm=1.85"
     assert all(
@@ -1208,6 +1369,90 @@ def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder
     ).hexdigest()
     assert anchor.realizations[0].requested_axis == "prf"
     assert anchor.realizations[1].requested_axis == AXIS
-    # The committed artefacts are not regenerated by step 2: the realizations stay a model-level
-    # record until the setting-based rebuild of §8.3 step 5 renders them.
-    assert "realizations" not in json.dumps(provenance_document(ladder))
+    # The ladder's own requested realization stays the level's primary, the reference recording
+    # another folder requested is still named, and neither path was collapsed into the other.
+    assert anchor.realizations[0].requested_axis == "prf"
+    assert anchor.realizations[1].requested_axis == AXIS
+    assert anchor.primary_path == ANCHOR_PATHS[1]
+    assert anchor.requested_paths == (ANCHOR_PATHS[1],)
+    # Step 5 renders the selection into the artefacts: every realization is named and every level
+    # mean is published with the per-realization numbers it was aggregated from.
+    document = provenance_document(ladder)
+    assert document["aggregation"]["recordings"] == len(REALIZATION_PATHS)
+    assert document["aggregation"]["multi_realization_levels"] == [
+        {"relative_path": ANCHOR_PATHS[1], "realization_paths": list(ANCHOR_PATHS)}
+    ]
+    assert "realization_paths" in LEVEL_COLUMNS
+    assert "realizations" in LEVEL_COLUMNS
+    rendered = levels_csv_text(ladder)
+    row = next(r for r in _dict_rows(rendered.splitlines()) if r["relative_path"] == ANCHOR_PATHS[1])
+    assert row["realizations"] == "2"
+    assert row["realization_paths"] == ";".join(ANCHOR_PATHS)
+
+
+def test_every_eligible_level_is_measured_and_every_pair_count_comes_from_the_levels(ladder) -> None:
+    """Plan §8.3 step 5: counts come from grouped settings, never from a folder's file count."""
+    levels = len(ladder.groups)
+    assert len(ladder.levels) == levels
+    assert len(ladder.pairs) == levels * (levels - 1) // 2
+    # One measurement per recording of every eligible level - the res folder's 13 and the prf
+    # folder's recording of the same 1.850 mm setting.
+    assert len(ladder.inputs) == len(REALIZATION_PATHS)
+    assert len(ladder.realizations) == len(REALIZATION_PATHS)
+    assert {row.relative_path for row in ladder.realizations} == set(REALIZATION_PATHS)
+    # Both reference recordings populate the shared anchor level, and the level's own row is the
+    # unweighted mean of the two realizations' rows - not either one of them.
+    anchor = next(row for row in ladder.levels if row.relative_path == ANCHOR_PATHS[1])
+    members = [row for row in ladder.realizations if row.relative_path in ANCHOR_PATHS]
+    assert [row.relative_path for row in members] == list(ANCHOR_PATHS)
+    assert anchor.mean_mm_s == pytest.approx(
+        float(np.mean([row.mean_mm_s for row in members]))
+    )
+    assert anchor.mean_mm_s != pytest.approx(members[0].mean_mm_s)
+    assert anchor.mean_mm_s != pytest.approx(members[1].mean_mm_s)
+    # The shared anchor is a real level of this axis, and its pair rows are the level's, so the
+    # second recording reaches every comparison the first one does.
+    touching = [
+        row for row in ladder.pairs
+        if ANCHOR_PATHS[1] in (row.fine_path, row.coarse_path)
+    ]
+    assert len(touching) == levels - 1
+    assert all(row.fine_path != ANCHOR_PATHS[0] for row in ladder.pairs)
+
+
+def test_a_realization_that_moved_its_native_grid_is_refused_rather_than_resampled() -> None:
+    """A level is measured on the one grid its shared settings give it: nothing is resampled."""
+    from udv_echo_process.analysis import _native_grid as grid
+
+    shared = (10.0, 11.85, 13.7)
+    assert grid.require_one_native_grid(
+        [("a", np.array(shared)), ("b", np.array(shared))], where="level"
+    ).tolist() == list(shared)
+    with pytest.raises(ResolutionLadderError, match="not the"):
+        grid.require_one_native_grid(
+            [("a", np.array(shared)), ("b", np.array([10.0, 12.0, 14.0]))], where="level"
+        )
+    with pytest.raises(ResolutionLadderError, match="not the"):
+        grid.require_one_native_grid(
+            [("a", np.array(shared)), ("b", np.array([10.0, 11.85]))], where="level"
+        )
+    with pytest.raises(ResolutionLadderError, match="no native gate grid"):
+        grid.require_one_native_grid([], where="level")
+
+
+def test_the_aggregation_cells_refuse_an_empty_or_non_finite_realization_set() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    assert grid.aggregate_cell([4.0, 6.0], cell="mean_mm_s", level="level") == pytest.approx(5.0)
+    with pytest.raises(ResolutionLadderError, match="realises no recording"):
+        grid.aggregate_cell([], cell="mean_mm_s", level="level")
+    with pytest.raises(ResolutionLadderError, match="finite"):
+        grid.aggregate_cell([float("nan")], cell="mean_mm_s", level="level")
+    # The two verdict rules are not interchangeable: a measurement claim is a conjunction, an
+    # adverse screening outcome a disjunction.
+    assert grid.aggregate_verdict([True, False], rule="all") is False
+    assert grid.aggregate_verdict([True, False], rule="any") is True
+    with pytest.raises(ResolutionLadderError, match="rule 'all' or 'any'"):
+        grid.aggregate_verdict([True], rule="mean")
+    with pytest.raises(ResolutionLadderError, match="no verdict"):
+        grid.aggregate_verdict([], rule="all")
