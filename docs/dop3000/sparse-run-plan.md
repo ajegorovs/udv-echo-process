@@ -121,12 +121,15 @@ stored files and is measured from them** — count, timestamp span and the achie
 off the preference and never inferred from a successful decode. §5 makes that the first gate of the
 trial.
 
-**Declared: the first gate's own rendering.** The frame is declared as the value the forty committed
-recordings carry in their words. If the `Operating parameters` dialog renders that setting with a
-different last decimal, the compile refuses *before* the first recording — naming both sides — and the
-number the dialog states is then the number that belongs in the run plan. That is the designed loop,
-not a defect: a declaration is compared with the application's own text, and the file's own words are
-the authority afterwards.
+**Declared: the first gate's own rendering.** The first gate is the one frame number the stored files do
+not carry — no word states it — and the `Operating parameters` dialog is the only place the instrument
+states it, so the plan declares **what the dialog states** and lets the stored geometry settle the rest.
+What the forty committed recordings provide is an *inferred* start: their depth words **imply**
+10.1626666667 ± 0.5 mm, they do not carry it (the row in [`sparse-parameter-set.md`](sparse-parameter-set.md)
+§3 says which is which). If the dialog renders that setting with a different last decimal, the compile
+refuses *before* the first recording — naming both sides — and the number the dialog states is then the
+number that belongs in the run plan. That is the designed loop, not a defect: a declaration is compared
+with the application's own text, and the file's own words are the authority afterwards.
 
 **Settled 2026-09-20 on the live pre-run check.** The dialog states the first gate as an **integer** —
 typing `10.163` and committing leaves `10`, and commas are not accepted at all — so the plan and its
