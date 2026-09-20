@@ -822,6 +822,80 @@ def read_screening_threshold(screening_threshold_path: Path, manifest_sha256: st
     )
 
 
+def bin_cell_edges(frequency_hz: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:
+    """Left and right edge of every bin's own cell, in the grid's frequency units.
+
+    A bin's cell runs from the midpoint to its previous neighbour to the midpoint to its next one,
+    so the cells partition the frequency axis however the bins are spaced. Clipping them to a band
+    therefore integrates over exactly that band - including a band narrower than one bin, which
+    keeps its share of the bin rather than losing it to a bin count.
+    """
+    frequency = np.asarray(frequency_hz, dtype=float)
+    if frequency.ndim != 1 or frequency.size < 2:
+        raise NativeGridError(
+            f"a frequency grid needs at least two bins to carry widths, got shape {frequency.shape}"
+        )
+    if not np.all(np.isfinite(frequency)):
+        raise NativeGridError("a frequency grid must be finite to carry widths")
+    if np.any(np.diff(frequency) <= 0.0):
+        raise NativeGridError(
+            "the frequency grid must be strictly increasing to be integrated over; a repeated or "
+            "descending bin carries no width"
+        )
+    left = np.empty(frequency.size)
+    right = np.empty(frequency.size)
+    left[1:] = right[:-1] = 0.5 * (frequency[:-1] + frequency[1:])
+    left[0] = frequency[0] - 0.5 * (frequency[1] - frequency[0])
+    right[-1] = frequency[-1] + 0.5 * (frequency[-1] - frequency[-2])
+    return left, right
+
+
+def integrate_density(
+    frequency_hz: Sequence[float], density: Sequence[float], band: tuple[float, float] | None = None
+) -> float:
+    """Integrate a spectral density over frequency, in the density's own units times Hz.
+
+    A density is a per-hertz quantity, so its integral over frequency is power and every term must
+    carry that bin's *actual* width - the midpoint rule over the cells of
+    :func:`bin_cell_edges`, clipped to ``band`` when one is given. Summing the density values alone
+    counts bins instead of integrating over them, so one spectrum represented on two different
+    grids would return two different powers. Refuses a grid with no width to integrate over and a
+    band that reaches outside the grid's own coverage, where the clipped cells no longer tile it.
+    """
+    frequency = np.asarray(frequency_hz, dtype=float)
+    values = np.asarray(density, dtype=float)
+    if frequency.ndim != 1 or values.shape != frequency.shape:
+        raise NativeGridError(
+            f"a spectral integral needs one frequency per density value, got shapes "
+            f"{frequency.shape} and {values.shape}"
+        )
+    if not np.all(np.isfinite(values)):
+        raise NativeGridError("a spectral integral needs finite densities")
+    left, right = bin_cell_edges(frequency)
+    low, high = (left[0], right[-1]) if band is None else (float(band[0]), float(band[1]))
+    if not (math.isfinite(low) and math.isfinite(high) and low < high):
+        raise NativeGridError(f"the integrated band must be finite and increasing, got ({low}, {high})")
+    if low < left[0] - TOLERANCE_S or high > right[-1] + TOLERANCE_S:
+        raise NativeGridError(
+            f"the band [{low:.6g}, {high:.6g}] Hz reaches outside the frequency grid's own coverage "
+            f"[{left[0]:.6g}, {right[-1]:.6g}] Hz; the bins there cannot measure it"
+        )
+    width = np.clip(np.minimum(right, high) - np.maximum(left, low), 0.0, None)
+    return float(np.sum(values * width))
+
+
+def band_density(
+    frequency_hz: Sequence[float], density: Sequence[float], band: tuple[float, float]
+) -> float:
+    """Mean spectral density in ``band``: the power in the band over that band's width.
+
+    The power is :func:`integrate_density` over the band, each bin contributing its own cell
+    clipped to it, so a level's band mean is the integral of its own spectrum over the band divided
+    by the band's width and two representations of one spectrum on different grids agree.
+    """
+    return integrate_density(frequency_hz, density, band) / (float(band[1]) - float(band[0]))
+
+
 def psd_band_summary(
     frequency_hz: Sequence[float],
     density: Sequence[float],
@@ -831,23 +905,29 @@ def psd_band_summary(
 ) -> dict[str, float]:
     """The bandwidth summary of one ensemble PSD inside ``band``: the power-weighted
     mean frequency, the RMS spread about it and the share of in-band power above ``hf_above_hz`` —
-    the same three numbers for a level's curve and the committed WP1 curves. Refuses a band that
-    carries no power.
+    the same three numbers for a level's curve and the committed WP1 curves. Every moment is
+    integrated over the actual frequency grid (:func:`integrate_density`), so the summary depends on
+    the spectrum rather than on how densely it was sampled, and it refuses a band that carries no
+    power.
     """
     frequency = np.asarray(frequency_hz, dtype=float)
     values = np.asarray(density, dtype=float)
-    inside = (frequency >= band[0]) & (frequency <= band[1])
-    frequencies, densities = frequency[inside], values[inside]
-    total = float(densities.sum())
+    total = integrate_density(frequency, values, band)
     if not math.isfinite(total) or total <= 0.0:
         raise NativeGridError(f"the ensemble PSD carries no power in {band} Hz")
-    centroid = float((frequencies * densities).sum() / total)
+    centroid = integrate_density(frequency, frequency * values, band) / total
+    if hf_above_hz <= band[0]:
+        hf_share = 1.0
+    elif hf_above_hz >= band[1]:
+        hf_share = 0.0
+    else:
+        hf_share = float(1.0 - integrate_density(frequency, values, (band[0], hf_above_hz)) / total)
     return {
         "centroid_hz": centroid,
         "bandwidth_hz": float(
-            np.sqrt(((frequencies - centroid) ** 2 * densities).sum() / total)
+            math.sqrt(integrate_density(frequency, (frequency - centroid) ** 2 * values, band) / total)
         ),
-        "hf_share": float(densities[frequencies > hf_above_hz].sum() / total),
+        "hf_share": hf_share,
     }
 
 

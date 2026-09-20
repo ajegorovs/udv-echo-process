@@ -9,7 +9,7 @@
   },
   "screening_threshold": {
     "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
@@ -19,6 +19,97 @@
     "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "timestamps": {
+    "name": "uniform-grid phase error at the top of the analysed band",
+    "criterion": "worst-case phase error of the uniform grid at the top of the analysed band: max_k |t_k - (t_0 + k x uniform_period_s)| x f_max <= 1/16 cycle, one criterion per input, f_max the Nyquist limit of that input's own profile rate",
+    "tolerance_cycles": 0.0625,
+    "justification": "a sample the uniform grid places dt away from its recorded time is mis-phased by 2 pi f dt for every resolved component at f, so max|t_k - grid| x f_max is the worst-case phase error over the analysed band; 1/16 of a cycle (pi/8 rad) keeps the worst-placed sample's coherent (zero-lag) weight at cos(pi/8) = 0.924 of its unbiased value, i.e. caps the amplitude bias of the coherent sums and of the PSD cross terms at 7.6%, and keeps every sample inside its own cycle of the fastest resolved component so none can be attributed to a neighbouring cycle. The tolerance is a grid-error tolerance and says nothing about the flow; the four published statistics describe the recorded intervals themselves, while max_grid_residual_s also carries their cumulative departure, which is what a quantized interval accumulates over a record",
+    "estimator": "uniform grid at each record's own mean inter-profile interval, the period its first and last recorded timestamps imply; the residual is measured against that grid, not against a nominal PRF period",
+    "decision": "uniform grid retained: every input's worst-case phase error is below the tolerance at the top of the band it is analysed in, so the recorded timestamps need no resampling and no irregular-time estimator",
+    "retained": true,
+    "per_input": [
+      {
+        "relative_path": "prf/400.BDD",
+        "source_sha256": "2e1a0316b2be4c134512f7d15794d15b926002018a50f2e02cf49f5ed334718e",
+        "profiles": 545,
+        "intervals": 544,
+        "span_s": 8.153500000000001,
+        "median_dt_s": 0.014999999999999902,
+        "dt_iqr_s": 4.440892098500626e-16,
+        "rms_deviation_s": 3.4566644922156546e-05,
+        "max_abs_deviation_s": 0.00010000000000087717,
+        "uniform_period_s": 0.014988051470588237,
+        "f_max_hz": 33.359906788495735,
+        "max_grid_residual_s": 0.00011985294117700107,
+        "worst_case_phase_cycles": 0.0039982829459918184,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "prf/500.BDD",
+        "source_sha256": "ec836da40022c5d895cd200681538eb6be36460fb8d0d328a6abb54a5e930c8a",
+        "profiles": 543,
+        "intervals": 542,
+        "span_s": 10.1295,
+        "median_dt_s": 0.01869999999999994,
+        "dt_iqr_s": 0.0,
+        "rms_deviation_s": 3.299334608079023e-05,
+        "max_abs_deviation_s": 0.00010000000000065512,
+        "uniform_period_s": 0.018689114391143912,
+        "f_max_hz": 26.75354163581618,
+        "max_grid_residual_s": 8.560885608854818e-05,
+        "worst_case_phase_cycles": 0.002290340095759569,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "prf/600.BDD",
+        "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+        "profiles": 669,
+        "intervals": 668,
+        "span_s": 14.956000000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2830539309866983e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238922155688623,
+        "f_max_hz": 22.33217437817598,
+        "max_grid_residual_s": 9.161676646751715e-05,
+        "worst_case_phase_cycles": 0.002046001604717219,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "prf/700.BDD",
+        "source_sha256": "368c29e8d55e0ed521e403d4d6d673784c3c763ead6668f4a499d51bfc5aa9ba",
+        "profiles": 557,
+        "intervals": 556,
+        "span_s": 14.505700000000001,
+        "median_dt_s": 0.026099999999999568,
+        "dt_iqr_s": 4.440892098500626e-16,
+        "rms_deviation_s": 3.2575313952874195e-05,
+        "max_abs_deviation_s": 9.999999999976694e-05,
+        "uniform_period_s": 0.026089388489208633,
+        "f_max_hz": 19.16488001268467,
+        "max_grid_residual_s": 8.651079136690054e-05,
+        "worst_case_phase_cycles": 0.0016579689363490457,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "prf/800.BDD",
+        "source_sha256": "29308430cb2a7704771210c7d14043d3705640d854df68ffb5f7a6bbd844f5f9",
+        "profiles": 539,
+        "intervals": 538,
+        "span_s": 16.0267,
+        "median_dt_s": 0.029799999999999827,
+        "dt_iqr_s": 0.0,
+        "rms_deviation_s": 3.25496475234292e-05,
+        "max_abs_deviation_s": 0.0001000000000015433,
+        "uniform_period_s": 0.02978940520446097,
+        "f_max_hz": 16.784490880842593,
+        "max_grid_residual_s": 8.81040892194429e-05,
+        "worst_case_phase_cycles": 0.0014787822820686817,
+        "criterion_met": true
+      }
+    ]
   },
   "derived_scale": {
     "invariant": "velo_max_ms x prf_period_us",
@@ -239,7 +330,7 @@
       "mixer_setpoint_role": "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it",
       "floor": {
         "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-        "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+        "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
         "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
         "source_paths": [
           "prf/600.BDD",
@@ -262,20 +353,20 @@
         "e_folding_lag_difference_s": 0.02238928132107877,
         "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
         "hf_share": [
-          0.10130398654814897,
-          0.11936241554550668
+          0.09382956236925455,
+          0.11482240777745167
         ],
-        "hf_share_difference": 0.01805842899735771,
+        "hf_share_difference": 0.020992845408197125,
         "centroid_hz": [
-          3.426573420220116,
-          3.9721670718520095
+          3.105802940885664,
+          3.702878870920169
         ],
-        "centroid_hz_difference": 0.5455936516318936,
+        "centroid_hz_difference": 0.5970759300345048,
         "bandwidth_hz": [
-          3.382912442362056,
-          3.5306703072928483
+          3.3009377339045,
+          3.489017703696107
         ],
-        "bandwidth_hz_difference": 0.14775786493079224
+        "bandwidth_hz_difference": 0.18807996979160713
       }
     },
     "alignment": {
@@ -299,7 +390,7 @@
     "difference": "signed faster - slower per-gate time mean at every common knot, mm/s; a negative value means the shorter period is slower there",
     "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a PRF effect and not a bound on repeatability or uncontrolled drift",
     "matched_segment": "the physical segment duration every file is analysed in, the largest multiple of 0.1 s that fits five whole segments in the shortest record; each file takes the whole number of profiles inside it, so segment duration and resolution agree rather than being equal",
-    "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, so spectra are compared only where every recording has support",
+    "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, the power being the trapezoidal integral of its own PSD over the frequency bins that band holds, so spectra are compared only where every recording has support",
     "usable_bandwidth": "the highest frequency a file's matched segment supports, half its profile rate; the full-record Nyquist limit is published beside it",
     "acf_e_folding_lag": "the first lag of the mean-removed segment's normalized autocovariance below 1/e, in seconds on that file's own lag grid",
     "mixer_marker": "nominal 500 RPM -> 8.33 Hz marker only: no tachometer in these files, so it is not a phase reference and no peak here is attributed to it or to a harmonic",
@@ -348,13 +439,13 @@
       "focus_usable_bandwidth_hz": 33.359906788495735,
       "profile_period_over_prf_period_spread_relative": 0.006250893902227755,
       "mixer_marker_hz": 8.333333333333334,
-      "focus_psd_share_below_mixer_marker": 0.835513489019188,
+      "focus_psd_share_below_mixer_marker": 0.8299435870240677,
       "floor_paths": [
         "prf/600.BDD",
         "res/1-8.BDD"
       ],
-      "floor_hf_share_difference": 0.01805842899735771,
-      "statement": "Temporal bandwidth: the actual profile rate falls from 66.72 Hz to 33.57 Hz across the ladder and the usable bandwidth with it (33.36 to 16.47 Hz), so the shorter period carries the wider band. Spectra are compared only inside 0.625-16.25 Hz, the bands every recording supports, at a nominal resolution of 0.625 Hz. The 8.333 Hz mixer marker sits inside that band for all five levels (0.836 of the 400 us level's in-band power is below it) and stays a marker: no peak is attributed to it or to a harmonic, whose second multiple (16.67 Hz) is above the shared band."
+      "floor_hf_share_difference": 0.020992845408197125,
+      "statement": "Temporal bandwidth: the actual profile rate falls from 66.72 Hz to 33.57 Hz across the ladder and the usable bandwidth with it (33.36 to 16.47 Hz), so the shorter period carries the wider band. Spectra are compared only inside 0.625-16.25 Hz, the bands every recording supports, at a nominal resolution of 0.625 Hz. The 8.333 Hz mixer marker sits inside that band for all five levels (0.83 of the 400 us level's in-band power is below it) and stays a marker: no peak is attributed to it or to a harmonic, whose second multiple (16.67 Hz) is above the shared band."
     },
     "focus_decision": {
       "focus_setting_us": 400.0,
@@ -383,7 +474,7 @@
   },
   "figure": {
     "path": "figures/prf-ladder.png",
-    "caption": "WP2 PRF ladder: 5 decoded pulse-repetition periods 400-800 us. Common-duration view: 67 nominal 500-RPM revolutions = 8.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm; gradients and correlation lengths are native-grid quantities and pairs use the slower level's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: every full record in matched 1.6 s segments, one profile length per file because the rate differs (33.57-66.72 Hz), nominal resolution 0.625 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...). Plan decision 400 vs 250 us: peak load 0.7266 of the 231.2 mm/s limit at 400 us with none beyond it, and the widest usable bandwidth in the ladder (33.36 Hz of 33.36-16.47 Hz). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it. no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, so a level effect cannot be separated from drift. Generated at commit 1de828e from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 PRF ladder: 5 decoded pulse-repetition periods 400-800 us. Common-duration view: 67 nominal 500-RPM revolutions = 8.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm; gradients and correlation lengths are native-grid quantities and pairs use the slower level's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: every full record in matched 1.6 s segments, one profile length per file because the rate differs (33.57-66.72 Hz), nominal resolution 0.625 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...). Plan decision 400 vs 250 us: peak load 0.7266 of the 231.2 mm/s limit at 400 us with none beyond it, and the widest usable bandwidth in the ladder (33.36 Hz of 33.36-16.47 Hz). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it. no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, so a level effect cannot be separated from drift. Generated at commit 1de828e from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "velocity headroom: the largest |v| / Vmax per level against the unambiguous limit at 1.0, with the samples beyond the limit and the wrap-like discontinuities beside it",
       "usable temporal bandwidth: each level's ensemble PSD against the frequencies it supports, with the shared comparison band, each file's usable bandwidth and the 8.33 Hz marker"

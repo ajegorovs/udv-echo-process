@@ -144,6 +144,7 @@ class BurstLadder(ValueModel):
     groups: tuple[grid.LevelGroup, ...] = ()
     common: dict[str, object]
     temporal: dict[str, object]
+    timestamps: dict[str, object]
     focus_pair: tuple[str, str]
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
@@ -165,6 +166,13 @@ class BurstLadder(ValueModel):
             raise ValueError(f"focus pair {self.focus_pair} must be one of the pairs")
         if self.screening_threshold.value_mm_s <= 0.0:
             raise ValueError("the repeatability screening_threshold must be positive")
+        if self.timestamps.get("retained") is not True:
+            raise ValueError("the uniform temporal grid must be measured and retained, not assumed")
+        measured = [
+            item["relative_path"] for item in self.timestamps["per_input"]  # type: ignore[index]
+        ]
+        if measured != [entry.relative_path for entry in self.inputs]:
+            raise ValueError("the timestamp measurement must cover every level, in input order")
         return self
 
 
@@ -370,6 +378,13 @@ def _build(
     entries = [entry for entry, *_ in decoded]
     _require_clean_ofat(entries)
     period = wp1.shared_profile_period_s([entry.profile_period_s for entry in entries])
+    # R6: every level's recorded timestamps are measured against the uniform grid this period
+    # places on them, at that level's own top-of-band frequency; a level over the tolerance stops
+    # the build by name rather than being analysed on a grid it does not support.
+    timestamp_grid = wp1.timestamp_grid([
+        wp1.measure_timestamps(entry, time_s, f_max_hz=1.0 / (2.0 * period))
+        for entry, _values, time_s, _depths in decoded
+    ])
     revolutions = wp1.common_revolution_count([entry.duration_s for entry in entries])
     window_s = revolutions * wp1.NOMINAL_REVOLUTION_S
     support = grid.common_support([(entry.depth_min_mm, entry.depth_max_mm) for entry in entries])
@@ -435,6 +450,7 @@ def _build(
             "acf_estimator": wp1.ACF_ESTIMATOR, "psd_window": wp1.PSD_WINDOW,
             "psd_detrend": wp1.PSD_DETREND, "psd_scaling": wp1.PSD_SCALING, "floor": floor,
         },
+        timestamps=wp1.timestamp_document(timestamp_grid),
         focus_pair=_focus_pair(levels), levels=levels, pairs=pairs,
     )
     return model, profiles
@@ -724,6 +740,7 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
         "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
         "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
+        "timestamps": dict(model.timestamps),
         "inputs": [
             {
                 "relative_path": entry.relative_path, "axis": entry.axis,

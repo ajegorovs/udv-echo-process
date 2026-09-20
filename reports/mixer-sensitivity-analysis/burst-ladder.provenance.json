@@ -9,7 +9,7 @@
   },
   "screening_threshold": {
     "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
@@ -19,6 +19,209 @@
     "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
     "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift",
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "timestamps": {
+    "name": "uniform-grid phase error at the top of the analysed band",
+    "criterion": "worst-case phase error of the uniform grid at the top of the analysed band: max_k |t_k - (t_0 + k x uniform_period_s)| x f_max <= 1/16 cycle, one criterion per input, f_max the Nyquist limit of that input's own profile rate",
+    "tolerance_cycles": 0.0625,
+    "justification": "a sample the uniform grid places dt away from its recorded time is mis-phased by 2 pi f dt for every resolved component at f, so max|t_k - grid| x f_max is the worst-case phase error over the analysed band; 1/16 of a cycle (pi/8 rad) keeps the worst-placed sample's coherent (zero-lag) weight at cos(pi/8) = 0.924 of its unbiased value, i.e. caps the amplitude bias of the coherent sums and of the PSD cross terms at 7.6%, and keeps every sample inside its own cycle of the fastest resolved component so none can be attributed to a neighbouring cycle. The tolerance is a grid-error tolerance and says nothing about the flow; the four published statistics describe the recorded intervals themselves, while max_grid_residual_s also carries their cumulative departure, which is what a quantized interval accumulates over a record",
+    "estimator": "uniform grid at each record's own mean inter-profile interval, the period its first and last recorded timestamps imply; the residual is measured against that grid, not against a nominal PRF period",
+    "decision": "uniform grid retained: every input's worst-case phase error is below the tolerance at the top of the band it is analysed in, so the recorded timestamps need no resampling and no irregular-time estimator",
+    "retained": true,
+    "per_input": [
+      {
+        "relative_path": "burst_len/2.BDD",
+        "source_sha256": "bc5804498dd734dbe4acc72bcd2a3028b0581a3c88bc2a424bc0e7a97e47ef5c",
+        "profiles": 529,
+        "intervals": 528,
+        "span_s": 11.8215,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.285643703363989e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389204545454545,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 8.749999999935199e-05,
+        "worst_case_phase_cycles": 0.001954065055377966,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/4.BDD",
+        "source_sha256": "dd38dc77ed3d442852e48a8d18e1019e95ce48d9008d6ed47c6d9534ac9b9482",
+        "profiles": 536,
+        "intervals": 535,
+        "span_s": 11.9783,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2640780639345706e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389345794392525,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.457943925283985e-05,
+        "worst_case_phase_cycles": 0.0021121643108866998,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/6.BDD",
+        "source_sha256": "d493b9cdea2d818323969ef4455a5ef387eb715ecab979180bf61674ff504a32",
+        "profiles": 512,
+        "intervals": 511,
+        "span_s": 11.440900000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.280733057311017e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389236790606656,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.726027397261028e-05,
+        "worst_case_phase_cycles": 0.0021720331731173988,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/8.BDD",
+        "source_sha256": "48e5b680a9b78da74038b63e90ed79bc950ae58a88d683544517516d0097f170",
+        "profiles": 517,
+        "intervals": 516,
+        "span_s": 11.552800000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.294345637344441e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389147286821707,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 8.372093023201188e-05,
+        "worst_case_phase_cycles": 0.0018696702191008312,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/12.BDD",
+        "source_sha256": "8b3f7b91932b65a1c82da122db3bb2160f286d7aa8e5f0fa7b35eb108acf6c56",
+        "profiles": 521,
+        "intervals": 520,
+        "span_s": 11.6424,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2816506165680244e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238923076923077,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 0.00010153846153926338,
+        "worst_case_phase_cycles": 0.002267574393967813,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/14.BDD",
+        "source_sha256": "7644a56d24b2c13b8d1b96abd53c672a3e33adea7acaa21ee3113895877b2b09",
+        "profiles": 585,
+        "intervals": 584,
+        "span_s": 13.0754,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2582876417148484e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389383561643834,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.520547945207625e-05,
+        "worst_case_phase_cycles": 0.002126145148333543,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/16.BDD",
+        "source_sha256": "86ff4f89738f35d458d6a4176e0f4a87880f46722eeda520b9c1fbcb28f2f493",
+        "profiles": 497,
+        "intervals": 496,
+        "span_s": 11.1051,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.268865838632129e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389314516129032,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.213709677435844e-05,
+        "worst_case_phase_cycles": 0.0020576214984238303,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/18.BDD",
+        "source_sha256": "e1598263277fa58b4802dd3779ddb29ee6dc034e0cb0853083327ddb050e85dc",
+        "profiles": 524,
+        "intervals": 523,
+        "span_s": 11.7096,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2722250807302264e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389292543021033,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 8.565965583173796e-05,
+        "worst_case_phase_cycles": 0.0019129661727741965,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/20.BDD",
+        "source_sha256": "a7aa7814f5832d34a33538ad4745718bacca5c0af0d5ab8979094a8e23b48abd",
+        "profiles": 518,
+        "intervals": 517,
+        "span_s": 11.5752,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2911580742979975e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238916827852998,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.922630560932344e-05,
+        "worst_case_phase_cycles": 0.002215938929907081,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/24.BDD",
+        "source_sha256": "9786ebfaf5fea60108552af761e41d7eb9480ed4453580a2e476341451d214b6",
+        "profiles": 545,
+        "intervals": 544,
+        "span_s": 12.1797,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.293264070083781e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389154411764707,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 0.00010643382352970576,
+        "worst_case_phase_cycles": 0.0023768984602423253,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/28.BDD",
+        "source_sha256": "cc8156ac2287ac20de9c2e3850885e5cca020c87851e9cfb05c72ff03dfdb6aa",
+        "profiles": 510,
+        "intervals": 509,
+        "span_s": 11.396,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.316920957232662e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238899803536346,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 0.00011316306483299954,
+        "worst_case_phase_cycles": 0.0025271770348716948,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/32.BDD",
+        "source_sha256": "a29e78dc6dcfc890d49e7c14d8f525675a67c19ae8f7b5f7f0aa68b66bdcf2fe",
+        "profiles": 520,
+        "intervals": 519,
+        "span_s": 11.620000000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.284810608266988e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389210019267823,
+        "f_max_hz": 22.332172061627862,
+        "max_grid_residual_s": 9.132947976875361e-05,
+        "worst_case_phase_cycles": 0.0020395856564947665,
+        "criterion_met": true
+      }
+    ]
   },
   "inputs": [
     {
@@ -366,7 +569,7 @@
       "rule": "every file's full record in non-overlapping segments of the identical profile count on one shared profile period, so the segment duration, lag grid, frequency grid and frequency resolution are identical for all 12 files; each level's ensemble ACF/PSD is summarised in burst-levels.csv",
       "floor": {
         "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-        "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+        "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
         "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
         "source_paths": [
           "prf/600.BDD",
@@ -389,20 +592,20 @@
         "e_folding_lag_difference_s": 0.02238928132107877,
         "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
         "hf_share": [
-          0.07202236344557275,
-          0.09990761745914685
+          0.08454240496884091,
+          0.11245566068966872
         ],
-        "hf_share_difference": 0.0278852540135741,
+        "hf_share_difference": 0.027913255720827812,
         "centroid_hz": [
-          2.93324120675563,
-          3.734821991704059
+          3.2938787179474875,
+          4.069727579383254
         ],
-        "centroid_hz_difference": 0.8015807849484289,
+        "centroid_hz_difference": 0.7758488614357661,
         "bandwidth_hz": [
-          3.85573595700905,
-          4.301416958210061
+          4.011752112021186,
+          4.387637374182616
         ],
-        "bandwidth_hz_difference": 0.4456810012010113
+        "bandwidth_hz_difference": 0.3758852621614306
       }
     },
     "alignment": {
@@ -606,11 +809,11 @@
           32
         ],
         "knee_cycles": 6,
-        "knee_value": 0.09591963648750212,
-        "knee_change": -0.02757892044789048,
-        "net_change": -0.022270774725695414,
+        "knee_value": 0.11189618090388742,
+        "knee_change": -0.02681195761230659,
+        "net_change": -0.020605753368146185,
         "monotone_decreasing": false,
-        "statement": "psd_hf_share: largest one-step change -0.02758 across 2-32 cycles, reached at 6 cycles (value 0.09592), net -0.02227; the sequence does not fall monotonically"
+        "statement": "psd_hf_share: largest one-step change -0.02681 across 2-32 cycles, reached at 6 cycles (value 0.1119), net -0.02061; the sequence does not fall monotonically"
       },
       "acf_e_folding_lag_s": {
         "metric": "acf_e_folding_lag_s",
@@ -646,22 +849,22 @@
       "segment_profiles": 86,
       "frequency_resolution_hz": 0.5193528386425084,
       "nyquist_hz": 22.332172061627862,
-      "hf_share_min": 0.0787238054101207,
-      "hf_share_max": 0.1234985569353926,
-      "centroid_hz_min": 3.1970491411547575,
-      "centroid_hz_max": 4.064985745504256,
-      "bandwidth_hz_min": 3.952299497929861,
-      "bandwidth_hz_max": 4.638697836300465,
+      "hf_share_min": 0.08850958990442725,
+      "hf_share_max": 0.138708138516194,
+      "centroid_hz_min": 3.504412043522636,
+      "centroid_hz_max": 4.434478083007262,
+      "bandwidth_hz_min": 4.043993479230703,
+      "bandwidth_hz_max": 4.724873291454465,
       "floor_paths": [
         "prf/600.BDD",
         "res/1-8.BDD"
       ],
-      "floor_hf_share_difference": 0.0278852540135741,
-      "floor_centroid_difference_hz": 0.8015807849484289,
-      "floor_bandwidth_difference_hz": 0.4456810012010113,
+      "floor_hf_share_difference": 0.027913255720827812,
+      "floor_centroid_difference_hz": 0.7758488614357661,
+      "floor_bandwidth_difference_hz": 0.3758852621614306,
       "floor_e_folding_lag_difference_s": 0.02238928132107877,
       "floor_band_level_difference_db": 3.5316513237090668,
-      "statement": "Temporal bandwidth: the share of in-band power above 10 Hz ranges 0.07872-0.1235 (spread 0.04477) over the 12 levels, the centroid 3.197-4.065 Hz and the RMS bandwidth 3.952-4.639 Hz, against a same-settings repeat floor of 0.02789 in the same share and 0.4457 Hz in the bandwidth: a smaller bandwidth loss is not separable from repeat-plus-drift. The shortest bursts carry the largest share and the longest the smallest, the direction a longer pulse predicts, at a magnitude inside the floor."
+      "statement": "Temporal bandwidth: the share of in-band power above 10 Hz ranges 0.08851-0.1387 (spread 0.0502) over the 12 levels, the centroid 3.504-4.434 Hz and the RMS bandwidth 4.044-4.725 Hz, against a same-settings repeat floor of 0.02791 in the same share and 0.3759 Hz in the bandwidth: a smaller bandwidth loss is not separable from repeat-plus-drift. The shortest bursts carry the largest share and the longest the smallest, the direction a longer pulse predicts, at a magnitude inside the floor."
     },
     "spatial_smoothing": {
       "levels": 12,
@@ -692,7 +895,7 @@
   },
   "figure": {
     "path": "figures/burst-ladder.png",
-    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02789. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the screening_threshold, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit 4cb2522 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 burst ladder: 12 decoded burst lengths 2-32 cycles. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...). Temporal floor: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02791. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the screening_threshold, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit 4cb2522 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "dropout (zero fraction) and variance (robust spread, RMS) versus cycle count, with the plan's 16-20-cycle region shaded",
       "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 screening_threshold band"

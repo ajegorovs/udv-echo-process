@@ -416,7 +416,36 @@ def test_the_temporal_grid_is_matched_by_physical_duration_not_profile_count(lad
     assert max(resolutions) / min(resolutions) < 1.02
 
 
+def test_band_density_is_integrated_over_the_actual_frequency_grid() -> None:
+    """R5: the band density is the PSD integrated over frequency, not a sum of bins.
+
+    Two representations of one spectral density, one on a uniform grid and one on an unequal grid
+    whose in-band edge nodes agree with it, must give the same band density. The pre-correction rule
+    — sum the bin values inside the band and divide by the band width — counts bins instead of
+    integrating over them, so it returns a different number for a differently spaced grid.
+    """
+    from udv_echo_process.analysis.prf_ladder import _band_density
+
+    slope, intercept = 0.5, 1.0
+    density = lambda f: intercept + slope * np.asarray(f, dtype=float)
+    uniform = np.arange(0.0, 10.0 + 0.25, 0.5)
+    unequal = np.sort(np.concatenate([uniform, [1.25, 2.25, 3.25]]))
+    edges = np.array([1.0, 2.0, 3.0, 4.0])
+    uniform_values = _band_density(uniform, density(uniform), edges)
+    unequal_values = _band_density(unequal, density(unequal), edges)
+    # A linear density integrates exactly, so the two grids agree to rounding.
+    assert uniform_values == pytest.approx(unequal_values, rel=1e-12)
+    # The same comparison under the retired bin-sum rule does not: the unequal grid carries three
+    # extra bins, whose values the old rule added to the same band widths.
+    counted = np.array([
+        density(unequal)[(unequal >= low) & (unequal < high)].sum() / (high - low)
+        for low, high in itertools.pairwise(edges)
+    ])
+    assert not np.allclose(counted, unequal_values, rtol=1e-6)
+
+
 def test_the_spectra_are_summarised_only_where_every_recording_has_support(ladder) -> None:
+    from udv_echo_process.analysis import _native_grid as grid
     from udv_echo_process.analysis import reference_repeat as wp1
 
     bands = ladder.temporal["bands"]
@@ -440,15 +469,19 @@ def test_the_spectra_are_summarised_only_where_every_recording_has_support(ladde
         assert frequency[-1] == pytest.approx(row["usable_bandwidth_hz"])
         assert frequency[-1] <= row["nyquist_hz"] * (1.0 + 1e-9)
         inside = frequency <= row["usable_bandwidth_hz"] + 1e-9
+        # Shares and band means are integrals over the file's own grid (R5), not counts of bins.
+        band = (float(frequency[0]), min(row["usable_bandwidth_hz"], float(frequency[-1])))
+        total = grid.integrate_density(frequency, density, band)
         assert row["psd_share_below_mixer_marker"] == pytest.approx(
-            float(density[inside & (frequency < MARKER_HZ)].sum() / density[inside].sum())
+            float(grid.integrate_density(frequency, density, (band[0], MARKER_HZ)) / total)
         )
         # Band density: the power the file supports in a band over that band's width.
         densities[row["relative_path"]] = np.array([
-            density[inside & (frequency >= low) & (frequency < high)].sum() / (high - low)
+            grid.band_density(frequency, density, (low, high))
             for low, high in itertools.pairwise(edges)
         ])
         assert densities[row["relative_path"]].size == bands
+        assert inside.any()
     for row in ladder.pairs:
         levels = 10.0 * np.log10(densities[row["faster_path"]] / densities[row["slower_path"]])
         worst = int(np.argmax(np.abs(levels)))
@@ -545,6 +578,40 @@ def test_the_decision_answers_whether_250_us_is_justified(tmp_path) -> None:
     assert len(findings["limitations"]) >= 4
     joined = " ".join(findings["limitations"])
     assert "drift" in joined and "replicate" in joined and "marker" in joined
+
+
+def test_provenance_records_each_level_s_timestamp_jitter_and_the_estimator_decision(
+    tmp_path,
+) -> None:
+    """R6: every PRF level carries the four interval statistics beside criterion and decision.
+
+    The ladder's files do not share a profile rate, so the criterion is evaluated against each
+    level's own top-of-band frequency and each level's own recorded intervals.
+    """
+    from udv_echo_process.analysis.prf_ladder import PROVENANCE_NAME
+
+    _write(tmp_path)
+    document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    timestamps = document["timestamps"]
+    assert timestamps["retained"] is True
+    assert timestamps["tolerance_cycles"] == pytest.approx(1.0 / 16.0)
+    assert "phase" in timestamps["criterion"] and timestamps["justification"].strip()
+    per_input = {item["relative_path"]: item for item in timestamps["per_input"]}
+    assert set(per_input) == set(PATHS)
+    for item in per_input.values():
+        assert item["criterion_met"] is True
+        assert item["intervals"] == item["profiles"] - 1
+        assert item["median_dt_s"] > 0.0 and item["rms_deviation_s"] > 0.0
+        assert item["max_abs_deviation_s"] > 0.0
+        assert item["dt_iqr_s"] >= 0.0
+        assert item["f_max_hz"] == pytest.approx(0.5 / item["uniform_period_s"])
+        assert item["worst_case_phase_cycles"] == pytest.approx(
+            item["max_grid_residual_s"] * item["f_max_hz"]
+        )
+        assert item["worst_case_phase_cycles"] < 1.0 / 16.0
+        # These intervals are quantized to 0.1 ms, so the measured deviation is one quantum.
+        assert item["max_abs_deviation_s"] == pytest.approx(1e-4, abs=1e-6)
+    assert "uniform" in timestamps["estimator"] and "uniform" in timestamps["decision"]
 
 
 def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) -> None:

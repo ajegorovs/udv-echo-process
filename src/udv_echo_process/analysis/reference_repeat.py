@@ -32,6 +32,14 @@ What this module computes, from the manifest-selected files only:
 - **Temporal autocorrelation and PSD** per gate, on the identical 50-gate grid,
   from non-overlapping segments of one shared duration and therefore one shared
   frequency resolution for both recordings.
+- **The recorded timestamps, measured** (R6): the median inter-profile interval,
+  its interquartile range, the RMS and the maximum absolute deviation from that
+  median are published for both recordings, together with the largest distance
+  between a recorded timestamp and the uniform grid the temporal estimator uses.
+  The uniform grid is kept only while that residual stays inside
+  :data:`JITTER_TOLERANCE_CYCLES` at the top of the analysed band, and the
+  criterion with its justification is recorded beside the decision; a record over
+  it stops the analysis by name rather than being analysed on a grid it breaks.
 
 The mixer setpoint (500 RPM → 8.33 Hz) is a *marker*, never a phase reference:
 these files carry no tachometer, so dependence is read from each signal's own
@@ -134,7 +142,6 @@ MIXER_SETPOINT_HZ = NOMINAL_RPM / 60.0
 #: Largest relative disagreement between the two recordings' profile rates that
 #: still counts as one shared time base.
 _PROFILE_RATE_TOLERANCE = 1e-4
-
 
 class ReferenceRepeatError(ValueError):
     """A WP1 input is not the pair the plan describes.
@@ -460,6 +467,30 @@ class ReferenceRepeat(ValueModel):
     screening_threshold: ObservedDiscrepancyScreeningThreshold
     rows: tuple[GateRow, ...]
     temporal: TemporalComparison
+    timestamps: TimestampGrid
+
+    @model_validator(mode="after")
+    def _check_the_timestamp_measurement_is_this_pair_s(self) -> ReferenceRepeat:
+        """The measurement must be the two inputs' own recorded timestamps, in pair order."""
+        if tuple(item.relative_path for item in self.timestamps.per_input) != REPEAT_PAIR:
+            raise ValueError(
+                f"the timestamp measurement must cover {REPEAT_PAIR} in that order, got "
+                f"{tuple(item.relative_path for item in self.timestamps.per_input)}"
+            )
+        for entry, item in zip(
+            (self.input_a, self.input_b), self.timestamps.per_input, strict=True
+        ):
+            if item.source_sha256 != entry.source_sha256:
+                raise ValueError(
+                    f"{entry.relative_path}: the timestamp measurement is not of the analysed bytes"
+                )
+            if not math.isclose(item.uniform_period_s, entry.profile_period_s, rel_tol=1e-12):
+                raise ValueError(
+                    f"{entry.relative_path}: the measured uniform period "
+                    f"{item.uniform_period_s} is not the period the temporal view uses "
+                    f"{entry.profile_period_s}"
+                )
+        return self
 
     @model_validator(mode="after")
     def _check_rows_resolve_the_common_view(self) -> ReferenceRepeat:
@@ -481,6 +512,239 @@ class ReferenceRepeat(ValueModel):
         if self.input_a.source_sha256 == self.input_b.source_sha256:
             raise ValueError("the two inputs must have different content hashes")
         return self
+
+
+# ── R6: the recorded timestamps, measured, and the criterion the grid is kept by ──
+
+#: The quantitative jitter tolerance: the worst-case phase error the uniform grid may place on a
+#: recorded sample, in cycles of the fastest frequency the analysis resolves.
+JITTER_TOLERANCE_CYCLES = 1.0 / 16.0
+
+#: The criterion, written as the quantity it bounds, and the physical/statistical justification the
+#: tolerance rests on. Recorded verbatim in the provenance so the estimator choice is checkable.
+JITTER_CRITERION_NAME = "uniform-grid phase error at the top of the analysed band"
+JITTER_CRITERION = (
+    "worst-case phase error of the uniform grid at the top of the analysed band: "
+    "max_k |t_k - (t_0 + k x uniform_period_s)| x f_max <= 1/16 cycle, one criterion per input, "
+    "f_max the Nyquist limit of that input's own profile rate"
+)
+JITTER_JUSTIFICATION = (
+    "a sample the uniform grid places dt away from its recorded time is mis-phased by 2 pi f dt for "
+    "every resolved component at f, so max|t_k - grid| x f_max is the worst-case phase error over "
+    "the analysed band; 1/16 of a cycle (pi/8 rad) keeps the worst-placed sample's coherent "
+    "(zero-lag) weight at cos(pi/8) = 0.924 of its unbiased value, i.e. caps the amplitude bias "
+    "of the coherent sums and of the PSD cross terms at 7.6%, and keeps every sample inside its own "
+    "cycle of the fastest resolved component so none can be attributed to a neighbouring cycle. The "
+    "tolerance is a grid-error tolerance and says nothing about the flow; the four published "
+    "statistics "
+    "describe the recorded intervals themselves, while max_grid_residual_s also carries their "
+    "cumulative departure, which is what a quantized interval accumulates over a record"
+)
+UNIFORM_GRID_ESTIMATOR = (
+    "uniform grid at each record's own mean inter-profile interval, the period its first and last "
+    "recorded timestamps imply; the residual is measured against that grid, not against a nominal "
+    "PRF period"
+)
+UNIFORM_GRID_RETAINED = (
+    "uniform grid retained: every input's worst-case phase error is below the tolerance at the top "
+    "of the band it is analysed in, so the recorded timestamps need no resampling and no "
+    "irregular-time estimator"
+)
+UNIFORM_GRID_REFUSED = (
+    "uniform grid not supported: a recorded timestamp sits further from the uniform grid than the "
+    "tolerance allows at the top of the analysed band; resample or use an irregular-time estimator "
+    "rather than analysing the record on a grid its own timestamps do not support"
+)
+
+
+class TimestampJitter(ValueModel):
+    """One recording's recorded inter-profile intervals, measured rather than assumed uniform.
+
+    Every quantity is computed from the recorded profile timestamps. ``median_dt_s``,
+    ``dt_iqr_s``, ``rms_deviation_s`` and ``max_abs_deviation_s`` describe the intervals
+    themselves; ``uniform_period_s`` is the scalar the temporal estimator uses and
+    ``max_grid_residual_s`` is the largest distance between a recorded timestamp and the grid that
+    period places on the record — where the cumulative departure of a quantized interval shows up.
+    ``criterion_met`` records whether that residual exceeds :data:`JITTER_TOLERANCE_CYCLES` at
+    ``f_max_hz``.
+    """
+
+    relative_path: str
+    source_sha256: str
+    profiles: int
+    intervals: int
+    span_s: float
+    median_dt_s: float
+    dt_iqr_s: float
+    rms_deviation_s: float
+    max_abs_deviation_s: float
+    uniform_period_s: float
+    f_max_hz: float
+    max_grid_residual_s: float
+    worst_case_phase_cycles: float
+    tolerance_cycles: float
+    criterion_met: bool
+
+
+class TimestampGrid(ValueModel):
+    """The timestamp measurement of one artefact's inputs, with the estimator decision.
+
+    ``per_input`` holds one :class:`TimestampJitter` per recording the artefact analyses, and the
+    criterion, its tolerance and justification are recorded beside the decision they produced.
+    A grid is only ever built by :func:`timestamp_grid`, which refuses every input whose criterion
+    is not met, so ``retained`` is true exactly when every input passed.
+    """
+
+    name: str
+    criterion: str
+    tolerance_cycles: float
+    justification: str
+    estimator: str
+    decision: str
+    retained: bool
+    per_input: tuple[TimestampJitter, ...]
+
+    @model_validator(mode="after")
+    def _check_the_decision_follows_the_measurements(self) -> TimestampGrid:
+        if not self.per_input:
+            raise ValueError("a timestamp grid needs at least one measured input")
+        paths = [item.relative_path for item in self.per_input]
+        if len(set(paths)) != len(paths):
+            raise ValueError("every measured input must appear once")
+        if self.retained != all(item.criterion_met for item in self.per_input):
+            raise ValueError("the decision must follow the measured criteria")
+        if self.tolerance_cycles != JITTER_TOLERANCE_CYCLES:
+            raise ValueError(
+                f"the tolerance is {JITTER_TOLERANCE_CYCLES!r} cycles; a record that moves it "
+                "must be a stated decision, not a silent edit"
+            )
+        return self
+
+
+def measure_timestamps(
+    entry: RepeatInput, time_s: np.ndarray, *, f_max_hz: float
+) -> TimestampJitter:
+    """Measure one recording's recorded profile timestamps (plan §8.3 step 4, R6).
+
+    Args:
+        entry: the recording's manifest-pinned record (path, hash, profile period).
+        time_s: the recorded profile timestamps, in seconds.
+        f_max_hz: the highest frequency the analysis of this record resolves (its Nyquist limit).
+
+    Returns:
+        The interval statistics, the uniform period, the grid residual and whether the residual
+        stays inside :data:`JITTER_TOLERANCE_CYCLES` at ``f_max_hz``.
+
+    Raises:
+        ReferenceRepeatError: when fewer than two timestamps are given, a timestamp is not finite,
+            the timestamps do not increase strictly, or ``f_max_hz`` is not positive and finite.
+    """
+    times = np.asarray(time_s, dtype=float)
+    if times.ndim != 1 or times.size < 2:
+        raise ReferenceRepeatError(
+            f"{entry.relative_path}: profile-interval statistics need at least two recorded "
+            f"timestamps, got shape {times.shape}"
+        )
+    if not np.all(np.isfinite(times)):
+        raise ReferenceRepeatError(f"{entry.relative_path}: the recorded timestamps are not finite")
+    if not (math.isfinite(f_max_hz) and f_max_hz > 0.0):
+        raise ReferenceRepeatError(f"f_max_hz must be positive and finite, got {f_max_hz!r}")
+    intervals = np.diff(times)
+    if np.any(intervals <= 0.0):
+        raise ReferenceRepeatError(
+            f"{entry.relative_path}: the recorded profile timestamps are not strictly increasing; "
+            "a repeated or reversed profile has no uniform grid"
+        )
+    median = float(np.median(intervals))
+    deviation = intervals - median
+    period = float((times[-1] - times[0]) / (times.size - 1))
+    residual = float(np.max(np.abs(times - (times[0] + np.arange(times.size) * period))))
+    return TimestampJitter(
+        relative_path=entry.relative_path,
+        source_sha256=entry.source_sha256,
+        profiles=int(times.size),
+        intervals=int(intervals.size),
+        span_s=float(times[-1] - times[0]),
+        median_dt_s=median,
+        dt_iqr_s=float(np.percentile(intervals, 75.0) - np.percentile(intervals, 25.0)),
+        rms_deviation_s=float(np.sqrt(np.mean(np.square(deviation)))),
+        max_abs_deviation_s=float(np.max(np.abs(deviation))),
+        uniform_period_s=period,
+        f_max_hz=float(f_max_hz),
+        max_grid_residual_s=residual,
+        worst_case_phase_cycles=float(residual * f_max_hz),
+        tolerance_cycles=JITTER_TOLERANCE_CYCLES,
+        criterion_met=bool(residual * f_max_hz <= JITTER_TOLERANCE_CYCLES),
+    )
+
+
+def timestamp_grid(jitters: Sequence[TimestampJitter]) -> TimestampGrid:
+    """The estimator decision of one artefact: keep the uniform grid only where it is justified.
+
+    Raises:
+        ReferenceRepeatError: when any input's measured worst-case phase error exceeds
+            :data:`JITTER_TOLERANCE_CYCLES`. The message names the remedy — resample, or use an
+            irregular-time estimator — because the committed uniform-grid estimator must not be
+            kept for a record the measurement does not support.
+    """
+    measured = tuple(jitters)
+    if not measured:
+        raise ReferenceRepeatError("a timestamp grid needs at least one measured input")
+    over = [
+        f"{item.relative_path} ({item.worst_case_phase_cycles:.4g} cycles > "
+        f"{JITTER_TOLERANCE_CYCLES:g} at {item.f_max_hz:.6g} Hz)"
+        for item in measured
+        if not item.criterion_met
+    ]
+    if over:
+        raise ReferenceRepeatError(
+            f"{UNIFORM_GRID_REFUSED}: " + "; ".join(over)
+        )
+    return TimestampGrid(
+        name=JITTER_CRITERION_NAME,
+        criterion=JITTER_CRITERION,
+        tolerance_cycles=JITTER_TOLERANCE_CYCLES,
+        justification=JITTER_JUSTIFICATION,
+        estimator=UNIFORM_GRID_ESTIMATOR,
+        decision=UNIFORM_GRID_RETAINED,
+        retained=True,
+        per_input=measured,
+    )
+
+
+def timestamp_document(grid: TimestampGrid) -> dict[str, object]:
+    """The timestamp measurement and decision as the provenance document records them.
+
+    Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
+    """
+    return {
+        "name": grid.name,
+        "criterion": grid.criterion,
+        "tolerance_cycles": grid.tolerance_cycles,
+        "justification": grid.justification,
+        "estimator": grid.estimator,
+        "decision": grid.decision,
+        "retained": grid.retained,
+        "per_input": [
+            {
+                "relative_path": item.relative_path,
+                "source_sha256": item.source_sha256,
+                "profiles": item.profiles,
+                "intervals": item.intervals,
+                "span_s": item.span_s,
+                "median_dt_s": item.median_dt_s,
+                "dt_iqr_s": item.dt_iqr_s,
+                "rms_deviation_s": item.rms_deviation_s,
+                "max_abs_deviation_s": item.max_abs_deviation_s,
+                "uniform_period_s": item.uniform_period_s,
+                "f_max_hz": item.f_max_hz,
+                "max_grid_residual_s": item.max_grid_residual_s,
+                "worst_case_phase_cycles": item.worst_case_phase_cycles,
+                "criterion_met": item.criterion_met,
+            }
+            for item in grid.per_input
+        ],
+    }
 
 
 # ── decoding and binding ───────────────────────────────────────────────
@@ -911,6 +1175,13 @@ def build_reference_repeat(
     profile_period_s = shared_profile_period_s(
         [entry_a.profile_period_s, entry_b.profile_period_s]
     )
+    # R6: the recorded timestamps are measured, and the uniform grid the temporal view uses is
+    # only kept where the measured phase error at the top of the analysed band stays inside the
+    # tolerance; a record over it is refused by name rather than analysed on a grid it breaks.
+    timestamps = timestamp_grid([
+        measure_timestamps(entry, time_s, f_max_hz=1.0 / (2.0 * profile_period_s))
+        for entry, time_s in ((entry_a, time_a), (entry_b, time_b))
+    ])
     gate_rows = tuple(
         GateRow(
             gate_index=gate,
@@ -968,6 +1239,7 @@ def build_reference_repeat(
         temporal=temporal_comparison(
             entry_a, values_a, entry_b, values_b, profile_period_s
         ),
+        timestamps=timestamps,
     )
 
 
@@ -1147,6 +1419,7 @@ def provenance_document(model: ReferenceRepeat) -> dict[str, object]:
             }
             for entry in (model.input_a, model.input_b)
         ],
+        "timestamps": timestamp_document(model.timestamps),
         "difference": {
             "definition": DIFFERENCE_DEFINITION,
             "units": "mm/s",

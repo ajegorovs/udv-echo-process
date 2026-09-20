@@ -46,6 +46,49 @@
       "velo_max_ms": 154.13758351092335
     }
   ],
+  "timestamps": {
+    "name": "uniform-grid phase error at the top of the analysed band",
+    "criterion": "worst-case phase error of the uniform grid at the top of the analysed band: max_k |t_k - (t_0 + k x uniform_period_s)| x f_max <= 1/16 cycle, one criterion per input, f_max the Nyquist limit of that input's own profile rate",
+    "tolerance_cycles": 0.0625,
+    "justification": "a sample the uniform grid places dt away from its recorded time is mis-phased by 2 pi f dt for every resolved component at f, so max|t_k - grid| x f_max is the worst-case phase error over the analysed band; 1/16 of a cycle (pi/8 rad) keeps the worst-placed sample's coherent (zero-lag) weight at cos(pi/8) = 0.924 of its unbiased value, i.e. caps the amplitude bias of the coherent sums and of the PSD cross terms at 7.6%, and keeps every sample inside its own cycle of the fastest resolved component so none can be attributed to a neighbouring cycle. The tolerance is a grid-error tolerance and says nothing about the flow; the four published statistics describe the recorded intervals themselves, while max_grid_residual_s also carries their cumulative departure, which is what a quantized interval accumulates over a record",
+    "estimator": "uniform grid at each record's own mean inter-profile interval, the period its first and last recorded timestamps imply; the residual is measured against that grid, not against a nominal PRF period",
+    "decision": "uniform grid retained: every input's worst-case phase error is below the tolerance at the top of the band it is analysed in, so the recorded timestamps need no resampling and no irregular-time estimator",
+    "retained": true,
+    "per_input": [
+      {
+        "relative_path": "prf/600.BDD",
+        "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+        "profiles": 669,
+        "intervals": 668,
+        "span_s": 14.956000000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2830539309866983e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238922155688623,
+        "f_max_hz": 22.332114766420233,
+        "max_grid_residual_s": 9.161676646751715e-05,
+        "worst_case_phase_cycles": 0.0020459961432809136,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "res/1-8.BDD",
+        "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+        "profiles": 517,
+        "intervals": 516,
+        "span_s": 11.552900000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2647993397266717e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238934108527132,
+        "f_max_hz": 22.332114766420233,
+        "max_grid_residual_s": 9.593023255810573e-05,
+        "worst_case_phase_cycles": 0.002142324963057,
+        "criterion_met": true
+      }
+    ]
+  },
   "difference": {
     "definition": "prf/600.BDD minus res/1-8.BDD",
     "units": "mm/s",

@@ -62,7 +62,7 @@ ENVELOPE_MM_S = 19.37008103465545
 PITCH_MM = 1.85
 WORST_PAIR_ABS_MM_S = 44.03130014799165  # burst_len/4.BDD minus burst_len/28.BDD
 FOCUS_ABS_MM_S = 11.751918176021  # burst_len/18.BDD minus burst_len/20.BDD
-FLOOR_HF_SHARE_DIFFERENCE = 0.0278852540135741
+FLOOR_HF_SHARE_DIFFERENCE = 0.027913255720827812
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -372,7 +372,46 @@ def test_the_temporal_grid_is_matched_across_every_file(ladder) -> None:
     assert set(temporal["segments"].values()) == {5, 6}
 
 
+def test_the_psd_band_summary_integrates_over_the_actual_frequency_grid() -> None:
+    """R5: the shared band summary integrates the density over the frequency grid it was given.
+
+    A constant density on ``1-4 Hz`` has a closed-form band power, centre of mass and high-frequency
+    share, so the summary is checked against the analytic values rather than against its own
+    arithmetic; the same spectrum on an unequal grid must return the same numbers, because the bins'
+    cells tile the band exactly. The retired rule — density values weighted by frequency, and shares
+    taken over the bin count — is not grid-invariant and moves the centre of mass by over a percent.
+    """
+    from udv_echo_process.analysis import _native_grid as grid
+
+    uniform = np.arange(0.0, 10.0 + 0.125, 0.25)
+    unequal = np.sort(np.concatenate([uniform, [1.125, 2.125, 3.625]]))
+    flat_uniform = np.ones_like(uniform)
+    flat_unequal = np.ones_like(unequal)
+    summary = grid.psd_band_summary(uniform, flat_uniform, (1.0, 4.0), hf_above_hz=2.0)
+    same = grid.psd_band_summary(unequal, flat_unequal, (1.0, 4.0), hf_above_hz=2.0)
+    # Unit density on [1, 4]: power 3, centroid (4^2 - 1^2)/2/3 = 2.5 and 2/3 of the power above 2 Hz.
+    assert summary["centroid_hz"] == pytest.approx(2.5, rel=1e-12)
+    assert summary["hf_share"] == pytest.approx(2.0 / 3.0, rel=1e-12)
+    # The centre of mass and the share are quadrature-exact, so the unequal grid returns them too;
+    # the RMS spread inherits the midpoint rule's own small term and agrees to well inside 1 %.
+    assert same["centroid_hz"] == pytest.approx(2.5, rel=1e-12)
+    assert same["hf_share"] == pytest.approx(2.0 / 3.0, rel=1e-12)
+    assert summary["bandwidth_hz"] == pytest.approx(math.sqrt(0.75), rel=1e-2)
+    assert same["bandwidth_hz"] == pytest.approx(summary["bandwidth_hz"], rel=1e-2)
+
+    def counted(f_grid: np.ndarray) -> float:
+        """The retired rule: the frequency grid weighted by bin count, band-limited."""
+        inside = (f_grid >= 1.0) & (f_grid <= 4.0)
+        values = np.ones_like(f_grid)
+        return float((f_grid[inside] * values[inside]).sum() / values[inside].sum())
+
+    retired_gap = abs(counted(uniform) - counted(unequal)) / counted(uniform)
+    assert abs(summary["centroid_hz"] - same["centroid_hz"]) < 1e-12 < retired_gap
+    assert retired_gap > 0.01
+
+
 def test_the_temporal_metrics_are_the_acf_and_psd_of_the_full_record(ladder) -> None:
+    from udv_echo_process.analysis import _native_grid as grid
     from udv_echo_process.analysis.reference_repeat import temporal_series
 
     entry = next(e for e in ladder.inputs if e.burst_length == 16)
@@ -383,14 +422,18 @@ def test_the_temporal_metrics_are_the_acf_and_psd_of_the_full_record(ladder) -> 
     assert ladder.temporal["profiles_analysed"][entry.relative_path] == series.profiles_analysed
     frequency = np.asarray(series.frequency_hz, dtype=float)
     density = np.asarray(series.psd_mean_mm2_s2_per_hz, dtype=float)
-    inside = (frequency >= 0.5) & (frequency <= 20.0)
-    band = density[inside]
-    centroid = float((frequency[inside] * band).sum() / band.sum())
+    band_hz = (0.5, 20.0)
+    # Every moment is the integral over the actual grid, each bin's cell clipped to the band (R5).
+    total = grid.integrate_density(frequency, density, band_hz)
+    centroid = grid.integrate_density(frequency, frequency * density, band_hz) / total
     assert (row["psd_centroid_hz"], row["psd_hf_share"]) == pytest.approx(
-        (centroid, float(band[frequency[inside] > 10.0].sum() / band.sum()))
+        (
+            centroid,
+            1.0 - grid.integrate_density(frequency, density, (band_hz[0], 10.0)) / total,
+        )
     )
     assert row["psd_bandwidth_hz"] == pytest.approx(
-        float(np.sqrt(((frequency[inside] - centroid) ** 2 * band).sum() / band.sum()))
+        math.sqrt(grid.integrate_density(frequency, (frequency - centroid) ** 2 * density, band_hz) / total)
     )
     assert row["psd_bandwidth_hz"] > 0.0 and 0.0 < row["psd_hf_share"] < 1.0
 
@@ -544,6 +587,31 @@ def test_written_artefacts_reproduce_the_declared_columns_and_bytes(tmp_path) ->
     figure = (tmp_path / "a" / FIGURES_DIRNAME / FIGURE_NAME).read_bytes()
     assert figure == (tmp_path / "b" / FIGURES_DIRNAME / FIGURE_NAME).read_bytes()
     assert figure.startswith(b"\x89PNG\r\n\x1a\n") and len(figure) > 40_000
+
+
+def test_provenance_records_each_level_s_timestamp_jitter_and_the_estimator_decision(
+    tmp_path,
+) -> None:
+    """R6: every burst input carries the four interval statistics beside criterion and decision."""
+    from udv_echo_process.analysis.burst_ladder import PROVENANCE_NAME
+
+    _write(tmp_path)
+    document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    timestamps = document["timestamps"]
+    assert timestamps["retained"] is True
+    assert timestamps["tolerance_cycles"] == pytest.approx(1.0 / 16.0)
+    assert "phase" in timestamps["criterion"] and timestamps["justification"].strip()
+    per_input = {item["relative_path"]: item for item in timestamps["per_input"]}
+    assert set(per_input) == {row["relative_path"] for row in select_level_rows(MANIFEST)}
+    for item in per_input.values():
+        assert item["criterion_met"] is True
+        assert item["intervals"] == item["profiles"] - 1
+        for key in ("median_dt_s", "rms_deviation_s", "max_abs_deviation_s"):
+            assert item[key] > 0.0, key
+        assert item["dt_iqr_s"] >= 0.0
+        assert item["median_dt_s"] == pytest.approx(0.0224)
+        assert item["max_abs_deviation_s"] == pytest.approx(1e-4, abs=1e-6)
+    assert "uniform" in timestamps["estimator"] and "uniform" in timestamps["decision"]
 
 
 def test_provenance_records_binding_definitions_views_and_the_caption(tmp_path) -> None:

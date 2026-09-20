@@ -33,6 +33,16 @@ count, and spectra are compared only where every recording has support. The 500-
 marker (8.33 Hz), never a phase reference, so no peak is attributed to it or to a harmonic; no
 profile or gate is an independent replicate, the levels carry no acquisition order, and no p-value
 is produced (plan §3.3). PRF axis only.
+
+Two corrections the review round owns are part of this module. The comparison bands are **integrated**
+over each recording's own frequency grid — its band mean is the power in the band over that band's
+width, each bin contributing its own width, so the same spectrum on an unevenly spaced grid returns
+the same band mean (R5). And each file's recorded timestamps are **measured** before the temporal
+view is built: the median inter-profile interval, its IQR, the RMS and the maximum absolute deviation
+from that median are published with the largest distance between a recorded timestamp and the uniform
+grid, and that grid is kept only while the residual stays inside the shared
+:data:`udv_echo_process.analysis.reference_repeat.JITTER_TOLERANCE_CYCLES` at the top of the
+analysed band (R6).
 """
 
 from __future__ import annotations
@@ -154,6 +164,7 @@ class PrfLadder(ValueModel):
     groups: tuple[grid.LevelGroup, ...] = ()
     common: dict[str, object]
     temporal: dict[str, object]
+    timestamps: dict[str, object]
     focus_path: str
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
@@ -176,6 +187,13 @@ class PrfLadder(ValueModel):
             raise ValueError(f"focus level {self.focus_path} must be one of the levels")
         if self.screening_threshold.value_mm_s <= 0.0:
             raise ValueError("the repeatability screening_threshold must be positive")
+        if self.timestamps.get("retained") is not True:
+            raise ValueError("the uniform temporal grid must be measured and retained, not assumed")
+        measured = [
+            item["relative_path"] for item in self.timestamps["per_input"]  # type: ignore[index]
+        ]
+        if measured != [entry.relative_path for entry in self.inputs]:
+            raise ValueError("the timestamp measurement must cover every level, in input order")
         return self
 
 
@@ -360,21 +378,18 @@ def _band_edges(
 
 
 def _band_density(frequency: np.ndarray, density: np.ndarray, edges: np.ndarray) -> np.ndarray:
-    """Mean spectral density of each band ``[edges[k], edges[k+1])``: band power over band width.
+    """Mean spectral density of each band ``[edges[k], edges[k+1]]``: band power over band width.
 
-    Only bins the recording actually supports are summed, so every level is compared on identical
-    bands and on frequencies it measured.
+    The band's power is the shared :func:`udv_echo_process.analysis._native_grid.band_density`
+    integral of the density over the recording's *own* frequency grid, so a band mean carries the
+    bin widths the recording was measured on rather than a count of bins; only bins the recording
+    actually supports are integrated, so every level is compared on identical bands and on
+    frequencies it measured.
     """
-    values = np.empty(edges.size - 1)
-    for index in range(edges.size - 1):
-        low, high = edges[index], edges[index + 1]
-        inside = (frequency >= low) & (frequency < high)
-        if not np.any(inside):
-            raise PrfLadderError(
-                f"the frequency grid holds no bin in the comparison band [{low:.6g}, {high:.6g}) Hz"
-            )
-        values[index] = float(density[inside].sum() / (high - low))
-    return values
+    return np.array([
+        grid.band_density(frequency, density, (low, high))
+        for low, high in itertools.pairwise(edges)
+    ])
 
 
 def level_row(
@@ -386,11 +401,18 @@ def level_row(
 ) -> dict[str, object]:
     """One level's row: its common-window, native-grid, load and matched-segment metrics."""
     frequency = np.asarray(series.frequency_hz, dtype=float)
-    supported = frequency <= cell["usable_bandwidth_hz"]
-    density = np.asarray(series.psd_mean_mm2_s2_per_hz, dtype=float)[supported]
-    total = float(density.sum())
+    density = np.asarray(series.psd_mean_mm2_s2_per_hz, dtype=float)
+    # Power, not a count of bins: the shares below are integrals over the recording's own grid,
+    # clipped to the band the matched segment supports (R5).
+    usable = float(cell["usable_bandwidth_hz"])
+    band = (float(frequency[0]), min(usable, float(frequency[-1])))
+    total = grid.integrate_density(frequency, density, band)
     if total <= 0.0:
         raise PrfLadderError(f"{entry.relative_path}: the ensemble PSD carries no power")
+    marker = min(max(MIXER_MARKER_HZ, band[0]), band[1])
+    below_power = (
+        grid.integrate_density(frequency, density, (band[0], marker)) if marker > band[0] else 0.0
+    )
     means = metrics.means
     return {
         "axis": entry.axis, "relative_path": entry.relative_path,
@@ -408,9 +430,7 @@ def level_row(
         "segment_duration_s": cell["duration_s"], "frequency_resolution_hz": cell["resolution_hz"],
         "segments": cell["segments"], "usable_bandwidth_hz": cell["usable_bandwidth_hz"],
         "acf_e_folding_lag_s": series.acf_e_folding_lag_s,
-        "psd_share_below_mixer_marker": float(
-            density[frequency[supported] < MIXER_MARKER_HZ].sum() / total
-        ),
+        "psd_share_below_mixer_marker": float(below_power / total),
     }
 
 
@@ -500,6 +520,13 @@ def _build(
     cell, nominal_resolution = _temporal_grid(
         [e.profile_period_s for e in entries], [e.duration_s for e in entries]
     )
+    # R6: each level's own recorded timestamps are measured against the uniform grid its period
+    # places on them, at its own top-of-band frequency; a level over the tolerance stops the build
+    # by name rather than being analysed on a grid it does not support.
+    timestamp_grid = wp1.timestamp_grid([
+        wp1.measure_timestamps(entry, time_s, f_max_hz=1.0 / (2.0 * entry.profile_period_s))
+        for entry, _values, time_s, _depths in decoded
+    ])
     series = [
         wp1.temporal_series(
             e, v, e.profile_period_s, segment_profiles=int(cell[str(e.profile_period_s)]["profiles"])
@@ -578,6 +605,7 @@ def _build(
             "psd_detrend": wp1.PSD_DETREND, "psd_scaling": wp1.PSD_SCALING,
             "segment_step_s": SEGMENT_STEP_S, "min_segments": MIN_SEGMENTS,
         },
+        timestamps=wp1.timestamp_document(timestamp_grid),
         focus_path=str(matches[0]["relative_path"]), levels=levels, pairs=pairs,
     )
     curves = {
@@ -618,7 +646,7 @@ DEFINITIONS: dict[str, str] = {
     "difference": "signed faster - slower per-gate time mean at every common knot, mm/s; a negative value means the shorter period is slower there",
     "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a PRF effect and not a bound on repeatability or uncontrolled drift",
     "matched_segment": "the physical segment duration every file is analysed in, the largest multiple of 0.1 s that fits five whole segments in the shortest record; each file takes the whole number of profiles inside it, so segment duration and resolution agree rather than being equal",
-    "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, so spectra are compared only where every recording has support",
+    "comparison_bands": "identical bands from the nominal resolution up to the narrowest usable bandwidth in the ladder; a level's density is its band power over the band width, the power being the trapezoidal integral of its own PSD over the frequency bins that band holds, so spectra are compared only where every recording has support",
     "usable_bandwidth": "the highest frequency a file's matched segment supports, half its profile rate; the full-record Nyquist limit is published beside it",
     "acf_e_folding_lag": "the first lag of the mean-removed segment's normalized autocovariance below 1/e, in seconds on that file's own lag grid",
     "mixer_marker": "nominal 500 RPM -> 8.33 Hz marker only: no tachometer in these files, so it is not a phase reference and no peak here is attributed to it or to a harmonic",
@@ -805,6 +833,7 @@ def provenance_document(model: PrfLadder) -> dict[str, object]:
         "artefact": "prf-ladder", "axis": model.axis, "analysis_commit": model.analysis_commit, "dataset_root": model.dataset_root,
         "manifest": {"path": model.manifest_path, "sha256": model.manifest_sha256},
         "screening_threshold": dict(model.screening_threshold.model_dump()) | {"source_path": model.screening_threshold.path},
+        "timestamps": dict(model.timestamps),
         "derived_scale": {
             "invariant": "velo_max_ms x prf_period_us", "tolerance_relative": VELO_SCALE_RTOL,
             "values": [e.velo_max_ms * e.prf_period_us for e in model.inputs],

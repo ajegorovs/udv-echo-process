@@ -534,6 +534,141 @@ def test_provenance_records_the_binding_definitions_and_views(tmp_path, monkeypa
     assert "--analysis-commit" in document["regeneration"]["command"]
 
 
+def test_timestamp_jitter_publishes_the_four_statistics_from_the_recorded_timestamps() -> None:
+    """R6: the interval statistics come from the recorded timestamps, never a nominal period."""
+    from udv_echo_process.analysis.reference_repeat import measure_timestamps
+    from udv_echo_process.io import load
+
+    model = build_reference_repeat(DATA_ROOT, MANIFEST, analysis_commit=COMMIT)
+    f_max = model.temporal.nyquist_hz
+    for entry, relative in ((model.input_a, FILE_A), (model.input_b, FILE_B)):
+        time_s = np.asarray(
+            load(DATA_ROOT / relative).recording.streams[0].data.time_s, dtype=float
+        )
+        jitter = measure_timestamps(entry, time_s, f_max_hz=f_max)
+        intervals = np.diff(time_s)
+        median = float(np.median(intervals))
+        deviation = intervals - median
+        assert jitter.relative_path == relative
+        assert jitter.source_sha256 == entry.source_sha256
+        assert jitter.profiles == time_s.size
+        assert jitter.intervals == time_s.size - 1
+        assert jitter.span_s == pytest.approx(float(time_s[-1] - time_s[0]))
+        assert jitter.median_dt_s == pytest.approx(median)
+        assert jitter.dt_iqr_s == pytest.approx(
+            float(np.percentile(intervals, 75.0) - np.percentile(intervals, 25.0))
+        )
+        assert jitter.rms_deviation_s == pytest.approx(float(np.sqrt(np.mean(deviation**2))))
+        assert jitter.max_abs_deviation_s == pytest.approx(float(np.max(np.abs(deviation))))
+        # The uniform period is the record's own mean interval, and the residual is measured
+        # against the grid that period places on the recorded timestamps.
+        assert jitter.uniform_period_s == pytest.approx(entry.profile_period_s)
+        grid = time_s[0] + np.arange(time_s.size, dtype=float) * jitter.uniform_period_s
+        assert jitter.max_grid_residual_s == pytest.approx(
+            float(np.max(np.abs(time_s - grid)))
+        )
+        # The recorded intervals are quantized to the reader's 0.1 ms timestamp unit, so the measured
+        # jitter is one quantum and the deviations are stated, not assumed away.
+        assert jitter.max_abs_deviation_s == pytest.approx(1e-4, abs=1e-6)
+        assert 0.0 < jitter.rms_deviation_s < jitter.max_abs_deviation_s
+
+
+def test_the_temporal_estimator_is_retained_only_when_the_measured_criterion_is_met() -> None:
+    """R6: the criterion is quantitative, justified, and evaluated on the measured residuals."""
+    from udv_echo_process.analysis.reference_repeat import (
+        JITTER_TOLERANCE_CYCLES,
+        measure_timestamps,
+        timestamp_grid,
+    )
+    from udv_echo_process.io import load
+
+    model = build_reference_repeat(DATA_ROOT, MANIFEST, analysis_commit=COMMIT)
+    f_max = model.temporal.nyquist_hz
+    jitters = [
+        measure_timestamps(
+            entry,
+            np.asarray(
+                load(DATA_ROOT / entry.relative_path).recording.streams[0].data.time_s, dtype=float
+            ),
+            f_max_hz=f_max,
+        )
+        for entry in (model.input_a, model.input_b)
+    ]
+    grid = timestamp_grid(jitters)
+    assert grid.tolerance_cycles == JITTER_TOLERANCE_CYCLES == 1.0 / 16.0
+    assert grid.name and "phase" in grid.criterion and "tolerance" in grid.justification
+    assert grid.retained is True
+    assert [item.relative_path for item in grid.per_input] == [FILE_A, FILE_B]
+    for jitter in grid.per_input:
+        assert jitter.f_max_hz == pytest.approx(f_max)
+        assert jitter.criterion_met is True
+        assert jitter.worst_case_phase_cycles == pytest.approx(
+            jitter.max_grid_residual_s * f_max
+        )
+        # The committed records pass with a wide margin: the residual is one timestamp quantum, and
+        # a quantum at the top of the analysed band is a fraction of a percent of a cycle.
+        assert jitter.worst_case_phase_cycles < JITTER_TOLERANCE_CYCLES / 4.0
+        assert jitter.worst_case_phase_cycles == pytest.approx(
+            jitter.max_grid_residual_s * jitter.f_max_hz
+        )
+    assert "uniform" in grid.estimator
+    assert "median" in grid.estimator or "mean" in grid.estimator
+    assert "resample" in grid.decision or "irregular" in grid.decision
+
+
+def test_the_temporal_estimator_refuses_a_record_that_breaks_the_criterion() -> None:
+    """R6: a grid whose residual does exceed the tolerance is refused, not silently kept."""
+    from udv_echo_process.analysis.reference_repeat import (
+        JITTER_TOLERANCE_CYCLES,
+        measure_timestamps,
+        timestamp_grid,
+    )
+
+    model = build_reference_repeat(DATA_ROOT, MANIFEST, analysis_commit=COMMIT)
+    f_max = model.temporal.nyquist_hz
+    # A cadence that alternates ±5 ms about 22.4 ms: one interval in two is a quarter of a cycle
+    # out at the Nyquist limit, far above the tolerance.
+    steps = np.where(np.arange(600) % 2 == 0, 0.0174, 0.0274)
+    time_s = np.concatenate([[0.0], np.cumsum(steps)])
+    broken = measure_timestamps(model.input_a, time_s, f_max_hz=f_max)
+    assert broken.max_abs_deviation_s == pytest.approx(5e-3)
+    assert broken.criterion_met is False
+    assert broken.worst_case_phase_cycles > JITTER_TOLERANCE_CYCLES
+    with pytest.raises(ReferenceRepeatError, match="resample or use an irregular-time estimator"):
+        timestamp_grid([broken])
+    # And the uniform grid is refused for a record whose timestamps are not strictly increasing.
+    with pytest.raises(ReferenceRepeatError, match="increasing"):
+        measure_timestamps(model.input_a, np.array([0.0, 0.02, 0.02, 0.06]), f_max_hz=f_max)
+
+
+def test_provenance_records_the_timestamp_measurement_and_the_estimator_decision(
+    tmp_path, monkeypatch
+) -> None:
+    """R6: every input carries the four statistics beside the criterion and the decision."""
+    from udv_echo_process.analysis.reference_repeat import PROVENANCE_NAME
+
+    monkeypatch.chdir(ROOT)
+    _write(tmp_path)
+    document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    timestamps = document["timestamps"]
+    assert timestamps["retained"] is True
+    assert timestamps["tolerance_cycles"] == pytest.approx(1.0 / 16.0)
+    assert "phase" in timestamps["criterion"]
+    assert "uniform" in timestamps["estimator"]
+    assert timestamps["justification"].strip()
+    per_input = {item["relative_path"]: item for item in timestamps["per_input"]}
+    assert set(per_input) == set(REPEAT_PAIR)
+    for relative, item in per_input.items():
+        for key in (
+            "median_dt_s", "dt_iqr_s", "rms_deviation_s", "max_abs_deviation_s",
+            "intervals", "span_s", "uniform_period_s", "max_grid_residual_s", "f_max_hz",
+            "worst_case_phase_cycles", "criterion_met",
+        ):
+            assert key in item, f"{relative} is missing {key}"
+        assert item["criterion_met"] is True
+        assert item["max_abs_deviation_s"] > 0.0
+
+
 def test_figure_is_a_reviewer_visible_multi_panel_image(tmp_path, monkeypatch) -> None:
     import matplotlib
 

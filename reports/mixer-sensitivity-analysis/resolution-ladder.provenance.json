@@ -9,7 +9,7 @@
   },
   "screening_threshold": {
     "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
-    "source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
     "metric": "max_gate_abs_mean_difference_mm_s",
     "units": "mm/s",
     "value_mm_s": 19.37008103465545,
@@ -298,7 +298,7 @@
     "screening_threshold_gate": {
       "pairs": 78,
       "screening_threshold_mm_s": 19.37008103465545,
-      "screening_threshold_source_sha256": "c85ba0cc3f18375547d7f0407696389abd8d7fec1932bf4875ddc38e699b65a9",
+      "screening_threshold_source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
       "pairs_above_screening_threshold": 0,
       "max_abs_difference_mm_s": 17.367988923598926,
       "max_abs_difference_fine_path": "res/1-2.BDD",
@@ -354,7 +354,7 @@
   },
   "figure": {
     "path": "figures/resolution-ladder.png",
-    "caption": "WP2 resolution ladder: 13 decoded pitches 0.2467-2.96 mm (0-2..3-0). Common-duration view: 93 nominal 500-RPM revolutions = 11.16 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-96.7427 mm. Gradients and correlation lengths are native-grid quantities; pairs use the coarser participant's own gate depths as knots (spacing = the coarser pitch) with the finer profile sampled there by nearest native gate - nothing is interpolated or upsampled. Decision threshold: the committed sole-pair observed-discrepancy screening threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, read from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, c85ba0cc3f18...), one observed realization of same-settings repeatability plus uncontrolled drift that screens an effect without bounding it. Focus pair: res/0-2.BDD (0.2467 mm) vs res/0-6.BDD (0.6167 mm) - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm, 0 of 141 knots above the screening_threshold. Coarsest measured pitch 2.96 mm (3-0) samples the 11.84 mm correlation length 4 times. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. no gate and no profile is an independent experimental replicate - gates and profiles are not independent samples, and the levels carry no acquisition order. Generated at commit 3a4c55a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "caption": "WP2 resolution ladder: 13 decoded pitches 0.2467-2.96 mm (0-2..3-0). Common-duration view: 93 nominal 500-RPM revolutions = 11.16 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-96.7427 mm. Gradients and correlation lengths are native-grid quantities; pairs use the coarser participant's own gate depths as knots (spacing = the coarser pitch) with the finer profile sampled there by nearest native gate - nothing is interpolated or upsampled. Decision threshold: the committed sole-pair observed-discrepancy screening threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, read from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...), one observed realization of same-settings repeatability plus uncontrolled drift that screens an effect without bounding it. Focus pair: res/0-2.BDD (0.2467 mm) vs res/0-6.BDD (0.6167 mm) - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm, 0 of 141 knots above the screening_threshold. Coarsest measured pitch 2.96 mm (3-0) samples the 11.84 mm correlation length 4 times. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. no gate and no profile is an independent experimental replicate - gates and profiles are not independent samples, and the levels carry no acquisition order. Generated at commit 3a4c55a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
     "panels": [
       "native-grid spatial correlation length versus gate pitch, with the 1:1 line where a correlation length would equal one gate",
       "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the signed difference at the 0.617 mm knots and the WP1 screening_threshold band; the native gradient spread stays in resolution-levels.csv"
