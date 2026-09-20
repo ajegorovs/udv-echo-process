@@ -509,3 +509,13 @@ reports *"Not inside a git checkout"* even when run from this repository.
 
 `.hermes/` is git-ignored on purpose: agent working artifacts (dispatch plans, scratch state),
 never repository documentation.
+
+**Scratch files go in `.hermes/scratch/`, never directly in `.hermes/`.** Hermes' write guard
+reads *any* file whose immediate parent directory is a project-local `.hermes` as agent-steering
+config (`tools/file_tools_write_guards.py::_protected_instruction_reason`) and asks a human to
+approve each `write_file`/`patch` there — one prompt per operation, no persisted scope, not
+bypassed by `--yolo` or the command allowlist. The match is on the parent directory name and the
+file name is never examined, so a scratch script sitting at `.hermes/fmt_cli.py` is treated
+exactly like `.hermes/config.yaml`. One level down is outside the rule: `.hermes/scratch/x.py`
+is never gated. Keep the root of `.hermes/` empty of hand-written files.
+

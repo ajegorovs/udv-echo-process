@@ -394,6 +394,16 @@ next to the tooling, and keep the reconnaissance scripts re-runnable so the next
 re-derives nothing. The final report states what was measured, what was assumed, and the single
 experiment that would settle each open question — with the highest-risk unknown first.
 
+**Scratch scripts live in `.hermes/scratch/`, never directly in `.hermes/`.** The repo gitignores
+`.hermes/` as the agent's working-artifact home and reconnaissance produces throwaway scripts
+constantly — but a file written *directly* in a project-local `.hermes/` is read by Hermes' write
+guard as agent-steering config, so every `write_file`/`patch` there asks the human to approve it:
+one prompt per operation, no persisted scope, not bypassed by `--yolo` or the command allowlist
+(the rule matches the parent directory name only, so the file name is never examined). One level
+down is outside it. This is the same rule `AGENTS.md` states, and the reason to honour it is that
+an approval-gated scratch write stalls a live acquisition session at the worst moment — move any
+existing loose files into the subdirectory with `mv`, which is a shell command and not gated.
+
 **Answer a capability question with the mechanism, one measurement and the gap — not a
 narration of the implementation.** When the operator asks whether something is possible (*can we
 record for a fixed time? is this value settable?*), what they need is: the exact step that sets
