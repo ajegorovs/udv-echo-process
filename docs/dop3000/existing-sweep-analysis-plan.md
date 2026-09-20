@@ -373,9 +373,11 @@ artifacts run:
 .venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final
 ```
 
-Do not start acquisition, encode the provisional sparse set as a campaign, or merge PR #24 until §8.4 is
-fully satisfied. If a correction changes the proposed condition set, update the decision table first and let
-`sparse-parameter-set.md` follow it; never preserve the old count by construction.
+Do not start acquisition or encode the provisional sparse set as a campaign until §8.4 is fully satisfied: the
+gate this paragraph set for PR #24 was satisfied and the slice merged as `5c9fcf9` (§10.6), but the set stays
+provisional until the campaign-definition/run-plan PR encodes it. If a correction changes the proposed condition
+set, update the decision table first and let `sparse-parameter-set.md` follow it; never preserve the old count by
+construction.
 
 ### 8.8 Step 8 rebinding map (correction → baseline items)
 
@@ -547,8 +549,8 @@ boundary; no implementation belongs in the ruling commit.
 
 No acquisition or writer change is part of these commits. At `626f165`, the full suite reports **2210 passed,
 22 skipped**; Ruff, the screening checker, decision-layer validator and baseline `--check-final` all exit zero.
-The implementation items in §9.4 are complete; the PR remains a draft only until the final narrow review is
-requested.
+The implementation items in §9.4 are complete; the narrow review was requested, answered and approved, and the
+slice merged as `5c9fcf9` (§10.6).
 
 ## 10. Review of `2ddf672` — repeated-realization semantics and execution-order claims
 
@@ -629,3 +631,37 @@ the round.
 measured at this commit: `.venv/Scripts/python.exe -m pytest -q` → **2216 passed, 22 skipped**;
 `tools/validate_decision_layer.py`, `tools/check_screening_terms.py` and
 `tools/validate_analysis_review_baseline.py --check-final` → exit 0; `ruff check .` → clean.
+
+### 10.6 Merged
+
+The slice merged into `docs/sparse-parameter-set` as **`5c9fcf9`** — "Merge pull request #24 from
+ajegorovs/analysis/existing-sweep-plan", 2026-09-20 — carrying `82ae499`, `7b70d9a`, `945464f` and `473424f` on
+top of the reviewed head `2ddf672`. The merge commit is the boundary a later reader should diff against.
+
+The gate is re-run on the merge's own branch, so "green" is verified where the commits now live rather than
+inherited from the reviewed head. This commit also sweeps the sentences the merge made false: §8.3's prohibition
+on merging PR #24 before §8.4 is spent (the gate was met and the merge landed), and §9.7's closing line no longer
+calls the PR a draft. Historical sections keep their own wording — §8 and §9 are the record of the rounds that
+produced this slice, not statements about its present state.
+
+    .venv/Scripts/python.exe -m pytest -q                                              -> 2216 passed, 22 skipped, exit 0
+    .venv/Scripts/python.exe tools/validate_decision_layer.py                          -> exit 0, "the WP4 schedule is executable and its counts agree"
+    .venv/Scripts/python.exe tools/check_screening_terms.py                            -> exit 0, "the text names the quantity and no live claim survives"
+    .venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final    -> exit 0, "the tree is the frozen baseline"
+    .venv/Scripts/ruff.exe check .                                                     -> all checks passed
+
+The merge's fresh checkout also surfaced a **pre-existing binding defect**, fixed in its own commit in this
+pass: the two hand-written documents are recorded by SHA-256 alone, but unlike their `*.csv` and `*.json`
+siblings they were not pinned to `eol=lf`, so their bound hashes depended on the checkout's `core.autocrlf` —
+`--check-final` passed only on the host that recorded the value, and on this branch it failed for `README.md`
+the moment git re-wrote the worktree. `.gitattributes` now pins
+`reports/mixer-sensitivity-analysis/*.md text eol=lf`, and `decision-table.md`'s `replacement_sha256` is rebound
+to its LF bytes. `README.md`'s recorded value was already the LF form and did not move; the `decision-table.md`
+value recorded at `945464f` had been taken from a CRLF worktree and is corrected here. The two documents'
+committed bytes are unchanged — this is a hash and attribute correction, not a content change.
+
+Still open, and deliberately not part of this merge: **PR #23** (`docs/sparse-parameter-set` → `master`) is a
+separate draft, so nothing has reached `master` yet — merging it is its own review decision. The next slice is
+the campaign-definition/run-plan encoding, which owns the within-job beginning/middle/end placement, the
+cross-job interleaving of the common-reference jobs, and the explicit run-level ordering mechanism §9.2
+requires.
