@@ -549,3 +549,61 @@ No acquisition or writer change is part of these commits. At `626f165`, the full
 22 skipped**; Ruff, the screening checker, decision-layer validator and baseline `--check-final` all exit zero.
 The implementation items in §9.4 are complete; the PR remains a draft only until the final narrow review is
 requested.
+
+## 10. Review of `2ddf672` — repeated-realization semantics and execution-order claims
+
+The review of `2ddf672` (the five commits after `8ef9b63`) confirmed both earlier blockers as resolved and raised
+two findings: the repeated-measurement semantics of the block-local controls contradict the rows, and the
+validator's common-reference rules prove cardinality while the documents read as though placement were proven.
+This section records the round's adjudication, its commits and the interpretation that survives it. No acquisition
+runs, no writer surface changes, and no ordering implementation lands in any of these commits.
+
+### 10.1 Adjudication
+
+| Finding | Verdict | Repository evidence | Consequence |
+|---|---|---|---|
+| The emissions blocks' "block-local controls" are replicate measurements of E8/E64/E128, but the documents say they are not | **Confirmed, and half-diagnosed.** The rows give each emissions level four same-setting acquisitions inside one run, so the claim that "the axis stays one recording per level" and that those controls "do not replicate a condition" is false for it. The document contradicts *itself* rather than merely understating the design: §3.2 of the same document, decision-table §8.2 and §9.2 of this plan already called those repeats repetitions of that emissions condition. | the §3.1 / §8.2 rows in both documents; `sparse-parameter-set.md` §3.2 against §3.4, §4 and §8; `decision-table.md` §3 | Delete the false branch at all three sites and state the row-derived facts: four same-setting acquisitions per emissions level inside one run; within-run repeated measurement, not independent run-level replication; the burst controls are new realizations of the already-committed burst-4 and burst-18 conditions rather than duplicates of CC1-CC4; and the no-plateau-test verdict rests on level/run confounding instead of on a count of recordings. The validator derives the same-setting pairs from the rows and refuses singular-coverage prose while any exist. |
+| The common-reference rules prove the intended jobs exist, but not their temporal ordering | **Confirmed, and narrower than stated.** Moving all four `CR*` rows to the bottom of both tables leaves the validator green (measured: exit 0, "the WP4 schedule is executable and its counts agree"), while collapsing their four job ids onto one makes it fail (measured: exit 1, 8 × `schedule-common-reference-block`). The rows never claimed to encode sequence — §6 already assigns point order to the definition — but §9.2's "placement … must be explicit machine-readable rows" was only half met. | `tools/validate_decision_layer.py::_schedule_rules`; both row tables; §6's `already covered` row | The validator's rule comments and messages state what they prove (four distinct reference-only jobs, one recording each); the documents state that the rows encode membership, run-wide compatibility, control type and counts but not execution sequence; within-job placement and cross-job placement are deferred to the campaign-definition/run-plan PR. No sequence column is added — the schema pins its columns and the acquisition order is a run-plan fact. |
+| The two earlier blockers (`8ef9b63`) really are closed | **Confirmed.** D1 is `high`, `executable = no` and job `none`; a job whose rows disagree on run-wide `burst_cycles` or `emissions_per_profile` is refused; the counts are derived from the rows (7 scientific + 15 block-local + 4 common-reference = 26 recordings across 9 executable jobs). | `sparse-parameter-set.md` §3.1 row `D1`; `_schedule_rules`; §3.3 counts | None — recorded so a later round does not re-open them. |
+
+### 10.2 As landed
+
+| Work | Commit | Result |
+|---|---|---|
+| repeated-realization semantics and their validator rule | `82ae499` | both documents state the four same-setting acquisitions per emissions level, the burst anchors' re-acquisition of the committed conditions and the confounding justification of the no-plateau-test verdict; `repeated_realizations()` derives the pairs from the rows and `_repeated_realization_rules()` refuses singular-coverage prose while any exist |
+| execution-order deferral | `7b70d9a` | the validator states that it proves four distinct reference-only jobs and one recording each; both documents state that the rows encode membership, settings and counts but not execution sequence; the within-job/cross-job distinction and the run-level ordering mechanism the next PR must add are recorded above |
+| this record and the rebinding | this commit | the round is recorded here and `decision-table.md`'s replacement hash is refreshed in `review-correction-baseline.json` |
+
+### 10.3 Interpretation that survives this round
+
+- **Within-run repeated measurement is not independent run-level axis replication.** E8, E64 and E128 each
+  receive four same-setting acquisitions inside one run, and every new level is confined to its own run, so level
+  and run are confounded and no between-level displacement can be separated from the difference between the two
+  runs that carry it. The repeats sharpen each level's own within-run measurement; they do not replicate the
+  emissions axis.
+- **The only condition the first pass observes in more than one distinct run is the common reference**: four
+  reference-only jobs carrying one acquisition each, beside §1's two committed realizations of the same condition.
+- **The burst block-local controls re-acquire already-committed conditions.** They repeat the reference spatial
+  window at burst 4 and 18 — `burst_len/4.BDD` and `burst_len/18.BDD` — inside the new runs, and they are not
+  duplicates of CC1-CC4, which move resolution and gate count.
+- **Execution order is not encoded by the WP4 rows.** Within-job beginning/middle/end placement and the cross-job
+  placement of the common-reference jobs are requirements the campaign-definition/run-plan PR must encode and
+  test; the row table answers membership, run-wide compatibility, control type and count only.
+- **The frozen record is a current-bytes binding, not a per-round audit.** `review-correction-baseline.json`
+  admits only the correction ids R1-R9 of §8.2, so the one hand-written item whose bytes moved keeps the
+  correction id it carries (`R9`) and only its `replacement_sha256` is refreshed. No generated artifact changed,
+  so no `sha256`, `generator_revision` or `generator_command` in the record was touched.
+
+### 10.4 Gates re-run for this round
+
+    .venv/Scripts/python.exe -m pytest -q
+    .venv/Scripts/python.exe tools/validate_decision_layer.py
+    .venv/Scripts/python.exe tools/check_screening_terms.py
+    .venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final
+    ruff check .
+
+measured at this commit: `.venv/Scripts/python.exe -m pytest -q` → **2216 passed, 22 skipped** in 173.06 s;
+`tools/validate_decision_layer.py` → exit 0, "the WP4 schedule is executable and its counts agree";
+`tools/check_screening_terms.py` → exit 0, "the text names the quantity and no live claim survives";
+`tools/validate_analysis_review_baseline.py --check-final` → exit 0, "the tree is the frozen baseline";
+`ruff check .` → all checks passed. Worktree clean, no generated artifact regenerated, no acquisition run.
