@@ -157,6 +157,12 @@ reference-only job.
 **"Five of five points stored" is not the gate.** The trial is diagnostic; the questions it has to
 answer are about the *data*, not about the run's exit status:
 
+**Recorded at the trial's first live step (2026-09-20).** The application's own preference — "do not
+keep in a block more profiles than" — states **≈1,000,000 profiles**, some 400× the pass's declared
+requirement of 2500, while the historical observation on this installation is a block that stopped at
+~257 profiles. Those two numbers together are why gate (1) is measured from the stored files: the
+preference is evidence of what a block retains in neither direction.
+
 1. **Retention, from the stored files.** For every point: the stored profile count, the first→last
    record stamp span, and the achieved period, against the ≈12 s window the pass asked for — i.e. does
    the file cover the requested comparison interval (≥ 11.52 s of usable physical time under the
