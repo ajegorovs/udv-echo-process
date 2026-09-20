@@ -229,6 +229,40 @@ def test_every_job_records_at_the_passes_frame() -> None:
         assert job.condition.prf_us == 600.0
 
 
+def test_the_exact_kind_sequence_is_science_reference_science(tmp_path: Path) -> None:
+    """The concrete sequence, not a name or a count: S, R, S, R, S, R, S, R, S.
+
+    ``RunPlan._check_structure`` proves each reference job is *interior* and that no two are
+    adjacent; it does not require a reference job between every pair of scientific jobs (a plan may
+    legitimately have two scientific jobs in a row). So the pass's own sequence is pinned here,
+    where the design's order lives.
+    """
+    run = committed_run()
+    assert [job.kind.value for job in run.jobs] == [
+        "scientific",
+        "common-reference",
+        "scientific",
+        "common-reference",
+        "scientific",
+        "common-reference",
+        "scientific",
+        "common-reference",
+        "scientific",
+    ]
+    # And generically: two scientific jobs in a row are *allowed* by the validator, which is
+    # exactly why the committed sequence needs its own case.
+    path = pass_copy(tmp_path)
+    payload = plan_payload(path)
+    payload["jobs"][1]["kind"] = "scientific"
+    payload["jobs"][2]["kind"] = "common-reference"
+    payload["jobs"][3]["kind"] = "scientific"
+    write_plan(path, payload)
+    kinds = [
+        job.kind.value for job in run_plan.load_run_plan(path / "run-plan.json").jobs
+    ]
+    assert kinds[:3] == ["scientific", "scientific", "common-reference"]
+
+
 def test_the_scientific_rows_are_the_designs_windows() -> None:
     run = committed_run()
     windows = {
@@ -755,6 +789,66 @@ def test_a_job_that_is_not_next_is_refused_by_name(tmp_path: Path) -> None:
     assert "burst-4" in message and "pending" in message
 
 
+def test_raising_a_fact_no_stored_file_carries_is_refused_by_the_plan(tmp_path: Path) -> None:
+    """The plan's own vocabulary check: a raise has to be enforceable on both sides of a recording."""
+    path = pass_copy(tmp_path)
+    payload = plan_payload(path)
+    payload["strict_facts"] = ["max_profiles_per_block"]
+    write_plan(path, payload)
+    with pytest.raises(run_plan.RunPlanError) as error:
+        run_plan.load_run_plan(path / "run-plan.json")
+    message = str(error.value)
+    assert "max_profiles_per_block" in message
+    assert "raiseable facts" in message
+
+
+def test_a_raise_only_holds_for_a_fact_every_job_states(tmp_path: Path) -> None:
+    """The raise relies on every job declaring the fact, and the guard says so.
+
+    Today's vocabulary makes the guard unreachable — every strictable fact is required by
+    ``CampaignDefinition`` or by its points — so this case drives the check directly, with a
+    definition that states nothing for the raised fact. It exists because the vocabulary is a table
+    rather than a law: an optional fixed fact added to it would otherwise let a raise compare
+    nothing while the plan still read as stricter than it is.
+    """
+    plan = run_plan.load_run_plan(PLAN_FILE)
+    entry = plan.jobs[0]
+    definition = campaign.load_campaign(PASS_DIR / entry.definition)
+    silent = definition.model_copy(update={"burst_length": None})
+    raised = plan.model_copy(update={"strict_facts": ("burst_length",)})
+
+    with pytest.raises(run_plan.RunPlanError) as error:
+        run_plan._check_raised_facts(raised, entry, silent)
+
+    message = str(error.value)
+    assert "burst_length" in message
+    assert "declares no value for" in message
+    # And with the fact stated, the same check is satisfied.
+    run_plan._check_raised_facts(raised, entry, definition)
+
+
+def test_a_record_that_answers_another_plan_is_refused(tmp_path: Path) -> None:
+    """A pass's record and the plan it was run from are one thing — by hash, both sides named."""
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    plan = run_plan.load_run_plan(PLAN_FILE)
+    edited_plan = plan.model_copy(
+        update={"strict_facts": ("emissions_per_profile", "burst_length")}
+    )
+    edited = run_plan.plan_run(edited_plan, directory=PASS_DIR)
+    assert edited.plan_fingerprint != run.plan_fingerprint
+
+    with pytest.raises(run_plan.RunPlanError) as error:
+        run_plan.next_job(edited, manifest)
+    assert "plan fingerprint" in str(error.value)
+
+    with pytest.raises(run_plan.RunPlanError) as error:
+        run_plan.record_job(
+            manifest, edited, edited.jobs[0], job_manifest_for(run, run.jobs[0])
+        )
+    assert "plan fingerprint" in str(error.value)
+
+
 def test_a_job_whose_outcome_is_partial_is_recorded_as_such() -> None:
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
@@ -858,8 +952,16 @@ def test_the_sheet_names_every_job_its_run_wide_values_and_its_points() -> None:
 
 
 def test_the_sheet_says_which_run_wide_fact_refuses_and_which_only_advises() -> None:
-    """The one gap this pass carries: word 14's acceptance is advisory, and it has to be said."""
-    sheet = run_plan.operator_setup_sheet(committed_run())
+    """The pass raises its own axis, and the sheet has to say so in the operator's terms.
+
+    ``emissions_per_profile`` is the one fact the verifier's table calls advisory — for a reason
+    (a definition's value for it used to be derived) that does not hold for a pass that *moves* it
+    between jobs on purpose. This pass therefore raises it, and both halves are named: the compile
+    refuses before the first recording, and the stored file's own word has to agree too.
+    """
+    run = committed_run()
+    assert run.strict_facts == ("emissions_per_profile",)
+    sheet = run_plan.operator_setup_sheet(run)
     assert (
         "burst_length: read from the Operating parameters dialog; a disagreement refuses"
         in sheet
@@ -868,8 +970,12 @@ def test_the_sheet_says_which_run_wide_fact_refuses_and_which_only_advises() -> 
         "prf_us: read from the measurement screen's parameter column; a disagreement refuses"
         in sheet
     )
-    assert "emissions_per_profile is advisory" in sheet
-    assert "confirm it on the screen by hand" in sheet
+    assert "emissions_per_profile: read from the measurement screen's parameter column" in sheet
+    assert "this pass raises it to a refusal" in sheet
+    assert "the stored file's own word has to agree as well" in sheet
+    assert "raised facts: ['emissions_per_profile']" in sheet
+    # The default sentence is what an ordinary campaign keeps, and it is not this pass's.
+    assert "is advisory to the stored-file verifier — confirm it on the screen" not in sheet
 
 
 def test_the_sheet_names_the_settings_no_reader_reaches_and_the_cap() -> None:
@@ -919,6 +1025,8 @@ def test_the_cli_check_json_is_the_only_thing_on_stdout(
     ]
     assert payload["jobs"][1]["separates"] == ["burst-4", "burst-18"]
     assert payload["jobs"][0]["points"][1]["label"] == "cc1"
+    # The pass's policy is part of what `--check` states: the one fact it raises.
+    assert payload["strict_facts"] == ["emissions_per_profile"]
 
 
 def test_the_cli_sheet_prints_the_operator_sheet(capsys: pytest.CaptureFixture[str]) -> None:
@@ -1015,6 +1123,7 @@ def test_the_cli_next_hands_the_next_job_to_the_campaign_path(
         seen["store"] = kwargs["store_dir"]
         seen["resume"] = kwargs["resume"]
         seen["mode"] = kwargs["expected_mode"]
+        seen["strict_facts"] = kwargs.get("strict_facts")
         run = committed_run()
         job = next(entry for entry in run.jobs if entry.job == definition.job)
         manifest = job_manifest_for(run, job)
@@ -1046,6 +1155,9 @@ def test_the_cli_next_hands_the_next_job_to_the_campaign_path(
     assert seen["job"] == "burst-4"
     assert str(seen["log"]).endswith("sparse-mixer-first-pass-burst-4.jsonl")
     assert seen["resume"] is True
+    # The pass's own policy travels with the job: the compile refuses on it, and the stored file's
+    # word is enforced against it.
+    assert seen["strict_facts"] == ("emissions_per_profile",)
     # The pass's record is written and stands at step 2 afterwards.
     written = run_plan.read_run_manifest(
         run_plan.run_manifest_path(

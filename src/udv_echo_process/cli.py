@@ -1018,6 +1018,7 @@ def _run_plan_payload(run: run_plan.PlannedRun) -> dict[str, object]:
         "first_gate_mm": run.first_gate_mm,
         "reference_window": run.reference_window.model_dump(mode="json"),
         "reference_condition": run.reference_condition.model_dump(mode="json"),
+        "strict_facts": list(run.strict_facts),
         "counts": run.counts,
         "jobs": [
             {
@@ -1058,6 +1059,10 @@ def _run_plan_check(run: run_plan.PlannedRun, as_json: bool) -> int:
     )
     print(
         f"frame       : c = {run.sound_speed_ms} m/s, first gate {run.first_gate_mm} mm"
+    )
+    print(
+        f"raised      : {list(run.strict_facts) or 'none'} "
+        "(a raised fact refuses before a recording and is enforced in the stored file's own word)"
     )
     for job in run.jobs:
         before, after = run_plan.separates(run, job.job)
@@ -1195,6 +1200,7 @@ def _run_plan_next(
             definition_path=definition_path,
             notes=notes,
             expected_mode=ProcessMode(args.expect_mode),
+            strict_facts=run.strict_facts,
         )
         manifest = run_plan.record_job(manifest, run, following, job_manifest)
         run_plan.write_run_manifest(path, manifest)

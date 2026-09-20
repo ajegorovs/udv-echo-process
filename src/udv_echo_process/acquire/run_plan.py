@@ -63,11 +63,13 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 
 from udv_echo_process.acquire.campaign import (
     COVARIATE_ACCEPTANCE,
+    STRICTABLE_FACTS,
     CampaignDefinition,
     CampaignError,
     JobManifest,
     PlannedPoint,
     campaign_fingerprint,
+    declared_fixed_fact,
     load_campaign,
     manifest_path_for,
     plan_campaign,
@@ -313,6 +315,13 @@ class RunPlan(ValueModel):
         Every window any scientific row of the pass uses, the reference window included. A job's
         window that is not in this list is a condition the design does not have, and a declared
         window no scientific row acquires is a condition the pass does not record.
+    ``strict_facts``
+        The fixed facts this pass **raises to refusal** over the compile's own table
+        (``campaign.STRICTABLE_FACTS``): the ones that are the experiment rather than a nuisance, so
+        a disagreement stops the job before the first recording *and* invalidates the point whose
+        stored file disagrees (``campaign.run_campaign(strict_facts=...)``). Empty by default — the
+        table's own acceptance is right for an ordinary campaign — and every job of the pass must
+        declare each fact it names, or there is nothing to compare.
     """
 
     plan: str = Field(min_length=1)
@@ -326,6 +335,8 @@ class RunPlan(ValueModel):
     reference_window: PlannedWindow
     reference_condition: RunCondition
     windows: tuple[PlannedWindow, ...]
+    #: The fixed facts this pass raises to refusal (:data:`~udv_echo_process.acquire.campaign.STRICTABLE_FACTS`).
+    strict_facts: tuple[str, ...] = ()
     jobs: tuple[RunPlanJob, ...]
 
     @field_validator("plan", "name_prefix", "store_dir")
@@ -375,6 +386,26 @@ class RunPlan(ValueModel):
                 "pass that ran one file twice would spend recordings on one condition"
             )
         return value
+
+    @field_validator("strict_facts")
+    @classmethod
+    def _check_strict_facts(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        """A raised fact must be one the compile *and* the stored file can be held to.
+
+        The vocabulary is :data:`~udv_echo_process.acquire.campaign.STRICTABLE_FACTS` — the fixed
+        facts a stored file carries a word for — because a plan that raised a fact only the compile
+        could see would refuse a job at the screen and then accept the file's own words: the
+        dataset would be weaker than the policy claims. Whether every job actually *declares* the
+        fact is checked against the definitions by :func:`plan_run`.
+        """
+        unknown = [name for name in value if name not in STRICTABLE_FACTS]
+        if unknown:
+            raise ValueError(
+                f"strict_facts names {unknown}, which no stored file carries a word for: a pass "
+                "raises a fact to have it enforced before *and* after the recording, and the "
+                f"raiseable facts are {list(STRICTABLE_FACTS)}"
+            )
+        return tuple(name for name in STRICTABLE_FACTS if name in value)
 
     @model_validator(mode="after")
     def _check_structure(self) -> RunPlan:
@@ -484,6 +515,9 @@ class PlannedRun(ValueModel):
     first_gate_mm: float
     reference_window: PlannedWindow
     reference_condition: RunCondition
+    #: The facts the pass raises to refusal, carried so the sheet, the record and the run all state
+    #: the same policy.
+    strict_facts: tuple[str, ...] = ()
     jobs: tuple[PlannedJob, ...]
 
     @property
@@ -798,6 +832,7 @@ def plan_run(plan: RunPlan, *, directory: Path | str) -> PlannedRun:
     for entry in plan.jobs:
         definition = _load_job_definition(base, entry)
         _check_job_declaration(plan, entry, definition)
+        _check_raised_facts(plan, entry, definition)
         points = plan_campaign(definition)
         _check_job_points(plan, entry, points, identities, used_windows)
         planned.append(
@@ -826,6 +861,7 @@ def plan_run(plan: RunPlan, *, directory: Path | str) -> PlannedRun:
         first_gate_mm=plan.first_gate_mm,
         reference_window=plan.reference_window,
         reference_condition=plan.reference_condition,
+        strict_facts=plan.strict_facts,
         jobs=tuple(planned),
     )
     _check_block_cap(run)
@@ -906,6 +942,34 @@ def _check_job_declaration(
                 "the first gate is dialog-only too, and it decides the near end of every window of "
                 "the pass"
             )
+
+
+def _check_raised_facts(
+    plan: RunPlan, entry: RunPlanJob, definition: CampaignDefinition
+) -> None:
+    """Every fact the pass raises must be **declared** by every job, or the raise compares nothing.
+
+    A raise is a comparison at a stricter acceptance, and a job that declares no value for the fact
+    falls through to "there is nothing to reconcile" (:func:`campaign.declared_fixed_fact` returns
+    ``None``, and :func:`campaign._check_fact` carries the declaration instead of comparing). The
+    pass would then read as stricter than it is.
+
+    **For today's vocabulary this cannot fire**, and that is worth stating rather than implying it
+    guards something live: every fact in :data:`~udv_echo_process.acquire.campaign.STRICTABLE_FACTS`
+    is required by :class:`~udv_echo_process.acquire.campaign.CampaignDefinition` or by its points,
+    so a raise is always declared. It is here because the vocabulary is a table, not a law: the day
+    an *optional* fixed fact is added to it, a raise would silently compare nothing, and this is the
+    line that refuses that instead.
+    """
+    for name in plan.strict_facts:
+        if declared_fixed_fact(definition, name) is not None:
+            continue
+        raise RunPlanError(
+            f"step {entry.step} ({entry.job!r}, {entry.definition}) declares no value for {name}, "
+            "which this run plan raises to a refusal: a fact the pass depends on has to be stated "
+            "by every job, or the raise has nothing to compare and the pass would look stricter "
+            "than it is"
+        )
 
 
 def _check_job_points(
@@ -1189,7 +1253,12 @@ def next_job(run: PlannedRun, manifest: RunManifest) -> PlannedJob | None:
     The pass's order is the plan's order, and a job is next when every job before it is ok — which
     is the same thing :func:`record_job` enforces from the other side, and the reason a pass cannot
     be run out of order by accident: the runner takes one job at a time and this is what names it.
+
+    The record must answer **this** plan (:func:`_check_record_answers_plan`): a pass's record and
+    the plan it was run from are one thing, so an edited point, value or policy is a different run
+    whose finished jobs are not this one's.
     """
+    _check_record_answers_plan(run, manifest)
     record = manifest.next_record
     if record is None:
         return None
@@ -1200,6 +1269,25 @@ def next_job(run: PlannedRun, manifest: RunManifest) -> PlannedJob | None:
         f"the run manifest names step {record.step} ({record.job!r}), which is not a step of this "
         f"plan ({[entry.step for entry in run.jobs]}): the record and the plan are not the same "
         "pass"
+    )
+
+
+def _check_record_answers_plan(run: PlannedRun, manifest: RunManifest) -> None:
+    """Refuse a record that answers a different plan — by hash, naming both sides.
+
+    The per-job resume already refuses a changed *definition* (``campaign._validate_resume``), and
+    this is the run-level half of the same rule: a plan whose job order, windows, values or raised
+    facts moved is not the pass whose record stands beside it, and its finished jobs must not read
+    as this plan's finished jobs.
+    """
+    if manifest.plan_fingerprint == run.plan_fingerprint:
+        return
+    raise RunPlanError(
+        f"the run manifest answers plan fingerprint {manifest.plan_fingerprint[:12]}... while this "
+        f"plan hashes to {run.plan_fingerprint[:12]}...: a pass and its record have to be the same "
+        "pass, and a point, a value or a raised fact that moved makes this a different run. Either "
+        "run the plan the record was started from, or start a new pass (a new store directory or a "
+        "new plan name) rather than folding two runs into one record"
     )
 
 
@@ -1238,6 +1326,7 @@ def record_job(
             f"{job.definition_fingerprint} — the manifest beside this log answers a different "
             "definition, so its outcome cannot be recorded as this plan's step"
         )
+    _check_record_answers_plan(run, manifest)
     record = manifest.next_record
     if record is None:
         raise RunPlanError(
@@ -1347,7 +1436,10 @@ def job_requirements(run: PlannedRun, job: PlannedJob) -> tuple[str, ...]:
         )
     ]
     for fact in ("burst_length", "emissions_per_profile", "prf_us"):
-        lines.append(f"                {fact}: {_readability(fact)}")
+        lines.append(
+            f"                {fact}: "
+            f"{_readability(fact, strict=fact in run.strict_facts)}"
+        )
     if before or after:
         lines.append(
             f"placement  : the reference check between {before!r} and {after!r}"
@@ -1389,6 +1481,16 @@ def operator_setup_sheet(run: PlannedRun) -> str:
         "requirement (the active cap is an application preference no reader here reaches; "
         "confirm it by hand and record what it says)"
     )
+    if run.strict_facts:
+        lines.append(
+            f"raised facts: {list(run.strict_facts)} — a disagreement on any of them refuses "
+            "before the first recording, and the stored file's own word must agree as well"
+        )
+    else:
+        lines.append(
+            "raised facts: none — every fixed fact of this pass keeps the acceptance of the "
+            "stored-file verifier's own table"
+        )
     lines.append("")
     for job in run.jobs:
         lines.append(
@@ -1415,18 +1517,20 @@ def operator_setup_sheet(run: PlannedRun) -> str:
     return "\n".join(lines)
 
 
-def _readability(fact: str) -> str:
+def _readability(fact: str, *, strict: bool = False) -> str:
     """What the compile does with one run-wide fact — read or not, refused or advised.
 
     Read from the two tables that decide it rather than restated: the facts a reader reaches are
-    ``snapshot.SUPPORTED_READ_FACTS``, and what a disagreement does is
-    ``campaign.COVARIATE_ACCEPTANCE``. Which *surface* states a readable fact is the third table,
-    ``snapshot``'s own module docstring: the PRF period and the emissions per profile come off the
-    measurement screen's column, and the burst length, the sound speed and the first gate out of the
-    ``Operating parameters`` dialog. Stating all three on the sheet is what lets an operator tell a
-    value that will stop the job from one that will merely be written down — which matters here,
-    because word 14's acceptance is advisory for a reason that does not hold for this pass (see the
-    pass's own documentation).
+    ``snapshot.SUPPORTED_READ_FACTS``, what a disagreement does is
+    ``campaign.COVARIATE_ACCEPTANCE``, and which *surface* states a readable fact is the third
+    table, ``snapshot``'s own module docstring (the PRF period and the emissions per profile come
+    off the measurement screen's column; the burst length, the sound speed and the first gate out of
+    the ``Operating parameters`` dialog).
+
+    ``strict`` is the pass's own policy (:attr:`RunPlan.strict_facts`): a fact the pass raises is
+    refused before the first recording **and** enforced in the stored file's own word, and the
+    sentence says both halves. A sheet that read an advisory fact as one the run will stop for, or a
+    raised fact as one it will merely note, would be wrong in the direction that costs a job.
     """
     if fact not in SUPPORTED_READ_FACTS:
         return (
@@ -1434,6 +1538,12 @@ def _readability(fact: str) -> str:
         )
     surface = _FACT_SURFACE.get(fact, "the measurement screen")
     acceptance = COVARIATE_ACCEPTANCE[fact].value
+    if strict:
+        return (
+            f"read from {surface}; this pass raises it to a refusal, so a disagreement stops the "
+            "job before the first recording and the stored file's own word has to agree as well "
+            f"(the verifier's own default for it is {acceptance!r})"
+        )
     if acceptance == "refuse":
         return f"read from {surface}; a disagreement refuses before the first recording"
     return (

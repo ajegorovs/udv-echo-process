@@ -16,6 +16,9 @@
     "emissions_per_profile": 20,
     "prf_us": 600.0
   },
+  "strict_facts": [
+    "emissions_per_profile"
+  ],
   "windows": [
     {
       "resolution_mm": 0.617,
