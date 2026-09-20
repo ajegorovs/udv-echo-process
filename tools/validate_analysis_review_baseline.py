@@ -20,6 +20,12 @@ plus the correction register (R1-R9 of §8.2, each with its status and the
 baseline items it maps once it lands) and the focused/full gate commands with the
 raw results of the runs that were actually made.
 
+Step 8's rebinding is checked here too. ``--check-final`` requires the two
+hand-written documents to carry a *binding list* — a markdown table whose rows are
+``| `path` | `sha256` |`` — that names every generated item at the bytes now on
+disk, so a rebinding that updates the record but not the documents it describes,
+or the documents but not the record, is a failure rather than a half-done pass.
+
 Two modes, both read-only — nothing here writes to the report tree:
 
 ``--check-current``
@@ -39,6 +45,8 @@ Two modes, both read-only — nothing here writes to the report tree:
     which is the honest answer at freeze time, because the mappings for R1-R9 do
     not exist yet. This tool never invents one: a pending correction is reported,
     never assumed, and a changed item with no mapping is a failure, never a pass.
+    It also re-checks the two binding lists, so the hand-written documents and the
+    record cannot disagree about the tree.
 
 Why hashes and not just presence: six modules write the twenty-two artefacts, the
 decision table is bound to the manifest's own hash, and the plan's whole
@@ -90,6 +98,9 @@ HAND_WRITTEN_PATHS = ("decision-table.md", "README.md")
 #: The correction ids of plan §8.2. A mapping may only name one of these.
 CORRECTION_IDS = ("R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9")
 
+#: The hand-written documents that carry a binding list of the generated artifacts.
+BINDING_LIST_PATHS = ("decision-table.md", "README.md")
+
 #: Correction statuses: ``recorded`` means every mapped item is rebound.
 CORRECTION_STATUSES = ("pending", "recorded")
 
@@ -107,6 +118,11 @@ REQUIRED_GATES = ("focused-tests", "full-tests", "lint")
 
 #: ``sha256:`` plus 64 lower-case hex characters — the repository's id form.
 SHA256_ID_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+
+#: One markdown binding row: ``| `path` | `sha256` | ... |``, hash bare or prefixed.
+BINDING_ROW_RE = re.compile(
+    r"^\|\s*`(?P<path>[^`]+)`\s*\|\s*`?(?:sha256:)?(?P<hash>[0-9a-f]{64})`?\s*\|"
+)
 
 #: A short git revision, as the provenance documents record it.
 GENERATOR_REVISION_RE = re.compile(r"^[0-9a-f]{7,40}$")
@@ -400,6 +416,57 @@ def _tree_state(baseline: Baseline, root: Path) -> dict[str, tuple[str, str | No
     return state
 
 
+def binding_table_hashes(text: str) -> dict[str, str]:
+    """Map each ``| `path` | `sha256` |`` row of a markdown binding list to its hash.
+
+    The hash is returned bare (no ``sha256:`` prefix), matching how the hand-written
+    documents print it. Rows whose second cell is not a SHA-256 are ignored, so a
+    document may carry other tables beside its binding list.
+    """
+    found: dict[str, str] = {}
+    for line in text.splitlines():
+        match = BINDING_ROW_RE.match(line.strip())
+        if match is not None:
+            found[match.group("path")] = match.group("hash")
+    return found
+
+
+def binding_problems(baseline: Baseline, root: Path = REPO) -> list[str]:
+    """The hand-written binding lists: complete, current, and free of phantom rows.
+
+    Step 8 rebinds the record *and* the documents that describe the tree. A binding
+    list that omits a generated item, or prints a hash the bytes no longer have, is
+    the same class of error as a stale replacement hash in the record, so it is
+    reported the same way.
+    """
+    report = root / baseline.report_dir
+    generated = {item.path: item for item in baseline.items if item.role == GENERATED_ROLE}
+    problems: list[str] = []
+    for name in BINDING_LIST_PATHS:
+        path = report / name
+        if not path.is_file():
+            problems.append(f"missing binding list: {name} is not in the report tree")
+            continue
+        listed = binding_table_hashes(path.read_text(encoding="utf-8"))
+        missing = sorted(set(generated) - set(listed))
+        if missing:
+            problems.append(
+                f"incomplete binding list: {name} does not list {', '.join(missing)}"
+            )
+        for artifact in sorted(set(listed) & set(generated)):
+            target = report / artifact
+            if not target.is_file():
+                problems.append(f"missing artifact: {name} lists {artifact}, which is absent")
+                continue
+            current = sha256_id(target).removeprefix("sha256:")
+            if listed[artifact] != current:
+                problems.append(
+                    f"stale binding hash: {name} lists {artifact} as {listed[artifact]}, "
+                    f"tree {current}"
+                )
+    return problems
+
+
 def _provenance_problems(baseline: Baseline, root: Path) -> list[str]:
     """Generator modules and the revisions their provenance documents record."""
     report = root / baseline.report_dir
@@ -486,6 +553,9 @@ def check_final(baseline: Baseline, root: Path = REPO) -> list[str]:
     it reports every correction still pending. Pending corrections are reported as
     missing — never assumed and never filled in here, because a mapping this tool
     invented would be indistinguishable from a measured one.
+
+    It also checks the two hand-written binding lists, so the record and the
+    documents it rebinds cannot disagree about which bytes are current.
     """
     problems: list[str] = []
     state = _tree_state(baseline, root)
@@ -559,6 +629,7 @@ def check_final(baseline: Baseline, root: Path = REPO) -> list[str]:
 
     problems.extend(_provenance_problems(baseline, root))
     problems.extend(_gate_problems(baseline))
+    problems.extend(binding_problems(baseline, root))
     return problems
 
 

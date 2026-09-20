@@ -15,8 +15,14 @@ What the tests pin:
   and the revision its own provenance document records);
 - ``--check-current`` fails on any drift, so the freeze is a gate and not a note;
 - ``--check-final`` demands a correction id and a replacement hash for every
-  changed item and reports the corrections still pending — it never invents a
-  mapping, which is why it must fail today, before R1-R9 have landed;
+  changed item, reports a pending correction as a missing mapping — never
+  inventing one — and, once R1-R9 have landed, is green on the rebound record;
+- the two hand-written binding lists (``decision-table.md`` and ``README.md``)
+  name every generated artifact at the bytes now on disk, so the record and the
+  documents it rebinds cannot disagree;
+- the freeze is preserved: the recorded hashes stay the captured commit's bytes
+  and the recorded generator revisions stay the ones the provenance documents
+  still cite, while ``replacement_sha256`` tracks the current bytes;
 - the recorded gate commands and their raw results are present and green.
 """
 
@@ -42,6 +48,9 @@ RECORD_PATH = REPO / "reports" / "mixer-sensitivity-analysis" / "review-correcti
 
 #: The focused gate command the record must carry, and the file it names.
 FOCUSED_TEST_FILE = "tests/test_validate_analysis_review_baseline.py"
+
+#: The two hand-written documents that carry a binding list of generated items.
+BINDING_LIST_PATHS = ("decision-table.md", "README.md")
 
 
 def _load_tool():
@@ -78,6 +87,24 @@ def document():
 # --------------------------------------------------------------------------- #
 # synthetic records: what the schema and the two check modes refuse
 # --------------------------------------------------------------------------- #
+
+
+def _write_binding_lists(tool, items, report: Path) -> None:
+    """Rewrite both hand-written binding lists from the files as they now stand.
+
+    The synthetic tree mirrors the real one: ``decision-table.md`` and ``README.md``
+    each carry a markdown binding table naming every generated item at its current
+    bytes, so ``check_final`` can hold the record and the documents together.
+    """
+    rows = "\n".join(
+        f"| `{item['path']}` | `{tool.sha256_id(report / item['path']).removeprefix('sha256:')}` |"
+        for item in items
+        if item["role"] == tool.GENERATED_ROLE
+    )
+    for name in tool.BINDING_LIST_PATHS:
+        (report / name).write_text(
+            f"# {name}\n\n| Artifact | SHA-256 |\n|---|---|\n{rows}\n", encoding="utf-8"
+        )
 
 
 def _synthetic_tree(tool, root: Path, *, gate_names=None, mangle=None):
@@ -149,6 +176,8 @@ def _synthetic_tree(tool, root: Path, *, gate_names=None, mangle=None):
                 "replacement_sha256": None,
             }
         )
+
+    _write_binding_lists(tool, items, report)
 
     for item in items:
         item["sha256"] = tool.sha256_id(report / item["path"])
@@ -296,21 +325,92 @@ def test_main_requires_a_mode(tool):
     assert excinfo.value.code == 2
 
 
-def test_check_final_reports_the_pending_corrections(tool, baseline):
-    """R1-R9 are all unlanded at freeze time: the mode must say so, not guess."""
-    problems = tool.check_final(baseline)
-    assert problems
-    text = "\n".join(problems)
-    for correction_id in tool.CORRECTION_IDS:
-        assert correction_id in text
-    assert all(item.correction is None for item in baseline.items)
-    assert all(item.replacement_sha256 is None for item in baseline.items)
+def test_check_final_is_green_on_the_rebound_record(tool, baseline):
+    """Every R1-R9 has landed: the rebinding mode is a pass, not a note."""
+    assert tool.check_final(baseline) == []
+    assert all(correction.status == "recorded" for correction in baseline.corrections)
 
 
-def test_main_check_final_is_non_zero_while_pending(tool, capsys):
-    assert tool.main(["--check-final"]) == 1
+def test_main_check_final_is_zero_once_every_correction_is_recorded(tool, capsys):
+    assert tool.main(["--check-final"]) == 0
     captured = capsys.readouterr()
-    assert "R1" in captured.out + captured.err
+    assert "0 pending" in captured.out
+
+
+def test_every_changed_item_names_one_recorded_correction(tool, baseline):
+    """A moved artifact names a correction, and its replacement is the tree's bytes.
+
+    An unchanged artifact may not carry either field: a mapping without a moved
+    artifact, or a replacement that is not the bytes on disk, is a half-done
+    rebinding.
+    """
+    moved = 0
+    for item in baseline.items:
+        current = tool.sha256_id(REPO / baseline.report_dir / item.path)
+        if item.sha256 == current:
+            assert item.correction is None and item.replacement_sha256 is None, item.path
+            continue
+        moved += 1
+        assert item.correction in tool.CORRECTION_IDS, item.path
+        assert item.replacement_sha256 == current, item.path
+    assert moved > 0, "the corrected tree must have moved at least one artifact"
+
+
+def test_every_correction_maps_at_least_one_changed_item(tool, baseline):
+    """R1-R9 are each recorded, and the register and the item fields agree exactly."""
+    by_path = {item.path: item for item in baseline.items}
+    mapped: set[str] = set()
+    for correction in baseline.corrections:
+        assert correction.status == "recorded", correction.id
+        assert correction.mapped_items, correction.id
+        for path in correction.mapped_items:
+            assert path not in mapped, f"{path} is mapped by two corrections"
+            mapped.add(path)
+            assert by_path[path].correction == correction.id, path
+            assert by_path[path].replacement_sha256 is not None, path
+    changed = {
+        item.path for item in baseline.items if item.replacement_sha256 is not None
+    }
+    assert mapped == changed
+
+
+def test_binding_lists_name_every_generated_artifact_at_current_bytes(tool, baseline):
+    """Both hand-written documents print the tree's own bytes, and the tool agrees.
+
+    ``decision-table.md``'s binding list is the hand-written table's contract with
+    the 22 generated artifacts; the README carries the same list. Neither may omit
+    an artifact or print a hash the bytes no longer have.
+    """
+    assert tool.binding_problems(baseline) == []
+    generated = {item.path for item in baseline.items if item.role == tool.GENERATED_ROLE}
+    for name in tool.BINDING_LIST_PATHS:
+        text = (REPO / baseline.report_dir / name).read_text(encoding="utf-8")
+        listed = tool.binding_table_hashes(text)
+        assert set(listed) >= generated, name
+        for artifact, digest in listed.items():
+            if artifact not in generated:
+                continue
+            current = tool.sha256_id(
+                REPO / baseline.report_dir / artifact
+            ).removeprefix("sha256:")
+            assert digest == current, f"{name} lists {artifact} as {digest}, tree {current}"
+
+
+def test_record_preserves_the_frozen_hashes_and_revisions(tool, baseline):
+    """Rebinding never rewrites the freeze: the captured head and its fields stay.
+
+    ``sha256`` remains the captured commit's bytes and ``generator_revision`` /
+    ``generator_command`` remain the revisions the provenance documents still cite;
+    only ``replacement_sha256`` tracks the corrected tree.
+    """
+    assert baseline.captured_head == "ad8292f4db86efebf8fa2c6d41f23936fd6e07dc"
+    for item in baseline.items:
+        if item.role != tool.GENERATED_ROLE:
+            continue
+        source = REPO / baseline.report_dir / item.revision_source
+        recorded = json.loads(source.read_text(encoding="utf-8"))
+        assert recorded["analysis_commit"] == item.generator_revision, item.path
+        assert item.generator_revision in item.generator_command, item.path
 
 
 # --------------------------------------------------------------------------- #
@@ -423,6 +523,7 @@ def test_check_final_demands_a_mapping_for_a_changed_item(tool, tmp_path):
     document, report = _synthetic_tree(tool, tmp_path)
     baseline = tool.parse_baseline(document)
     (report / "artefact-00.csv").write_text("regenerated\n", encoding="utf-8")
+    _write_binding_lists(tool, document["items"], report)
     problems = tool.check_final(baseline, root=tmp_path)
     assert any(
         "artefact-00.csv" in problem and "correction" in problem for problem in problems
@@ -436,8 +537,11 @@ def test_check_final_demands_the_replacement_hash_too(tool, tmp_path):
     document, report = _synthetic_tree(tool, tmp_path, mangle=mangle)
     baseline = tool.parse_baseline(document)
     (report / "artefact-00.csv").write_text("regenerated\n", encoding="utf-8")
+    _write_binding_lists(tool, document["items"], report)
     problems = tool.check_final(baseline, root=tmp_path)
-    assert any("artefact-00.csv" in problem for problem in problems)
+    assert any(
+        "artefact-00.csv" in problem and "replacement" in problem for problem in problems
+    )
 
 
 def test_check_final_accepts_a_mapped_replacement(tool, tmp_path):
@@ -452,6 +556,7 @@ def test_check_final_accepts_a_mapped_replacement(tool, tmp_path):
         if correction["id"] == "R5":
             correction["status"] = "recorded"
             correction["mapped_items"] = ["artefact-00.csv"]
+    _write_binding_lists(tool, document["items"], report)
     baseline = tool.parse_baseline(document)
     problems = tool.check_final(baseline, root=tmp_path)
     assert not [problem for problem in problems if "artefact-00.csv" in problem]
@@ -475,3 +580,45 @@ def test_check_final_rejects_a_recorded_correction_without_replacements(tool, tm
     baseline = tool.parse_baseline(document)
     problems = tool.check_final(baseline, root=tmp_path)
     assert any("R1" in problem for problem in problems)
+
+
+def test_check_final_flags_a_stale_binding_hash(tool, tmp_path):
+    """A hand-written list that prints old bytes is a rebinding failure."""
+    document, report = _synthetic_tree(tool, tmp_path)
+    replacement = tool.sha256_id(report / "artefact-00.csv").removeprefix("sha256:")
+    text = (report / "decision-table.md").read_text(encoding="utf-8")
+    (report / "decision-table.md").write_text(
+        text.replace(replacement, "0" * 64), encoding="utf-8"
+    )
+    baseline = tool.parse_baseline(document)
+    problems = tool.check_final(baseline, root=tmp_path)
+    assert any(
+        "decision-table.md" in problem
+        and "artefact-00.csv" in problem
+        and "stale binding hash" in problem
+        for problem in problems
+    )
+
+
+def test_check_final_flags_an_incomplete_binding_list(tool, tmp_path):
+    """A list that omits a generated artifact is a rebinding failure."""
+    document, report = _synthetic_tree(tool, tmp_path)
+    (report / "README.md").write_text("# README.md\n", encoding="utf-8")
+    baseline = tool.parse_baseline(document)
+    problems = tool.check_final(baseline, root=tmp_path)
+    assert any(
+        "incomplete binding list" in problem and "README.md" in problem
+        for problem in problems
+    )
+
+
+def test_binding_table_hashes_reads_only_hash_rows(tool):
+    """Other markdown tables beside the binding list are ignored, not misread."""
+    text = (
+        "| Artifact | SHA-256 |\n"
+        "|---|---|\n"
+        "| `manifest.csv` | `" + "a" * 64 + "` |\n"
+        "| `decision-table.md` | the 22 artifacts above |\n"
+        "| `notes` | `" + "b" * 40 + "` |\n"
+    )
+    assert tool.binding_table_hashes(text) == {"manifest.csv": "a" * 64}

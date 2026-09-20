@@ -5,12 +5,14 @@
 > existing 40 velocity recordings have been analysed. No new instrument acquisition belongs to this
 > plan until the existing-data decision table is complete.
 >
-> **State — review corrections required before merge.** At PR #24 head `59c852a`, the setting-based
-> grouping, full fingerprint, PSD integration, timestamp evidence and first WP1/WP2 regeneration have
-> landed. They do not complete steps 3 or 5: generated provenance still gives the screening threshold a
-> stale “bound / not distinguishable” role, and several generators still claim one recording per level or
-> setting despite the shared two-realization anchor. Those contradictions must be corrected before the
-> R7/R8 resolution pass and the WP3/WP4 redesign. No new acquisition belongs to this PR.
+> **State — review corrections landed; step 8 rebinding is the remaining work.** Steps 1-7 of §8.3 have
+> landed: the baseline freeze (`7c4c187`), the setting-based fingerprint and level-group model
+> (`c128b34`), the screening-reference semantics (`91e6036`, prose contract `3b7d7b0`), the PSD
+> integration and timestamp accounting (`3205625`), the grouped-realization evidence (`1c5ed0c`), the
+> corrected resolution interpretations (`f5fbc5b`) and the rebuilt decision layer (`b3f2ae0`). Every
+> generated artifact now carries grouped counts and screening-reference-only prose, and the decision
+> table is rebuilt from those bytes. Step 8 — the rebinding of the hand-written binding lists, the
+> correction register and the PR body — is the open item, and no new acquisition belongs to this PR.
 >
 > **Dataset:**
 > [`data/mixer-sensitivity-analysis/4MHz/0500RPM/001/`](../../data/mixer-sensitivity-analysis/4MHz/0500RPM/001/)
@@ -34,7 +36,7 @@ The work ends with an explicit verdict for each candidate in the sparse-set PR:
 | resolution | retain the coarsest pitch that preserves structure beyond the sole-pair observed-discrepancy screening threshold; decide whether 0.247 mm adds information over 0.617 mm |
 | burst length | locate the empirical transition and decide 18 versus 20 cycles |
 | PRF | measure velocity and temporal-bandwidth headroom; acquire 250 µs only if the committed 400-µs rung is inadequate — 400 µs is an existing rung of the committed PRF ladder, not the reference, which stays 600 µs |
-| emissions/profile | establish that the axis is absent from the old sweep; 8/20/64 is only the initial bracket, and the corrected decision layer must either add a high-intermediate successive-increment point before deciding on 128 or make 128 an ordinary sparse point |
+| emissions/profile | establish that the axis is absent from the old sweep; 8/20/64 is only the initial bracket, and the corrected decision layer must either add a high-intermediate successive-increment point before deciding on 128 or make 128 an ordinary sparse point — **decided by step 7 (`b3f2ae0`): E128 is an ordinary sparse point** (`decision-table.md` §3) |
 | sensitivity | decide whether one high-sensitivity diagnostic is needed before a wider ladder |
 | TGC and power | decide what velocity-only data can screen and what still requires echo/energy acquisition |
 
@@ -170,13 +172,16 @@ Deliver `decision-table.md`, one row per candidate condition, with:
 Gate: update `sparse-parameter-set.md` from this table. Do not retain a level merely because the
 instrument accepts it.
 
-**Provisional — not accepted and not delivered.** `reports/mixer-sensitivity-analysis/decision-table.md`
+**Accepted by step 7 (`b3f2ae0`).** `reports/mixer-sensitivity-analysis/decision-table.md`
 exists, with seven columns exactly as named above, one row per candidate condition of the sparse-set draft
-plus explicit rows for the four introduced pitch × burst corner conditions and the one reference condition
-(realized by the three within-run reference controls). It is hand-written and pinned by SHA-256 to the 22
-committed artifacts it reads. Its earlier claim to meet the gate through `sparse-parameter-set.md` §2-§3 —
-the 17-condition candidate list replaced by 7 unique new conditions, no level retained for feasibility
-reasons — is reopened by §8.3 step 7 and is not an accepted result.
+plus explicit rows for the four introduced pitch × burst corner conditions, the one reference condition
+(realized by the within-run reference controls) and the draft's two excluded axes. It is hand-written and
+pinned by SHA-256 to the 22 committed artifacts it reads, and `tools/validate_decision_layer.py` derives
+every condition/control/job count from its rows. Its earlier claim to meet the gate through
+`sparse-parameter-set.md` §2-§3 — the 17-condition candidate list replaced by 7 unique new conditions, no
+level retained for feasibility reasons — is superseded: the corrected table carries **eight unconditional
+new conditions** (CC1-CC4, E8, E64, E128, D1), **six jobs** and **26 first-pass recordings**, with E128 an
+ordinary sparse point.
 
 ### WP4 — Design only the missing measurements
 
@@ -186,18 +191,19 @@ The provisional augmentation, subject to WP3, is:
 - pitch × burst corners at 0.617 and 2.960 mm crossed with 4 and 18 cycles;
 - emissions/profile 8 and 64 around the existing 20 as the initial bracket; the corrected decision layer must
   either add a high-intermediate point and judge successive high-end increments before 128, or include 128 as
-  an ordinary sparse point;
+  an ordinary sparse point — **decided by step 7: 128 is an ordinary sparse point** (`decision-table.md` §3);
 - one higher-sensitivity diagnostic, extending lower only if it changes validity or distribution;
 - an echo/energy diagnostic before declaring the TGC/power dynamic-range window safe;
 - PRF 250 µs only if the committed 400-µs rung shows inadequate headroom (600 µs remains the shared reference period).
 
 Gate: every new acquisition closes a named information gap; no Cartesian product.
 
-**Provisional — not accepted.** It was recorded as a draft design in `sparse-parameter-set.md` §3; no WP3 or
-WP4 artifact is delivered by this plan yet. Its four crossing corners, 8/64 bracket, higher-sensitivity
-diagnostic, within-run reference controls and PRF decision remain inputs to review, but the exact set and
-count are reopened by §8—especially E128, whose old E64-versus-E20 trigger does not test plateau. Nothing in
-this paragraph freezes those conditions ahead of corrected WP1/WP2 evidence and step 7.
+**Accepted by step 7 (`b3f2ae0`).** The design is recorded in `sparse-parameter-set.md` §3 and
+`decision-table.md` §6-§8: the four crossing corners, the emissions series E8/E20/E64/E128 all
+unconditional, the one higher-sensitivity + echo/energy diagnostic, the within-run reference controls and
+the PRF deferral. The exact set and count are fixed by those two documents and their shared validator
+(`tools/validate_decision_layer.py`), not by this paragraph, and nothing here freezes a condition ahead of
+the corrected WP1/WP2 evidence.
 
 ## 5. Implementation order and commits
 
@@ -240,14 +246,12 @@ This plan is complete when:
 - the next campaign contains only the within-run reference controls for the one reference condition, plus the
   missing-information measurements justified by the decision table.
 
-**Where each condition stood before review.** The 22 generated artifacts plus the hand-written decision table and
-report README remain the 24-item report baseline that §8.3 item 1 must record, not accepted final evidence.
-The prior sparse set contained 7 unique
-conditions (8 with conditional E128) and 3 within-run reference controls per run for the single reference
-condition; those numbers are reopened. Step 7 owns updating
-this §7 status, §1's emissions decision, WP4 above, `decision-table.md` and `sparse-parameter-set.md` together,
-and its validator must derive all condition/control/job counts from their rows rather than preserve these old
-numbers.
+**Where each condition stands after review.** The 22 generated artifacts plus the hand-written decision table and
+report README remain the 24-item report baseline that §8.3 item 1 recorded; step 8 rebinds it rather than
+replacing it. The corrected design carries **eight unconditional new conditions**, **3 within-run reference
+controls per run** for the single reference condition, **six jobs** and **26 first-pass recordings** — counts
+derived from the condition rows by `tools/validate_decision_layer.py`, with the superseded 7-unique-condition
+(8 with the conditional E128) draft numbers not preserved by construction.
 
 ## 8. Review round — required completion of PR #24
 
@@ -282,12 +286,12 @@ table has been rebuilt from them. The old `CC1–CC4 + E8 + E64 + D1` set is not
 
 1. **Freeze the original evidence as the comparison baseline — LANDED (`7c4c187`).** The frozen record is historical after the first correction changes bytes: ordinary tests validate hashes from the captured revision, while `--check-current` is an intentional movement diagnostic and is no longer a completion gate after step 2 starts.
 2. **Define the scientific fingerprint and level-group model (R1, R4) — LANDED (`c128b34`).** The two reference files are represented as two realizations of the same anchor on every eligible axis and every non-allowlisted scientific field participates in identity.
-3. **Complete WP1 screening semantics (R2) — REOPENED.** Replace `ScreeningThresholdBinding.role` with a screening-reference-only statement and apply it to spatial and temporal uses. Extend the checker with regression cases matching the retired phrases “smaller than this bound is not distinguishable”, “below the threshold cannot be distinguished from drift”, and “inside the threshold means indistinguishable”. Done when the checker scans every emitted role/caption/finding (including generated JSON or their source fields), rejects those formulations, and every screening outcome says only that an effect is or is not demonstrated relative to the observed-discrepancy screening threshold.
-4. **Correct temporal calculations (R5, R6) — LANDED (`3205625`).** Actual frequency-cell widths are integrated and each temporal artifact records the timestamp statistics, quantitative criterion and estimator decision. The semantic cleanup still owed for temporal “floor / inseparable” language belongs to reopened step 3, not to the numerical method.
-5. **Complete grouped-realization evidence (R1, R4) — REOPENED after first regeneration (`59c852a`).** Keep the grouped bytes and counts, but make every definition, limitation, module description and caption agree with them: most non-reference levels have one recording; the shared reference level has two realizations; this is one duplicated setting, not replicated coverage of an axis. Add a shared validator that rejects “one recording per setting/level”, “each level is one recording”, and “no level is replicated” whenever `multi_realization_levels` is non-empty. Regenerate each affected axis with its owning generator. Done when provenance lists both named reference paths at all five shared levels, the validator covers source and emitted prose, and no generated or hand-written evidence contradicts the grouped model.
-6. **Correct resolution interpretations (R7, R8).** Rename the residual metric throughout code, tables, provenance, captions and decisions; demote the correlation scale. Done when neither quantity is used as a variance partition or primary physical-resolution argument.
-7. **Redesign the decision layer (R3, R9).** Rebuild `decision-table.md` and `sparse-parameter-set.md` only from the corrected artifacts, choose and justify either a high-intermediate successive-increment design or an unconditional E128 point, and describe controls as correlated drift diagnostics. Done when every retained/new condition cites corrected evidence, the selected emissions design has an explicit rationale, and all condition/control/job counts agree programmatically.
-8. **Rebind and verify everything.** In a dedicated documentation/data-binding commit after the generator and decision commits, update only the hand-written decision table's artifact hashes, the report README's binding list, provenance references and the PR body. Generated captions and figure bytes must already have been regenerated by their owning generator step and `data(analysis)` commit; step 8 never hand-edits them. Done when `.venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final` maps every changed hash to R1–R9 and its replacement, regeneration is byte-identical from the recorded revisions, links resolve, the tree is clean, and focused plus full gates pass.
+3. **Complete WP1 screening semantics (R2) — LANDED (`91e6036`; prose contract `3b7d7b0`).** Replace `ScreeningThresholdBinding.role` with a screening-reference-only statement and apply it to spatial and temporal uses. Extend the checker with regression cases matching the retired phrases “smaller than this bound is not distinguishable”, “below the threshold cannot be distinguished from drift”, and “inside the threshold means indistinguishable”. Done when the checker scans every emitted role/caption/finding (including generated JSON or their source fields), rejects those formulations, and every screening outcome says only that an effect is or is not demonstrated relative to the observed-discrepancy screening threshold.
+4. **Correct temporal calculations (R5, R6) — LANDED (`3205625`).** Actual frequency-cell widths are integrated and each temporal artifact records the timestamp statistics, quantitative criterion and estimator decision. The semantic cleanup owed for temporal “floor / inseparable” language belonged to step 3 (`91e6036`), not to the numerical method.
+5. **Complete grouped-realization evidence (R1, R4) — LANDED (`1c5ed0c`; grouped bytes regenerated at `59c852a`).** Keep the grouped bytes and counts, but make every definition, limitation, module description and caption agree with them: most non-reference levels have one recording; the shared reference level has two realizations; this is one duplicated setting, not replicated coverage of an axis. Add a shared validator that rejects “one recording per setting/level”, “each level is one recording”, and “no level is replicated” whenever `multi_realization_levels` is non-empty. Regenerate each affected axis with its owning generator. Done when provenance lists both named reference paths at all five shared levels, the validator covers source and emitted prose, and no generated or hand-written evidence contradicts the grouped model.
+6. **Correct resolution interpretations (R7, R8) — LANDED (`f5fbc5b`).** Rename the residual metric throughout code, tables, provenance, captions and decisions; demote the correlation scale. Done when neither quantity is used as a variance partition or primary physical-resolution argument.
+7. **Redesign the decision layer (R3, R9) — LANDED (`b3f2ae0`).** Rebuild `decision-table.md` and `sparse-parameter-set.md` only from the corrected artifacts, choose and justify either a high-intermediate successive-increment design or an unconditional E128 point, and describe controls as correlated drift diagnostics. Done when every retained/new condition cites corrected evidence, the selected emissions design has an explicit rationale, and all condition/control/job counts agree programmatically.
+8. **Rebind and verify everything — LANDED locally (rebinding commit; the PR body and push are coordinator-owned).** In a dedicated documentation/data-binding commit after the generator and decision commits, update only the hand-written decision table's artifact hashes, the report README's binding list, provenance references and the PR body. Generated captions and figure bytes must already have been regenerated by their owning generator step and `data(analysis)` commit; step 8 never hand-edits them. Done when `.venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final` maps every changed hash to R1–R9 and its replacement, regeneration is byte-identical from the recorded revisions, links resolve, the tree is clean, and focused plus full gates pass.
 
 ### 8.4 Acceptance tests
 
@@ -362,3 +366,29 @@ artifacts run:
 Do not start acquisition, encode the provisional sparse set as a campaign, or merge PR #24 until §8.4 is
 fully satisfied. If a correction changes the proposed condition set, update the decision table first and let
 `sparse-parameter-set.md` follow it; never preserve the old count by construction.
+
+### 8.8 Step 8 rebinding map (correction → baseline items)
+
+Step 8 binds each changed baseline item to **exactly one primary correction** — the §8.2 ruling whose landing
+dominates that item's bytes. The mapping lives in
+`reports/mixer-sensitivity-analysis/review-correction-baseline.json` (`corrections[].mapped_items`), beside
+the preserved freeze (`sha256`, `generator_revision`, `generator_command`) and the `replacement_sha256` of the
+current bytes; `tools/validate_analysis_review_baseline.py --check-final` refuses a changed item without a
+mapping, a recorded correction without a mapped item, and a replacement that is not the tree's bytes.
+
+| Correction | Ruling (§8.2) | Primary items |
+|---|---|---|
+| R1 | setting-based anchors and grouped realizations | `resolution-levels.csv`, `burst-levels.csv`, `burst-pairs.csv`, `prf-levels.csv`, `gain-power-levels.csv`, `gain-power-pairs.csv`, `gain-power-depths.csv`, `figures/prf-ladder.png`, `figures/gain-power-screen.png` |
+| R2 | sole-pair observed-discrepancy screening semantics | `figures/reference-repeat.png`, `figures/burst-ladder.png` |
+| R3 | emissions extension (unconditional series) | `README.md` |
+| R4 | complete OFAT identity / fingerprint | `burst-ladder.provenance.json`, `gain-power-screen.provenance.json` |
+| R5 | PSD integration | `prf-pairs.csv`, `prf-ladder.provenance.json` |
+| R6 | timestamp jitter | `reference-repeat.provenance.json` |
+| R7 | residual variance naming | `resolution-pairs.csv` |
+| R8 | spatial scale demotion | `resolution-ladder.provenance.json`, `figures/resolution-ladder.png` |
+| R9 | within-run reference controls | `decision-table.md` |
+
+The three artifacts that did not move (`manifest.csv`, `qc-summary.json`, `reference-repeat.csv`) carry
+neither a correction nor a replacement, and a replacement recorded for an unchanged artifact is itself a
+failure. Both hand-written documents carry a binding list that names every generated item at the bytes now on
+disk, and `--check-final` re-checks them, so the record and the documents cannot disagree about the tree.
