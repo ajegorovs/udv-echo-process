@@ -519,3 +519,10 @@ file name is never examined, so a scratch script sitting at `.hermes/fmt_cli.py`
 exactly like `.hermes/config.yaml`. One level down is outside the rule: `.hermes/scratch/x.py`
 is never gated. Keep the root of `.hermes/` empty of hand-written files.
 
+**The gate is deliberate, and the convention above is the whole answer.** A project-local
+`.hermes/` can steer a future run, which is why this one is per-operation with no `--yolo` and no
+allowlist bypass; it is not a harness defect and there is nothing here to file. Do not reach for
+`security.protected_instruction_files: false` either — it would unprotect `AGENTS.md`, `CLAUDE.md`,
+`SOUL.md` and `.cursorrules` in every repository, to spare a prompt that the subdirectory already
+avoids.
+
