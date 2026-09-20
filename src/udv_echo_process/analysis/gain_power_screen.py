@@ -28,7 +28,14 @@ restated in the provenance document and in the limitations it carries:
 The input binding, the common views, the native-grid metrics, the knot alignment, the committed WP1
 envelope reader and the table/caption/figure writers are the shared layer's
 (:mod:`udv_echo_process.analysis._native_grid`), driven here with this screen's own axes, key cells,
-settings and columns; no second helper module is added. No profile and no gate is an independent
+settings and columns; no second helper module is added. Each axis is selected by decoded
+**scientific fingerprint** (:data:`ELIGIBILITY`), never by folder (plan §8.3 step 2, R1/R4): its key
+cell is the only setting it may move, so every recording sharing the rest of the fingerprint is
+eligible, and the base state neither ladder requests - TGC ≈19.9216 dB, emitting power medium - is
+one level realized by both reference recordings (``prf/600.BDD`` and ``res/1-8.BDD``, whichever
+folder each sits in). No screened row requests that level, so the committed ladders do not hold it
+yet and it is recorded as eligible evidence for the setting-based rebuild of §8.3 step 5. No profile
+and no gate is an independent
 experimental replicate, the levels carry no acquisition order, one recording per setting is all there
 is, and no p-value is produced (plan §3.3). TGC and emitting power only: the resolution, burst and PRF
 verdicts belong to their own modules and are not revisited here.
@@ -99,6 +106,16 @@ VERIFIED_CELLS: tuple[str, ...] = (
     "profiles", "gates", "duration_s", "resolution_mm", "prf_period_us", "burst_length",
     "emissions_per_profile", "emit_power", "sensitivity", "tgc_mode")
 
+#: The setting-based contract of each screened axis (plan §8.3 step 2, R1/R4): the axis's key cell is
+#: the only decoded setting it may move, so every recording sharing the rest of the fingerprint -
+#: whatever folder its row sits in - is eligible. Both ladders' base state (TGC ≈19.9216 dB, emitting
+#: power medium) is realized by neither axis's own rows: the two reference recordings are recorded as
+#: its two realizations for the setting-based rebuild of §8.3 step 5.
+ELIGIBILITY: dict[str, grid.AxisEligibility] = {
+    "tgc": grid.AxisEligibility(axis="tgc", ladder_label=KEY_LABEL["tgc"], varied=("tgc_start_db",)),
+    "em_pow": grid.AxisEligibility(axis="em_pow", ladder_label=KEY_LABEL["em_pow"], varied=("emit_power",)),
+}
+
 #: Column order of the three tables: the dict rows carry exactly these keys, so table and model cannot
 #: drift.
 LEVEL_COLUMNS: tuple[str, ...] = (
@@ -161,6 +178,8 @@ class ScreenAxis(ValueModel):
 
     axis: str
     inputs: tuple[ScreenInput, ...]
+    eligibility: grid.AxisEligibility
+    groups: tuple[grid.LevelGroup, ...]
     levels: tuple[dict[str, object], ...]
     pairs: tuple[dict[str, object], ...]
     depths: tuple[dict[str, object], ...]
@@ -175,6 +194,13 @@ class ScreenAxis(ValueModel):
                               (DEPTH_COLUMNS, self.depths)):
             if any(tuple(row) != columns for row in rows):
                 raise ValueError("a row must carry exactly the declared columns")
+        if self.eligibility.axis != self.axis:
+            raise ValueError(
+                f"the {self.axis} axis carries the {self.eligibility.axis} eligibility contract")
+        representatives = [group.primary_path for group in self.groups if group.in_ladder]
+        if representatives != [r["relative_path"] for r in self.levels]:
+            raise ValueError(
+                "the axis must be exactly the representatives of its in-ladder groups, in order")
         if [r["relative_path"] for r in self.levels] != [e.relative_path for e in self.inputs]:
             raise ValueError("every level must appear exactly once, in input order")
         positions = [_key_position(self.axis, row["key_value"]) for row in self.levels]
@@ -290,14 +316,40 @@ def _screen_verdict(blanked: bool, spread_out: bool) -> str:
 
 
 def select_level_rows(manifest_path: Path, axis: str) -> tuple[dict[str, str], ...]:
-    """Every manifest row of one axis, ordered by its decoded key then path — the selection,
-    ordering and refusals are the shared axis-input layer's, driven with this axis's key."""
+    """The representative row of every level the axis itself requested, by decoded key then path.
+
+    The selection, ordering and refusals are the shared axis-input layer's, driven with this axis's
+    own contract; a same-settings recording sitting in another folder is eligible
+    (:func:`level_groups`) but is not one of this axis's requested levels, so it does not redefine
+    the committed ladder on its own.
+    """
     path = Path(manifest_path)
     if axis not in AXES:
         raise GainPowerScreenError(f"{axis!r} is not one of the screened axes {list(AXES)}")
     return grid.select_axis_rows(
-        path, axis=axis, ladder_label=KEY_LABEL[axis],
-        order_key=lambda row: _key_position(axis, _key_of(axis, row, path)),
+        path, eligibility=ELIGIBILITY[axis], order_key=_order_key(axis, path),
+        order_label=KEY_LABEL[axis])
+
+
+def _order_key(axis: str, manifest_path: Path):
+    """This axis's ordering key: its decoded key's position on the axis's declared order.
+    """
+    return lambda row: _key_position(axis, _key_of(axis, row, manifest_path))
+
+
+def level_groups(manifest_path: Path, axis: str) -> tuple[grid.LevelGroup, ...]:
+    """Every eligible level of one screened axis with all its realizations, by decoded key then path.
+
+    The base state neither ladder requests - TGC ≈19.9216 dB for ``tgc``, emitting power ``medium``
+    for ``em_pow`` - is one decoded level realized by ``prf/600.BDD`` and ``res/1-8.BDD``, whichever
+    folder each sits in (plan §8.3 step 2, R1). The setting-based rebuild of §8.3 step 5 joins it and
+    renders the realizations into the provenance.
+    """
+    path = Path(manifest_path)
+    if axis not in AXES:
+        raise GainPowerScreenError(f"{axis!r} is not one of the screened axes {list(AXES)}")
+    return grid.level_groups(
+        path, eligibility=ELIGIBILITY[axis], order_key=_order_key(axis, path),
         order_label=KEY_LABEL[axis])
 
 
@@ -527,7 +579,9 @@ def _build_axis(
     means = _gate_means(levels, depths)
     flagged = [row for row in levels if row["screen"] != "usable"]
     return ScreenAxis(
-        axis=axis, inputs=tuple(entries), levels=levels, depths=depths, base_state=base,
+        axis=axis, inputs=tuple(entries), eligibility=ELIGIBILITY[axis],
+        groups=level_groups(manifest_path, axis),
+        levels=levels, depths=depths, base_state=base,
         pairs=tuple(
             _pair_row(axis, low, means[str(low["relative_path"])], high,
                       means[str(high["relative_path"])], support=support, envelope=envelope,

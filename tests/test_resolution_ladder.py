@@ -41,6 +41,7 @@ from udv_echo_process.analysis.resolution_ladder import (
     AXIS,
     CORRELATION_FLOOR,
     DATASET_ROOT,
+    ELIGIBILITY,
     FOCUS_PITCHES_MM,
     LEVEL_COLUMNS,
     NOMINAL_REVOLUTION_S,
@@ -243,15 +244,74 @@ def test_select_level_rows_refuses_a_row_that_did_not_decode(tmp_path) -> None:
         select_level_rows(manifest)
 
 
-def test_select_level_rows_refuses_two_levels_with_one_pitch(tmp_path) -> None:
+def test_select_level_rows_refuses_a_ladder_whose_rows_are_not_one_fingerprint_apart(
+    tmp_path,
+) -> None:
+    """A requested row that moved a setting other than the pitch is refused by name."""
+    manifest = _manifest(
+        tmp_path, lambda rows: _replace(rows, "res/0-4.BDD", burst_length="12")
+    )
+    with pytest.raises(ResolutionLadderError, match="does not match the decoded"):
+        select_level_rows(manifest)
+
+
+def test_two_recordings_at_one_decoded_pitch_are_two_realizations_not_a_refusal(
+    tmp_path,
+) -> None:
+    """R1: the old duplicate-key refusal was the defect - one decoded level, two named files."""
+    from udv_echo_process.analysis.resolution_ladder import level_groups
+
     def collapse(rows):
         return [
             {**row, "resolution_mm": "1.85"} if row["axis"] == "res" else row for row in rows
         ]
 
     manifest = _manifest(tmp_path, collapse)
-    with pytest.raises(ResolutionLadderError, match="same pitch"):
-        select_level_rows(manifest)
+    collapsed = [group for group in level_groups(manifest) if group.key == ("1.85",)]
+    assert len(collapsed) == 1
+    level = collapsed[0]
+    # Every requested row that moved to the pitch, plus the reference recording that always
+    # carried 1.850 mm: one level, 14 separately named realizations, never a refusal.
+    assert len(level.realizations) == len(LABELS) + 1
+    assert set(level.realization_paths) == {
+        *(f"res/{label}.BDD" for label in LABELS),
+        ANCHOR_PATHS[0],
+    }
+    assert level.realization_paths[0] == ANCHOR_PATHS[0]  # manifest order, then the axis's own
+    assert level.primary_path == FOCUS_FINE
+    assert level.in_ladder is True
+    assert level.requested_paths == tuple(f"res/{label}.BDD" for label in LABELS)
+    assert [row["relative_path"] for row in select_level_rows(manifest)] == [FOCUS_FINE]
+
+
+def test_a_same_settings_recording_in_another_folder_is_not_excluded(tmp_path) -> None:
+    """R1: the folder a row sits in cannot decide whether it realizes a level."""
+    from udv_echo_process.analysis.resolution_ladder import level_groups
+
+    def relabel(rows):
+        return [
+            {**row, "axis": "burst_len"} if row["relative_path"] == ANCHOR_PATHS[0] else row
+            for row in rows
+        ]
+
+    groups = level_groups(MANIFEST)
+    anchor = next(group for group in groups if group.key == ("1.85",))
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert ANCHOR_PATHS[1] == anchor.primary_path  # the axis's own requested realization
+    assert anchor.requested_paths == (ANCHOR_PATHS[1],)
+    assert [group.key for group in groups if not group.in_ladder] == []
+    # The same recording recorded under a third folder is still eligible, and still not the
+    # ladder's own: eligibility is the decoded fingerprint, the ladder is what the axis requested.
+    relabelled = next(
+        group
+        for group in level_groups(_manifest(tmp_path, relabel))
+        if group.key == ("1.85",)
+    )
+    assert relabelled.realization_paths == ANCHOR_PATHS
+    assert relabelled.primary_path == ANCHOR_PATHS[1]
+    assert [row["relative_path"] for row in select_level_rows(MANIFEST)] == [
+        f"res/{label}.BDD" for label in LABELS
+    ]
 
 
 def test_select_level_rows_refuses_a_row_without_a_usable_pitch(tmp_path) -> None:
@@ -988,3 +1048,166 @@ def test_report_readme_documents_the_wp2_regeneration() -> None:
     assert "resolution-pairs.csv" in readme
     assert "figures/resolution-ladder.png" in readme
     assert "--analysis-commit" in readme
+
+
+# ── slice 6: the scientific fingerprint and the setting-based contract (R1, R4) ──────
+
+#: The decoded configuration cells the WP0 inventory publishes that the old
+#: ``DECODED_CELLS`` omitted and a complete fingerprint must carry (R4).
+FINGERPRINT_OMISSIONS = (
+    "emit_freq_khz",
+    "doppler_angle_deg",
+    "tgc_start_db",
+    "tgc_end_db",
+    "sampling_volume_index",
+    "skipped_profiles",
+)
+#: The cells the two reference recordings share whatever folder they sit in. They are the
+#: dataset's one repeated setting, and they must be one decoded level, not two folders.
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+
+
+def _replace(rows, relative: str, **cells):
+    """The manifest rows with one relative path's cells replaced."""
+    return [{**row, **cells} if row["relative_path"] == relative else row for row in rows]
+
+
+def _perturbed_cell(field: str, current: str) -> str:
+    """A value of one cell that is not the committed one and is still a decoded setting."""
+    if field in ("emit_power", "sensitivity", "tgc_mode"):
+        return "changed"
+    return f"{float(current) + 1.0:g}"
+
+
+def test_the_fingerprint_covers_the_decoded_configuration_and_leaves_the_extent_out() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    for cell in FINGERPRINT_OMISSIONS:
+        assert cell in grid.FINGERPRINT_FIELDS, cell
+        # ... and the reader must publish it, so a fingerprint cell is re-checkable.
+        assert cell in grid.DECODED_CELLS, cell
+    assert grid.DERIVED_FINGERPRINT_CELLS == ("prf_hz", "velo_max_ms")
+    for cell in ("profiles", "duration_s"):
+        assert cell in grid.OBSERVATION_EXTENT_CELLS
+        assert cell not in grid.FINGERPRINT_FIELDS
+        assert cell not in grid.DERIVED_FINGERPRINT_CELLS
+    assert not set(grid.OBSERVATION_EXTENT_CELLS) & set(grid.FINGERPRINT_FIELDS)
+
+
+def test_the_reader_publishes_every_fingerprint_cell_the_manifest_records() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    row = next(r for r in _rows(MANIFEST) if r["relative_path"] == "res/1-8.BDD")
+    decoded = grid.read_decoded_level(
+        DATA_ROOT, row, cells=grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS
+    )
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        assert grid.canonical_cell(row[field]) == grid.canonical_cell(
+            grid.format_cell(decoded.observed[field])
+        ), field
+
+
+def test_the_resolution_contract_holds_every_fingerprint_field_but_the_pitch() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.resolution_ladder import ELIGIBILITY
+
+    assert (ELIGIBILITY.axis, ELIGIBILITY.ladder_label) == (AXIS, "resolution")
+    assert ELIGIBILITY.varied == ("resolution_mm",)
+    assert ELIGIBILITY.derived == ()
+    every = set(grid.FINGERPRINT_FIELDS) | set(grid.DERIVED_FINGERPRINT_CELLS)
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    assert set(ELIGIBILITY.identity_fields) == every - allowed
+    assert every - set(ELIGIBILITY.identity_fields) == allowed
+    assert "profiles" not in ELIGIBILITY.identity_fields
+
+
+def test_the_contract_refuses_a_field_that_is_not_a_fingerprint_cell() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    with pytest.raises(ValueError, match="not a fingerprint field"):
+        grid.AxisEligibility(axis="res", ladder_label="resolution", varied=("gates",))
+    with pytest.raises(ValueError, match="not a derived fingerprint cell"):
+        grid.AxisEligibility(
+            axis="res", ladder_label="resolution", varied=("resolution_mm",), derived=("gates",)
+        )
+    with pytest.raises(ValueError, match="at least one varied field"):
+        grid.AxisEligibility(axis="res", ladder_label="resolution", varied=())
+    with pytest.raises(ValueError, match="not a fingerprint field"):
+        # A derived cell is not a setting: it cannot key a ladder either.
+        grid.AxisEligibility(axis="prf", ladder_label="PRF", varied=("prf_hz",))
+
+
+def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint(
+    tmp_path,
+) -> None:
+    """R4/R1: perturbing each field either changes identity or is allowlisted for this axis."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.resolution_ladder import ELIGIBILITY, level_groups
+
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    base = next(g for g in level_groups(MANIFEST) if g.key == ("1.85",))
+    assert base.realization_paths == ANCHOR_PATHS
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        row = next(r for r in _rows(MANIFEST) if r["relative_path"] == ANCHOR_PATHS[0])
+        value = _perturbed_cell(field, row[field])
+        manifest = _manifest(
+            tmp_path,
+            lambda rows, f=field, v=value: _replace(rows, ANCHOR_PATHS[0], **{f: v}),
+        )
+        groups = level_groups(manifest)
+        at = next(g for g in groups if g.key == ("1.85",))
+        if field in allowed:
+            # Allowlisted: perturbing it moves the recording to the level its own key names,
+            # so it is still eligible. Only the pitch may do that on this axis.
+            assert field == "resolution_mm", field
+            assert ANCHOR_PATHS[0] not in at.realization_paths, field
+            assert ANCHOR_PATHS[0] in {
+                path for group in groups for path in group.realization_paths
+            }, field
+        else:
+            assert at.realization_paths == (ANCHOR_PATHS[1],), field
+
+
+def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder) -> None:
+    """Plan §8.3 step 2: the selection is recorded on the model; §8.3 step 5 renders it."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.resolution_ladder import provenance_document
+
+    assert ladder.eligibility == ELIGIBILITY
+    requested = select_level_rows(MANIFEST)
+    assert [group.key for group in ladder.groups if group.in_ladder] == [
+        (row["resolution_mm"],) for row in requested
+    ]
+    assert [row.relative_path for row in ladder.levels] == [
+        row["relative_path"] for row in requested
+    ]
+    anchor = next(group for group in ladder.groups if group.key == ("1.85",))
+    assert anchor.key_display == "resolution_mm=1.85"
+    assert all(
+        group.key_display == f"{group.key_fields[0]}={group.key[0]}" for group in ladder.groups
+    )
+    # The axis's identity is the whole decoded configuration apart from the pitch: the dataset's
+    # one repeated setting, held constant.
+    assert anchor.identity == {
+        "emit_freq_khz": "4000", "prf_period_us": "600", "prf_hz": "1666.66666667",
+        "burst_length": "10", "emissions_per_profile": "20", "emit_power": "medium",
+        "sensitivity": "medium", "sampling_volume_index": "4", "sound_speed_ms": "1480",
+        "doppler_angle_deg": "0", "velo_max_ms": "154.137583511", "tgc_mode": "uniform",
+        "tgc_start_db": "19.9215686275", "tgc_end_db": "40", "skipped_profiles": "0",
+    }
+    assert anchor.realizations[0].fingerprint == anchor.realizations[1].fingerprint
+    assert set(anchor.realizations[0].fingerprint) == set(
+        grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS
+    )
+    # ... and the two realizations differ only in what they observed.
+    assert anchor.realizations[0].extent["profiles"] != anchor.realizations[1].extent["profiles"]
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert [realization.own_axis for realization in anchor.realizations] == [False, True]
+    assert anchor.realizations[1].source_sha256 == hashlib.sha256(
+        (DATA_ROOT / ANCHOR_PATHS[1]).read_bytes()
+    ).hexdigest()
+    assert anchor.realizations[0].requested_axis == "prf"
+    assert anchor.realizations[1].requested_axis == AXIS
+    # The committed artefacts are not regenerated by step 2: the realizations stay a model-level
+    # record until the setting-based rebuild of §8.3 step 5 renders them.
+    assert "realizations" not in json.dumps(provenance_document(ladder))

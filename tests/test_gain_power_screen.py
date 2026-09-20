@@ -603,3 +603,159 @@ def test_the_report_paths_are_line_ending_pinned() -> None:
     assert "reports/mixer-sensitivity-analysis/figures/*.png binary" in attributes
     for name in (MANIFEST, REPORT_DIR / "reference-repeat.provenance.json"):
         assert b"\r\n" not in name.read_bytes()
+
+
+# --------------------------------------------------------------------------- fingerprint
+
+
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in: the dataset's
+#: one repeated setting, which neither screened ladder holds as a requested level.
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+
+
+def _perturbed_cell(field: str, current: str) -> str:
+    """A value of one cell that is not the committed one and is still a decoded setting."""
+    if field in ("emit_power", "sensitivity", "tgc_mode"):
+        return "changed"
+    return f"{float(current) + 1.0:g}"
+
+
+def _cell_of(relative: str, field: str) -> str:
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        return next(r for r in csv.DictReader(handle) if r["relative_path"] == relative)[field]
+
+
+def test_the_fingerprint_covers_the_decoded_configuration_and_leaves_the_extent_out() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    for cell in ("emit_freq_khz", "doppler_angle_deg", "tgc_start_db", "tgc_end_db",
+                 "sampling_volume_index", "skipped_profiles"):
+        assert cell in grid.FINGERPRINT_FIELDS, cell
+        assert cell in grid.DECODED_CELLS, cell
+    assert grid.DERIVED_FINGERPRINT_CELLS == ("prf_hz", "velo_max_ms")
+    for cell in ("profiles", "duration_s"):
+        assert cell in grid.OBSERVATION_EXTENT_CELLS
+        assert cell not in grid.FINGERPRINT_FIELDS
+    assert not set(grid.OBSERVATION_EXTENT_CELLS) & set(grid.FINGERPRINT_FIELDS)
+
+
+def test_the_reader_publishes_every_fingerprint_cell_the_manifest_records() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        row = next(r for r in csv.DictReader(handle) if r["relative_path"] == ANCHOR_PATHS[0])
+    decoded = grid.read_decoded_level(
+        DATA_ROOT, row, cells=grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS
+    )
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        assert grid.canonical_cell(row[field]) == grid.canonical_cell(
+            grid.format_cell(decoded.observed[field])
+        ), field
+
+
+def test_each_axis_contract_holds_every_fingerprint_field_but_its_own_key() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    eligibility = module.ELIGIBILITY
+    assert tuple(sorted(eligibility)) == tuple(sorted(AXES))
+    assert eligibility["tgc"].varied == ("tgc_start_db",)
+    assert eligibility["em_pow"].varied == ("emit_power",)
+    assert eligibility["tgc"].derived == eligibility["em_pow"].derived == ()
+    every = set(grid.FINGERPRINT_FIELDS) | set(grid.DERIVED_FINGERPRINT_CELLS)
+    for axis, key in (("tgc", "tgc_start_db"), ("em_pow", "emit_power")):
+        contract = eligibility[axis]
+        assert (contract.axis, contract.ladder_label) == (axis, module.KEY_LABEL[axis])
+        assert set(contract.identity_fields) == every - {key}
+        assert key not in contract.identity_fields
+        assert "sensitivity" in contract.identity_fields
+        assert "emit_power" in contract.identity_fields or key == "emit_power"
+
+
+def test_the_committed_anchor_is_one_level_of_both_screened_axes() -> None:
+    """R1: the level neither ladder requests is still one decoded level, realized by both files."""
+    from udv_echo_process.analysis.gain_power_screen import level_groups
+
+    for axis in AXES:
+        anchor = next(g for g in level_groups(RELATIVE_MANIFEST, axis) if len(g.realizations) > 1)
+        assert anchor.realization_paths == ANCHOR_PATHS, axis
+        assert anchor.primary_path == ANCHOR_PATHS[0], axis
+        assert anchor.in_ladder is False, axis  # the setting-based rebuild joins it (§8.3 step 5)
+        assert [r.own_axis for r in anchor.realizations] == [False, False], axis
+        assert anchor.realizations[0].fingerprint == anchor.realizations[1].fingerprint, axis
+        assert anchor.realizations[0].extent["duration_s"] != (
+            anchor.realizations[1].extent["duration_s"]
+        ), axis
+        # Every other level is realized by exactly one recording on the committed inventory.
+        assert all(
+            len(g.realizations) == 1
+            for g in level_groups(RELATIVE_MANIFEST, axis)
+            if g.key != anchor.key
+        ), axis
+
+
+def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint(
+    tmp_path,
+) -> None:
+    """R4/R1, both screened axes: perturbing each field either changes identity or is allowlisted."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.gain_power_screen import ELIGIBILITY, level_groups
+
+    for axis, key in (("tgc", "tgc_start_db"), ("em_pow", "emit_power")):
+        allowed = set(ELIGIBILITY[axis].varied) | set(ELIGIBILITY[axis].derived)
+        assert allowed == {key}
+        for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+            current = _cell_of(ANCHOR_PATHS[0], field)
+            # The power axis's own key has to stay one of the instrument's declared steps to be
+            # orderable at all; every other cell just has to move off its committed value.
+            value = "high" if field == "emit_power" and current != "high" else (
+                _perturbed_cell(field, current))
+            manifest = _inventory(
+                tmp_path,
+                lambda body, f=field, v=value: _replace(body, ANCHOR_PATHS[0], **{f: v}),
+                name=f"fingerprint-{axis}-{field}.csv")
+            groups = level_groups(manifest, axis)
+            at = next(group for group in groups if ANCHOR_PATHS[1] in group.realization_paths)
+            eligible = {path for group in groups for path in group.realization_paths}
+            assert ANCHOR_PATHS[0] not in at.realization_paths, (axis, field)
+            if field in allowed:
+                # Allowlisted: the recording moves to the level its own key names and stays eligible.
+                assert ANCHOR_PATHS[0] in eligible, (axis, field)
+            else:
+                assert ANCHOR_PATHS[0] not in eligible, (axis, field)
+                assert at.realization_paths == (ANCHOR_PATHS[1],), (axis, field)
+
+
+def test_two_recordings_at_one_decoded_key_are_two_realizations_not_a_refusal(tmp_path) -> None:
+    """R1: the old duplicate-key refusal was the defect - one decoded level, two named files."""
+    from udv_echo_process.analysis.gain_power_screen import level_groups
+
+    collapsed = _inventory(
+        tmp_path,
+        lambda body: _replace(body, TGC_PATHS[1], tgc_start_db="9.88235294118"),
+        name="collapsed-tgc.csv")
+    at = next(group for group in level_groups(collapsed, "tgc") if group.key == ("9.88235294118",))
+    assert at.realization_paths == (TGC_PATHS[2], TGC_PATHS[1])  # manifest order, both named
+    assert at.primary_path == TGC_PATHS[2]
+    assert at.in_ladder is True
+    assert len(select_level_rows(collapsed, "tgc")) == len(TGC_PATHS) - 1
+
+
+def test_the_screen_carries_the_setting_based_selection_beside_its_levels(screen) -> None:
+    """Plan §8.3 step 2: the selection is recorded on the model; §8.3 step 5 renders it."""
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    for axis in screen.axes:
+        requested = select_level_rows(RELATIVE_MANIFEST, axis.axis)
+        assert axis.eligibility == module.ELIGIBILITY[axis.axis]
+        assert [group.key for group in axis.groups if group.in_ladder] == [
+            (str(row[axis.eligibility.varied[0]]),) for row in requested
+        ]
+        anchor = next(group for group in axis.groups if not group.in_ladder)
+        assert all(
+            group.key_display == f"{group.key_fields[0]}={group.key[0]}" for group in axis.groups
+        )
+        assert anchor.realization_paths == ANCHOR_PATHS, axis.axis
+        assert anchor.requested_paths == (), axis.axis
+        assert anchor.ladder_label == module.KEY_LABEL[axis.axis], axis.axis
+    assert "realizations" not in json.dumps(module.provenance_document(screen))

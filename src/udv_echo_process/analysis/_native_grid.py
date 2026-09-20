@@ -6,8 +6,10 @@ the same plan when they land. Nothing here knows which manifest axis it serves o
 a row's key column is called: the callers name their axis, their ladder and their key,
 and hand this module decoded grids.
 
-What it carries: the axis-input layer (:func:`read_decoded_level`,
-:func:`manifest_axis_rows`, :func:`select_axis_rows`, :func:`require_clean_ofat`), the
+What it carries: the scientific-fingerprint layer (:data:`FINGERPRINT_FIELDS`,
+:data:`DERIVED_FINGERPRINT_CELLS`, :class:`AxisEligibility`, :class:`LevelGroup`,
+:func:`level_groups`), the axis-input layer (:func:`read_decoded_level`,
+:func:`requested_axis_rows`, :func:`select_axis_rows`, :func:`require_clean_ofat`), the
 common views (:func:`window`, :func:`common_support`), the native-grid metrics
 (:func:`level_metrics`, :func:`spatial_gradient`, :func:`correlation_length`), the
 pairwise alignment (:func:`align_on_knots`, :func:`depth_ranges`), the committed WP1
@@ -15,6 +17,12 @@ envelope and temporal-floor readers (:func:`read_envelope`,
 :func:`read_temporal_floor`), the ladder shape (:func:`largest_step`, :func:`knees`)
 and the deterministic writers (:func:`csv_text`, :func:`wrap_caption`,
 :func:`write_text_artefacts`, :func:`panel_figure`).
+
+An axis selects its recordings by their **decoded scientific settings**, never by the
+folder they sit in: :class:`AxisEligibility` declares which fingerprint fields that
+axis's key may move *and* which fall out of it as derived, every recording agreeing on
+the rest is eligible, and recordings sharing one decoded key are the *realizations* of
+one level rather than a duplicate-key refusal (plan §8.3 steps 2 and 5).
 
 ``NativeGridError`` is the error class every consumer re-exports under its own name
 (``ResolutionLadderError``, ``BurstLadderError``), so a caller catches a helper refusal
@@ -34,6 +42,7 @@ from pathlib import Path
 from typing import NamedTuple
 
 import numpy as np
+from pydantic import model_validator
 
 from udv_echo_process.analysis.reference_repeat import gate_metrics
 from udv_echo_process.analysis.sweep_inventory import format_cell
@@ -156,22 +165,69 @@ TOLERANCE_S = 1e-9
 #: The WP1 envelope metric every axis compares to, as its provenance records it.
 ENVELOPE_METRIC = "max_gate_abs_mean_difference_mm_s"
 
-#: Every decoded cell the WP0 inventory publishes for a recording, in row-column
-#: order: shape and timing, the depth support and the acquisition settings. An axis
-#: re-checks the cells it depends on; the full set is the default.
+#: A recording's **scientific fingerprint**: the independent decoded configuration settings the
+#: WP0 inventory publishes, in manifest column order (plan §8.3 step 2, R4). The shape, duration
+#: and depth support, the velocity range and the data-quality counters are deliberately absent -
+#: they are the observation extent, and two realizations of one decoded level may differ in them.
+FINGERPRINT_FIELDS: tuple[str, ...] = (
+    "emit_freq_khz",
+    "prf_period_us",
+    "burst_length",
+    "emissions_per_profile",
+    "emit_power",
+    "sensitivity",
+    "resolution_mm",
+    "sampling_volume_index",
+    "sound_speed_ms",
+    "doppler_angle_deg",
+    "tgc_mode",
+    "tgc_start_db",
+    "tgc_end_db",
+    "skipped_profiles",
+)
+
+#: Decoded cells that *follow* from the fingerprint rather than standing beside it: the PRF in Hz
+#: and the reader's ±Nyquist velocity (``c / (4 f0 T_prf)``). An axis whose key defines them names
+#: them in :attr:`AxisEligibility.derived`, and they then leave that axis's identity.
+DERIVED_FINGERPRINT_CELLS: tuple[str, ...] = ("prf_hz", "velo_max_ms")
+
+#: What was *recorded* rather than how the instrument was configured: published beside the
+#: fingerprint (the two reference recordings differ here and nowhere else), never compared as part
+#: of it.
+OBSERVATION_EXTENT_CELLS: tuple[str, ...] = (
+    "profiles",
+    "gates",
+    "duration_s",
+    "depth_min_mm",
+    "depth_max_mm",
+)
+
+#: Every decoded cell the WP0 inventory publishes for a recording, in row-column order: shape and
+#: timing, the depth support and the acquisition settings (R4 - a fingerprint cell an axis does not
+#: re-check cannot be compared). An axis re-checks the cells it depends on; the full set is the
+#: default.
 DECODED_CELLS: tuple[str, ...] = (
     "profiles",
     "gates",
     "duration_s",
     "depth_min_mm",
     "depth_max_mm",
-    "resolution_mm",
+    "emit_freq_khz",
     "prf_period_us",
+    "prf_hz",
     "burst_length",
     "emissions_per_profile",
     "emit_power",
     "sensitivity",
+    "resolution_mm",
+    "sampling_volume_index",
+    "sound_speed_ms",
+    "doppler_angle_deg",
+    "velo_max_ms",
     "tgc_mode",
+    "tgc_start_db",
+    "tgc_end_db",
+    "skipped_profiles",
 )
 
 
@@ -193,14 +249,193 @@ def observed_cells(
         "duration_s": float(time_s[-1] - time_s[0]),
         "depth_min_mm": float(depths[0]),
         "depth_max_mm": float(np.max(depths)),
-        "resolution_mm": config.resolution_mm,
+        "emit_freq_khz": config.source_freq_khz,
         "prf_period_us": 1e6 / float(config.pulse_repetition_freq_hz),
+        "prf_hz": config.pulse_repetition_freq_hz,
         "burst_length": config.burst_length,
         "emissions_per_profile": config.emissions_per_profile,
         "emit_power": config.emit_power,
         "sensitivity": config.sensitivity,
+        "resolution_mm": config.resolution_mm,
+        "sampling_volume_index": config.sampling_volume_index,
+        "sound_speed_ms": config.sound_speed_ms,
+        "doppler_angle_deg": config.doppler_angle_deg,
+        "velo_max_ms": config.velo_max_ms,
         "tgc_mode": config.tgc_mode,
+        "tgc_start_db": config.tgc_start_db,
+        "tgc_end_db": config.tgc_end_db,
+        "skipped_profiles": config.skipped_profiles,
     }
+
+
+def canonical_cell(cell: object) -> str:
+    """One manifest cell as it compares: empty stays empty, a number becomes the number it is
+    (``1.85`` and ``1.850000000000`` are one setting), and a label passes through stripped.
+    """
+    text = str("" if cell is None else cell).strip()
+    if not text:
+        return ""
+    try:
+        number = float(text)
+    except ValueError:
+        return text
+    return format_cell(number)
+
+
+def _is_decoded_cell(cell: str) -> bool:
+    """True when a cell is a usable decoded setting: non-empty, and finite when it is numeric.
+    """
+    if not cell:
+        return False
+    try:
+        number = float(cell)
+    except ValueError:
+        return True
+    return math.isfinite(number)
+
+
+def fingerprint_cells(row: Mapping[str, str]) -> dict[str, str]:
+    """One row's full scientific fingerprint: every :data:`FINGERPRINT_FIELDS` cell beside the
+    :data:`DERIVED_FINGERPRINT_CELLS` that follow from them.
+
+    Strict on purpose: the fingerprint of a recording an axis *uses* is read from decoded settings,
+    so a blank or non-finite cell is refused by name rather than compared as text (plan §8.3 step 2).
+    """
+    return {
+        field: decoded_fingerprint_cell(row, field)
+        for field in FINGERPRINT_FIELDS + DERIVED_FINGERPRINT_CELLS
+    }
+
+
+def decoded_fingerprint_cell(row: Mapping[str, str], field: str) -> str:
+    """One cell of a row's fingerprint, refused when it is empty or not a finite decoded setting.
+    """
+    cell = canonical_cell(row.get(field))
+    if not _is_decoded_cell(cell):
+        raise NativeGridError(
+            f"{row.get('relative_path') or '?'}: manifest {field}={row.get(field)!r} is empty or "
+            "not a finite decoded setting; a scientific fingerprint is read from decoded settings, "
+            "never from a blank or non-numeric cell"
+        )
+    return cell
+
+
+def observation_text(row: Mapping[str, str]) -> dict[str, str]:
+    """The row's observation extent as it recorded it: shape, duration and depth support, which
+    two realizations of one decoded level may differ in (plan §2).
+    """
+    return {cell: canonical_cell(row.get(cell)) for cell in OBSERVATION_EXTENT_CELLS}
+
+
+class AxisEligibility(ValueModel):
+    """One axis's declared setting-based contract (plan §8.3 step 2, R1/R4): the fingerprint fields
+    its key is allowed to move (``varied``), the derived cells that follow from that key
+    (``derived``) and, by exclusion, the ``identity_fields`` every eligible recording must share
+    whatever folder it sits in.
+
+    The contract is declared data, never a folder name: it is what lets ``prf/600.BDD`` realize the
+    resolution axis's 1.850 mm level and ``res/1-8.BDD`` the PRF axis's 600 µs level.
+    """
+
+    axis: str
+    ladder_label: str
+    varied: tuple[str, ...]
+    derived: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def _check_the_contract_is_declared_over_the_fingerprint(self) -> AxisEligibility:
+        if not self.varied:
+            raise ValueError(f"the {self.axis} contract must name at least one varied field")
+        for field in self.varied:
+            if field not in FINGERPRINT_FIELDS:
+                raise ValueError(
+                    f"{field!r} is not a fingerprint field: {list(FINGERPRINT_FIELDS)}"
+                )
+        for field in self.derived:
+            if field not in DERIVED_FINGERPRINT_CELLS:
+                raise ValueError(
+                    f"{field!r} is not a derived fingerprint cell: "
+                    f"{list(DERIVED_FINGERPRINT_CELLS)}"
+                )
+        return self
+
+    @property
+    def identity_fields(self) -> tuple[str, ...]:
+        """The settings every eligible recording must share: the fingerprint and its derived cells
+        minus whatever this axis is allowed to move.
+        """
+        moved = set(self.varied) | set(self.derived)
+        return tuple(
+            field for field in FINGERPRINT_FIELDS + DERIVED_FINGERPRINT_CELLS if field not in moved
+        )
+
+
+class LevelRealization(ValueModel):
+    """One recording that realizes a decoded level: its own path and hash, the folder that
+    requested it, its full fingerprint and its observation extent. Never collapsed into another
+    realization's path (plan §8.3 step 2).
+    """
+
+    relative_path: str
+    requested_axis: str
+    requested_label: str
+    source_sha256: str
+    own_axis: bool
+    fingerprint: dict[str, str]
+    extent: dict[str, str]
+
+
+class LevelGroup(ValueModel):
+    """One decoded level of one axis: its key (the varied cells), the identity every realization
+    shares, and every recording that realizes it, in manifest order.
+
+    ``in_ladder`` is True when the axis itself requested at least one realization. The committed
+    ladders are still built from those requested levels; a level realized only elsewhere is recorded
+    here - with both of the reference recordings when they share it - for the setting-based rebuild
+    of plan §8.3 step 5 rather than silently dropped.
+    """
+
+    axis: str
+    ladder_label: str
+    key_fields: tuple[str, ...]
+    key: tuple[str, ...]
+    key_display: str
+    identity: dict[str, str]
+    primary_path: str
+    realizations: tuple[LevelRealization, ...]
+    in_ladder: bool
+
+    @model_validator(mode="after")
+    def _check_the_group_holds_its_primary_and_one_key(self) -> LevelGroup:
+        if self.key_fields != tuple(
+            field for field in self.key_fields if field in FINGERPRINT_FIELDS
+        ) or not self.key_fields:
+            raise ValueError("a level is keyed by at least one fingerprint field")
+        if len(self.key) != len(self.key_fields):
+            raise ValueError(
+                f"{len(self.key_fields)} key field(s) need {len(self.key_fields)} key value(s), "
+                f"got {len(self.key)}"
+            )
+        paths = [item.relative_path for item in self.realizations]
+        if not paths or len(set(paths)) != len(paths):
+            raise ValueError("a level holds at least one distinct realization per recording")
+        if self.primary_path not in paths:
+            raise ValueError(f"the primary {self.primary_path!r} must be one of the realizations")
+        if self.in_ladder != any(item.own_axis for item in self.realizations):
+            raise ValueError("a level is in the ladder exactly when the axis requested one of it")
+        return self
+
+    @property
+    def realization_paths(self) -> tuple[str, ...]:
+        """Every recording realizing this level, in manifest order.
+        """
+        return tuple(item.relative_path for item in self.realizations)
+
+    @property
+    def requested_paths(self) -> tuple[str, ...]:
+        """The realizations this axis itself requested.
+        """
+        return tuple(item.relative_path for item in self.realizations if item.own_axis)
 
 
 def read_decoded_level(
@@ -289,23 +524,20 @@ def read_decoded_level(
     )
 
 
-def manifest_axis_rows(
+def requested_axis_rows(
     manifest_path: Path, axis: str, *, ladder_label: str
 ) -> tuple[dict[str, str], ...]:
-    """Every manifest row of one axis, in file order.
+    """Every manifest row the *axis itself* requested, in file order.
 
-    The ladder is bound to the WP0 manifest, never to a hand-maintained filename list. Refuses a
-    missing or unreadable manifest, no rows of ``axis``, a row without a relative path, a repeated
-    path, and a row that did not decode.
+    The axis's own request is bound to the WP0 manifest, never to a hand-maintained filename list,
+    and this is the request - not the eligibility rule: whether a recording may realize one of the
+    axis's levels is decided by the decoded fingerprint (plan §8.3 step 2), so a same-settings file
+    recorded under another folder is still eligible. Refuses a missing or unreadable manifest, an
+    axis the inventory holds no rows for, a row without a relative path, and a repeated path.
     """
     path = Path(manifest_path)
-    try:
-        text = path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise NativeGridError(f"cannot read the manifest {path}: {exc}") from exc
-    selected = [
-        row for row in csv.DictReader(text.splitlines()) if (row.get("axis") or "") == axis
-    ]
+    rows = _manifest_rows(path)
+    selected = [row for row in rows if (row.get("axis") or "") == axis]
     if not selected:
         raise NativeGridError(
             f"manifest {path} holds no {axis} rows; the {ladder_label} ladder is selected "
@@ -324,39 +556,186 @@ def manifest_axis_rows(
             raise NativeGridError(
                 f"manifest {path} must hold exactly one row for {relative!r}, found {count}"
             )
-    for row in selected:
-        if row.get("decode_error"):
-            raise NativeGridError(
-                f"{row['relative_path']}: the manifest records "
-                f"decode_error={row['decode_error']!r}; a ladder must be selected from "
-                "decoded recordings"
-            )
     return tuple(selected)
+
+
+def _manifest_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
+    """Every manifest row, or a named refusal: the whole inventory, never one file.
+    """
+    path = Path(manifest_path)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise NativeGridError(f"cannot read the manifest {path}: {exc}") from exc
+    return tuple(csv.DictReader(text.splitlines()))
+
+
+def _require_decoded_row(row: Mapping[str, str]) -> None:
+    """Refuse a row the inventory recorded as undecoded: a ladder is built from decoded recordings.
+    """
+    if row.get("decode_error"):
+        raise NativeGridError(
+            f"{row['relative_path']}: the manifest records "
+            f"decode_error={row['decode_error']!r}; a ladder must be selected from "
+            "decoded recordings"
+        )
+
+
+def key_cells(eligibility: AxisEligibility, row: Mapping[str, str]) -> tuple[str, ...]:
+    """One row's decoded level key: the varied cells, refused when a cell is not a decoded setting.
+    """
+    return tuple(
+        decoded_fingerprint_cell(row, field) for field in eligibility.varied
+    )
+
+
+def identity_text(eligibility: AxisEligibility, row: Mapping[str, str]) -> tuple[str, ...]:
+    """The row's identity as it compares: the values of every ``identity_fields`` cell, in contract
+    order. A blank cell stays blank and so matches no decoded identity.
+    """
+    return tuple(canonical_cell(row.get(field)) for field in eligibility.identity_fields)
+
+
+def _level_groups_and_rows(
+    manifest_path: Path,
+    *,
+    eligibility: AxisEligibility,
+    order_key: Callable[[Mapping[str, str]], float],
+    order_label: str,
+) -> tuple[tuple[LevelGroup, ...], dict[str, dict[str, str]]]:
+    """The grouping both public readers share: every eligible decoded level, and every row by path.
+
+    The axis's own requested rows anchor the identity: they must carry one scientific fingerprint
+    apart from the varied fields, and every manifest row agreeing with them on the identity is
+    eligible whatever folder it sits in. Eligible rows sharing one key are the realizations of one
+    level; the level's primary is the first realization the axis itself requested, or the first in
+    manifest order for a level only another folder requested.
+    """
+    rows = _manifest_rows(Path(manifest_path))
+    requested = requested_axis_rows(
+        manifest_path, eligibility.axis, ladder_label=eligibility.ladder_label
+    )
+    for row in requested:
+        _require_decoded_row(row)
+        # The axis's own key first, so a requested row without a usable key is refused in the
+        # axis's own terms (a pitch, a cycle count) rather than as a bare fingerprint cell.
+        order_key(row)
+    anchor = requested[0]
+    anchor_fingerprint = fingerprint_cells(anchor)
+    anchor_identity = {field: anchor_fingerprint[field] for field in eligibility.identity_fields}
+    for row in requested[1:]:
+        cells = fingerprint_cells(row)
+        moved = sorted(
+            field for field in eligibility.identity_fields if cells[field] != anchor_identity[field]
+        )
+        if moved:
+            field = moved[0]
+            raise NativeGridError(
+                f"{row['relative_path']}: manifest {field}={row.get(field)!r} does not match the "
+                f"decoded {field}={anchor_identity[field]!r} the {eligibility.ladder_label} ladder "
+                f"holds ({anchor['relative_path']}); the {eligibility.axis} rows must share one "
+                f"scientific fingerprint apart from {list(eligibility.varied)}, and this ladder "
+                f"varies only its {order_label}"
+            )
+    wanted = identity_text(eligibility, anchor)
+    eligible = [row for row in rows if identity_text(eligibility, row) == wanted]
+    for row in eligible:
+        _require_decoded_row(row)
+    members: dict[tuple[str, ...], list[dict[str, str]]] = {}
+    for row in eligible:
+        members.setdefault(key_cells(eligibility, row), []).append(row)
+    requested_paths = {row["relative_path"] for row in requested}
+    groups: list[LevelGroup] = []
+    for key, sharing in members.items():
+        primary = next(
+            (row for row in sharing if row["relative_path"] in requested_paths), sharing[0]
+        )
+        groups.append(
+            LevelGroup(
+                axis=eligibility.axis,
+                ladder_label=eligibility.ladder_label,
+                key_fields=eligibility.varied,
+                key=key,
+                key_display=", ".join(
+                    f"{field}={value}"
+                    for field, value in zip(eligibility.varied, key, strict=True)
+                ),
+                identity=dict(anchor_identity),
+                primary_path=primary["relative_path"],
+                realizations=tuple(
+                    LevelRealization(
+                        relative_path=row["relative_path"],
+                        requested_axis=row.get("axis") or "",
+                        requested_label=row.get("requested_label") or "",
+                        source_sha256=row.get("source_sha256") or "",
+                        own_axis=row["relative_path"] in requested_paths,
+                        fingerprint={
+                            field: canonical_cell(row.get(field))
+                            for field in FINGERPRINT_FIELDS + DERIVED_FINGERPRINT_CELLS
+                        },
+                        extent=observation_text(row),
+                    )
+                    for row in sharing
+                ),
+                in_ladder=any(row["relative_path"] in requested_paths for row in sharing),
+            )
+        )
+    by_path = {row["relative_path"]: row for row in rows}
+    return (
+        tuple(
+            sorted(
+                groups,
+                key=lambda group: (order_key(by_path[group.primary_path]), group.primary_path),
+            )
+        ),
+        by_path,
+    )
+
+
+def level_groups(
+    manifest_path: Path,
+    *,
+    eligibility: AxisEligibility,
+    order_key: Callable[[Mapping[str, str]], float],
+    order_label: str,
+) -> tuple[LevelGroup, ...]:
+    """Every eligible decoded level of one axis, ordered by its decoded key then by path.
+
+    Eligibility is the decoded scientific fingerprint, never the folder a row sits in
+    (plan §8.3 step 2, R1): every recording agreeing with the axis's own rows on the non-varied
+    fields realizes the level its key names, and a level realized by two recordings is one level
+    with two named realizations, not a duplicate key to refuse.
+    """
+    return _level_groups_and_rows(
+        Path(manifest_path),
+        eligibility=eligibility,
+        order_key=order_key,
+        order_label=order_label,
+    )[0]
 
 
 def select_axis_rows(
     manifest_path: Path,
     *,
-    axis: str,
-    ladder_label: str,
+    eligibility: AxisEligibility,
     order_key: Callable[[Mapping[str, str]], float],
     order_label: str,
 ) -> tuple[dict[str, str], ...]:
-    """Every manifest row of one axis, ordered by its decoded key then by path.
+    """The representative row of every level the axis itself requested, by decoded key then path.
 
-    ``order_key`` reads the row's own quantity (a cycle count, a pitch) and raises when that cell
-    is unusable; ``order_label`` names the quantity in the refusals, because a ladder is ordered
-    by its decoded key, never by a filename. Refuses two rows carrying one key.
+    ``order_key`` reads the row's own quantity (a cycle count, a pitch) and raises when that cell is
+    unusable; ``order_label`` names the quantity in the refusals, because a ladder is ordered by its
+    decoded key, never by a filename. One level is one row here - the recordings sharing that level's
+    decoded key are its realizations (:func:`level_groups`), kept as separate named paths and handed
+    to the setting-based rebuild of plan §8.3 step 5 rather than refused.
     """
-    rows = manifest_axis_rows(manifest_path, axis, ladder_label=ladder_label)
-    ordered = sorted(rows, key=lambda row: (order_key(row), row["relative_path"]))
-    for first, second in itertools.pairwise(ordered):
-        if order_key(first) == order_key(second):
-            raise NativeGridError(
-                f"{first['relative_path']} and {second['relative_path']} carry the same "
-                f"{order_label} {order_key(first)}; a ladder needs one level per {order_label}"
-            )
-    return tuple(ordered)
+    groups, by_path = _level_groups_and_rows(
+        Path(manifest_path),
+        eligibility=eligibility,
+        order_key=order_key,
+        order_label=order_label,
+    )
+    return tuple(by_path[group.primary_path] for group in groups if group.in_ladder)
 
 
 def require_clean_ofat(

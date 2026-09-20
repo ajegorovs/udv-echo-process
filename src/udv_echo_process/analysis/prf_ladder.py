@@ -15,6 +15,14 @@ and temporal-floor readers and the writers belong to the shared layer
 (:mod:`udv_echo_process.analysis._native_grid`), which this axis drives with its own axis name, key
 cell, settings and columns.
 
+Selection is by decoded **scientific fingerprint** (:data:`ELIGIBILITY`), never by folder
+(plan §8.3 step 2, R1/R4): the period is the only setting this axis may move, ``prf_hz`` and
+``velo_max_ms`` follow from it, and every recording sharing the rest of the fingerprint - including
+`res/1-8.BDD`, which sits under another folder - is eligible at the level its own decoded period
+names. ``prf/600.BDD`` and ``res/1-8.BDD`` are therefore two named realizations of the 600 µs level,
+not a duplicate key to refuse. The committed ladder still holds the levels this axis itself
+requested; the setting-based rebuild of §8.3 step 5 renders the realizations into the artefacts.
+
 Two facts separate this axis from its siblings (plan §2). The velocity scale is not a free setting:
 the reader publishes ``velo_max_ms`` as the ±Nyquist velocity, and here ``Vmax × prf_period`` is
 constant across all five files, so the scale moved *with* the key and is audited as an intended
@@ -66,6 +74,16 @@ WARNING_FRACTIONS: tuple[float, ...] = (0.5, 0.75, 0.9, 1.0)
 #: interval, so a consecutive-profile step of at least Vmax *with a sign reversal* is the
 #: conservative half-span signature; ``max_abs_step_over_velo_max`` is published beside the count.
 WRAP_STEP_FRACTION = 1.0
+
+#: The axis's setting-based contract (plan §8.3 step 2, R1/R4): the pulse-repetition period is the
+#: only decoded setting this ladder may move, and ``prf_hz`` / ``velo_max_ms`` follow from it
+#: (``Vmax = c / (4 f0 T)``), so they are derived rather than settings. Every recording sharing the
+#: rest of the fingerprint - whatever folder its row sits in - is eligible, and the two 600 µs
+#: recordings are two realizations of one level rather than a duplicate key.
+ELIGIBILITY = grid.AxisEligibility(
+    axis=AXIS, ladder_label="PRF", varied=("prf_period_us",),
+    derived=("prf_hz", "velo_max_ms"),
+)
 
 #: Settings that must **not** move: this axis changes the pulse-repetition period only. The
 #: velocity scale is absent — it is the key's consequence, audited as such — and so is the rate.
@@ -131,7 +149,9 @@ class PrfLadder(ValueModel):
     envelope: grid.EnvelopeBinding
     axis: str = AXIS
     analysis_commit: str | None = None
+    eligibility: grid.AxisEligibility = ELIGIBILITY
     inputs: tuple[LevelInput, ...]
+    groups: tuple[grid.LevelGroup, ...] = ()
     common: dict[str, object]
     temporal: dict[str, object]
     focus_path: str
@@ -175,15 +195,30 @@ def _period_us_of(row: Mapping[str, str], manifest_path: Path) -> float:
 
 
 def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
-    """Every ``prf`` manifest row, ordered by decoded PRF period then path.
+    """The representative row of every ``prf`` level the axis itself requested, by period then path.
 
     The ladder is bound to the WP0 manifest, never to a filename list: selection, ordering and
-    refusals are the shared axis-input layer's, driven with this axis's key.
+    refusals are the shared axis-input layer's, driven with this axis's own contract. A same-settings
+    recording sitting in another folder is eligible (:func:`level_groups`) but is not one of this
+    axis's requested levels, so it does not redefine the committed ladder on its own.
     """
     path = Path(manifest_path)
-    order = lambda row: _period_us_of(row, path)
     return grid.select_axis_rows(
-        path, axis=AXIS, ladder_label="PRF", order_key=order, order_label="PRF period"
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _period_us_of(row, path),
+        order_label="PRF period",
+    )
+
+
+def level_groups(manifest_path: Path) -> tuple[grid.LevelGroup, ...]:
+    """Every eligible ``prf`` level with all its realizations, by period then path.
+
+    The 600 µs level of ``prf/600.BDD`` and ``res/1-8.BDD`` is one decoded level with two named
+    realizations, whichever folder each sits in (plan §8.3 step 2, R1).
+    """
+    path = Path(manifest_path)
+    return grid.level_groups(
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _period_us_of(row, path),
+        order_label="PRF period",
     )
 
 
@@ -519,7 +554,9 @@ def _build(
         manifest_path=Path(manifest_path).as_posix(), manifest_sha256=manifest_sha256,
         envelope=envelope,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
+        eligibility=ELIGIBILITY,
         inputs=tuple(entries),
+        groups=level_groups(manifest_path),
         common={
             "nominal_rpm": wp1.NOMINAL_RPM, "revolution_s": wp1.NOMINAL_REVOLUTION_S,
             "revolutions": revolutions, "window_s": window_s, "levels": len(levels),

@@ -4,7 +4,14 @@ The committed sweep holds a 13-point resolution ladder: one base-state recording
 0.247 mm (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates), over the same ~100 mm
 window (plan §2). This module answers the plan's question — *does 0.247 mm add information over
 0.617 mm, and how coarse can a measured pitch go before structure is lost* — from the ``res``
-rows of the WP0 manifest, never a filename list (plan §4 WP2 gate). One build produces:
+rows of the WP0 manifest, never a filename list (plan §4 WP2 gate). The recordings are selected by
+their decoded **scientific fingerprint**: :data:`ELIGIBILITY` names the pitch as the only setting this
+axis may move, so every recording that shares the rest of the fingerprint - including
+`prf/600.BDD`, which sits under another folder - is eligible and realizes the level its own decoded
+pitch names, with the two 1.850 mm recordings recorded as two named realizations of one level
+(plan §8.3 step 2, R1/R4). The committed ladder still holds the levels this axis itself requested;
+the setting-based rebuild of §8.3 step 5 renders the realizations into the artefacts. One build
+produces:
 
 - the **common views** — the largest whole number of nominal 500-RPM revolutions (0.12 s) fitting
   every recording, and the intersection of the decoded depth ranges (plan §3.1, §3.2);
@@ -41,9 +48,12 @@ from pathlib import Path
 import numpy as np
 from pydantic import model_validator
 
+from udv_echo_process.analysis import _native_grid as grid
 from udv_echo_process.analysis._native_grid import (
     CORRELATION_FLOOR,
+    AxisEligibility,
     EnvelopeBinding,
+    LevelGroup,
     LevelMetrics,
     NativeGridError,
     align_on_knots,
@@ -82,6 +92,14 @@ PAIRS_NAME = "resolution-pairs.csv"
 PROVENANCE_NAME = "resolution-ladder.provenance.json"
 FIGURES_DIRNAME = "figures"
 FIGURE_NAME = "resolution-ladder.png"
+
+#: The axis's setting-based contract (plan §8.3 step 2, R1/R4): the pitch is the only decoded
+#: setting this ladder may move, so every recording sharing the rest of the fingerprint - whatever
+#: folder its row sits in - is eligible, and the two 1.850 mm recordings are two realizations of one
+#: level rather than a duplicate key.
+ELIGIBILITY = AxisEligibility(
+    axis=AXIS, ladder_label="resolution", varied=("resolution_mm",)
+)
 
 #: The committed WP1 artefact the decision threshold is read from.
 ENVELOPE_NAME = "reference-repeat.provenance.json"
@@ -243,7 +261,13 @@ class PairRow(ValueModel):
 
 
 class ResolutionLadder(ValueModel):
-    """The WP2 resolution result: the levels, the two views and every pair."""
+    """The WP2 resolution result: the levels, the two views and every pair.
+
+    ``eligibility`` and ``groups`` are the *selection* the levels were drawn from (plan §8.3
+    step 2): the axis's fingerprint contract, and every eligible level with all its realizations,
+    including the reference recordings another folder requested. The written artefacts still carry
+    the requested levels; the setting-based rebuild of §8.3 step 5 renders the groups.
+    """
 
     dataset_root: str
     manifest_path: str
@@ -251,7 +275,9 @@ class ResolutionLadder(ValueModel):
     envelope: EnvelopeBinding
     axis: str = AXIS
     analysis_commit: str | None = None
+    eligibility: AxisEligibility = ELIGIBILITY
     inputs: tuple[LevelInput, ...]
+    groups: tuple[LevelGroup, ...] = ()
     common: CommonView
     focus_pair: tuple[str, str]
     levels: tuple[LevelRow, ...]
@@ -278,6 +304,12 @@ class ResolutionLadder(ValueModel):
             raise ValueError(f"focus pair {self.focus_pair} must be one of the pairs")
         if self.envelope.value_mm_s <= 0.0:
             raise ValueError("the repeatability envelope must be positive")
+        representatives = [group.primary_path for group in self.groups if group.in_ladder]
+        if representatives and representatives != paths:
+            raise ValueError(
+                "the ladder must be exactly the representatives of the in-ladder groups, in "
+                f"their order; got {representatives} beside {paths}"
+            )
         for entry in self.inputs:
             if not (
                 entry.depth_min_mm <= self.common.support_min_mm
@@ -316,17 +348,37 @@ def _row_pitch(row: Mapping[str, str], manifest_path: Path) -> float:
     return pitch
 
 
+def _order_key(manifest_path: Path):
+    """This axis's ordering key: the row's decoded pitch, bound to the manifest path.
+    """
+    return lambda row: _row_pitch(row, manifest_path)
+
+
 def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
-    """Return every ``res`` manifest row, ordered by pitch and then by path.
+    """Return the representative row of every ``res`` level the axis itself requested, by pitch.
 
     The ladder is bound to the WP0 manifest rather than to a hand-maintained filename list: the
     selection, the ordering and the refusals are the shared axis-input layer's
-    (:func:`_native_grid.select_axis_rows`), driven here with this axis's ``resolution_mm`` key.
+    (:func:`_native_grid.select_axis_rows`), driven here with this axis's own contract. A recording
+    of the same decoded settings sitting in another folder is *eligible*
+    (:func:`level_groups`) but is not one of this axis's requested levels, so it does not redefine
+    the committed ladder on its own.
     """
     path = Path(manifest_path)
     return select_axis_rows(
-        path, axis=AXIS, ladder_label="resolution",
-        order_key=lambda row: _row_pitch(row, path), order_label="pitch",
+        path, eligibility=ELIGIBILITY, order_key=_order_key(path), order_label="pitch"
+    )
+
+
+def level_groups(manifest_path: Path) -> tuple[LevelGroup, ...]:
+    """Every eligible ``res`` level with all its realizations, by pitch then path.
+
+    The level of the plan's two reference recordings is one 1.850 mm level with ``res/1-8.BDD`` and
+    ``prf/600.BDD`` as two named realizations, whichever folder each sits in (plan §8.3 step 2, R1).
+    """
+    path = Path(manifest_path)
+    return grid.level_groups(
+        path, eligibility=ELIGIBILITY, order_key=_order_key(path), order_label="pitch"
     )
 
 
@@ -516,6 +568,7 @@ def _build(
 ) -> tuple[ResolutionLadder, dict[str, tuple[np.ndarray, np.ndarray]]]:
     """Build the ladder and return it beside each level's native mean profile."""
     rows = select_level_rows(manifest_path)
+    groups = level_groups(manifest_path)
     manifest_sha256 = f"sha256:{sha256_file(Path(manifest_path))}"
     envelope = read_envelope(Path(envelope_path), manifest_sha256)
     root = Path(dataset_root)
@@ -559,7 +612,9 @@ def _build(
         manifest_sha256=manifest_sha256,
         envelope=envelope,
         analysis_commit=commit,
+        eligibility=ELIGIBILITY,
         inputs=tuple(entry for entry, *_ in decoded),
+        groups=groups,
         common=CommonView(
             nominal_rpm=NOMINAL_RPM,
             revolution_s=NOMINAL_REVOLUTION_S,

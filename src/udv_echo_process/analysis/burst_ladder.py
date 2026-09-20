@@ -17,7 +17,13 @@ knot alignment, the committed WP1 envelope and temporal-floor readers, the knees
 belong to the shared layer (:mod:`udv_echo_process.analysis._native_grid`), which this axis
 drives with its own axis name, key cell, settings and columns — and which the resolution, PRF and
 TGC/power axes drive with theirs, so no axis can drift from the inventory contract its siblings
-honour. What is left here is what is burst-specific: the columns, the rows, the findings, the
+honour. Selection is by decoded **scientific fingerprint** (:data:`ELIGIBILITY`), never by folder
+(plan §8.3 step 2, R1/R4): the cycle count is the only setting this axis may move, so every
+recording sharing the rest of the fingerprint is eligible, and the dataset's two reference
+recordings — both burst 10, one of them under the ``res`` folder — are two named realizations of
+that one level. No ``burst_len`` row requests burst 10, so the committed ladder does not hold it
+yet and the level is recorded as eligible evidence for the setting-based rebuild of §8.3 step 5.
+What is left here is what is burst-specific: the columns, the rows, the findings, the
 caption and the panels.
 
 Only the decoded burst length may differ across the files, so a coupled ladder is refused rather
@@ -69,6 +75,15 @@ COUPLED_SETTINGS: tuple[str, ...] = (
 VERIFIED_CELLS: tuple[str, ...] = (
     "profiles", "gates", "duration_s", "resolution_mm", "prf_period_us", "burst_length",
     "emissions_per_profile", "emit_power", "sensitivity", "tgc_mode",
+)
+
+#: The axis's setting-based contract (plan §8.3 step 2, R1/R4): the burst length is the only decoded
+#: setting this ladder may move, so every recording sharing the rest of the fingerprint - whatever
+#: folder its row sits in - is eligible. The dataset's two reference recordings share burst 10, a
+#: level no ``burst_len`` row requests, and are recorded as its two realizations for the
+#: setting-based rebuild of §8.3 step 5.
+ELIGIBILITY = grid.AxisEligibility(
+    axis=AXIS, ladder_label="burst", varied=("burst_length",)
 )
 
 #: Column order of the two tables: the dict rows of :class:`BurstLadder` carry exactly these
@@ -124,7 +139,9 @@ class BurstLadder(ValueModel):
     envelope: grid.EnvelopeBinding
     axis: str = AXIS
     analysis_commit: str | None = None
+    eligibility: grid.AxisEligibility = ELIGIBILITY
     inputs: tuple[LevelInput, ...]
+    groups: tuple[grid.LevelGroup, ...] = ()
     common: dict[str, object]
     temporal: dict[str, object]
     focus_pair: tuple[str, str]
@@ -167,15 +184,32 @@ def _cycles_of(row: Mapping[str, str], manifest_path: Path) -> int:
 
 
 def select_level_rows(manifest_path: Path) -> tuple[dict[str, str], ...]:
-    """Every ``burst_len`` manifest row, ordered by decoded cycle count then path.
+    """The representative row of every ``burst_len`` level the axis itself requested, by cycles.
 
     The ladder is bound to the WP0 manifest, never to a filename list: the selection, the ordering
-    and the refusals are the shared axis-input layer's, driven with this axis's key.
+    and the refusals are the shared axis-input layer's, driven with this axis's own contract. A
+    same-settings recording sitting in another folder is eligible (:func:`level_groups`) but is not
+    one of this axis's requested levels, so it does not redefine the committed ladder on its own.
     """
     path = Path(manifest_path)
     return grid.select_axis_rows(
-        path, axis=AXIS, ladder_label="burst",
-        order_key=lambda row: _cycles_of(row, path), order_label="cycle count",
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _cycles_of(row, path),
+        order_label="cycle count",
+    )
+
+
+def level_groups(manifest_path: Path) -> tuple[grid.LevelGroup, ...]:
+    """Every eligible ``burst`` level with all its realizations, by cycle count then path.
+
+    The dataset's two reference recordings share burst 10 and are two named realizations of that one
+    level, whichever folder each sits in (plan §8.3 step 2, R1). No ``burst_len`` row requests it, so
+    it is eligible and recorded but not yet one of the ladder's levels: the setting-based rebuild of
+    §8.3 step 5 joins it and renders the realizations into the provenance.
+    """
+    path = Path(manifest_path)
+    return grid.level_groups(
+        path, eligibility=ELIGIBILITY, order_key=lambda row: _cycles_of(row, path),
+        order_label="cycle count",
     )
 
 
@@ -374,7 +408,9 @@ def _build(
         manifest_path=Path(manifest_path).as_posix(), manifest_sha256=manifest_sha256,
         envelope=envelope,
         analysis_commit=analysis_commit if analysis_commit is not None else current_revision(),
+        eligibility=ELIGIBILITY,
         inputs=tuple(entries),
+        groups=level_groups(manifest_path),
         common={
             "nominal_rpm": wp1.NOMINAL_RPM, "revolution_s": wp1.NOMINAL_REVOLUTION_S,
             "revolutions": revolutions, "window_s": window_s,

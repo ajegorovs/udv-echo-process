@@ -38,6 +38,7 @@ from udv_echo_process.analysis.burst_ladder import (
     BurstLadderError,
     build_burst_ladder,
     largest_step,
+    level_groups,
     select_level_rows,
 )
 
@@ -167,7 +168,6 @@ def test_select_level_rows_refuses_a_bad_inventory(tmp_path) -> None:
         select_level_rows(duplicated)
     for relative, cell, pattern in (
         ("burst_len/16.BDD", "", "integer cycle count"),
-        ("burst_len/14.BDD", "12", "one level per cycle count"),
         ("burst_len/20.BDD", "0", "<= 0"),
     ):
         broken = _manifest(
@@ -178,6 +178,71 @@ def test_select_level_rows_refuses_a_bad_inventory(tmp_path) -> None:
         )
         with pytest.raises(BurstLadderError, match=pattern):
             select_level_rows(broken)
+    # A requested row that moved a setting other than the cycle count is refused by name.
+    coupled = _manifest(tmp_path, lambda rows: _replace(rows, "burst_len/12.BDD", emit_power="high"))
+    with pytest.raises(BurstLadderError, match="does not match the decoded"):
+        select_level_rows(coupled)
+
+
+def test_two_recordings_at_one_decoded_cycle_count_are_two_realizations_not_a_refusal(
+    tmp_path,
+) -> None:
+    """R1: the old duplicate-key refusal was the defect - one decoded level, two named files."""
+    manifest = _manifest(tmp_path, lambda rows: _replace(rows, "burst_len/14.BDD", burst_length="12"))
+    groups = level_groups(manifest)
+    at = next(group for group in groups if group.key == ("12",))
+    assert at.realization_paths == ("burst_len/12.BDD", "burst_len/14.BDD")
+    assert at.primary_path == "burst_len/12.BDD"
+    assert at.in_ladder is True
+    assert at.requested_paths == at.realization_paths
+    assert len(select_level_rows(manifest)) == len(CYCLES) - 1
+
+
+def test_the_reference_level_another_folder_realizes_is_recorded_for_the_rebuild(
+    tmp_path,
+) -> None:
+    """R1: burst 10 is one eligible level realized by both reference recordings, never dropped."""
+    groups = level_groups(MANIFEST)
+    anchor = next(group for group in groups if group.key == (ANCHOR_CYCLES,))
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert anchor.requested_paths == ()
+    assert anchor.in_ladder is False  # no burst_len row requests it: the §8.3 step 5 rebuild joins it
+    assert [group.key for group in groups if not group.in_ladder] == [(ANCHOR_CYCLES,)]
+    assert [int(row["burst_length"]) for row in select_level_rows(MANIFEST)] == list(CYCLES)
+    # A requested row at that same decoded level joins the ladder, and the level is one level with
+    # two names - the folder stopped mattering the moment the decoded cycle count was read.
+    def relabel(rows):
+        return [
+            {**row, "axis": AXIS} if row["relative_path"] == ANCHOR_PATHS[1] else row
+            for row in rows
+        ]
+
+    relabelled = level_groups(_manifest(tmp_path, relabel))
+    joined = next(group for group in relabelled if group.key == (ANCHOR_CYCLES,))
+    assert joined.in_ladder is True
+    assert joined.primary_path == ANCHOR_PATHS[1]
+    assert joined.realization_paths == ANCHOR_PATHS
+    assert len(select_level_rows(_manifest(tmp_path, relabel))) == len(CYCLES) + 1
+
+
+def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder) -> None:
+    """Plan §8.3 step 2: the selection is recorded on the model; §8.3 step 5 renders it."""
+    from udv_echo_process.analysis.burst_ladder import ELIGIBILITY, provenance_document
+
+    assert ladder.eligibility == ELIGIBILITY
+    assert [group.key for group in ladder.groups if group.in_ladder] == [
+        (str(row["burst_length"]),) for row in select_level_rows(MANIFEST)
+    ]
+    assert [row["relative_path"] for row in ladder.levels] == [
+        row["relative_path"] for row in select_level_rows(MANIFEST)
+    ]
+    # burst 10 is eligible evidence the committed ladder does not yet hold.
+    assert [group.key for group in ladder.groups if not group.in_ladder] == [(ANCHOR_CYCLES,)]
+    assert all(
+        group.key_display == f"{group.key_fields[0]}={group.key[0]}" for group in ladder.groups
+    )
+    assert [group.ladder_label for group in ladder.groups] == ["burst"] * len(ladder.groups)
+    assert "realizations" not in json.dumps(provenance_document(ladder))
 
 
 def test_build_refuses_stale_hash_wrong_grid_coupled_ladder_or_unbound_envelope(
@@ -643,3 +708,102 @@ def test_cli_writes_the_four_artefacts_and_the_committed_ones_regenerate(
         )
     assert absent.value.code == 1
     assert "cannot read the manifest" in capsys.readouterr().err
+
+
+# ── slice 6: the scientific fingerprint and the setting-based contract (R1, R4) ──
+
+#: The decoded configuration cells the WP0 inventory publishes that the old ``DECODED_CELLS``
+#: omitted and a complete fingerprint must carry (R4).
+FINGERPRINT_OMISSIONS = (
+    "emit_freq_khz",
+    "doppler_angle_deg",
+    "tgc_start_db",
+    "tgc_end_db",
+    "sampling_volume_index",
+    "skipped_profiles",
+)
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in: the
+#: dataset's one repeated setting, at burst length 10.
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+ANCHOR_CYCLES = "10"
+
+
+def _perturbed_cell(field: str, current: str) -> str:
+    """A value of one cell that is not the committed one and is still a decoded setting."""
+    if field in ("emit_power", "sensitivity", "tgc_mode"):
+        return "changed"
+    return f"{float(current) + 1.0:g}"
+
+
+def _cell_of(relative: str, field: str) -> str:
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        return next(r for r in csv.DictReader(handle) if r["relative_path"] == relative)[field]
+
+
+def test_the_fingerprint_covers_the_decoded_configuration_and_leaves_the_extent_out() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    for cell in FINGERPRINT_OMISSIONS:
+        assert cell in grid.FINGERPRINT_FIELDS, cell
+        assert cell in grid.DECODED_CELLS, cell
+    assert grid.DERIVED_FINGERPRINT_CELLS == ("prf_hz", "velo_max_ms")
+    for cell in ("profiles", "duration_s"):
+        assert cell in grid.OBSERVATION_EXTENT_CELLS
+        assert cell not in grid.FINGERPRINT_FIELDS
+    assert not set(grid.OBSERVATION_EXTENT_CELLS) & set(grid.FINGERPRINT_FIELDS)
+
+
+def test_the_reader_publishes_every_fingerprint_cell_the_manifest_records() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        row = next(r for r in csv.DictReader(handle) if r["relative_path"] == ANCHOR_PATHS[0])
+    decoded = grid.read_decoded_level(
+        DATA_ROOT, row, cells=grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS
+    )
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        assert grid.canonical_cell(row[field]) == grid.canonical_cell(
+            grid.format_cell(decoded.observed[field])
+        ), field
+
+
+def test_the_burst_contract_holds_every_fingerprint_field_but_the_cycle_count() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.burst_ladder import ELIGIBILITY
+
+    assert (ELIGIBILITY.axis, ELIGIBILITY.ladder_label) == (AXIS, "burst")
+    assert ELIGIBILITY.varied == ("burst_length",)
+    assert ELIGIBILITY.derived == ()
+    every = set(grid.FINGERPRINT_FIELDS) | set(grid.DERIVED_FINGERPRINT_CELLS)
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    assert set(ELIGIBILITY.identity_fields) == every - allowed
+    for field in ("prf_period_us", "resolution_mm", "emit_power", "tgc_start_db"):
+        assert field in ELIGIBILITY.identity_fields
+
+
+def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint(
+    tmp_path,
+) -> None:
+    """R4/R1: perturbing each field either changes identity or is allowlisted for this axis."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.burst_ladder import ELIGIBILITY, level_groups
+
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    base = next(g for g in level_groups(MANIFEST) if g.key == (ANCHOR_CYCLES,))
+    assert base.realization_paths == ANCHOR_PATHS
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        value = _perturbed_cell(field, _cell_of(ANCHOR_PATHS[1], field))
+        manifest = _manifest(
+            tmp_path,
+            lambda rows, f=field, v=value: _replace(rows, ANCHOR_PATHS[1], **{f: v}),
+        )
+        groups = level_groups(manifest)
+        at = next(g for g in groups if g.key == (ANCHOR_CYCLES,))
+        if field in allowed:
+            # Allowlisted: the cycle count moves the recording to its own level; it stays eligible.
+            assert field == "burst_length", field
+            assert ANCHOR_PATHS[1] in {
+                path for group in groups for path in group.realization_paths
+            }, field
+        else:
+            assert at.realization_paths == (ANCHOR_PATHS[0],), field

@@ -184,7 +184,6 @@ def test_select_level_rows_refuses_a_bad_inventory(tmp_path) -> None:
         ))
     for relative, cell, pattern in (
         (PATHS[0], "", "not a pulse-repetition period"), (PATHS[1], "0", "<= 0"),
-        (PATHS[1], "600.0", "one level per PRF period"),
     ):
         broken = _manifest(
             tmp_path,
@@ -192,6 +191,62 @@ def test_select_level_rows_refuses_a_bad_inventory(tmp_path) -> None:
         )
         with pytest.raises(PrfLadderError, match=pattern):
             select_level_rows(broken)
+    # A requested row that moved a setting other than the period is refused by name.
+    coupled = _manifest(
+        tmp_path, lambda rows: _replace(rows, PATHS[2], burst_length="12")
+    )
+    with pytest.raises(PrfLadderError, match="does not match the decoded"):
+        select_level_rows(coupled)
+
+
+def test_two_recordings_at_one_decoded_period_are_two_realizations_not_a_refusal(
+    tmp_path,
+) -> None:
+    """R1: the old duplicate-key refusal was the defect - one decoded level, two named files."""
+    from udv_echo_process.analysis.prf_ladder import level_groups
+
+    manifest = _manifest(tmp_path, lambda rows: _replace(rows, PATHS[1], prf_period_us="600.0"))
+    groups = level_groups(manifest)
+    at = next(group for group in groups if group.key == ("600",))
+    # Manifest order, then the axis's own requested realization: the level of the plan's 600 µs
+    # setting is one level with three named recordings, never a refusal.
+    assert at.realization_paths == (PATHS[1], PATHS[2], ANCHOR_PATHS[1])
+    assert at.primary_path == PATHS[1]
+    assert at.in_ladder is True
+    assert at.requested_paths == (PATHS[1], PATHS[2])
+    assert [row["relative_path"] for row in select_level_rows(manifest)] == [
+        PATHS[0], PATHS[1], PATHS[3], PATHS[4]
+    ]
+
+
+def test_a_same_settings_recording_in_another_folder_is_not_excluded(tmp_path) -> None:
+    """R1: the folder a row sits in cannot decide whether it realizes a level."""
+    from udv_echo_process.analysis.prf_ladder import level_groups
+
+    groups = level_groups(MANIFEST)
+    anchor = next(group for group in groups if group.key == ("600",))
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert anchor.primary_path == ANCHOR_PATHS[0]  # the axis's own requested realization
+    assert anchor.requested_paths == (ANCHOR_PATHS[0],)
+    assert [group.key for group in groups if not group.in_ladder] == []
+    assert all(
+        len(group.realizations) == 1 for group in groups if group.key != ("600",)
+    )
+    # Relabelling the reference recording under another folder cannot exclude it either.
+    def relabel(rows):
+        return [
+            {**row, "axis": "tgc"} if row["relative_path"] == ANCHOR_PATHS[1] else row
+            for row in rows
+        ]
+
+    relabelled = next(
+        group
+        for group in level_groups(_manifest(tmp_path, relabel))
+        if group.key == ("600",)
+    )
+    assert relabelled.realization_paths == ANCHOR_PATHS
+    assert relabelled.primary_path == ANCHOR_PATHS[0]
+    assert [float(row["prf_period_us"]) for row in select_level_rows(MANIFEST)] == list(PERIODS)
 
 
 def test_build_refuses_stale_hash_derived_cells_coupling_or_unbound_envelope(tmp_path) -> None:
@@ -644,3 +699,128 @@ def test_cli_refuses_a_stale_unscaled_or_absent_inventory_with_named_reasons(tmp
         )
     assert absent.value.code == 1
     assert "cannot read the manifest" in capsys.readouterr().err
+
+
+# ── slice 6: the scientific fingerprint and the setting-based contract (R1, R4) ──────
+
+#: The decoded configuration cells the WP0 inventory publishes that the old ``DECODED_CELLS``
+#: omitted and a complete fingerprint must carry (R4).
+FINGERPRINT_OMISSIONS = (
+    "emit_freq_khz",
+    "doppler_angle_deg",
+    "tgc_start_db",
+    "tgc_end_db",
+    "sampling_volume_index",
+    "skipped_profiles",
+)
+#: The two recordings that carry one decoded fingerprint whatever folder they sit in.
+ANCHOR_PATHS = ("prf/600.BDD", "res/1-8.BDD")
+
+
+def _perturbed_cell(field: str, current: str) -> str:
+    """A value of one cell that is not the committed one and is still a decoded setting."""
+    if field in ("emit_power", "sensitivity", "tgc_mode"):
+        return "changed"
+    return f"{float(current) + 1.0:g}"
+
+
+def _cell_of(relative: str, field: str) -> str:
+    return next(r for r in _rows() if r["relative_path"] == relative)[field]
+
+
+def _rows() -> list[dict[str, str]]:
+    with MANIFEST.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def test_the_fingerprint_covers_the_decoded_configuration_and_leaves_the_extent_out() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    for cell in FINGERPRINT_OMISSIONS:
+        assert cell in grid.FINGERPRINT_FIELDS, cell
+        assert cell in grid.DECODED_CELLS, cell
+    assert grid.DERIVED_FINGERPRINT_CELLS == ("prf_hz", "velo_max_ms")
+    for cell in ("profiles", "duration_s"):
+        assert cell in grid.OBSERVATION_EXTENT_CELLS
+        assert cell not in grid.FINGERPRINT_FIELDS
+    assert not set(grid.OBSERVATION_EXTENT_CELLS) & set(grid.FINGERPRINT_FIELDS)
+
+
+def test_the_reader_publishes_every_fingerprint_cell_the_manifest_records() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    row = next(r for r in _rows() if r["relative_path"] == ANCHOR_PATHS[1])
+    decoded = grid.read_decoded_level(
+        DATA_ROOT, row, cells=grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS
+    )
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        assert grid.canonical_cell(row[field]) == grid.canonical_cell(
+            grid.format_cell(decoded.observed[field])
+        ), field
+
+
+def test_the_prf_contract_holds_every_fingerprint_field_but_the_period_and_its_scale() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.prf_ladder import ELIGIBILITY
+
+    assert (ELIGIBILITY.axis, ELIGIBILITY.ladder_label) == (AXIS, "PRF")
+    assert ELIGIBILITY.varied == ("prf_period_us",)
+    # Vmax = c / (4 f0 T) and the PRF in Hz follow the period: they are derived, not settings.
+    assert ELIGIBILITY.derived == ("prf_hz", "velo_max_ms")
+    every = set(grid.FINGERPRINT_FIELDS) | set(grid.DERIVED_FINGERPRINT_CELLS)
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    assert set(ELIGIBILITY.identity_fields) == every - allowed
+    assert "resolution_mm" in ELIGIBILITY.identity_fields
+    assert "emit_freq_khz" in ELIGIBILITY.identity_fields
+
+
+def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint(
+    tmp_path,
+) -> None:
+    """R4/R1: perturbing each field either changes identity or is allowlisted for this axis."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.prf_ladder import ELIGIBILITY, level_groups
+
+    allowed = set(ELIGIBILITY.varied) | set(ELIGIBILITY.derived)
+    base = next(g for g in level_groups(MANIFEST) if g.key == ("600",))
+    assert base.realization_paths == ANCHOR_PATHS
+    for field in grid.FINGERPRINT_FIELDS + grid.DERIVED_FINGERPRINT_CELLS:
+        value = _perturbed_cell(field, _cell_of(ANCHOR_PATHS[1], field))
+        manifest = _manifest(
+            tmp_path,
+            lambda rows, f=field, v=value: _replace(rows, ANCHOR_PATHS[1], **{f: v}),
+        )
+        groups = level_groups(manifest)
+        at = next(g for g in groups if g.key == ("600",))
+        if field in allowed:
+            # Allowlisted: the recording keeps realizing 600 us (derived cells) or moves to the
+            # level its own key names (the period). Either way it stays eligible.
+            assert ANCHOR_PATHS[1] in {
+                path for group in groups for path in group.realization_paths
+            }, field
+        else:
+            assert at.realization_paths == (ANCHOR_PATHS[0],), field
+
+
+def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder) -> None:
+    """Plan §8.3 step 2: the selection is recorded on the model; §8.3 step 5 renders it."""
+    from udv_echo_process.analysis.prf_ladder import ELIGIBILITY, provenance_document
+
+    assert ladder.eligibility == ELIGIBILITY
+    assert [
+        tuple(float(value) for value in group.key) for group in ladder.groups if group.in_ladder
+    ] == [(float(row["prf_period_us"]),) for row in select_level_rows(MANIFEST)]
+    assert [row["relative_path"] for row in ladder.levels] == [
+        row["relative_path"] for row in select_level_rows(MANIFEST)
+    ]
+    anchor = next(group for group in ladder.groups if group.key == ("600",))
+    assert anchor.key_display == "prf_period_us=600"
+    assert all(
+        group.key_display == f"{group.key_fields[0]}={group.key[0]}" for group in ladder.groups
+    )
+    assert anchor.realization_paths == ANCHOR_PATHS
+    assert anchor.realizations[1].requested_axis == "res"
+    assert anchor.realizations[1].fingerprint["velo_max_ms"] == (
+        anchor.realizations[0].fingerprint["velo_max_ms"]
+    )
+    assert "realizations" not in json.dumps(provenance_document(ladder))
