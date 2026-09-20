@@ -37,6 +37,7 @@ import io
 import itertools
 import json
 import math
+import re
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -105,6 +106,30 @@ class NativeGridError(ValueError):
     recording, a committed WP1 artefact or a pair the axis cannot bind. The command turns it into
     a non-zero exit naming the reason, never a traceback.
     """
+
+
+SINGULAR_REALIZATION_CLAIMS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"\bone recording per (?:setting|level)\b", re.IGNORECASE),
+    re.compile(r"\beach level is one recording\b", re.IGNORECASE),
+    re.compile(r"\bno level is replicated\b", re.IGNORECASE),
+)
+
+
+def validate_realization_prose(
+    texts: Mapping[str, str],
+    *,
+    multi_realization_levels: Sequence[str],
+) -> None:
+    """Refuse singular-coverage prose when the model has a duplicated level."""
+    if not multi_realization_levels:
+        return
+    for label, text in texts.items():
+        for pattern in SINGULAR_REALIZATION_CLAIMS:
+            match = pattern.search(text)
+            if match is not None:
+                raise NativeGridError(
+                    f"{label} contradicts multi-realization levels: {match.group(0)!r}"
+                )
 
 
 class DecodedLevel(NamedTuple):

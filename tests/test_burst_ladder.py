@@ -951,6 +951,33 @@ def test_the_burst_contract_holds_every_fingerprint_field_but_the_cycle_count() 
         assert field in ELIGIBILITY.identity_fields
 
 
+@pytest.mark.parametrize(
+    "claim",
+    (
+        "one recording per setting",
+        "each level is one recording",
+        "no level is replicated",
+    ),
+)
+def test_grouped_realization_prose_rejects_singular_coverage_claims(claim: str) -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    with pytest.raises(grid.NativeGridError, match="limitations"):
+        grid.validate_realization_prose(
+            {"limitations": claim},
+            multi_realization_levels=("burst_length=10",),
+        )
+
+
+def test_singular_coverage_claims_are_allowed_without_a_duplicated_level() -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+
+    grid.validate_realization_prose(
+        {"limitations": "No level is replicated"},
+        multi_realization_levels=(),
+    )
+
+
 def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint(
     tmp_path,
 ) -> None:
