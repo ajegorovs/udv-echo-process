@@ -527,3 +527,16 @@ its focused tests, and must not add writers. Final rebinding remains coordinator
 Use one commit for this ruling, one atomic tested resolution source/test/artifact commit, one decision-layer
 schedule/validator commit, and one final rebinding commit. The reviewed head `8ef9b63` remains the comparison
 boundary; no implementation belongs in the ruling commit.
+
+### 9.7 As landed after the review of `8ef9b63`
+
+| Work | Commit | Result |
+|---|---|---|
+| residual R2 resolution semantics | `f103d8b` | source and provenance now use observation-only screening-reference wording; focused regressions cover generated and hand-written consumers |
+| executable WP4 schedule and validator | `99e86c1` | D1 is `high` and blocked; five scientific jobs, fifteen block-local recordings and four separate common-reference jobs derive nine executable jobs and 26 first-pass recordings |
+| adversarial findings and final rebinding | `626f165` | pins block identity, run-wide values, anchors, non-D1 sensitivity and D1's block; corrects README prose; refreshes the provenance and hand-written hashes |
+
+No acquisition or writer change is part of these commits. At `626f165`, the full suite reports **2210 passed,
+22 skipped**; Ruff, the screening checker, decision-layer validator and baseline `--check-final` all exit zero.
+The implementation items in §9.4 are complete; the PR remains a draft only until the final narrow review is
+requested.
