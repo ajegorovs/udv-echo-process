@@ -22,6 +22,7 @@ import json
 import math
 import os
 import re
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -1004,3 +1005,89 @@ def test_every_fingerprint_field_is_allowlisted_or_changes_the_row_s_fingerprint
             }, field
         else:
             assert at.realization_paths == (ANCHOR_PATHS[0],), field
+
+
+# ── slice 7: the grouped-realization prose (the shared validator, wired) ──
+
+#: The decoded key of the one level of this dataset that more than one recording realizes.
+BURST_MULTI_REALIZATION_KEYS = ("burst_length=10",)
+
+
+def _emitted_prose(document: Mapping[str, object]) -> dict[str, str]:
+    """Every prose string the provenance artefact emits, by label: definitions, findings, caption."""
+    texts: dict[str, str] = {}
+
+    def walk(value: object, label: str) -> None:
+        if isinstance(value, Mapping):
+            for key, inner in value.items():
+                walk(inner, f"{label}.{key}")
+        elif isinstance(value, str):
+            texts[label] = value
+        elif isinstance(value, (list, tuple)):
+            for index, inner in enumerate(value):
+                walk(inner, f"{label}[{index}]")
+
+    walk(document["definitions"], "definitions")
+    walk(document["findings"], "findings")
+    texts["figure.caption"] = str(document["figure"]["caption"])
+    return texts
+
+
+def test_the_emitted_prose_passes_the_shared_realization_validator(tmp_path) -> None:
+    """Every definition, findings string and the caption survives the shared grouped-realization check."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.burst_ladder import PROVENANCE_NAME
+
+    _write(tmp_path)
+    document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    texts = _emitted_prose(document)
+    assert "definitions.realizations" in texts and "findings.limitations[0]" in texts
+    assert texts["figure.caption"] == document["figure"]["caption"]
+    grid.validate_realization_prose(
+        texts, multi_realization_levels=BURST_MULTI_REALIZATION_KEYS
+    )
+
+
+def test_the_prose_states_the_realization_counts_the_selection_found(tmp_path) -> None:
+    """Most burst levels have one recording; burst 10 has two realizations; one duplicated setting
+    is not replicated coverage of the axis."""
+    from udv_echo_process.analysis.burst_ladder import PROVENANCE_NAME
+
+    _write(tmp_path)
+    document = json.loads((tmp_path / "a" / PROVENANCE_NAME).read_text(encoding="utf-8"))
+    limitations = " ".join(document["findings"]["limitations"])
+    assert "No level is replicated" not in limitations
+    assert not re.search(r"one recording per (?:setting|level)", limitations, re.IGNORECASE)
+    assert "Most burst levels have one recording" in limitations
+    assert ANCHOR_CYCLES in limitations and "two realizations" in limitations
+    assert "not replicated coverage of the axis" in limitations
+    assert "drift" in limitations and "replicate" in limitations
+
+
+def test_the_module_prose_does_not_describe_the_ladder_as_one_recording_per_cycle_count() -> None:
+    """The sweep requested one recording at each cycle count; the ladder also holds the anchor."""
+    from udv_echo_process.analysis import burst_ladder as module
+
+    doc = " ".join((module.__doc__ or "").split())
+    assert "one recording per" not in doc.lower()
+    assert "burst 10" in doc and "two realizations" in doc and "13 decoded" in doc
+    assert "not replicated coverage of the axis" in doc
+
+
+def test_singular_coverage_prose_stops_the_build_by_name(ladder, monkeypatch) -> None:
+    """The shared check is wired to what this axis emits: definitions, findings and the caption."""
+    from udv_echo_process.analysis import burst_ladder as module
+
+    monkeypatch.setitem(module.DEFINITIONS, "replicates", "one recording per level")
+    with pytest.raises(module.BurstLadderError, match=r"definitions\.replicates"):
+        module.provenance_document(ladder)
+    monkeypatch.undo()
+
+    monkeypatch.setattr(module, "_FOCUS_VERDICT", "no level is replicated in this ladder")
+    with pytest.raises(module.BurstLadderError, match=r"findings\.focus_18_vs_20\.statement"):
+        module.provenance_document(ladder)
+    monkeypatch.undo()
+
+    monkeypatch.setattr(module, "REPLICATE_ROLE", "no level is replicated")
+    with pytest.raises(module.BurstLadderError, match="figure.caption"):
+        module.figure_caption(ladder)

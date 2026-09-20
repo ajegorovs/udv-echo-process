@@ -1049,3 +1049,89 @@ def test_the_ladder_carries_the_setting_based_selection_beside_its_levels(ladder
     assert level["mean_mm_s"] != pytest.approx(members[0]["mean_mm_s"])
     assert level["mean_mm_s"] != pytest.approx(members[1]["mean_mm_s"])
     assert len(ladder.pairs) == len(ladder.groups) * (len(ladder.groups) - 1) // 2 == 10
+
+
+# ── slice 7: the grouped-realization prose contract (R1, plan §8.3 step 5) ─────────────
+
+
+def _prose_texts(model) -> dict[str, str]:
+    """The reviewer-visible prose the shared grouped-realization contract checks.
+
+    Definitions, every finding statement including the limitations, and the figure caption: the
+    three places a singular-coverage claim could survive a regeneration (plan §8.2 R1). Composed
+    from the emitted document here, so the test does not borrow the module's own helper.
+    """
+    from udv_echo_process.analysis.prf_ladder import DEFINITIONS, provenance_document
+
+    document = provenance_document(model)
+    findings = document["findings"]
+    return {
+        "definitions": " ".join(DEFINITIONS.values()),
+        "findings": " ".join(
+            [
+                findings[key]["statement"]
+                for key in ("effect_gate", "velocity_headroom", "temporal_bandwidth",
+                            "focus_decision", "realizations")
+            ]
+            + list(findings["limitations"])
+        ),
+        "caption": document["figure"]["caption"],
+    }
+
+
+def test_the_grouped_realization_prose_never_claims_singular_coverage(ladder) -> None:
+    """R1: the 600 us level has two realizations, so no artefact may claim one recording per level."""
+    from udv_echo_process.analysis import _native_grid as grid
+
+    multi = [group.key_display for group in ladder.groups if len(group.realizations) > 1]
+    assert multi == ["prf_period_us=600"]
+    texts = _prose_texts(ladder)
+    for label, text in texts.items():
+        for pattern in grid.SINGULAR_REALIZATION_CLAIMS:
+            assert pattern.search(text) is None, (label, pattern.pattern)
+    # The shared validator passes this ladder's own prose, and refuses a singular claim.
+    grid.validate_realization_prose(texts, multi_realization_levels=multi)
+    with pytest.raises(grid.NativeGridError, match="findings"):
+        grid.validate_realization_prose(
+            {"findings": "No level is replicated."}, multi_realization_levels=multi
+        )
+    grid.validate_realization_prose(
+        {"findings": "No level is replicated."}, multi_realization_levels=()
+    )
+
+
+def test_each_affected_artefact_distinguishes_the_duplicated_setting(ladder) -> None:
+    """R1/§8.3 step 5: most levels are one recording; the single duplicated setting is named."""
+    for label, text in _prose_texts(ladder).items():
+        assert "single recording" in text, label
+        assert ANCHOR_PATHS[0] in text and ANCHOR_PATHS[1] in text, label
+        assert "not replicated coverage" in text, label
+
+
+def test_the_prf_module_source_carries_no_singular_realization_claim() -> None:
+    """The contract covers the source prose, not only the emitted artefacts (§8.4)."""
+    from udv_echo_process.analysis import _native_grid as grid
+
+    source = (ROOT / "src/udv_echo_process/analysis/prf_ladder.py").read_text(encoding="utf-8")
+    for pattern in grid.SINGULAR_REALIZATION_CLAIMS:
+        assert pattern.search(source) is None, pattern.pattern
+
+
+def test_the_ladder_refuses_source_prose_that_contradicts_the_grouping(monkeypatch) -> None:
+    """The build runs the shared contract over definitions, findings and the caption."""
+    from udv_echo_process.analysis import prf_ladder as module
+
+    def build():
+        return build_prf_ladder(
+            DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE, analysis_commit=COMMIT
+        )
+
+    build()  # the committed prose is accepted
+    with monkeypatch.context() as context:
+        context.setitem(module.DEFINITIONS, "replicates", "one recording per setting")
+        with pytest.raises(module.PrfLadderError, match="definitions"):
+            build()
+    with monkeypatch.context() as context:
+        context.setattr(module, "REPLICATE_ROLE", "each level is one recording")
+        with pytest.raises(module.PrfLadderError, match="caption"):
+            build()

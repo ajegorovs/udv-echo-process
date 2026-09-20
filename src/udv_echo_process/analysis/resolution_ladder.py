@@ -1,8 +1,10 @@
 """WP2, resolution axis — the measured pitch ladder against the sole-pair screening threshold.
 
-The committed sweep holds a 13-point resolution ladder: one base-state recording per gate pitch,
-0.247 mm (`res/0-2.BDD`, 365 gates) to 2.96 mm (`res/3-0.BDD`, 31 gates), over the same ~100 mm
-window (plan §2). This module answers the plan's question — *does 0.247 mm add information over
+The committed sweep holds a 13-point resolution ladder: 0.247 mm (`res/0-2.BDD`, 365 gates) to
+2.96 mm (`res/3-0.BDD`, 31 gates), over the same ~100 mm window (plan §2). Most of its levels are
+one base-state recording, and the shared 1.850 mm reference level is the dataset's one duplicated
+setting, carrying two named realizations: one repeated setting, not replicated coverage of this
+axis. This module answers the plan's question — *does 0.247 mm add information over
 0.617 mm, and how coarse can a measured pitch go before structure is lost* — from the ``res``
 rows of the WP0 manifest, never a filename list (plan §4 WP2 gate). The recordings are selected by
 their decoded **scientific fingerprint**: :data:`ELIGIBILITY` names the pitch as the only setting this
@@ -822,6 +824,19 @@ def build_resolution_ladder(
 # ── the artefacts a reviewer reads ─────────────────────────────────────
 
 
+#: The grouped-realization role of every number this axis publishes (plan §8.3 step 5, R1).
+#: Written once so the definition, the finding and the caption cannot drift apart: the ladder is
+#: selected by decoded settings, so the dataset's one duplicated setting appears as a level with two
+#: named realizations while every other level is a single recording - one repeated reference
+#: setting, which is not replicated coverage of the axis.
+REALIZATION_ROLE = (
+    "the ladder is the setting-based selection, so its one duplicated setting is a reference "
+    "setting and not replicated coverage of this axis: the shared 1.850 mm reference level carries "
+    "both of the reference recordings as two named realizations, every other level is a single "
+    "recording, every difference is one measurement against another, and no pitch effect here is "
+    "estimated repeatably"
+)
+
 #: Metric definitions, recorded verbatim in the provenance document so the tables
 #: cannot be read without them.
 DEFINITIONS: dict[str, str] = {
@@ -877,9 +892,8 @@ DEFINITIONS: dict[str, str] = {
         "knots retain (1.0 = coarsening loses nothing)"
     ),
     "replicates": (
-        "no profile and no gate is an independent experimental replicate: each level is "
-        "one recording, the levels carry no acquisition order, and their differences "
-        "hold drift as well as pitch"
+        "no profile and no gate is an independent experimental replicate: the levels carry no "
+        "acquisition order and their differences hold drift as well as pitch. " + REALIZATION_ROLE
     ),
     "time_view": (
         "the common-duration view of every distributional metric: the largest integer "
@@ -975,6 +989,8 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
     lengths = [row.correlation_length_mm for row in model.levels]
     units = [row.correlation_length_over_pitch for row in model.levels]
     coarsest = model.levels[-1]
+    single_recording = [row for row in model.levels if row.realizations == 1]
+    duplicated = [group for group in model.groups if len(group.realizations) > 1]
 
     coarse_pairs = [row for row in pairs if row.coarse_path == coarsest.relative_path]
     coarse_worst = max(row.max_abs_difference_mm_s for row in coarse_pairs)
@@ -1068,6 +1084,7 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
         "realizations": {
             "levels": len(model.levels),
             "recordings": len(model.inputs),
+            "single_recording_levels": len(single_recording),
             "aggregation": grid.AGGREGATION,
             "multi_realization_levels": [
                 {
@@ -1075,27 +1092,26 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                     "key_display": group.key_display,
                     "realization_paths": list(group.realization_paths),
                 }
-                for group in model.groups
-                if len(group.realizations) > 1
+                for group in duplicated
             ],
             "statement": (
                 f"Selection: the {len(model.levels)} decoded pitches are the setting-based "
                 f"selection of {len(model.inputs)} recording(s) - every recording whose decoded "
-                "settings put it at a pitch of this ladder, whatever folder requested it. A level "
-                "with more than one recording is one level with that many named realizations, each "
-                "measured on its own and each named in resolution-levels.csv and in the provenance "
-                "document: "
+                "settings put it at a pitch of this ladder, whatever folder requested it. "
+                f"{len(single_recording)} of the {len(model.levels)} levels are a single "
+                "recording; a level with more than one recording is one level with that many "
+                "named realizations, each measured on its own and each named in "
+                "resolution-levels.csv and in the provenance document: "
                 + (
                     "; ".join(
                         f"{group.key_display} realized by "
                         + " and ".join(group.realization_paths)
-                        for group in model.groups
-                        if len(group.realizations) > 1
+                        for group in duplicated
                     )
                     or "no level here has a second realization"
                 )
-                + ". Each level's numbers are the unweighted mean of its realizations' numbers: "
-                "one realization, one vote."
+                + f". {REALIZATION_ROLE}. Each level's numbers are the unweighted mean of its "
+                "realizations' numbers: one realization, one vote."
             ),
         },
         "limitations": [
@@ -1103,12 +1119,11 @@ def _findings(model: ResolutionLadder) -> dict[str, object]:
                 f"The screening threshold is the only repeat, at {screening_threshold:.4g} "
                 f"mm/s per gate ({model.screening_threshold.metric}): one observed "
                 "realization of repeatability plus uncontrolled drift. The levels are "
-                "separate recordings with no acquisition order, so an effect smaller than "
-                "it cannot be separated from drift, and a difference that falls above the screening "
-                "threshold "
-                "could still be drift rather than pitch — screening is not attribution. No "
-                "level is replicated: every difference is one measurement against another "
-                "and estimates no pitch effect repeatably."
+                "separate recordings with no acquisition order. Magnitude relative to this one "
+                "observation does not establish distinguishability or a pitch effect, and a difference "
+                "that falls above the screening threshold could still be drift rather than pitch — "
+                "screening is not attribution. "
+                f"{REALIZATION_ROLE}."
             ),
             (
                 "The spatial metrics describe the depth-resolved *mean* profile over the "
@@ -1198,11 +1213,51 @@ def _levels_document(model: ResolutionLadder) -> list[dict[str, object]]:
     ]
 
 
+def _reviewer_visible_texts(findings: Mapping[str, object], caption: str) -> dict[str, str]:
+    """Every string a reviewer reads in this axis's artefacts, keyed by where it sits (plan R1).
+
+    The module's own description is source prose and the two caveats are appended to the caption, so
+    both travel beside the definitions, the finding statements, the limitations and the caption.
+    """
+    texts: dict[str, str] = {
+        "source.__doc__": __doc__ or "",
+        "figure.caption": caption,
+        "caveats.mixer_setpoint_role": MIXER_SETPOINT_ROLE,
+        "caveats.replicate_role": REPLICATE_ROLE,
+    }
+    texts.update({f"definitions.{key}": text for key, text in DEFINITIONS.items()})
+    for key in ("screening_threshold_gate", "information", "coarsest_pitch", "realizations"):
+        texts[f"findings.{key}.statement"] = str(findings[key]["statement"])
+    for index, text in enumerate(findings["limitations"]):
+        texts[f"findings.limitations[{index}]"] = str(text)
+    return texts
+
+
+def _validate_realization_prose(model: ResolutionLadder, texts: Mapping[str, str]) -> None:
+    """Refuse singular-coverage prose while the selection holds a multi-realization level.
+
+    The one gate every grouped axis of this plan uses
+    (:func:`udv_echo_process.analysis._native_grid.validate_realization_prose`), given the levels the
+    ladder actually grouped; it is a no-op when every level is one recording.
+    """
+    grid.validate_realization_prose(
+        texts,
+        multi_realization_levels=[
+            group.key_display for group in model.groups if len(group.realizations) > 1
+        ],
+    )
+
+
 def provenance_document(model: ResolutionLadder) -> dict[str, object]:
     """The machine-readable record beside the tables and the figure.
 
     Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
+    Every reviewer-visible string is checked against the grouped selection before the document is
+    returned, so prose that contradicts the model is refused rather than published.
     """
+    findings = _findings(model)
+    caption = figure_caption(model)
+    _validate_realization_prose(model, _reviewer_visible_texts(findings, caption))
     support = (model.common.support_min_mm, model.common.support_max_mm)
     matches_plan = all(
         abs(actual - declared) <= PLAN_SUPPORT_TOLERANCE_MM
@@ -1334,14 +1389,14 @@ def provenance_document(model: ResolutionLadder) -> dict[str, object]:
             },
         },
         "definitions": dict(DEFINITIONS),
-        "findings": _findings(model),
+        "findings": findings,
         "tables": {
             "levels": {"path": LEVELS_NAME, "rows": len(model.levels)},
             "pairs": {"path": PAIRS_NAME, "rows": len(model.pairs)},
         },
         "figure": {
             "path": f"{FIGURES_DIRNAME}/{FIGURE_NAME}",
-            "caption": figure_caption(model),
+            "caption": caption,
             "panels": list(FIGURE_PANELS),
         },
         "regeneration": {

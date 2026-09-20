@@ -469,8 +469,9 @@ provenance's `findings` block, and each pair row carries its own):
   500 vs 800 (5 knots), 600 vs 700 (2), 600 vs 800 (8, in three runs out to 71.21 mm). Only
   `prf/500.BDD` vs `prf/700.BDD` and `prf/700.BDD` vs `prf/800.BDD` are below the screening threshold at every
   knot. None of these runs spans the support, so the evidence is a *localised* signal (near-field and
-  a few mid/minor-depth knots), not a global velocity bias — and with one recording per level and no
-  acquisition order, that localised signal cannot be separated from drift.
+  a few mid/minor-depth knots), not a global velocity bias. Most PRF levels have one recording and the
+  600 µs reference has two realizations; without replicated axis coverage or acquisition order, the
+  localised signal does not demonstrate a PRF effect relative to drift.
 - **A spectral axis effect is not demonstrated relative to the sole-pair discrepancy.** Band-mean spectral level
   differences between levels run 1.22-3.46 dB in magnitude, while the same-settings WP1 pair differs
   by 3.532 dB in the same resummarisation; the direction (the shorter period's density slightly
@@ -542,8 +543,10 @@ energy are absent from these files.** Only one axial-velocity channel exists per
 screen reports depth-resolved dropout (the share of window samples exactly 0.0 per gate), bias (the
 signed `low - high` per-gate mean difference per knot) and variance/robust spread (per-gate IQR and
 standard deviation by level and depth) — and stops there. A blank or erratic gate is a property of
-the recorded velocity array, not evidence that a gain, a power or the receiver saturated. No
-p-values are produced (one recording per setting, no replicates, no acquisition order).
+the recorded velocity array, not evidence that a gain, a power or the receiver saturated. Most
+levels have one recording; the shared TGC ≈19.92 dB / medium-power anchor has two realizations, which
+is one duplicated setting rather than replicated axis coverage. No p-values are produced and there is
+no acquisition order.
 
 **Diagnostic conclusion.** The velocity-only evidence justifies exactly **one**
 higher-sensitivity/echo-energy diagnostic before any wider TGC, power *or* sensitivity ladder — and

@@ -115,9 +115,10 @@ is identical in every one.
 | **600 µs** (`prf/600.BDD`) | Measured. The reference recording: 669 profiles, 14.956 s, load 0.9219, band 22.0176 Hz, rate 44.6643 Hz; member of the WP1 pair. | **Yes** — as a pairwise effect only: 600 vs 800 puts **8** knots above the screening threshold in three runs (19.4127-21.2627; 54.5627-56.4127; 65.6627-71.2127 mm), max 22.4215 mm/s = 1.1575 x screening threshold; 600 vs 700 at 2 knots (80.4627-82.3127 mm). | It is the reference condition itself: the anchor every new condition is defined around, and the period the whole augmentation holds fixed. | None: `prf_us` is run-wide and the augmentation never moves it. | `keep` (measured; the reference) | A replicated PRF effect that separates the 400/600 pair from drift, or a recorded wrap-like event at this period (measured today: 0). |
 | **800 µs** (`prf/800.BDD`) | Measured. 539 profiles, 16.0267 s, load **1.2109**, **1** sample beyond the limit, **3** wrap-like steps (largest step 1.4531 `Vmax`), narrowest usable bandwidth 16.4678 Hz, rate 33.5690 Hz. | **Yes** — as a pairwise effect only: 800 vs 600 clears at 8 knots; 800 vs 400 at 2; 800 vs 500 at 5; 800 vs 700 clears nowhere (0.9965 x screening threshold, the closest non-clearance in the ladder). | None sought: the ladder's own load ordering says the long-period side is where the velocity scale is under pressure, and this is the level that shows it most. | None — not acquired. | `defer` (measured; not reacquired) | A stated question needing a longer period (e.g. a deeper window at a different setpoint), and then only with the echo/energy diagnostic in place — this is the one level whose measured load exceeds 1.0. |
 
-**What the PRF clearances are not.** Eight of the ten pairs clear the screening threshold; every clearance is a handful of
-knots (1-8), none spans the support, and with one recording per level and no acquisition order they cannot be
-separated from drift (`prf-ladder.provenance.json` `findings.limitations`). This table therefore records them as
+**What the PRF clearances are not.** Six of the ten grouped-level pairs clear the screening threshold; every clearance is a handful of
+knots, none spans the support, and most levels have one recording while the 600 µs reference has two realizations.
+Without replicated axis coverage or acquisition order they do not demonstrate a PRF effect relative to drift
+(`prf-ladder.provenance.json` `findings.limitations`). This table therefore records them as
 pairwise facts that do not change any verdict above: no row here claims the PRF *caused* a clearance.
 
 ## 3. Emissions/profile axis — draft §C

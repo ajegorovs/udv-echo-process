@@ -21,9 +21,10 @@ restated in the provenance document and in the limitations it carries:
   energy channel exists to show the gain a setting applied, so nothing here calls the key a gain;
 - sensitivity is fixed at ``medium`` in every committed row, so that axis is absent from the sweep
   and unidentifiable from it;
-- the base state's own level is missing from *both* screened axes — the TGC ladder straddles the
-  value the other manifest rows carry, the power ladder straddles ``medium``, and each axis's focus
-  pair is the two ladder-adjacent levels that bracket it.
+- the base state's own key is requested by neither screened axis's rows, and both setting-based
+  ladders hold it anyway: the value the manifest's other rows carry — TGC ≈19.9216 dB, emitting
+  power ``medium`` — is one level of each axis, realized by the two reference recordings, so each
+  axis's focus pair is that level and the next setting above it (plan §8.3 step 5).
 
 The input binding, the common views, the native-grid metrics, the knot alignment, the committed WP1
 screening_threshold reader and the table/caption/figure writers are the shared layer's
@@ -31,14 +32,13 @@ screening_threshold reader and the table/caption/figure writers are the shared l
 settings and columns; no second helper module is added. Each axis is selected by decoded
 **scientific fingerprint** (:data:`ELIGIBILITY`), never by folder (plan §8.3 step 2, R1/R4): its key
 cell is the only setting it may move, so every recording sharing the rest of the fingerprint is
-eligible, and the base state neither ladder requests - TGC ≈19.9216 dB, emitting power medium - is
-one level realized by both reference recordings (``prf/600.BDD`` and ``res/1-8.BDD``, whichever
-folder each sits in). No screened row requests that level, so the committed ladders do not hold it
-yet and it is recorded as eligible evidence for the setting-based rebuild of §8.3 step 5. No profile
-and no gate is an independent
-experimental replicate, the levels carry no acquisition order, one recording per setting is all there
-is, and no p-value is produced (plan §3.3). TGC and emitting power only: the resolution, burst and PRF
-verdicts belong to their own modules and are not revisited here.
+eligible, and the base state neither axis's own rows request - TGC ≈19.9216 dB, emitting power
+medium - is one level of both ladders, realized by the two reference recordings (``prf/600.BDD``
+and ``res/1-8.BDD``, whichever folder each sits in). Most levels carry one recording; the anchor
+level is the one decoded key with two realizations, which is repeat evidence for one setting and not
+replicated axis coverage. No profile and no gate is an independent experimental replicate, the
+levels carry no acquisition order, and no p-value is produced (plan §3.3). TGC and emitting power
+only: the resolution, burst and PRF verdicts belong to their own modules and are not revisited here.
 """
 
 from __future__ import annotations
@@ -68,9 +68,10 @@ LEVELS_NAME, PAIRS_NAME, DEPTHS_NAME = (
 PROVENANCE_NAME, FIGURE_NAME = "gain-power-screen.provenance.json", "gain-power-screen.png"
 FIGURES_DIRNAME, SCREENING_THRESHOLD_NAME = "figures", "reference-repeat.provenance.json"
 
-#: The cell each axis's ladder is keyed by, what it is, and the level each axis does **not** hold. The
-#: base state is the dataset README's note of 2026-09-16 — TCG 20, emitting power medium, sensitivity
-#: medium; the decoded cell on the manifest's other rows is what this module checks.
+#: The cell each axis's ladder is keyed by, what it is, and the level each axis's own rows do not
+#: request. The base state is the dataset README's note of 2026-09-16 — TGC 20, emitting power
+#: medium, sensitivity medium; the decoded cell on the manifest's other rows is what this module
+#: checks, and the setting-based selection holds it as one level of each ladder (plan §8.3 step 5).
 KEY_COLUMN: dict[str, str] = {"tgc": "tgc_start_db", "em_pow": "emit_power"}
 KEY_LABEL: dict[str, str] = {"tgc": "decoded TGC start", "em_pow": "requested emitting power"}
 KEY_UNITS: dict[str, str] = {"tgc": "dB", "em_pow": "declared step"}
@@ -108,9 +109,9 @@ VERIFIED_CELLS: tuple[str, ...] = (
 
 #: The setting-based contract of each screened axis (plan §8.3 step 2, R1/R4): the axis's key cell is
 #: the only decoded setting it may move, so every recording sharing the rest of the fingerprint -
-#: whatever folder its row sits in - is eligible. Both ladders' base state (TGC ≈19.9216 dB, emitting
-#: power medium) is realized by neither axis's own rows: the two reference recordings are recorded as
-#: its two realizations for the setting-based rebuild of §8.3 step 5.
+#: whatever folder its row sits in - is eligible. The base state (TGC ≈19.9216 dB, emitting power
+#: medium) is requested by no axis's own rows; the two reference recordings are the two realizations
+#: of that one held level (plan §8.3 step 5), not a replicated axis.
 ELIGIBILITY: dict[str, grid.AxisEligibility] = {
     "tgc": grid.AxisEligibility(axis="tgc", ladder_label=KEY_LABEL["tgc"], varied=("tgc_start_db",)),
     "em_pow": grid.AxisEligibility(axis="em_pow", ladder_label=KEY_LABEL["em_pow"], varied=("emit_power",)),
@@ -209,9 +210,9 @@ LevelInput = ScreenInput
 
 
 class ScreenAxis(ValueModel):
-    """One screened axis: its rows, its two common views, its screening result, the level it does not
-    hold and the TGC words its key is read through. ``levels``/``pairs``/``depths`` are dict rows
-    keyed by the declared column tuples, so a table and its model cannot drift.
+    """One screened axis: its rows, its two common views, its screening result, the base state its own
+    rows do not request and the TGC words its key is read through. ``levels``/``pairs``/``depths`` are
+    dict rows keyed by the declared column tuples, so a table and its model cannot drift.
     """
 
     axis: str
@@ -300,6 +301,71 @@ class GainPowerScreen(ValueModel):
         if tuple(self.sensitivity.get("values_in_manifest", ())) != (SENSITIVITY_VALUE,):
             raise ValueError("this screen is only truthful where sensitivity is fixed at medium")
         return self
+
+
+def _string_paths(value: object, label: str) -> dict[str, str]:
+    """Every string inside one emitted value, by dotted label, so prose is checked where it lands.
+    """
+    found: dict[str, str] = {}
+    if isinstance(value, Mapping):
+        for key, inner in value.items():
+            found |= _string_paths(inner, label=f"{label}.{key}")
+    elif isinstance(value, str):
+        found[label] = value
+    elif isinstance(value, (list, tuple)):
+        for index, inner in enumerate(value):
+            found |= _string_paths(inner, label=f"{label}[{index}]")
+    return found
+
+
+def multi_realization_level_keys(model: GainPowerScreen) -> tuple[str, ...]:
+    """The levels more than one recording realizes, as ``<axis>:<key display>``.
+
+    On the committed inventory these are exactly the two axes' shared anchor level - TGC ≈19.9216 dB
+    and emitting power ``medium`` - which no axis's own rows request while the setting-based selection
+    holds it as one level of each ladder (plan §8.3 step 5). Most levels carry one recording: two
+    recordings at one decoded key is repeat evidence for that setting, not replicated axis coverage.
+    """
+    return tuple(f"{axis.axis}:{group.key_display}" for axis in model.axes
+                 for group in axis.groups if len(group.realizations) > 1)
+
+
+def _require_coverage_prose(model: GainPowerScreen, texts: Mapping[str, str]) -> None:
+    """Put a labelled set of strings to the shared grouped-realization contract, with this screen's
+    own duplicated levels: a module that kept its own copy of the rule could let a definition and the
+    figure caption disagree about the same ladder.
+    """
+    grid.validate_realization_prose(
+        texts, multi_realization_levels=multi_realization_level_keys(model))
+
+
+def realization_prose_texts(model: GainPowerScreen) -> dict[str, str]:
+    """Every prose string this screen emits, by label: the definitions and every findings string.
+
+    The figure caption is composed and checked by :func:`figure_caption` itself, which is where it is
+    written; every other emitted string is collected here.
+    """
+    texts = {f"definitions.{name}": text for name, text in DEFINITIONS.items()}
+    texts |= _string_paths(_findings(model), label="findings")
+    return texts
+
+
+def validate_emitted_prose(model: GainPowerScreen) -> None:
+    """Refuse emitted prose that contradicts the grouped realizations (plan §8.3 step 5).
+
+    The shared grouped-realization check is wired to the text this screen actually emits - every
+    definition, every findings string and, in :func:`figure_caption`, the caption - against the
+    decoded levels more than one recording realizes, so a coverage claim cannot drift away from the
+    selection whose numbers sit beside it.
+    """
+    _require_coverage_prose(model, realization_prose_texts(model))
+
+
+def realization_prose(model: GainPowerScreen) -> dict[str, str]:
+    """Every prose string this screen emits, by label: the definitions, the findings strings and the
+    figure caption, so an auditor can put the whole emitted set to the shared contract at once.
+    """
+    return realization_prose_texts(model) | {"figure.caption": figure_caption(model)}
 
 
 def _key_position(axis: str, key: object) -> float:
@@ -395,10 +461,11 @@ def _order_key(axis: str, manifest_path: Path):
 def level_groups(manifest_path: Path, axis: str) -> tuple[grid.LevelGroup, ...]:
     """Every eligible level of one screened axis with all its realizations, by decoded key then path.
 
-    The base state neither ladder requests - TGC ≈19.9216 dB for ``tgc``, emitting power ``medium``
-    for ``em_pow`` - is one decoded level realized by ``prf/600.BDD`` and ``res/1-8.BDD``, whichever
-    folder each sits in (plan §8.3 step 2, R1). The setting-based rebuild of §8.3 step 5 joins it and
-    renders the realizations into the provenance.
+    The base state neither axis's own rows request - TGC ≈19.9216 dB for ``tgc``, emitting power
+    ``medium`` for ``em_pow`` - is one decoded level realized by ``prf/600.BDD`` and ``res/1-8.BDD``,
+    whichever folder each sits in, so this view is where both realizations are named (plan §8.3
+    step 2, R1). The setting-based ladder (:func:`selected_levels`) holds that level as one level of
+    each axis and the provenance renders its two realizations (plan §8.3 step 5).
     """
     path = Path(manifest_path)
     if axis not in AXES:
@@ -468,14 +535,17 @@ def _read_level(
 def _base_state(
     axis: str, levels: Sequence[Mapping[str, object]], manifest_path: Path
 ) -> dict[str, object]:
-    """The level this axis's own rows do not sample, and the pair the screen focuses on.
+    """The level this axis's own rows do not request, and the focus pair the screen compares.
 
     The base state is what the manifest's *other* rows carry in this axis's key column. Where the
-    ladder does not hold it - the TGC ladder straddling 19.9216 dB, the power ladder straddling
-    ``medium`` - the focus pair is the two ladder-adjacent levels whose keys bracket it. Where the
-    ladder *does* hold it (the shared anchor level both reference recordings realize, plan §8.3
-    step 5), the focus pair is that level and its ladder-adjacent level above it, so the reference
-    condition is compared with the next setting the decision could move to.
+    ladder holds it - the shared anchor level the two reference recordings realize, which the
+    setting-based selection makes a level of every screened axis (plan §8.3 step 5), so ``in_ladder``
+    loads True - the focus pair is that level and the ladder-adjacent level above it, so the reference
+    condition is compared with the next setting the decision could move to. Where no level carries its
+    key, ``in_ladder`` loads False and the focus pair is the two ladder-adjacent levels whose keys
+    bracket it. ``in_ladder`` here is a property of the *scientific* ladder, not of the axis's own
+    request: :attr:`udv_echo_process.analysis._native_grid.LevelGroup.in_ladder` is that request, and
+    on the committed inventory the anchor level loads False there while this field loads True.
     """
     key_column = KEY_COLUMN[axis]
     others = {(row.get(key_column) or "").strip() for row in _manifest_rows(Path(manifest_path))
@@ -512,6 +582,9 @@ def _base_state(
                 "focus pair must be unique")
         pair = (straddle[0], straddle[0] + 1)
     index = pair[0]
+    # ``straddling_*`` names the focus pair whichever branch chose it: the base level and the next
+    # setting above it where the ladder holds that level, or the two ladder-adjacent levels bracketing
+    # a key no level of the axis carries.
     return {
         "label": BASE_STATE_LABEL[axis], "decoded_key": base, "in_ladder": in_ladder,
         "focus_pair_kind": "base_state_is_a_level" if in_ladder else "bracketing_levels",
@@ -863,8 +936,9 @@ def build_gain_power_screen(
 ) -> GainPowerScreen:
     """Build the velocity-only TGC/power screen from the manifest-selected recordings:
     ``analysis_commit`` is the revision to record, ``None`` probes the checkout's short git SHA once.
-    A manifest, a WP1 screening_threshold, a coupled setting, a moved TGC word, an absent base-state level or a
-    recording that contradicts its row is refused by name before anything is written.
+    A manifest, a WP1 screening_threshold, a coupled setting, a moved TGC word, a base state no
+    adjacent pair brackets or a recording that contradicts its row is refused by name before anything
+    is written.
     """
     root, manifest = Path(dataset_root), Path(manifest_path)
     manifest_sha256 = f"sha256:{grid.sha256_file(manifest)}"
@@ -893,7 +967,7 @@ DEFINITIONS: dict[str, str] = {
     "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
     "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a gain or power effect and not a bound on repeatability or uncontrolled drift",
     "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
-    "base_state": "the level each axis's own rows do not sample: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis). Where the ladder holds that level - the shared anchor both reference recordings realize - the focus pair is the base level and the next setting above it; where it does not, the focus pair is the two ladder-adjacent levels whose keys bracket it",
+    "base_state": "the level each axis's own rows do not request: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis). The setting-based ladder holds that level - the shared anchor both reference recordings realize - so the focus pair is the base level and the next setting above it; where no level of the axis carries that key, the focus pair is the two ladder-adjacent levels whose keys bracket it",
     "realizations": "the recordings that realize one decoded key: the ladder holds every eligible decoded level, so the shared anchor level (TGC ≈19.9216 dB, emitting power medium) is realized by `prf/600.BDD` and `res/1-8.BDD` rather than being absent, one dropped or one standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
     "aggregation": "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE + ". On this screen the cells that assert an adverse screening outcome (the dropout count, the worst zero fraction, the per-gate spread and its ratio) are the worst realization's rather than a mean, and the level's screen word is recomputed from those outcomes",
     "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit",
@@ -913,8 +987,12 @@ MIXER_SETPOINT_ROLE = (
     "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these "
     "files, so the setpoint is not a phase reference")
 REPLICATE_ROLE = (
-    "one recording per setting and no acquisition order: no gate and no profile is an independent "
-    "experimental replicate, a level effect cannot be separated from drift, and no p-value is produced")
+    "most levels carry one recording; the shared anchor setting (TGC ≈19.9216 dB, emitting power "
+    "medium) is the one decoded key of each axis with two realizations, and those are repeat "
+    "measurements of one setting rather than replicated axis coverage. The levels carry no "
+    "acquisition order, magnitude relative to one observed discrepancy does not establish a level "
+    "effect, no gate and no profile is "
+    "an independent experimental replicate, and no p-value is produced")
 VELOCITY_ONLY_ROLE = (
     "these files carry one axial-velocity channel in mm/s and no echo or energy profile, so echo SNR, "
     "receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred here")
@@ -924,7 +1002,8 @@ FIGURE_PANELS: tuple[str, ...] = (
     ("dropout by depth: every level's per-gate zero fraction against depth with the declared "
      "majority-blank limit (the per-gate robust spread is tabulated in " + DEPTHS_NAME + ")"),
     ("each axis's focus pair against the screening_threshold: the signed low - high per-gate mean difference of "
-     "the two levels bracketing the base state's own key, at the shared knots, against the WP1 "
+     "the base state's own level and the next setting above it (the two ladder-adjacent levels bracketing that "
+     "key only where no level of the axis carries it), at the shared knots, against the WP1 "
      "screening_threshold band"))
 
 
@@ -1050,7 +1129,7 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
                              for name, row in flagged) or "none"
     base_text = "; ".join(f"{name}: {row['low_key']} and {row['high_key']}"
                           for name, row in focus.items())
-    return {
+    findings = {
         "screening_threshold": {
             "value_mm_s": screening_threshold, "metric": model.screening_threshold.metric,
             "source_path": model.screening_threshold.path,
@@ -1124,11 +1203,13 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
                 f"screening_threshold, {power['knots_above_screening_threshold']} knots above it). This module does not "
                 "predict that diagnostic's outcome and claims nothing about what it would show.")},
         "limitations": [
-            (f"One recording per setting and no acquisition order: the only repeat is the "
+            (f"Most levels carry one recording and no acquisition order: the only repeat is the "
              f"sole-pair observed-discrepancy screening threshold, {screening_threshold:.4g} mm/s "
              f"per gate ({model.screening_threshold.metric}), one observed realization of "
-             f"repeatability plus uncontrolled drift and not a bound on either: no level is "
-             f"replicated, no p-value is produced and no replicate claim is made."),
+             f"repeatability plus uncontrolled drift and not a bound on either. The two reference "
+             f"recordings that share the anchor setting are two realizations of one decoded key "
+             f"under repeat, not an independent replicate of any level: no p-value is produced and "
+             f"no replicate claim is made."),
             ("Velocity only: " + VELOCITY_ONLY_ROLE + ". A majority-blank gate or a disproportionate "
              "per-gate spread is a property of the recorded velocity array, not evidence that a gain, "
              "a power or the receiver saturated."),
@@ -1137,10 +1218,12 @@ def _findings(model: GainPowerScreen) -> dict[str, object]:
              "not establish, and no wider TGC ladder can be designed on that reading."),
             ("Each axis focuses on the pair that carries its base state "
              f"({base_text}), and that state's sensitivity is medium like every other row, so the "
-             "screen compares the reference condition from inside its own ladder only where the "
-             "shared anchor level is one of its levels. "
+             "screen compares the reference condition with that level and the next setting above "
+             "it, in the ladder the setting-based selection builds. "
              + SENSITIVITY_ROLE + " — no pair in this screen varies it, and its effect on dropout, "
              "bias or spread is not estimable from the committed sweep.")]}
+    _require_coverage_prose(model, _string_paths(findings, label="findings"))
+    return findings
 
 
 def figure_caption(model: GainPowerScreen) -> str:
@@ -1152,7 +1235,7 @@ def figure_caption(model: GainPowerScreen) -> str:
     realizations = summary["realizations"]
     first, second = model.axes
     labels = [", ".join(str(row["requested_label"]) for row in axis.levels) for axis in model.axes]
-    return (
+    caption = (
         f"{ARTEFACT}: the velocity-only screening of {summary['levels']} committed levels over two "
         f"axes — {first.axis} {len(first.levels)} ({labels[0]}) and {second.axis} "
         f"{len(second.levels)} ({labels[1]}). "
@@ -1173,6 +1256,8 @@ def figure_caption(model: GainPowerScreen) -> str:
         f"{MIXER_SETPOINT_ROLE}. {REPLICATE_ROLE}. {TGC_REPRESENTATION_ROLE}. {SENSITIVITY_ROLE}. "
         f"Generated at commit {model.analysis_commit or 'unknown'} from {model.manifest_path} "
         f"({model.manifest_sha256}).")
+    _require_coverage_prose(model, {"figure.caption": caption})
+    return caption
 
 
 def _axis_document(axis: ScreenAxis) -> dict[str, object]:
@@ -1254,7 +1339,11 @@ def provenance_document(model: GainPowerScreen) -> dict[str, object]:
     """The machine-readable record beside the three tables and the figure.
 
     Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
+    Every definition, every findings statement and the figure caption is put to the shared coverage
+    contract before the document is returned, so no emitted string can claim singular coverage on
+    one ladder while another realizes two recordings of one level.
     """
+    validate_emitted_prose(model)
     tables = ((LEVELS_NAME, LEVEL_COLUMNS, "levels"), (PAIRS_NAME, PAIR_COLUMNS, "pairs"),
               (DEPTHS_NAME, DEPTH_COLUMNS, "depths"))
     return {
@@ -1277,9 +1366,9 @@ def provenance_document(model: GainPowerScreen) -> dict[str, object]:
 
 
 def render_figure(model: GainPowerScreen, path: Path, *, dpi: int = 150) -> Path:
-    """Write the two-panel screening figure, deterministically, and return it: all 10 levels'
-    dropout against depth with the declared majority-blank limit, and each axis's focus pair against
-    the WP1 screening_threshold band. The frame is the shared writer's, so this module owns the panels only.
+    """Write the two-panel screening figure, deterministically, and return it: every level's dropout
+    against depth with the declared majority-blank limit, and each axis's focus pair against the WP1
+    screening_threshold band. The frame is the shared writer's, so this module owns the panels only.
     """
     series = {str(level["relative_path"]): (
         np.asarray([r["depth_mm"] for r in axis.depths

@@ -1456,3 +1456,125 @@ def test_the_aggregation_cells_refuse_an_empty_or_non_finite_realization_set() -
         grid.aggregate_verdict([True], rule="mean")
     with pytest.raises(ResolutionLadderError, match="no verdict"):
         grid.aggregate_verdict([], rule="all")
+
+
+# ── slice 7: grouped-realization prose (R1) ─────────────────────────────────
+
+
+def _multi_realization_levels(ladder) -> list[str]:
+    """The levels the shared validator has to be told about: one entry per level with >1 recording."""
+    return [group.key_display for group in ladder.groups if len(group.realizations) > 1]
+
+
+def _reviewer_visible_prose(model) -> dict[str, str]:
+    """Every string the resolution artefacts put in front of a reviewer, keyed by where it sits.
+
+    The module's own description travels too: it is source prose a reviewer reads in the repository,
+    and R1 refuses singular coverage in source *and* emitted prose.
+    """
+    from udv_echo_process.analysis import resolution_ladder as module
+
+    document = module.provenance_document(model)
+    findings = document["findings"]
+    texts: dict[str, str] = {
+        "source.__doc__": module.__doc__ or "",
+        "figure.caption": document["figure"]["caption"],
+        "caveats.mixer_setpoint_role": module.MIXER_SETPOINT_ROLE,
+        "caveats.replicate_role": module.REPLICATE_ROLE,
+    }
+    for key, text in document["definitions"].items():
+        texts[f"definitions.{key}"] = text
+    for key in ("screening_threshold_gate", "information", "coarsest_pitch", "realizations"):
+        texts[f"findings.{key}.statement"] = findings[key]["statement"]
+    for index, text in enumerate(findings["limitations"]):
+        texts[f"findings.limitations[{index}]"] = text
+    return texts
+
+
+def test_the_reviewer_visible_resolution_prose_survives_the_shared_realization_validator(
+    ladder,
+) -> None:
+    """R1: the live model's prose cannot claim singular coverage while 1.850 mm has two recordings."""
+    from udv_echo_process.analysis import _native_grid as grid
+
+    multi = _multi_realization_levels(ladder)
+    assert multi == ["resolution_mm=1.85"]
+    texts = _reviewer_visible_prose(ladder)
+    grid.validate_realization_prose(texts, multi_realization_levels=multi)
+    # The same check with a singular claim spliced in is refused, so the contract has teeth.
+    for claim in (
+        "one recording per setting",
+        "one recording per level",
+        "each level is one recording",
+        "no level is replicated",
+    ):
+        with pytest.raises(grid.NativeGridError, match="limitations"):
+            grid.validate_realization_prose(
+                {**texts, "limitations": claim}, multi_realization_levels=multi
+            )
+
+
+def test_the_provenance_document_validates_its_own_prose_against_the_grouped_selection(
+    ladder, monkeypatch
+) -> None:
+    """R1: emitting the document runs the shared validator over every reviewer-visible string."""
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis.resolution_ladder import provenance_document
+
+    expected = set(_reviewer_visible_prose(ladder))
+    seen: list[tuple[dict[str, str], tuple[str, ...]]] = []
+    original = grid.validate_realization_prose
+
+    def spy(texts, *, multi_realization_levels):
+        seen.append((dict(texts), tuple(multi_realization_levels)))
+        return original(texts, multi_realization_levels=multi_realization_levels)
+
+    monkeypatch.setattr(grid, "validate_realization_prose", spy)
+    document = provenance_document(ladder)
+    # Computed once for a caller, not once per document view.
+    assert len(seen) == 1
+    texts, multi = seen[0]
+    assert multi == ("resolution_mm=1.85",)
+    assert set(texts) == expected
+    assert texts["figure.caption"] == document["figure"]["caption"]
+    assert texts["findings.limitations[0]"] in document["findings"]["limitations"]
+
+
+def test_emitting_the_provenance_refuses_a_definition_that_claims_singular_coverage(
+    ladder, monkeypatch
+) -> None:
+    """R1: a singular claim spliced into live prose is refused at emit time, not merely downstream."""
+    from udv_echo_process.analysis import resolution_ladder as module
+
+    monkeypatch.setitem(module.DEFINITIONS, "replicates", "each level is one recording")
+    with pytest.raises(ResolutionLadderError, match="definitions.replicates"):
+        module.provenance_document(ladder)
+
+
+def test_the_realization_prose_separates_the_duplicated_reference_setting_from_axis_replication(
+    ladder,
+) -> None:
+    """R1: '14 recordings, 13 levels' is one repeated reference setting, not replicated coverage."""
+    from udv_echo_process.analysis.resolution_ladder import (
+        DEFINITIONS,
+        provenance_document,
+    )
+
+    document = provenance_document(ladder)
+    findings = document["findings"]
+    statement = findings["realizations"]["statement"]
+    single = [row for row in ladder.levels if row.realizations == 1]
+    duplicated = [group for group in ladder.groups if len(group.realizations) > 1]
+    assert [group.key_display for group in duplicated] == ["resolution_mm=1.85"]
+    assert len(single) == len(LABELS) - 1 == 12
+    assert findings["realizations"]["recordings"] == len(REALIZATION_PATHS) == len(single) + 2
+    joined = " ".join((statement, DEFINITIONS["replicates"], *findings["limitations"]))
+    # The duplicated level, both of its named recordings and the three counts are all stated ...
+    assert "1.85" in joined
+    for path in ANCHOR_PATHS:
+        assert path in joined, path
+    for count in (len(single), len(ladder.levels), len(ladder.inputs)):
+        assert str(count) in joined, count
+    # ... and the duplication is named as one repeated setting, explicitly not replication.
+    assert re.search(r"not replicated coverage", joined, re.IGNORECASE), joined
+    assert "reference setting" in joined

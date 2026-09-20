@@ -5,9 +5,9 @@ recorded twice as ``prf/600.BDD`` (669 profiles, 14.956 s) and
 ``res/1-8.BDD`` (517 profiles, 11.5529 s). Their difference is the **sole-pair
 observed-discrepancy screening threshold**: one observed realization of
 repeatability plus uncontrolled drift, because duration and unknown acquisition
-time also differ — file metadata does not recover acquisition order, so a level
-effect smaller than it cannot be separated from drift and a larger one is still
-screened, not proved (plan §2–§3.3).
+time also differ — file metadata does not recover acquisition order, so magnitude
+relative to this observation does not establish distinguishability or an axis effect;
+every result remains screened, not proved (plan §2–§3.3).
 
 What this module computes, from the manifest-selected files only:
 

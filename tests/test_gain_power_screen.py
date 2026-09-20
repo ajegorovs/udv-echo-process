@@ -443,7 +443,7 @@ def test_every_pair_is_compared_to_the_committed_screening_threshold_and_its_dep
     assert screen.screening_threshold.value_mm_s == ENVELOPE_MM_S
 
 
-def test_each_axis_reports_the_pair_that_brackets_the_base_state(screen, axis_rows) -> None:
+def test_each_axis_reports_the_pair_that_carries_the_base_state(screen, axis_rows) -> None:
     tgc, power = axis_rows["tgc"], axis_rows["em_pow"]
     for axis, expected in ((tgc, FOCUS_TGC), (power, FOCUS_POWER)):
         focus = next(row for row in axis.pairs if row["focus_pair"])
@@ -496,8 +496,11 @@ def test_the_screen_says_what_velocity_only_cannot_say(findings, screen) -> None
     assert manifest_cell_values(RELATIVE_MANIFEST, "tgc_end_db") == ("40",)
     text = " ".join(findings["limitations"]) + " " + velocity["statement"]
     for claim in ("echo SNR", "receiver saturation", "a safe plateau", "acoustic energy",
-                  "no p-value is produced", "no level is replicated"):
+                  "no p-value is produced"):
         assert claim in text
+    # The coverage claim is the count that is true: most levels carry one recording and only the
+    # shared anchor level carries two, which is repeat evidence and not replicated axis coverage.
+    assert "two realizations" in " ".join(findings["limitations"])
     assert TGC_MODE_LABEL in text and "word 23" in text and "word 25" in text and "word 24" in text
 
 
@@ -820,3 +823,98 @@ def test_the_screen_carries_the_setting_based_selection_beside_its_levels(screen
         assert block["aggregation"]["recordings"] == len(block["inputs"])
         assert block["levels"][0]["aggregation"] == block["aggregation"]["rule"]
     assert "realizations" in json.dumps(document)
+
+
+# ------------------------------------------------------------- grouped-realization prose
+
+
+def test_the_screen_names_the_levels_more_than_one_recording_realizes(screen) -> None:
+    """One decoded key carries two recordings on each axis and every other level carries one."""
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    assert module.multi_realization_level_keys(screen) == (
+        "tgc:tgc_start_db=19.9215686275", "em_pow:emit_power=medium")
+    for axis in screen.axes:
+        doubled = [group for group in axis.groups if len(group.realizations) > 1]
+        assert len(doubled) == 1, axis.axis
+        assert doubled[0].in_ladder is False, axis.axis  # no row of this axis requests that key
+
+
+def test_every_emitted_prose_string_obeys_the_shared_coverage_contract(screen) -> None:
+    from udv_echo_process.analysis import _native_grid as grid
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    levels = module.multi_realization_level_keys(screen)
+    texts = module.realization_prose(screen)
+    assert {"definitions.realizations", "findings.screen_summary.realizations.statement",
+            "figure.caption"} <= set(texts)
+    assert any(label.startswith("findings.limitations[") for label in texts)
+    grid.validate_realization_prose(texts, multi_realization_levels=levels)
+    grid.validate_realization_prose({"source.__doc__": module.__doc__ or ""},
+                                    multi_realization_levels=levels)
+    for pattern in grid.SINGULAR_REALIZATION_CLAIMS:
+        assert not pattern.search(module.__doc__ or ""), pattern.pattern
+
+
+def test_a_singular_coverage_claim_in_the_emitted_prose_is_refused(screen) -> None:
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(module, "REPLICATE_ROLE", "one recording per setting, so nothing repeats")
+        with pytest.raises(GainPowerScreenError, match="contradicts multi-realization levels"):
+            module.figure_caption(screen)
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(module, "DEFINITIONS",
+                      module.DEFINITIONS | {"coverage": "no level is replicated"})
+        with pytest.raises(GainPowerScreenError, match="contradicts multi-realization levels"):
+            module.provenance_document(screen)
+
+
+def test_the_screen_applies_the_shared_contract_rather_than_its_own_rule(screen) -> None:
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    seen: list[tuple[tuple[str, ...], tuple[str, ...]]] = []
+    shared = module.grid.validate_realization_prose
+
+    def spy(texts, *, multi_realization_levels):
+        seen.append((tuple(sorted(texts)), tuple(multi_realization_levels)))
+        return shared(texts, multi_realization_levels=multi_realization_levels)
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(module.grid, "validate_realization_prose", spy)
+        document = module.provenance_document(screen)
+        caption = module.figure_caption(screen)
+    assert seen, "the screen must validate its prose through the shared contract"
+    assert {levels for _texts, levels in seen} == {
+        ("tgc:tgc_start_db=19.9215686275", "em_pow:emit_power=medium")}
+    labels = {label for texts, _levels in seen for label in texts}
+    assert {"definitions.tgc_representation", "definitions.realizations",
+            "findings.screen_summary.statement", "findings.screen_summary.realizations.statement",
+            "findings.diagnostic.statement", "findings.limitations[0]", "figure.caption"} <= labels
+    assert document["figure"]["caption"] == caption
+
+
+def test_the_base_state_prose_separates_a_held_level_from_a_requested_one(screen, findings) -> None:
+    """A level the ladder holds is not the same fact as the axis's own rows requesting its key:
+    :attr:`grid.LevelGroup.in_ladder` is that request, and the statements must not conflate them."""
+    from udv_echo_process.analysis import gain_power_screen as module
+
+    for axis in screen.axes:
+        anchor = next(group for group in axis.groups if len(group.realizations) > 1)
+        assert anchor.in_ladder is False               # no row of this axis requests the anchor key
+        assert axis.base_state["in_ladder"] is True    # yet the setting-based ladder holds it
+        assert axis.base_state["straddling_pair"][0] == anchor.primary_path
+        low_key = axis.base_state["straddling_keys"][0]
+        if axis.axis == "tgc":
+            assert float(low_key) == pytest.approx(float(anchor.key[0]))
+        else:
+            assert low_key == anchor.key[0] == "medium"
+        assert len(anchor.realization_paths) == 2
+        block = findings["axes"][axis.axis]["base_state"]
+        assert block["focus_pair_kind"] == "base_state_is_a_level"
+        assert "holds it" in block["statement"]
+        assert "no level of this axis does" not in block["statement"]
+        assert "straddle" not in block["statement"]
+    text = module.__doc__ or ""
+    assert "do not hold it yet" not in text
+    assert "two realizations" in text

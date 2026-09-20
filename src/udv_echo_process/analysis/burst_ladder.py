@@ -1,8 +1,11 @@
 """WP2, burst-length axis — the measured cycle ladder against the sole-pair screening threshold.
 
-The committed sweep holds a 12-point burst-length ladder — one base-state recording per
-requested cycle count, 2 (`burst_len/2.BDD`) to 32 (`burst_len/32.BDD`), over the same ~100 mm
-window on the same 1.85 mm gate grid (plan §2). This module answers the plan's burst question
+The committed sweep requested 12 cycle counts, 2 (`burst_len/2.BDD`) to 32 (`burst_len/32.BDD`),
+with one base-state recording at each, over the same ~100 mm window on the same 1.85 mm gate grid
+(plan §2). The analysed ladder holds 13 decoded burst lengths, because the dataset also carries the
+shared reference setting, burst 10, outside every ``burst_len`` folder: most burst levels have one
+recording, burst 10 has two realizations, and one duplicated setting is not replicated coverage of
+the axis. This module answers the plan's burst question
 from the ``burst_len`` rows of the WP0 manifest, never a filename list (plan §4 WP2 gate):
 where the empirical transition is, and whether 18 can be separated from 20 cycles.
 
@@ -677,6 +680,51 @@ FIGURE_PANELS: tuple[str, ...] = (
 )
 
 
+def multi_realization_level_keys(model: BurstLadder) -> tuple[str, ...]:
+    """The decoded levels more than one recording realizes, by display key (plan §8.3 step 5).
+    """
+    return tuple(group.key_display for group in model.groups if len(group.realizations) > 1)
+
+
+def _string_paths(value: object, *, label: str) -> dict[str, str]:
+    """Every string inside an emitted document, by dotted label, so prose is checked where it lands.
+    """
+    found: dict[str, str] = {}
+    if isinstance(value, Mapping):
+        for key, inner in value.items():
+            found |= _string_paths(inner, label=f"{label}.{key}")
+    elif isinstance(value, str):
+        found[label] = value
+    elif isinstance(value, (list, tuple)):
+        for index, inner in enumerate(value):
+            found |= _string_paths(inner, label=f"{label}[{index}]")
+    return found
+
+
+def realization_prose_texts(model: BurstLadder) -> dict[str, str]:
+    """Every prose string this axis emits, by label: the definitions and every findings string.
+
+    The figure caption is composed and checked by :func:`figure_caption` itself, which is where it
+    is written; every other emitted string is collected here.
+    """
+    texts = {f"definitions.{name}": text for name, text in DEFINITIONS.items()}
+    texts |= _string_paths(_findings(model), label="findings")
+    return texts
+
+
+def validate_emitted_prose(model: BurstLadder) -> None:
+    """Refuse emitted prose that contradicts the grouped realizations (plan §8.3 step 5).
+
+    The shared grouped-realization check is wired to the text this axis actually emits - every
+    definition and every findings string - against the decoded levels more than one recording
+    realizes, so a coverage claim cannot drift away from the selection whose numbers sit beside it.
+    """
+    grid.validate_realization_prose(
+        realization_prose_texts(model),
+        multi_realization_levels=multi_realization_level_keys(model),
+    )
+
+
 def levels_csv_text(model: BurstLadder) -> str:
     """Render ``burst-levels.csv`` from the model's own level rows."""
     return grid.csv_text(LEVEL_COLUMNS, model.levels)
@@ -685,6 +733,32 @@ def levels_csv_text(model: BurstLadder) -> str:
 def pairs_csv_text(model: BurstLadder) -> str:
     """Render ``burst-pairs.csv`` from the model's own pair rows."""
     return grid.csv_text(PAIR_COLUMNS, model.pairs)
+
+
+def _coverage_clause(model: BurstLadder) -> str:
+    """How many recordings realize each level, as the selection found them (plan §8.3 step 5).
+
+    Most burst levels have one recording and the dataset's duplicated setting is the burst-10 anchor,
+    which two recordings realize; one duplicated setting is not replicated coverage of the axis,
+    because it repeats that one setting under repeat and repeats no other level.
+    """
+    repeated = [group for group in model.groups if len(group.realizations) > 1]
+    if not repeated:
+        return (
+            f"No level of this ladder has a second realization: one recording realizes each of the "
+            f"{len(model.groups)} levels, so nothing here is replicated coverage of the axis."
+        )
+    named = "; ".join(
+        f"{group.key_display} by " + " and ".join(group.realization_paths) for group in repeated
+    )
+    count = f"{len(repeated)} level" + ("" if len(repeated) == 1 else "s")
+    verb = "has" if len(repeated) == 1 else "have"
+    return (
+        f"Most burst levels have one recording ({len(model.groups) - len(repeated)} of "
+        f"{len(model.groups)}); {count} {verb} two realizations ({named}), and one "
+        "duplicated setting is not replicated coverage of the axis: it repeats one setting under "
+        "repeat rather than any other level of this ladder."
+    )
 
 
 def _findings(model: BurstLadder) -> dict[str, object]:
@@ -840,9 +914,10 @@ def _findings(model: BurstLadder) -> dict[str, object]:
                 f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per "
                 f"gate ({model.screening_threshold.metric}): one observed realization of "
                 "repeatability plus uncontrolled drift, not a bound on either. The levels are "
-                "separate recordings with no acquisition order, so a smaller effect cannot be "
-                "separated from drift and a larger one could still be drift or one recording "
-                "rather than the burst length. No level is replicated."
+                "separate recordings with no acquisition order. Magnitude relative to this one "
+                "observation does not establish distinguishability or a burst-length effect; a "
+                "larger difference could still be drift or one recording "
+                f"rather than the burst length. {_coverage_clause(model)}"
             ),
             (
                 f"Temporal metrics are screened against the same-settings WP1 pair through its "
@@ -867,13 +942,15 @@ def figure_caption(model: BurstLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
     It names the ladder, both time views, the common support, the alignment rule, the screening_threshold and
-    the observed same-settings temporal discrepancy with its sources, and the 18-versus-20 numbers.
+    the observed same-settings temporal discrepancy with its sources, and the 18-versus-20 numbers. The
+    caption is checked against the grouped realizations before it is returned, so the text the figure
+    and the document carry cannot claim a coverage the selection did not find.
     """
     findings = _findings(model)
     focus, temporal = findings["focus_18_vs_20"], findings["temporal_bandwidth"]
     window, common = findings["focus_window_16_20"], model.common
     cycles = [row["cycles"] for row in model.levels]
-    return (
+    caption = (
         f"WP2 burst ladder: {common['levels']} decoded burst lengths {cycles[0]}-{cycles[-1]} "
         f"cycles. "
         + findings["realizations"]["statement"] + " "
@@ -900,6 +977,11 @@ def figure_caption(model: BurstLadder) -> str:
         f"{REPLICATE_ROLE}. Generated at commit {model.analysis_commit or 'unknown'} from "
         f"{model.manifest_path} ({model.manifest_sha256})."
     )
+    grid.validate_realization_prose(
+        {"figure.caption": caption},
+        multi_realization_levels=multi_realization_level_keys(model),
+    )
+    return caption
 
 
 def provenance_document(model: BurstLadder) -> dict[str, object]:
@@ -907,6 +989,7 @@ def provenance_document(model: BurstLadder) -> dict[str, object]:
 
     Keys are inserted in a fixed order, so a regeneration from the same commit is byte-identical.
     """
+    validate_emitted_prose(model)
     common, temporal = model.common, model.temporal
     level_of = {path: group.primary_path for group in model.groups
                 for path in group.realization_paths}

@@ -1,7 +1,8 @@
 """WP2, PRF axis — the measured pulse-repetition ladder against the sole-pair screening threshold.
 
-The committed sweep holds a five-point PRF ladder — one base-state recording per requested
-pulse-repetition period, 400 µs (``prf/400.BDD``) to 800 µs (``prf/800.BDD``), over the same
+The committed sweep requested five PRF periods, 400 µs (``prf/400.BDD``) to 800 µs
+(``prf/800.BDD``). The analysed ladder has five levels and six recordings because the 600 µs
+reference level also includes ``res/1-8.BDD`` over the same
 ~100 mm window on the same 1.85 mm gate grid (plan §2). This module answers the plan's PRF
 question from the ``prf`` rows of the WP0 manifest, never a filename list (plan §4 WP2 gate):
 *does the committed 400-µs setting have inadequate velocity or temporal-bandwidth headroom, and
@@ -20,8 +21,10 @@ Selection is by decoded **scientific fingerprint** (:data:`ELIGIBILITY`), never 
 ``velo_max_ms`` follow from it, and every recording sharing the rest of the fingerprint - including
 `res/1-8.BDD`, which sits under another folder - is eligible at the level its own decoded period
 names. ``prf/600.BDD`` and ``res/1-8.BDD`` are therefore two named realizations of the 600 µs level,
-not a duplicate key to refuse. The committed ladder still holds the levels this axis itself
-requested; the setting-based rebuild of §8.3 step 5 renders the realizations into the artefacts.
+not a duplicate key to refuse, and that one repeated setting is not replicated coverage of the axis:
+every other level here is a single recording. The committed ladder still holds the levels this axis
+itself requested; the setting-based rebuild of §8.3 step 5 renders the realizations into the
+artefacts, and no definition, finding or caption may claim singular coverage (R1).
 
 Two facts separate this axis from its siblings (plan §2). The velocity scale is not a free setting:
 the reader publishes ``velo_max_ms`` as the ±Nyquist velocity, and here ``Vmax × prf_period`` is
@@ -754,6 +757,7 @@ def _build(
         timestamps=wp1.timestamp_document(timestamp_grid),
         focus_path=str(matches[0]["relative_path"]), levels=tuple(levels), pairs=pairs,
     )
+    require_grouped_realization_prose(model)
     curves = {
         e.relative_path: (
             np.asarray(s.frequency_hz, dtype=float),
@@ -796,7 +800,7 @@ DEFINITIONS: dict[str, str] = {
     "usable_bandwidth": "the highest frequency a file's matched segment supports, half its profile rate; the full-record Nyquist limit is published beside it",
     "acf_e_folding_lag": "the first lag of the mean-removed segment's normalized autocovariance below 1/e, in seconds on that file's own lag grid",
     "mixer_marker": "nominal 500 RPM -> 8.33 Hz marker only: no tachometer in these files, so it is not a phase reference and no peak here is attributed to it or to a harmonic",
-    "replicates": "no profile and no gate is an independent experimental replicate",
+    "replicates": "no profile and no gate is an independent experimental replicate, and the ladder is not replicated level by level: most levels here are a single recording, and the only second realization is the one duplicated 600 us setting (`prf/600.BDD` and `res/1-8.BDD`), which is not replicated coverage of the axis but one repeated setting",
     "realizations": "the recordings that realize one decoded period: the ladder holds every eligible decoded period, so `prf/600.BDD` and `res/1-8.BDD` are two named realizations of the 600 us level rather than one being dropped or standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
     "aggregation": "how one level's numbers are formed from its realizations: " + grid.AGGREGATION_RULE,
     "views": "distributional metrics use the common-duration window on the common support; native-grid gradients and correlation lengths use each level's own grid; the full record is analysed only through the matched temporal view; a level's band density is the unweighted mean of its realizations' densities on the shared comparison bands",
@@ -805,7 +809,12 @@ DEFINITIONS: dict[str, str] = {
 #: The verdict :func:`_findings` records, and the two caveats that travel with every artefact, so they
 #: cannot drift between the provenance document and the figure caption.
 MIXER_SETPOINT_ROLE = "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference and no spectral peak or harmonic is attributed to it"
-REPLICATE_ROLE = "no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, so a level effect cannot be separated from drift"
+REPLICATE_ROLE = "no profile and no gate is an independent experimental replicate; the levels carry no acquisition order, and magnitude relative to one observed discrepancy does not establish a PRF effect"
+
+#: The finding keys whose statements, with the limitations, carry this axis's reviewer-visible prose.
+FINDING_KEYS: tuple[str, ...] = (
+    "effect_gate", "velocity_headroom", "temporal_bandwidth", "focus_decision", "realizations",
+)
 _FOCUS_VERDICT = (
     "Verdict: this evidence does not show the 400 us setting to be inadequate on either count, so it "
     f"does not justify a {CANDIDATE_SETTING_US:g} us acquisition. Unidentifiable here: a wrap that "
@@ -821,6 +830,56 @@ FIGURE_PANELS: tuple[str, ...] = (
     "velocity headroom: the largest |v| / Vmax per level against the unambiguous limit at 1.0, with the samples beyond the limit and the wrap-like discontinuities beside it",
     "usable temporal bandwidth: each level's ensemble PSD against the frequencies it supports, with the shared comparison band, each file's usable bandwidth and the 8.33 Hz marker",
 )
+
+
+def duplicate_coverage_sentence(model: PrfLadder) -> str:
+    """What this ladder's coverage is, from its own grouping (plan §8.2 R1, §8.3 step 5).
+
+    Most levels are one recording; the only second realization belongs to the one duplicated
+    setting, named with both of its paths, and that repeated setting is *not* replicated coverage
+    of the axis. Composed from ``model.groups`` rather than written by hand, so the sentence cannot
+    drift from the selection the tables were built from.
+    """
+    duplicated = [group for group in model.groups if len(group.realizations) > 1]
+    if not duplicated:
+        return (
+            "Every level here is a single recording: no setting is duplicated, so no level carries "
+            "repeated coverage."
+        )
+    named = "; ".join(
+        f"{group.key_display} realized by " + " and ".join(group.realization_paths)
+        for group in duplicated
+    )
+    return (
+        "Coverage: most levels here are a single recording, and the only duplicated setting is "
+        f"{named}. That one repeated setting is not replicated coverage of the axis: it repeats a "
+        "condition rather than replicating any level."
+    )
+
+
+def prose_texts(model: PrfLadder) -> dict[str, str]:
+    """The reviewer-visible prose the shared grouped-realization contract checks (plan §8.2 R1).
+
+    The definitions, every finding statement with the limitations, and the figure caption: the three
+    places a singular-coverage claim could survive a regeneration and reach a reviewer.
+    """
+    findings = _findings(model)
+    statements = [findings[key]["statement"] for key in FINDING_KEYS]
+    return {
+        "definitions": " ".join(DEFINITIONS.values()),
+        "findings": " ".join([*statements, *findings["limitations"]]),
+        "caption": figure_caption(model),
+    }
+
+
+def require_grouped_realization_prose(model: PrfLadder) -> None:
+    """Refuse singular-coverage prose while a level of this ladder has two realizations (R1)."""
+    grid.validate_realization_prose(
+        prose_texts(model),
+        multi_realization_levels=[
+            group.key_display for group in model.groups if len(group.realizations) > 1
+        ],
+    )
 
 
 def levels_csv_text(model: PrfLadder) -> str:
@@ -960,9 +1019,9 @@ def _findings(model: PrfLadder) -> dict[str, object]:
             ),
         },
         "limitations": [
-            f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per gate ({model.screening_threshold.metric}): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order, so a smaller effect cannot be separated from drift and a larger one could still be drift or one recording rather than the PRF. No level is replicated.",
+            f"The screening threshold is the only repeat, {screening_threshold:.4g} mm/s per gate ({model.screening_threshold.metric}): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order. Magnitude relative to this observation does not establish distinguishability or a PRF effect; a larger difference could still be drift or one recording rather than the PRF. {duplicate_coverage_sentence(model)}",
             f"The velocity scale is the key's own consequence (Vmax x prf_period is constant across the ladder to the audited tolerance), but the profile rate is not: it rises from {min(rates.values()):.4g} to {max(rates.values()):.4g} Hz while its ratio to the PRF period varies by {ratio_spread:.3g} relative, so the rate is a separate measured property and nothing here claims a future setting would scale it.",
-            f"The temporal metrics are screened against the same-settings WP1 pair through its committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), resummarised in {band[0]:.4g}-{band[1]:.4g} Hz on the bands this ladder shares; one pair cannot estimate that floor's own spread, and 5-10 segments per level make a band level a coarse magnitude.",
+            f"The temporal metrics are screened against the same-settings WP1 pair through its committed curves ({floor['source_paths'][0]} vs {floor['source_paths'][1]}), resummarised in {band[0]:.4g}-{band[1]:.4g} Hz on the bands this ladder shares; one pair cannot estimate the discrepancy distribution, and 5-10 segments per level make a band level a coarse magnitude.",
             "The files carry the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the spectra are per gate, and a wrap-like step is counted as a discontinuity of the recorded estimate, never as proof that a particular sample aliased. This module owns the PRF axis only: resolution, burst, TGC, emitting power and emissions per profile are neither analysed nor decided here.",
         ],
     }
@@ -1000,6 +1059,7 @@ def figure_caption(model: PrfLadder) -> str:
         f"with none beyond it, and the widest usable bandwidth in the ladder "
         f"({temporal['focus_usable_bandwidth_hz']:.4g} Hz of {max(temporal['usable_bandwidth_hz']):.4g}"
         f"-{min(temporal['usable_bandwidth_hz']):.4g} Hz). {MIXER_SETPOINT_ROLE}. {REPLICATE_ROLE}. "
+        f"{duplicate_coverage_sentence(model)} "
         f"Generated at commit {model.analysis_commit or 'unknown'} from {model.manifest_path} "
         f"({model.manifest_sha256})."
     )

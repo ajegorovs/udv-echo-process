@@ -230,8 +230,9 @@ was shown inadequate.
 ## 8. Limitations this design carries
 
 One same-settings repeat only, so the committed screening threshold is one observed realization of repeatability *plus* uncontrolled drift and a
-clearance can still be drift. No acquisition order, so no time drift is reconstructed from the old set. One
-recording per level, so no old verdict is a replicated one and no p-value is produced. Velocity only: echo
+clearance can still be drift. No acquisition order, so no time drift is reconstructed from the old set. Most
+levels have one recording and the shared reference level has two realizations; one duplicated setting is not
+replicated coverage of an axis, so no old verdict is replicated axis evidence and no p-value is produced. Velocity only: echo
 SNR, receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred. The TGC axis
 is screened through an unsettled representation, not a validated gain ladder. The pitch x burst interaction is
 not estimable from the committed set, which is exactly why CC1-CC4 are new measurements rather than a
