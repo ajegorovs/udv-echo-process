@@ -1,0 +1,57 @@
+{
+  "job": "burst-4",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "sparse1-burst-4",
+  "prf_us": 600.0,
+  "emissions_per_profile": 20,
+  "burst_length": 4,
+  "max_profiles_per_block": 2500,
+  "points": [
+    {
+      "label": "ctrl-begin",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    },
+    {
+      "label": "cc1",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 0.617,
+        "gates": 145
+      }
+    },
+    {
+      "label": "ctrl-mid",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    },
+    {
+      "label": "cc3",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 2.96,
+        "gates": 31
+      }
+    },
+    {
+      "label": "ctrl-end",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    }
+  ]
+}

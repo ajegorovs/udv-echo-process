@@ -1,0 +1,134 @@
+{
+  "plan": "sparse-mixer-first-pass",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "sparse1",
+  "store_dir": "outputs/live/store",
+  "max_profiles_per_block": 2500,
+  "sound_speed_ms": 1480.0,
+  "first_gate_mm": 10.1626666667,
+  "reference_window": {
+    "resolution_mm": 1.85,
+    "gates": 50
+  },
+  "reference_condition": {
+    "burst_length": 10,
+    "emissions_per_profile": 20,
+    "prf_us": 600.0
+  },
+  "windows": [
+    {
+      "resolution_mm": 0.617,
+      "gates": 145
+    },
+    {
+      "resolution_mm": 1.85,
+      "gates": 50
+    },
+    {
+      "resolution_mm": 2.96,
+      "gates": 31
+    }
+  ],
+  "jobs": [
+    {
+      "step": 1,
+      "job": "burst-4",
+      "kind": "scientific",
+      "definition": "jobs/burst-4.json",
+      "condition": {
+        "burst_length": 4,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 2,
+      "job": "common-reference-1",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-1.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 3,
+      "job": "burst-18",
+      "kind": "scientific",
+      "definition": "jobs/burst-18.json",
+      "condition": {
+        "burst_length": 18,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 4,
+      "job": "common-reference-2",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-2.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 5,
+      "job": "emissions-8",
+      "kind": "scientific",
+      "definition": "jobs/emissions-8.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 8,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 6,
+      "job": "common-reference-3",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-3.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 7,
+      "job": "emissions-64",
+      "kind": "scientific",
+      "definition": "jobs/emissions-64.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 8,
+      "job": "common-reference-4",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-4.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      }
+    },
+    {
+      "step": 9,
+      "job": "emissions-128",
+      "kind": "scientific",
+      "definition": "jobs/emissions-128.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 128,
+        "prf_us": 600.0
+      }
+    }
+  ]
+}

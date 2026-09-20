@@ -1,0 +1,48 @@
+{
+  "job": "emissions-128",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "sparse1-emissions-128",
+  "prf_us": 600.0,
+  "emissions_per_profile": 128,
+  "burst_length": 10,
+  "max_profiles_per_block": 2500,
+  "points": [
+    {
+      "label": "ctrl-begin",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    },
+    {
+      "label": "e128",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    },
+    {
+      "label": "ctrl-mid",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    },
+    {
+      "label": "ctrl-end",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.1626666667,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    }
+  ]
+}
