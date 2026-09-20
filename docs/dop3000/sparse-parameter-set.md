@@ -349,3 +349,9 @@ This document and the decision table are the merged artefacts of the gating work
 in §3.1 in the campaign-definition format, adds only the writers §6 names, and records the block-local
 controls and the common-reference jobs as points in the definition rather than as a convention — the crossing
 first, since it is the one that closes a gap no existing recording can.
+
+**Landed.** The encoding is in `examples/sparse-mixer-first-pass/` — one run plan and one definition per job,
+with the within-job control placement and the cross-job order the rows do not carry — and it needs **no** new
+writer: the pass runs through the writer surface the six-point campaign was verified on. What it checks before
+anything is recorded, what it leaves to the operator and how it is used are
+[`sparse-run-plan.md`](sparse-run-plan.md).
