@@ -8,7 +8,7 @@ question from the ``prf`` rows of the WP0 manifest, never a filename list (plan 
 is a 250-µs acquisition therefore justified?* One build produces the common views (plan §3.1, §3.2), the per-level native-grid metrics, the
 actual profile rate the timestamps imply, the ``|v| / Vmax`` load distributions with their warning
 fractions, the wrap-like temporal discontinuities, the matched full-record temporal view with its
-repeat floor, and every unordered pair against the committed WP1 screening_threshold with the depth ranges
+observed same-settings temporal discrepancy, and every unordered pair against the committed WP1 screening_threshold with the depth ranges
 where it clears it. The manifest selection, decode and its hash/cell/grid re-checks, the clean-OFAT
 audit, the common views, the native-grid metrics, the knot alignment, the committed WP1 screening_threshold
 and temporal-floor readers and the writers belong to the shared layer
@@ -972,7 +972,7 @@ def figure_caption(model: PrfLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
     It names the ladder, both time views, the common support, the alignment rule, the screening_threshold and
-    the temporal floor with their sources, and the 400-us decision numbers.
+    the observed same-settings temporal discrepancy with its sources, and the 400-us decision numbers.
     """
     findings = _findings(model)
     decision, headroom = findings["focus_decision"], findings["velocity_headroom"]

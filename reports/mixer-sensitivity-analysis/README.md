@@ -19,7 +19,7 @@ Expected outputs, in work-plan order:
 | `figures/resolution-ladder.*` | WP2 | reviewer-visible resolution decision figure |
 | `burst-levels.csv` | WP2 | one row per decoded burst length, native-grid and temporal metrics |
 | `burst-pairs.csv` | WP2 | every level pair on the shared knots, against the WP1 screening threshold |
-| `burst-ladder.provenance.json` | WP2 | binding, definitions, both views, temporal floor and findings |
+| `burst-ladder.provenance.json` | WP2 | binding, definitions, both views, observed same-settings temporal discrepancy and findings |
 | `figures/burst-ladder.*` | WP2 | reviewer-visible burst dropout/variance and 18-vs-20 decision figure |
 | `prf-levels.csv` | WP2 | one row per decoded PRF period: velocity load, wrap-like counts, matched-segment temporal metrics |
 | `prf-pairs.csv` | WP2 | every level pair on the shared knots and bands, against the WP1 screening threshold |
@@ -249,7 +249,7 @@ artefacts are:
 |---|---|
 | `burst-levels.csv` | 12 rows, one per decoded cycle count: common-duration mean, robust spread (IQR), RMS, zero fraction (dropout), native-grid gradient and correlation length, and the matched full-record temporal metrics (ACF e-folding lag, in-band power share above 10 Hz, spectral centroid, RMS bandwidth) |
 | `burst-pairs.csv` | 66 rows, every unordered pair: the signed `short - long` per-gate mean difference at the shared knots, the knots that clear the WP1 screening threshold and the depth ranges where they do, and the short-to-long change of the dropout, variance, smoothing and bandwidth metrics |
-| `burst-ladder.provenance.json` | the binding (manifest hash, all 12 source hashes, the the WP1 screening threshold's path and hash, generator commit), the metric definitions, both views, the temporal floor, the findings and the figure caption |
+| `burst-ladder.provenance.json` | the binding (manifest hash, all 12 source hashes, the the WP1 screening threshold's path and hash, generator commit), the metric definitions, both views, the observed same-settings temporal discrepancy, the findings and the figure caption |
 | `figures/burst-ladder.png` | two panels, the minimum the decisions need: dropout and variance versus cycle count with the 16-20-cycle region shaded, and the plan's 18-versus-20 difference at the shared knots against the screening threshold band |
 
 They are written by:
@@ -261,7 +261,7 @@ They are written by:
 The command selects **every `burst_len` row of `manifest.csv`** (never a filename list), orders the
 ladder by decoded cycle count, re-checks all 12 source SHA-256 values against the bytes together with
 every decoded setting and the gate grid of each recording, reads the decision threshold and the
-temporal repeat floor from the committed WP1 provenance and refuses to run when that artefact was
+observed same-settings temporal discrepancy from the committed WP1 provenance and refuses to run when that artefact was
 generated against another manifest. It also refuses a ladder in which any setting other than the
 burst length moved (plan section 2's clean-OFAT requirement). A malformed, duplicated, undecodable,
 coupled or stale inventory exits 1 with a named reason and writes nothing. As with WP0/WP1/resolution,
@@ -296,7 +296,7 @@ Definitions the tables cannot be read without, all restated in the provenance do
   segments per level. Each level's ensemble PSD inside 0.5-20 Hz gives the in-band power share above
   10 Hz, the power-weighted spectral centroid and the RMS bandwidth; its ensemble autocorrelation gives
   the e-folding lag.
-- **temporal repeat floor** — the same metrics for the two committed WP1 same-settings recordings,
+- **observed same-settings temporal discrepancy** — the same metrics for the two committed WP1 same-settings recordings,
   computed from the ACF/PSD curves `reference-repeat.provenance.json` already records. Their difference
   screens repeatability plus uncontrolled drift for the temporal metrics, exactly as the
   19.37008103465545 mm/s mean-profile screening threshold does for the depth profiles.
@@ -336,17 +336,17 @@ Every number below is copied from the artefacts above (the same values are resta
   scale of order tens of millimetres. In the temporal view the in-band power share above 10 Hz ranges
   **0.0787-0.1235** (spread 0.0448) and the RMS bandwidth **3.952-4.639 Hz**, while the two committed
   same-settings recordings differ by **0.0279** in the same share and **0.446 Hz** in the bandwidth —
-  the ladder's spread is only ~1.6x that floor. The direction is the one a longer pulse predicts (the
-  shortest bursts carry the largest share), but the magnitude is not separable from repeat-plus-drift.
+  the ladder's spread is only ~1.6x that observed discrepancy. The direction is the one a longer pulse predicts (the
+  shortest bursts carry the largest share), but an axis effect is not demonstrated relative to that sole-pair screening reference.
   The ACF e-folding lag takes only the two values the WP1 pair shows (0.08956 s at 11 levels,
   0.11195 s at `burst_len/32.BDD`), and that pair's own lag difference is exactly one profile period
-  (0.02239 s), so a one-lag change is inside the floor by construction.
+  (0.02239 s), so a one-lag change is smaller than that observed discrepancy by construction.
 
 Reviewer path: `burst-pairs.csv` (the focus-pair row `burst_len/18.BDD` -> `burst_len/20.BDD` with
 `knots_above_screening threshold` = 0, and the `max_abs_difference_over_screening threshold` column throughout), then
 `burst-levels.csv` for the per-level distributional, spatial and temporal numbers, then
 `figures/burst-ladder.png`, then the `findings`, `definitions` and `views` blocks of
-`burst-ladder.provenance.json` for the binding, the temporal floor and the limitations.
+`burst-ladder.provenance.json` for the binding, the observed same-settings temporal discrepancy and the limitations.
 
 ## WP2 — the PRF axis
 
@@ -371,7 +371,7 @@ They are written by:
 The command selects **every `prf` row of `manifest.csv`** (never a filename list), orders the ladder
 by decoded PRF period, re-checks all five source SHA-256 values against the bytes together with
 every decoded setting, the gate grid *and the two cells the key derives* (`prf_hz` and
-`velo_max_ms`), reads the decision threshold and the temporal floor from the committed WP1
+`velo_max_ms`), reads the decision threshold and the observed same-settings temporal discrepancy from the committed WP1
 provenance, and refuses to run when that artefact was generated against another manifest. It also
 refuses a ladder in which a decoded setting other than the key moved (plan §2's clean-OFAT
 requirement) and a ladder whose velocity scale did **not** move with the key: `velo_max_ms` is the
@@ -428,10 +428,10 @@ Definitions the tables cannot be read without, all restated in the provenance do
   (`max_gate_abs_mean_difference_mm_s`), read from `reference-repeat.provenance.json` and pinned to
   this manifest's hash. It is a screening threshold: one observed realization of repeatability *plus* uncontrolled drift, and it is the
   threshold every mean-profile effect here is compared to.
-- **temporal repeat floor** — the same-settings WP1 pair (`prf/600.BDD` vs `res/1-8.BDD`) through
+- **observed same-settings temporal discrepancy** — the same-settings WP1 pair (`prf/600.BDD` vs `res/1-8.BDD`) through
   its committed curves, resummarised in the bands this ladder shares: their band-mean spectral
   levels differ by up to 3.532 dB and their share of in-band power below the 8.333 Hz marker by
-  0.01806, so a cross-level spectral difference smaller than that is not separable either.
+  0.01806. A smaller cross-level spectral difference does not demonstrate an axis effect relative to that observation.
 
 ### What the committed files measure
 
@@ -471,10 +471,10 @@ provenance's `findings` block, and each pair row carries its own):
   knot. None of these runs spans the support, so the evidence is a *localised* signal (near-field and
   a few mid/minor-depth knots), not a global velocity bias — and with one recording per level and no
   acquisition order, that localised signal cannot be separated from drift.
-- **The spectra themselves are not separable at this resolution either.** Band-mean spectral level
+- **A spectral axis effect is not demonstrated relative to the sole-pair discrepancy.** Band-mean spectral level
   differences between levels run 1.22-3.46 dB in magnitude, while the same-settings WP1 pair differs
   by 3.532 dB in the same resummarisation; the direction (the shorter period's density slightly
-  below the longer's in 8 of 10 pairs) is not larger than the floor, and with 5-10 segments per level
+  below the longer's in 8 of 10 pairs) is not larger than that observed discrepancy, and with 5-10 segments per level
   a band level is a coarse magnitude.
 
 Reviewer path: `prf-levels.csv` for the per-level load, warning fractions, wrap-like counts, profile

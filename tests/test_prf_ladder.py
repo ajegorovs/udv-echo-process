@@ -276,7 +276,7 @@ def test_build_refuses_stale_hash_derived_cells_coupling_or_unbound_screening_th
     changed = _manifest(tmp_path, lambda rows: _replace(rows, PATHS[1], gates="49"))
     with pytest.raises(PrfLadderError, match="records manifest"):
         build_prf_ladder(DATASET_ROOT, changed, ENVELOPE, analysis_commit=COMMIT)
-    # The threshold and the temporal floor are the committed WP1 pair through its committed curves.
+    # The threshold and temporal discrepancy are the committed WP1 pair through its committed curves.
     ladder = build_prf_ladder(DATASET_ROOT, RELATIVE_MANIFEST, RELATIVE_ENVELOPE,
                               analysis_commit=COMMIT)
     floor = ladder.temporal["floor"]

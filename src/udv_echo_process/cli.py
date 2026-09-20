@@ -439,9 +439,9 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
     and writes ``burst-levels.csv``, ``burst-pairs.csv``, ``burst-ladder.provenance.json``
     and ``figures/burst-ladder.png`` into the report directory, comparing every level pair to
     the committed WP1 sole-pair observed-discrepancy screening threshold and the matched temporal
-    view to the temporal repeat floor the committed WP1 curves imply. Exits 0 on success and 1
+    view to the observed same-settings temporal discrepancy in the committed WP1 curves. Exits 0 on success and 1
     with the named reason on stderr when the selection, the bytes, the screening threshold or the
-    temporal floor cannot
+    temporal discrepancy cannot
     be trusted (never a traceback, never a half-written artefact). It touches nothing but
     those four files: no instrument, no cache.
     """
@@ -472,7 +472,7 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
         "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the sole-pair screening threshold and temporal floor are read from "
+            "WP1 provenance the sole-pair screening threshold and temporal discrepancy are read from "
             "(default: <report-dir>/reference-repeat.provenance.json)"
         ),
     )
@@ -532,7 +532,7 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
     )
     print(
         f"bandwidth   : in-band power above 10 Hz {temporal['hf_share_min']:.4g}-"
-        f"{temporal['hf_share_max']:.4g}, against a same-settings floor of "
+        f"{temporal['hf_share_max']:.4g}, against an observed same-settings discrepancy of "
         f"{temporal['floor_hf_share_difference']:.4g} in the same share"
     )
     print(f"levels table: {report_dir / burst_ladder.LEVELS_NAME}")
@@ -555,10 +555,10 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     ``prf-ladder.provenance.json`` and ``figures/prf-ladder.png`` into the report directory:
     per-level velocity metrics, the actual profile rate from the timestamps, the ``|v| / Vmax``
     load fractions, the wrap-like discontinuities, the matched-physical-duration temporal view
-    with its repeat floor, every level pair against the committed WP1 sole-pair screening
+    with its observed same-settings temporal discrepancy, every level pair against the committed WP1 sole-pair screening
     threshold, and the plan's 400-us versus 250-us decision. Exits 0 on success and 1 with the
     named reason on stderr when the selection, the bytes, the screening threshold, the temporal
-    floor or the key's scaling cannot be
+    discrepancy or the key's scaling cannot be
     trusted (never a traceback, never a half-written artefact). It touches nothing but those four
     files: no instrument, no cache.
     """
@@ -589,7 +589,7 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
         "--screening-threshold",
         default=None,
         help=(
-            "WP1 provenance the sole-pair screening threshold and temporal floor are read from "
+            "WP1 provenance the sole-pair screening threshold and temporal discrepancy are read from "
             "(default: <report-dir>/reference-repeat.provenance.json)"
         ),
     )

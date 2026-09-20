@@ -10,7 +10,7 @@ one common physical support serve every cross-level summary; native-grid gradien
 correlation length are computed before any alignment and pairs sample the shorter pulse's
 grid at the longer pulse's own knots; every mean-profile effect is stated against the
 committed WP1 screening_threshold; the full-record temporal view is matched across all 12 files and
-compared to the temporal repeat floor the committed WP1 curves imply; and the
+compared to the observed same-settings temporal discrepancy in the committed WP1 curves; and the
 18-versus-20-cycle question is answered from the numbers rather than asserted.
 """
 

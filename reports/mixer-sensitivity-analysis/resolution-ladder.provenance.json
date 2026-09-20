@@ -17,7 +17,7 @@
     "depth_mm": 82.31266666666666,
     "median_abs_mean_difference_mm_s": 8.908740794548184,
     "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
-    "role": "decision threshold: an effect smaller than this bound is not distinguishable from repeat-plus-drift"
+    "role": "screening reference only: above/below indicates magnitude relative to the sole observed same-settings discrepancy; neither outcome establishes distinguishability, causality, or a bound on drift"
   },
   "aggregation": {
     "rule": "unweighted arithmetic mean over the level's realizations",

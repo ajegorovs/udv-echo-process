@@ -135,10 +135,10 @@ per axis block). Recordings for the first pass: **10** (7 unique + 3 controls) i
 
 ### 3.4 The measurement that triggers the conditional extension
 
-`E128` is acquired **only if E64 has not plateaued**, and plateauing is judged against the committed temporal
-repeat floor resummarised in the same bands, not by inspection:
+`E128` is acquired **only if E64 has not plateaued**, and plateauing is judged against the committed
+observed same-settings temporal discrepancy resummarised in the same bands, not by inspection:
 
-| Quantity, E64 against the reference | Committed floor | Source |
+| Quantity, E64 against the reference | Observed same-settings discrepancy | Source |
 |---|---|---|
 | in-band power share above 10 Hz | 0.02789 | `burst-ladder.provenance.json` `findings.temporal_bandwidth` |
 | RMS bandwidth | 0.4457 Hz | same key |

@@ -108,6 +108,22 @@ MANIFEST_BINDING_RE = re.compile(
 #: An above/below screening outcome: it must carry the non-causal interpretation.
 OUTCOME_RE = re.compile(r"\b(?:above|below|clears|clearing|clear|exceeds)\b", re.IGNORECASE)
 
+#: A sole observed discrepancy cannot support a statistical distinguishability
+#: claim. These formulations are invalid even though they contain words such as
+#: ``not`` or ``cannot``: those words negate distinguishability, not the inference.
+INDISTINGUISHABILITY_CLAIM_RE = re.compile(
+    r"smaller\s+than\s+this\s+bound\s+is\s+not\s+distinguishable"
+    r"|below\s+the\s+threshold\s+cannot\s+be\s+distinguished\s+from\s+drift"
+    r"|inside\s+the\s+threshold\s+means\s+indistinguishable",
+    re.IGNORECASE,
+)
+
+TEMPORAL_FLOOR_CLAIM_RE = re.compile(
+    r"\btemporal\s+floor\b|\brepeat\s+floor\b|"
+    r"\bnot\s+separable\s+from\s+repeat(?:-plus-|\s+plus\s+)drift\b",
+    re.IGNORECASE,
+)
+
 #: The framing that keeps an outcome non-causal rather than a proof or a bound.
 NON_CAUSAL_RE = re.compile(
     r"screening|non-causal|not proof|not a proof|no proof|does not prove|do not prove|"
@@ -341,6 +357,34 @@ def _scan_line(path: str, number: int, line: str) -> list[Violation]:
     statistical = STATISTICAL_ENVELOPE_MARKERS.search(line) is not None
     strict = QUANTITY_MARKER_RE.search(line) is not None
     owns_quantity = path in R2_TEXT_UNITS
+
+    if INDISTINGUISHABILITY_CLAIM_RE.search(line) is not None:
+        violations.append(
+            Violation(
+                path=path,
+                line=number,
+                rule="r2-indistinguishability-claim",
+                message=(
+                    "one observed discrepancy is a screening reference, not evidence that an "
+                    "effect is statistically indistinguishable from drift"
+                ),
+                excerpt=line.strip(),
+            )
+        )
+
+    if TEMPORAL_FLOOR_CLAIM_RE.search(line) is not None:
+        violations.append(
+            Violation(
+                path=path,
+                line=number,
+                rule="r2-temporal-floor-claim",
+                message=(
+                    "the sole pair supplies an observed same-settings temporal discrepancy, not "
+                    "a statistical floor or separability criterion"
+                ),
+                excerpt=line.strip(),
+            )
+        )
 
     for phrase in RETIRED_PHRASES:
         start = lowered.find(phrase)

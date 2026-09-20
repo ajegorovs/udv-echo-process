@@ -108,6 +108,40 @@ def test_every_retired_phrase_is_caught_one_by_one(tool, no_allowlist):
         assert "r2-retired-phrase" in rules_of(violations), phrase
 
 
+@pytest.mark.parametrize(
+    "text",
+    (
+        "An effect smaller than this bound is not distinguishable from repeat-plus-drift.\n",
+        "Below the threshold cannot be distinguished from drift.\n",
+        "Inside the threshold means indistinguishable.\n",
+    ),
+)
+def test_indistinguishability_claims_from_one_pair_are_violations(tool, no_allowlist, text):
+    violations = tool.scan_text(
+        text,
+        "src/udv_echo_process/analysis/_native_grid.py",
+        allowlist=no_allowlist,
+    )
+    assert "r2-indistinguishability-claim" in rules_of(violations)
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "The temporal floor is taken from the same-settings pair.\n",
+        "The same-settings repeat floor is 0.3 Hz.\n",
+        "A smaller bandwidth loss is not separable from repeat-plus-drift.\n",
+    ),
+)
+def test_temporal_floor_inferences_from_one_pair_are_violations(tool, no_allowlist, text):
+    violations = tool.scan_text(
+        text,
+        "src/udv_echo_process/analysis/burst_ladder.py",
+        allowlist=no_allowlist,
+    )
+    assert "r2-temporal-floor-claim" in rules_of(violations)
+
+
 def test_an_explicit_negation_is_not_a_violation(tool, no_allowlist):
     """A statement that the quantity is *not* a bound must survive."""
     for text in (

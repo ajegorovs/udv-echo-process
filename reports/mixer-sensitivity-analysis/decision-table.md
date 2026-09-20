@@ -41,7 +41,7 @@ SHA-256 of the committed bytes:
 | `manifest.csv` | `064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139` | the 40 rows, their decoded settings and their source hashes; every axis selects from it |
 | `qc-summary.json` | `4e46582b6cfe1644cc3699a5134d8c02dcf9ad3e7568359a01a2f1c56fce463f` | axis counts 13/12/8/5/2, zero decode failures, monotone timestamps |
 | `reference-repeat.csv` | `05f3495c98f6d58fd50cb447fbca4c8a1164aba178c6b53d0eefa34a58c4d9cb` | the 50-gate per-gate statistics of the only same-settings pair |
-| `reference-repeat.provenance.json` | `a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263` | the sole-pair observed-discrepancy screening threshold, the metric definitions, both time views, the temporal floor curves |
+| `reference-repeat.provenance.json` | `a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263` | the sole-pair observed-discrepancy screening threshold, the metric definitions, both time views, the observed same-settings temporal-discrepancy curves |
 | `resolution-levels.csv` | `c037a36bf4b825ba120b4a85ab16efe26b314317661269fc1351c3d9a2002be9` | per-pitch distributional and native-grid spatial metrics |
 | `resolution-pairs.csv` | `1278c42f7c66eb93d7224b543d6c70814dd4a000aaf70c8c76ab9774781e703f` | all 78 pairs: per-knot difference, knots above the screening threshold, depth ranges, sub-knot detail |
 | `resolution-ladder.provenance.json` | `e5e08dd71f666ec014521cd6a82efa905e4691d91580e72d4fe67c45dae75793` | `findings.screening_threshold_gate`, `findings.information`, `findings.coarsest_pitch`, `findings.limitations` |
@@ -132,7 +132,7 @@ All 40 manifest rows carry `emissions_per_profile` = 20 (word 14), and the recor
 | **8** (new) | Not measured. No committed recording varies the axis; every file's word 14 is 20 and every file's time base agrees with it. | **N/A** — no measured variation exists to compare. | The low-averaging end, and the first point that would make the axis **readable from a file's own time base** rather than inferred: at ~15 ms per profile (matrix §9) the stored step itself states the setting. | `emissions_per_profile` is a **run-wide** campaign value today (`campaign.CampaignDefinition.emissions_per_profile`; points may not disagree) and is not in `actuator.PARAMETER_WRITE_ORDER` = `(RESOLUTION, GATES)`, although `ParamRole.EMISSIONS_PER_PROFILE` exists. One job per level needs no new writer; one run with per-point levels does. The runner's size guard already derives from the definition's emissions (`emissions x PRF + ~1 ms`), so it needs no change. | `keep` (acquire) | A control spread above the screening threshold inside the emissions jobs, or a refusal from the app's own period/size law at the shorter stored step — either says the condition cannot carry a bounded comparison yet. |
 | **20** (reference) | Measured — it *is* the reference: 20 in all 40 rows, corroborated by the time base. | **N/A** | The axis's own reference: the comparand for 8 and 64, and the value the reference controls carry. | None. | `keep` (measured; the controls are acquired) | A decoded word 14 that disagrees with the time-base recovery on a new file — that would mean one of the two paths is wrong and the axis is not readable the way this table assumes. |
 | **64** (new) | Not measured, as above. | **N/A** | Moderate averaging: the level that decides whether the axis has plateaued, and the gate for 128. | As for 8 (one job today, or a per-point writer for one run). | `keep` (acquire) | A control spread above the screening threshold inside the emissions jobs; or the axis proving unreadable (see 8). |
-| **128** (new) | Not measured, as above. | **N/A** | None until 64 is seen. | As for 8, if it is ever acquired. | `defer` (conditional) — acquired only on the §5 trigger | The §5 trigger itself: 64's own change from 20 measured above the committed temporal floor on the named metrics. |
+| **128** (new) | Not measured; same rationale. | **N/A** | None until 64 is seen. | As for 8, if it is ever acquired. | `defer` (conditional) — acquired only on the §5 trigger | The §5 trigger itself: 64's own change from 20 measured relative to the committed observed same-settings temporal discrepancy on the named metrics. |
 
 ## 4. Burst-length axis — draft §D
 
@@ -259,12 +259,12 @@ jobs (one per axis block). Recordings for the first pass: **10** (7 unique + 3 c
 ### 8.5 The trigger for the one conditional extension
 
 `E128` is acquired **only if E64 has not plateaued**, and "plateaued" is a measurement against the committed
-temporal floor, not an opinion. Resummarise E64 against the reference in the same bands the committed ladders
-use and compare each of these to its committed same-settings floor:
+observed same-settings temporal discrepancy, not an opinion. Resummarise E64 against the reference in the same bands the committed ladders
+use and compare each of these to its committed observed same-settings discrepancy:
 
-- in-band power share above 10 Hz — floor **0.02789** (`burst-ladder.provenance.json` `findings.temporal_bandwidth.floor_hf_share_difference`);
-- RMS bandwidth — floor **0.4457 Hz** (same key, `floor_bandwidth_difference_hz`);
-- band-mean spectral level — floor **3.5317 dB**, and the share of in-band power below the 8.333 Hz marker — floor **0.01806** (`prf-ladder.provenance.json` `findings.temporal_bandwidth.floor_band_level_difference_db`, `floor_hf_share_difference`);
+- in-band power share above 10 Hz — observed discrepancy **0.02789** (`burst-ladder.provenance.json` `findings.temporal_bandwidth.floor_hf_share_difference`);
+- RMS bandwidth — observed discrepancy **0.4457 Hz** (same key, `floor_bandwidth_difference_hz`);
+- band-mean spectral level — observed discrepancy **3.5317 dB**, and the share of in-band power below the 8.333 Hz marker — observed discrepancy **0.01806** (`prf-ladder.provenance.json` `findings.temporal_bandwidth.floor_band_level_difference_db`, `floor_hf_share_difference`);
 - stored profile period and per-gate zero fraction, against the same control repeats.
 
 If E64's change from the reference exceeds its floor on any of those, the axis has not plateaued and E128 is

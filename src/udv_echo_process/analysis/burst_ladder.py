@@ -7,7 +7,7 @@ from the ``burst_len`` rows of the WP0 manifest, never a filename list (plan §4
 where the empirical transition is, and whether 18 can be separated from 20 cycles.
 
 One build produces the common views (plan §3.1, §3.2), the per-level native-grid metrics, the
-matched full-record temporal view with its repeat floor, every unordered pair against the
+matched full-record temporal view with its observed same-settings temporal discrepancy, every unordered pair against the
 committed WP1 screening_threshold (with the depth ranges where a difference clears it), the knees of the
 dropout/variance/smoothing/bandwidth metrics, and the four artefacts.
 
@@ -777,12 +777,12 @@ def _findings(model: BurstLadder) -> dict[str, object]:
                 f"ranges {min(shares):.4g}-{max(shares):.4g} (spread "
                 f"{max(shares) - min(shares):.4g}) over the {len(model.levels)} levels, the "
                 f"centroid {min(centroids):.4g}-{max(centroids):.4g} Hz and the RMS bandwidth "
-                f"{min(bandwidths):.4g}-{max(bandwidths):.4g} Hz, against a same-settings repeat "
-                f"floor of {floor['hf_share_difference']:.4g} in the same share and "
-                f"{floor['bandwidth_hz_difference']:.4g} Hz in the bandwidth: a smaller bandwidth "
-                "loss is not separable from repeat-plus-drift. The shortest bursts carry the "
+                f"{min(bandwidths):.4g}-{max(bandwidths):.4g} Hz, against an observed same-settings "
+                f"discrepancy of {floor['hf_share_difference']:.4g} in the same share and "
+                f"{floor['bandwidth_hz_difference']:.4g} Hz in bandwidth. The observed change is "
+                "smaller than that sole-pair discrepancy, so an axis effect is not demonstrated. The shortest bursts carry the "
                 "largest share and the longest the smallest, the direction a longer pulse "
-                "predicts, at a magnitude inside the floor."
+                "predicts, at a magnitude below that observed discrepancy."
             ),
         },
         "realizations": {
@@ -867,7 +867,7 @@ def figure_caption(model: BurstLadder) -> str:
     """The caption the committed figure and the provenance document both carry.
 
     It names the ladder, both time views, the common support, the alignment rule, the screening_threshold and
-    the temporal floor with their sources, and the 18-versus-20 numbers.
+    the observed same-settings temporal discrepancy with its sources, and the 18-versus-20 numbers.
     """
     findings = _findings(model)
     focus, temporal = findings["focus_18_vs_20"], findings["temporal_bandwidth"]
@@ -889,7 +889,7 @@ def figure_caption(model: BurstLadder) -> str:
         f"{temporal['frequency_resolution_hz']:.4g} Hz, Nyquist {temporal['nyquist_hz']:.4g} Hz. "
         f"Decision threshold: the committed WP1 screening_threshold {model.screening_threshold.value_mm_s:.4g} mm/s "
         f"({model.screening_threshold.metric}, from {model.screening_threshold.path}, "
-        f"{model.screening_threshold.source_sha256[:12]}...). Temporal floor: {temporal['floor_paths'][0]} "
+        f"{model.screening_threshold.source_sha256[:12]}...). Observed same-settings temporal discrepancy: {temporal['floor_paths'][0]} "
         f"vs {temporal['floor_paths'][1]}, in-band power above {PSD_HF_ABOVE_HZ:g} Hz differing "
         f"by {temporal['floor_hf_share_difference']:.4g}. Plan question 18 vs 20 cycles: max "
         f"|diff| {focus['max_abs_difference_mm_s']:.4g} mm/s at "

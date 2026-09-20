@@ -94,8 +94,9 @@ class ScreeningThresholdBinding(ValueModel):
     median_abs_mean_difference_mm_s: float
     scope: str
     role: str = (
-        "decision threshold: an effect smaller than this bound is not "
-        "distinguishable from repeat-plus-drift"
+        "screening reference only: above/below indicates magnitude relative to the sole observed "
+        "same-settings discrepancy; neither outcome establishes distinguishability, causality, "
+        "or a bound on drift"
     )
 
 
@@ -1117,7 +1118,7 @@ def read_temporal_floor(
     band_hz: tuple[float, float],
     hf_above_hz: float,
 ) -> dict[str, object]:
-    """The temporal repeat floor the committed WP1 curves record.
+    """The observed same-settings temporal discrepancy the committed WP1 curves record.
 
     Both recordings are summarised with the same :func:`psd_band_summary` the axis levels use, so
     their difference is comparable to a difference across a ladder. Refuses a missing document,
