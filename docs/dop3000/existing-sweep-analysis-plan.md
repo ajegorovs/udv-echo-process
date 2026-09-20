@@ -5,11 +5,13 @@
 > existing 40 velocity recordings have been analysed. No new instrument acquisition belongs to this
 > plan until the existing-data decision table is complete.
 >
-> **State — review corrections required before merge.** WP0-WP4 exist on PR #24, but the scientific
-> decision layer is not accepted as delivered. The completion plan in §8 supersedes the earlier
-> “delivered” markers: correct the shared-anchor selection, nuisance-threshold semantics, OFAT contract
-> and temporal metrics; regenerate WP1/WP2; then reconsider WP3/WP4. No new acquisition belongs to this
-> PR.
+> **State — review corrections required before merge.** WP0 exists and WP1-WP4 are provisional drafts on
+> PR #24: the scientific decision layer is not accepted and nothing here is delivered. The completion plan
+> in §8 supersedes the earlier “delivered” markers: apply R1-R9 of §8.2 — treat every axis's
+> same-fingerprint recordings as realizations irrespective of folder (R1), name the sole-pair quantity
+> exactly **sole-pair observed-discrepancy screening threshold** (R2), call the beginning/middle/end
+> controls **within-run reference controls** (R9), and correct the OFAT contract and temporal metrics;
+> regenerate WP1/WP2; then reconsider WP3/WP4. No new acquisition belongs to this PR.
 >
 > **Dataset:**
 > [`data/mixer-sensitivity-analysis/4MHz/0500RPM/001/`](../../data/mixer-sensitivity-analysis/4MHz/0500RPM/001/)
@@ -30,15 +32,15 @@ The work ends with an explicit verdict for each candidate in the sparse-set PR:
 
 | Axis | Decision required |
 |---|---|
-| resolution | retain the coarsest pitch that preserves structure beyond the observed-discrepancy screening threshold; decide whether 0.247 mm adds information over 0.617 mm |
+| resolution | retain the coarsest pitch that preserves structure beyond the sole-pair observed-discrepancy screening threshold; decide whether 0.247 mm adds information over 0.617 mm |
 | burst length | locate the empirical transition and decide 18 versus 20 cycles |
-| PRF | measure velocity and temporal-bandwidth headroom; acquire 250 µs only if 400 µs is inadequate |
+| PRF | measure velocity and temporal-bandwidth headroom; acquire 250 µs only if the committed 400-µs rung is inadequate — 400 µs is an existing rung of the committed PRF ladder, not the reference, which stays 600 µs |
 | emissions/profile | establish that the axis is absent from the old sweep; 8/20/64 is only the initial bracket, and the corrected decision layer must either add a high-intermediate successive-increment point before deciding on 128 or make 128 an ordinary sparse point |
 | sensitivity | decide whether one high-sensitivity diagnostic is needed before a wider ladder |
 | TGC and power | decide what velocity-only data can screen and what still requires echo/energy acquisition |
 
 The output is not a significance-ranked collection of individual gates. It is an effect-size and
-information-value decision, bounded by the only repeated setting in the dataset.
+information-value decision, constrained by the only repeated setting in the dataset.
 
 ## 2. Facts the implementation must preserve
 
@@ -55,9 +57,13 @@ These are verified properties of the committed payload, not conclusions about th
 - TGC word 23 is `0`, word 25 is fixed at `255`, and only word 24 moves in the TGC folder. The
   reader currently labels word 23 value `0` as `uniform`; do not reinterpret this ladder as a simple
   scalar gain until the representation has been settled;
-- `prf/600.BDD` and `res/1-8.BDD` have the same operating-parameter signature but different durations.
-  They are the only same-settings pair; their difference is one observed realization of repeatability plus
-  uncontrolled drift, not an upper bound on either;
+- `prf/600.BDD` (in the `prf` folder) and `res/1-8.BDD` (in the `res` folder) carry the same decoded
+  scientific fingerprint — resolution 1.850 mm, PRF 600 µs, burst 10 cycles, TGC ≈19.9216 dB uniform start,
+  emitting power medium — and differ only in duration. Every axis analysed here selects recordings by that
+  decoded fingerprint and treats all recordings carrying the same relevant fingerprint as realizations of
+  one decoded level, irrespective of the folder they sit in. They are the only same-settings pair; their
+  difference is the sole-pair observed-discrepancy screening threshold — one observed realization of
+  repeatability plus uncontrolled drift, not a bound on either;
 - file metadata does not recover acquisition order. Do not estimate time drift from folder or filename
   order;
 - the resolution and burst ladders intersect only at the reference, so pitch × burst interaction is not
@@ -91,15 +97,16 @@ independent experimental replicates.
 
 ### 3.3 Uncertainty
 
-The `prf/600` ↔ `res/1-8` difference is the observed discrepancy from the sole same-settings pair; duration
-and unknown acquisition time also differ, so it does not bound repeatability or drift. Within-record block
+The `prf/600` ↔ `res/1-8` difference is the sole-pair observed-discrepancy screening threshold; duration
+and unknown acquisition time also differ, so it does not bound repeatability or drift (an explicit negation,
+not a positive bound claim). Within-record block
 bootstrap intervals may describe conditional uncertainty, with block length based on measured autocorrelation
 and no shorter than a nominal mixer revolution. They do not turn one acquisition into independent run-level
 replication.
 
-No gate-wise p-value family is a primary endpoint. Report effect sizes relative to the observed-discrepancy
-screening threshold, saying only whether they fall above or below it; neither outcome proves an axis effect or
-bounds possible drift.
+No gate-wise p-value family is a primary endpoint. Report effect sizes relative to the
+sole-pair observed-discrepancy screening threshold, saying only whether they fall above or below it; neither
+outcome proves an axis effect or bounds possible drift.
 
 ## 4. Work packages and acceptance gates
 
@@ -123,16 +130,16 @@ Gate:
 - manifest values reproduce the dataset README where fields overlap;
 - tests fail first for each newly exposed reader field, then pass.
 
-### WP1 — Record the sole-pair observed discrepancy
+### WP1 — Record the sole-pair observed-discrepancy screening threshold
 
 Deliver:
 
 - `reference-repeat.csv`: depth-resolved mean, median, robust spread, RMS and zero fraction for both
   same-settings recordings and their difference;
-- one figure showing both profiles, their difference and the declared observed-discrepancy screening threshold;
+- one figure showing both profiles, their difference and the declared sole-pair observed-discrepancy screening threshold;
 - temporal autocorrelation and PSD comparison on the identical 50-gate grid.
 
-Gate: every later axis verdict states whether its effect falls above or below this screening threshold and where
+Gate: every later axis verdict states whether its effect falls above or below this sole-pair observed-discrepancy screening threshold and where
 in depth, without interpreting either outcome as proof of an axis effect or a bound on drift.
 
 ### WP2 — Analyse existing ladders
@@ -155,7 +162,7 @@ Gate: plots are generated from the manifest-selected files, not from hand-mainta
 Deliver `decision-table.md`, one row per candidate condition, with:
 
 - existing evidence;
-- effect relative to the observed-discrepancy screening threshold;
+- effect relative to the sole-pair observed-discrepancy screening threshold;
 - scientific information gained;
 - automation needed;
 - verdict: `keep`, `defer`, `replace`, or `requires diagnostic`;
@@ -164,31 +171,34 @@ Deliver `decision-table.md`, one row per candidate condition, with:
 Gate: update `sparse-parameter-set.md` from this table. Do not retain a level merely because the
 instrument accepts it.
 
-**Delivered.** `reports/mixer-sensitivity-analysis/decision-table.md` — seven columns exactly as named
-above, one row per candidate condition of the sparse-set draft plus explicit rows for the four introduced
-pitch x burst corner conditions and the reference control. It is hand-written and bound by SHA-256 to the 22
-committed artifacts it reads. The gate is met by `sparse-parameter-set.md` §2-§3: the 17-condition candidate
-list is replaced by 7 unique new conditions, and no level is retained for feasibility reasons.
+**Provisional — not accepted and not delivered.** `reports/mixer-sensitivity-analysis/decision-table.md`
+exists, with seven columns exactly as named above, one row per candidate condition of the sparse-set draft
+plus explicit rows for the four introduced pitch × burst corner conditions and the one reference condition
+(realized by the three within-run reference controls). It is hand-written and pinned by SHA-256 to the 22
+committed artifacts it reads. Its earlier claim to meet the gate through `sparse-parameter-set.md` §2-§3 —
+the 17-condition candidate list replaced by 7 unique new conditions, no level retained for feasibility
+reasons — is reopened by §8.3 step 7 and is not an accepted result.
 
 ### WP4 — Design only the missing measurements
 
 The provisional augmentation, subject to WP3, is:
 
-- reference controls at the beginning, middle and end of each randomized/blocked run;
+- the reference condition, realized as within-run reference controls at the beginning, middle and end of each randomized/blocked run;
 - pitch × burst corners at 0.617 and 2.960 mm crossed with 4 and 18 cycles;
 - emissions/profile 8 and 64 around the existing 20 as the initial bracket; the corrected decision layer must
   either add a high-intermediate point and judge successive high-end increments before 128, or include 128 as
   an ordinary sparse point;
 - one higher-sensitivity diagnostic, extending lower only if it changes validity or distribution;
-- an echo/energy diagnostic before declaring the TGC/power envelope safe;
-- PRF 250 µs only if the committed 400-µs data show inadequate headroom.
+- an echo/energy diagnostic before declaring the TGC/power dynamic-range window safe;
+- PRF 250 µs only if the committed 400-µs rung shows inadequate headroom (600 µs remains the shared reference period).
 
 Gate: every new acquisition closes a named information gap; no Cartesian product.
 
-**Previously delivered as a provisional design** in `sparse-parameter-set.md` §3. Its four crossing corners,
-8/64 bracket, higher-sensitivity diagnostic, controls and PRF decision remain inputs to review, but the exact
-set and count are reopened by §8—especially E128, whose old E64-versus-E20 trigger does not test plateau.
-Nothing in this paragraph freezes those conditions ahead of corrected WP1/WP2 evidence and step 7.
+**Provisional — not accepted.** It was recorded as a draft design in `sparse-parameter-set.md` §3; no WP3 or
+WP4 artifact is delivered by this plan yet. Its four crossing corners, 8/64 bracket, higher-sensitivity
+diagnostic, within-run reference controls and PRF decision remain inputs to review, but the exact set and
+count are reopened by §8—especially E128, whose old E64-versus-E20 trigger does not test plateau. Nothing in
+this paragraph freezes those conditions ahead of corrected WP1/WP2 evidence and step 7.
 
 ## 5. Implementation order and commits
 
@@ -197,7 +207,9 @@ Use vertical, reviewable commits:
 1. `docs(analysis): gate the sparse matrix on the existing sweep`
 2. `feat(bdd): expose sweep metadata required by the manifest`
 3. `feat(analysis): inventory the committed mixer sweep`
-4. `feat(analysis): quantify the reference-repeat bound`
+4. `feat(analysis): quantify the reference-repeat bound` — **historical commit subject, not a live term.**
+   This subject shipped as commit `2c70976`; the retired word “bound” is preserved here only as commit
+   history, and the quantity it names is the sole-pair observed-discrepancy screening threshold.
 5. one commit per existing axis analysis (`resolution`, `burst`, `prf`, `energy`)
 6. `docs(matrix): decide the first measured augmentation`
 
@@ -226,13 +238,14 @@ This plan is complete when:
 - PR #23's candidate levels and wording match the measured decisions;
 - limitations remain explicit: one same-settings repeat, unknown acquisition order, velocity-only data,
   and no pitch × burst interaction in the old set;
-- the next campaign contains only the independent references and missing-information measurements
-  justified by the decision table.
+- the next campaign contains only the within-run reference controls for the one reference condition, plus the
+  missing-information measurements justified by the decision table.
 
 **Where each condition stood before review.** The 22 generated artifacts plus the hand-written decision table and
 report README remain the 24-item report baseline that §8.3 item 1 must record, not accepted final evidence.
 The prior sparse set contained 7 unique
-conditions (8 with conditional E128) and 3 controls per run; those numbers are reopened. Step 7 owns updating
+conditions (8 with conditional E128) and 3 within-run reference controls per run for the single reference
+condition; those numbers are reopened. Step 7 owns updating
 this §7 status, §1's emissions decision, WP4 above, `decision-table.md` and `sparse-parameter-set.md` together,
 and its validator must derive all condition/control/job counts from their rows rather than preserve these old
 numbers.
@@ -255,23 +268,23 @@ been rebuilt from them. The old `CC1–CC4 + E8 + E64 + D1` set is not frozen wh
 
 | ID | Ruling | Current evidence | Required result |
 |---|---|---|---|
-| R1 | setting-based anchors | `_native_grid.py` selects rows by manifest `axis` (`manifest_axis_rows`), while `prf/600.BDD` and `res/1-8.BDD` carry the same listed scientific settings and are repeated burst-10 / TGC-19.9216 / medium-power anchors | select by decoded scientific settings, group duplicate settings as repeated realizations, and include both anchors without collapsing or rejecting them |
-| R2 | nuisance threshold | the sole same-settings difference is repeatedly called an upper bound | name it the **observed discrepancy from the sole same-settings pair**; “above” and “below” are screening outcomes, not bounds on possible drift or proof of an axis effect |
+| R1 | setting-based anchors | `_native_grid.py` selects rows by manifest `axis` (`manifest_axis_rows`), while `prf/600.BDD` and `res/1-8.BDD` carry the same listed scientific settings and are repeated burst-10 / TGC-19.9216 / medium-power anchors. Both populate the identical relevant fingerprint — resolution 1.850 mm, PRF 600 µs, burst 10, TGC ≈19.9216 dB, power medium — where an axis analyses them | **Every axis**, not only burst/TGC/power, must select eligible rows by decoded scientific settings and treat all recordings with the same relevant scientific fingerprint as realizations of one decoded level, irrespective of folder; group duplicate settings and include both reference recordings without collapsing or rejecting them. `tests/test_resolution_ladder.py` and `tests/test_prf_ladder.py` must carry this selection test alongside `tests/test_burst_ladder.py` and `tests/test_gain_power_screen.py` |
+| R2 | nuisance threshold | the sole same-settings difference was repeatedly called an upper bound — a **marked defect-history quotation** (retired), not a live term | name that quantity, everywhere, exactly **sole-pair observed-discrepancy screening threshold**; positive uses of bound/bounded/envelope around it must go, and `bound` may survive only in explicit negations or in marked defect-history quotations; “above” and “below” are screening outcomes, not bounds on possible drift or proof of an axis effect |
 | R3 | emissions extension | `sparse-parameter-set.md` §3.4 triggers E128 when E64 differs from E20 | either add a high-intermediate point and use successive high-end increments, or make E128 an ordinary sparse point; no E20→E64 displacement may be called a plateau test |
 | R4 | complete OFAT identity | `_native_grid.DECODED_CELLS` omits decoded covariates including emitting frequency, Doppler angle, numeric TGC endpoints, sampling-volume index and skipped profiles | define one full scientific-settings fingerprint and an explicit per-axis allowlist of fields that may vary or are derived from the varied field |
 | R5 | PSD integration | `prf_ladder._band_density()` sums PSD-density bins and divides by band width without integrating over frequency | integrate on the actual frequency grid, test unequal grids, and regenerate PRF temporal outputs |
 | R6 | timestamp jitter | `reference_repeat.temporal_series()` consumes one scalar profile period rather than the recorded timestamps | publish median Δt, IQR, RMS deviation and maximum deviation per file; retain the uniform method only if a stated measured tolerance supports it, otherwise resample or use an irregular-time method |
 | R7 | residual variance | resolution detail is `var(fine - nearest-coarse reconstruction) / var(fine)` | call it normalized reconstruction-residual variance; do not describe it as an orthogonal share of spatial variance |
 | R8 | spatial scale | correlation length is the autocorrelation of one mean-removed depth profile | retain it only as a descriptive profile scale, not a physical turbulence scale or principal resolution criterion |
-| R9 | controls | beginning→middle and middle→end share the middle observation | call the three controls a minimum within-run drift diagnostic; do not call adjacent differences independent |
+| R9 | controls | beginning→middle and middle→end share the middle observation | call the beginning/middle/end controls **within-run reference controls** forming one minimum within-run drift diagnostic for the single reference condition; never call them “independent references”, and do not call adjacent differences independent |
 
 ### 8.3 Corrected implementation order
 
 1. **Freeze the current evidence as the comparison baseline.** Add `tools/validate_analysis_review_baseline.py` and create `reports/mixer-sensitivity-analysis/review-correction-baseline.json`. It records 24 report-tree hashes: the 22 generated artifacts (each with its generator revision), the hand-written `decision-table.md`, and the report `README.md`; it also records the focused/full gate commands and raw results. The validator's `--check-current` mode verifies the baseline against the current tree; its `--check-final` mode later requires a correction ID and replacement hash for every changed baseline item. Done when `.venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-current` exits zero against the committed record.
 2. **Define the scientific fingerprint and level-group model (R1, R4).** Separate observation extent (`profiles`, `duration_s`) from configuration, select eligible rows by settings, and represent one or more recordings per decoded level. Done when tests admit the two reference files as two realizations of the same anchor and reject a change in every non-allowlisted scientific field.
-3. **Correct WP1 semantics (R2).** Rename models, table headings, captions and prose consistently across source, reports, the decision table and both plan documents; the older sections of this document are part of this step. Done when a mechanical text check finds no positive assertion matching the retired phrases `is an upper bound`, `as an upper bound`, `inside the bound`, `repeatability bound` or `repeatability envelope` for the sole-pair value; negated explanations and the quoted defect record in §8.2 are allowed. Every above/below statement must carry the non-causal screening interpretation.
+3. **Correct WP1 semantics (R2).** Name the quantity, everywhere, exactly **sole-pair observed-discrepancy screening threshold**, and rename models, table headings, captions and prose consistently across source, reports, the decision table and both plan documents; the older sections of this document are part of this step. Done when a mechanical text check finds no positive assertion matching the retired phrases `is an upper bound`, `as an upper bound`, `inside the bound`, `repeatability bound`, `repeatability envelope` or the superseded name `observed discrepancy from the sole same-settings pair` for the sole-pair observed-discrepancy screening threshold; negated explanations and the marked defect record in §8.2 are allowed, and `bound` survives only in explicit negations. Unrelated positive uses are reworded rather than exempted — `bound by SHA-256` becomes `pinned by SHA-256` and the TGC/power envelope becomes the TGC/power dynamic-range window. Every above/below statement must carry the non-causal screening interpretation.
 4. **Correct temporal calculations (R5, R6).** Integrate PSD density over actual bin widths; publish median Δt, Δt IQR, RMS deviation from median Δt and maximum absolute deviation for every input to `reference-repeat`, burst and PRF temporal artifacts. Before choosing an estimator, record a quantitative tolerance and its physical/statistical justification in the provenance schema; if the measured jitter exceeds it, resample or use an irregular-time method. Done when an unequal-grid regression test fails on the old formula, every named artifact carries all four jitter statistics plus the criterion and estimator decision, and the PRF temporal artifacts are regenerated.
-5. **Regenerate the shared-anchor axis analyses (R1, R4).** Rebuild burst, TGC and emitting-power outputs with burst 10, TGC 19.9216 and medium power represented by both reference recordings; rebuild any other axis whose full fingerprint or temporal method changes. Done when provenance lists every realization and all pair/level counts are derived from grouped settings rather than folder counts.
+5. **Regenerate the shared-anchor axis analyses (R1, R4).** Rebuild **every** axis's outputs on setting-based selection: burst, TGC and emitting power with burst 10, TGC ≈19.9216 dB and medium power represented by both reference recordings, and resolution and PRF with resolution 1.850 mm and PRF 600 µs likewise represented by both, irrespective of which of the `prf`/`res` folders a recording sits in. Rebuild any other axis whose full fingerprint or temporal method changes. Done when provenance lists every realization, `tests/test_resolution_ladder.py` and `tests/test_prf_ladder.py` pass the same fingerprint-selection test as the burst and gain/power suites, and all pair/level counts are derived from grouped settings rather than folder counts.
 6. **Correct resolution interpretations (R7, R8).** Rename the residual metric throughout code, tables, provenance, captions and decisions; demote the correlation scale. Done when neither quantity is used as a variance partition or primary physical-resolution argument.
 7. **Redesign the decision layer (R3, R9).** Rebuild `decision-table.md` and `sparse-parameter-set.md` only from the corrected artifacts, choose and justify either a high-intermediate successive-increment design or an unconditional E128 point, and describe controls as correlated drift diagnostics. Done when every retained/new condition cites corrected evidence, the selected emissions design has an explicit rationale, and all condition/control/job counts agree programmatically.
 8. **Rebind and verify everything.** In a dedicated documentation/data-binding commit after the generator and decision commits, update only the hand-written decision table's artifact hashes, the report README's binding list, provenance references and the PR body. Generated captions and figure bytes must already have been regenerated by their owning generator step and `data(analysis)` commit; step 8 never hand-edits them. Done when `.venv/Scripts/python.exe tools/validate_analysis_review_baseline.py --check-final` maps every changed hash to R1–R9 and its replacement, regeneration is byte-identical from the recorded revisions, links resolve, the tree is clean, and focused plus full gates pass.
@@ -280,21 +293,21 @@ been rebuilt from them. The old `CC1–CC4 + E8 + E64 + D1` set is not frozen wh
 
 The correction is complete only when all of the following are executable tests or mechanically checked records:
 
-- `tests/test_burst_ladder.py` and `tests/test_gain_power_screen.py`: adding a same-settings file under a different folder cannot exclude it from an eligible axis, and two files at one decoded level remain two named realizations rather than triggering the old duplicate-key refusal;
+- `tests/test_burst_ladder.py`, `tests/test_gain_power_screen.py`, `tests/test_resolution_ladder.py` and `tests/test_prf_ladder.py`: adding a same-settings file under a different folder cannot exclude it from an eligible axis, and two files at one decoded level remain two named realizations rather than triggering the old duplicate-key refusal — exercised for every axis, with `prf/600.BDD` and `res/1-8.BDD` admitted as two realizations of the resolution-1.850 mm / PRF-600 µs / burst-10 / TGC-≈19.9216 dB / medium-power fingerprint where an axis analyses it;
 - focused shared-input tests: perturbing each fingerprint field either changes identity or is explicitly allowlisted for that axis;
-- mechanical text check over `src/`, `docs/` and `reports/`: no positive assertion uses `is an upper bound`, `as an upper bound`, `inside the bound`, `repeatability bound` or `repeatability envelope` for the sole-pair value; negated explanations and §8.2's quoted defect are exempt, and every above/below use states that it neither proves an axis effect nor bounds drift;
+- mechanical text check over `src/`, `docs/` and `reports/`: no positive assertion uses `is an upper bound`, `as an upper bound`, `inside the bound`, `repeatability bound`, `repeatability envelope` or the superseded name `observed discrepancy from the sole same-settings pair` for the sole-pair observed-discrepancy screening threshold; the canonical name is the only live name; §8.2's marked defect quotation and §5's labelled historical commit subject are exempt, and every above/below use states that it neither proves an axis effect nor bounds drift;
 - `tests/test_prf_ladder.py`: band integration agrees for equivalent spectra represented on unequal frequency grids;
 - provenance-schema tests: `reference-repeat`, burst and PRF temporal artifacts each carry median Δt, Δt IQR, RMS deviation, maximum deviation, the quantitative criterion and the estimator decision;
 - resolution tests and repository text check: the residual is named as a normalized reconstruction residual and correlation length as descriptive only;
 - decision-table validation: the selected emissions design is exactly one of the two allowed alternatives, contains its rationale, never infers plateau from E64 versus E20 alone, and its counts agree with the condition rows;
-- decision-table and sparse-set text check: adjacent control differences are described and analysed as correlated;
+- R9 text check over `docs/`, `src/` and `reports/`: the beginning/middle/end controls are named `within-run reference controls` for the single reference condition, and no live text calls them or their differences “independent references” or independent observations; the decision table and sparse set describe adjacent control differences as correlated;
 - the baseline/rebinding validator: regenerated artifact hashes, row counts, generator revisions, correction IDs and decision-table bindings agree programmatically.
 
 ### 8.5 Commit boundaries
 
 Keep the review legible: one commit for the durable ruling (this section), then one tested commit for each
 numbered implementation step above. Generated artifacts follow their generator correction in a separate
-`data(analysis): ...` commit. Corrected evidence lands before WP3/WP4 decisions. Step 8 then gets its own bounded
+`data(analysis): ...` commit. Corrected evidence lands before WP3/WP4 decisions. Step 8 then gets its own scoped
 `docs(analysis): rebind corrected evidence` commit, which may change only binding hashes/revisions and links in
 the hand-written decision table and report README plus the PR body; generated captions and figures belong to
 their generator's `data(analysis)` commit. Any scientific verdict change belongs to step 7, not rebinding.
