@@ -36,10 +36,11 @@ Everything the gate refuses is a ruling this step owns:
 - **§9.2/§9.4 — the schedule must be executable.** ``CampaignDefinition`` carries
   ``burst_length`` and ``emissions_per_profile`` once per campaign, so every row
   of one job must agree on those run-wide values; a common-reference row cannot
-  sit inside a non-reference block; the reference condition gets its own jobs,
-  one between each pair of scientific jobs; the superseded ``REF-CTRL |
-  every-run`` row is refused outright; each scientific job carries its three
-  block-local control recordings.
+  sit inside a non-reference block; the reference condition gets four distinct
+  reference-only jobs, whose intended placement between consecutive scientific jobs is a
+  run-plan requirement this table does not encode; the superseded ``REF-CTRL |
+  every-run`` row is refused outright; each scientific job carries its
+  three block-local control recordings.
 - **§9.3 — D1 is the one scientifically selected, blocked diagnostic.** It must
   differ from the reference sensitivity, equal the operator-approved value read
   from the application's own dialog (``high``, restored without recording), carry

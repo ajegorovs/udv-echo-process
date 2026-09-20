@@ -607,3 +607,25 @@ measured at this commit: `.venv/Scripts/python.exe -m pytest -q` → **2216 pass
 `tools/check_screening_terms.py` → exit 0, "the text names the quantity and no live claim survives";
 `tools/validate_analysis_review_baseline.py --check-final` → exit 0, "the tree is the frozen baseline";
 `ruff check .` → all checks passed. Worktree clean, no generated artifact regenerated, no acquisition run.
+
+### 10.5 Approval of `945464f` — the round's close
+
+The review of `945464f` reports no remaining merge blocker and accepts the round's abstraction, its
+interpretation and its scope (§10.1–§10.3 stand as written). It raises qualifications to carry forward rather
+than to act on, and each has a disposition here so a later session does not re-open a settled question:
+
+| Qualification | Disposition |
+|---|---|
+| The top-level validator docstring still read "the reference condition gets its own jobs, one between each pair of scientific jobs", against §10's clarification that placement is not encoded | **Corrected in this commit**, in the reviewer's own suggested form: four distinct reference-only jobs, whose intended placement between consecutive scientific jobs is a run-plan requirement the table does not encode |
+| Violation granularity — one message per derived repeat per offending sentence (three for one claim on this schedule) | **Deliberate non-change.** The reviewer prefers the present behaviour because it names E8, E64, E128 and the control rows behind each. Revisit only if a much larger design makes the output noisy |
+| `tools/validate_decision_layer.py` is no longer a standalone stdlib script, because it imports the shared `SINGULAR_REALIZATION_CLAIMS` | **Accepted.** The documented execution environment is the project `.venv`, and one canonical semantic vocabulary is worth more than two regex lists that can drift. If standalone operation is ever needed, the vocabulary moves to a dependency-light module — not a reason to delay this PR |
+| Keeping the changed hand-written item under `R9` instead of introducing `R10` | **Confirmed by the reviewer**: the round refines the control and schedule semantics `R9` already governs, so §10 carries the round while the frozen `R1`–`R9` register stays intact |
+
+The next PR is the campaign-definition/run-plan encoding and owns both orderings — the within-job
+beginning/middle/end placement and the cross-job interleaving of the common-reference jobs — together with the
+run-level mechanism §9.2 requires. This document's eight-condition scientific set is otherwise unchanged by
+the round.
+
+measured at this commit: `.venv/Scripts/python.exe -m pytest -q` → **2216 passed, 22 skipped**;
+`tools/validate_decision_layer.py`, `tools/check_screening_terms.py` and
+`tools/validate_analysis_review_baseline.py --check-final` → exit 0; `ruff check .` → clean.
