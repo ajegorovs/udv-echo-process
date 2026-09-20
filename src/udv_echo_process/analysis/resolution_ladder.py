@@ -975,18 +975,22 @@ REPLICATE_ROLE = (
 )
 
 #: The two verdicts of :func:`_findings`, written once so the wording cannot drift
-#: between the provenance document and the figure caption.
+#: between the provenance document and the figure caption. Both are observation-only
+#: screening references (plan §8.2 R2, §9.4 step 2): the sole same-settings repeat screens
+#: the size of an observed difference and is not a statement about a smaller one.
 _FOCUS_VERDICT = (
     "Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - "
     "both the level difference and the normalized reconstruction-residual variance the extra "
     "gates leave sit inside the repeat-plus-drift screening_threshold, so this evidence cannot "
-    "support that claim; it equally cannot exclude a real effect smaller than that observed "
-    "discrepancy, which one same-settings repeat cannot resolve."
+    "support that claim. The sole same-settings repeat is a screening reference for a difference "
+    "of this size and nothing more: the current single-repeat evidence does not support "
+    "distinguishing the difference from the observed same-settings discrepancy."
 )
 _COARSEST_VERDICT = (
     "On this evidence no measured pitch is shown to lose structure the finer pitches show - a "
-    "statement about the 13 recorded pitches only: nothing finer or coarser was measured, and a "
-    "difference smaller than that observed discrepancy would be invisible here."
+    "statement about the 13 recorded pitches only: nothing finer or coarser was measured, and the "
+    "sole same-settings repeat is a screening reference for the size of these differences rather "
+    "than a criterion any pitch is judged by."
 )
 
 #: Panels of the reviewer-visible figure.
