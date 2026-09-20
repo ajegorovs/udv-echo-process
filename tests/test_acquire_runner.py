@@ -933,6 +933,7 @@ def make_runner(
     fake_class: type[FakeActuator] = FakeActuator,
     channel: int | None = None,
     expected_mode: ProcessMode = ProcessMode.INSTRUMENT,
+    strict_covariates: tuple[str, ...] = (),
     **fake_kwargs: object,
 ) -> tuple[FakeActuator, object, Path, ScriptedReader | None]:
     """A runner over a fresh fake, a private capture directory and a private log.
@@ -965,6 +966,7 @@ def make_runner(
         log_path=log_path,
         channel=channel,
         expected_mode=expected_mode,
+        strict_covariates=strict_covariates,
     )
     reader = (
         patch_reader(monkeypatch, block, fake=fake)
@@ -1247,6 +1249,69 @@ def test_an_actuator_that_cannot_store_yields_not_ok_and_one_log_entry(
 
 
 # ------------------------------------------------------------------ 5. run() order
+
+
+def test_a_strict_fact_is_handed_to_the_verification_of_every_point(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A runner built with a raised fact asks the verifier to enforce it on the stored file.
+
+    The pre-run half of the policy belongs to the compile; this is the post-storage half reaching
+    the one call that reads the file, so a point whose own word disagrees is invalid rather than
+    logged with a note.
+    """
+    seen: list[dict[str, object]] = []
+
+    def recording_verifier(
+        path: object,
+        requested: object,
+        channel: int | None = None,
+        **kwargs: object,
+    ) -> FakeVerification:
+        seen.append(kwargs)
+        return FakeVerification(True)
+
+    _fake, engine, _log, _reader = make_runner(
+        tmp_path,
+        monkeypatch,
+        verifier=recording_verifier,
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    outcomes = engine.run(definition_for(1, 2), DURATION_S)
+
+    assert [outcome.ok for outcome in outcomes] == [True, True]
+    assert seen, "the verify hook was never called"
+    assert all(
+        call.get("strict_covariates") == ("emissions_per_profile",) for call in seen
+    )
+    # The default stays empty: an ordinary runner raises nothing.
+    assert all(call.get("check_covariates") is True for call in seen)
+
+
+def test_a_runner_with_no_raised_fact_asks_for_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The empty default is what keeps the historical advisory behaviour for every other run."""
+    seen: list[dict[str, object]] = []
+
+    def recording_verifier(
+        path: object,
+        requested: object,
+        channel: int | None = None,
+        **kwargs: object,
+    ) -> FakeVerification:
+        seen.append(kwargs)
+        return FakeVerification(True)
+
+    _fake, engine, _log, _reader = make_runner(
+        tmp_path, monkeypatch, verifier=recording_verifier
+    )
+
+    engine.run(definition_for(1), DURATION_S)
+
+    assert seen
+    assert all(call.get("strict_covariates") == () for call in seen)
 
 
 def test_run_visits_every_point_in_order_and_a_failure_does_not_abort(

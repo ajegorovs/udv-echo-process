@@ -112,7 +112,11 @@ from udv_echo_process.acquire.snapshot import (
     Provenance,
     identity_digest,
 )
-from udv_echo_process.acquire.verify import ADVISORY_COVARIATES, PRF_TOLERANCE_US
+from udv_echo_process.acquire.verify import (
+    ADVISORY_COVARIATES,
+    PRF_TOLERANCE_US,
+    STRICTABLE_COVARIATES,
+)
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
@@ -124,6 +128,7 @@ __all__ = [
     "MAX_POINT_DURATION_S",
     "MIN_POINT_DURATION_S",
     "RESOLUTION_DISPLAY_MM",
+    "STRICTABLE_FACTS",
     "Acceptance",
     "CampaignDefinition",
     "CampaignError",
@@ -136,6 +141,7 @@ __all__ = [
     "PlannedPoint",
     "campaign_fingerprint",
     "compile_campaign",
+    "declared_fixed_fact",
     "load_campaign",
     "manifest_path_for",
     "plan_campaign",
@@ -769,6 +775,33 @@ COVARIATE_ACCEPTANCE: Mapping[str, Acceptance] = {
     for name in FIXED_FACT_FIELDS
 }
 
+#: The fixed facts a run may **raise to refusal** — the ones a stored file carries a word for, so
+#: the same requirement can be enforced before *and* after storage (``verify.STRICTABLE_COVARIATES``).
+#: ``max_profiles_per_block`` is deliberately not here: no word in a stored file states the active
+#: cap, so a fact that could be checked before a recording but never afterwards would be a policy
+#: half-enforced, and a caller naming it is refused rather than quietly accommodated.
+STRICTABLE_FACTS: tuple[str, ...] = STRICTABLE_COVARIATES
+
+
+def _check_strict_facts(
+    strict_facts: tuple[str, ...], *, where: str
+) -> tuple[str, ...]:
+    """Validate a run's raised facts, and return them in the vocabulary's own order.
+
+    A raised fact must be one a stored file carries a word for (:data:`STRICTABLE_FACTS`), so the
+    requirement can be enforced before *and* after a recording: a raise that only the compile could
+    see would make a job refusable at the screen and acceptable in the dataset, which is the worse of
+    the two halves to have. An unknown name is refused with the vocabulary, never ignored.
+    """
+    unknown = [name for name in strict_facts if name not in STRICTABLE_FACTS]
+    if unknown:
+        raise CampaignError(
+            f"{where} raises {unknown}, which no stored file carries a word for: a fact that could "
+            "be refused before a recording but not checked afterwards would leave the dataset "
+            f"weaker than the policy claims. The raiseable facts are {list(STRICTABLE_FACTS)}"
+        )
+    return tuple(name for name in STRICTABLE_FACTS if name in strict_facts)
+
 
 class FactCheck(ValueModel):
     """One fixed fact: what the definition declares, what the instrument was found to state, and
@@ -819,6 +852,10 @@ class ExecutableCampaign(ValueModel):
     identity: CompilationIdentity
     facts: tuple[FactCheck, ...]
     points: tuple[PlannedPoint, ...]
+    #: The facts this compilation **raised to refusal** over the table's own acceptance — what a
+    #: plan supplies when one of them is the experiment. Empty for every ordinary campaign, and the
+    #: empty default is what keeps a compiled plan written before this field readable.
+    strict_facts: tuple[str, ...] = ()
 
     @property
     def identity_digest(self) -> str:
@@ -860,7 +897,10 @@ class ExecutableCampaign(ValueModel):
 
 
 def compile_campaign(
-    definition: CampaignDefinition, snapshot: InstrumentSnapshot
+    definition: CampaignDefinition,
+    snapshot: InstrumentSnapshot,
+    *,
+    strict_facts: tuple[str, ...] = (),
 ) -> ExecutableCampaign:
     """Reconcile a definition against one reading of the instrument, or refuse before recording.
 
@@ -886,16 +926,26 @@ def compile_campaign(
     safe to compile against an instrument somebody else is using, and the whole check runs on a
     captured snapshot on a host with no application at all.
 
+    ``strict_facts`` is the **policy override**, and it is what a plan supplies when one of the
+    fixed facts is the experiment rather than a nuisance: a fact named there refuses on
+    disagreement whatever :data:`COVARIATE_ACCEPTANCE` says, its refusal says so in those words, and
+    the compiled plan carries the tuple (:attr:`ExecutableCampaign.strict_facts`) so the policy a
+    job was compiled under outlives the command line that set it. It can only **raise**: a fact the
+    table already refuses is unchanged, and there is no argument that lowers one, because that would
+    be a caller asking to be believed over the record.
+
     What it deliberately does **not** own: the strip's view. Starting a point cycle from a
     recording view is a precondition the runner refuses with its own message before anything is
     stored (``runner``'s "a running recording keeps its data"), and a second refusal here would
     give one cause two diagnoses.
     """
+    strict_facts = _check_strict_facts(strict_facts, where=f"{definition.job!r}")
     points = plan_campaign(definition)
     _refuse_unusable_screen(snapshot)
     channel = _routed_channel(definition, snapshot)
     checks = tuple(
-        _check_fact(definition, snapshot, name) for name in FIXED_FACT_FIELDS
+        _check_fact(definition, snapshot, name, strict_facts=strict_facts)
+        for name in FIXED_FACT_FIELDS
     )
     _refuse_failed_reads(checks)
     _refuse_disagreements(checks)
@@ -906,6 +956,7 @@ def compile_campaign(
         identity=CompilationIdentity.from_snapshot(snapshot),
         facts=checks,
         points=points,
+        strict_facts=strict_facts,
     )
 
 
@@ -1039,13 +1090,18 @@ def _routed_channel(
     return established
 
 
-def _declared_fixed_fact(definition: CampaignDefinition, name: str) -> object | None:
+def declared_fixed_fact(definition: CampaignDefinition, name: str) -> object | None:
     """The value the definition declares for one fixed fact — the field that has to agree.
 
     Four of them are the campaign's own shared fields. The two that are the window frame come
     from the points, which by the time this is called have already been planned: ``plan_campaign``
     refuses a list whose points disagree on the sound speed or the first gate, so the first
     point's frame *is* the campaign's.
+
+    Public because it is the one answer to "what does this definition say about that fact", and a
+    caller that needs to know whether a fact is **declared at all** (a run that raises a fact has
+    nothing to raise it against unless every job states one) must not re-derive the answer from the
+    models and drift from the comparison that uses it.
     """
     if name == "sound_speed_ms":
         return definition.points[0].parameters.sound_speed_ms
@@ -1055,9 +1111,19 @@ def _declared_fixed_fact(definition: CampaignDefinition, name: str) -> object | 
 
 
 def _check_fact(
-    definition: CampaignDefinition, snapshot: InstrumentSnapshot, name: str
+    definition: CampaignDefinition,
+    snapshot: InstrumentSnapshot,
+    name: str,
+    *,
+    strict_facts: tuple[str, ...] = (),
 ) -> FactCheck:
     """Compare one fixed fact: the declaration against the reading, at its own acceptance.
+
+    ``strict_facts`` raises a fact's acceptance to :attr:`Acceptance.REFUSE` for this call — the
+    policy override a caller supplies when the fact is not a nuisance but the experiment
+    (:func:`_check_strict_facts` validates the vocabulary). The raise never lowers anything, and the
+    refusal it produces says which side of the policy it came from, so a reader of the message can
+    tell the verifier's own table from a caller's requirement.
 
     The comparison is numeric on both sides, because both sides are numbers: the declaration is
     the campaign's own value and the reading is the application's rendering of the same setting,
@@ -1069,8 +1135,10 @@ def _check_fact(
     then refused with a recording already spent.
     """
     observed = snapshot.fact(name)
-    acceptance = COVARIATE_ACCEPTANCE[name]
-    declared = _declared_fixed_fact(definition, name)
+    table_acceptance = COVARIATE_ACCEPTANCE[name]
+    raised = name in strict_facts
+    acceptance = Acceptance.REFUSE if raised else table_acceptance
+    declared = declared_fixed_fact(definition, name)
     if declared is None:
         return FactCheck(
             name=name,
@@ -1119,6 +1187,13 @@ def _check_fact(
                 f"{name}: the campaign declares {declared_text}, the instrument states "
                 f"{observed.value!r}"
                 + (f" (tolerance {tolerance:g})" if tolerance else "")
+                + (
+                    "; this run raises the fact to a refusal, where the stored-file verifier's "
+                    f"own table calls it {table_acceptance.value!r} — a fact this run depends on "
+                    "is not a nuisance to be recorded"
+                    if raised
+                    else ""
+                )
             )
         ),
     )
@@ -1201,6 +1276,7 @@ def run_campaign(
     no_snapshot: bool = False,
     resume_declaration_only: bool = False,
     expected_mode: ProcessMode,
+    strict_facts: tuple[str, ...] = (),
 ) -> JobManifest:
     """Run the points that still have to run, write the manifest, and say what happened.
 
@@ -1277,7 +1353,15 @@ def run_campaign(
     cannot be compiled against the definition, or when a resume's identity is not proven. The
     runner itself never raises for a bad point: a refused point is an outcome, and the manifest
     is written either way.
+
+    ``strict_facts`` is the run's policy override, enforced **twice**: the compile refuses a
+    disagreement before the first recording (:func:`compile_campaign`, which carries the tuple on the
+    compiled plan), and the per-point verification refuses it *after* storage
+    (``SweepRunner(strict_covariates=...)``), so a file whose own word disagrees invalidates its point
+    instead of being logged with a note. One argument, both halves, because a fact a run depends on
+    must not be enforced on one side of the recording and merely recorded on the other.
     """
+    strict_facts = _check_strict_facts(strict_facts, where=f"{definition.job!r}")
     directory = _store_directory(definition, store_dir)
     log = Path(log_path) if log_path is not None else directory / DEFAULT_LOG_NAME
     effective_channel = definition.channel if channel is None else int(channel)
@@ -1324,8 +1408,9 @@ def run_campaign(
         # refuses by naming both sides and the caption itself (plan §24.4, §24.5 D3/D5).
         refuse_process_mode(snapshot, expected_mode)
         # (5) compiled, or refused — untouched, because the refusal already names the fact or
-        # the state that stopped the job.
-        compiled = compile_campaign(definition, snapshot)
+        # the state that stopped the job. The run's raised facts go with it, so the compiled plan
+        # records the policy it was compiled under.
+        compiled = compile_campaign(definition, snapshot, strict_facts=strict_facts)
         planned = compiled.points
 
     # (6) the resume's identity, validated *before* the todo/skipped sets are computed: no
@@ -1365,6 +1450,9 @@ def run_campaign(
         log_path=log,
         channel=effective_channel,
         expected_mode=expected_mode,
+        # The same facts the compile refused on, enforced on the stored file's own words: a run
+        # that raised a fact does not fall back to an advisory once the recording is spent.
+        strict_covariates=strict_facts,
     )
     outcomes = runner.run_points(
         tuple(

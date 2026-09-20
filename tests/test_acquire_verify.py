@@ -263,14 +263,14 @@ def test_a_prf_that_disagrees_is_enforced(tmp_path: Path) -> None:
 
 
 def test_emissions_that_disagree_are_an_advisory_not_a_mismatch(tmp_path: Path) -> None:
-    """Word 14 is read and reported — and does not refuse the point.
+    """Word 14 is read and reported — and does not refuse the point *by default*.
 
     The request says 52 emissions; the file says 150. The 52 is not a reading off the
     instrument: it is the period law inverted to reproduce the committed recording's
     own profile count (``EMISSIONS_PER_PROFILE`` in ``test_acquire_runner.py``). So the
     *declaration* is what disagrees, and refusing the point over it would refuse a file
-    whose core words are all exactly right. It becomes an enforceable covariate when a
-    campaign compiles against a live instrument snapshot instead of a definition.
+    whose core words are all exactly right. A caller whose request *is* that value raises
+    it (:func:`test_a_raised_fact_refuses_instead_of_advising`); the default stays advisory.
     """
     path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
 
@@ -307,6 +307,87 @@ def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
     assert result.advisories == (
         "emissions_per_profile: requested 52, found 150 in word 14",
     )
+
+
+def test_a_raised_fact_refuses_instead_of_advising(tmp_path: Path) -> None:
+    """The same bytes and the same request, with the caller requiring word 14 to agree.
+
+    This is the post-storage half of a run's policy: a pass whose axis *is* the emissions value
+    raises the fact, and then a file whose word disagrees is not that pass's point — ``ok`` false,
+    the mismatch naming the field and both sides, and nothing left in the advisories.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+        check_covariates=True,
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is False
+    assert result.advisories == ()
+    assert result.mismatches == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+    # Raised fields are enforced fields, and the record says a caller raised them.
+    assert "emissions_per_profile" in result.enforced_covariates
+    assert result.strict_covariates == ("emissions_per_profile",)
+    # And the field is no longer reported as compared-without-enforcing.
+    assert result.advisory_covariates == ()
+
+
+def test_a_raised_fact_that_agrees_is_recorded_as_enforced(tmp_path: Path) -> None:
+    """A raise that holds leaves no trace but the statement that it was required."""
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122),
+        check_covariates=True,
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is True
+    assert result.mismatches == ()
+    assert "emissions_per_profile" in result.enforced_covariates
+    assert result.strict_covariates == ("emissions_per_profile",)
+
+
+def test_a_raise_applies_without_the_covariate_switch(tmp_path: Path) -> None:
+    """The raise is per fact and does not depend on ``check_covariates``.
+
+    A caller that only cares about word 14 says so by naming it; the switch governs the *table's*
+    enforced covariates, and turning it off must not silently turn a raised fact back into an
+    advisory.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is False
+    assert result.advisories == ()
+    assert result.strict_covariates == ("emissions_per_profile",)
+
+
+def test_raising_a_fact_no_stored_file_carries_is_refused(tmp_path: Path) -> None:
+    """A fact nothing can compare must not read as enforced."""
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    with pytest.raises(ValueError) as caught:
+        verify_stored_point(
+            path,
+            params_for(gates=805, rung=0, resolution_mm=0.122),
+            strict_covariates=("max_profiles_per_block",),
+        )
+
+    message = str(caught.value)
+    assert "max_profiles_per_block" in message
+    assert "raiseable fields are" in message
 
 
 def test_a_covariate_nobody_declared_is_not_a_mismatch(tmp_path: Path) -> None:

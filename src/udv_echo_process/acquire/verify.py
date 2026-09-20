@@ -72,6 +72,7 @@ __all__ = [
     "CHANNEL_1_OFFSET_BYTES",
     "CHANNEL_STRIDE_BYTES",
     "ENFORCED_COVARIATES",
+    "STRICTABLE_COVARIATES",
     "WORDS_PER_CHANNEL",
     "WORD_BURST_LENGTH",
     "WORD_DEPTH_MM",
@@ -124,7 +125,7 @@ ENFORCED_COVARIATES = (
     "burst_length",
 )
 
-#: Read, reported and returned, but **not** enforced: word 14
+#: Read, reported and returned, but **not** enforced by default: word 14
 #: (``emissions_per_profile``). Its value in a definition is not an instrument
 #: reading yet — it is derived from the period law to reproduce a stored profile
 #: count (``52`` in ``test_acquire_runner.py`` is exactly that derivation), which is
@@ -133,9 +134,22 @@ ENFORCED_COVARIATES = (
 #: a disagreement the *request* caused. It becomes enforceable when a campaign is
 #: compiled against a live instrument snapshot instead of against a definition (the
 #: review's Phase 6); until then its disagreement is an advisory on the record.
+#:
+#: **A caller may raise it** — ``verify_stored_point(strict_covariates=...)`` — and that is the
+#: right answer for a run whose *axis* is this value: a campaign that moves emissions per profile
+#: between jobs has deliberately requested it, so the historical derivation rationale does not
+#: apply, and a stored file whose word 14 disagrees is not that run's point.
 ADVISORY_COVARIATES = ("emissions_per_profile",)
 
 _COVARIATES = ENFORCED_COVARIATES + ADVISORY_COVARIATES
+
+#: The fixed facts a stored file carries a word for, so a caller can require them to agree:
+#: :data:`ENFORCED_COVARIATES` are compared into ``ok`` for every caller, and the advisory one can
+#: be *raised* by a caller that treats it as mandatory (:func:`verify_stored_point`'s
+#: ``strict_covariates``) — which is how a run whose axis **is** that value makes the dataset it
+#: produces self-validating. The block cap is deliberately absent: no word in a stored file states
+#: it, so a requirement on it could be enforced before a recording and never afterwards.
+STRICTABLE_COVARIATES: tuple[str, ...] = _COVARIATES
 
 #: The app writes integer microseconds; a requested value may carry a fraction.
 PRF_TOLERANCE_US = 1.0
@@ -174,6 +188,11 @@ class VerificationResult:
     looked" — for both classes. A field the request left unset appears in neither: it was
     never compared, and listing it would claim a verification that did not happen. When
     ``check_covariates=False`` both are empty, since nothing was compared.
+
+    ``strict_covariates`` names the fields of :data:`STRICTABLE_COVARIATES` this **caller**
+    raised (:func:`verify_stored_point`'s own argument), so a record says whether an advisory
+    field was compared against a request that treated it as mandatory. Empty when the caller
+    raised nothing, which is every caller whose request does not rest on that value.
     """
 
     ok: bool
@@ -182,6 +201,7 @@ class VerificationResult:
     advisories: tuple[str, ...] = ()
     enforced_covariates: tuple[str, ...] = ()
     advisory_covariates: tuple[str, ...] = ()
+    strict_covariates: tuple[str, ...] = ()
 
 
 def _word_offset(word_index: int, channel: int) -> int:
@@ -395,6 +415,7 @@ def verify_stored_point(
     *,
     depth_tolerance_mm: float = 1.5,
     check_covariates: bool = False,
+    strict_covariates: tuple[str, ...] = (),
 ) -> VerificationResult:
     """Verify a stored point's own words against the parameters requested.
 
@@ -411,13 +432,16 @@ def verify_stored_point(
     module's own callers, which verify a *file*, not a run.
 
     Emissions per profile (word 14) is read, returned in :class:`WordFacts` and
-    compared into :attr:`VerificationResult.advisories` — never into ``ok``. The
-    disagreement that forced that decision is a real committed point
-    (``sw100-k1-161738.BDD``, 805 gates at rung 0, all three core words as
-    requested) storing word 14 = 150 against a plan that said 52; the 52 is the
-    period law inverted to reproduce that recording's profile count, not a reading
-    off the instrument, so the *request* is what is wrong. It becomes enforceable
-    once a campaign compiles against a live snapshot instead of a definition.
+    compared into :attr:`VerificationResult.advisories` — never into ``ok`` — **unless
+    the caller raises it**: ``strict_covariates`` names the facts of
+    :data:`STRICTABLE_COVARIATES` this request rests on, and those comparisons go into
+    ``mismatches`` like an enforced covariate's. The default stays advisory for the reason
+    it always was — a definition's value for word 14 used to be a *derivation* rather than
+    a reading (:data:`ADVISORY_COVARIATES`), so enforcing it would refuse a point whose
+    core words are all correct. A caller that moved that value between points on purpose
+    is in the opposite situation: its request is the experiment, and a stored file whose
+    word 14 disagrees is not its point. An unknown name raises, naming the vocabulary,
+    because a fact nothing can compare must not read as enforced.
 
     ``requested_parameters`` is duck-typed: ``gates``, ``resolution_mm``,
     ``first_gate_mm`` and the optional covariates are read with ``getattr``, so a
@@ -527,12 +551,31 @@ def verify_stored_point(
             )
 
     # Read and reported even when not enforced: a disagreement the request caused is
-    # evidence, and it is only visible at all if something writes it down.
+    # evidence, and it is only visible at all if something writes it down. A field the
+    # caller *raised* is not read this way — it goes to the mismatches, because for that
+    # caller it is not evidence but a wrong point.
+    unknown = [name for name in strict_covariates if name not in STRICTABLE_COVARIATES]
+    if unknown:
+        raise ValueError(
+            f"strict_covariates names {unknown}, which no stored file carries a word for: a fact "
+            "that cannot be compared must not read as enforced. The raiseable fields are "
+            f"{list(STRICTABLE_COVARIATES)}"
+        )
+    raised = tuple(name for name in STRICTABLE_COVARIATES if name in strict_covariates)
     advisories: list[str] = []
     advisory_compared: list[str] = []
     for field in ADVISORY_COVARIATES:
         requested = _requested(requested_parameters, field)
         if requested is None:
+            continue
+        if field in raised:
+            enforced.append(field)
+            _compare_number(
+                mismatches,
+                field=field,
+                requested=requested,
+                found=getattr(facts, field),
+            )
             continue
         advisory_compared.append(field)
         _compare_number(
@@ -549,4 +592,5 @@ def verify_stored_point(
         advisories=tuple(advisories),
         enforced_covariates=tuple(enforced),
         advisory_covariates=tuple(advisory_compared),
+        strict_covariates=raised,
     )

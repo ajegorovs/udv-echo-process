@@ -370,6 +370,7 @@ class SweepRunner:
         *,
         channel: int | None = None,
         expected_mode: ProcessMode,
+        strict_covariates: tuple[str, ...] = (),
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
@@ -389,8 +390,15 @@ class SweepRunner:
         cannot be built without one. It is checked against the caption at the top of every point
         (:meth:`_execute`, before a parameter is written) and handed to the per-point record call
         as well, and a campaign persists both halves on its manifest.
+
+        ``strict_covariates`` names the words a *caller* requires a stored file to agree with,
+        over the verifier's own default (``verify.STRICTABLE_COVARIATES``): a field named here is
+        compared into the verdict instead of the advisories, so `word 14` disagrees and the point
+        is invalid rather than recorded-with-a-note. Empty by default, because that default is the
+        right answer for a request whose emissions value was derived rather than asked for.
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
+        self._strict_covariates = tuple(strict_covariates)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
@@ -766,6 +774,7 @@ class SweepRunner:
                 parameters,
                 channel=self._channel_setting.channel,
                 check_covariates=True,
+                strict_covariates=self._strict_covariates,
             )
         except Exception as exc:  # noqa: BLE001 - no verdict is not a pass
             return self._fail(
