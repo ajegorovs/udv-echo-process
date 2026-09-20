@@ -1,0 +1,1352 @@
+{
+  "artefact": "resolution-ladder",
+  "axis": "res",
+  "analysis_commit": "3a4c55a",
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "manifest": {
+    "path": "reports/mixer-sensitivity-analysis/manifest.csv",
+    "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
+  },
+  "screening_threshold": {
+    "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
+    "metric": "max_gate_abs_mean_difference_mm_s",
+    "units": "mm/s",
+    "value_mm_s": 19.37008103465545,
+    "gate_index": 39,
+    "depth_mm": 82.31266666666666,
+    "median_abs_mean_difference_mm_s": 8.908740794548184,
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
+    "role": "screening reference only: above/below indicates magnitude relative to the sole observed same-settings discrepancy; neither outcome establishes distinguishability, causality, or a bound on drift"
+  },
+  "aggregation": {
+    "rule": "unweighted arithmetic mean over the level's realizations",
+    "statement": "each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+    "levels": 13,
+    "recordings": 14,
+    "multi_realization_levels": [
+      {
+        "relative_path": "res/1-8.BDD",
+        "realization_paths": [
+          "prf/600.BDD",
+          "res/1-8.BDD"
+        ]
+      }
+    ]
+  },
+  "inputs": [
+    {
+      "relative_path": "res/0-2.BDD",
+      "level_path": "res/0-2.BDD",
+      "axis": "res",
+      "requested_label": "0-2",
+      "source_sha256": "85dc6e5152914c33f336571303a29ba76d852768aa7fd08a0abc46702a2a28fd",
+      "pitch_mm": 0.24666666666666665,
+      "gates": 365,
+      "profiles": 540,
+      "duration_s": 12.210500000000001,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 99.94933333333333,
+      "profiles_window": 493,
+      "gates_in_support": 352
+    },
+    {
+      "relative_path": "res/0-4.BDD",
+      "level_path": "res/0-4.BDD",
+      "axis": "res",
+      "requested_label": "0-4",
+      "source_sha256": "923fa2ea5cdb75d0479c84d071d6cfb55529b36559f23e5e183a1c9f83c3d12d",
+      "pitch_mm": 0.37000000000000005,
+      "gates": 240,
+      "profiles": 501,
+      "duration_s": 11.273200000000001,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 98.59266666666667,
+      "profiles_window": 495,
+      "gates_in_support": 235
+    },
+    {
+      "relative_path": "res/0-6.BDD",
+      "level_path": "res/0-6.BDD",
+      "axis": "res",
+      "requested_label": "0-6",
+      "source_sha256": "ada06d27f56acd5436ce23e77aa7525f60e422d18294fe3e19b68348eaef0e4d",
+      "pitch_mm": 0.6166666666666667,
+      "gates": 145,
+      "profiles": 548,
+      "duration_s": 12.289,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 98.96266666666668,
+      "profiles_window": 497,
+      "gates_in_support": 141
+    },
+    {
+      "relative_path": "res/0-8.BDD",
+      "level_path": "res/0-8.BDD",
+      "axis": "res",
+      "requested_label": "0-8",
+      "source_sha256": "5877a45686549e11b51dfb9315169b2209e7dbc54f66b463317629822d803aee",
+      "pitch_mm": 0.74,
+      "gates": 120,
+      "profiles": 514,
+      "duration_s": 11.5137,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 98.22266666666667,
+      "profiles_window": 498,
+      "gates_in_support": 118
+    },
+    {
+      "relative_path": "res/1-0.BDD",
+      "level_path": "res/1-0.BDD",
+      "axis": "res",
+      "requested_label": "1-0",
+      "source_sha256": "c8afe466119a1b1e0bcca069fac0b1e1ca418d6e5f4aabf36e76a3c5a622497d",
+      "pitch_mm": 0.9866666666666668,
+      "gates": 90,
+      "profiles": 502,
+      "duration_s": 11.2316,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 97.97600000000001,
+      "profiles_window": 498,
+      "gates_in_support": 88
+    },
+    {
+      "relative_path": "res/1-2.BDD",
+      "level_path": "res/1-2.BDD",
+      "axis": "res",
+      "requested_label": "1-2",
+      "source_sha256": "de9841e6a7c46763f2ba899303cf5351e2d404031b7a066b167da3113d9a27ae",
+      "pitch_mm": 1.2333333333333334,
+      "gates": 74,
+      "profiles": 521,
+      "duration_s": 11.6522,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.19600000000001,
+      "profiles_window": 499,
+      "gates_in_support": 71
+    },
+    {
+      "relative_path": "res/1-4.BDD",
+      "level_path": "res/1-4.BDD",
+      "axis": "res",
+      "requested_label": "1-4",
+      "source_sha256": "0c508f7067a1b04cffad48ead21e825d1108c50c6f64c7cfbdf8849b1fbc9796",
+      "pitch_mm": 1.3566666666666667,
+      "gates": 65,
+      "profiles": 565,
+      "duration_s": 12.6316,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 96.98933333333333,
+      "profiles_window": 499,
+      "gates_in_support": 64
+    },
+    {
+      "relative_path": "res/1-6.BDD",
+      "level_path": "res/1-6.BDD",
+      "axis": "res",
+      "requested_label": "1-6",
+      "source_sha256": "10455df3aaffbae3916e95e97cc739a1017e9ff203edca57e7408c9e716d9396",
+      "pitch_mm": 1.603333333333333,
+      "gates": 55,
+      "profiles": 553,
+      "duration_s": 12.3581,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 96.74266666666666,
+      "profiles_window": 499,
+      "gates_in_support": 55
+    },
+    {
+      "relative_path": "prf/600.BDD",
+      "level_path": "res/1-8.BDD",
+      "axis": "prf",
+      "requested_label": "600",
+      "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+      "pitch_mm": 1.85,
+      "gates": 50,
+      "profiles": 669,
+      "duration_s": 14.956000000000001,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 499,
+      "gates_in_support": 47
+    },
+    {
+      "relative_path": "res/1-8.BDD",
+      "level_path": "res/1-8.BDD",
+      "axis": "res",
+      "requested_label": "1-8",
+      "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+      "pitch_mm": 1.85,
+      "gates": 50,
+      "profiles": 517,
+      "duration_s": 11.552900000000001,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 499,
+      "gates_in_support": 47
+    },
+    {
+      "relative_path": "res/2-0.BDD",
+      "level_path": "res/2-0.BDD",
+      "axis": "res",
+      "requested_label": "2-0",
+      "source_sha256": "b1e7063443dbc8dd27f8d17fa7d578e699d50f2bc5b21b4acc5fffce62525d46",
+      "pitch_mm": 1.973333333333333,
+      "gates": 45,
+      "profiles": 524,
+      "duration_s": 11.7048,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 96.98933333333333,
+      "profiles_window": 499,
+      "gates_in_support": 44
+    },
+    {
+      "relative_path": "res/2-2.BDD",
+      "level_path": "res/2-2.BDD",
+      "axis": "res",
+      "requested_label": "2-2",
+      "source_sha256": "94d88329c3e7b8e89c334c3102188193999a85a184c33519c040684c8bf8c211",
+      "pitch_mm": 2.2199999999999998,
+      "gates": 40,
+      "profiles": 515,
+      "duration_s": 11.501100000000001,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 96.74266666666666,
+      "profiles_window": 499,
+      "gates_in_support": 40
+    },
+    {
+      "relative_path": "res/2-5.BDD",
+      "level_path": "res/2-5.BDD",
+      "axis": "res",
+      "requested_label": "2-5",
+      "source_sha256": "00cb6e09c34a0cce4fad706494b2bb0194e36a572c1354150f97426136384964",
+      "pitch_mm": 2.466666666666667,
+      "gates": 37,
+      "profiles": 519,
+      "duration_s": 11.5911,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 98.96266666666668,
+      "profiles_window": 499,
+      "gates_in_support": 36
+    },
+    {
+      "relative_path": "res/3-0.BDD",
+      "level_path": "res/3-0.BDD",
+      "axis": "res",
+      "requested_label": "3-0",
+      "source_sha256": "46bbe2a82e6af90e6c1c47391029ab754c0dbef958dcfd00f3ccbd9e14349291",
+      "pitch_mm": 2.9600000000000004,
+      "gates": 31,
+      "profiles": 517,
+      "duration_s": 11.5441,
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 98.96266666666668,
+      "profiles_window": 499,
+      "gates_in_support": 30
+    }
+  ],
+  "levels": [
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "0.246666666667"
+      ],
+      "key_display": "resolution_mm=0.246666666667",
+      "ladder_label": "resolution",
+      "primary_path": "res/0-2.BDD",
+      "requested_paths": [
+        "res/0-2.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/0-2.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/0-2.BDD",
+          "source_sha256": "85dc6e5152914c33f336571303a29ba76d852768aa7fd08a0abc46702a2a28fd",
+          "requested_axis": "res",
+          "requested_label": "0-2",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "0.246666666667",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "540",
+            "gates": "365",
+            "duration_s": "12.2105",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "99.9493333333"
+          },
+          "profiles": 540.0,
+          "profiles_window": 493.0,
+          "gates": 365,
+          "gates_in_support": 352,
+          "duration_s": 12.210500000000001,
+          "mean_mm_s": 24.85138200749567,
+          "robust_spread_mm_s": 34.4644201467934,
+          "rms_mm_s": 38.364868746813286,
+          "zero_fraction": 0.008989489212612944,
+          "time_iqr_median_mm_s": 26.49239716593995,
+          "gradient_median_abs_mm_s_per_mm": 1.5546794016921712,
+          "gradient_max_abs_mm_s_per_mm": 11.338266974124668,
+          "correlation_length_mm": 10.113333333333333,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "0.37"
+      ],
+      "key_display": "resolution_mm=0.37",
+      "ladder_label": "resolution",
+      "primary_path": "res/0-4.BDD",
+      "requested_paths": [
+        "res/0-4.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/0-4.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/0-4.BDD",
+          "source_sha256": "923fa2ea5cdb75d0479c84d071d6cfb55529b36559f23e5e183a1c9f83c3d12d",
+          "requested_axis": "res",
+          "requested_label": "0-4",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "0.37",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "501",
+            "gates": "240",
+            "duration_s": "11.2732",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "98.5926666667"
+          },
+          "profiles": 501.0,
+          "profiles_window": 495.0,
+          "gates": 240,
+          "gates_in_support": 235,
+          "duration_s": 11.273200000000001,
+          "mean_mm_s": 27.1287467922563,
+          "robust_spread_mm_s": 32.53650742845395,
+          "rms_mm_s": 39.54986801142076,
+          "zero_fraction": 0.008794326241134751,
+          "time_iqr_median_mm_s": 26.492397165939952,
+          "gradient_median_abs_mm_s_per_mm": 1.2163635062415317,
+          "gradient_max_abs_mm_s_per_mm": 11.762563852248887,
+          "correlation_length_mm": 10.36,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "0.616666666667"
+      ],
+      "key_display": "resolution_mm=0.616666666667",
+      "ladder_label": "resolution",
+      "primary_path": "res/0-6.BDD",
+      "requested_paths": [
+        "res/0-6.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/0-6.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/0-6.BDD",
+          "source_sha256": "ada06d27f56acd5436ce23e77aa7525f60e422d18294fe3e19b68348eaef0e4d",
+          "requested_axis": "res",
+          "requested_label": "0-6",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "0.616666666667",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "548",
+            "gates": "145",
+            "duration_s": "12.289",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "98.9626666667"
+          },
+          "profiles": 548.0,
+          "profiles_window": 497.0,
+          "gates": 145,
+          "gates_in_support": 141,
+          "duration_s": 12.289,
+          "mean_mm_s": 25.68823971953717,
+          "robust_spread_mm_s": 31.49333989051474,
+          "rms_mm_s": 39.096966439497805,
+          "zero_fraction": 0.009660801689570044,
+          "time_iqr_median_mm_s": 27.69659703711904,
+          "gradient_median_abs_mm_s_per_mm": 1.328031616048337,
+          "gradient_max_abs_mm_s_per_mm": 10.278493217699184,
+          "correlation_length_mm": 9.866666666666667,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "0.74"
+      ],
+      "key_display": "resolution_mm=0.74",
+      "ladder_label": "resolution",
+      "primary_path": "res/0-8.BDD",
+      "requested_paths": [
+        "res/0-8.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/0-8.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/0-8.BDD",
+          "source_sha256": "5877a45686549e11b51dfb9315169b2209e7dbc54f66b463317629822d803aee",
+          "requested_axis": "res",
+          "requested_label": "0-8",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "0.74",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "514",
+            "gates": "120",
+            "duration_s": "11.5137",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "98.2226666667"
+          },
+          "profiles": 514.0,
+          "profiles_window": 498.0,
+          "gates": 120,
+          "gates_in_support": 118,
+          "duration_s": 11.5137,
+          "mean_mm_s": 25.09495645368096,
+          "robust_spread_mm_s": 29.050112856180238,
+          "rms_mm_s": 37.50544587629787,
+          "zero_fraction": 0.009444557892587298,
+          "time_iqr_median_mm_s": 26.34187218204256,
+          "gradient_median_abs_mm_s_per_mm": 1.3626162658246248,
+          "gradient_max_abs_mm_s_per_mm": 11.28651458551114,
+          "correlation_length_mm": 10.36,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "0.986666666667"
+      ],
+      "key_display": "resolution_mm=0.986666666667",
+      "ladder_label": "resolution",
+      "primary_path": "res/1-0.BDD",
+      "requested_paths": [
+        "res/1-0.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/1-0.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/1-0.BDD",
+          "source_sha256": "c8afe466119a1b1e0bcca069fac0b1e1ca418d6e5f4aabf36e76a3c5a622497d",
+          "requested_axis": "res",
+          "requested_label": "1-0",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "0.986666666667",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "502",
+            "gates": "90",
+            "duration_s": "11.2316",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "97.976"
+          },
+          "profiles": 502.0,
+          "profiles_window": 498.0,
+          "gates": 90,
+          "gates_in_support": 88,
+          "duration_s": 11.2316,
+          "mean_mm_s": 26.509406104427082,
+          "robust_spread_mm_s": 31.91673724831442,
+          "rms_mm_s": 38.90628493716559,
+          "zero_fraction": 0.008374406717780211,
+          "time_iqr_median_mm_s": 30.104996779477215,
+          "gradient_median_abs_mm_s_per_mm": 1.1812608635386324,
+          "gradient_max_abs_mm_s_per_mm": 12.746343882290853,
+          "correlation_length_mm": 9.866666666666667,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "1.23333333333"
+      ],
+      "key_display": "resolution_mm=1.23333333333",
+      "ladder_label": "resolution",
+      "primary_path": "res/1-2.BDD",
+      "requested_paths": [
+        "res/1-2.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/1-2.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/1-2.BDD",
+          "source_sha256": "de9841e6a7c46763f2ba899303cf5351e2d404031b7a066b167da3113d9a27ae",
+          "requested_axis": "res",
+          "requested_label": "1-2",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.23333333333",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "521",
+            "gates": "74",
+            "duration_s": "11.6522",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.196"
+          },
+          "profiles": 521.0,
+          "profiles_window": 499.0,
+          "gates": 74,
+          "gates_in_support": 71,
+          "duration_s": 11.6522,
+          "mean_mm_s": 27.279822676555717,
+          "robust_spread_mm_s": 31.4853621628729,
+          "rms_mm_s": 41.493917941789206,
+          "zero_fraction": 0.008947472409607948,
+          "time_iqr_median_mm_s": 29.50289684388767,
+          "gradient_median_abs_mm_s_per_mm": 1.1426952143778317,
+          "gradient_max_abs_mm_s_per_mm": 9.039814880865606,
+          "correlation_length_mm": 12.333333333333332,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "1.35666666667"
+      ],
+      "key_display": "resolution_mm=1.35666666667",
+      "ladder_label": "resolution",
+      "primary_path": "res/1-4.BDD",
+      "requested_paths": [
+        "res/1-4.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/1-4.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/1-4.BDD",
+          "source_sha256": "0c508f7067a1b04cffad48ead21e825d1108c50c6f64c7cfbdf8849b1fbc9796",
+          "requested_axis": "res",
+          "requested_label": "1-4",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.35666666667",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "565",
+            "gates": "65",
+            "duration_s": "12.6316",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "96.9893333333"
+          },
+          "profiles": 565.0,
+          "profiles_window": 499.0,
+          "gates": 65,
+          "gates_in_support": 64,
+          "duration_s": 12.6316,
+          "mean_mm_s": 28.005603110024616,
+          "robust_spread_mm_s": 38.29669309754817,
+          "rms_mm_s": 41.40488980448346,
+          "zero_fraction": 0.009487725450901804,
+          "time_iqr_median_mm_s": 27.696597037119034,
+          "gradient_median_abs_mm_s_per_mm": 1.6631694044882643,
+          "gradient_max_abs_mm_s_per_mm": 9.317306246748142,
+          "correlation_length_mm": 18.993333333333332,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "1.60333333333"
+      ],
+      "key_display": "resolution_mm=1.60333333333",
+      "ladder_label": "resolution",
+      "primary_path": "res/1-6.BDD",
+      "requested_paths": [
+        "res/1-6.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/1-6.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/1-6.BDD",
+          "source_sha256": "10455df3aaffbae3916e95e97cc739a1017e9ff203edca57e7408c9e716d9396",
+          "requested_axis": "res",
+          "requested_label": "1-6",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.60333333333",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "553",
+            "gates": "55",
+            "duration_s": "12.3581",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "96.7426666667"
+          },
+          "profiles": 553.0,
+          "profiles_window": 499.0,
+          "gates": 55,
+          "gates_in_support": 55,
+          "duration_s": 12.3581,
+          "mean_mm_s": 22.81543022826278,
+          "robust_spread_mm_s": 27.708663168092755,
+          "rms_mm_s": 37.285453739834345,
+          "zero_fraction": 0.010566587720896338,
+          "time_iqr_median_mm_s": 27.696597037119034,
+          "gradient_median_abs_mm_s_per_mm": 1.499862725405017,
+          "gradient_max_abs_mm_s_per_mm": 6.035574038007167,
+          "correlation_length_mm": 9.619999999999997,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "1.85"
+      ],
+      "key_display": "resolution_mm=1.85",
+      "ladder_label": "resolution",
+      "primary_path": "res/1-8.BDD",
+      "requested_paths": [
+        "res/1-8.BDD"
+      ],
+      "realizations": 2,
+      "realization_paths": [
+        "prf/600.BDD",
+        "res/1-8.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "prf/600.BDD",
+          "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+          "requested_axis": "prf",
+          "requested_label": "600",
+          "own_axis": false,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "669",
+            "gates": "50",
+            "duration_s": "14.956",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "profiles": 669.0,
+          "profiles_window": 499.0,
+          "gates": 50,
+          "gates_in_support": 47,
+          "duration_s": 14.956000000000001,
+          "mean_mm_s": 16.2000901358175,
+          "robust_spread_mm_s": 23.50361652374493,
+          "rms_mm_s": 34.845553884361784,
+          "zero_fraction": 0.008612970622095255,
+          "time_iqr_median_mm_s": 32.51339652183539,
+          "gradient_median_abs_mm_s_per_mm": 1.2092219905573587,
+          "gradient_max_abs_mm_s_per_mm": 3.5598347489007676,
+          "correlation_length_mm": 14.8,
+          "correlation_reaches_floor": true
+        },
+        {
+          "relative_path": "res/1-8.BDD",
+          "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+          "requested_axis": "res",
+          "requested_label": "1-8",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "517",
+            "gates": "50",
+            "duration_s": "11.5529",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "profiles": 517.0,
+          "profiles_window": 499.0,
+          "gates": 50,
+          "gates_in_support": 47,
+          "duration_s": 11.552900000000001,
+          "mean_mm_s": 25.0952932348956,
+          "robust_spread_mm_s": 30.48869974444207,
+          "rms_mm_s": 37.850257578684634,
+          "zero_fraction": 0.00980684773802925,
+          "time_iqr_median_mm_s": 27.69659703711904,
+          "gradient_median_abs_mm_s_per_mm": 0.841368051682299,
+          "gradient_max_abs_mm_s_per_mm": 7.662319279971799,
+          "correlation_length_mm": 11.100000000000001,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "1.97333333333"
+      ],
+      "key_display": "resolution_mm=1.97333333333",
+      "ladder_label": "resolution",
+      "primary_path": "res/2-0.BDD",
+      "requested_paths": [
+        "res/2-0.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/2-0.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/2-0.BDD",
+          "source_sha256": "b1e7063443dbc8dd27f8d17fa7d578e699d50f2bc5b21b4acc5fffce62525d46",
+          "requested_axis": "res",
+          "requested_label": "2-0",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.97333333333",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "524",
+            "gates": "45",
+            "duration_s": "11.7048",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "96.9893333333"
+          },
+          "profiles": 524.0,
+          "profiles_window": 499.0,
+          "gates": 45,
+          "gates_in_support": 44,
+          "duration_s": 11.7048,
+          "mean_mm_s": 23.126495084765757,
+          "robust_spread_mm_s": 29.37499585556602,
+          "rms_mm_s": 35.795709819745966,
+          "zero_fraction": 0.01033885953725633,
+          "time_iqr_median_mm_s": 28.59974694050336,
+          "gradient_median_abs_mm_s_per_mm": 1.118970591990265,
+          "gradient_max_abs_mm_s_per_mm": 7.731291893510878,
+          "correlation_length_mm": 11.84,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "2.22"
+      ],
+      "key_display": "resolution_mm=2.22",
+      "ladder_label": "resolution",
+      "primary_path": "res/2-2.BDD",
+      "requested_paths": [
+        "res/2-2.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/2-2.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/2-2.BDD",
+          "source_sha256": "94d88329c3e7b8e89c334c3102188193999a85a184c33519c040684c8bf8c211",
+          "requested_axis": "res",
+          "requested_label": "2-2",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "2.22",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "515",
+            "gates": "40",
+            "duration_s": "11.5011",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "96.7426666667"
+          },
+          "profiles": 515.0,
+          "profiles_window": 499.0,
+          "gates": 40,
+          "gates_in_support": 40,
+          "duration_s": 11.501100000000001,
+          "mean_mm_s": 24.882473640768907,
+          "robust_spread_mm_s": 36.15133501041748,
+          "rms_mm_s": 39.1794008046535,
+          "zero_fraction": 0.009519038076152305,
+          "time_iqr_median_mm_s": 28.298696972708584,
+          "gradient_median_abs_mm_s_per_mm": 1.355537416599249,
+          "gradient_max_abs_mm_s_per_mm": 6.120028592986217,
+          "correlation_length_mm": 13.319999999999999,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "2.46666666667"
+      ],
+      "key_display": "resolution_mm=2.46666666667",
+      "ladder_label": "resolution",
+      "primary_path": "res/2-5.BDD",
+      "requested_paths": [
+        "res/2-5.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/2-5.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/2-5.BDD",
+          "source_sha256": "00cb6e09c34a0cce4fad706494b2bb0194e36a572c1354150f97426136384964",
+          "requested_axis": "res",
+          "requested_label": "2-5",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "2.46666666667",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "519",
+            "gates": "37",
+            "duration_s": "11.5911",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "98.9626666667"
+          },
+          "profiles": 519.0,
+          "profiles_window": 499.0,
+          "gates": 37,
+          "gates_in_support": 36,
+          "duration_s": 11.5911,
+          "mean_mm_s": 24.45281882701238,
+          "robust_spread_mm_s": 39.50994256695759,
+          "rms_mm_s": 38.84661995914252,
+          "zero_fraction": 0.010910710309507904,
+          "time_iqr_median_mm_s": 30.104996779477215,
+          "gradient_median_abs_mm_s_per_mm": 0.9118081676370927,
+          "gradient_max_abs_mm_s_per_mm": 5.192023546834824,
+          "correlation_length_mm": 14.8,
+          "correlation_reaches_floor": true
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "resolution_mm"
+      ],
+      "key": [
+        "2.96"
+      ],
+      "key_display": "resolution_mm=2.96",
+      "ladder_label": "resolution",
+      "primary_path": "res/3-0.BDD",
+      "requested_paths": [
+        "res/3-0.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "res/3-0.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "res/3-0.BDD",
+          "source_sha256": "46bbe2a82e6af90e6c1c47391029ab754c0dbef958dcfd00f3ccbd9e14349291",
+          "requested_axis": "res",
+          "requested_label": "3-0",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "2.96",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "517",
+            "gates": "31",
+            "duration_s": "11.5441",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "98.9626666667"
+          },
+          "profiles": 517.0,
+          "profiles_window": 499.0,
+          "gates": 31,
+          "gates_in_support": 30,
+          "duration_s": 11.5441,
+          "mean_mm_s": 24.241983298464593,
+          "robust_spread_mm_s": 32.6557768673255,
+          "rms_mm_s": 38.753292267571894,
+          "zero_fraction": 0.010888443553774215,
+          "time_iqr_median_mm_s": 27.997647004913816,
+          "gradient_median_abs_mm_s_per_mm": 1.2106894929730758,
+          "gradient_max_abs_mm_s_per_mm": 6.108071165895124,
+          "correlation_length_mm": 11.84,
+          "correlation_reaches_floor": true
+        }
+      ]
+    }
+  ],
+  "views": {
+    "time": {
+      "common_duration": {
+        "nominal_rpm": 500.0,
+        "revolution_s": 0.12,
+        "revolutions": 93,
+        "window_s": 11.16,
+        "profiles_window": {
+          "res/0-2.BDD": 493,
+          "res/0-4.BDD": 495,
+          "res/0-6.BDD": 497,
+          "res/0-8.BDD": 498,
+          "res/1-0.BDD": 498,
+          "res/1-2.BDD": 499,
+          "res/1-4.BDD": 499,
+          "res/1-6.BDD": 499,
+          "prf/600.BDD": 499,
+          "res/1-8.BDD": 499,
+          "res/2-0.BDD": 499,
+          "res/2-2.BDD": 499,
+          "res/2-5.BDD": 499,
+          "res/3-0.BDD": 499
+        },
+        "rule": "largest integer number of nominal revolutions fitting every resolution recording, truncated per file by the recorded timestamps"
+      }
+    },
+    "depth": {
+      "common_support": {
+        "min_mm": 10.162666666666668,
+        "max_mm": 96.74266666666666,
+        "plan_declared_mm": [
+          10.163,
+          96.743
+        ],
+        "plan_tolerance_mm": 0.01,
+        "matches_plan": true,
+        "gates_in_support": {
+          "res/0-2.BDD": 352,
+          "res/0-4.BDD": 235,
+          "res/0-6.BDD": 141,
+          "res/0-8.BDD": 118,
+          "res/1-0.BDD": 88,
+          "res/1-2.BDD": 71,
+          "res/1-4.BDD": 64,
+          "res/1-6.BDD": 55,
+          "prf/600.BDD": 47,
+          "res/1-8.BDD": 47,
+          "res/2-0.BDD": 44,
+          "res/2-2.BDD": 40,
+          "res/2-5.BDD": 36,
+          "res/3-0.BDD": 30
+        },
+        "rule": "intersection of the 13 decoded depth ranges; every cross-level summary uses it and nothing else"
+      },
+      "native_grid": "each level keeps its own decoded gate grid for the distributional metrics, the gradient and the descriptive profile autocorrelation scale; no level is resampled to compute a native-grid quantity"
+    },
+    "gradient": {
+      "rule": "gate-to-gate |mean[k+1] - mean[k]| / native pitch on the supported native grid, mm/s per mm, at the midpoint depth of the interval",
+      "depth_reference": "midpoint of the two adjacent native gates"
+    },
+    "correlation": {
+      "rule": "first lag of the normalized biased native autocovariance of the mean-removed supported native mean profile below 1/e, in mm",
+      "role": "descriptive autocorrelation scale of one mean-removed depth profile: it describes how far one profile's own values stay correlated with themselves, and it is not a physical turbulence scale, not a noise floor and not a criterion any pitch is judged adequate by (plan \u00a78.2 R8)",
+      "floor": 0.36787944117144233,
+      "lag_cap": "floor((gates_in_support - 1) / 2) gates, half the profile"
+    },
+    "alignment": {
+      "knot_rule": "the coarser participant's native gate depths inside the common support, so the knot spacing is the coarser pitch and never finer than the coarsest participating pitch",
+      "fine_sampling_rule": "the finer profile is sampled at each knot by its nearest native gate (offset at most half the finer pitch); no interpolation",
+      "upsampled": false,
+      "max_knot_offset_over_all_pairs_mm": 0.986666666666693,
+      "focus_pair": {
+        "fine_path": "res/0-2.BDD",
+        "coarse_path": "res/0-6.BDD",
+        "selection": "selected by pitch from the manifest-selected ladder: the plan's question names 0.247 mm and 0.617 mm, not a filename"
+      }
+    }
+  },
+  "definitions": {
+    "pitch_mm": "mean step of the decoded gate depths (mm), re-checked against the manifest's resolution_mm cell: the realised pitch, not the rung label",
+    "robust_spread": "interquartile range p75 - p25 across supported gates of the per-gate time means, linear-interpolated percentiles, mm/s",
+    "rms": "root mean square about zero over the common window and support, mm/s; DC-inclusive, so a mean offset raises it (not a standard deviation)",
+    "zero_fraction": "samples exactly equal to 0.0 over the sample count, common window and support, dimensionless",
+    "time_iqr": "median over supported gates of the per-gate temporal interquartile range, mm/s",
+    "gradient": "median and maximum |mean[k+1] - mean[k]| / pitch on the supported native grid, mm/s per mm, before any alignment, at the interval midpoint",
+    "correlation_length": "descriptive autocorrelation scale of one mean-removed depth profile: the first lag where the normalized biased autocovariance of the supported native mean profile falls below 1/e, in mm (gates x pitch); capped at floor((gates - 1) / 2) gates, where a cap is a lower bound (correlation_reaches_floor false). It describes how far one profile's values stay correlated with themselves: it is not a physical turbulence scale, not a noise floor and not a resolution criterion, and no pitch here is judged adequate or inadequate by it (plan \u00a78.2 R8)",
+    "knots": "a pair's common depth knots: the coarser participant's native gate depths in the common support, so the spacing equals the coarser pitch, never finer than the coarsest participating pitch",
+    "difference": "signed fine - coarse per-gate time mean at every knot, mm/s; mean/median/max absolute values and the knot of the maximum are reported beside it",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold, max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every effect here is screened against, one observed realization of repeatability *plus* uncontrolled drift and not a bound on either",
+    "detail": "inside the finer recording alone, so drift-free: the residual of the supported native mean profile against its nearest-coarse reconstruction (that same profile resampled at the coarse knots by nearest native gate), as RMS and peak in mm/s. The residual normalized by the finer profile's own variance - the normalized reconstruction-residual variance (normalized_reconstruction_residual_variance) - is var(fine - nearest-coarse reconstruction) / var(fine): a ratio of one profile's variance to itself, not an orthogonal share of spatial variance and not one term of a variance partition. coarse_knot_reconstruction_variance_ratio is var(fine sampled at the coarse knots) / var(fine), the same kind of stand-alone ratio read at the knots rather than between them, so the two are not complementary and do not sum to one",
+    "replicates": "no profile and no gate is an independent experimental replicate: the levels carry no acquisition order and their differences hold drift as well as pitch. the ladder is the setting-based selection, so its one duplicated setting is a reference setting and not replicated coverage of this axis: the shared 1.850 mm reference level carries both of the reference recordings as two named realizations, every other level is a single recording, every difference is one measurement against another, and no pitch effect here is estimated repeatably",
+    "time_view": "the common-duration view of every distributional metric: the largest integer number of nominal 500-RPM revolutions (0.12 s) fitting every level, truncated per file by the recorded timestamps",
+    "realizations": "the recordings that realize one decoded level: the ladder holds every eligible decoded pitch, so `res/1-8.BDD` and `prf/600.BDD` are two named realizations of the 1.850 mm level rather than one being dropped or standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+    "depth_view": "each level on its own decoded gate grid, restricted to the common physical support; the gradient and the descriptive profile autocorrelation scale are native-grid quantities and nothing is upsampled in this report"
+  },
+  "findings": {
+    "screening_threshold_gate": {
+      "pairs": 78,
+      "screening_threshold_mm_s": 19.37008103465545,
+      "screening_threshold_source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
+      "pairs_above_screening_threshold": 0,
+      "max_abs_difference_mm_s": 17.367988923598926,
+      "max_abs_difference_fine_path": "res/1-2.BDD",
+      "max_abs_difference_coarse_path": "res/1-6.BDD",
+      "max_abs_difference_depth_mm": 43.83266666666667,
+      "max_ratio_to_screening_threshold": 0.8966399723638463,
+      "statement": "Effect gate: the largest absolute per-knot mean-profile difference over the 78 pairs is 17.37 mm/s (1-2 vs 1-6 at 43.83 mm) = 0.897 of the WP1 screening_threshold 19.37 mm/s; not one of the 78 pairs puts a knot above the screening_threshold, so no level differs from another by more than repeat-plus-drift anywhere in the common support."
+    },
+    "information": {
+      "fine_path": "res/0-2.BDD",
+      "coarse_path": "res/0-6.BDD",
+      "fine_pitch_mm": 0.24666666666666665,
+      "coarse_pitch_mm": 0.6166666666666667,
+      "knot_spacing_mm": 0.6166666666666667,
+      "knots": 141,
+      "knots_above_screening_threshold": 0,
+      "mean_abs_difference_mm_s": 1.9741170190804878,
+      "max_abs_difference_mm_s": 6.113552614489791,
+      "max_abs_difference_depth_mm": 44.696000000000005,
+      "detail_rms_mm_s": 0.5814472383223697,
+      "detail_max_abs_mm_s": 2.7381502141820704,
+      "normalized_reconstruction_residual_variance": 0.0007219264317894629,
+      "coarse_knot_reconstruction_variance_ratio": 0.991513079637173,
+      "statement": "Plan question: 0-2 at 0.2467 mm versus 0-6 at 0.6167 mm on 141 knots spaced 0.6167 mm - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm = 0.316 of the 19.37 mm/s screening_threshold, 0 knots above it. Normalized by the finer profile's own variance, its nearest-coarse reconstruction carries 0.9915 and the reconstruction residual below the knots carries 0.000722 - two stand-alone ratios of that variance, not an orthogonal partition of it. The residual is 0.5814 mm/s RMS with a peak of 2.738 mm/s = 0.141 of the screening_threshold. Verdict: an information gain from 0.247 mm over 0.617 mm is not demonstrated - both the level difference and the normalized reconstruction-residual variance the extra gates leave sit inside the repeat-plus-drift screening_threshold, so this evidence cannot support that claim. The sole same-settings repeat is a screening reference for a difference of this size and nothing more: the current single-repeat evidence does not support distinguishing the difference from the observed same-settings discrepancy."
+    },
+    "coarsest_pitch": {
+      "path": "res/3-0.BDD",
+      "label": "3-0",
+      "pitch_mm": 2.9600000000000004,
+      "gates_in_support": 30,
+      "correlation_length_mm": 11.84,
+      "correlation_length_over_pitch": 3.9999999999999996,
+      "max_abs_difference_to_any_other_level_mm_s": 10.43237683989414,
+      "max_ratio_to_screening_threshold": 0.5385819925703634,
+      "statement": "Coarsest measured pitch: the descriptive autocorrelation scale of each level's mean-removed depth profile - the first lag where its normalized autocovariance drops to 1/e - ranges over 9.62-18.99 mm across the 13 levels (4-41 gate pitches). That is a description of one profile and not a criterion by which a pitch is judged adequate: the evidence for this level is its own aligned difference. 3-0 at 2.96 mm (30 supported gates) differs from every other level by at most 10.43 mm/s (0.539 of the screening_threshold). On this evidence no measured pitch is shown to lose structure the finer pitches show - a statement about the 13 recorded pitches only: nothing finer or coarser was measured, and the sole same-settings repeat is a screening reference for the size of these differences rather than a criterion any pitch is judged by."
+    },
+    "realizations": {
+      "levels": 13,
+      "recordings": 14,
+      "single_recording_levels": 12,
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "multi_realization_levels": [
+        {
+          "relative_path": "res/1-8.BDD",
+          "key_display": "resolution_mm=1.85",
+          "realization_paths": [
+            "prf/600.BDD",
+            "res/1-8.BDD"
+          ]
+        }
+      ],
+      "statement": "Selection: the 13 decoded pitches are the setting-based selection of 14 recording(s) - every recording whose decoded settings put it at a pitch of this ladder, whatever folder requested it. 12 of the 13 levels are a single recording; a level with more than one recording is one level with that many named realizations, each measured on its own and each named in resolution-levels.csv and in the provenance document: resolution_mm=1.85 realized by prf/600.BDD and res/1-8.BDD. the ladder is the setting-based selection, so its one duplicated setting is a reference setting and not replicated coverage of this axis: the shared 1.850 mm reference level carries both of the reference recordings as two named realizations, every other level is a single recording, every difference is one measurement against another, and no pitch effect here is estimated repeatably. Each level's numbers are the unweighted mean of its realizations' numbers: one realization, one vote."
+    },
+    "limitations": [
+      "The screening threshold is the only repeat, at 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s): one observed realization of repeatability plus uncontrolled drift. The levels are separate recordings with no acquisition order. Magnitude relative to this one observation does not establish distinguishability or a pitch effect, and a difference that falls above the screening threshold could still be drift rather than pitch \u2014 screening is not attribution. the ladder is the setting-based selection, so its one duplicated setting is a reference setting and not replicated coverage of this axis: the shared 1.850 mm reference level carries both of the reference recordings as two named realizations, every other level is a single recording, every difference is one measurement against another, and no pitch effect here is estimated repeatably.",
+      "The spatial metrics describe the depth-resolved *mean* profile over the common window; they do not separate spatial structure from temporal noise aliased across gates, and neither gates nor profiles are independent replicates.",
+      "Alignment samples the finer profile at the coarser knots by nearest native gate: nothing is interpolated or upsampled, and the tables say nothing about structure between the coarser knots.",
+      "This module owns the resolution axis only: burst length, PRF, TGC, emitting power and emissions per profile are neither analysed nor decided here, and pitch x burst interaction is not estimable from this dataset. What would overturn the reading: two recordings per pitch, which would separate pitch from drift and show whether the sub-knot detail measured here is structure or noise."
+    ]
+  },
+  "tables": {
+    "levels": {
+      "path": "resolution-levels.csv",
+      "rows": 13
+    },
+    "pairs": {
+      "path": "resolution-pairs.csv",
+      "rows": 78
+    }
+  },
+  "figure": {
+    "path": "figures/resolution-ladder.png",
+    "caption": "WP2 resolution ladder: 13 decoded pitches 0.2467-2.96 mm (0-2..3-0). Selection: the 13 decoded pitches are the setting-based selection of 14 recording(s) - every recording whose decoded settings put it at a pitch of this ladder, whatever folder requested it. 12 of the 13 levels are a single recording; a level with more than one recording is one level with that many named realizations, each measured on its own and each named in resolution-levels.csv and in the provenance document: resolution_mm=1.85 realized by prf/600.BDD and res/1-8.BDD. the ladder is the setting-based selection, so its one duplicated setting is a reference setting and not replicated coverage of this axis: the shared 1.850 mm reference level carries both of the reference recordings as two named realizations, every other level is a single recording, every difference is one measurement against another, and no pitch effect here is estimated repeatably. Each level's numbers are the unweighted mean of its realizations' numbers: one realization, one vote. Common-duration view: 93 nominal 500-RPM revolutions = 11.16 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-96.7427 mm. Gradients and the descriptive profile autocorrelation scale are native-grid quantities; pairs use the coarser participant's own gate depths as knots (spacing = the coarser pitch) with the finer profile sampled there by nearest native gate - nothing is interpolated or upsampled. Decision threshold: the committed sole-pair observed-discrepancy screening threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, read from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...), one observed realization of same-settings repeatability plus uncontrolled drift that screens an effect without bounding it. Focus pair: res/0-2.BDD (0.2467 mm) vs res/0-6.BDD (0.6167 mm) - mean |diff| 1.974 mm/s, max |diff| 6.114 mm/s at 44.7 mm, 0 of 141 knots above the screening_threshold. Coarsest measured pitch 2.96 mm (3-0) differs from every other level by at most 10.43 mm/s (0.539 of that screening threshold); the descriptive autocorrelation scale of its mean-removed depth profile is 11.84 mm, a description of one profile and not a criterion any pitch is judged by. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): these files carry no tachometer, so the setpoint is not a phase reference and no harmonic is attributed to it. no gate and no profile is an independent experimental replicate - gates and profiles are not independent samples, and the levels carry no acquisition order. Generated at commit 3a4c55a from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "panels": [
+      "descriptive autocorrelation scale of each level's mean-removed depth profile versus gate pitch, with the 1:1 line where that scale would equal one gate: a reading reference, not a criterion any pitch is judged by",
+      "the plan's 0.247 mm vs 0.617 mm pair: both aligned profiles versus depth, the signed difference at the 0.617 mm knots and the WP1 screening_threshold band; the native gradient spread stays in resolution-levels.csv"
+    ]
+  },
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}

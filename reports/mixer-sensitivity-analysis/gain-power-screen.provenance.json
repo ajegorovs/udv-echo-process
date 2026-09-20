@@ -1,0 +1,2043 @@
+{
+  "artefact": "gain-power-screen",
+  "axes": [
+    "tgc",
+    "em_pow"
+  ],
+  "analysis_commit": "71b7906",
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "sensitivity": {
+    "column": "sensitivity",
+    "values_in_manifest": [
+      "medium"
+    ],
+    "rows_in_manifest": 40,
+    "axis_present": false,
+    "identifiable": false,
+    "levels_screened": 12
+  },
+  "manifest": {
+    "path": "reports/mixer-sensitivity-analysis/manifest.csv",
+    "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
+  },
+  "screening_threshold": {
+    "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
+    "metric": "max_gate_abs_mean_difference_mm_s",
+    "units": "mm/s",
+    "value_mm_s": 19.37008103465545,
+    "gate_index": 39,
+    "depth_mm": 82.31266666666666,
+    "median_abs_mean_difference_mm_s": 8.908740794548184,
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
+    "role": "screening reference only: above/below indicates magnitude relative to the sole observed same-settings discrepancy; neither outcome establishes distinguishability, causality, or a bound on drift",
+    "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "axis_blocks": [
+    {
+      "axis": "tgc",
+      "tgc_representation": {
+        "mode_word": 23,
+        "start_word": 24,
+        "key_cell": "tgc_start_db",
+        "role": "the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder",
+        "end_word": 25,
+        "mode_label": "uniform",
+        "end_db": 40.0
+      },
+      "key": {
+        "column": "tgc_start_db",
+        "label": "decoded TGC start",
+        "units": "dB",
+        "values": [
+          0.1568627450980392,
+          4.862745098039215,
+          9.882352941176471,
+          14.901960784313726,
+          19.92156862745098,
+          24.941176470588236,
+          29.96078431372549,
+          34.98039215686275,
+          40.0
+        ]
+      },
+      "audited_constants": {
+        "settings": [
+          "resolution_mm",
+          "burst_length",
+          "emissions_per_profile",
+          "emit_power",
+          "sensitivity",
+          "tgc_mode",
+          "tgc_end_db",
+          "prf_period_us",
+          "sound_speed_ms",
+          "velo_max_ms",
+          "gates"
+        ],
+        "tgc_end_db": 40.0,
+        "tgc_mode": "uniform",
+        "sensitivity": "medium"
+      },
+      "base_state": {
+        "label": "20",
+        "decoded_key": "19.9215686275",
+        "in_ladder": true,
+        "focus_pair_kind": "base_state_is_a_level",
+        "straddling_keys": [
+          19.92156862745098,
+          24.941176470588236
+        ],
+        "straddling_pair": [
+          "prf/600.BDD",
+          "tgc/25.BDD"
+        ]
+      },
+      "aggregation": {
+        "rule": "unweighted arithmetic mean over the level's realizations",
+        "statement": "each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+        "levels": 9,
+        "recordings": 10,
+        "multi_realization_levels": [
+          {
+            "relative_path": "prf/600.BDD",
+            "realization_paths": [
+              "prf/600.BDD",
+              "res/1-8.BDD"
+            ]
+          }
+        ],
+        "worst_cells": [
+          "max_gate_robust_spread_mm_s",
+          "max_gate_robust_spread_depth_mm",
+          "max_gate_spread_ratio_to_axis_median",
+          "max_gate_std_mm_s",
+          "worst_gate_zero_fraction",
+          "worst_gate_zero_fraction_depth_mm",
+          "majority_blank_gates",
+          "majority_blank_depth_ranges_mm"
+        ],
+        "worst_cells_rule": "a cell that asserts an adverse screening outcome is the worst realization's value, not a mean over realizations, so a dropout or a disproportionate spread one recording found is never averaged away; the level's screen word is recomputed from those outcomes"
+      },
+      "screening": {
+        "dropout_gate_limit": 0.5,
+        "spread_ratio_limit": 3.0,
+        "levels_screened": 9,
+        "levels_flagged": 2,
+        "levels_dropout_limited": [
+          "tgc/0.BDD",
+          "tgc/40.BDD"
+        ],
+        "levels_spread_limited": [
+          "tgc/40.BDD"
+        ],
+        "flagged_paths": [
+          "tgc/0.BDD",
+          "tgc/40.BDD"
+        ],
+        "axis_median_gate_robust_spread_mm_s": 29.803946811682447
+      },
+      "inputs": [
+        {
+          "relative_path": "tgc/0.BDD",
+          "requested_label": "0",
+          "key_value": 0.1568627450980392,
+          "tgc_start_db": 0.1568627450980392,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "dropout-limited",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 516,
+          "gates": 50,
+          "duration_s": 11.5275,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/0.BDD",
+          "realizations": 1,
+          "source_sha256": "4f936ff8751593313a621d0cbf4ea322ae7fb5e23e12ea7d109ce683a613b72e"
+        },
+        {
+          "relative_path": "tgc/5.BDD",
+          "requested_label": "5",
+          "key_value": 4.862745098039215,
+          "tgc_start_db": 4.862745098039215,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 496,
+          "gates": 50,
+          "duration_s": 11.0823,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/5.BDD",
+          "realizations": 1,
+          "source_sha256": "64f571f427fe38c292df962f50744dbd6293690304b46ccb5ebe355dd0f9272c"
+        },
+        {
+          "relative_path": "tgc/10.BDD",
+          "requested_label": "10",
+          "key_value": 9.882352941176471,
+          "tgc_start_db": 9.882352941176471,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 522,
+          "gates": 50,
+          "duration_s": 11.664900000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/10.BDD",
+          "realizations": 1,
+          "source_sha256": "d15a4ce74bae1640ff017dcec17e497c4b7b7270928ddb9f582e32bf2d1f3f81"
+        },
+        {
+          "relative_path": "tgc/15.BDD",
+          "requested_label": "15",
+          "key_value": 14.901960784313726,
+          "tgc_start_db": 14.901960784313726,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 494,
+          "gates": 50,
+          "duration_s": 11.038,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/15.BDD",
+          "realizations": 1,
+          "source_sha256": "05c6f63a67b087be9c56d547cb748f5fbc43cf7cedacf44f768ce6e0ea3abc9f"
+        },
+        {
+          "relative_path": "prf/600.BDD",
+          "requested_label": "600",
+          "key_value": 19.92156862745098,
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 669,
+          "gates": 50,
+          "duration_s": 14.956000000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "prf/600.BDD",
+          "realizations": 2,
+          "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de"
+        },
+        {
+          "relative_path": "res/1-8.BDD",
+          "requested_label": "1-8",
+          "key_value": 19.92156862745098,
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 517,
+          "gates": 50,
+          "duration_s": 11.552900000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "prf/600.BDD",
+          "realizations": 2,
+          "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de"
+        },
+        {
+          "relative_path": "tgc/25.BDD",
+          "requested_label": "25",
+          "key_value": 24.941176470588236,
+          "tgc_start_db": 24.941176470588236,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 614,
+          "gates": 50,
+          "duration_s": 13.7246,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/25.BDD",
+          "realizations": 1,
+          "source_sha256": "c90c19e57f565253de44a029f923eb703138e0f01db3223d14205ef949376c1e"
+        },
+        {
+          "relative_path": "tgc/30.BDD",
+          "requested_label": "30",
+          "key_value": 29.96078431372549,
+          "tgc_start_db": 29.96078431372549,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 517,
+          "gates": 50,
+          "duration_s": 11.552800000000001,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/30.BDD",
+          "realizations": 1,
+          "source_sha256": "083f2df703f787a275eb544df8b7cf21d2315c4bca2ccfc8fba8ce9ecbd5324e"
+        },
+        {
+          "relative_path": "tgc/35.BDD",
+          "requested_label": "35",
+          "key_value": 34.98039215686275,
+          "tgc_start_db": 34.98039215686275,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 418,
+          "gates": 50,
+          "duration_s": 9.3363,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/35.BDD",
+          "realizations": 1,
+          "source_sha256": "dbc6d7d4a5300e86d4e64f6c76236da90bd934c25d3f0e28db577d0c464a4be1"
+        },
+        {
+          "relative_path": "tgc/40.BDD",
+          "requested_label": "40",
+          "key_value": 40.0,
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "dropout- and spread-limited",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 492,
+          "gates": 50,
+          "duration_s": 10.9928,
+          "profiles_window": 413,
+          "gates_in_support": 50,
+          "level_path": "tgc/40.BDD",
+          "realizations": 1,
+          "source_sha256": "07c90296fdf8572599be1aedfbf715886fd952af52e35f77cb1764a3ca49dd64"
+        }
+      ],
+      "levels": [
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "0.156862745098"
+          ],
+          "key_display": "tgc_start_db=0.156862745098",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/0.BDD",
+          "requested_paths": [
+            "tgc/0.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/0.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/0.BDD",
+              "source_sha256": "4f936ff8751593313a621d0cbf4ea322ae7fb5e23e12ea7d109ce683a613b72e",
+              "requested_axis": "tgc",
+              "requested_label": "0",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "0.156862745098",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "516",
+                "gates": "50",
+                "duration_s": "11.5275",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 0.1568627450980392,
+              "mean_mm_s": 24.00754676832193,
+              "robust_spread_mm_s": 32.288884681446085,
+              "rms_mm_s": 37.166802569713205,
+              "zero_fraction": 0.24372881355932202,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 43.351195362447186,
+              "max_gate_spread_ratio_to_axis_median": 1.4545454545454541,
+              "worst_gate_zero_fraction": 0.8111380145278451,
+              "majority_blank_gates": 10,
+              "dropout_limited": true,
+              "spread_limited": false,
+              "screen": "dropout-limited"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "4.86274509804"
+          ],
+          "key_display": "tgc_start_db=4.86274509804",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/5.BDD",
+          "requested_paths": [
+            "tgc/5.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/5.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/5.BDD",
+              "source_sha256": "64f571f427fe38c292df962f50744dbd6293690304b46ccb5ebe355dd0f9272c",
+              "requested_axis": "tgc",
+              "requested_label": "5",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "4.86274509804",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "496",
+                "gates": "50",
+                "duration_s": "11.0823",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 4.862745098039215,
+              "mean_mm_s": 19.87565418370235,
+              "robust_spread_mm_s": 29.007950286665757,
+              "rms_mm_s": 36.21200521757714,
+              "zero_fraction": 0.037239709443099275,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 43.351195362447186,
+              "max_gate_spread_ratio_to_axis_median": 1.4545454545454541,
+              "worst_gate_zero_fraction": 0.21549636803874092,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "9.88235294118"
+          ],
+          "key_display": "tgc_start_db=9.88235294118",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/10.BDD",
+          "requested_paths": [
+            "tgc/10.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/10.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/10.BDD",
+              "source_sha256": "d15a4ce74bae1640ff017dcec17e497c4b7b7270928ddb9f582e32bf2d1f3f81",
+              "requested_axis": "tgc",
+              "requested_label": "10",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "9.88235294118",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "522",
+                "gates": "50",
+                "duration_s": "11.6649",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 9.882352941176471,
+              "mean_mm_s": 24.649242428489224,
+              "robust_spread_mm_s": 31.026370046529507,
+              "rms_mm_s": 39.83095707537729,
+              "zero_fraction": 0.008184019370460049,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 50.57639458952171,
+              "max_gate_spread_ratio_to_axis_median": 1.6969696969696964,
+              "worst_gate_zero_fraction": 0.03631961259079903,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "14.9019607843"
+          ],
+          "key_display": "tgc_start_db=14.9019607843",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/15.BDD",
+          "requested_paths": [
+            "tgc/15.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/15.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/15.BDD",
+              "source_sha256": "05c6f63a67b087be9c56d547cb748f5fbc43cf7cedacf44f768ce6e0ea3abc9f",
+              "requested_axis": "tgc",
+              "requested_label": "15",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "14.9019607843",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "494",
+                "gates": "50",
+                "duration_s": "11.038",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 14.901960784313726,
+              "mean_mm_s": 24.55115699588277,
+              "robust_spread_mm_s": 27.15499866890713,
+              "rms_mm_s": 38.92368061079989,
+              "zero_fraction": 0.006295399515738499,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 38.53439587773084,
+              "max_gate_spread_ratio_to_axis_median": 1.2929292929292928,
+              "worst_gate_zero_fraction": 0.031476997578692496,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "19.9215686275"
+          ],
+          "key_display": "tgc_start_db=19.9215686275",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "prf/600.BDD",
+          "requested_paths": [],
+          "realizations": 2,
+          "realization_paths": [
+            "prf/600.BDD",
+            "res/1-8.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "prf/600.BDD",
+              "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+              "requested_axis": "prf",
+              "requested_label": "600",
+              "own_axis": false,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "669",
+                "gates": "50",
+                "duration_s": "14.956",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 19.92156862745098,
+              "mean_mm_s": 12.146965286518359,
+              "robust_spread_mm_s": 26.734403435450503,
+              "rms_mm_s": 34.06521404778527,
+              "zero_fraction": 0.009152542372881356,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 54.18899420305899,
+              "max_gate_spread_ratio_to_axis_median": 1.818181818181818,
+              "worst_gate_zero_fraction": 0.031476997578692496,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            },
+            {
+              "relative_path": "res/1-8.BDD",
+              "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+              "requested_axis": "res",
+              "requested_label": "1-8",
+              "own_axis": false,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "517",
+                "gates": "50",
+                "duration_s": "11.5529",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 19.92156862745098,
+              "mean_mm_s": 22.81419344319801,
+              "robust_spread_mm_s": 34.434867986985566,
+              "rms_mm_s": 37.80527411029359,
+              "zero_fraction": 0.009443099273607748,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 36.12599613537266,
+              "max_gate_spread_ratio_to_axis_median": 1.212121212121212,
+              "worst_gate_zero_fraction": 0.043583535108958835,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "24.9411764706"
+          ],
+          "key_display": "tgc_start_db=24.9411764706",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/25.BDD",
+          "requested_paths": [
+            "tgc/25.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/25.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/25.BDD",
+              "source_sha256": "c90c19e57f565253de44a029f923eb703138e0f01db3223d14205ef949376c1e",
+              "requested_axis": "tgc",
+              "requested_label": "25",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "24.9411764706",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "614",
+                "gates": "50",
+                "duration_s": "13.7246",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 24.941176470588236,
+              "mean_mm_s": 24.133098454648735,
+              "robust_spread_mm_s": 25.419405513170204,
+              "rms_mm_s": 37.9084418686861,
+              "zero_fraction": 0.008668280871670701,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 42.1469954912681,
+              "max_gate_spread_ratio_to_axis_median": 1.414141414141414,
+              "worst_gate_zero_fraction": 0.043583535108958835,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "29.9607843137"
+          ],
+          "key_display": "tgc_start_db=29.9607843137",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/30.BDD",
+          "requested_paths": [
+            "tgc/30.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/30.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/30.BDD",
+              "source_sha256": "083f2df703f787a275eb544df8b7cf21d2315c4bca2ccfc8fba8ce9ecbd5324e",
+              "requested_axis": "tgc",
+              "requested_label": "30",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "29.9607843137",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "517",
+                "gates": "50",
+                "duration_s": "11.5528",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 29.96078431372549,
+              "mean_mm_s": 23.21364957479979,
+              "robust_spread_mm_s": 33.030211115458854,
+              "rms_mm_s": 39.67638439793434,
+              "zero_fraction": 0.011234866828087168,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 51.78059446070081,
+              "max_gate_spread_ratio_to_axis_median": 1.7373737373737372,
+              "worst_gate_zero_fraction": 0.07021791767554479,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "34.9803921569"
+          ],
+          "key_display": "tgc_start_db=34.9803921569",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/35.BDD",
+          "requested_paths": [
+            "tgc/35.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/35.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/35.BDD",
+              "source_sha256": "dbc6d7d4a5300e86d4e64f6c76236da90bd934c25d3f0e28db577d0c464a4be1",
+              "requested_axis": "tgc",
+              "requested_label": "35",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "34.9803921569",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "418",
+                "gates": "50",
+                "duration_s": "9.3363",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 34.98039215686275,
+              "mean_mm_s": 20.755449024209796,
+              "robust_spread_mm_s": 27.267254589101817,
+              "rms_mm_s": 37.72283646222691,
+              "zero_fraction": 0.017627118644067796,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 42.1469954912681,
+              "max_gate_spread_ratio_to_axis_median": 1.414141414141414,
+              "worst_gate_zero_fraction": 0.22276029055690072,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "tgc_start_db"
+          ],
+          "key": [
+            "40"
+          ],
+          "key_display": "tgc_start_db=40",
+          "ladder_label": "decoded TGC start",
+          "primary_path": "tgc/40.BDD",
+          "requested_paths": [
+            "tgc/40.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "tgc/40.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "tgc/40.BDD",
+              "source_sha256": "07c90296fdf8572599be1aedfbf715886fd952af52e35f77cb1764a3ca49dd64",
+              "requested_axis": "tgc",
+              "requested_label": "40",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "40",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "492",
+                "gates": "50",
+                "duration_s": "10.9928",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": 40.0,
+              "mean_mm_s": 16.378576117129036,
+              "robust_spread_mm_s": 30.461445772822593,
+              "rms_mm_s": 37.36137480070533,
+              "zero_fraction": 0.03878934624697337,
+              "profiles_window": 413,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 148.11658415502788,
+              "max_gate_spread_ratio_to_axis_median": 4.969696969696968,
+              "worst_gate_zero_fraction": 0.5544794188861986,
+              "majority_blank_gates": 1,
+              "dropout_limited": true,
+              "spread_limited": true,
+              "screen": "dropout- and spread-limited"
+            }
+          ]
+        }
+      ],
+      "views": {
+        "time": {
+          "common_duration": {
+            "nominal_rpm": 500.0,
+            "revolution_s": 0.12,
+            "revolutions": 77,
+            "window_s": 9.24,
+            "profiles_window": {
+              "tgc/0.BDD": 413.0,
+              "tgc/5.BDD": 413.0,
+              "tgc/10.BDD": 413.0,
+              "tgc/15.BDD": 413.0,
+              "prf/600.BDD": 413.0,
+              "tgc/25.BDD": 413.0,
+              "tgc/30.BDD": 413.0,
+              "tgc/35.BDD": 413.0,
+              "tgc/40.BDD": 413.0
+            }
+          },
+          "rule": "the largest integer number of nominal revolutions fitting every recording of this axis, truncated per file by the recorded timestamps"
+        },
+        "depth": {
+          "common_support_min_mm": 10.162666666666668,
+          "common_support_max_mm": 100.81266666666667,
+          "plan_declared_mm": [
+            10.163,
+            96.743
+          ],
+          "contains_plan_window": true,
+          "gates_in_support": {
+            "tgc/0.BDD": 50,
+            "tgc/5.BDD": 50,
+            "tgc/10.BDD": 50,
+            "tgc/15.BDD": 50,
+            "prf/600.BDD": 50,
+            "tgc/25.BDD": 50,
+            "tgc/30.BDD": 50,
+            "tgc/35.BDD": 50,
+            "tgc/40.BDD": 50
+          },
+          "rule": "the intersection of this axis's decoded depth ranges; each level keeps its own decoded gate grid inside it and nothing is resampled"
+        },
+        "alignment": {
+          "upsampled": false,
+          "focus_pair": [
+            "prf/600.BDD",
+            "tgc/25.BDD"
+          ],
+          "max_knot_offset_over_all_pairs_mm": 0.0,
+          "knot_rule": "the higher key's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid; the lower level is sampled there by its nearest native gate, never interpolated"
+        },
+        "depths": {
+          "rows": 450,
+          "columns": [
+            "axis",
+            "relative_path",
+            "requested_label",
+            "key_name",
+            "key_value",
+            "gate_index",
+            "depth_mm",
+            "in_plan_window",
+            "profiles_window",
+            "mean_mm_s",
+            "robust_spread_mm_s",
+            "std_mm_s",
+            "rms_mm_s",
+            "zero_fraction",
+            "majority_blank"
+          ]
+        }
+      }
+    },
+    {
+      "axis": "em_pow",
+      "tgc_representation": {
+        "mode_word": 23,
+        "start_word": 24,
+        "key_cell": "tgc_start_db",
+        "role": "the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder",
+        "end_word": 25,
+        "mode_label": "uniform",
+        "end_db": 40.0
+      },
+      "key": {
+        "column": "emit_power",
+        "label": "requested emitting power",
+        "units": "declared step",
+        "values": [
+          "low",
+          "medium",
+          "high"
+        ]
+      },
+      "audited_constants": {
+        "settings": [
+          "resolution_mm",
+          "burst_length",
+          "emissions_per_profile",
+          "sensitivity",
+          "tgc_mode",
+          "tgc_start_db",
+          "tgc_end_db",
+          "prf_period_us",
+          "sound_speed_ms",
+          "velo_max_ms",
+          "gates"
+        ],
+        "tgc_end_db": 40.0,
+        "tgc_mode": "uniform",
+        "sensitivity": "medium"
+      },
+      "base_state": {
+        "label": "medium",
+        "decoded_key": "medium",
+        "in_ladder": true,
+        "focus_pair_kind": "base_state_is_a_level",
+        "straddling_keys": [
+          "medium",
+          "high"
+        ],
+        "straddling_pair": [
+          "prf/600.BDD",
+          "em_pow/high.BDD"
+        ]
+      },
+      "aggregation": {
+        "rule": "unweighted arithmetic mean over the level's realizations",
+        "statement": "each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+        "levels": 3,
+        "recordings": 4,
+        "multi_realization_levels": [
+          {
+            "relative_path": "prf/600.BDD",
+            "realization_paths": [
+              "prf/600.BDD",
+              "res/1-8.BDD"
+            ]
+          }
+        ],
+        "worst_cells": [
+          "max_gate_robust_spread_mm_s",
+          "max_gate_robust_spread_depth_mm",
+          "max_gate_spread_ratio_to_axis_median",
+          "max_gate_std_mm_s",
+          "worst_gate_zero_fraction",
+          "worst_gate_zero_fraction_depth_mm",
+          "majority_blank_gates",
+          "majority_blank_depth_ranges_mm"
+        ],
+        "worst_cells_rule": "a cell that asserts an adverse screening outcome is the worst realization's value, not a mean over realizations, so a dropout or a disproportionate spread one recording found is never averaged away; the level's screen word is recomputed from those outcomes"
+      },
+      "screening": {
+        "dropout_gate_limit": 0.5,
+        "spread_ratio_limit": 3.0,
+        "levels_screened": 3,
+        "levels_flagged": 0,
+        "levels_dropout_limited": [],
+        "levels_spread_limited": [],
+        "flagged_paths": [],
+        "axis_median_gate_robust_spread_mm_s": 28.900796908298126
+      },
+      "inputs": [
+        {
+          "relative_path": "em_pow/low.BDD",
+          "requested_label": "low",
+          "key_value": "low",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "low",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 556,
+          "gates": 50,
+          "duration_s": 12.425600000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "level_path": "em_pow/low.BDD",
+          "realizations": 1,
+          "source_sha256": "40b1de33bbaee4e3654d9ab00f20ef740e16b517efc8e40bec56f6d340df6144"
+        },
+        {
+          "relative_path": "prf/600.BDD",
+          "requested_label": "600",
+          "key_value": "medium",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 669,
+          "gates": 50,
+          "duration_s": 14.956000000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "level_path": "prf/600.BDD",
+          "realizations": 2,
+          "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de"
+        },
+        {
+          "relative_path": "res/1-8.BDD",
+          "requested_label": "1-8",
+          "key_value": "medium",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "medium",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 517,
+          "gates": 50,
+          "duration_s": 11.552900000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "level_path": "prf/600.BDD",
+          "realizations": 2,
+          "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de"
+        },
+        {
+          "relative_path": "em_pow/high.BDD",
+          "requested_label": "high",
+          "key_value": "high",
+          "tgc_start_db": 19.92156862745098,
+          "tgc_end_db": 40.0,
+          "tgc_mode": "uniform",
+          "emit_power": "high",
+          "screen": "usable",
+          "sensitivity": "medium",
+          "resolution_mm": 1.85,
+          "prf_period_us": 600.0,
+          "burst_length": 10,
+          "emissions_per_profile": 20,
+          "profiles": 520,
+          "gates": 50,
+          "duration_s": 11.620000000000001,
+          "profiles_window": 515,
+          "gates_in_support": 50,
+          "level_path": "em_pow/high.BDD",
+          "realizations": 1,
+          "source_sha256": "9e02546ba83b86842ddeb7bb9516b4a21d5eff9412c57c6f827cff655c437b5d"
+        }
+      ],
+      "levels": [
+        {
+          "key_fields": [
+            "emit_power"
+          ],
+          "key": [
+            "low"
+          ],
+          "key_display": "emit_power=low",
+          "ladder_label": "requested emitting power",
+          "primary_path": "em_pow/low.BDD",
+          "requested_paths": [
+            "em_pow/low.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "em_pow/low.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "em_pow/low.BDD",
+              "source_sha256": "40b1de33bbaee4e3654d9ab00f20ef740e16b517efc8e40bec56f6d340df6144",
+              "requested_axis": "em_pow",
+              "requested_label": "low",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "low",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "556",
+                "gates": "50",
+                "duration_s": "12.4256",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": "low",
+              "mean_mm_s": 20.77041349844525,
+              "robust_spread_mm_s": 22.25840703635252,
+              "rms_mm_s": 35.78035457144011,
+              "zero_fraction": 0.03984466019417476,
+              "profiles_window": 515,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 43.953295298036736,
+              "max_gate_spread_ratio_to_axis_median": 1.5208333333333335,
+              "worst_gate_zero_fraction": 0.21941747572815534,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "emit_power"
+          ],
+          "key": [
+            "medium"
+          ],
+          "key_display": "emit_power=medium",
+          "ladder_label": "requested emitting power",
+          "primary_path": "prf/600.BDD",
+          "requested_paths": [],
+          "realizations": 2,
+          "realization_paths": [
+            "prf/600.BDD",
+            "res/1-8.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "prf/600.BDD",
+              "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+              "requested_axis": "prf",
+              "requested_label": "600",
+              "own_axis": false,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "669",
+                "gates": "50",
+                "duration_s": "14.956",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": "medium",
+              "mean_mm_s": 14.176822949434591,
+              "robust_spread_mm_s": 25.42440048407382,
+              "rms_mm_s": 34.55567736655198,
+              "zero_fraction": 0.008737864077669903,
+              "profiles_window": 515,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 52.9847943318799,
+              "max_gate_spread_ratio_to_axis_median": 1.8333333333333333,
+              "worst_gate_zero_fraction": 0.027184466019417475,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            },
+            {
+              "relative_path": "res/1-8.BDD",
+              "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+              "requested_axis": "res",
+              "requested_label": "1-8",
+              "own_axis": false,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "medium",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "517",
+                "gates": "50",
+                "duration_s": "11.5529",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": "medium",
+              "mean_mm_s": 22.318991150259784,
+              "robust_spread_mm_s": 35.61625716077645,
+              "rms_mm_s": 37.03415497753725,
+              "zero_fraction": 0.009864077669902913,
+              "profiles_window": 515,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 34.319696328604024,
+              "max_gate_spread_ratio_to_axis_median": 1.1875,
+              "worst_gate_zero_fraction": 0.04466019417475728,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        },
+        {
+          "key_fields": [
+            "emit_power"
+          ],
+          "key": [
+            "high"
+          ],
+          "key_display": "emit_power=high",
+          "ladder_label": "requested emitting power",
+          "primary_path": "em_pow/high.BDD",
+          "requested_paths": [
+            "em_pow/high.BDD"
+          ],
+          "realizations": 1,
+          "realization_paths": [
+            "em_pow/high.BDD"
+          ],
+          "aggregation": "unweighted arithmetic mean over the level's realizations",
+          "per_realization": [
+            {
+              "relative_path": "em_pow/high.BDD",
+              "source_sha256": "9e02546ba83b86842ddeb7bb9516b4a21d5eff9412c57c6f827cff655c437b5d",
+              "requested_axis": "em_pow",
+              "requested_label": "high",
+              "own_axis": true,
+              "fingerprint": {
+                "emit_freq_khz": "4000",
+                "prf_period_us": "600",
+                "burst_length": "10",
+                "emissions_per_profile": "20",
+                "emit_power": "high",
+                "sensitivity": "medium",
+                "resolution_mm": "1.85",
+                "sampling_volume_index": "4",
+                "sound_speed_ms": "1480",
+                "doppler_angle_deg": "0",
+                "tgc_mode": "uniform",
+                "tgc_start_db": "19.9215686275",
+                "tgc_end_db": "40",
+                "skipped_profiles": "0",
+                "prf_hz": "1666.66666667",
+                "velo_max_ms": "154.137583511"
+              },
+              "extent": {
+                "profiles": "520",
+                "gates": "50",
+                "duration_s": "11.62",
+                "depth_min_mm": "10.1626666667",
+                "depth_max_mm": "100.812666667"
+              },
+              "key_value": "high",
+              "mean_mm_s": 23.788395583359517,
+              "robust_spread_mm_s": 26.5713131769153,
+              "rms_mm_s": 37.92722976192647,
+              "zero_fraction": 0.008970873786407768,
+              "profiles_window": 515,
+              "gates_in_support": 50,
+              "max_gate_robust_spread_mm_s": 42.1469954912681,
+              "max_gate_spread_ratio_to_axis_median": 1.4583333333333333,
+              "worst_gate_zero_fraction": 0.062135922330097085,
+              "majority_blank_gates": 0,
+              "dropout_limited": false,
+              "spread_limited": false,
+              "screen": "usable"
+            }
+          ]
+        }
+      ],
+      "views": {
+        "time": {
+          "common_duration": {
+            "nominal_rpm": 500.0,
+            "revolution_s": 0.12,
+            "revolutions": 96,
+            "window_s": 11.52,
+            "profiles_window": {
+              "em_pow/low.BDD": 515.0,
+              "prf/600.BDD": 515.0,
+              "em_pow/high.BDD": 515.0
+            }
+          },
+          "rule": "the largest integer number of nominal revolutions fitting every recording of this axis, truncated per file by the recorded timestamps"
+        },
+        "depth": {
+          "common_support_min_mm": 10.162666666666668,
+          "common_support_max_mm": 100.81266666666667,
+          "plan_declared_mm": [
+            10.163,
+            96.743
+          ],
+          "contains_plan_window": true,
+          "gates_in_support": {
+            "em_pow/low.BDD": 50,
+            "prf/600.BDD": 50,
+            "em_pow/high.BDD": 50
+          },
+          "rule": "the intersection of this axis's decoded depth ranges; each level keeps its own decoded gate grid inside it and nothing is resampled"
+        },
+        "alignment": {
+          "upsampled": false,
+          "focus_pair": [
+            "prf/600.BDD",
+            "em_pow/high.BDD"
+          ],
+          "max_knot_offset_over_all_pairs_mm": 0.0,
+          "knot_rule": "the higher key's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid; the lower level is sampled there by its nearest native gate, never interpolated"
+        },
+        "depths": {
+          "rows": 150,
+          "columns": [
+            "axis",
+            "relative_path",
+            "requested_label",
+            "key_name",
+            "key_value",
+            "gate_index",
+            "depth_mm",
+            "in_plan_window",
+            "profiles_window",
+            "mean_mm_s",
+            "robust_spread_mm_s",
+            "std_mm_s",
+            "rms_mm_s",
+            "zero_fraction",
+            "majority_blank"
+          ]
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "key": "the decoded cell the axis's ladder is ordered and keyed by, re-checked against the manifest cell: tgc_start_db (op word 24) on the TGC axis, the emit_power label on the power axis; never a filename and never a requested label",
+    "tgc_representation": "op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / decoded tgc_start_db moves across the eight files: the representation this axis is screened through, not a validated scalar gain ladder",
+    "power_gap": "the distance between two power levels along the instrument's declared low < medium < high: low -> high is two steps, with the base state's medium between them",
+    "common_duration": "the leading whole nominal 500-RPM revolutions (0.12 s each) that fit every recording of one axis, truncated per file by the recorded timestamps; every distributional metric of that axis uses that window and nothing else",
+    "common_support": "the intersection of one axis's decoded depth ranges; every cross-level summary of that axis uses it, and each level keeps its own native gate grid inside it",
+    "spread_metrics": "per level, the IQR p75 - p25 across supported gates of the per-gate time means and the RMS about zero in mm/s (not a sigma); per gate in the depth rows, the IQR of that gate's window samples, their standard deviation about the gate's own mean and their RMS about zero",
+    "zero_fraction": "samples exactly 0.0 over the common window and support, per gate in the depth rows: the dropout the screen screens on",
+    "majority_blank": "a supported gate whose window samples are exactly zero in more than the declared dropout gate limit (0.5) of the profiles: a screening margin, not an instrument flag, and no gate is dropped from any table",
+    "spread_ratio": "a level's largest per-gate robust spread divided by its own axis's median per-gate robust spread: the screen's second aggregate, with the declared limit 3.0, and every ratio is published so the margin can be moved",
+    "screen": "one word from the two declared margins: usable, dropout-limited, spread-limited, or both; it says a setting cannot carry a wider ladder, never that a gain or a power setting caused the dropout",
+    "difference": "signed low - high per-gate time mean at every common knot, mm/s, where low/high are the earlier/later level of that axis's declared key order; a negative value means the earlier level is slower there, and its mean and median over depth are that level's bias relative to the other, never a bias of the flow",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a gain or power effect and not a bound on repeatability or uncontrolled drift",
+    "depth_table": "one row per level per supported gate: depth, plan-window membership, the window length, and that gate's mean, robust spread, standard deviation, RMS and zero fraction",
+    "base_state": "the level each axis's own rows do not request: the value the manifest's other rows carry in that axis's key column (decoded on the TGC axis, the label on the power axis). The setting-based ladder holds that level - the shared anchor both reference recordings realize - so the focus pair is the base level and the next setting above it; where no level of the axis carries that key, the focus pair is the two ladder-adjacent levels whose keys bracket it",
+    "realizations": "the recordings that realize one decoded key: the ladder holds every eligible decoded level, so the shared anchor level (TGC \u224819.9216 dB, emitting power medium) is realized by `prf/600.BDD` and `res/1-8.BDD` rather than being absent, one dropped or one standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.. On this screen the cells that assert an adverse screening outcome (the dropout count, the worst zero fraction, the per-gate spread and its ratio) are the worst realization's rather than a mean, and the level's screen word is recomputed from those outcomes",
+    "velocity_only": "the files carry one axial-velocity channel in mm/s: dropout, bias and spread only, with echo SNR, receiver saturation, a safe plateau and acoustic energy neither measured nor inferred, and no gate or profile an independent experimental replicate; both panels of the figure carry this document's caption and the generating commit"
+  },
+  "findings": {
+    "screening_threshold": {
+      "value_mm_s": 19.37008103465545,
+      "metric": "max_gate_abs_mean_difference_mm_s",
+      "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+      "median_abs_mean_difference_mm_s": 8.908740794548184,
+      "statement": "Threshold: the committed WP1 screening_threshold 19.3701 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json) is the sole-pair observed-discrepancy screening threshold: one observed realization of same-settings repeatability plus uncontrolled drift, and not a bound on either. Every mean-profile effect in both axes is screened against it, above or below, without that outcome proving a gain or power effect."
+    },
+    "axes": {
+      "tgc": {
+        "screen": {
+          "key": "tgc_start_db",
+          "levels": 9,
+          "levels_flagged": 3,
+          "levels_dropout_limited": [
+            "tgc/0.BDD",
+            "tgc/40.BDD"
+          ],
+          "levels_spread_limited": [
+            "tgc/40.BDD"
+          ],
+          "dropout_gate_limit": 0.5,
+          "spread_ratio_limit": 3.0,
+          "axis_median_gate_robust_spread_mm_s": 29.803946811682447,
+          "statement": "Screen (tgc): 9 levels keyed by tgc_start_db dB, overall dropout 0.006295-0.2437; 2 carry a gate blank above 0.5 of the window (tgc/0.BDD with 10 of 50 gates covering 84.1627..100.813 mm at up to 0.8111 blank, tgc/40.BDD with 1 of 50 gates covering 69.3627..69.3627 mm at up to 0.5545 blank) and 1 a per-gate spread past 3x the axis median (tgc/40.BDD at 4.97x = 148.1 mm/s at 73.06 mm). A flag rules a setting out of a wider ladder, not a cause."
+        },
+        "effect_gate": {
+          "pairs": 36,
+          "screening_threshold_mm_s": 19.37008103465545,
+          "knots_above_screening_threshold": 17,
+          "pairs_above_screening_threshold": 17,
+          "clearing_pairs": [
+            [
+              "tgc/0.BDD",
+              "tgc/15.BDD",
+              3,
+              "78.6127..78.6127; 95.2627..97.1127"
+            ],
+            [
+              "tgc/0.BDD",
+              "tgc/30.BDD",
+              1,
+              "15.7127..15.7127"
+            ],
+            [
+              "tgc/0.BDD",
+              "tgc/40.BDD",
+              4,
+              "10.1627..10.1627; 15.7127..15.7127; 73.0627..74.9127"
+            ],
+            [
+              "tgc/5.BDD",
+              "tgc/30.BDD",
+              3,
+              "56.4127..60.1127"
+            ],
+            [
+              "tgc/5.BDD",
+              "tgc/40.BDD",
+              3,
+              "10.1627..10.1627; 73.0627..74.9127"
+            ],
+            [
+              "tgc/10.BDD",
+              "tgc/40.BDD",
+              5,
+              "10.1627..10.1627; 73.0627..74.9127; 80.4627..82.3127"
+            ],
+            [
+              "tgc/15.BDD",
+              "prf/600.BDD",
+              2,
+              "78.6127..80.4627"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/30.BDD",
+              8,
+              "10.1627..15.7127; 76.7627..82.3127"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/35.BDD",
+              1,
+              "10.1627..10.1627"
+            ],
+            [
+              "tgc/15.BDD",
+              "tgc/40.BDD",
+              11,
+              "10.1627..10.1627; 15.7127..15.7127; 19.4127..19.4127; 73.0627..86.0127"
+            ],
+            [
+              "prf/600.BDD",
+              "tgc/30.BDD",
+              5,
+              "49.0127..50.8627; 54.5627..58.2627"
+            ],
+            [
+              "prf/600.BDD",
+              "tgc/40.BDD",
+              3,
+              "10.1627..10.1627; 73.0627..74.9127"
+            ],
+            [
+              "tgc/25.BDD",
+              "tgc/30.BDD",
+              3,
+              "13.8627..15.7127; 78.6127..78.6127"
+            ],
+            [
+              "tgc/25.BDD",
+              "tgc/40.BDD",
+              8,
+              "10.1627..10.1627; 15.7127..15.7127; 73.0627..74.9127; 78.6127..84.1627"
+            ],
+            [
+              "tgc/30.BDD",
+              "tgc/35.BDD",
+              4,
+              "47.1627..52.7127"
+            ],
+            [
+              "tgc/30.BDD",
+              "tgc/40.BDD",
+              2,
+              "73.0627..74.9127"
+            ],
+            [
+              "tgc/35.BDD",
+              "tgc/40.BDD",
+              6,
+              "73.0627..74.9127; 78.6127..78.6127; 82.3127..86.0127"
+            ]
+          ],
+          "max_ratio_to_screening_threshold": 2.4317786964690544,
+          "max_abs_difference_mm_s": 47.10375040895438,
+          "max_abs_difference_paths": [
+            "tgc/30.BDD",
+            "tgc/40.BDD"
+          ],
+          "max_abs_difference_depth_mm": 73.06266666666666,
+          "statement": "Effect gate (tgc): the largest absolute per-knot mean difference over the 36 pair(s) is 47.1 mm/s (tgc/30.BDD / tgc/40.BDD at 73.06 mm) = 2.43 of the 19.37 mm/s WP1 screening_threshold; 17 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+        },
+        "focus_pair": {
+          "low_path": "prf/600.BDD",
+          "high_path": "tgc/25.BDD",
+          "low_key": 19.92156862745098,
+          "high_key": 24.941176470588236,
+          "knots": 50,
+          "ratio_to_screening_threshold": 0.7947874662554386,
+          "knots_above_screening_threshold": 0,
+          "mean_signed_difference_mm_s": -6.652519089790548,
+          "max_abs_difference_mm_s": 15.39509762669633,
+          "max_abs_difference_depth_mm": 63.812666666666665,
+          "statement": "Focus pair (tgc): the base state's own tgc_start_db (19.9215686275) is a level of this axis, realized by the reference recordings, so the focus pair compares it with the next setting above it \u2014 prf/600.BDD (19.9216) and tgc/25.BDD (24.9412) \u2014 differ by at most 15.4 mm/s at 63.81 mm = 0.795 of the 19.37 mm/s screening_threshold, 0 of 50 knots above it (mean signed -6.653 mm/s)."
+        },
+        "base_state": {
+          "label": "20",
+          "decoded_key": "19.9215686275",
+          "in_ladder": true,
+          "focus_pair_kind": "base_state_is_a_level",
+          "straddling_pair": [
+            "prf/600.BDD",
+            "tgc/25.BDD"
+          ],
+          "straddling_keys": [
+            19.92156862745098,
+            24.941176470588236
+          ],
+          "statement": "Base state (tgc): the manifest's other rows carry tgc_start_db = 19.9215686275 and this ladder holds it, realized by both reference recordings, so the reference condition is one of its levels at 19.9216 and 24.9412 (prf/600.BDD / tgc/25.BDD)."
+        }
+      },
+      "em_pow": {
+        "screen": {
+          "key": "emit_power",
+          "levels": 3,
+          "levels_flagged": 0,
+          "levels_dropout_limited": [],
+          "levels_spread_limited": [],
+          "dropout_gate_limit": 0.5,
+          "spread_ratio_limit": 3.0,
+          "axis_median_gate_robust_spread_mm_s": 28.900796908298126,
+          "statement": "Screen (em_pow): 3 levels keyed by emit_power declared step, overall dropout 0.008971-0.03984; 0 carry a gate blank above 0.5 of the window (none) and 0 a per-gate spread past 3x the axis median (none). A flag rules a setting out of a wider ladder, not a cause."
+        },
+        "effect_gate": {
+          "pairs": 3,
+          "screening_threshold_mm_s": 19.37008103465545,
+          "knots_above_screening_threshold": 0,
+          "pairs_above_screening_threshold": 0,
+          "clearing_pairs": [],
+          "max_ratio_to_screening_threshold": 0.6910912602607447,
+          "max_abs_difference_mm_s": 13.386493713592785,
+          "max_abs_difference_paths": [
+            "prf/600.BDD",
+            "em_pow/high.BDD"
+          ],
+          "max_abs_difference_depth_mm": 58.26266666666666,
+          "statement": "Effect gate (em_pow): the largest absolute per-knot mean difference over the 3 pair(s) is 13.39 mm/s (prf/600.BDD / em_pow/high.BDD at 58.26 mm) = 0.691 of the 19.37 mm/s WP1 screening_threshold; 0 pair(s) clear it somewhere, each with its knots, depth ranges and bias in the pairs table and in this block."
+        },
+        "focus_pair": {
+          "low_path": "prf/600.BDD",
+          "high_path": "em_pow/high.BDD",
+          "low_key": "medium",
+          "high_key": "high",
+          "knots": 50,
+          "ratio_to_screening_threshold": 0.6910912602607447,
+          "knots_above_screening_threshold": 0,
+          "mean_signed_difference_mm_s": -5.5404885335123275,
+          "max_abs_difference_mm_s": 13.386493713592785,
+          "max_abs_difference_depth_mm": 58.26266666666666,
+          "statement": "Focus pair (em_pow): the base state's own emit_power (medium) is a level of this axis, realized by the reference recordings, so the focus pair compares it with the next setting above it \u2014 prf/600.BDD (medium) and em_pow/high.BDD (high) \u2014 differ by at most 13.39 mm/s at 58.26 mm = 0.691 of the 19.37 mm/s screening_threshold, 0 of 50 knots above it (mean signed -5.54 mm/s)."
+        },
+        "base_state": {
+          "label": "medium",
+          "decoded_key": "medium",
+          "in_ladder": true,
+          "focus_pair_kind": "base_state_is_a_level",
+          "straddling_pair": [
+            "prf/600.BDD",
+            "em_pow/high.BDD"
+          ],
+          "straddling_keys": [
+            "medium",
+            "high"
+          ],
+          "statement": "Base state (em_pow): the manifest's other rows carry emit_power = medium and this ladder holds it, realized by both reference recordings, so the reference condition is one of its levels at medium and high (prf/600.BDD / em_pow/high.BDD)."
+        }
+      }
+    },
+    "screen_summary": {
+      "levels": 12,
+      "pairs": 39,
+      "levels_flagged": 2,
+      "pairs_above_screening_threshold": 17,
+      "flagged": [
+        {
+          "relative_path": "tgc/0.BDD",
+          "screen": "dropout-limited",
+          "zero_fraction": 0.24372881355932202,
+          "majority_blank_gates": 10,
+          "majority_blank_depth_ranges_mm": "84.1627..100.813",
+          "worst_gate_zero_fraction": 0.8111380145278451,
+          "max_gate_spread_ratio_to_axis_median": 1.4545454545454541,
+          "max_gate_robust_spread_mm_s": 43.351195362447186,
+          "max_gate_robust_spread_depth_mm": 56.41266666666667,
+          "axis": "tgc"
+        },
+        {
+          "relative_path": "tgc/40.BDD",
+          "screen": "dropout- and spread-limited",
+          "zero_fraction": 0.03878934624697337,
+          "majority_blank_gates": 1,
+          "majority_blank_depth_ranges_mm": "69.3627..69.3627",
+          "worst_gate_zero_fraction": 0.5544794188861986,
+          "max_gate_spread_ratio_to_axis_median": 4.969696969696968,
+          "max_gate_robust_spread_mm_s": 148.11658415502788,
+          "max_gate_robust_spread_depth_mm": 73.06266666666666,
+          "axis": "tgc"
+        }
+      ],
+      "realizations": {
+        "rule": "unweighted arithmetic mean over the level's realizations",
+        "recordings": 14,
+        "multi_realization_levels": [
+          {
+            "axis": "tgc",
+            "relative_path": "prf/600.BDD",
+            "realization_paths": [
+              "prf/600.BDD",
+              "res/1-8.BDD"
+            ]
+          },
+          {
+            "axis": "em_pow",
+            "relative_path": "prf/600.BDD",
+            "realization_paths": [
+              "prf/600.BDD",
+              "res/1-8.BDD"
+            ]
+          }
+        ],
+        "statement": "Realizations: the 12 screened levels are the setting-based selection of 14 recording(s) \u2014 every recording whose decoded settings put it at one of these keys, whatever folder requested it \u2014 so the shared anchor level is present in both axes and carries both of the reference recordings. Each level's typical cells are the unweighted mean of its realizations' cells; its adverse screening cells are the worst realization's, so no recording's dropout is averaged away."
+      },
+      "statement": "Screen: 12 levels over two axes and 39 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 17 of the 39 pairs clear the screening_threshold anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow."
+    },
+    "sensitivity": {
+      "column": "sensitivity",
+      "values_in_manifest": [
+        "medium"
+      ],
+      "rows_in_manifest": 40,
+      "axis_present": false,
+      "identifiable": false,
+      "levels_screened": 12,
+      "statement": "Sensitivity: every one of the 40 committed manifest rows carries 'medium' and neither screened axis varies it, so the axis is absent from this sweep and its effect is unidentifiable from it."
+    },
+    "velocity_only": {
+      "channels": "one axial-velocity channel per file, in mm/s; no echo or energy profile",
+      "not_inferred": [
+        "echo SNR",
+        "receiver saturation",
+        "a safe plateau",
+        "acoustic energy",
+        "the gain a TGC or emitting-power setting applied"
+      ],
+      "measured": [
+        "depth-resolved dropout (the share of window samples exactly 0.0 per gate); bias (the signed per-gate mean difference between two levels, per knot); variance and robust spread (per-gate IQR and std, by level and depth)"
+      ],
+      "statement": "Velocity only: this screen measures dropout, bias and spread and stops there. Echo SNR, receiver saturation, a safe plateau and acoustic energy are not measurable in these files and are not inferred, and a dropout or spread anomaly is not attributed to gain."
+    },
+    "diagnostic": {
+      "justified": true,
+      "wider_ladder_justified": false,
+      "outcome_claimed": false,
+      "flagged_levels": 2,
+      "pairs_above_screening_threshold": 17,
+      "focus_pair_ratios": {
+        "tgc": 0.7947874662554386,
+        "em_pow": 0.6910912602607447
+      },
+      "statement": "Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 12 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.691 of the screening_threshold, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show."
+    },
+    "limitations": [
+      "Most levels carry one recording and no acquisition order: the only repeat is the sole-pair observed-discrepancy screening threshold, 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s), one observed realization of repeatability plus uncontrolled drift and not a bound on either. The two reference recordings that share the anchor setting are two realizations of one decoded key under repeat, not an independent replicate of any level: no p-value is produced and no replicate claim is made.",
+      "Velocity only: these files carry one axial-velocity channel in mm/s and no echo or energy profile, so echo SNR, receiver saturation, a safe plateau and acoustic energy are neither measured nor inferred here. A majority-blank gate or a disproportionate per-gate spread is a property of the recorded velocity array, not evidence that a gain, a power or the receiver saturated.",
+      "TGC representation: the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. Reading word 24 as a calibrated gain set point is reading something these files do not establish, and no wider TGC ladder can be designed on that reading.",
+      "Each axis focuses on the pair that carries its base state (tgc: 19.92156862745098 and 24.941176470588236; em_pow: medium and high), and that state's sensitivity is medium like every other row, so the screen compares the reference condition with that level and the next setting above it, in the ladder the setting-based selection builds. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it \u2014 no pair in this screen varies it, and its effect on dropout, bias or spread is not estimable from the committed sweep."
+    ]
+  },
+  "tables": {
+    "levels": {
+      "path": "gain-power-levels.csv",
+      "columns": [
+        "axis",
+        "relative_path",
+        "requested_label",
+        "realizations",
+        "realization_paths",
+        "key_name",
+        "key_value",
+        "tgc_start_db",
+        "tgc_end_db",
+        "tgc_mode",
+        "emit_power",
+        "sensitivity",
+        "resolution_mm",
+        "prf_period_us",
+        "burst_length",
+        "emissions_per_profile",
+        "gates",
+        "profiles",
+        "duration_s",
+        "profiles_window",
+        "gates_in_support",
+        "pitch_mm",
+        "mean_mm_s",
+        "robust_spread_mm_s",
+        "rms_mm_s",
+        "zero_fraction",
+        "median_gate_robust_spread_mm_s",
+        "max_gate_robust_spread_mm_s",
+        "max_gate_robust_spread_depth_mm",
+        "max_gate_spread_ratio_to_axis_median",
+        "max_gate_std_mm_s",
+        "worst_gate_zero_fraction",
+        "worst_gate_zero_fraction_depth_mm",
+        "majority_blank_gates",
+        "majority_blank_depth_ranges_mm",
+        "dropout_limited",
+        "spread_limited",
+        "screen"
+      ],
+      "rows": 12
+    },
+    "pairs": {
+      "path": "gain-power-pairs.csv",
+      "columns": [
+        "axis",
+        "low_path",
+        "low_label",
+        "low_key",
+        "high_path",
+        "high_label",
+        "high_key",
+        "key_gap",
+        "knots",
+        "knot_spacing_mm",
+        "max_knot_offset_mm",
+        "mean_signed_difference_mm_s",
+        "mean_abs_difference_mm_s",
+        "max_abs_difference_mm_s",
+        "max_abs_difference_depth_mm",
+        "knots_above_screening_threshold",
+        "max_abs_difference_over_screening_threshold",
+        "depth_ranges_above_screening_threshold_mm",
+        "robust_spread_change_mm_s",
+        "zero_fraction_change",
+        "focus_pair"
+      ],
+      "rows": 39
+    },
+    "depths": {
+      "path": "gain-power-depths.csv",
+      "columns": [
+        "axis",
+        "relative_path",
+        "requested_label",
+        "key_name",
+        "key_value",
+        "gate_index",
+        "depth_mm",
+        "in_plan_window",
+        "profiles_window",
+        "mean_mm_s",
+        "robust_spread_mm_s",
+        "std_mm_s",
+        "rms_mm_s",
+        "zero_fraction",
+        "majority_blank"
+      ],
+      "rows": 600
+    }
+  },
+  "figure": {
+    "path": "figures/gain-power-screen.png",
+    "caption": "gain-power-screen: the velocity-only screening of 12 committed levels over two axes \u2014 tgc 9 (0, 5, 10, 15, 600, 25, 30, 35, 40) and em_pow 3 (low, 600, high). Realizations: the 12 screened levels are the setting-based selection of 14 recording(s) \u2014 every recording whose decoded settings put it at one of these keys, whatever folder requested it \u2014 so the shared anchor level is present in both axes and carries both of the reference recordings. Each level's typical cells are the unweighted mean of its realizations' cells; its adverse screening cells are the worst realization's, so no recording's dropout is averaged away. Common-duration view per axis: 77 nominal 500-RPM revolutions = 9.24 s for tgc and 96 = 11.52 s for em_pow, truncated per file by the recorded timestamps. Common support: 10.1627-100.813 mm on each axis's own 1.85 mm grid, which contains the plan's declared 10.163-96.743 mm window; pairs use the higher key's own gate depths as knots, so nothing is interpolated or upsampled. Threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...). Screening margins: a gate blank in more than 0.5 of the window, and a per-gate robust spread past 3x the axis's median. Screen: 12 levels over two axes and 39 pairs; 2 levels are flagged under the two declared margins (tgc tgc/0.BDD: dropout-limited; tgc tgc/40.BDD: dropout- and spread-limited) and 17 of the 39 pairs clear the screening_threshold anywhere. A flag rules a setting out of a wider ladder; it is not a statement about gain, power or the flow. Diagnostic: the velocity-only evidence justifies exactly one higher-sensitivity/echo-energy diagnostic before any wider TGC, power or sensitivity ladder, and no ladder of its own \u2014 2 of the 12 screened levels are flagged for a dropout or spread this screen cannot attribute to the gain rather than the flow, drift or one recording, and sensitivity is fixed at 'medium' in all 40 rows, so an echo/energy measurement is the only thing that would make that axis identifiable at all. A wider ladder is not justified first: the TGC representation is unsettled for the very cell a ladder would step, and the power axis is unremarkable in velocity (0.691 of the screening_threshold, 0 knots above it). This module does not predict that diagnostic's outcome and claims nothing about what it would show. Spread and bias by depth are in gain-power-depths.csv. nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. most levels carry one recording; the shared anchor setting (TGC \u224819.9216 dB, emitting power medium) is the one decoded key of each axis with two realizations, and those are repeat measurements of one setting rather than replicated axis coverage. The levels carry no acquisition order, magnitude relative to one observed discrepancy does not establish a level effect, no gate and no profile is an independent experimental replicate, and no p-value is produced. the TGC axis moves one decoded cell only: op word 23 stays 0 and the reader labels that mode `uniform`, word 25 stays 255 and decodes to a fixed 40 dB end, and only word 24 / tgc_start_db moves, so this is the representation the axis is screened through and not a validated scalar gain ladder. sensitivity is fixed at medium in every committed manifest row: the axis is absent from this sweep and unidentifiable from it. Generated at commit 71b7906 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "panels": [
+      "dropout by depth: every level's per-gate zero fraction against depth with the declared majority-blank limit (the per-gate robust spread is tabulated in gain-power-depths.csv)",
+      "each axis's focus pair against the screening_threshold: the signed low - high per-gate mean difference of the base state's own level and the next setting above it (the two ladder-adjacent levels bracketing that key only where no level of the axis carries it), at the shared knots, against the WP1 screening_threshold band"
+    ]
+  },
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}

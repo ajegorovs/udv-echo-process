@@ -27,6 +27,7 @@ class ChannelConfig(ValueModel):
     source_freq_khz: float | None = None
     pulse_repetition_freq_hz: float | None = None
     burst_length: int | None = None
+    emissions_per_profile: int | None = None  # .BDD op word 14
     emit_power: str | None = None  # "low" | "medium" | "high"
     sensitivity: str | None = None
 
@@ -34,6 +35,11 @@ class ChannelConfig(ValueModel):
     gate1_mm: float | None = None
     n_gates: int | None = None
     resolution_mm: float | None = None
+    #: Stored sampling-volume *index* (.BDD op word 27) — the instrument's own
+    #: option-list position, deliberately **not** converted to a length: the
+    #: index → mm relation is medium/burst dependent and only ever measured at
+    #: one sound speed, so no reviewed law exists to apply.
+    sampling_volume_index: int | None = None
     sampling_volume_mm: float | None = None
     max_depth_mm: float | None = None
 
@@ -49,6 +55,7 @@ class ChannelConfig(ValueModel):
     wall_filter: str | None = None
     trigger_state: str | None = None
     trigger_delay_ms: float | None = None  # .BDD op word 47
+    skipped_profiles: int | None = None  # .BDD op word 84
     module_scale: int | None = None  # ADC full-scale 1|2|4|8 → 2048|1024|512|256
 
     def describe(self) -> str:

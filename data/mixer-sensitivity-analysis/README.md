@@ -25,16 +25,18 @@ description above is the operator's and is the authority.)*
 The base state every sweep holds is the run's own note of 2026-09-16: *sensitivity medium, emitting
 power medium, TCG 20, emissions/profile 20, resolution 1.85 mm, gates 50, PRF 600, burst length 10*.
 `4MHz/0500RPM/001/prf/600.BDD` is that state recorded, and its header confirms every value the reader
-decodes (`docs/dop3000/parameter-sweep-matrix.md` §8). **`Emissions/profile` is the one base-state
-value no file decodes** — it is word 14, the decode §9 of that document lists as missing — but the
-*recorded time base still measures it*: the median profile interval divided by `T_prf` is **37.3 on
-every one of the forty points** (22.4 ms at 600 µs, 15.0 ms at 400 µs, 29.8 ms at 800 µs), which is
-C5's `16 + N_PRF` with roughly 0.6–1.0 ms of transit overhead — i.e. **N_PRF = 20**, the note's own
-value, recovered without the word. A recording at a second `N_PRF` would separate the application's
-constant from that overhead and make the axis readable from the file alone. The operator reads the
-parameter as **time averaging** and may set it to the smallest the instrument allows (~8) for the
-sweep — undecided; it is recorded here because it moves the stored step (to ~15 ms at 600 µs, a 1.5x
-faster profile rate), not because it blocks anything.
+decodes (`docs/dop3000/parameter-sweep-matrix.md` §8), including the per-profile emission count: word
+14 is published as the stored integer `ChannelConfig.emissions_per_profile` = **20**, exactly the
+note's value (`sampling_volume_index` = 4 and `skipped_profiles` = 0 come from words 27 and 84 the same
+way; word 27 is an option-list index, so `sampling_volume_mm` stays unset). **The recorded time base
+independently corroborates word 14 rather than substituting for it**: the median profile interval
+divided by `T_prf` is **37.3 on every one of the forty points** (22.4 ms at 600 µs, 15.0 ms at 400 µs,
+29.8 ms at 800 µs), which is C5's `16 + N_PRF` with roughly 0.6–1.0 ms of transit overhead — i.e.
+**N_PRF = 20** recovered from timing alone, in agreement with the decoded word. A recording at a second
+`N_PRF` would still be what separates the application's constant from that overhead; it is no longer
+needed to read the word. The operator reads the parameter as **time averaging** and may set it to the
+instrument's smallest (~8) for the sweep — undecided; it is recorded here because it moves the stored
+step (to ~15 ms at 600 µs, a 1.5x faster profile rate), not because it blocks anything.
 
 ## The 40 points, decoded from the files
 

@@ -1,0 +1,22 @@
+# Deterministic reviewer evidence.
+#
+# Every artefact under reports/mixer-sensitivity-analysis binds its numbers to the
+# SHA-256 of the bytes it was generated from -- the committed manifest.csv above all
+# -- through the provenance records beside it. Those bytes must therefore be the same
+# in every checkout. A fresh clone on a host whose core.autocrlf is true would
+# otherwise check the CSV and JSON out with CRLF: manifest.csv would hash 2ff7c3f7...
+# instead of 064a289b..., and every axis (WP1, resolution, burst and PRF) would
+# refuse to run with a manifest-mismatch reason. eol=lf overrides core.autocrlf for
+# exactly these paths; nothing else in the repository changes behaviour.
+reports/mixer-sensitivity-analysis/*.csv text eol=lf
+reports/mixer-sensitivity-analysis/*.json text eol=lf
+
+# The two hand-written documents are bound by the same record
+# (``review-correction-baseline.json`` records each by SHA-256 alone, because nothing
+# regenerates them), so their hashes must not depend on a checkout's core.autocrlf
+# either. Without this pin a Windows checkout hashes them with CRLF and a Linux one
+# without, and ``--check-final`` passes only on the host that recorded the value.
+reports/mixer-sensitivity-analysis/*.md text eol=lf
+
+# Committed figures are binary evidence: never translated, never diffed as text.
+reports/mixer-sensitivity-analysis/figures/*.png binary

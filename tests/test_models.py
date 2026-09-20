@@ -163,6 +163,23 @@ class TestArtifactContracts:
         assert c.n_gates is None
         assert len(ChannelConfig.model_fields) > 5  # acous/gate/physics/tgc charset
 
+    def test_channel_config_exposes_the_sweep_metadata_words_optional(self):
+        # words 14/27/84: optional metadata, so an unpopulated config stays valid
+        c = ChannelConfig()
+        assert c.emissions_per_profile is None
+        assert c.sampling_volume_index is None
+        assert c.skipped_profiles is None
+        populated = ChannelConfig(
+            emissions_per_profile=20, sampling_volume_index=4, skipped_profiles=0
+        )
+        assert populated.sampling_volume_index == 4
+
+    def test_channel_config_has_no_sampling_volume_millimetre_conversion(self):
+        # word 27 stays an index: no reviewed index → mm law exists, so the
+        # construction must not invent a length from it
+        cfg = ChannelConfig(sampling_volume_index=4)
+        assert cfg.sampling_volume_mm is None
+
 
 # ── source descriptors ──────────────────────────────────────────────────
 
