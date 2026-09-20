@@ -55,13 +55,15 @@ decoder whose vector reproduces it is the one the instrument used:
 Word 2 is the UI's derived window depth (``First gate depth + gates ×
 resolution``), an integer: it is *close to* but not the last gate of the axis
 (``100`` vs ``99.5477`` on ``sw100-k1``), which is why it is not used as the
-gate axis. Words the independent session verified but that this reader
-deliberately does not decode — 3 (velocity scale ×100, derivable from word 15,
-pinned by ``test_velocity_scale_word_three_equals_the_nyquist_decode``),
-14 (emissions/profile), 27 (sampling-volume index), 42 (the session's *probable*
-``Tgc [dB]``, which the manual's table instead calls "internal use"), 84
-(skipped profiles) — stay undecoded: ``ChannelConfig`` has no field for them or
-the field's identity is not settled (``docs/dop3000/udop-automation.md`` §10).
+gate axis. Words the independent session verified and that this reader publishes
+as stored integers — 14 (emissions/profile), 27 (sampling-volume *index*, never
+a millimetre value) and 84 (skipped profiles) — are pinned below against the
+same fixtures and against the whole committed mixer sweep. Word 3 (velocity
+scale ×100, derivable from word 15, pinned by
+``test_velocity_scale_word_three_equals_the_nyquist_decode``) and word 42 (the
+session's *probable* ``Tgc [dB]``, which the manual's table instead calls
+"internal use") stay undecoded: word 3 is redundant with word 15 and word 42's
+identity is not settled (``docs/dop3000/udop-automation.md`` §10).
 """
 
 from __future__ import annotations
@@ -89,6 +91,9 @@ SW100_K1 = VEL3010 / "sw100-k1-161738.BDD"
 SIM_LABEL_2 = VEL3010 / "sim-label-2.BDD"
 
 ECHO_200 = DATA / "echo" / "200.BDD"
+
+#: The committed 40-file mixer sensitivity sweep WP0 inventories.
+MIXER_SWEEP = DATA / "mixer-sensitivity-analysis" / "4MHz" / "0500RPM" / "001"
 
 #: Channel whose configuration each fixture actually measured, per the private
 #: session's capture log (the block footer byte, verified below).
@@ -477,6 +482,60 @@ def test_op_words_are_read_as_signed_int32():
         op = _read_op(_Buffer(raw), channel)
         assert op["velo_offset"] == -97
         assert op["prf_us"] == int(words[5])
+
+
+# ── sweep metadata exposed for the manifest (WP0) ──────────────────────
+
+
+def test_emissions_profile_volume_index_and_skipped_profiles_are_exposed():
+    """Words 14, 27 and 84 reach the public ``ChannelConfig`` as stored ints.
+
+    Each word is checked twice: against the independent unsigned read of the
+    channel table, and against the reader's decoded ``ChannelConfig``. The
+    values are the *stored* integers — word 27 stays an index (the instrument's
+    own ``Sampling volume`` option-list position), never a millimetre value.
+    """
+    cases = [
+        (SW100_K1, 1, 150, 3, 0),
+        (SIM_LABEL_2, 10, 44, 3, 0),
+        (ECHO_200, 4, 8, 5, 0),
+    ]
+    for path, channel, emissions, volume_index, skipped in cases:
+        words = _raw_words(path, channel)
+        assert int(words[14]) == emissions
+        assert int(words[27]) == volume_index
+        assert int(words[84]) == skipped
+
+        config = _stream(path, channel).config
+        assert config.emissions_per_profile == emissions
+        assert config.sampling_volume_index == volume_index
+        assert config.skipped_profiles == skipped
+        # the index is not a length: no reviewed index → mm conversion exists, so
+        # the millimetre field must stay unset rather than guess one
+        assert config.sampling_volume_mm is None
+
+
+def test_every_mixer_sweep_file_exposes_the_stored_sweep_words():
+    """WP0's fixture evidence: the committed sweep holds one triple everywhere.
+
+    The 40 committed files of ``data/mixer-sensitivity-analysis/4MHz/0500RPM/001``
+    carry ``word 14 = 20``, ``word 27 = 4`` and ``word 84 = 0`` (the dataset
+    README's base state of 20 emissions/profile); the reader must expose those
+    integers on every one of them, discovered from the directory rather than a
+    hand-maintained list.
+    """
+    files = sorted(MIXER_SWEEP.rglob("*.BDD"))
+    assert len(files) == 40
+    for path in files:
+        stream = read(path).recording.streams[0]
+        channel = stream.acquisition.channel.device_channel
+        words = _raw_words(path, channel)
+        assert int(words[14]) == 20
+        assert int(words[27]) == 4
+        assert int(words[84]) == 0
+        assert stream.config.emissions_per_profile == 20
+        assert stream.config.sampling_volume_index == 4
+        assert stream.config.skipped_profiles == 0
 
 
 def test_acquisition_rate_word_is_the_packed_table_not_a_scalar():

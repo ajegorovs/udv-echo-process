@@ -90,12 +90,16 @@ worth recording, because each could otherwise be mistaken for an error:
   word 9 (first gate) and word 46 (hardware delay) carry the offset instead.
 * Words 3 (velocity scale x100), 14 (emissions/profile), 27 (sampling-volume
   index), 42 (the session's *probable* ``Tgc [dB]``, which the manual's table
-  calls "internal use") and 84 (skipped profiles) are verified by that session
-  but stay undecoded: ``ChannelConfig`` has no field for them, or — for words 27
-  and 42 — the field's identity is not settled (``udop-automation.md`` §10).
-  Word 3 is redundant with word 15 for the Nyquist velocity this reader reports.
-  TGC therefore comes from the manual's rows 23–25 (mode + start/end), not from
-  word 42.
+  calls "internal use") and 84 (skipped profiles) are verified by that session.
+  Words 14, 27 and 84 are decoded into ``ChannelConfig.emissions_per_profile``,
+  ``ChannelConfig.sampling_volume_index`` and ``ChannelConfig.skipped_profiles``
+  as the **stored integers** — word 27 is the instrument's option-list index,
+  not a length, so ``sampling_volume_mm`` stays unset (the index → mm relation
+  is medium- and burst-dependent and measured at one sound speed only). Words 3
+  and 42 stay undecoded: word 3 is redundant with word 15 for the Nyquist
+  velocity this reader reports, and word 42's identity is not settled
+  (``udop-automation.md`` §10). TGC therefore comes from the manual's rows 23–25
+  (mode + start/end), not from word 42.
 
 ``tests/test_bdd_verified_map.py`` pins that map against the two committed
 captures in ``data/dop3010-velocity/``.
@@ -161,6 +165,7 @@ _OP_PARAM = {
     "gate1": (9, "i"),
     "resolution": (10, "i"),
     "gate_n": (13, "i"),
+    "emissions_per_profile": (14, "i"),
     "velo_scale": (15, "i"),
     "sensitivity": (18, "i"),
     "sound_speed_ms": (19, "i"),
@@ -170,6 +175,11 @@ _OP_PARAM = {
     "tgc_mode": (23, "i"),
     "tgc_start": (24, "i"),
     "tgc_end": (25, "i"),
+    # Word 27 is the sampling-volume *index* (the instrument's own option-list
+    # position), not a length: the index → mm relation depends on the medium and
+    # the burst and was only ever measured at one sound speed, so the reader
+    # publishes the stored index and leaves ``sampling_volume_mm`` unset.
+    "sampling_volume_index": (27, "i"),
     "hardware_delay_ns": (46, "i"),
     "trigger_delay_ms": (47, "i"),
     # Word 52, whose bit labels in the manual §10.7 parameters table are
@@ -178,6 +188,11 @@ _OP_PARAM = {
     # "bits 4–13" (selected channels) are indices 3–12, and its "bits 15–31"
     # (first multiplexer channel) are indices 14+.
     "mux_flags": (52, "i"),
+    # Word 84 "number of skipped profiles": verified by the independent session
+    # (labelled ``Number of skipped profiles 0`` next to a greyed-out
+    # ``Apply skip profile``) and published as the stored integer; the manual's
+    # table does not carry it.
+    "skipped_profiles": (84, "i"),
 }
 
 #: Op word 29 "acquisition rate": a packed 4-byte form, byte 0 is a byte *index*
@@ -319,11 +334,15 @@ def _build_config(op: dict[str, object], depth_mm: np.ndarray | None) -> Channel
         source_freq_khz=_num(op["emit_freq_khz"]),
         pulse_repetition_freq_hz=_prf_hz(op),
         burst_length=_int(op["burst_length"]),
+        emissions_per_profile=_int(op["emissions_per_profile"]),
         emit_power=_EMIT_POWER.get(op["emit_power"], None),
         sensitivity=_SENSITIVITY.get(op["sensitivity"], None),
         gate1_mm=gate1_mm,
         n_gates=_int(op["gate_n"]),
         resolution_mm=_resolution_mm(op),
+        # the stored index only; ``sampling_volume_mm`` stays unset because no
+        # reviewed index → mm conversion exists (see ``_OP_PARAM``)
+        sampling_volume_index=_int(op["sampling_volume_index"]),
         max_depth_mm=max_depth_mm,
         sound_speed_ms=_num(op["sound_speed_ms"]),
         doppler_angle_deg=_num(op["doppler_angle_deg"]),
@@ -333,6 +352,7 @@ def _build_config(op: dict[str, object], depth_mm: np.ndarray | None) -> Channel
         tgc_start_db=tgc_start,
         tgc_end_db=tgc_end,
         trigger_delay_ms=_num(op["trigger_delay_ms"]),
+        skipped_profiles=_int(op["skipped_profiles"]),
     )
 
 

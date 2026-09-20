@@ -486,21 +486,22 @@ before the recording at the time — consistent with tracking the cap, unproven
 ## 10. Consequences for this repository
 
 A stored `.BDD` is only a usable sweep log if a reader can recover the point from
-it. Words 14, 27 and 84 are **not decoded** by `io/dop/bdd.py`, and
-`ChannelConfig.sampling_volume_mm` / `wall_filter` are declared but never
-populated, so a point cannot yet be identified from the file alone:
+it. The required operation words are now exposed as stored integers by
+`io/dop/bdd.py`; the physical sampling-volume length and wall filter remain
+unresolved:
 
 | need | word | state |
 |---|---|---|
-| `Emissions per profile` (`N_PRF`) — the primary variance axis | 14 | identity verified, not decoded |
-| `Sampling volume` — identity verified *and* an index into a physics-driven list | 27 | identity verified, not decoded |
-| `Number of skipped profiles` | 84 | identity identified; semantics unconfirmed |
+| `Emissions per profile` (`N_PRF`) — the primary variance axis | 14 | identity verified; decoded as `ChannelConfig.emissions_per_profile` |
+| `Sampling volume` — identity verified *and* an index into a physics-driven list | 27 | decoded as `ChannelConfig.sampling_volume_index`; `sampling_volume_mm` remains unset because no reviewed index → length law exists |
+| `Number of skipped profiles` | 84 | decoded as `ChannelConfig.skipped_profiles`; semantics remain unconfirmed |
+| wall filter | 16 | `ChannelConfig.wall_filter` remains unset |
 | achieved profile period per point (`Time between profile`) | — | not stored as a parameter; log it instrument-side (§8) |
 
-Adding them stays inside the existing agenda gate on extra decoded metadata:
-word-level evidence (above), a destination domain field, propagation and storage
-rules. The resolution law of §3 is the other useful addition — it makes a
-point's gate geometry checkable from `word 10 + word 19` alone.
+The decode follows the existing metadata gate: word-level evidence (above), a
+destination domain field, propagation and fixture tests. The resolution law of
+§3 is the other useful addition — it makes a point's gate geometry checkable
+from `word 10 + word 19` alone.
 
 ---
 

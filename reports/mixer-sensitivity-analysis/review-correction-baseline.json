@@ -1,0 +1,382 @@
+{
+  "baseline": "review-correction-baseline",
+  "plan": "docs/dop3000/existing-sweep-analysis-plan.md \u00a78.3 item 1",
+  "report_dir": "reports/mixer-sensitivity-analysis",
+  "captured": {
+    "head": "ad8292f4db86efebf8fa2c6d41f23936fd6e07dc",
+    "branch": "analysis/existing-sweep-plan",
+    "utc": "2026-09-20T09:25:55Z"
+  },
+  "items": [
+    {
+      "path": "manifest.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
+      "generator": "src/udv_echo_process/analysis/sweep_inventory.py",
+      "generator_revision": "9318125",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli sweep-inventory --analysis-commit 9318125",
+      "revision_source": "qc-summary.json",
+      "correction": null,
+      "replacement_sha256": null
+    },
+    {
+      "path": "qc-summary.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:4e46582b6cfe1644cc3699a5134d8c02dcf9ad3e7568359a01a2f1c56fce463f",
+      "generator": "src/udv_echo_process/analysis/sweep_inventory.py",
+      "generator_revision": "9318125",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli sweep-inventory --analysis-commit 9318125",
+      "revision_source": "qc-summary.json",
+      "correction": null,
+      "replacement_sha256": null
+    },
+    {
+      "path": "reference-repeat.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:05f3495c98f6d58fd50cb447fbca4c8a1164aba178c6b53d0eefa34a58c4d9cb",
+      "generator": "src/udv_echo_process/analysis/reference_repeat.py",
+      "generator_revision": "2c70976",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli reference-repeat --analysis-commit 2c70976",
+      "revision_source": "reference-repeat.provenance.json",
+      "correction": null,
+      "replacement_sha256": null
+    },
+    {
+      "path": "reference-repeat.provenance.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:a58a83a28b667fd1998ac81f2a3553925ce2951fff4fdb2431d3988e0924d263",
+      "generator": "src/udv_echo_process/analysis/reference_repeat.py",
+      "generator_revision": "2c70976",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli reference-repeat --analysis-commit 2c70976",
+      "revision_source": "reference-repeat.provenance.json",
+      "correction": "R6",
+      "replacement_sha256": "sha256:b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b"
+    },
+    {
+      "path": "figures/reference-repeat.png",
+      "role": "generated-artifact",
+      "sha256": "sha256:f17c67cd7fe4a2068fbda22547bf0995b7d6137cd751f7268a171d6cdc37a2fe",
+      "generator": "src/udv_echo_process/analysis/reference_repeat.py",
+      "generator_revision": "2c70976",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli reference-repeat --analysis-commit 2c70976",
+      "revision_source": "reference-repeat.provenance.json",
+      "correction": "R2",
+      "replacement_sha256": "sha256:71bc162e4cd1b6589d0f60fa7a047e535cb057499f9e590cf2ac301c071a7237"
+    },
+    {
+      "path": "resolution-levels.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:c037a36bf4b825ba120b4a85ab16efe26b314317661269fc1351c3d9a2002be9",
+      "generator": "src/udv_echo_process/analysis/resolution_ladder.py",
+      "generator_revision": "3a4c55a",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
+      "revision_source": "resolution-ladder.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:9a538a2b83b3a2e7c4f969aa00c2b5feb1e907c3748eb2ccfc20f4e4b87a18eb"
+    },
+    {
+      "path": "resolution-pairs.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:1278c42f7c66eb93d7224b543d6c70814dd4a000aaf70c8c76ab9774781e703f",
+      "generator": "src/udv_echo_process/analysis/resolution_ladder.py",
+      "generator_revision": "3a4c55a",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
+      "revision_source": "resolution-ladder.provenance.json",
+      "correction": "R7",
+      "replacement_sha256": "sha256:0b75ef17cad20288d04fb6ace223f27a0b49691980d823a306254ca2efa330bb"
+    },
+    {
+      "path": "resolution-ladder.provenance.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:e5e08dd71f666ec014521cd6a82efa905e4691d91580e72d4fe67c45dae75793",
+      "generator": "src/udv_echo_process/analysis/resolution_ladder.py",
+      "generator_revision": "3a4c55a",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
+      "revision_source": "resolution-ladder.provenance.json",
+      "correction": "R8",
+      "replacement_sha256": "sha256:d257ab35d20083fd30abb82e64ecb5c1a0ec39cfb21f855860a0d52bd25a6247"
+    },
+    {
+      "path": "figures/resolution-ladder.png",
+      "role": "generated-artifact",
+      "sha256": "sha256:6fe76ff5c76881fbb93c0ddb6f73782c90ff3e9c9344e7965f6da3c9a23fc8d6",
+      "generator": "src/udv_echo_process/analysis/resolution_ladder.py",
+      "generator_revision": "3a4c55a",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli resolution-ladder --analysis-commit 3a4c55a",
+      "revision_source": "resolution-ladder.provenance.json",
+      "correction": "R8",
+      "replacement_sha256": "sha256:dfc8f545ec77e9f200872f52973a7a40682e7fb05e4c50334da66d8cebbd843f"
+    },
+    {
+      "path": "burst-levels.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:3712e8bb8a58c0ab3e2342107dab42831088f5a9708d41d1dbc90318f21c95ef",
+      "generator": "src/udv_echo_process/analysis/burst_ladder.py",
+      "generator_revision": "4cb2522",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit 4cb2522",
+      "revision_source": "burst-ladder.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:71312af10046eac5e4e2a2d55887414ea7cf2a87b311ae4513a3894acae1b19f"
+    },
+    {
+      "path": "burst-pairs.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:7c59580d8a4196e140f7677924ce62404c13abbbe917d58ade6efca03753a799",
+      "generator": "src/udv_echo_process/analysis/burst_ladder.py",
+      "generator_revision": "4cb2522",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit 4cb2522",
+      "revision_source": "burst-ladder.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:6e0ba041355877245e34e10917bb5d6db40a7e8172101dc44fb214938969d720"
+    },
+    {
+      "path": "burst-ladder.provenance.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:a13401dc855770b9f08d27b95ec5203feb2f5bda0b75c59752ebcbe282086a70",
+      "generator": "src/udv_echo_process/analysis/burst_ladder.py",
+      "generator_revision": "4cb2522",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit 4cb2522",
+      "revision_source": "burst-ladder.provenance.json",
+      "correction": "R4",
+      "replacement_sha256": "sha256:f0e70fe4c70a953b39c61878ee4635b17d376a619cfbc6171441f6f76fb5612c"
+    },
+    {
+      "path": "figures/burst-ladder.png",
+      "role": "generated-artifact",
+      "sha256": "sha256:646739c4f06b731d79a2b4b89ee81c56810e042fe65268e4455ce0bd65d910a4",
+      "generator": "src/udv_echo_process/analysis/burst_ladder.py",
+      "generator_revision": "4cb2522",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit 4cb2522",
+      "revision_source": "burst-ladder.provenance.json",
+      "correction": "R2",
+      "replacement_sha256": "sha256:0fb98cebeb0f19ac924ab5aa81638be740b308ec7660796b20cbe04435208afa"
+    },
+    {
+      "path": "prf-levels.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:e6fb49bff1058439aac0f8234bacb5ae8b04168959346806521b5b3161f1b974",
+      "generator": "src/udv_echo_process/analysis/prf_ladder.py",
+      "generator_revision": "1de828e",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder --analysis-commit 1de828e",
+      "revision_source": "prf-ladder.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:adf8320336f6de4265df9c666c7a12515f22e1d552e50d07cbd48d69843fa997"
+    },
+    {
+      "path": "prf-pairs.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:189a69477acd9970a49ff0ca4e6e87a07566cfd0bc3f24f5ea30c83c1c09ea56",
+      "generator": "src/udv_echo_process/analysis/prf_ladder.py",
+      "generator_revision": "1de828e",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder --analysis-commit 1de828e",
+      "revision_source": "prf-ladder.provenance.json",
+      "correction": "R5",
+      "replacement_sha256": "sha256:b1e9399e7a96213dcec3abac585a7174bd65fc08815f641c3f4d19c5bf1220c3"
+    },
+    {
+      "path": "prf-ladder.provenance.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:43799572f14201adcbc7883610adafcd2a02fcf4fcc675e291a6eb380dbe49e2",
+      "generator": "src/udv_echo_process/analysis/prf_ladder.py",
+      "generator_revision": "1de828e",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder --analysis-commit 1de828e",
+      "revision_source": "prf-ladder.provenance.json",
+      "correction": "R5",
+      "replacement_sha256": "sha256:da503728dee8d6c6a3de176c4d72d4b316b938be3b96f617e7ff8cf250ef94a3"
+    },
+    {
+      "path": "figures/prf-ladder.png",
+      "role": "generated-artifact",
+      "sha256": "sha256:862c7e3afa0324b7888281b61c3057a32487b09d4ac1e6c5836811c75ad00081",
+      "generator": "src/udv_echo_process/analysis/prf_ladder.py",
+      "generator_revision": "1de828e",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli prf-ladder --analysis-commit 1de828e",
+      "revision_source": "prf-ladder.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:dccccebe47666f25abd6002df5a793862bea0b16134c79aa339283346b687a23"
+    },
+    {
+      "path": "gain-power-levels.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:75579e21af86affe4242bafc4eb8d37587a0f7fba1009d0e93e7faf1a299ddd7",
+      "generator": "src/udv_echo_process/analysis/gain_power_screen.py",
+      "generator_revision": "71b7906",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+      "revision_source": "gain-power-screen.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:a1417023cee709d8a050a5d7fb90996bd660c4e4b90ef2eb800ddddb9c2df195"
+    },
+    {
+      "path": "gain-power-pairs.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:cf231d6290d5b6ea67dffec907d9eff77e47a91ce0b6c7408c573e6f8d1f455f",
+      "generator": "src/udv_echo_process/analysis/gain_power_screen.py",
+      "generator_revision": "71b7906",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+      "revision_source": "gain-power-screen.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:ee2fb3e1d0332c0b72110513df69b77a7d73563e2a0d3395da6ef20c46e19dbc"
+    },
+    {
+      "path": "gain-power-depths.csv",
+      "role": "generated-artifact",
+      "sha256": "sha256:8fbec2c5834b55d7066849e424fa6c6c89918a5512e01f31463525e5f09ed135",
+      "generator": "src/udv_echo_process/analysis/gain_power_screen.py",
+      "generator_revision": "71b7906",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+      "revision_source": "gain-power-screen.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:d5e539420610e71c59272376bdcb30a27815bed0f11d43b823b4661b358bb335"
+    },
+    {
+      "path": "gain-power-screen.provenance.json",
+      "role": "generated-artifact",
+      "sha256": "sha256:d037b2cf94032fb0e238d4f9cd213ef77f8b22700d21fe4a854cab2c31b9247f",
+      "generator": "src/udv_echo_process/analysis/gain_power_screen.py",
+      "generator_revision": "71b7906",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+      "revision_source": "gain-power-screen.provenance.json",
+      "correction": "R4",
+      "replacement_sha256": "sha256:2597de32623a58f6af3af3f9f25ca0c0c6d5ac631212f9d129d83c683a453301"
+    },
+    {
+      "path": "figures/gain-power-screen.png",
+      "role": "generated-artifact",
+      "sha256": "sha256:0f1073291d64e9aafdc471f368dc30e1635489622a8ffef3e89f9ecde47ca95e",
+      "generator": "src/udv_echo_process/analysis/gain_power_screen.py",
+      "generator_revision": "71b7906",
+      "generator_command": ".venv/Scripts/python.exe -m udv_echo_process.cli gain-power-screen --analysis-commit 71b7906",
+      "revision_source": "gain-power-screen.provenance.json",
+      "correction": "R1",
+      "replacement_sha256": "sha256:eb5fd8a09a482841c7f037c038cfbdc8a05cb980362db282d67282fc92b21cd5"
+    },
+    {
+      "path": "decision-table.md",
+      "role": "hand-written",
+      "sha256": "sha256:ef3874b763758fb2c84bbd9504a11fda6f4bd9d0d853cf186988c1cc126ee5b4",
+      "generator": null,
+      "generator_revision": null,
+      "generator_command": null,
+      "revision_source": null,
+      "correction": "R9",
+      "replacement_sha256": "sha256:bc5312fae9ed4ded950d45b70968c218c2ba384a12babae398eef1ee5e61f8bd"
+    },
+    {
+      "path": "README.md",
+      "role": "hand-written",
+      "sha256": "sha256:35d4249283a690fffdb5629b712ab56e0b8725cb86341b2f5eb04ae453e6a110",
+      "generator": null,
+      "generator_revision": null,
+      "generator_command": null,
+      "revision_source": null,
+      "correction": "R3",
+      "replacement_sha256": "sha256:6fe5e035d1138059927e7207f28e0931424727c7a1ff7ce6ef2662a30a7e145e"
+    }
+  ],
+  "corrections": [
+    {
+      "id": "R1",
+      "title": "setting-based anchors",
+      "status": "recorded",
+      "mapped_items": [
+        "resolution-levels.csv",
+        "burst-levels.csv",
+        "burst-pairs.csv",
+        "prf-levels.csv",
+        "gain-power-levels.csv",
+        "gain-power-pairs.csv",
+        "gain-power-depths.csv",
+        "figures/prf-ladder.png",
+        "figures/gain-power-screen.png"
+      ]
+    },
+    {
+      "id": "R2",
+      "title": "nuisance threshold",
+      "status": "recorded",
+      "mapped_items": [
+        "figures/reference-repeat.png",
+        "figures/burst-ladder.png"
+      ]
+    },
+    {
+      "id": "R3",
+      "title": "emissions extension",
+      "status": "recorded",
+      "mapped_items": [
+        "README.md"
+      ]
+    },
+    {
+      "id": "R4",
+      "title": "complete OFAT identity",
+      "status": "recorded",
+      "mapped_items": [
+        "burst-ladder.provenance.json",
+        "gain-power-screen.provenance.json"
+      ]
+    },
+    {
+      "id": "R5",
+      "title": "PSD integration",
+      "status": "recorded",
+      "mapped_items": [
+        "prf-pairs.csv",
+        "prf-ladder.provenance.json"
+      ]
+    },
+    {
+      "id": "R6",
+      "title": "timestamp jitter",
+      "status": "recorded",
+      "mapped_items": [
+        "reference-repeat.provenance.json"
+      ]
+    },
+    {
+      "id": "R7",
+      "title": "residual variance",
+      "status": "recorded",
+      "mapped_items": [
+        "resolution-pairs.csv"
+      ]
+    },
+    {
+      "id": "R8",
+      "title": "spatial scale",
+      "status": "recorded",
+      "mapped_items": [
+        "resolution-ladder.provenance.json",
+        "figures/resolution-ladder.png"
+      ]
+    },
+    {
+      "id": "R9",
+      "title": "controls",
+      "status": "recorded",
+      "mapped_items": [
+        "decision-table.md"
+      ]
+    }
+  ],
+  "gates": [
+    {
+      "name": "focused-tests",
+      "command": ".venv/Scripts/python.exe -m pytest -q tests/test_validate_analysis_review_baseline.py",
+      "exit_code": 0,
+      "raw_result": "29 passed in 1.52s"
+    },
+    {
+      "name": "full-tests",
+      "command": ".venv/Scripts/python.exe -m pytest -q",
+      "exit_code": 0,
+      "raw_result": "2183 passed, 22 skipped in 159.60s (0:02:39)"
+    },
+    {
+      "name": "lint",
+      "command": ".venv/Scripts/ruff.exe check src tests tools",
+      "exit_code": 0,
+      "raw_result": "All checks passed!"
+    }
+  ]
+}

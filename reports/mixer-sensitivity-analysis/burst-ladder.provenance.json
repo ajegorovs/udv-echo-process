@@ -1,0 +1,1946 @@
+{
+  "artefact": "burst-ladder",
+  "axis": "burst_len",
+  "analysis_commit": "4cb2522",
+  "dataset_root": "data/mixer-sensitivity-analysis/4MHz/0500RPM/001",
+  "manifest": {
+    "path": "reports/mixer-sensitivity-analysis/manifest.csv",
+    "sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139"
+  },
+  "screening_threshold": {
+    "path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+    "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
+    "metric": "max_gate_abs_mean_difference_mm_s",
+    "units": "mm/s",
+    "value_mm_s": 19.37008103465545,
+    "gate_index": 39,
+    "depth_mm": 82.31266666666666,
+    "median_abs_mean_difference_mm_s": 8.908740794548184,
+    "scope": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either",
+    "role": "screening reference only: above/below indicates magnitude relative to the sole observed same-settings discrepancy; neither outcome establishes distinguishability, causality, or a bound on drift",
+    "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json"
+  },
+  "timestamps": {
+    "name": "uniform-grid phase error at the top of the analysed band",
+    "criterion": "worst-case phase error of the uniform grid at the top of the analysed band: max_k |t_k - (t_0 + k x uniform_period_s)| x f_max <= 1/16 cycle, one criterion per input, f_max the Nyquist limit of that input's own profile rate",
+    "tolerance_cycles": 0.0625,
+    "justification": "a sample the uniform grid places dt away from its recorded time is mis-phased by 2 pi f dt for every resolved component at f, so max|t_k - grid| x f_max is the worst-case phase error over the analysed band; 1/16 of a cycle (pi/8 rad) keeps the worst-placed sample's coherent (zero-lag) weight at cos(pi/8) = 0.924 of its unbiased value, i.e. caps the amplitude bias of the coherent sums and of the PSD cross terms at 7.6%, and keeps every sample inside its own cycle of the fastest resolved component so none can be attributed to a neighbouring cycle. The tolerance is a grid-error tolerance and says nothing about the flow; the four published statistics describe the recorded intervals themselves, while max_grid_residual_s also carries their cumulative departure, which is what a quantized interval accumulates over a record",
+    "estimator": "uniform grid at each record's own mean inter-profile interval, the period its first and last recorded timestamps imply; the residual is measured against that grid, not against a nominal PRF period",
+    "decision": "uniform grid retained: every input's worst-case phase error is below the tolerance at the top of the band it is analysed in, so the recorded timestamps need no resampling and no irregular-time estimator",
+    "retained": true,
+    "per_input": [
+      {
+        "relative_path": "burst_len/2.BDD",
+        "source_sha256": "bc5804498dd734dbe4acc72bcd2a3028b0581a3c88bc2a424bc0e7a97e47ef5c",
+        "profiles": 529,
+        "intervals": 528,
+        "span_s": 11.8215,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.285643703363989e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389204545454545,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 8.749999999935199e-05,
+        "worst_case_phase_cycles": 0.0019540643391862964,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/4.BDD",
+        "source_sha256": "dd38dc77ed3d442852e48a8d18e1019e95ce48d9008d6ed47c6d9534ac9b9482",
+        "profiles": 536,
+        "intervals": 535,
+        "span_s": 11.9783,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2640780639345706e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389345794392525,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.457943925283985e-05,
+        "worst_case_phase_cycles": 0.002112163536749482,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/6.BDD",
+        "source_sha256": "d493b9cdea2d818323969ef4455a5ef387eb715ecab979180bf61674ff504a32",
+        "profiles": 512,
+        "intervals": 511,
+        "span_s": 11.440900000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.280733057311017e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389236790606656,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.726027397261028e-05,
+        "worst_case_phase_cycles": 0.002172032377037421,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/8.BDD",
+        "source_sha256": "48e5b680a9b78da74038b63e90ed79bc950ae58a88d683544517516d0097f170",
+        "profiles": 517,
+        "intervals": 516,
+        "span_s": 11.552800000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.294345637344441e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389147286821707,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 8.372093023201188e-05,
+        "worst_case_phase_cycles": 0.0018696695338410272,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "prf/600.BDD",
+        "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+        "profiles": 669,
+        "intervals": 668,
+        "span_s": 14.956000000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2830539309866983e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238922155688623,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.161676646751715e-05,
+        "worst_case_phase_cycles": 0.0020460006425949712,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "res/1-8.BDD",
+        "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+        "profiles": 517,
+        "intervals": 516,
+        "span_s": 11.552900000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2647993397266717e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238934108527132,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.593023255810573e-05,
+        "worst_case_phase_cycles": 0.002142329674206067,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/12.BDD",
+        "source_sha256": "8b3f7b91932b65a1c82da122db3bb2160f286d7aa8e5f0fa7b35eb108acf6c56",
+        "profiles": 521,
+        "intervals": 520,
+        "span_s": 11.6424,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2816506165680244e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238923076923077,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 0.00010153846153926338,
+        "worst_case_phase_cycles": 0.002267573562870666,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/14.BDD",
+        "source_sha256": "7644a56d24b2c13b8d1b96abd53c672a3e33adea7acaa21ee3113895877b2b09",
+        "profiles": 585,
+        "intervals": 584,
+        "span_s": 13.0754,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2582876417148484e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389383561643834,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.520547945207625e-05,
+        "worst_case_phase_cycles": 0.002126144369072156,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/16.BDD",
+        "source_sha256": "86ff4f89738f35d458d6a4176e0f4a87880f46722eeda520b9c1fbcb28f2f493",
+        "profiles": 497,
+        "intervals": 496,
+        "span_s": 11.1051,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.268865838632129e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389314516129032,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.213709677435844e-05,
+        "worst_case_phase_cycles": 0.002057620744277302,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/18.BDD",
+        "source_sha256": "e1598263277fa58b4802dd3779ddb29ee6dc034e0cb0853083327ddb050e85dc",
+        "profiles": 524,
+        "intervals": 523,
+        "span_s": 11.7096,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2722250807302264e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389292543021033,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 8.565965583173796e-05,
+        "worst_case_phase_cycles": 0.001912965471645831,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/20.BDD",
+        "source_sha256": "a7aa7814f5832d34a33538ad4745718bacca5c0af0d5ab8979094a8e23b48abd",
+        "profiles": 518,
+        "intervals": 517,
+        "span_s": 11.5752,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.2911580742979975e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238916827852998,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.922630560932344e-05,
+        "worst_case_phase_cycles": 0.0022159381177350407,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/24.BDD",
+        "source_sha256": "9786ebfaf5fea60108552af761e41d7eb9480ed4453580a2e476341451d214b6",
+        "profiles": 545,
+        "intervals": 544,
+        "span_s": 12.1797,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.293264070083781e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389154411764707,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 0.00010643382352970576,
+        "worst_case_phase_cycles": 0.0023768975890764072,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/28.BDD",
+        "source_sha256": "cc8156ac2287ac20de9c2e3850885e5cca020c87851e9cfb05c72ff03dfdb6aa",
+        "profiles": 510,
+        "intervals": 509,
+        "span_s": 11.396,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.316920957232662e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.02238899803536346,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 0.00011316306483299954,
+        "worst_case_phase_cycles": 0.002527176108626616,
+        "criterion_met": true
+      },
+      {
+        "relative_path": "burst_len/32.BDD",
+        "source_sha256": "a29e78dc6dcfc890d49e7c14d8f525675a67c19ae8f7b5f7f0aa68b66bdcf2fe",
+        "profiles": 520,
+        "intervals": 519,
+        "span_s": 11.620000000000001,
+        "median_dt_s": 0.022399999999999975,
+        "dt_iqr_s": 8.881784197001252e-16,
+        "rms_deviation_s": 3.284810608266988e-05,
+        "max_abs_deviation_s": 0.00010000000000043308,
+        "uniform_period_s": 0.022389210019267823,
+        "f_max_hz": 22.332163876580204,
+        "max_grid_residual_s": 9.132947976875361e-05,
+        "worst_case_phase_cycles": 0.002039584908958622,
+        "criterion_met": true
+      }
+    ]
+  },
+  "aggregation": {
+    "rule": "unweighted arithmetic mean over the level's realizations",
+    "statement": "each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+    "levels": 13,
+    "recordings": 14,
+    "multi_realization_levels": [
+      {
+        "relative_path": "prf/600.BDD",
+        "realization_paths": [
+          "prf/600.BDD",
+          "res/1-8.BDD"
+        ]
+      }
+    ]
+  },
+  "inputs": [
+    {
+      "relative_path": "burst_len/2.BDD",
+      "level_path": "burst_len/2.BDD",
+      "axis": "burst_len",
+      "requested_label": "2",
+      "cycles": 2,
+      "source_sha256": "bc5804498dd734dbe4acc72bcd2a3028b0581a3c88bc2a424bc0e7a97e47ef5c",
+      "profiles": 529,
+      "gates": 50,
+      "duration_s": 11.8215,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/4.BDD",
+      "level_path": "burst_len/4.BDD",
+      "axis": "burst_len",
+      "requested_label": "4",
+      "cycles": 4,
+      "source_sha256": "dd38dc77ed3d442852e48a8d18e1019e95ce48d9008d6ed47c6d9534ac9b9482",
+      "profiles": 536,
+      "gates": 50,
+      "duration_s": 11.9783,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/6.BDD",
+      "level_path": "burst_len/6.BDD",
+      "axis": "burst_len",
+      "requested_label": "6",
+      "cycles": 6,
+      "source_sha256": "d493b9cdea2d818323969ef4455a5ef387eb715ecab979180bf61674ff504a32",
+      "profiles": 512,
+      "gates": 50,
+      "duration_s": 11.440900000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/8.BDD",
+      "level_path": "burst_len/8.BDD",
+      "axis": "burst_len",
+      "requested_label": "8",
+      "cycles": 8,
+      "source_sha256": "48e5b680a9b78da74038b63e90ed79bc950ae58a88d683544517516d0097f170",
+      "profiles": 517,
+      "gates": 50,
+      "duration_s": 11.552800000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "prf/600.BDD",
+      "level_path": "prf/600.BDD",
+      "axis": "prf",
+      "requested_label": "600",
+      "cycles": 10,
+      "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+      "profiles": 669,
+      "gates": 50,
+      "duration_s": 14.956000000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "res/1-8.BDD",
+      "level_path": "prf/600.BDD",
+      "axis": "res",
+      "requested_label": "1-8",
+      "cycles": 10,
+      "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+      "profiles": 517,
+      "gates": 50,
+      "duration_s": 11.552900000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/12.BDD",
+      "level_path": "burst_len/12.BDD",
+      "axis": "burst_len",
+      "requested_label": "12",
+      "cycles": 12,
+      "source_sha256": "8b3f7b91932b65a1c82da122db3bb2160f286d7aa8e5f0fa7b35eb108acf6c56",
+      "profiles": 521,
+      "gates": 50,
+      "duration_s": 11.6424,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/14.BDD",
+      "level_path": "burst_len/14.BDD",
+      "axis": "burst_len",
+      "requested_label": "14",
+      "cycles": 14,
+      "source_sha256": "7644a56d24b2c13b8d1b96abd53c672a3e33adea7acaa21ee3113895877b2b09",
+      "profiles": 585,
+      "gates": 50,
+      "duration_s": 13.0754,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/16.BDD",
+      "level_path": "burst_len/16.BDD",
+      "axis": "burst_len",
+      "requested_label": "16",
+      "cycles": 16,
+      "source_sha256": "86ff4f89738f35d458d6a4176e0f4a87880f46722eeda520b9c1fbcb28f2f493",
+      "profiles": 497,
+      "gates": 50,
+      "duration_s": 11.1051,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/18.BDD",
+      "level_path": "burst_len/18.BDD",
+      "axis": "burst_len",
+      "requested_label": "18",
+      "cycles": 18,
+      "source_sha256": "e1598263277fa58b4802dd3779ddb29ee6dc034e0cb0853083327ddb050e85dc",
+      "profiles": 524,
+      "gates": 50,
+      "duration_s": 11.7096,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/20.BDD",
+      "level_path": "burst_len/20.BDD",
+      "axis": "burst_len",
+      "requested_label": "20",
+      "cycles": 20,
+      "source_sha256": "a7aa7814f5832d34a33538ad4745718bacca5c0af0d5ab8979094a8e23b48abd",
+      "profiles": 518,
+      "gates": 50,
+      "duration_s": 11.5752,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/24.BDD",
+      "level_path": "burst_len/24.BDD",
+      "axis": "burst_len",
+      "requested_label": "24",
+      "cycles": 24,
+      "source_sha256": "9786ebfaf5fea60108552af761e41d7eb9480ed4453580a2e476341451d214b6",
+      "profiles": 545,
+      "gates": 50,
+      "duration_s": 12.1797,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/28.BDD",
+      "level_path": "burst_len/28.BDD",
+      "axis": "burst_len",
+      "requested_label": "28",
+      "cycles": 28,
+      "source_sha256": "cc8156ac2287ac20de9c2e3850885e5cca020c87851e9cfb05c72ff03dfdb6aa",
+      "profiles": 510,
+      "gates": 50,
+      "duration_s": 11.396,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    },
+    {
+      "relative_path": "burst_len/32.BDD",
+      "level_path": "burst_len/32.BDD",
+      "axis": "burst_len",
+      "requested_label": "32",
+      "cycles": 32,
+      "source_sha256": "a29e78dc6dcfc890d49e7c14d8f525675a67c19ae8f7b5f7f0aa68b66bdcf2fe",
+      "profiles": 520,
+      "gates": 50,
+      "duration_s": 11.620000000000001,
+      "prf_period_us": 600.0,
+      "resolution_mm": 1.85,
+      "emissions_per_profile": 20,
+      "emit_power": "medium",
+      "sensitivity": "medium",
+      "tgc_mode": "uniform",
+      "depth_min_mm": 10.162666666666668,
+      "depth_max_mm": 100.81266666666667,
+      "profiles_window": 494,
+      "gates_in_support": 50
+    }
+  ],
+  "levels": [
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "2"
+      ],
+      "key_display": "burst_length=2",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/2.BDD",
+      "requested_paths": [
+        "burst_len/2.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/2.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/2.BDD",
+          "source_sha256": "bc5804498dd734dbe4acc72bcd2a3028b0581a3c88bc2a424bc0e7a97e47ef5c",
+          "requested_axis": "burst_len",
+          "requested_label": "2",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "2",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "529",
+            "gates": "50",
+            "duration_s": "11.8215",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 2,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 24.565872384178302,
+          "robust_spread_mm_s": 21.502524420386116,
+          "rms_mm_s": 38.11046142747144,
+          "zero_fraction": 0.011821862348178138,
+          "gradient_median_abs_mm_s_per_mm": 1.4230614518802873,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.11805065421040872,
+          "psd_centroid_hz": 3.983025767849651,
+          "psd_bandwidth_hz": 4.5158752657235
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "4"
+      ],
+      "key_display": "burst_length=4",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/4.BDD",
+      "requested_paths": [
+        "burst_len/4.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/4.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/4.BDD",
+          "source_sha256": "dd38dc77ed3d442852e48a8d18e1019e95ce48d9008d6ed47c6d9534ac9b9482",
+          "requested_axis": "burst_len",
+          "requested_label": "4",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "4",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "536",
+            "gates": "50",
+            "duration_s": "11.9783",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 4,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 24.075465643117955,
+          "robust_spread_mm_s": 34.378199966070206,
+          "rms_mm_s": 39.36204195859166,
+          "zero_fraction": 0.007692307692307693,
+          "gradient_median_abs_mm_s_per_mm": 1.0923314292673727,
+          "correlation_length_mm": 12.950000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.13870815449422313,
+          "psd_centroid_hz": 4.434478086914209,
+          "psd_bandwidth_hz": 4.724873629420765
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "6"
+      ],
+      "key_display": "burst_length=6",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/6.BDD",
+      "requested_paths": [
+        "burst_len/6.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/6.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/6.BDD",
+          "source_sha256": "d493b9cdea2d818323969ef4455a5ef387eb715ecab979180bf61674ff504a32",
+          "requested_axis": "burst_len",
+          "requested_label": "6",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "6",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "512",
+            "gates": "50",
+            "duration_s": "11.4409",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 6,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 21.075350360820483,
+          "robust_spread_mm_s": 30.54925877648613,
+          "rms_mm_s": 37.282012642528784,
+          "zero_fraction": 0.0072874493927125505,
+          "gradient_median_abs_mm_s_per_mm": 1.3044729975569789,
+          "correlation_length_mm": 14.8,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.11189619335567447,
+          "psd_centroid_hz": 3.833637659278428,
+          "psd_bandwidth_hz": 4.437968022616278
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "8"
+      ],
+      "key_display": "burst_length=8",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/8.BDD",
+      "requested_paths": [
+        "burst_len/8.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/8.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/8.BDD",
+          "source_sha256": "48e5b680a9b78da74038b63e90ed79bc950ae58a88d683544517516d0097f170",
+          "requested_axis": "burst_len",
+          "requested_label": "8",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "8",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "517",
+            "gates": "50",
+            "duration_s": "11.5528",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 8,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 21.192357635752863,
+          "robust_spread_mm_s": 30.822275751328327,
+          "rms_mm_s": 38.123864325413265,
+          "zero_fraction": 0.009676113360323887,
+          "gradient_median_abs_mm_s_per_mm": 1.4863086275194617,
+          "correlation_length_mm": 14.8,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.11947105780590062,
+          "psd_centroid_hz": 4.179576428429098,
+          "psd_bandwidth_hz": 4.4207629025050235
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "10"
+      ],
+      "key_display": "burst_length=10",
+      "ladder_label": "burst",
+      "primary_path": "prf/600.BDD",
+      "requested_paths": [],
+      "realizations": 2,
+      "realization_paths": [
+        "prf/600.BDD",
+        "res/1-8.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "prf/600.BDD",
+          "source_sha256": "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+          "requested_axis": "prf",
+          "requested_label": "600",
+          "own_axis": false,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "669",
+            "gates": "50",
+            "duration_s": "14.956",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 10,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 13.905632083276389,
+          "robust_spread_mm_s": 24.389313281608437,
+          "rms_mm_s": 34.285933214739906,
+          "zero_fraction": 0.00854251012145749,
+          "gradient_median_abs_mm_s_per_mm": 1.2847082551697244,
+          "correlation_length_mm": 14.8,
+          "acf_e_folding_lag_s": 0.11194616042656558,
+          "psd_hf_share": 0.08454239301771704,
+          "psd_centroid_hz": 3.2938793269751647,
+          "psd_bandwidth_hz": 4.011750759008536
+        },
+        {
+          "relative_path": "res/1-8.BDD",
+          "source_sha256": "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de",
+          "requested_axis": "res",
+          "requested_label": "1-8",
+          "own_axis": false,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "10",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "517",
+            "gates": "50",
+            "duration_s": "11.5529",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 10,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 22.427515681757804,
+          "robust_spread_mm_s": 35.837743838273596,
+          "rms_mm_s": 37.17705765977472,
+          "zero_fraction": 0.00979757085020243,
+          "gradient_median_abs_mm_s_per_mm": 0.9974606658086911,
+          "correlation_length_mm": 12.950000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.11245556198189799,
+          "psd_centroid_hz": 4.069727334554001,
+          "psd_bandwidth_hz": 4.387633834700407
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "12"
+      ],
+      "key_display": "burst_length=12",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/12.BDD",
+      "requested_paths": [
+        "burst_len/12.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/12.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/12.BDD",
+          "source_sha256": "8b3f7b91932b65a1c82da122db3bb2160f286d7aa8e5f0fa7b35eb108acf6c56",
+          "requested_axis": "burst_len",
+          "requested_label": "12",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "12",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "521",
+            "gates": "50",
+            "duration_s": "11.6424",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 12,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 24.37646685788151,
+          "robust_spread_mm_s": 29.85574690735563,
+          "rms_mm_s": 40.253034173654946,
+          "zero_fraction": 0.009068825910931173,
+          "gradient_median_abs_mm_s_per_mm": 1.4691791841171356,
+          "correlation_length_mm": 12.950000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.09638511897358881,
+          "psd_centroid_hz": 3.641631155947495,
+          "psd_bandwidth_hz": 4.168109134319979
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "14"
+      ],
+      "key_display": "burst_length=14",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/14.BDD",
+      "requested_paths": [
+        "burst_len/14.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/14.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/14.BDD",
+          "source_sha256": "7644a56d24b2c13b8d1b96abd53c672a3e33adea7acaa21ee3113895877b2b09",
+          "requested_axis": "burst_len",
+          "requested_label": "14",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "14",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "585",
+            "gates": "50",
+            "duration_s": "13.0754",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 14,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 26.93297830909159,
+          "robust_spread_mm_s": 28.569276295989752,
+          "rms_mm_s": 39.340233204003454,
+          "zero_fraction": 0.0072874493927125505,
+          "gradient_median_abs_mm_s_per_mm": 1.2662611622749729,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.1021500321926796,
+          "psd_centroid_hz": 3.888340437614907,
+          "psd_bandwidth_hz": 4.232556015222263
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "16"
+      ],
+      "key_display": "burst_length=16",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/16.BDD",
+      "requested_paths": [
+        "burst_len/16.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/16.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/16.BDD",
+          "source_sha256": "86ff4f89738f35d458d6a4176e0f4a87880f46722eeda520b9c1fbcb28f2f493",
+          "requested_axis": "burst_len",
+          "requested_label": "16",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "16",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "497",
+            "gates": "50",
+            "duration_s": "11.1051",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 16,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 26.099301475198367,
+          "robust_spread_mm_s": 29.2213480885816,
+          "rms_mm_s": 39.325065278361684,
+          "zero_fraction": 0.008218623481781376,
+          "gradient_median_abs_mm_s_per_mm": 0.9948253668237097,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.08900408146770655,
+          "psd_centroid_hz": 3.528640831348322,
+          "psd_bandwidth_hz": 4.043993664357215
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "18"
+      ],
+      "key_display": "burst_length=18",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/18.BDD",
+      "requested_paths": [
+        "burst_len/18.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/18.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/18.BDD",
+          "source_sha256": "e1598263277fa58b4802dd3779ddb29ee6dc034e0cb0853083327ddb050e85dc",
+          "requested_axis": "burst_len",
+          "requested_label": "18",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "18",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "524",
+            "gates": "50",
+            "duration_s": "11.7096",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 18,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 21.659801699107728,
+          "robust_spread_mm_s": 27.064026457015856,
+          "rms_mm_s": 36.97363874615415,
+          "zero_fraction": 0.009190283400809716,
+          "gradient_median_abs_mm_s_per_mm": 1.2912965026321392,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.1044076952258326,
+          "psd_centroid_hz": 3.979360775380089,
+          "psd_bandwidth_hz": 4.264157080097113
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "20"
+      ],
+      "key_display": "burst_length=20",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/20.BDD",
+      "requested_paths": [
+        "burst_len/20.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/20.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/20.BDD",
+          "source_sha256": "a7aa7814f5832d34a33538ad4745718bacca5c0af0d5ab8979094a8e23b48abd",
+          "requested_axis": "burst_len",
+          "requested_label": "20",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "20",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "518",
+            "gates": "50",
+            "duration_s": "11.5752",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 20,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 27.084648989222686,
+          "robust_spread_mm_s": 29.12506085191857,
+          "rms_mm_s": 40.149876891692124,
+          "zero_fraction": 0.008380566801619433,
+          "gradient_median_abs_mm_s_per_mm": 0.9697900264666259,
+          "correlation_length_mm": 12.950000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.10188112149632722,
+          "psd_centroid_hz": 3.788589203098799,
+          "psd_bandwidth_hz": 4.259668219086339
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "24"
+      ],
+      "key_display": "burst_length=24",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/24.BDD",
+      "requested_paths": [
+        "burst_len/24.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/24.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/24.BDD",
+          "source_sha256": "9786ebfaf5fea60108552af761e41d7eb9480ed4453580a2e476341451d214b6",
+          "requested_axis": "burst_len",
+          "requested_label": "24",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "24",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "545",
+            "gates": "50",
+            "duration_s": "12.1797",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 24,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 20.37881580375426,
+          "robust_spread_mm_s": 24.53435354949338,
+          "rms_mm_s": 35.30730460610344,
+          "zero_fraction": 0.010242914979757085,
+          "gradient_median_abs_mm_s_per_mm": 1.179296295771218,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.09486585923165824,
+          "psd_centroid_hz": 3.618311608179677,
+          "psd_bandwidth_hz": 4.1631010354715805
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "28"
+      ],
+      "key_display": "burst_length=28",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/28.BDD",
+      "requested_paths": [
+        "burst_len/28.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/28.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/28.BDD",
+          "source_sha256": "cc8156ac2287ac20de9c2e3850885e5cca020c87851e9cfb05c72ff03dfdb6aa",
+          "requested_axis": "burst_len",
+          "requested_label": "28",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "28",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "510",
+            "gates": "50",
+            "duration_s": "11.396",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 28,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 19.371285660524016,
+          "robust_spread_mm_s": 25.53988481844353,
+          "rms_mm_s": 34.18378945587315,
+          "zero_fraction": 0.02117408906882591,
+          "gradient_median_abs_mm_s_per_mm": 1.399343761015628,
+          "correlation_length_mm": 11.100000000000001,
+          "acf_e_folding_lag_s": 0.08955692834125246,
+          "psd_hf_share": 0.08850959963173666,
+          "psd_centroid_hz": 3.5044119299771412,
+          "psd_bandwidth_hz": 4.06536697951059
+        }
+      ]
+    },
+    {
+      "key_fields": [
+        "burst_length"
+      ],
+      "key": [
+        "32"
+      ],
+      "key_display": "burst_length=32",
+      "ladder_label": "burst",
+      "primary_path": "burst_len/32.BDD",
+      "requested_paths": [
+        "burst_len/32.BDD"
+      ],
+      "realizations": 1,
+      "realization_paths": [
+        "burst_len/32.BDD"
+      ],
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "per_realization": [
+        {
+          "relative_path": "burst_len/32.BDD",
+          "source_sha256": "a29e78dc6dcfc890d49e7c14d8f525675a67c19ae8f7b5f7f0aa68b66bdcf2fe",
+          "requested_axis": "burst_len",
+          "requested_label": "32",
+          "own_axis": true,
+          "fingerprint": {
+            "emit_freq_khz": "4000",
+            "prf_period_us": "600",
+            "burst_length": "32",
+            "emissions_per_profile": "20",
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "resolution_mm": "1.85",
+            "sampling_volume_index": "4",
+            "sound_speed_ms": "1480",
+            "doppler_angle_deg": "0",
+            "tgc_mode": "uniform",
+            "tgc_start_db": "19.9215686275",
+            "tgc_end_db": "40",
+            "skipped_profiles": "0",
+            "prf_hz": "1666.66666667",
+            "velo_max_ms": "154.137583511"
+          },
+          "extent": {
+            "profiles": "520",
+            "gates": "50",
+            "duration_s": "11.62",
+            "depth_min_mm": "10.1626666667",
+            "depth_max_mm": "100.812666667"
+          },
+          "cycles": 32,
+          "profiles_window": 494,
+          "gates_in_support": 50,
+          "mean_mm_s": 23.670815483976803,
+          "robust_spread_mm_s": 29.59126171297729,
+          "rms_mm_s": 37.11953185535969,
+          "zero_fraction": 0.013279352226720647,
+          "gradient_median_abs_mm_s_per_mm": 1.1239550170869494,
+          "correlation_length_mm": 12.950000000000001,
+          "acf_e_folding_lag_s": 0.11194616042656558,
+          "psd_hf_share": 0.09744491127306076,
+          "psd_centroid_hz": 3.6071504086911035,
+          "psd_bandwidth_hz": 4.213363680501179
+        }
+      ]
+    }
+  ],
+  "views": {
+    "time": {
+      "common_duration": {
+        "nominal_rpm": 500.0,
+        "revolution_s": 0.12,
+        "revolutions": 92,
+        "window_s": 11.04,
+        "profiles_window": {
+          "burst_len/2.BDD": 494,
+          "burst_len/4.BDD": 494,
+          "burst_len/6.BDD": 494,
+          "burst_len/8.BDD": 494,
+          "prf/600.BDD": 494,
+          "res/1-8.BDD": 494,
+          "burst_len/12.BDD": 494,
+          "burst_len/14.BDD": 494,
+          "burst_len/16.BDD": 494,
+          "burst_len/18.BDD": 494,
+          "burst_len/20.BDD": 494,
+          "burst_len/24.BDD": 494,
+          "burst_len/28.BDD": 494,
+          "burst_len/32.BDD": 494
+        },
+        "rule": "largest integer number of nominal revolutions fitting every burst recording, truncated per file by the recorded timestamps"
+      }
+    },
+    "depth": {
+      "common_support": {
+        "min_mm": 10.162666666666668,
+        "max_mm": 100.81266666666667,
+        "plan_declared_mm": [
+          10.163,
+          96.743
+        ],
+        "contains_plan_window": true,
+        "gates_in_support": {
+          "burst_len/2.BDD": 50,
+          "burst_len/4.BDD": 50,
+          "burst_len/6.BDD": 50,
+          "burst_len/8.BDD": 50,
+          "prf/600.BDD": 50,
+          "res/1-8.BDD": 50,
+          "burst_len/12.BDD": 50,
+          "burst_len/14.BDD": 50,
+          "burst_len/16.BDD": 50,
+          "burst_len/18.BDD": 50,
+          "burst_len/20.BDD": 50,
+          "burst_len/24.BDD": 50,
+          "burst_len/28.BDD": 50,
+          "burst_len/32.BDD": 50
+        },
+        "rule": "the intersection of the decoded depth ranges, used by every summary"
+      },
+      "native_grid": "each level keeps its own decoded gate grid for the distributional metrics, the gradient and the correlation length; nothing is resampled"
+    },
+    "temporal": {
+      "grid": {
+        "profile_period_s": 0.022389232085313116,
+        "profile_rate_hz": 44.66432775316041,
+        "period_spread_relative": 1.7219272144148043e-05,
+        "wp1_period_relative_difference": 2.199082374569655e-06,
+        "segment_profiles": 86,
+        "segment_duration_s": 1.903084727251615,
+        "frequency_resolution_hz": 0.5193526482925629,
+        "nyquist_hz": 22.332163876580204,
+        "band_hz": [
+          0.5,
+          20.0
+        ],
+        "levels": 13,
+        "profiles_analysed": {
+          "burst_len/2.BDD": 516,
+          "burst_len/4.BDD": 516,
+          "burst_len/6.BDD": 430,
+          "burst_len/8.BDD": 516,
+          "prf/600.BDD": 602,
+          "res/1-8.BDD": 516,
+          "burst_len/12.BDD": 516,
+          "burst_len/14.BDD": 516,
+          "burst_len/16.BDD": 430,
+          "burst_len/18.BDD": 516,
+          "burst_len/20.BDD": 516,
+          "burst_len/24.BDD": 516,
+          "burst_len/28.BDD": 430,
+          "burst_len/32.BDD": 516
+        },
+        "segments": {
+          "burst_len/2.BDD": 6,
+          "burst_len/4.BDD": 6,
+          "burst_len/6.BDD": 5,
+          "burst_len/8.BDD": 6,
+          "prf/600.BDD": 7,
+          "res/1-8.BDD": 6,
+          "burst_len/12.BDD": 6,
+          "burst_len/14.BDD": 6,
+          "burst_len/16.BDD": 5,
+          "burst_len/18.BDD": 6,
+          "burst_len/20.BDD": 6,
+          "burst_len/24.BDD": 6,
+          "burst_len/28.BDD": 5,
+          "burst_len/32.BDD": 6
+        },
+        "acf_estimator": "biased (divide-by-N) autocovariance of the mean-removed segment",
+        "psd_window": "hann",
+        "psd_detrend": "constant",
+        "psd_scaling": "density"
+      },
+      "mixer_setpoint_hz": 8.333333333333334,
+      "mixer_setpoint_role": "nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference",
+      "rule": "every file's full record in non-overlapping segments of the identical profile count on one shared profile period, so the segment duration, lag grid, frequency grid and frequency resolution are identical for every recording; each level's ensemble ACF/PSD is summarised in burst-levels.csv",
+      "floor": {
+        "source_path": "reports/mixer-sensitivity-analysis/reference-repeat.provenance.json",
+        "source_sha256": "b0c1b7cf9639f83fd63d8fb2c39414490bba98a1e7f846de94b8608527a0061b",
+        "manifest_sha256": "sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139",
+        "source_paths": [
+          "prf/600.BDD",
+          "res/1-8.BDD"
+        ],
+        "source_hashes": [
+          "cd47a0dded66bb879acc8f177fe263ccf2fcc8b665d23468c4c185a47b59a8de",
+          "92ef87e3df57b443d37d62ed6cb84a99a5a4173c3b3c646e1a4d6c50b0fb67de"
+        ],
+        "profile_period_s": 0.022389281321078775,
+        "band_hz": [
+          0.5,
+          20.0
+        ],
+        "band_max_abs_level_difference_db": 3.5316513237090668,
+        "e_folding_lag_s": [
+          0.11194640660539387,
+          0.0895571252843151
+        ],
+        "e_folding_lag_difference_s": 0.02238928132107877,
+        "role": "sole-pair observed-discrepancy screening threshold: one observed realization of repeatability plus uncontrolled drift, screened and not a bound on either (temporal)",
+        "hf_share": [
+          0.08454240496884091,
+          0.11245566068966872
+        ],
+        "hf_share_difference": 0.027913255720827812,
+        "centroid_hz": [
+          3.2938787179474875,
+          4.069727579383254
+        ],
+        "centroid_hz_difference": 0.7758488614357661,
+        "bandwidth_hz": [
+          4.011752112021186,
+          4.387637374182616
+        ],
+        "bandwidth_hz_difference": 0.3758852621614306
+      }
+    },
+    "alignment": {
+      "knot_rule": "the longer pulse's native gate depths inside the common support, so the knot spacing is never finer than that participant's own grid",
+      "short_sampling_rule": "the shorter pulse's profile is sampled at each knot by its nearest native gate (offset at most half its own pitch); no interpolation",
+      "upsampled": false,
+      "max_knot_offset_over_all_pairs_mm": 0.0,
+      "focus_pair": {
+        "short_path": "burst_len/18.BDD",
+        "long_path": "burst_len/20.BDD",
+        "selection": "selected by decoded cycle count from the manifest ladder: the plan's question names 18 and 20 cycles, not a filename"
+      }
+    }
+  },
+  "definitions": {
+    "cycles": "decoded burst length, re-checked against the manifest burst_length cell",
+    "robust_spread": "IQR p75 - p25 across supported gates of the per-gate time means",
+    "rms": "root mean square about zero over the common window and support, mm/s; not a sigma",
+    "zero_fraction": "samples exactly 0.0 over the common window and support: dropout",
+    "gradient": "median and maximum |mean[k+1] - mean[k]| / native pitch, mm/s per mm",
+    "correlation_length": "first native lag whose normalized autocovariance < 1/e, mm",
+    "difference": "signed short - long per-gate time mean at every common knot, mm/s",
+    "screening_threshold": "the committed sole-pair observed-discrepancy screening threshold max_gate_abs_mean_difference_mm_s, read from reference-repeat.provenance.json and pinned to this manifest's hash: the threshold every mean-profile effect is screened against. An effect above or below it is a screening outcome, not proof of a burst effect and not a bound on repeatability or uncontrolled drift",
+    "figure": "both panels carry this document's caption and the generating commit",
+    "knee": "the largest one-step change of a metric along the ladder, with monotonicity",
+    "temporal_bandwidth": "per level, from its full-record ensemble PSD inside 0.5-20 Hz: the spectral centroid and RMS bandwidth, the share of in-band power above 10 Hz, and the e-folding lag of the ensemble autocorrelation",
+    "temporal_floor": "the same temporal metrics for the two committed WP1 same-settings recordings, from the curves reference-repeat.provenance.json already records; their difference is the temporal screening threshold for those metrics \u2014 one observed realization of repeatability plus uncontrolled drift, not a bound on either",
+    "replicates": "no profile and no gate is an independent experimental replicate",
+    "realizations": "the recordings that realize one decoded cycle count: the ladder holds every eligible decoded burst length, so `prf/600.BDD` and `res/1-8.BDD` are two named realizations of the burst-10 level rather than one being dropped or standing in for the other; realization_paths names each of them and the provenance document carries each one's own numbers",
+    "aggregation": "how one level's numbers are formed from its realizations: each realization of a decoded level is measured independently - the same common window, the same common physical support, its own native gate grid - and the level's reported value is the unweighted arithmetic mean of its realizations' values. Each recording is one realization of one decoded setting under repeat, so none is more representative than another and none may outvote another: weighting by profiles, gates or duration would let one longer recording speak for the level. The estimand is the level's average behaviour under repeat, not the pooled behaviour of one recording. A boolean verdict aggregates by conjunction when it asserts that a measurement was made (a correlation length reaches the 1/e floor only when every realization's did) and by disjunction when it asserts an adverse screening outcome (a level is dropout- or spread-limited when any realization is), so no realization's adverse finding is averaged away. Every realization's own value is published in the provenance document beside the level's mean, so each mean is auditable against the recordings it summarises.",
+    "time_view": "whole 500-RPM revolutions for every level; the full record for ACF/PSD",
+    "depth_view": "each level on its own gate grid inside the common support",
+    "comparability": "only the decoded burst length may differ across the ladder"
+  },
+  "findings": {
+    "screening_threshold_gate": {
+      "pairs": 78,
+      "screening_threshold_mm_s": 19.37008103465545,
+      "pairs_above_screening_threshold": 22,
+      "clearances_involving_the_longest_bursts": 17,
+      "max_abs_difference_mm_s": 44.03130014799165,
+      "max_abs_difference_paths": [
+        "burst_len/4.BDD",
+        "burst_len/28.BDD"
+      ],
+      "max_abs_difference_depth_mm": 10.162666666666668,
+      "max_ratio_to_screening_threshold": 2.2731603481273135,
+      "statement": "Effect gate: over the 78 pairs the largest absolute per-knot mean difference is 44.03 mm/s (4 vs 28 cycles) = 2.27 of the WP1 screening_threshold 19.37 mm/s; 22 pairs put a knot above it, 17 of those at the longest bursts, and none covers the support."
+    },
+    "focus_18_vs_20": {
+      "short_path": "burst_len/18.BDD",
+      "long_path": "burst_len/20.BDD",
+      "short_cycles": 18.0,
+      "long_cycles": 20.0,
+      "knots": 50,
+      "knots_above_screening_threshold": 0,
+      "mean_abs_difference_mm_s": 5.502559621882552,
+      "max_abs_difference_mm_s": 11.751918176021,
+      "max_abs_difference_depth_mm": 91.56266666666666,
+      "ratio_to_screening_threshold": 0.6067046469756827,
+      "statement": "Plan question, 18 versus 20 cycles: the largest absolute per-knot mean difference is 11.75 mm/s at 91.56 mm = 0.607 of the 19.37 mm/s screening_threshold, with 0 of 50 knots above it. Verdict: this evidence cannot support choosing 18 cycles over 20 or the reverse \u2014 the difference sits below the screening threshold and no level in the 16-20-cycle region falls above it against any other, so the screening outcome is that nothing is separated. Unidentifiable from this dataset: any burst effect smaller than the screening_threshold, and the pitch x burst interaction, because the two ladders meet only at the reference. What would overturn it: two recordings per cycle count in this region, which would separate the level effect from drift."
+    },
+    "focus_window_16_20": {
+      "cycles": [
+        16,
+        20
+      ],
+      "pairs": 3,
+      "pairs_above_screening_threshold": 0,
+      "max_ratio_to_screening_threshold": 0.6503732867808196,
+      "statement": "16-20-cycle region: 3 unordered pairs, 0 of them clearing the screening_threshold, so no level differs from another by more than repeat-plus-drift there."
+    },
+    "knees": {
+      "zero_fraction": {
+        "metric": "zero_fraction",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 28,
+        "knee_value": 0.02117408906882591,
+        "knee_change": 0.010931174089068825,
+        "net_change": 0.0014574898785425089,
+        "monotone_decreasing": false,
+        "statement": "zero_fraction: largest one-step change +0.01093 across 2.0-32.0 cycles, reached at 28 cycles (value 0.02117), net +0.001457; the sequence does not fall monotonically"
+      },
+      "robust_spread_mm_s": {
+        "metric": "robust_spread_mm_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 4,
+        "knee_value": 34.378199966070206,
+        "knee_change": 12.87567554568409,
+        "net_change": 8.088737292591173,
+        "monotone_decreasing": false,
+        "statement": "robust_spread_mm_s: largest one-step change +12.88 across 2.0-32.0 cycles, reached at 4 cycles (value 34.38), net +8.089; the sequence does not fall monotonically"
+      },
+      "rms_mm_s": {
+        "metric": "rms_mm_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 24,
+        "knee_value": 35.30730460610344,
+        "knee_change": -4.84257228558868,
+        "net_change": -0.990929572111753,
+        "monotone_decreasing": false,
+        "statement": "rms_mm_s: largest one-step change -4.843 across 2.0-32.0 cycles, reached at 24 cycles (value 35.31), net -0.9909; the sequence does not fall monotonically"
+      },
+      "correlation_length_mm": {
+        "metric": "correlation_length_mm",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 4,
+        "knee_value": 12.950000000000001,
+        "knee_change": 1.8499999999999996,
+        "net_change": 1.8499999999999996,
+        "monotone_decreasing": false,
+        "statement": "correlation_length_mm: largest one-step change +1.85 across 2.0-32.0 cycles, reached at 4 cycles (value 12.95), net +1.85; the sequence does not fall monotonically"
+      },
+      "gradient_max_abs_mm_s_per_mm": {
+        "metric": "gradient_max_abs_mm_s_per_mm",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 28,
+        "knee_value": 16.139888633409193,
+        "knee_change": 9.510794036733408,
+        "net_change": 1.2148728320681732,
+        "monotone_decreasing": false,
+        "statement": "gradient_max_abs_mm_s_per_mm: largest one-step change +9.511 across 2.0-32.0 cycles, reached at 28 cycles (value 16.14), net +1.215; the sequence does not fall monotonically"
+      },
+      "psd_hf_share": {
+        "metric": "psd_hf_share",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 6,
+        "knee_value": 0.11189619335567447,
+        "knee_change": -0.026811961138548668,
+        "net_change": -0.02060574293734796,
+        "monotone_decreasing": false,
+        "statement": "psd_hf_share: largest one-step change -0.02681 across 2.0-32.0 cycles, reached at 6 cycles (value 0.1119), net -0.02061; the sequence does not fall monotonically"
+      },
+      "acf_e_folding_lag_s": {
+        "metric": "acf_e_folding_lag_s",
+        "cycles": [
+          2,
+          4,
+          6,
+          8,
+          10,
+          12,
+          14,
+          16,
+          18,
+          20,
+          24,
+          28,
+          32
+        ],
+        "knee_cycles": 32,
+        "knee_value": 0.11194616042656558,
+        "knee_change": 0.022389232085313113,
+        "net_change": 0.022389232085313113,
+        "monotone_decreasing": false,
+        "statement": "acf_e_folding_lag_s: largest one-step change +0.02239 across 2.0-32.0 cycles, reached at 32 cycles (value 0.1119), net +0.02239; the sequence does not fall monotonically"
+      }
+    },
+    "temporal_bandwidth": {
+      "band_hz": [
+        0.5,
+        20.0
+      ],
+      "hf_above_hz": 10.0,
+      "levels": 13,
+      "segment_profiles": 86,
+      "frequency_resolution_hz": 0.5193526482925629,
+      "nyquist_hz": 22.332163876580204,
+      "hf_share_min": 0.08850959963173666,
+      "hf_share_max": 0.13870815449422313,
+      "centroid_hz_min": 3.5044119299771412,
+      "centroid_hz_max": 4.434478086914209,
+      "bandwidth_hz_min": 4.043993664357215,
+      "bandwidth_hz_max": 4.724873629420765,
+      "floor_paths": [
+        "prf/600.BDD",
+        "res/1-8.BDD"
+      ],
+      "floor_hf_share_difference": 0.027913255720827812,
+      "floor_centroid_difference_hz": 0.7758488614357661,
+      "floor_bandwidth_difference_hz": 0.3758852621614306,
+      "floor_e_folding_lag_difference_s": 0.02238928132107877,
+      "floor_band_level_difference_db": 3.5316513237090668,
+      "statement": "Temporal bandwidth: the share of in-band power above 10 Hz ranges 0.08851-0.1387 (spread 0.0502) over the 13 levels, the centroid 3.504-4.434 Hz and the RMS bandwidth 4.044-4.725 Hz, against an observed same-settings discrepancy of 0.02791 in the same share and 0.3759 Hz in bandwidth. The observed change is smaller than that sole-pair discrepancy, so an axis effect is not demonstrated. The shortest bursts carry the largest share and the longest the smallest, the direction a longer pulse predicts, at a magnitude below that observed discrepancy."
+    },
+    "realizations": {
+      "levels": 13,
+      "recordings": 14,
+      "aggregation": "unweighted arithmetic mean over the level's realizations",
+      "multi_realization_levels": [
+        {
+          "relative_path": "prf/600.BDD",
+          "key_display": "burst_length=10",
+          "realization_paths": [
+            "prf/600.BDD",
+            "res/1-8.BDD"
+          ]
+        }
+      ],
+      "statement": "Selection: the 13 decoded burst lengths are the setting-based selection of 14 recording(s) - every recording whose decoded settings put it at a burst length of this ladder, whatever folder requested it, so burst 10 is a level of this axis and carries both of the reference recordings. A level with more than one recording is one level with that many named realizations, each measured on its own and each named in burst-levels.csv and in the provenance document: burst_length=10 realized by prf/600.BDD and res/1-8.BDD. Each level's numbers are the unweighted mean of its realizations' numbers: one realization, one vote."
+    },
+    "spatial_smoothing": {
+      "levels": 13,
+      "correlation_length_min_mm": 11.100000000000001,
+      "correlation_length_max_mm": 14.8,
+      "longest_path": "burst_len/32.BDD",
+      "longest_cycles": 32.0,
+      "longest_correlation_length_over_pitch": 7.0,
+      "gradient_max_abs_mm_s_per_mm": 16.139888633409193,
+      "statement": "Spatial smoothing: the native correlation length of the depth-resolved mean profile is 11.1-14.8 mm over 2.0-32.0 cycles (6-8 gate pitches), so the longer pulse is not shown to smooth the profile within this ladder."
+    },
+    "limitations": [
+      "The screening threshold is the only repeat, 19.37 mm/s per gate (max_gate_abs_mean_difference_mm_s): one observed realization of repeatability plus uncontrolled drift, not a bound on either. The levels are separate recordings with no acquisition order. Magnitude relative to this one observation does not establish distinguishability or a burst-length effect; a larger difference could still be drift or one recording rather than the burst length. Most burst levels have one recording (12 of 13); 1 level has two realizations (burst_length=10 by prf/600.BDD and res/1-8.BDD), and one duplicated setting is not replicated coverage of the axis: it repeats one setting under repeat rather than any other level of this ladder.",
+      "Temporal metrics are screened against the same-settings WP1 pair through its committed curves (prf/600.BDD vs res/1-8.BDD), and one pair cannot estimate that floor's own spread.",
+      "The file carries the velocity-time index only: the 500-RPM setpoint is a marker rather than a phase reference, the ensemble PSD is per gate, and nothing here separates a burst effect from aliased temporal noise or one recording's dropout.",
+      "This module owns the burst-length axis only: resolution, PRF, TGC, emitting power and emissions per profile are neither analysed nor decided here, and the pitch x burst interaction is not estimable from this dataset."
+    ]
+  },
+  "tables": {
+    "levels": {
+      "path": "burst-levels.csv",
+      "rows": 13
+    },
+    "pairs": {
+      "path": "burst-pairs.csv",
+      "rows": 78
+    }
+  },
+  "figure": {
+    "path": "figures/burst-ladder.png",
+    "caption": "WP2 burst ladder: 13 decoded burst lengths 2.0-32.0 cycles. Selection: the 13 decoded burst lengths are the setting-based selection of 14 recording(s) - every recording whose decoded settings put it at a burst length of this ladder, whatever folder requested it, so burst 10 is a level of this axis and carries both of the reference recordings. A level with more than one recording is one level with that many named realizations, each measured on its own and each named in burst-levels.csv and in the provenance document: burst_length=10 realized by prf/600.BDD and res/1-8.BDD. Each level's numbers are the unweighted mean of its realizations' numbers: one realization, one vote. Common-duration view: 92 nominal 500-RPM revolutions = 11.04 s, truncated per file by the recorded timestamps. Common physical support: 10.1627-100.813 mm on the shared 1.85 mm grid, which contains the plan's declared window; gradients and correlation lengths are native-grid quantities and pairs use the longer pulse's own gate depths as knots, so nothing is interpolated or upsampled. Temporal view: full record in 86-profile segments on one shared 0.0223892 s profile period, frequency resolution 0.5194 Hz, Nyquist 22.33 Hz. Decision threshold: the committed WP1 screening_threshold 19.37 mm/s (max_gate_abs_mean_difference_mm_s, from reports/mixer-sensitivity-analysis/reference-repeat.provenance.json, b0c1b7cf9639...). Observed same-settings temporal discrepancy: prf/600.BDD vs res/1-8.BDD, in-band power above 10 Hz differing by 0.02791. Plan question 18 vs 20 cycles: max |diff| 11.75 mm/s at 91.56 mm = 0.607 of the screening_threshold, 0 of 50 knots above it (3 pairs in the 16-20-cycle region, 0 clearing it). nominal mixer marker only (500 RPM -> 8.33 Hz, one revolution = 0.12 s): no tachometer in these files, so the setpoint is not a phase reference. no gate and no profile is an independent experimental replicate; the levels carry no acquisition order. Generated at commit 4cb2522 from reports/mixer-sensitivity-analysis/manifest.csv (sha256:064a289b7b9e8128766305ac047ca171355539d83461fc25a25dcec1cf4d7139).",
+    "panels": [
+      "dropout (zero fraction) and variance (robust spread, RMS) versus cycle count, with the plan's 16-20-cycle region shaded",
+      "the plan's question: the signed short - long per-gate mean difference of 18 versus 20 cycles at the shared knots against the WP1 screening_threshold band"
+    ]
+  },
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli burst-ladder --analysis-commit 4cb2522",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}
