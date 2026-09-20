@@ -5,14 +5,18 @@
 > existing 40 velocity recordings have been analysed. No new instrument acquisition belongs to this
 > plan until the existing-data decision table is complete.
 >
-> **State — review corrections landed; step 8 rebinding is the remaining work.** Steps 1-7 of §8.3 have
+> **State — analysis corrections landed; WP4 reopened by review of `8ef9b63`.** Steps 1-8 of §8.3 have
 > landed: the baseline freeze (`7c4c187`), the setting-based fingerprint and level-group model
 > (`c128b34`), the screening-reference semantics (`91e6036`, prose contract `3b7d7b0`), the PSD
 > integration and timestamp accounting (`3205625`), the grouped-realization evidence (`1c5ed0c`), the
 > corrected resolution interpretations (`f5fbc5b`) and the rebuilt decision layer (`b3f2ae0`). Every
 > generated artifact now carries grouped counts and screening-reference-only prose, and the decision
-> table is rebuilt from those bytes. Step 8 — the rebinding of the hand-written binding lists, the
-> correction register and the PR body — is the open item, and no new acquisition belongs to this PR.
+> table is rebuilt from those bytes and the final rebinding landed at `8ef9b63`. The subsequent narrow
+> review found two acquisition-design blockers and one residual R2 wording issue: the six-job schedule
+> cannot place a true burst-10/emissions-20 reference inside five jobs whose burst or emissions value is
+> run-wide; D1 is encoded at the reference sensitivity rather than one step higher; and resolution still
+> describes the sole-pair screening reference as a detection limit. Section 9 is now the authority. No
+> acquisition or implementation starts until its plan-only correction is reviewed.
 >
 > **Dataset:**
 > [`data/mixer-sensitivity-analysis/4MHz/0500RPM/001/`](../../data/mixer-sensitivity-analysis/4MHz/0500RPM/001/)
@@ -392,3 +396,121 @@ The three artifacts that did not move (`manifest.csv`, `qc-summary.json`, `refer
 neither a correction nor a replacement, and a replacement recorded for an unchanged artifact is itself a
 failure. Both hand-written documents carry a binding list that names every generated item at the bytes now on
 disk, and `--check-final` re-checks them, so the record and the documents cannot disagree about the tree.
+
+## 9. Review of `8ef9b63` — WP4 schedule correction plan
+
+This section records the next review round as a plan only. It deliberately changes no generator, validator,
+decision row, sparse-set row, count, report artifact or acquisition code. The eight-condition scientific set
+remains provisional while its executable schedule is redesigned.
+
+### 9.1 Adjudication
+
+| Finding | Verdict | Repository evidence | Plan consequence |
+|---|---|---|---|
+| A true reference condition cannot occur inside five run-wide jobs | **Confirmed blocker.** `CampaignDefinition` carries `emissions_per_profile` and `burst_length` once for the whole campaign, and its contract says every point records with those values (`acquire/campaign.py::CampaignDefinition`). The point writer changes resolution and gates, not those run-wide fields. A burst-4/18 or emissions-8/64/128 job therefore cannot also contain burst-10/emissions-20 REF-CTRL points. | `src/udv_echo_process/acquire/campaign.py` lines 232-263; `actuator.PARAMETER_WRITE_ORDER`; the rows in both WP3/WP4 documents. | Reopen WP4's job/control schedule and every derived count. Do not call a block-local repeated condition a common reference control. Do not claim 26 recordings are executable. |
+| D1 is encoded at `sensitivity = medium` | **Confirmed blocker.** Both machine-readable tables encode D1 with the same sensitivity as REF-CTRL while their prose asks for one step higher. No repository evidence establishes the application's canonical next label or value. | D1 and REF-CTRL rows in `decision-table.md` and `sparse-parameter-set.md`; `tools/validate_decision_layer.py::REFERENCE_PARAMETERS`. | Read the exact next value from the application's sensitivity dialog before editing the rows. D1 must differ from the reference and equal that approved value; a prose placeholder is not a machine-readable condition. |
+| Resolution still says smaller effects are invisible / cannot be resolved | **Confirmed semantic overstatement.** `_FOCUS_VERDICT` and `_COARSEST_VERDICT` still turn one observed same-settings discrepancy into a detection limit. | `src/udv_echo_process/analysis/resolution_ladder.py` `_FOCUS_VERDICT`, `_COARSEST_VERDICT`. | Replace only the inference: the current single-repeat evidence does not support distinguishing the difference from the observed same-settings discrepancy. Regenerate the owning resolution artifacts and add exact regression cases for `invisible` and `cannot resolve`. |
+
+The review's positive findings are accepted without reopening them: grouped realizations, R7/R8 metric meaning,
+PSD integration, timestamp accounting, unconditional E128 and the R1-R9 historical replacement record remain
+the basis of the correction. The defect is concentrated in the executable WP4 schedule plus the two escaped
+R2 sentences.
+
+### 9.2 Schedule decision
+
+The correction will **not** implement per-point burst or emissions writers merely to preserve the old control
+count. The design must first describe what today's writer surface can execute:
+
+| Block | Scientific rows | Run-wide value |
+|---|---|---|
+| `burst-4` | CC1, CC3 | burst = 4; emissions = 20 |
+| `burst-18` | CC2, CC4 | burst = 18; emissions = 20 |
+| `emissions-8` | E8 | burst = 10; emissions = 8 |
+| `emissions-64` | E64 | burst = 10; emissions = 64 |
+| `emissions-128` | E128 | burst = 10; emissions = 128 |
+| D1 | not executable until §9.3 identifies the sensitivity value and the writer/echo-energy surface exists | reference burst/emissions; sensitivity intentionally non-reference |
+
+Two different controls must remain different in names, rows and analysis:
+
+1. **Block-local controls** hold each block's run-wide burst/emissions value and repeat the block's chosen anchor.
+   They diagnose within-block drift only. For burst blocks the anchor is the reference spatial window
+   (1.850 mm, 50 gates) at burst 4 or 18; for a one-condition emissions block the repeats are repetitions of
+   that emissions condition itself. They are not the common reference condition and must not be screened as
+   if all were burst 10 / emissions 20.
+2. **Common-reference checks** use the true reference condition (1.850 mm, 50 gates, burst 10,
+   emissions/profile 20, sensitivity medium) in separate reference-only jobs placed between scientific blocks.
+   They are between-job checks, not beginning/middle/end controls inside another run. Their placement and count
+   must be explicit machine-readable rows before a recording total is declared.
+
+The committed 19.3701 mm/s quantity remains a historical sole-pair observed-discrepancy screening reference.
+It is not automatically a pass/fail threshold for block-local controls taken at different burst or emissions
+settings. The redesigned analysis must report block-local observed discrepancies directly, use common-reference
+checks only for the true common condition, and avoid claiming either control type estimates drift statistically.
+
+All totals are reopened. `unique_new_conditions`, executable versus blocked conditions, block-local control
+recordings, common-reference checks, jobs and first-pass recordings must be derived from the revised rows. The
+validator must reject the old `REF-CTRL | every-run` representation and any prose-only total.
+
+### 9.3 D1 value-discovery gate
+
+Before D1 can be a row, the operator reads the sensitivity choices from the application's own dialog and records
+the exact canonical value immediately above `medium`; the dialog is then restored without recording data. The
+repository currently establishes only `medium`, so the plan does not invent `high`, an enum, or an index.
+
+Once that value is known, both machine-readable documents must encode it identically. The decision-layer
+validator must assert all of the following:
+
+- `D1.sensitivity != REF-CTRL.sensitivity`;
+- `D1.sensitivity == <operator-approved next value above medium>`;
+- every non-D1 scientific condition retains `medium`;
+- D1 is counted as scientifically selected but **not executable** until both the sensitivity write/read path and
+  echo/energy recording surface exist; executable-job and first-pass totals exclude it until those prerequisites
+  land.
+
+### 9.4 Corrected implementation order
+
+1. **Land this plan-only ruling.** Update the PR body to changes-requested/draft state; do not edit WP3/WP4 or
+   analysis code in this commit.
+2. **Close the residual R2 semantics.** Add red-first cases for `would be invisible` and `cannot resolve`, change
+   the two resolution verdicts to screening-reference-only wording, run the resolution generator, and commit the
+   source/tests/owned resolution artifacts together so byte-reproduction stays green.
+3. **Record the real D1 sensitivity value.** This is an operator observation from the application dialog, not a
+   guessed code value and not an acquisition. Stop if it is unavailable.
+4. **Rebuild WP4 rows and schedule.** Replace `REF-CTRL | every-run` with explicit block-local and separate
+   common-reference rows; mark D1 selected-but-blocked; derive every count and update both hand-written documents
+   from the same row schema. This step changes no writer.
+5. **Strengthen the decision validator.** Reject run-wide contradictions within a job, a common-reference row
+   inside a non-reference block, D1 at reference sensitivity, unapproved D1 vocabulary, D1 in executable totals,
+   and any declared count that differs from the rows. Require explicit control kind (`block-local` or
+   `common-reference`) and block/run-wide values.
+6. **Rebind and request the narrow final review.** Refresh only the affected hand-written hashes and generated
+   resolution bindings, update the correction register without rewriting the frozen baseline, run every gate,
+   then update the PR body with a finding-to-commit table.
+
+### 9.5 Acceptance criteria
+
+- a programmatic schedule check proves every row in a job agrees on run-wide `burst_cycles` and
+  `emissions_per_profile`;
+- no block-local row is named or analysed as the common reference condition;
+- common-reference checks occur only in explicit reference-only jobs and are described as between-job checks;
+- the old executable claims — six executable jobs, three true references inside every job, and 26 first-pass
+  recordings — are absent unless newly derived rows genuinely reproduce them;
+- D1 differs from medium by the operator-approved canonical next value and is excluded from executable totals
+  while either prerequisite is missing;
+- `resolution_ladder.py`, regenerated provenance/caption/figure text and hand-written consumers contain no live
+  positive inference that a below-screening difference is `invisible`, `cannot resolve`, `indistinguishable` or
+  `unresolvable`; negated defect history remains marked history;
+- `.venv/Scripts/python.exe -m pytest -q`, Ruff, the screening checker, decision-layer validator and baseline
+  `--check-final` all exit zero at a stationary HEAD;
+- no acquisition runs as part of this remediation.
+
+### 9.6 Delegation and commit boundaries
+
+Keep the shared row schema, validator, plan, decision table, sparse set, README, correction register and PR body
+single-writer. The resolution semantics slice owns `resolution_ladder.py`, its focused tests and its four generated
+artifacts. The schedule slice starts only after the exact D1 value is recorded, owns only the two hand-written
+decision documents plus validator/tests, and must not add writers. Final rebinding remains coordinator-owned.
+
+Use one commit for this ruling, one atomic tested resolution source/test/artifact commit, one decision-layer
+schedule/validator commit, and one final rebinding commit. The reviewed head `8ef9b63` remains the comparison
+boundary; no implementation belongs in the ruling commit.
