@@ -21,4 +21,5 @@ notebooks/layouts/
 .claude/
 
 # agent working artifacts (dispatch/orchestration plans; never repo documentation)
+# keep hand-written files OUT of .hermes/ itself — scratch goes in .hermes/scratch/ (see AGENTS.md)
 .hermes/
