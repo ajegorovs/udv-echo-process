@@ -231,3 +231,17 @@ disagrees fails the point.
   stamp span and achieved period against the ≈12 s window — is measured by hand today. Measuring it
   from a stored file as soon as one exists belongs to the analysis ingest, which is its own step;
   the trial is deliberately not gated on tooling that does not exist yet.
+
+**Open at the pre-run check (2026-09-20), recorded because it stops the trial.** The pass's first
+live step was the pre-run compile for `burst-4` (`uv run udv-acquire compile --definition
+examples/sparse-mixer-first-pass/jobs/burst-4.json --expect-mode instrument`). It refused, stored
+nothing and left the application untouched, naming **one** fact — *"first_gate_mm: the campaign
+declares 10.1626666667, the instrument states '1'"*, later `'10'`; sound speed, burst, emissions,
+PRF and the channel already agreed. The dialog's first-gate field does not accept a decimal
+(typing `10.163` and committing leaves `10`), while the committed sweep's own depths imply the
+frame was recorded at 10.1626666667. So the pass declares a value this dialog cannot state, and
+the pre-run comparison can never agree. Two ways out, both narrow: declare what the dialog *can*
+state and confirm the derived depth in the stored file (the split this pass already uses for
+`emissions_per_profile`), or teach the comparison that this dialog-only fact carries limited
+precision. Under review; the trial stays stopped until it is settled.
+
