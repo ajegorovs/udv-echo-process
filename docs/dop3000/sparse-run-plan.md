@@ -226,6 +226,10 @@ Two numbers belong to the ingest rather than to the gates. The achieved period i
 is off by up to 0.54× (`cc1`), because the size signature is calibrated on that nominal period: a number
 to recalibrate, not evidence against the files.
 
+**The trial's own six recordings are committed** under `data/sparse-mixer-first-pass-trial/` (with
+`retention.json` and a README giving the two commands that reproduce either half), so every number above
+can be checked from the files rather than from this page.
+
 ## 6. Using it
 
 ```text

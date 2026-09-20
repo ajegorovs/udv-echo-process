@@ -1,0 +1,122 @@
+[
+  {
+    "stored_name": "sparse1-burst-4-cc1-20260920T222516.BDD",
+    "point": "burst-4-cc1",
+    "bytes": 123745,
+    "profiles": 562,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.565900000000001,
+    "span_s": 12.565900000000001,
+    "period_ms": 22.399108734402855,
+    "words": {
+      "gates": 145,
+      "resolution_index": 4,
+      "resolution_mm": 0.6166666666666667,
+      "depth_mm": 99,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 4
+    }
+  },
+  {
+    "stored_name": "sparse1-burst-4-cc3-20260920T222516.BDD",
+    "point": "burst-4-cc3",
+    "bytes": 59449,
+    "profiles": 562,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.5447,
+    "span_s": 12.5447,
+    "period_ms": 22.36131907308378,
+    "words": {
+      "gates": 31,
+      "resolution_index": 23,
+      "resolution_mm": 2.96,
+      "depth_mm": 99,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 4
+    }
+  },
+  {
+    "stored_name": "sparse1-burst-4-ctrl-begin-20260920T222516.BDD",
+    "point": "burst-4-ctrl-begin",
+    "bytes": 70165,
+    "profiles": 562,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.5489,
+    "span_s": 12.5489,
+    "period_ms": 22.368805704099824,
+    "words": {
+      "gates": 50,
+      "resolution_index": 14,
+      "resolution_mm": 1.85,
+      "depth_mm": 101,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 4
+    }
+  },
+  {
+    "stored_name": "sparse1-burst-4-ctrl-end-20260920T222516.BDD",
+    "point": "burst-4-ctrl-end",
+    "bytes": 70234,
+    "profiles": 563,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.5713,
+    "span_s": 12.5713,
+    "period_ms": 22.368861209964415,
+    "words": {
+      "gates": 50,
+      "resolution_index": 14,
+      "resolution_mm": 1.85,
+      "depth_mm": 101,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 4
+    }
+  },
+  {
+    "stored_name": "sparse1-burst-4-ctrl-mid-20260920T222516.BDD",
+    "point": "burst-4-ctrl-mid",
+    "bytes": 70165,
+    "profiles": 562,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.5489,
+    "span_s": 12.5489,
+    "period_ms": 22.368805704099824,
+    "words": {
+      "gates": 50,
+      "resolution_index": 14,
+      "resolution_mm": 1.85,
+      "depth_mm": 101,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 4
+    }
+  },
+  {
+    "stored_name": "sparse1-common-reference-1-cr1-20260920T222916.BDD",
+    "point": "common-reference-1-cr1",
+    "bytes": 70165,
+    "profiles": 562,
+    "first_stamp_s": 0.0,
+    "last_stamp_s": 12.5489,
+    "span_s": 12.5489,
+    "period_ms": 22.368805704099824,
+    "words": {
+      "gates": 50,
+      "resolution_index": 14,
+      "resolution_mm": 1.85,
+      "depth_mm": 101,
+      "sound_speed_ms": 1480,
+      "prf_us": 600,
+      "emissions_per_profile": 20,
+      "burst_length": 10
+    }
+  }
+]
