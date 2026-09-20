@@ -156,7 +156,19 @@ def gates_for_depth(
 
 
 def depth_mm(first_gate_mm: float, gates: int, resolution_mm: float) -> float:
-    """The window law: ``first_gate + gates × resolution`` (docs/13 §1)."""
+    """The window law the planning layer applies: ``first_gate + gates × resolution`` (docs/13 §1).
+
+    What the *stored file* carries is a different quantity and is measured: word 2 follows
+    ``first_gate + (gates - 1) × pitch`` — the window's last gate — in 40 of 40 files of the
+    committed sweep, against 4 of 40 for this form. The two differ by exactly one pitch, which
+    sits inside the file check's 1.5 mm tolerance at the fine rungs (0.12-0.49 mm) every
+    campaign before this pass ran at and outside it at this pass's 1.85 mm and 2.96 mm rungs.
+    So this form is the plan's aim, and the file check predicts the last gate
+    (:func:`~udv_echo_process.acquire.verify._check_depth`). Whether the dialog's own ``Depth``
+    shows the last gate or one pitch beyond it is still open — the two readings coincide
+    inside the rounding at every rung measured so far — and this pass does not depend on the
+    answer, because its points declare resolution and gates directly.
+    """
     return first_gate_mm + gates * resolution_mm
 
 

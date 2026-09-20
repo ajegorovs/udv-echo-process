@@ -133,8 +133,15 @@ sticky — it survives activation and needs an explicit close.
   0-based resolution rung index, `resolution_mm = (idx+1) * c / 12000`**; 13 = gates;
   14 = emissions; 19 = sound speed m/s; 27 = sampling-volume index (identity unresolved
   against the manual's bandwidth); 11/12 = auto flags (both 1).
-- **Depth law** — `depth = first_gate + gates * resolution`, stored word is the *floor* of
-  it (100.06 → 100, 99.8 → 99). The first gate is dialog-only and not stored.
+- **Depth law** — the window's *end* is `first_gate + gates * resolution` as the application
+  derives it; the **stored word** (`word 2`) is the depth of the window's **last** gate,
+  `first_gate + (gates - 1) * pitch`, rounded to the integer that word holds. Measured on the
+  committed sweep (`data/mixer-sensitivity-analysis/4MHz/0500RPM/001`: 40 files, 13 distinct
+  gates × resolution pairs) the last-gate form reproduces every stored word, the window-end
+  form 4 of 40 floored and 2 of 40 rounded — no single first gate fits the window-end form.
+  The two differ by exactly one pitch, which is under the 1.5 mm file-check tolerance at the
+  fine rungs (0.12-0.49 mm) every earlier campaign ran at and over it at this pass's 1.85 mm
+  and 2.96 mm rungs. The first gate is dialog-only and not stored.
 - **Write order matters** — resolution first, then gates; writing gates first clamps them
   (words 11/12 set auto resolution and auto gate count).
 - **The chain works** — record → stop → store → confirmed file, unattended, strip back to

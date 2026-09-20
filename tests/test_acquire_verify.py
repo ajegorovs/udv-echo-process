@@ -196,25 +196,34 @@ def test_live_point_verifies_with_the_exact_rung_pitch(
     assert result.ok, result.mismatches
 
 
-def test_live_point_depth_word_is_the_floor_of_the_snapped_derivation(
+def test_live_point_depth_word_confirms_the_last_gate_form_inside_tolerance(
     tmp_path: Path,
 ) -> None:
-    """Word 2 tracks first gate + gates x rung pitch, floored — within tolerance.
+    """One pitch separates the two depth forms, and this ladder's rungs sit under 1.5 mm.
 
-    Rung 0 at 805 gates derives 99.94 mm and the app stored 100, rung 3 at 201
-    gates derives 99.82 mm and the app stored 99; both are inside the 1.5 mm
-    default. This is why the depth check is a tolerance, not an equality.
+    Rung 0 at 805 gates: window end 99.942 mm, last gate 99.820 mm, and the app stored 100.
+    Rung 3 at 201 gates: 99.820 / 99.333, stored 99. The stored word is the last gate's,
+    rounded — and both forms land inside the 1.5 mm default on this ladder, which is exactly
+    why the convention could not be separated here. The committed coarse-rung sweep separates
+    them (``test_the_stored_depth_is_the_last_gates_depth_not_the_window_end``).
     """
-    derived = {
+    window_end = {
         0: FIRST_GATE_MM + 805 * RUNG_MM,   # 99.942
         1: FIRST_GATE_MM + 403 * 2 * RUNG_MM,  # 100.062
         3: FIRST_GATE_MM + 201 * 4 * RUNG_MM,  # 99.820
     }
+    last_gate = {
+        0: FIRST_GATE_MM + 804 * RUNG_MM,   # 99.820
+        1: FIRST_GATE_MM + 402 * 2 * RUNG_MM,  # 99.820
+        3: FIRST_GATE_MM + 200 * 4 * RUNG_MM,  # 99.333
+    }
     stored = {0: 100, 1: 100, 3: 99}
     for point in LIVE_POINTS:
         rung = int(point["rung"])
-        assert abs(derived[rung] - stored[rung]) <= 1.5
-        assert abs(derived[rung] - stored[rung]) > 0.0
+        pitch = (rung + 1) * RUNG_MM
+        assert window_end[rung] - last_gate[rung] == pytest.approx(pitch)
+        assert abs(last_gate[rung] - stored[rung]) <= 0.5
+        assert abs(window_end[rung] - stored[rung]) <= 1.5
 
 
 def test_default_depth_tolerance_is_one_and_a_half_mm() -> None:
@@ -567,7 +576,7 @@ def test_wrong_depth_is_reported(tmp_path: Path) -> None:
     )
     assert result.ok is False
     assert len(result.mismatches) == 1
-    assert result.mismatches[0].startswith("depth_mm: requested 99.9417")
+    assert result.mismatches[0].startswith("depth_mm: requested 99.82")
     assert "found 250 in word 2" in result.mismatches[0]
     assert "tolerance 1.5" in result.mismatches[0]
 
@@ -850,5 +859,62 @@ def test_real_c1500_point_verifies_against_its_plan() -> None:
         check_covariates=True,
     )
     assert result.ok, result.mismatches
-    # 2 + 378 x 0.125 = 49.25 mm: the file stores the floor, within 1.5 mm.
+    # The last gate: 2 + 377 x 0.125 = 49.125 mm and the file stores 49, 0.125 mm off.
+    assert abs((FIRST_GATE_MM + 377 * 0.125) - facts.depth_mm) <= 0.5
+    # The window-end form (49.25) is inside the tolerance here too: this rung cannot separate
+    # the two forms, which is why the committed coarse-rung sweep is the case below.
     assert abs(49.25 - facts.depth_mm) <= 1.5
+
+
+# --------------------------------------------------------------------------- #
+# The committed sweep separates the two depth forms: this pass's rungs are coarse.
+# --------------------------------------------------------------------------- #
+
+#: The pass's own point configurations, read off the committed sweep's files:
+#: (file, resolution_mm, gates, does the window-end form fall outside 1.5 mm?).
+COARSE_RUNG_DEPTH_CASES = (
+    ("res/1-8.BDD", 1.85, 50, True),
+    ("res/3-0.BDD", 2.96, 31, True),
+    ("res/0-6.BDD", 0.617, 145, False),
+)
+
+#: The committed 40-file mixer sensitivity sweep, and the frame its dialogs held.
+MIXER_SWEEP = REPO_ROOT / "data/mixer-sensitivity-analysis" / "4MHz" / "0500RPM" / "001"
+PASS_FIRST_GATE_MM = 10.1626666667
+
+
+@pytest.mark.parametrize(
+    ("relative", "resolution_mm", "gates", "window_end_separates"),
+    COARSE_RUNG_DEPTH_CASES,
+)
+def test_the_stored_depth_is_the_last_gates_depth_not_the_window_end(
+    relative: str, resolution_mm: float, gates: int, window_end_separates: bool
+) -> None:
+    """Word 2 is gate ``gates``, not the window end one pitch beyond it.
+
+    Over all 40 committed files and their 13 distinct gates x resolution pairs,
+    ``first_gate + (gates - 1) x pitch`` reproduces the stored word in 40 of 40; the
+    window-end form reproduces 4 of 40 floored and 2 of 40 rounded, and no single first gate
+    fits it. The two differ by exactly one pitch, so only a rung wider than the 1.5 mm default
+    separates them — 1.85 mm and 2.96 mm here, against 0.12-0.49 mm in every campaign before
+    this pass. While the window-end form was predicted, a correct 1.85 mm control recording
+    read as a ``depth_mm`` mismatch, so these are the regression cases that pin the
+    convention.
+    """
+    path = MIXER_SWEEP / relative
+    facts = read_words(path, 1)
+    pitch = facts.resolution_mm
+    last_gate = PASS_FIRST_GATE_MM + (gates - 1) * pitch
+    window_end = PASS_FIRST_GATE_MM + gates * pitch
+
+    assert abs(last_gate - facts.depth_mm) <= 1.5
+    assert (abs(window_end - facts.depth_mm) > 1.5) is window_end_separates
+
+    params = ParameterSet(
+        sound_speed_ms=1480.0,
+        first_gate_mm=PASS_FIRST_GATE_MM,
+        resolution_mm=resolution_mm,
+        gates=gates,
+    )
+    result = verify_stored_point(path, params, 1)
+    assert result.ok, result.mismatches

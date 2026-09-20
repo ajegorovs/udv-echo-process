@@ -150,9 +150,11 @@ Rules that follow:
   ```
 
   verified as `4 → 0.6083 mm` at `c = 1460` and `1 → 0.250 mm` at `c = 1500`.
-- The app writes its own derived window to **word 2 (`Depth`)**, so
-  `depth = first gate + gates × resolution` can be checked inside the file
-  without re-deriving the physics.
+- The app writes its own derived window to **word 2**, so the depth can be checked inside the
+  file without re-deriving the physics. What word 2 holds is the window's *last* gate —
+  `first gate + (gates - 1) × pitch`, rounded — not the dialog's `Depth` one pitch beyond it
+  (`dop3000/handoff-dop3010-acquisition.md` §3, measured on the committed sweep; the two
+  coincide inside the rounding only at rungs narrower than the check's 1.5 mm tolerance).
 
 **Burst length is a dialog-only write.** There is no sidebar field for it, so
 any burst sweep must drive `Parameters → Operating parameters`. Changing it

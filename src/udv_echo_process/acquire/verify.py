@@ -17,7 +17,7 @@ Word map (verified on real files — uint32 little-endian, 256 words per channel
 stride 1024 B, channel 1 at byte offset 548, so word ``i`` of channel ``c`` is at
 ``548 + (c - 1) * 1024 + i * 4``)::
 
-    2   depth in mm (the FLOOR of ``first_gate + gates x resolution``)
+   2   depth in mm — the window's *last* gate, ``first_gate + (gates - 1) x pitch`` rounded
     5   PRF in microseconds
     8   burst length
     10  0-based resolution rung index; ``resolution_mm = (word10 + 1) * c / 12000``
@@ -360,10 +360,17 @@ def _check_depth(
 ) -> None:
     """Compare word 2 with the depth the *requested* window should have.
 
-    The prediction is ``first_gate + gates x rung_pitch``: the app writes its own
-    derived depth, and the pitch it uses is the *snapped* rung (the requested
-    pitch is only a request — ``plan`` and docs/16 §12a), so the snapped rung,
-    not the requested decimal, is what the prediction multiplies.
+    The prediction is ``first_gate + (gates - 1) x rung_pitch`` — the depth of the window's
+    **last** gate, which is the depth the application stores: word 2 is the depth of gate
+    ``gates``, not of the window end one pitch beyond it. Measured on the committed sweep
+    (``data/mixer-sensitivity-analysis/4MHz/0500RPM/001``: 40 files, 13 distinct gates x
+    resolution pairs) this form reproduces the stored word in **40 of 40** files, the
+    window-end form in 4 of 40, and no single first gate fits the window-end form. The pitch
+    is the *snapped* rung, never the requested decimal (``plan`` and docs/16 §12a), so the
+    snapped rung is what the prediction multiplies. One pitch separates the two forms, so at
+    the fine rungs every earlier campaign ran at (0.12-0.49 mm) they are indistinguishable
+    inside the 1.5 mm default; at this pass's coarse rungs (1.85 mm, 2.96 mm) they are not,
+    and there the window-end form reports a correct recording as a mismatch.
     """
     word = WORD_DEPTH_MM
     requested_resolution = _as_float(_requested(requested_parameters, "resolution_mm"))
@@ -398,12 +405,12 @@ def _check_depth(
 
     index = _rung_index_for(requested_resolution, sound_speed_ms)
     pitch_mm = (index + 1) * sound_speed_ms / RUNG_DIVISOR
-    predicted_mm = requested_first_gate + requested_gates * pitch_mm
+    predicted_mm = requested_first_gate + (requested_gates - 1) * pitch_mm
     if abs(predicted_mm - facts.depth_mm) > tolerance_mm:
         mismatches.append(
             f"depth_mm: requested {_number(predicted_mm)} "
             f"(first gate {_number(requested_first_gate)} + "
-            f"{_number(requested_gates)} x {_number(pitch_mm)}), found "
+            f"{_number(requested_gates - 1)} x {_number(pitch_mm)}, the last gate), found "
             f"{facts.depth_mm} in word {word} (tolerance {tolerance_mm:g})"
         )
 
@@ -420,9 +427,9 @@ def verify_stored_point(
     """Verify a stored point's own words against the parameters requested.
 
     Checked, in order: gates exactly (word 13), the resolution rung the requested
-    pitch inverts to (word 10), the window depth within ``depth_tolerance_mm``
-    (word 2). Every disagreement and every *unverifiable* field becomes a string
-    naming the field, the request and the found value.
+    pitch inverts to (word 10), the depth of the window's last gate within
+    ``depth_tolerance_mm`` (word 2). Every disagreement and every *unverifiable* field
+    becomes a string naming the field, the request and the found value.
 
     With ``check_covariates=True`` the dialog-only words are enforced as well:
     sound speed (word 19), PRF (word 5, within :data:`PRF_TOLERANCE_US`) and burst
