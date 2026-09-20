@@ -11,5 +11,12 @@
 reports/mixer-sensitivity-analysis/*.csv text eol=lf
 reports/mixer-sensitivity-analysis/*.json text eol=lf
 
+# The two hand-written documents are bound by the same record
+# (``review-correction-baseline.json`` records each by SHA-256 alone, because nothing
+# regenerates them), so their hashes must not depend on a checkout's core.autocrlf
+# either. Without this pin a Windows checkout hashes them with CRLF and a Linux one
+# without, and ``--check-final`` passes only on the host that recorded the value.
+reports/mixer-sensitivity-analysis/*.md text eol=lf
+
 # Committed figures are binary evidence: never translated, never diffed as text.
 reports/mixer-sensitivity-analysis/figures/*.png binary
