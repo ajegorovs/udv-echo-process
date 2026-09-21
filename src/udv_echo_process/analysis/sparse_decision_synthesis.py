@@ -960,33 +960,48 @@ def _rows(
             floor_mm_s=None,
             observed_effect=(
                 f"the largest unresolved effect this pass can see is the scalar pitch x burst interaction "
-                f"at {abs(interaction):.3f} mm/s, which is inside the burst jobs' own anchor movement; the "
-                f"only unresolved *distinction* that additional run-level realizations can settle is "
-                f"E20 against E64, whose span ({e64_low:+.3f} to {e64_high:+.3f} mm/s) straddles the "
-                f"{averaged:.3f} mm/s floor"
+                f"at {abs(interaction):.3f} mm/s, which is inside the burst jobs' own anchor movement and "
+                f"is not settled by more points of the same design. The one *distinction* additional "
+                f"run-level realizations could settle was E20 against E64, whose span "
+                f"({e64_low:+.3f} to {e64_high:+.3f} mm/s) then straddled the {averaged:.3f} mm/s floor "
+                f"- and that distinction has since been measured: the targeted campaign returned four "
+                f"paired contrasts whose largest is {largest:.4f} mm/s, all inside the "
+                f"{s2_scalar:.4f} mm/s floor that campaign measured for itself, with no consistent "
+                "direction"
             ),
             observed_effect_mm_s=None,
             interpretation=(
                 "a dense second pass would reproduce these floors: the pitch x burst interaction is "
                 "limited by movement *inside* the burst jobs, and adding more pitch or burst conditions "
-                "of the same design does not shrink that. Only the E20/E64 realization dependence is "
-                "bounded by the number of runs rather than by the rig, and only it is worth measuring "
-                "again - as a bounded paired block inside one campaign, not a matrix."
+                "of the same design does not shrink that. The E20/E64 realization dependence was the one "
+                "limitation bounded by the number of runs rather than by the rig, and it was addressed "
+                "by the bounded paired block rather than by density: **that measurement has been "
+                "performed and did not detect a stable emissions-64 benefit above its contemporaneous "
+                "floor**, so it is no longer an open distinction and nothing here remains worth "
+                "measuring again by density or by a further emission level."
             ),
             decision_class="not resolvable with this design",
             automation=(
-                "none, and for a different reason than the pointwise surface's: the recommended block "
-                "changes neither resolution nor gates - it is eight run-level jobs at the reference "
-                "window's own settings - and its one varying run-wide setting is emissions per profile, "
-                "which the operator sets before each job and the compile's read-back verifies. No "
-                "acquisition-layer change is needed to run it."
+                "none. The bounded block this row pointed to has been acquired and analysed: it was "
+                "eight run-level jobs at the reference window's own settings, its one varying run-wide "
+                "setting (emissions per profile) was set by the operator and verified by the compile's "
+                "read-back, and no acquisition-layer change was needed to run it. Nothing about that "
+                "block is future work."
             ),
             verdict="defer",
             scope=STAGE_SCOPE,
             overturning_measurement=(
                 "a diagnostic that shows the within-job anchor movement is an artefact of the schedule "
-                "rather than the rig, or a named question that the recommended targeted set does not "
-                "answer"
+                "rather than the rig, or a named question that density could answer and the targeted "
+                "set could not - the E20/E64 realization dependence this row once pointed to is no "
+                "longer one of those, having been measured and reported not detected"
+            ),
+            prior_state=(
+                "this row said that the only unresolved distinction additional run-level realizations "
+                "could settle was E20 against E64, that it was worth measuring again as a bounded "
+                "paired block inside one campaign, and that the eight-job block was the next "
+                "acquisition. That block has since been run (see the campaign record above) and its "
+                "result is not detected at that campaign's floors."
             ),
         ),
         DecisionRow(
@@ -1046,10 +1061,16 @@ def _answers(
             order=1,
             question="which axes can be collapsed or fixed?",
             answer=(
-                "the emissions axis partly: E128 is replaced by E64 on cost, since no measured quantity "
-                "prefers it and its period is a factor of "
-                f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} longer; E8 and E20 are "
-                "kept, E8 having shown no stability loss and E20 being the pass's own reference. The "
+                "the emissions axis, on cost at both upper levels: **E20 is retained as the reference "
+                "and default condition**, E8 stays useful for bandwidth, and neither upper level is "
+                "worth acquiring again in this design - E128 because no measured quantity prefers it "
+                "and its period is a factor of "
+                f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} longer than E64's, and "
+                "E64 because the targeted contemporaneous campaign this pass recommended has since "
+                "been run and detected no improvement over E20 large enough to separate from the "
+                "variation that campaign measured for itself (answer 4). **`E128 is replaced by E64` "
+                "is no longer the current state of the axis**: E64 is not the level to move to, E20 "
+                "is. The "
                 "pitch axis is not collapsed: its interaction is unresolved at this design's floors, "
                 "which is a statement about separability rather than about the axis being irrelevant. "
                 "The burst axis stays at the two levels the historical table already fixed (4 and 18 "
@@ -1083,14 +1104,20 @@ def _answers(
             order=3,
             question="which levels are redundant?",
             answer=(
-                f"E128 is not a level worth acquiring further: no depth-averaged improvement over E64 is "
-                f"detected, and a fixed {story['block_s']:g} s block holds {profiles['E128']} profiles "
-                f"against {profiles['E64']} at E64. E8 and E20 are not redundant - E8 carries the "
-                "ladder's bandwidth advantage with no measured stability cost, and E20 is the only "
-                "condition observed in more than one run, so it is what makes any between-run statement "
-                "possible at all. The emissions levels' three block-local anchor sets are not redundant "
-                "either: they are each job's own drift diagnostic and the reason every E-level "
-                "comparison has a within-job context."
+                "on current evidence, **neither E64 nor E128 is justified for further acquisition in "
+                f"this design**. E128 because no depth-averaged improvement over E64 is detected and a "
+                f"fixed {story['block_s']:g} s block holds {profiles['E128']} profiles against "
+                f"{profiles['E64']} at E64; E64 because the contemporaneous test of it has now been run "
+                "and no emissions-64 improvement over emissions 20 was detected above that campaign's "
+                "own floor (answer 4). **E20 remains the reference and default condition**: it is the "
+                "only level with more than one realization of its own *and* the level the paired "
+                "campaign measured against, which is what makes any between-run statement possible at "
+                "all. **E8 remains useful for bandwidth**: it carries the ladder's advantage with no "
+                "measured stability cost. Not detected is not the same as absent at any of these "
+                "levels - it is a statement about the floors each one was screened against. The "
+                "emissions levels' three block-local anchor sets are not redundant either: they are "
+                "each job's own drift diagnostic and the reason every E-level comparison has a "
+                "within-job context."
             ),
             evidence_refs=("emissions-ladder.json#temporal", "anchor-floor.json#jobs"),
         ),
@@ -1098,16 +1125,19 @@ def _answers(
             order=4,
             question="is a denser second acquisition justified at all?",
             answer=(
-                "not as a dense pass. The pitch x burst interaction is limited by the burst jobs' own "
-                "anchor movement, which more points of the same design do not shrink; the emissions "
-                "ladder's one unresolved distinction (E20 against E64) is limited by how many runs each "
-                f"level has, and the observed difference straddles the {averaged:.3f} mm/s floor "
-                "depending on which E20 run is used. Only that second limitation is worth spending "
-                "recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign "
-                "and screened against this pass's emissions-20 runs would be separated by a campaign "
-                "as well as by an emission level, and the pass has measured that between-run variation "
-                "is large enough for that to enter the comparison. It takes realizations of both "
-                "levels inside one campaign."
+                "not as a dense pass, and no longer as a bounded one either. The pitch x burst "
+                "interaction is limited by the burst jobs' own anchor movement, which more points of "
+                "the same design do not shrink. The emissions ladder's one unresolved distinction "
+                "(E20 against E64) was limited by how many runs each level has rather than by the rig, "
+                f"and the observed difference then straddled the {averaged:.3f} mm/s floor depending on "
+                "which E20 run was used - so that one distinction was worth spending recordings on, and "
+                "not by acquiring emissions 64 alone: runs made in a later campaign and screened "
+                "against this pass's emissions-20 runs would be separated by a campaign as well as by "
+                "an emission level. Realizations of both levels inside one campaign were therefore "
+                "acquired (answer 5), and **that campaign's result closes the question at its own "
+                "resolving power**: no emissions-64 improvement over emissions 20 was detected above "
+                "the variation the campaign measured for itself, in either direction, depth-averaged "
+                "or per gate. Nothing measured here now argues for a denser acquisition of any kind."
             ),
             evidence_refs=(
                 "pitch-burst.json#conservative_reading",
@@ -1118,20 +1148,25 @@ def _answers(
             order=5,
             question="if it is, which small set of new conditions, and what does each buy?",
             answer=(
-                "eight run-level jobs in one campaign, and this is their acquisition order: "
-                f"{', '.join(STAGE2_SEQUENCE)}. They are four counterbalanced pairs, so each level "
-                "leads two pairs and follows in two and slow drift is sampled by both. Emissions per "
-                "profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, "
-                "and the same power, sensitivity, TGC, first gate, sound speed and duration. They buy "
-                "the one thing the ladder cannot supply: four emissions-64 and four emissions-20 "
-                "observations made contemporaneously, a between-run floor measured inside that same "
-                "campaign, and four adjacent paired contrasts oriented E64 minus E20. This pass's four "
-                "emissions-20 runs and its existing emissions-64 recording stay as prior context; only "
-                "the decisive comparison moves. Nothing else is recommended, and the acceptance "
-                "criterion is stated in advance below."
+                "**the one bounded set this pass recommended was the eight-job Stage-2 campaign**, and "
+                "this is the record of it: "
+                f"{', '.join(STAGE2_SEQUENCE)} - four counterbalanced pairs, so each level led two "
+                "pairs and followed in two and slow drift was sampled by both, with emissions per "
+                "profile the only setting that differed (1.850 mm, 50 gates, burst 10, PRF 600 us, and "
+                "the same power, sensitivity, TGC, first gate, sound speed and duration). It bought the "
+                "one thing the ladder could not supply: four emissions-64 and four emissions-20 "
+                "observations made contemporaneously, a floor measured inside that same campaign, and "
+                "four adjacent paired contrasts oriented E64 minus E20. **It has since been run**, and "
+                "its result is unresolved overlap / not detected: every one of the four contrasts sits "
+                "inside the floor that campaign measured for itself and they do not share a direction. "
+                "**No further emissions acquisition is currently recommended from this workstream** - "
+                "the set recommended by this pass has been acquired, analysed and incorporated into "
+                "the E64-vs-E20 row above, and nothing in its result names a measurement worth buying "
+                "next."
             ),
             evidence_refs=(
                 "emissions-ladder.json#levels",
+                "pairs.json#contrasts",
                 "decision-table.json#campaign",
             ),
         ),
@@ -1153,20 +1188,22 @@ def _campaign(
     assert isinstance(stage2, dict)
     contrasts = {pair: float(value) for pair, value in stage2["contrasts"].items()}
     low, high = story["step_e20_e64"]
+    stage2_outcome = str(stage2["outcome"])
     return Stage2Campaign(
-        recommended=True,
+        recommended=False,
         justification=(
-            "the pass's floors are adequate for everything it measured except one distinction, and that "
-            "one is limited by how many runs a level has rather than by the rig: the E64-to-E20 "
-            f"difference spans {low:+.3f} to {high:+.3f} mm/s depending on which of the four E20 runs it "
-            f"is compared with, so it straddles the {averaged:.3f} mm/s between-run floor. Acquiring "
-            "emissions 64 alone would not settle it: those runs would be made in a later campaign and "
-            "compared against emissions-20 runs from this one, and the between-run variation this pass "
-            "measured is large enough that campaign-level drift would enter the emissions comparison. "
-            "The two levels therefore have to be sampled alternately inside one campaign, so that slow "
-            "drift is shared by both levels and the decisive comparison carries a floor measured in its "
-            "own campaign. The existing four emissions-20 runs and the existing emissions-64 recording "
-            "stay as prior context; only the decisive comparison moves to the new block."
+            "**this block was this pass's one recommendation, and it has been acquired.** It existed "
+            "because the pass's floors were adequate for everything it measured except one distinction, "
+            "and that one was limited by how many runs a level has rather than by the rig: the "
+            f"E64-to-E20 difference spanned {low:+.3f} to {high:+.3f} mm/s depending on which of the "
+            f"four E20 runs it was compared with, straddling the {averaged:.3f} mm/s between-run floor, "
+            "and acquiring emissions 64 alone would not have settled it - those runs would have been "
+            "made in a later campaign and compared against emissions-20 runs from this one, so "
+            "campaign-level drift would have entered the emissions comparison. Sampling both levels "
+            "alternately inside one campaign was the answer, and the block below is what was designed "
+            f"and run. Its result is {stage2_outcome} / not detected: no emissions-64 improvement over "
+            "emissions 20 was separable from the variation that campaign measured for itself. "
+            "**No further acquisition is recommended from this workstream.**"
         ),
         pair_design=(
             "The four pairs are **acquired in the order below**, and that assignment is part of the "
@@ -1302,6 +1339,18 @@ def _checks(
     """The WP5 gate: what has to hold before a decision is published."""
     keys = {row.key for row in rows}
     by_key = {row.key: row for row in rows}
+    #: Everything the synthesis says about what should be measured next. The gate below reads it
+    #: as one text so a stale future-tense claim cannot survive anywhere in it.
+    post_campaign_prose = " ".join(
+        (
+            *(answer.answer for answer in answers),
+            campaign.justification,
+            by_key["dense_second_pass"].interpretation,
+            by_key["dense_second_pass"].automation,
+            by_key["dense_second_pass"].observed_effect,
+            by_key["dense_second_pass"].overturning_measurement,
+        )
+    )
     return {
         "every_frozen_slice_is_cited_and_held_its_gate": all(
             ref.ok and ref.checks_passed == ref.checks_total and ref.recorded_revision
@@ -1383,6 +1432,33 @@ def _checks(
             by_key["e64_versus_e20"].prior_state
         )
         and "not resolvable with this pass's design" in by_key["e64_versus_e20"].prior_state,
+        "a_block_that_has_run_is_not_still_recommended": (
+            campaign.recommended is (campaign.execution is None)
+        ),
+        "the_answers_carry_the_post_campaign_state": (
+            "E20 is retained as the reference and default condition" in answers[0].answer
+            and "no longer the current state of the axis" in answers[0].answer
+            and "neither E64 nor E128 is justified for further acquisition" in answers[2].answer
+            and "closes the question at its own resolving power" in answers[3].answer
+            and "No further emissions acquisition is currently recommended" in answers[4].answer
+            and "It has since been run" in answers[4].answer
+        ),
+        "the_old_future_state_is_gone": all(
+            forbidden not in post_campaign_prose for forbidden in (
+                "Only that second limitation is worth spending recordings on",
+                "only it is worth measuring again",
+                "Nothing else is recommended, and the acceptance",
+                "is what should be measured next",
+                "the recommended block changes neither resolution nor gates",
+            )
+        ),
+        "the_dense_row_records_the_measurement_it_pointed_to": (
+            "has been performed and did not detect a stable emissions-64 benefit" 
+            in by_key["dense_second_pass"].interpretation
+            and "no longer an open distinction" in by_key["dense_second_pass"].interpretation
+            and "Nothing about that block is future work" in by_key["dense_second_pass"].automation
+            and by_key["dense_second_pass"].prior_state is not None
+        ),
         "the_stage2_campaign_is_recorded_as_run": (
             campaign.execution is not None
             and campaign.execution.dataset == str(story["stage2"]["dataset"])  # type: ignore[index]
@@ -1395,8 +1471,7 @@ def _checks(
             )
         ),
         "both_levels_are_sampled_in_one_campaign": (
-            campaign.recommended
-            and campaign.recordings == 8
+            campaign.recordings == 8
             and len(campaign.conditions) == 2
             and len(campaign.sequence) == campaign.recordings
             and len([name for name in campaign.sequence if name.startswith("E20")]) == 4
@@ -1698,7 +1773,11 @@ def markdown_text(model: DecisionSynthesis) -> str:
         if row.prior_state:
             rows.append(f"- **what this row said before:** {row.prior_state}")
         rows.append("")
-    rows.append("## What is recommended next, and what is refused")
+    rows.append(
+        "## What was recommended, what it returned, and what is refused"
+        if model.campaign.execution is not None
+        else "## What is recommended next, and what is refused"
+    )
     rows.append("")
     rows.append(model.campaign.justification)
     rows.append("")

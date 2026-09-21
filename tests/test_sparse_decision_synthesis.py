@@ -262,7 +262,15 @@ def test_the_five_gate_questions_are_answered_in_the_plans_order(model) -> None:
         "E128" in model.answers[2].answer and "not redundant" in model.answers[2].answer
     )
     assert "not as a dense pass" in model.answers[3].answer
-    assert "eight run-level jobs in one campaign" in model.answers[4].answer
+    assert (
+        "the one bounded set this pass recommended was the eight-job Stage-2 campaign"
+        in model.answers[4].answer
+    )
+    assert "It has since been run" in model.answers[4].answer
+    assert (
+        "No further emissions acquisition is currently recommended"
+        in model.answers[4].answer
+    )
     # the answer quotes the campaign's own sequence, in its own order - the whole sequence, so
     # a second copy of it cannot drift back to the pre-counterbalancing design unnoticed
     answer = model.answers[4].answer
@@ -283,7 +291,10 @@ def test_the_recommendation_samples_both_levels_in_one_campaign(model) -> None:
     levels alternately inside one campaign and refuses the one-sided design by name.
     """
     campaign = model.campaign
-    assert campaign.recommended is True
+    # the block is history: it was recommended, and it has been acquired
+    assert campaign.execution is not None
+    assert campaign.recommended is False
+    assert campaign.recommended is (campaign.execution is None)
     assert campaign.recordings == 8
     assert campaign.sequence == (
         "E20-A",
@@ -388,18 +399,24 @@ def test_the_e64_row_cites_the_campaign_slice_and_no_other_row_moved(
     assert stage2.recorded_revision == slice_documents["stage2"]["analysis_commit"]
     assert stage2.path == "pairs.json"
 
-    untouched = {
+    # two rows moved: the E64-vs-E20 row, which now reads the campaign, and the dense-pass
+    # row, whose "measure this next" claim the campaign has since answered. The other five
+    # keep both their verdicts and an empty prior state.
+    unchanged = {
         "pitch_x_burst_interaction": ("defer", "not resolvable with this design"),
         "e8_versus_e20": ("keep", "not detected at this design's floors"),
         "e128_versus_e64": ("replace", "not detected at this design's floors"),
         "prf": ("keep", "measured and resolved"),
-        "dense_second_pass": ("defer", "not resolvable with this design"),
         "sensitivity_d1": ("requires diagnostic", "not measured"),
     }
-    for key, (verdict, decision_class) in untouched.items():
+    for key, (verdict, decision_class) in unchanged.items():
         other = model.row(key)
         assert (other.verdict, other.decision_class) == (verdict, decision_class), key
         assert other.prior_state is None, key
+    dense = model.row("dense_second_pass")
+    assert (dense.verdict, dense.decision_class) == ("defer", "not resolvable with this design")
+    assert dense.prior_state is not None
+    assert "E20 against E64" in dense.prior_state
 
 
 def test_the_campaign_is_recorded_as_executed_with_the_numbers_it_returned(model) -> None:
@@ -421,18 +438,22 @@ def test_the_campaign_is_recorded_as_executed_with_the_numbers_it_returned(model
 def test_the_dense_pass_row_describes_the_set_it_actually_recommends(model) -> None:
     """The row must not describe the earlier pointwise surface's automation.
 
-    The Stage-2 block changes neither resolution nor gates: it is eight run-level jobs at the
-    reference window's own settings, and its one varying run-wide value is emissions per
-    profile - set by the operator and verified by the compile's read-back.
+    The block the row once pointed to changed neither resolution nor gates - eight run-level
+    jobs at the reference window's own settings, its one varying run-wide value set by the
+    operator and verified by the compile's read-back - and it has since been acquired, so the
+    row now describes it in the past tense and points at no future work.
     """
     row = next(row for row in model.rows if row.key == "dense_second_pass")
     assert row.verdict == "defer"
-    assert "changes neither resolution nor gates" in row.automation
+    assert "has been acquired and analysed" in row.automation
+    assert "Nothing about that block is future work" in row.automation
+    assert row.prior_state is not None
     assert "emissions per profile" in row.automation
-    assert "operator sets before each job" in row.automation
-    assert "read-back verifies" in row.automation
+    assert "set by the operator" in row.automation
+    assert "verified by the compile's read-back" in row.automation
     assert "writes only resolution and gates" not in row.automation
-    assert "paired block inside one campaign" in row.interpretation
+    assert "addressed by the bounded paired block rather than by density" in row.interpretation
+    assert "did not detect a stable emissions-64 benefit" in row.interpretation
 
 
 def test_the_csv_is_the_column_contract(model) -> None:
@@ -464,6 +485,49 @@ def test_the_two_new_floors_are_the_campaign_slices_own_numbers(
     assert scalar.source_slice == per_gate.source_slice == "stage2"
     assert not scalar.endpoint.startswith(("depth-resolved", "depth-averaged"))
     assert not per_gate.endpoint.startswith(("depth-resolved", "depth-averaged"))
+
+
+FORBIDDEN_FUTURE_STATE = (
+    "Only that second limitation is worth spending recordings on",
+    "only it is worth measuring again",
+    "Nothing else is recommended, and the acceptance",
+    "is what should be measured next",
+    "the recommended block changes neither resolution nor gates",
+    "E128 is replaced by E64 on cost",
+)
+
+
+def test_no_stale_future_state_survives_once_the_campaign_has_run(model, document) -> None:
+    """The review's pin: after execution exists, nothing may still read as a pending plan."""
+    assert model.campaign.execution is not None
+    prose = " ".join(
+        (
+            *(answer.answer for answer in model.answers),
+            model.campaign.justification,
+            model.campaign.pair_design,
+            model.row("dense_second_pass").interpretation,
+            model.row("dense_second_pass").automation,
+            model.row("dense_second_pass").observed_effect,
+            model.row("dense_second_pass").overturning_measurement,
+            model.row("e64_versus_e20").interpretation,
+        )
+    )
+    for forbidden in FORBIDDEN_FUTURE_STATE:
+        assert forbidden not in prose, forbidden
+    rendered = json.dumps(document)
+    for forbidden in FORBIDDEN_FUTURE_STATE:
+        assert forbidden not in rendered, forbidden
+
+
+def test_the_prose_states_that_nothing_further_is_recommended() -> None:
+    prose = (REPORT_DIR / sds.MD_NAME).read_text(encoding="utf-8")
+    assert "What was recommended, what it returned, and what is refused" in prose
+    assert "No further acquisition is recommended from this workstream" in prose
+    assert "No further emissions acquisition is currently recommended" in prose
+    # the pre-campaign heading must not be the one a reader sees
+    assert "## What is recommended next, and what is refused" not in prose
+    # and the completed block is named as completed, not as pending
+    assert "this block was this pass's one recommendation, and it has been acquired" in prose
 
 
 def test_the_committed_table_records_a_real_generator_revision() -> None:
