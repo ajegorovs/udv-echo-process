@@ -14,7 +14,10 @@ retention, stored words and provenance are checkable from these files.
 - **Retention.** Spans 12.4651–12.5713 s, all above the pass's 11.52 s usable
   gate. The profile count follows the achieved period
   (`emissions × PRF + 10.369 ms`): 827–829, 561–563, 257–258 and 144 profiles at
-  emissions 8, 20, 64 and 128.
+  emissions 8, 20, 64 and 128. That intercept is the manual's
+  `T_tran + T_prf · (16 + N_PRF)` as two terms and not one: 9.6 ms of fixed emission time at
+  PRF 600 µs, plus ~0.77 ms of transfer. The planner now computes both
+  (`acquire/plan.py::profile_period_s`).
 - **The structural size law.** A `.BDD` is the container plus its blocks:
 
   ```text
@@ -42,7 +45,9 @@ their own word 14, 144 profiles, 12.4651 s span, 50 gates / rung 14 / 1.85 mm /
 depth 101, block chain ending at EOF, and their stored words verify against the
 job's own request. The same guard sat close to its lower edge on the other axis
 (0.503 at emissions 8) for the same reason — the fixed term, not the payload, is
-what the old model omitted.
+what the old model omitted. That second margin is now gone as well: with the period law corrected
+the emissions-8 expectation drops from 2069 profiles to 780, and the ratio moves from 0.508 to
+1.037 — see the commit that landed `acquire/plan.py::profile_period_s`.
 
 ## The rig is not producing signal yet
 

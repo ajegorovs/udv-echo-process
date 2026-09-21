@@ -233,13 +233,19 @@ class ProfileTiming(ValueModel):
 
     ``achieved_s`` is the **certificate**, not a curiosity: the profile period is
     what constrains the parameter matrix, it is the honest basis for deriving a
-    profile count (``T / period``), and it sizes the block cap. The *target* comes
-    from the manual's law, ``T_profile ≈ T_tran + T_prf · (16 + N_PRF)`` — which
-    word 17 of every parameter block corroborates by storing its constant, 16 —
-    and the achieved read-out is what says whether the point behaved
-    (docs/dop3000/udop-automation.md §8, corrected: the target is the formula, the
-    measurement is the certificate; an earlier revision had it the other way
-    round). ``within_tolerance`` is the comparison.
+    profile count (``T / period``), and it sizes the block cap. The *target* is
+    :func:`~udv_echo_process.acquire.plan.profile_period_s` — the manual's law
+    ``T_profile ≈ T_tran + T_prf · (N_Stb + N_PRF)``, ``N_Stb = 16``, whose constant
+    word 17 of every parameter block stores — and the achieved read-out is what says
+    whether the point behaved (docs/dop3000/udop-automation.md §8, corrected: the
+    target is the formula, the measurement is the certificate; an earlier revision had
+    it the other way round). ``within_tolerance`` is the comparison.
+
+    The law's two terms are worth keeping apart when reading a target: at the sparse
+    pass's 600 µs PRF the instrument's own ``16 · T_prf`` is 9.6 ms, while the ~10.37 ms
+    intercept its stored files measure is that 9.6 ms **and** the transfer term
+    (``T_tran``, ~0.77 ms as those files imply). The intercept is not the 16-emission
+    term on its own.
     """
 
     target_s: float | None = Field(default=None, gt=0)

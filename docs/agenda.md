@@ -210,13 +210,15 @@ profiles in one fixture and 4193–4927 in another.
 > four refused files are structurally exact at 144 profiles (`41,323 B`), carry emissions 128 in their own
 > `word 14`, span 12.4651 s and end their block chain at EOF. `acquire/log.py` now models that structure
 > and the regression reads every committed recording back. Second, and **measured but deliberately not
-> landed**: the profile period is `emissions × PRF + 10.369 ms` — 151.689 / 223.688 / 487.690 / 871.685
-> ticks (0.1 ms each) at emissions 8 / 20 / 64 / 128 — the manual's `T_prf × (16 + N_PRF)` term, which the
-> runner and the campaign both drop (`emissions × PRF + 1 ms`). It is why the per-point profile estimate
-> runs ~1.6× high at emissions 20 and worse as emissions rise; it moves every `--sheet` estimate and the
-> block-cap arithmetic, so it wants its own commit and a plan re-freeze decision. Until it lands the size
-> guard sits ~1 % inside its lower band at emissions 8 (0.503 measured) — no live risk at this pass's
-> 12 s windows, because a *longer* window is what would push it out.
+> landed on `feat/acquire-sparse-run-plan`: the profile period is `emissions × PRF + 10.369 ms` —
+> 151.689 / 223.688 / 487.690 / 871.685 ticks (0.1 ms each) at emissions 8 / 20 / 64 / 128 — against the
+> retired `emissions × PRF + 1 ms` form, which was ~1.6× high on profiles at emissions 20 and worse as
+> emissions rose. The intercept's two terms are separate: the manual's `T_prf × (16 + N_PRF)` is 9.6 ms at
+> 600 µs and the transfer term is the remaining ~0.77 ms. `acquire/plan.py::profile_period_s` computes the
+> whole law for both the runner's size expectation and the campaign's profile count, so it moves every
+> `--sheet` estimate; **the sparse parameter set itself is untouched**, so no plan re-freeze follows. The
+> guard's own margin moved with it and is now safe: the emissions-8 ratio goes from 0.508 (1.6 % inside its
+> lower band, the level the review named as a false-rejection risk) to 1.037.
 >
 > **The rig is not producing signal yet, and that is the operator's decision, not a defect.** Every stored
 > profile in all 26 recordings is zero; the historical reference is not

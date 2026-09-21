@@ -227,11 +227,20 @@ pass: the retention below passed on every job, and all seven remaining jobs ran 
 **Both of those numbers are now measured rather than deferred.** The achieved period is
 **emissions × PRF + 10.369 ms** — the 26 recorded points give 151.689 / 223.688 / 487.690 / 871.685
 ticks (1 tick = 0.1 ms) at emissions 8 / 20 / 64 / 128 — so a point carries ~562 profiles at the
-reference level, not the 924 the requested-period law estimated. That law
-(`emissions × PRF + 1 ms`, in the runner and in the campaign) drops the manual's
-`T_prf × (16 + N_PRF)` term, which is why the estimate runs ~1.6× high at emissions 20 and worse as
-emissions rise. It is a planning-number change, so it is recorded here and gets its own commit; the
-other number, the size signature, was wrong in the code and is corrected in this pass.
+reference level, not the 924 the retired `emissions × PRF + 1 ms` estimate claimed (1.65× high at
+emissions 20, worse as emissions rise). The two terms of that intercept are not one term. The
+manual's law is `T_profile ≈ T_tran + T_prf · (N_Stb + N_PRF)` with `N_Stb = 16`
+(docs/08 §8.8), so at PRF 600 µs the instrument's own fixed emission time is
+`16 × 600 µs = 9.6 ms`; the measured `10.369 ms` intercept is that 9.6 ms **plus** the transfer term
+`T_tran`, which these files put at ~0.77 ms. The intercept is the two together — it is not the
+16-emission term, and the two are not interchangeable.
+
+The planner now computes the whole law (`acquire/plan.py::profile_period_s`, with `T_tran` kept at
+the historical ~1 ms), and both the runner's size expectation and the campaign's profile count use
+it, so the retired form that dropped the 16-emission term is gone from the executable path. It moves
+every `--sheet` count and the guard's margin: at 12 s the estimate is now 531 profiles at emissions
+20 (was 924), and the gross size guard's ratio moves from 0.508 to 1.037 at emissions 8 — the level
+the review named as a false-rejection risk, and the only one that sat near the band.
 
 **The pass then ran to completion (2026-09-21): nine jobs, 26 points, all stored.** The record is
 `data/sparse-mixer-first-pass/` — 26 recordings, nine job logs, nine job manifests, the pass manifest,

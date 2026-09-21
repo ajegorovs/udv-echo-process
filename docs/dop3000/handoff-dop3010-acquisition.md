@@ -167,11 +167,14 @@ sticky — it survives activation and needs an explicit close.
   `169, 55, 401, 250` panel); the first is `Operating parameters`, the second
   `Default parameters`.
 - **Profile period** — the manual gives `T_profile ≈ T_tran + T_prf * (16 + N_PRF)`, and
-  word 17 = 16 in every file, which corroborates it. Compute the period from the point's
-  parameters; log the achieved value once per configuration as a certificate. The ported
-  doc's §8 has been corrected accordingly (`docs/dop3000/udop-automation.md`, as have the
-  two code comments that repeated the withdrawn "measure it, don't trust the formula"
-  line: `acquire/runner.py::PERIOD_OVERHEAD_S`, `acquire/config.py::ProfileTiming`).
+  word 17 = 16 in every file, which corroborates it. Its two terms are separate: at 600 µs PRF
+  `16 * T_prf` is 9.6 ms, while the 10.369 ms intercept the committed sparse files measure is
+  that plus a ~0.77 ms transfer term. Compute the period from the point's parameters
+  (`acquire/plan.py::profile_period_s`, the whole law); log the achieved value once per
+  configuration as a certificate. The ported doc's §8 has been corrected accordingly
+  (`docs/dop3000/udop-automation.md`, as have the two code comments that repeated the withdrawn
+  "measure it, don't trust the formula" line: `acquire/plan.py::profile_period_s`,
+  `acquire/config.py::ProfileTiming`).
 - **One channel is the scope.** Everything measured on channel 1, c = 1460. The channel is
   a single knob: `UDV_CHANNEL` → `ChannelSetting` (default 1, range 1–10).
 - **Store dialog** — its `Working directory` field decides where points land (currently

@@ -422,7 +422,13 @@ profiles are an output.**
 - **The manual's formula is the expectation; the instrument's own read-out is the
   certificate.** `T_profile ≈ T_tran + T_prf · (16 + N_PRF)`, and the parameter
   block corroborates it structurally: **word 17 = 16 in every file**, i.e. the
-  formula's constant term is a real, stored constant of the acquisition. Earlier
+  formula's constant term is a real, stored constant of the acquisition. **Keep the
+  formula's two terms apart when reading a measurement.** At the sparse pass's
+  600 µs PRF the fixed emission term alone is `16 × 600 µs = 9.6 ms`, while the
+  ~10.369 ms intercept the 26 committed pass files measure is that 9.6 ms *and* the
+  transfer term `T_tran` (~0.77 ms as they imply); the intercept is not the
+  16-emission term on its own, and docs that read it that way are wrong. The planner
+  implements the whole law (`acquire/plan.py::profile_period_s`). Earlier
   first evidence (`100 emissions × 200 µs PRF` observed at `21.2 ms`) was read as
   a contradiction of the formula; it is not — an earlier revision of this section
   said "measure the period, do not trust the formula", and that line is withdrawn.

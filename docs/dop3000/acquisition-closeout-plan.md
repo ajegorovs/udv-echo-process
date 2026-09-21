@@ -45,12 +45,15 @@ reproduce it). Two findings came out of the run, both in `sparse-run-plan.md` §
   and the four `emissions-128` points were refused at 3.14× before their words were read. A `.BDD` is
   `31,268 + (19 + 2 × gates) + profiles × (19 + gates)`, which reproduces **all 26 recordings
   byte-for-byte**; `acquire/log.py` now models that, and the regression reads every committed recording back.
-- **The profile period is measured, not assumed:** `emissions × PRF + 10.369 ms` (151.689 / 223.688 /
-  487.690 / 871.685 ticks at emissions 8 / 20 / 64 / 128 at PRF 600 µs) — the manual's
-  `T_prf × (16 + N_PRF)` term, which the runner and the campaign both drop in favour of `+ 1 ms`. That is
-  why the plan's per-point estimate runs ~1.6× high at emissions 20 and worse as emissions rise. It moves
-  every `--sheet` count and the block-cap arithmetic, so it is its **own** change with a plan re-freeze
-  decision, not part of this one.
+- **The profile period is measured, not assumed — and the planner now computes the whole law:**
+  `emissions × PRF + 10.369 ms` (151.689 / 223.688 / 487.690 / 871.685 ticks at emissions 8 / 20 / 64 /
+  128 at PRF 600 µs) against the retired `emissions × PRF + 1 ms`, which was ~1.6× high on profiles at
+  emissions 20 and worse as emissions rose. The intercept's two terms are separate: the manual's law is
+  `T_profile ≈ T_tran + T_prf · (16 + N_PRF)`, so at 600 µs the fixed emission term is 9.6 ms and the
+  remaining ~0.77 ms is the transfer term — the 10.369 ms is the two together, never the 16-emission term
+  alone. `acquire/plan.py::profile_period_s` implements all of it, the runner's size expectation and the
+  campaign's profile count both call it, and nothing re-freezes: the sparse parameter set is untouched,
+  because this was planning arithmetic and not experimental design.
 
 **The rig is not producing signal, so every stored profile is zero** — including the six independently
 committed trial files, while the historical reference file is not zero (25,594 of 25,850 samples non-zero).
@@ -75,7 +78,8 @@ and the burst / emissions / drift contrasts wait for a rig that is measuring.
    **temporal analysis uses the period measured from the stored timestamps** — the 26 files give
    `period = emissions × PRF + 10.369 ms` across all four emission levels (1 tick = 0.1 ms; the
    achieved periods are 871.685, 487.690, 223.688 and 151.689 ticks at emissions 128/64/20/8), which
-   is the manual's `T_prf × (16 + N_PRF)` term that the runner and the campaign both drop — and
+   is the manual's `T_prf × (16 + N_PRF)` together with its transfer term (9.6 ms + ~0.77 ms at 600 µs),
+   now computed by the planner — and
    **the size signature now models the BDD structure** exactly, on 26/26 files. The first is a
    planning-number change (it moves every per-point estimate), so it is recorded rather than bundled;
    the second landed with this pass. What the ingest still cannot do is start: the rig is not yet
