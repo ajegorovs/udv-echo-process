@@ -19,10 +19,12 @@ The design is **not re-derived here.** Its authority is
 
 Whether the tree a given checkout carries both documents depends on the stack rather than on the
 design: they belong to the frozen analysis on `analysis/sparse-pass-ingest` (PR #27), and this pass
-is stacked on the acquisition layer (PR #25), so a checkout of this branch alone has the executable
-pass **without** the analysis documents that decided it. The intended sequence removes the gap
-before anything is recorded — #25 lands, #27 rebases onto master and lands, this branch rebases onto
-that — and after it the pass, its authority and its decision table are one tree.
+is stacked on the acquisition layer (PR #25). That sequence has run — #25 merged to `master` as
+`c91ffdb`, #27 rebased onto it and merged as `17e2caf`, this pass rebased onto the result — so the
+tree this pass ships in carries the executable campaign, the design authority and the decision table
+together. An earlier revision of this branch, stacked only on #25, carried the pass without them:
+that is why this section states the chain rather than assuming it, and why the citations are checked
+rather than trusted.
 
 Either way the pass states its own design in full: the eight jobs, their four pairs, the roles, the
 orientation rule, the fixed frame and the compile's own checks are all in this document, in the run
