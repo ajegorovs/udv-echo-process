@@ -73,7 +73,7 @@ The four contrasts span 0.3448 to 7.2256 mm/s in absolute value (mean +1.8347, r
 
 **unresolved overlap** (depth-resolved) — not detected.
 
-0.0% of the 50 supported gates are individually resolved — every pair above the depth-resolved floor there *and* all four agreeing in direction.
+**No supported gate satisfies both requirements at once.** A gate counts as resolved only when **all four** paired contrasts at that gate are above the depth-resolved floor *and* the four agree in sign — so a gate where one pair clears the floor, while another does not or disagrees in sign, is not resolved. Of the 50 supported gates, 0 have at least one pair above the floor and 0 have all four above it; neither count is the resolved share, which also requires the four signs to agree.
 
 The criterion has exactly two allowed outcomes and this is one of them: a **resolved difference** or an **unresolved overlap**. Inside an overlap the vocabulary keeps two findings apart — **not detected** (the contrasts sit inside the campaign's own variation) and **not resolvable with this design** (they reach past the floor on some pairs but not consistently, or disagree in direction). Neither is a claim that no effect exists, and a depth-averaged verdict says nothing about a single gate.
 
@@ -88,7 +88,7 @@ Nothing in `reports/sparse-mixer-live-1/decision-table.md` is rewritten: its E64
 ## Reproduce
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit ed0513d
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 960c729
 ```
 
 The table is `pairs.csv`, the definition document `pairs.json` (it carries the definitions, the gate checks and the table's SHA-256), and the figure `figures/pairs.png`.

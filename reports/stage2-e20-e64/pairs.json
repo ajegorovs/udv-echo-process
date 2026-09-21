@@ -5,7 +5,7 @@
   "plan": "stage2-e20-e64",
   "plan_path": "examples/stage2-e20-e64/run-plan.json",
   "plan_fingerprint": "16a1f060053ad09fed3817076cf1fc96fc8a8e446c6aacbfabd2173b49bee427",
-  "analysis_commit": "ed0513d",
+  "analysis_commit": "960c729",
   "channel": 1,
   "duration_s": 12.0,
   "window_s": 12.0,
