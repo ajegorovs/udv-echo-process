@@ -1,0 +1,549 @@
+{
+  "alignment": {
+    "half_coarse_pitch_mm": 1.4800000000000004,
+    "knot_count": 31,
+    "knot_edges": [
+      10.138,
+      98.93800000000002
+    ],
+    "knot_pitch_mm": 2.960000000000001,
+    "knot_source": [
+      "cc3",
+      "cc4"
+    ],
+    "max_abs_offset_depth_mm": 60.458,
+    "max_abs_offset_knot": 17,
+    "max_abs_offset_label": "cc1",
+    "max_abs_offset_mm": 0.2466666666666697,
+    "refusal": "fail-closed: if a corner's nearest native gate to a required knot lies farther than half the coarse pitch (1.48 mm) from that knot, this slice refuses with a named error and writes nothing. A gate that far from its knot is not the same depth as the knot, and no interpolation is performed to make it one",
+    "rule": "the four corners are compared on common physical knots no finer than 2.96 mm, and the knot set is the 2.96 mm measurement's own native supported gate depths (the coarsest participating grid). Each corner is read at its nearest NATIVE gate to each knot: no interpolation, no resampling, no fit. The native depth used and its offset from the knot are published per knot in the table",
+    "why_no_interpolation": "a resampled profile is not the recording's own measurement: interpolating a 2.96 mm grid onto 0.6167 mm knots would manufacture structure the coarse recording never resolved, and interpolating the fine grid would hide the width of the gates it actually averaged. The pass therefore compares what was measured"
+  },
+  "analysis_commit": "9eb11ae",
+  "blocks": [
+    {
+      "anchor_floor_mm_s": 9.645932573047823,
+      "anchor_floor_source": "WP1, each burst job's own block-local anchor spread",
+      "anchors": [
+        {
+          "label": "ctrl-begin",
+          "mean_mm_s": 29.666122230020694,
+          "order": 1,
+          "short": "B",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123240"
+        },
+        {
+          "label": "ctrl-mid",
+          "mean_mm_s": 28.432211670579186,
+          "order": 3,
+          "short": "M",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123240"
+        },
+        {
+          "label": "ctrl-end",
+          "mean_mm_s": 20.02018965697287,
+          "order": 5,
+          "short": "E",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123240"
+        }
+      ],
+      "burst_length": 4,
+      "corner_labels": [
+        "cc1",
+        "cc3"
+      ],
+      "emissions_per_profile": 20,
+      "job": "burst-4",
+      "role": "context only: these block-local controls record the 1.85 mm reference window at this job's own condition. They are not cells of the 2x2 and never enter I(z); their spread is the guard the conservative reading uses",
+      "step": 1,
+      "structure": "B - CC1 - M - CC3 - E"
+    },
+    {
+      "anchor_floor_mm_s": 11.980101444577535,
+      "anchor_floor_source": "WP1, each burst job's own block-local anchor spread",
+      "anchors": [
+        {
+          "label": "ctrl-begin",
+          "mean_mm_s": 27.635479216974286,
+          "order": 7,
+          "short": "B",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123620"
+        },
+        {
+          "label": "ctrl-mid",
+          "mean_mm_s": 35.12605724599767,
+          "order": 9,
+          "short": "M",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123620"
+        },
+        {
+          "label": "ctrl-end",
+          "mean_mm_s": 23.145955801420136,
+          "order": 11,
+          "short": "E",
+          "supported_gates": 49,
+          "sweep_id": "20260921T123620"
+        }
+      ],
+      "burst_length": 18,
+      "corner_labels": [
+        "cc2",
+        "cc4"
+      ],
+      "emissions_per_profile": 20,
+      "job": "burst-18",
+      "role": "context only: these block-local controls record the 1.85 mm reference window at this job's own condition. They are not cells of the 2x2 and never enter I(z); their spread is the guard the conservative reading uses",
+      "step": 3,
+      "structure": "B - CC2 - M - CC4 - E"
+    }
+  ],
+  "checks": {
+    "all_four_corners_are_read_at_native_gates": true,
+    "anchor_floors_reproduce_wp1": true,
+    "anchors_excluded_from_the_interaction": true,
+    "corner_conditions_are_the_plans_declared_pitch_and_burst": true,
+    "corners_share_one_emissions_level": true,
+    "engine_revision_recorded": true,
+    "four_corners_present": true,
+    "interaction_recomputes_from_the_published_corner_profiles": true,
+    "knots_are_the_coarse_grids_native_supported_gates": true,
+    "no_alignment_offset_beyond_half_the_coarse_pitch": true,
+    "the_four_contrasts_carry_the_interaction": true,
+    "the_two_screening_endpoints_are_kept_apart": true,
+    "window_and_support_are_the_wp0_ones": true
+  },
+  "columns": {
+    "cc*_mm_s": "the corner's per-gate window mean velocity at that native gate, in mm/s, on the pass's primary 12 s window",
+    "cc*_native_mm": "the native gate depth the corner was actually read at for this knot. For the two 2.96 mm corners it is the knot itself, offset 0",
+    "cc*_offset_mm": "native depth minus the knot, in mm: zero for the coarse corners, at most half the corner's own pitch for the others, and refused by name above half the coarse pitch (1.48 mm)",
+    "depth_mm": "the common knot's physical depth: the 2.96 mm measurement's own gate",
+    "interaction_mm_s": "I(z) = [cc2 - cc4] - [cc1 - cc3] at this knot, in mm/s: the difference of differences of the four corners",
+    "knot": "the knot's index in the common knot set, from 0"
+  },
+  "conservative_reading": {
+    "knot_count": 31,
+    "knots_above_anchor_floor": {
+      "burst-18": 10,
+      "burst-4": 14
+    },
+    "knots_above_anchor_floor_share": {
+      "burst-18": 0.3225806451612903,
+      "burst-4": 0.45161290322580644
+    },
+    "knots_above_depth_resolved_floor": 9,
+    "knots_above_depth_resolved_floor_share": 0.2903225806451613,
+    "resolvable_below_mm_s": [
+      9.646,
+      11.98
+    ],
+    "statement": "a pitch or burst effect smaller than ~10-12 mm/s is not resolvable in this pass: both burst jobs' own block-local anchors move by that much inside their own job, so an interaction of that size or smaller cannot be separated from the anchors' movement. The magnitudes below are screening outcomes against those floors and against WP2's endpoints - neither outcome proves an axis effect"
+  },
+  "corner_contrasts": [
+    {
+      "burst_length": 4,
+      "definition": "the pitch contrast at burst 4: v(2.96,4) - v(0.617,4), cc3 - cc1",
+      "left": "cc3",
+      "max_abs_depth_mm": 45.658,
+      "max_abs_mm_s": 23.510913216105337,
+      "max_depth_mm": 60.458,
+      "max_mm_s": 3.039532172100845,
+      "mean_mm_s": -5.787428000874213,
+      "min_depth_mm": 45.658,
+      "min_mm_s": -23.510913216105337,
+      "name": "pitch_at_burst_4",
+      "pitch_mm": 2.96,
+      "right": "cc1"
+    },
+    {
+      "burst_length": 18,
+      "definition": "the pitch contrast at burst 18: v(2.96,18) - v(0.617,18), cc4 - cc2",
+      "left": "cc4",
+      "max_abs_depth_mm": 87.098,
+      "max_abs_mm_s": 9.678800213487753,
+      "max_depth_mm": 87.098,
+      "max_mm_s": 9.678800213487753,
+      "mean_mm_s": 2.1350405460776463,
+      "min_depth_mm": 63.418,
+      "min_mm_s": -5.275849470590334,
+      "name": "pitch_at_burst_18",
+      "pitch_mm": 2.96,
+      "right": "cc2"
+    },
+    {
+      "burst_length": null,
+      "definition": "the burst contrast at 0.6167 mm: v(0.617,18) - v(0.617,4), cc2 - cc1",
+      "left": "cc2",
+      "max_abs_depth_mm": 45.658,
+      "max_abs_mm_s": 16.311843862495067,
+      "max_depth_mm": 60.458,
+      "max_mm_s": 10.074763782051587,
+      "mean_mm_s": -4.372657753513315,
+      "min_depth_mm": 45.658,
+      "min_mm_s": -16.311843862495067,
+      "name": "burst_at_pitch_0617",
+      "pitch_mm": 0.617,
+      "right": "cc1"
+    },
+    {
+      "burst_length": null,
+      "definition": "the burst contrast at 2.96 mm: v(2.96,18) - v(2.96,4), cc4 - cc3",
+      "left": "cc4",
+      "max_abs_depth_mm": 51.577999999999996,
+      "max_abs_mm_s": 12.820131589442937,
+      "max_depth_mm": 51.577999999999996,
+      "max_mm_s": 12.820131589442937,
+      "mean_mm_s": 3.549810793438544,
+      "min_depth_mm": 98.93800000000002,
+      "min_mm_s": -7.411323229510028,
+      "name": "burst_at_pitch_296",
+      "pitch_mm": 2.96,
+      "right": "cc3"
+    }
+  ],
+  "crossed_cells": [
+    {
+      "anchor_floor_mm_s": 9.645932573047823,
+      "between": [
+        "ctrl-begin",
+        "ctrl-mid"
+      ],
+      "burst_length": 4,
+      "emissions_per_profile": 20,
+      "gates": 145,
+      "job": "burst-4",
+      "label": "cc1",
+      "note": "the corner's own scalar is the unweighted mean over its 145 native supported gates at its own pitch, while an anchor's is the mean over that anchor's 49 gates at 1.85 mm: the two differences here are a grid-mismatched placement of the corner inside its block, not a residual, and neither enters I(z)",
+      "order": 2,
+      "pitch_requested_mm": 0.617,
+      "pitch_stored_mm": 0.6166666666666667,
+      "plan": {
+        "burst_length": 4,
+        "emissions_per_profile": 20,
+        "gates": 145,
+        "resolution_mm": 0.617
+      },
+      "scalar_mean_knots_mm_s": 29.75698773621154,
+      "scalar_mean_native_mm_s": 30.291149081832096,
+      "supported_gates": 145,
+      "sweep_id": "20260921T123240",
+      "vs_left_anchor_mm_s": 0.6250268518114019,
+      "vs_right_anchor_mm_s": 1.85893741125291
+    },
+    {
+      "anchor_floor_mm_s": 11.980101444577535,
+      "between": [
+        "ctrl-begin",
+        "ctrl-mid"
+      ],
+      "burst_length": 18,
+      "emissions_per_profile": 20,
+      "gates": 145,
+      "job": "burst-18",
+      "label": "cc2",
+      "note": "the corner's own scalar is the unweighted mean over its 145 native supported gates at its own pitch, while an anchor's is the mean over that anchor's 49 gates at 1.85 mm: the two differences here are a grid-mismatched placement of the corner inside its block, not a residual, and neither enters I(z)",
+      "order": 8,
+      "pitch_requested_mm": 0.617,
+      "pitch_stored_mm": 0.6166666666666667,
+      "plan": {
+        "burst_length": 18,
+        "emissions_per_profile": 20,
+        "gates": 145,
+        "resolution_mm": 0.617
+      },
+      "scalar_mean_knots_mm_s": 25.38432998269822,
+      "scalar_mean_native_mm_s": 25.97253053769905,
+      "supported_gates": 145,
+      "sweep_id": "20260921T123620",
+      "vs_left_anchor_mm_s": -1.6629486792752353,
+      "vs_right_anchor_mm_s": -9.153526708298621
+    },
+    {
+      "anchor_floor_mm_s": 9.645932573047823,
+      "between": [
+        "ctrl-mid",
+        "ctrl-end"
+      ],
+      "burst_length": 4,
+      "emissions_per_profile": 20,
+      "gates": 31,
+      "job": "burst-4",
+      "label": "cc3",
+      "note": "the corner's own scalar is the unweighted mean over its 31 native supported gates at its own pitch, while an anchor's is the mean over that anchor's 49 gates at 1.85 mm: the two differences here are a grid-mismatched placement of the corner inside its block, not a residual, and neither enters I(z)",
+      "order": 4,
+      "pitch_requested_mm": 2.96,
+      "pitch_stored_mm": 2.96,
+      "plan": {
+        "burst_length": 4,
+        "emissions_per_profile": 20,
+        "gates": 31,
+        "resolution_mm": 2.96
+      },
+      "scalar_mean_knots_mm_s": 23.96955973533732,
+      "scalar_mean_native_mm_s": 23.96955973533732,
+      "supported_gates": 31,
+      "sweep_id": "20260921T123240",
+      "vs_left_anchor_mm_s": -4.462651935241865,
+      "vs_right_anchor_mm_s": 3.949370078364449
+    },
+    {
+      "anchor_floor_mm_s": 11.980101444577535,
+      "between": [
+        "ctrl-mid",
+        "ctrl-end"
+      ],
+      "burst_length": 18,
+      "emissions_per_profile": 20,
+      "gates": 31,
+      "job": "burst-18",
+      "label": "cc4",
+      "note": "the corner's own scalar is the unweighted mean over its 31 native supported gates at its own pitch, while an anchor's is the mean over that anchor's 49 gates at 1.85 mm: the two differences here are a grid-mismatched placement of the corner inside its block, not a residual, and neither enters I(z)",
+      "order": 10,
+      "pitch_requested_mm": 2.96,
+      "pitch_stored_mm": 2.96,
+      "plan": {
+        "burst_length": 18,
+        "emissions_per_profile": 20,
+        "gates": 31,
+        "resolution_mm": 2.96
+      },
+      "scalar_mean_knots_mm_s": 27.519370528775866,
+      "scalar_mean_native_mm_s": 27.519370528775866,
+      "supported_gates": 31,
+      "sweep_id": "20260921T123620",
+      "vs_left_anchor_mm_s": -7.606686717221805,
+      "vs_right_anchor_mm_s": 4.37341472735573
+    }
+  ],
+  "dataset_root": "data/sparse-mixer-live-1",
+  "definitions": {
+    "alignment_offset": "the signed native depth used minus the knot it stands in for, in mm. Its magnitude is bounded by half the finer corner's own pitch for a nearest-gate read, and the build refuses by name (nothing written) if any required offset exceeds half the coarse pitch, 1.48 mm",
+    "anchor_guard": "each burst job's own block-local anchor spread (WP1): 9.646 mm/s at burst 4 and 11.980 mm/s at burst 18. The anchors are context - never cells of the 2x2 and never an input to I(z) - and their movement inside their own job is what an interaction of comparable size cannot be separated from",
+    "corner": "one of the 2x2 design's four records: a pitch crossed with a burst length, measured inside the burst job that holds it (cc1/cc3 in burst-4, cc2/cc4 in burst-18). The corner's value at a knot is its own per-gate window mean at the native gate nearest that knot",
+    "corner_contrast": "one simple effect of the 2x2: a pitch contrast (2.96 mm minus 0.617 mm) at one burst length, or a burst contrast (18 minus 4) at one pitch. Published depth-resolved and reduced to its unweighted mean over the knots; the four carry the interaction as I = (burst at 0.617) - (burst at 2.96) = (pitch at burst 4) - (pitch at burst 18)",
+    "depth_averaged_floor": "WP2's between-run endpoint for a scalar, depth-averaged effect: 4.235 mm/s from the same pair, and the same reduction WP1's anchor spreads use. A scalar is screened against this number",
+    "depth_resolved_floor": "WP2's between-run endpoint for a per-depth magnitude: 14.603 mm/s at 21.238 mm, from the cr3-cr4 pair. A depth-resolved magnitude is screened against this number",
+    "interaction": "I(z) = [v(0.617,18)(z) - v(2.96,18)(z)] - [v(0.617,4)(z) - v(2.96,4)(z)], the difference-of-differences of the four corners at one knot: the pitch contrast at burst 18 minus the pitch contrast at burst 4, and equally the burst contrast at 2.96 mm minus the burst contrast at 0.617 mm. It is an observed difference, not proof that either axis moved anything",
+    "knot": "a common physical depth both pitches are read at: the 2.960 mm measurement's own native supported gate depths, which are the coarsest participating grid. Every corner is read at its native gate nearest the knot - no interpolation, no resampling, no fit - and the native depth used and its offset are published per knot",
+    "not_a_bound": "every number here is an observed difference between recordings: not a confidence interval, not a significance test, and neither a proof of an axis effect nor a statement about drift",
+    "scalar_reduction": "the unweighted mean of I(z) over the common knots, published with its sign: the depth-averaged effect, screened against WP2's depth-averaged endpoint (4.235 mm/s) and never against the depth-resolved one"
+  },
+  "floors": {
+    "anchor_guards": {
+      "applies_to": "the conservative reading: each burst job's own block-local anchor spread, so an interaction of comparable size cannot be separated from the anchors' movement inside that job",
+      "source": "WP1, each burst job's own block-local anchor spread",
+      "value_mm_s": {
+        "burst-18": 11.98,
+        "burst-4": 9.646
+      }
+    },
+    "depth_averaged": {
+      "applies_to": "a scalar, depth-averaged effect: the unweighted mean over the knots. Never applied to a per-knot magnitude",
+      "source": "WP2's depth-averaged endpoint, the same pair",
+      "value_mm_s": 4.235
+    },
+    "depth_resolved": {
+      "applies_to": "a depth-resolved magnitude: |I(z)| at one knot, or a corner contrast's per-knot magnitude. Never applied to a scalar",
+      "depth_mm": 21.238,
+      "source": "WP2, the cr3-cr4 pair, per-depth window-mean difference",
+      "value_mm_s": 14.603
+    },
+    "never_mixed": "the depth-resolved and the depth-averaged endpoints are different quantities from the same pair of runs; a number measured one way is never screened against the other's endpoint"
+  },
+  "interaction": {
+    "definition": "I(z) = [v(0.617,18)(z) - v(2.96,18)(z)] - [v(0.617,4)(z) - v(2.96,4)(z)], the difference-of-differences of the four corners at one knot: the pitch contrast at burst 18 minus the pitch contrast at burst 4, and equally the burst contrast at 2.96 mm minus the burst contrast at 0.617 mm. It is an observed difference, not proof that either axis moved anything",
+    "identities": [
+      "I(z) = [cc2 - cc4] - [cc1 - cc3] per knot",
+      "I(z) = burst_at_pitch_0617(z) - burst_at_pitch_296(z)",
+      "I(z) = pitch_at_burst_4(z) - pitch_at_burst_18(z)"
+    ],
+    "max_abs_depth_mm": 45.658,
+    "max_abs_mm_s": 21.743076801034654,
+    "max_depth_mm": 60.458,
+    "max_mm_s": 7.614787508898004,
+    "min_depth_mm": 45.658,
+    "min_mm_s": -21.743076801034654,
+    "per_knot": [
+      {
+        "depth_mm": 10.138,
+        "interaction_mm_s": -14.795485474090828,
+        "knot": 0
+      },
+      {
+        "depth_mm": 13.098,
+        "interaction_mm_s": -15.588385041543013,
+        "knot": 1
+      },
+      {
+        "depth_mm": 16.058,
+        "interaction_mm_s": -10.63347111015969,
+        "knot": 2
+      },
+      {
+        "depth_mm": 19.018,
+        "interaction_mm_s": -8.031553541690876,
+        "knot": 3
+      },
+      {
+        "depth_mm": 21.977999999999998,
+        "interaction_mm_s": -7.490802642508221,
+        "knot": 4
+      },
+      {
+        "depth_mm": 24.938,
+        "interaction_mm_s": -13.973769275251463,
+        "knot": 5
+      },
+      {
+        "depth_mm": 27.898,
+        "interaction_mm_s": -15.852928004941703,
+        "knot": 6
+      },
+      {
+        "depth_mm": 30.858,
+        "interaction_mm_s": -14.966951765986614,
+        "knot": 7
+      },
+      {
+        "depth_mm": 33.818,
+        "interaction_mm_s": -10.25185088888405,
+        "knot": 8
+      },
+      {
+        "depth_mm": 36.778,
+        "interaction_mm_s": -11.614221582175695,
+        "knot": 9
+      },
+      {
+        "depth_mm": 39.738,
+        "interaction_mm_s": -14.800464987994637,
+        "knot": 10
+      },
+      {
+        "depth_mm": 42.698,
+        "interaction_mm_s": -21.42808482303611,
+        "knot": 11
+      },
+      {
+        "depth_mm": 45.658,
+        "interaction_mm_s": -21.743076801034654,
+        "knot": 12
+      },
+      {
+        "depth_mm": 48.617999999999995,
+        "interaction_mm_s": -16.95970041721734,
+        "knot": 13
+      },
+      {
+        "depth_mm": 51.577999999999996,
+        "interaction_mm_s": -19.14274362335336,
+        "knot": 14
+      },
+      {
+        "depth_mm": 54.538000000000004,
+        "interaction_mm_s": -5.268593966745733,
+        "knot": 15
+      },
+      {
+        "depth_mm": 57.498000000000005,
+        "interaction_mm_s": -1.6948873746836526,
+        "knot": 16
+      },
+      {
+        "depth_mm": 60.458,
+        "interaction_mm_s": 7.614787508898004,
+        "knot": 17
+      },
+      {
+        "depth_mm": 63.418,
+        "interaction_mm_s": 6.783996690865468,
+        "knot": 18
+      },
+      {
+        "depth_mm": 66.378,
+        "interaction_mm_s": 5.620634701810673,
+        "knot": 19
+      },
+      {
+        "depth_mm": 69.33800000000001,
+        "interaction_mm_s": 4.957382730785187,
+        "knot": 20
+      },
+      {
+        "depth_mm": 72.298,
+        "interaction_mm_s": 1.2654545986105181,
+        "knot": 21
+      },
+      {
+        "depth_mm": 75.258,
+        "interaction_mm_s": 0.017072020311228897,
+        "knot": 22
+      },
+      {
+        "depth_mm": 78.218,
+        "interaction_mm_s": -7.928639396171199,
+        "knot": 23
+      },
+      {
+        "depth_mm": 81.178,
+        "interaction_mm_s": -5.5011096020820265,
+        "knot": 24
+      },
+      {
+        "depth_mm": 84.13799999999999,
+        "interaction_mm_s": -9.460296796148231,
+        "knot": 25
+      },
+      {
+        "depth_mm": 87.098,
+        "interaction_mm_s": -10.35945533411603,
+        "knot": 26
+      },
+      {
+        "depth_mm": 90.058,
+        "interaction_mm_s": -8.068996300698963,
+        "knot": 27
+      },
+      {
+        "depth_mm": 93.018,
+        "interaction_mm_s": -2.7230438250250923,
+        "knot": 28
+      },
+      {
+        "depth_mm": 95.97800000000001,
+        "interaction_mm_s": -2.6808101700642126,
+        "knot": 29
+      },
+      {
+        "depth_mm": 98.93800000000002,
+        "interaction_mm_s": -0.8965304611853266,
+        "knot": 30
+      }
+    ],
+    "reduction": "the unweighted mean of I(z) over the common knots, published with its sign: the depth-averaged effect, screened against WP2's depth-averaged endpoint (4.235 mm/s) and never against the depth-resolved one",
+    "scalar_reduction_mm_s": -7.922468546951859
+  },
+  "ok": true,
+  "plan": "sparse-mixer-live-1",
+  "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
+  "plan_path": "examples/sparse-mixer-live-1/run-plan.json",
+  "table": "pitch-burst.csv",
+  "table_rows": 31,
+  "table_sha256": "sha256:7b3f1ed7a872634264be1cf738fca152c56b406217b284e236c78041250f3849",
+  "views": {
+    "common_support": {
+      "rule": "the intersection of every recording's decoded depth range; each corner is read on its own native gate grid inside it, and no interpolation or resampling is applied at any stage",
+      "support_max_mm": 98.93800000000002,
+      "support_min_mm": 10.138
+    },
+    "primary_window": {
+      "revolutions": 100,
+      "rule": "the pass's designed exposure, the declared 12 s = 100 nominal 500-RPM revolutions, cut in each recording by its own stored timestamps (WP0); every corner value is the per-gate mean of that window and no other",
+      "window_s": 12.0
+    }
+  }
+}
