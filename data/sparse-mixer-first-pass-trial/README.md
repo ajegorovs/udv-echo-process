@@ -45,3 +45,33 @@ PY
 ```
 
 `retention.json` records the same two numbers for all six, in the form this repository's review reads.
+
+## The run's own records
+
+Five small text files from the same run, so the trial's provenance does not rest on a manifest-only claim:
+
+| file | what it carries |
+|---|---|
+| `sparse-mixer-first-pass.run.json` | the pass run manifest: the plan, its `plan_fingerprint`, the store directory, and per job the step, kind, declared condition, `definition_fingerprint`, status, expected against ok recordings, log and manifest paths, finish time |
+| `sparse-mixer-first-pass-burst-4.jsonl`, `…-common-reference-1.jsonl` | the per-point logs: name, status, `file_path`, size against `expected_size_bytes`, the decoded words, `covariates_enforced`, `covariate_advisories`, `block_cap_profiles`, requested duration, `failure` |
+| `sparse-mixer-first-pass-burst-4.manifest.json`, `…-common-reference-1.manifest.json` | the per-job manifests: definition path and fingerprint, planned against outcomes, skipped entries, the observed and expected process modes, `compilation_identity` |
+
+Recomputing those fingerprints from the plan in this tree — the check this directory could not previously
+support — prints the plan's and every job definition's, to compare with the manifest above:
+
+```bash
+uv run --no-sync python - <<'PY'
+from pathlib import Path
+from udv_echo_process.acquire.campaign import campaign_fingerprint, load_campaign
+from udv_echo_process.acquire.run_plan import load_run_plan, plan_fingerprint
+
+base = Path("examples/sparse-mixer-first-pass")
+plan = load_run_plan(base / "run-plan.json")
+print("plan", plan_fingerprint(plan))
+for job in plan.jobs:
+    print(job.job, campaign_fingerprint(load_campaign(base / job.definition)))
+PY
+```
+
+At this commit that prints `plan c22d46236726…` and the nine definitions, `burst-4` among them
+`ca7659f00462…` — the two values the run manifest carries.

@@ -1,0 +1,71 @@
+{
+  "job": "common-reference-1",
+  "fingerprint": "7c60f4c7133f7d9285b76382a3bbab396e03aaf33924f473987d8151861c1f97",
+  "channel": 1,
+  "planned": 1,
+  "skipped": [],
+  "started_at": "2026-09-20T22:29:09.038153+03:00",
+  "finished_at": "2026-09-20T22:29:37.820987+03:00",
+  "outcomes": [
+    {
+      "key": 1,
+      "label": "cr1",
+      "identity": "sparse1-common-reference-1-cr1",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-common-reference-1-cr1-20260920T222916.BDD",
+      "reason": null,
+      "aborted": false
+    }
+  ],
+  "store_dir": "C:\\Repos\\udv-echo-process\\outputs\\live\\store",
+  "log_path": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-1.jsonl",
+  "definition_path": "examples\\sparse-mixer-first-pass\\jobs\\common-reference-1.json",
+  "log_errors": [],
+  "compilation_identity": {
+    "channel": {
+      "value": "1",
+      "source": "routed"
+    },
+    "mode": {
+      "value": "manual",
+      "source": "read"
+    },
+    "process_mode": {
+      "value": "instrument",
+      "source": "read"
+    },
+    "prf_us": {
+      "value": "600",
+      "source": "read"
+    },
+    "emissions_per_profile": {
+      "value": "20",
+      "source": "read"
+    },
+    "burst_length": {
+      "value": "10",
+      "source": "read"
+    },
+    "sound_speed_ms": {
+      "value": "1480",
+      "source": "read"
+    },
+    "first_gate_mm": {
+      "value": "10",
+      "source": "read"
+    },
+    "max_profiles_per_block": {
+      "value": null,
+      "source": "unreadable"
+    },
+    "class_name": "TMain_Scr",
+    "panels": 4,
+    "strip_view": "ready",
+    "strip_has_slider": false
+  },
+  "declared_only": false,
+  "skipped_without_evidence": [],
+  "expected_process_mode": "instrument",
+  "observed_process_mode": "instrument"
+}
