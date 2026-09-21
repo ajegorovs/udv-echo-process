@@ -1,0 +1,135 @@
+{
+  "plan": "stage2-e20-e64",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "stage2",
+  "store_dir": "outputs/live/store",
+  "max_profiles_per_block": 2500,
+  "sound_speed_ms": 1480.0,
+  "first_gate_mm": 10.0,
+  "reference_window": {
+    "resolution_mm": 1.85,
+    "gates": 50
+  },
+  "reference_condition": {
+    "burst_length": 10,
+    "emissions_per_profile": 20,
+    "prf_us": 600.0
+  },
+  "strict_facts": [
+    "emissions_per_profile"
+  ],
+  "analysis_orientation": "E64 - E20",
+  "windows": [
+    {
+      "resolution_mm": 1.85,
+      "gates": 50
+    }
+  ],
+  "jobs": [
+    {
+      "step": 1,
+      "job": "e20-a",
+      "kind": "run-level",
+      "definition": "jobs/e20-a.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "pair": "A",
+      "role": "lead"
+    },
+    {
+      "step": 2,
+      "job": "e64-a",
+      "kind": "run-level",
+      "definition": "jobs/e64-a.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "pair": "A",
+      "role": "follow"
+    },
+    {
+      "step": 3,
+      "job": "e64-b",
+      "kind": "run-level",
+      "definition": "jobs/e64-b.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "pair": "B",
+      "role": "lead"
+    },
+    {
+      "step": 4,
+      "job": "e20-b",
+      "kind": "run-level",
+      "definition": "jobs/e20-b.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "pair": "B",
+      "role": "follow"
+    },
+    {
+      "step": 5,
+      "job": "e20-c",
+      "kind": "run-level",
+      "definition": "jobs/e20-c.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "pair": "C",
+      "role": "lead"
+    },
+    {
+      "step": 6,
+      "job": "e64-c",
+      "kind": "run-level",
+      "definition": "jobs/e64-c.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "pair": "C",
+      "role": "follow"
+    },
+    {
+      "step": 7,
+      "job": "e64-d",
+      "kind": "run-level",
+      "definition": "jobs/e64-d.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "pair": "D",
+      "role": "lead"
+    },
+    {
+      "step": 8,
+      "job": "e20-d",
+      "kind": "run-level",
+      "definition": "jobs/e20-d.json",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "pair": "D",
+      "role": "follow"
+    }
+  ]
+}

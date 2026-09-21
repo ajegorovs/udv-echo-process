@@ -1,0 +1,21 @@
+{
+  "job": "e64-a",
+  "channel": 1,
+  "duration_s": 12.0,
+  "name_prefix": "stage2-e64-a",
+  "prf_us": 600.0,
+  "emissions_per_profile": 64,
+  "burst_length": 10,
+  "max_profiles_per_block": 2500,
+  "points": [
+    {
+      "label": "ref",
+      "parameters": {
+        "sound_speed_ms": 1480.0,
+        "first_gate_mm": 10.0,
+        "resolution_mm": 1.85,
+        "gates": 50
+      }
+    }
+  ]
+}
