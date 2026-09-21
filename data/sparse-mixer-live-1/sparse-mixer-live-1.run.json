@@ -1,0 +1,191 @@
+{
+  "plan": "sparse-mixer-live-1",
+  "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
+  "channel": 1,
+  "duration_s": 12.0,
+  "store_dir": "outputs\\live\\store",
+  "created_at": "2026-09-21T12:32:32.704534+03:00",
+  "updated_at": "2026-09-21T12:49:15.630277+03:00",
+  "jobs": [
+    {
+      "step": 1,
+      "job": "burst-4",
+      "kind": "scientific",
+      "definition": "jobs/burst-4.json",
+      "definition_fingerprint": "f4493225adbb74d49d92182ab9bdef59ad15642e4c322f7600cec6514e4fbc69",
+      "condition": {
+        "burst_length": 4,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 5,
+      "ok_recordings": 5,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-burst-4.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-burst-4.manifest.json",
+      "finished_at": "2026-09-21T12:34:05.912041+03:00",
+      "note": "5/5 point(s) ok"
+    },
+    {
+      "step": 2,
+      "job": "common-reference-1",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-1.json",
+      "definition_fingerprint": "5c401ecf9e2761176e852a6b8c34d4c5b193408042add474e267873eb6ae4eb6",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-1.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-1.manifest.json",
+      "finished_at": "2026-09-21T12:35:34.336627+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 3,
+      "job": "burst-18",
+      "kind": "scientific",
+      "definition": "jobs/burst-18.json",
+      "definition_fingerprint": "e70327cc0f448663f7cf91e8e0779fcc02a28e9c67635a25ed6329e8b03a320a",
+      "condition": {
+        "burst_length": 18,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 5,
+      "ok_recordings": 5,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-burst-18.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-burst-18.manifest.json",
+      "finished_at": "2026-09-21T12:37:45.601258+03:00",
+      "note": "5/5 point(s) ok"
+    },
+    {
+      "step": 4,
+      "job": "common-reference-2",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-2.json",
+      "definition_fingerprint": "94501890aaaea1573d75c3a9ed731a0cc8b5cc687805d7de74240dcc8efa8ddc",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-2.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-2.manifest.json",
+      "finished_at": "2026-09-21T12:38:56.277597+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 5,
+      "job": "emissions-8",
+      "kind": "scientific",
+      "definition": "jobs/emissions-8.json",
+      "definition_fingerprint": "3c05d37df4f4b17383cae64c7b30f7313fb8849784628f866a149a8a6e9dd1db",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 8,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 4,
+      "ok_recordings": 4,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-emissions-8.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-emissions-8.manifest.json",
+      "finished_at": "2026-09-21T12:40:54.125771+03:00",
+      "note": "4/4 point(s) ok"
+    },
+    {
+      "step": 6,
+      "job": "common-reference-3",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-3.json",
+      "definition_fingerprint": "51bc174a0591eca248024502393e86eae2475fc81ca7107b967cae7dc5c98c68",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-3.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-3.manifest.json",
+      "finished_at": "2026-09-21T12:42:07.590411+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 7,
+      "job": "emissions-64",
+      "kind": "scientific",
+      "definition": "jobs/emissions-64.json",
+      "definition_fingerprint": "8f82c89509153192a6c56804dff0067dff5ad1dce91c5f7bb9215761f3b59bd0",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 4,
+      "ok_recordings": 4,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-emissions-64.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-emissions-64.manifest.json",
+      "finished_at": "2026-09-21T12:46:16.230239+03:00",
+      "note": "4/4 point(s) ok"
+    },
+    {
+      "step": 8,
+      "job": "common-reference-4",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-4.json",
+      "definition_fingerprint": "29dd8709ed4555c51aee523434b52700539ae25726e096a8e10326c5c59b83d4",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-4.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-common-reference-4.manifest.json",
+      "finished_at": "2026-09-21T12:47:25.956244+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 9,
+      "job": "emissions-128",
+      "kind": "scientific",
+      "definition": "jobs/emissions-128.json",
+      "definition_fingerprint": "808dacc2bb59859d651ead0c5c236879a5a23ffe6910debd98201cdb67a182e7",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 128,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 4,
+      "ok_recordings": 4,
+      "skipped": [],
+      "log": "outputs\\live\\store\\sparse-mixer-live-1-emissions-128.jsonl",
+      "manifest": "outputs\\live\\store\\sparse-mixer-live-1-emissions-128.manifest.json",
+      "finished_at": "2026-09-21T12:49:15.629581+03:00",
+      "note": "4/4 point(s) ok"
+    }
+  ]
+}

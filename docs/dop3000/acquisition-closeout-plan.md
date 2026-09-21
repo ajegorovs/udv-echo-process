@@ -80,13 +80,13 @@ and the burst / emissions / drift contrasts wait for a rig that is measuring.
    achieved periods are 871.685, 487.690, 223.688 and 151.689 ticks at emissions 128/64/20/8), which
    is the manual's `T_prf × (16 + N_PRF)` together with its transfer term (9.6 ms + ~0.77 ms at 600 µs),
    now computed by the planner — and
-   **the size signature now models the BDD structure** exactly, on 26/26 files. The first is a
-   planning-number change (it moves every per-point estimate), so it is recorded rather than bundled;
-   the second landed with this pass. What the ingest still cannot do is start: the rig is not yet
-   producing signal, so every stored profile is zero — a situational fact the operator has deferred
-   deliberately rather than keeping the instrument running while the capture functionality is
-   developed. When it is live, the ingest owes per-job drift, the reference checks across runs, the
-   pitch × burst contrast, and a Stage-2 recommendation;
+   **the size signature now models the BDD structure** exactly, on 26/26 files. Both landed, the second
+   with the pass and the first as its own two commits. **The ingest can now start:** the mixer-enabled
+   realization of the same frozen design ran on 2026-09-21 (nine jobs, 26 points, every point
+   payload-bearing) and is committed at
+   [`../../data/sparse-mixer-live-1/`](../../data/sparse-mixer-live-1/README.md), beside the zero-signal
+   first pass it does not replace. What the ingest owes is unchanged: per-job drift, the reference checks
+   across runs, the pitch × burst contrast, and a Stage-2 recommendation;
 5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
    surface) and blocks nothing above it.
 

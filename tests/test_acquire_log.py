@@ -170,10 +170,16 @@ def test_size_signature_includes_the_bdd_container_at_low_profile_counts() -> No
     assert signature.matches(41_323, 50, 155) is True
 
 
-def test_size_signature_reproduces_every_committed_point() -> None:
-    """The law is exact on all 26 pass recordings, not merely close."""
+#: Every committed pass whose recordings the size law must reproduce exactly: the
+#: zero-payload first pass (2026-09-20/21) and the live pass (2026-09-21).
+COMMITTED_PASS_ROOTS = ("sparse-mixer-first-pass", "sparse-mixer-live-1")
+
+
+@pytest.mark.parametrize("pass_dir", COMMITTED_PASS_ROOTS)
+def test_size_signature_reproduces_every_committed_point(pass_dir: str) -> None:
+    """The law is exact on all 26 recordings of each committed pass, not merely close."""
     signature = SizeSignature()
-    pass_root = Path(__file__).resolve().parents[1] / "data" / "sparse-mixer-first-pass"
+    pass_root = Path(__file__).resolve().parents[1] / "data" / pass_dir
     paths = sorted(pass_root.glob("*.BDD"))
     assert len(paths) == 26
 

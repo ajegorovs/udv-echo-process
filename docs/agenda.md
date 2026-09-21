@@ -220,20 +220,29 @@ profiles in one fixture and 4193–4927 in another.
 > guard's own margin moved with it and is now safe: the emissions-8 ratio goes from 0.508 (1.6 % inside its
 > lower band, the level the review named as a false-rejection risk) to 1.037.
 >
-> **The rig is not producing signal yet, and that is the operator's decision, not a defect.** Every stored
-> profile in all 26 recordings is zero; the historical reference is not
-> (`4MHz/0500RPM/001/res/1-8.BDD`: 25,594 of 25,850 samples non-zero). So the burst / emissions / drift
-> contrasts the pass was designed for stay unanalysed on purpose — the alternative is keeping the
-> instrument running for days while the capture functionality is developed. The zero payload is written
-> down in the data README so a later reader does not mistake it for a file defect.
+> **The rig was not producing signal for that pass, and the operator has since run the same design live.**
+> Every stored profile in the first pass's 26 recordings is zero; the historical reference is not
+> (`4MHz/0500RPM/001/res/1-8.BDD`: 25,594 of 25,850 samples non-zero). The zero payload is written down in
+> the data README so a later reader does not mistake it for a file defect.
 >
-> **What a fresh session does next, in order:** (1) land the review's findings on
-> `feat/acquire-sparse-run-plan` if the size-signature fix draws any; (2) the period-law change — one
-> commit, with the plan's declared counts re-derived and the fingerprint consequence stated;
-> (3) the analysis ingest, which cannot start until the rig measures again and whose debt is item 4 of
-> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) (per-job drift, the
-> reference checks across runs, the pitch × burst contrast, a Stage-2 recommendation). The live-dependent
-> suites stay the first preflight at any sitting that touches the instrument
+> **The mixer-enabled realization ran 2026-09-21 (nine jobs, 26 points, 16 min 43 s)** under a derived copy
+> of the same frozen plan (own name, own root `sparse2`, own run record), so nothing in the first pass was
+> overwritten: `examples/sparse-mixer-live-1/` and [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md).
+> Every point stored and verified; **zero-payload recordings: 0** (non-zero fraction 0.9864–0.9939 per
+> recording); spans 12.4686–12.5888 s; word 14 matches each point's own request; the structural size law is
+> exact on 26/26 and the regression now reads both passes back. The measured period law is confirmed at all
+> four emission levels on a live rig (15.2 / 22.4 / 48.8 / 87.2 ms), and the emissions-8 size-guard ratio
+> that sat at 0.508 (1.6 % inside its lower edge, the level a review flagged as a false-rejection risk)
+> verified as the guard's own arithmetic, not the files: it is 1.037 once the period law is corrected.
+>
+> **What a fresh session does next, in order:** (1) the review's findings on the delta since `e408b8e`
+> are **landed** on `feat/acquire-sparse-run-plan` — the period law (`521aaa6`), its wording (`51a6b80`)
+> and the mixer pass below; (2) **the analysis ingest**, which the live pass unblocks and which is now
+> the only open item: per-job drift, the reference checks across runs, the pitch × burst contrast and a
+> Stage-2 recommendation (item 4 of
+> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It is analysis over
+> committed files and needs no instrument, so it is unblocked the moment a session starts. The
+> live-dependent suites stay the first preflight at any sitting that touches the instrument
 > (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
 > that is not an understood live-state prerequisite stops the sitting before a recording is spent.
 
