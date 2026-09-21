@@ -174,6 +174,7 @@ class Stage2Campaign(ValueModel):
 
     recommended: bool
     justification: str
+    sequence: tuple[str, ...]
     conditions: tuple[str, ...]
     recordings: int
     buys: tuple[str, ...]
@@ -666,9 +667,10 @@ def _rows(
             verdict="defer",
             scope=STAGE_SCOPE,
             overturning_measurement=(
-                "additional independent run-level realizations of the E64 condition, so that the step is "
-                "a four-run against four-run comparison whose realization dependence can be seen rather "
-                "than inferred (this is the targeted campaign below)"
+                "run-level realizations of *both* levels inside one campaign - the paired alternating "
+                "set recommended below - so that the step becomes a contemporaneous four-against-four "
+                "comparison carrying its own measured between-run floor, rather than new emissions-64 "
+                "runs screened against an older reference"
             ),
         ),
         DecisionRow(
@@ -703,7 +705,11 @@ def _rows(
                 "inside the between-run floor - while the bandwidth cost is a factor of "
                 f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} in period and a halving "
                 "of Nyquist. The information rationale is therefore cost, not effect: no measured "
-                "quantity prefers 128 over 64, so the shorter period is taken."
+                "quantity prefers 128 over 64, so the shorter period is taken. **`replace` here means "
+                "do not spend further acquisition effort on emissions 128 in this design** - it is not "
+                "a claim that emissions 64 is scientifically proven superior, and a future measurement "
+                "that needs the extra profiles, such as a slower flow, a noisier one or a longer "
+                "coherent window, could reopen it."
             ),
             decision_class="not detected at this design's floors",
             automation="none: both levels are already writable",
@@ -908,7 +914,11 @@ def _answers(
                 "ladder's one unresolved distinction (E20 against E64) is limited by how many runs each "
                 f"level has, and the observed difference straddles the {averaged:.3f} mm/s floor "
                 "depending on which E20 run is used. Only that second limitation is worth spending "
-                "recordings on, and it takes a few run-level realizations rather than a matrix."
+                "recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign "
+                "and screened against this pass's emissions-20 runs would be separated by a campaign "
+                "as well as by an emission level, and the pass has measured that between-run variation "
+                "is large enough for that to enter the comparison. It takes realizations of both "
+                "levels inside one campaign."
             ),
             evidence_refs=(
                 "pitch-burst.json#conservative_reading",
@@ -919,12 +929,16 @@ def _answers(
             order=5,
             question="if it is, which small set of new conditions, and what does each buy?",
             answer=(
-                "three additional run-level realizations of the E64 condition, in their own "
-                "reference-style jobs and at the same decoded condition E64 already has. They buy the "
-                "one thing the ladder cannot currently supply: a four-run E64 against the four-run E20, "
-                "so that the E64-to-E20 step is a like-for-like run-level comparison whose realization "
-                "dependence is visible instead of inferred. Nothing else is recommended, and the "
-                "acceptance criterion is stated in advance below."
+                "eight run-level jobs in one campaign, sampling the two levels alternately: E20-A, "
+                "E64-A, E20-B, E64-B, E20-C, E64-C, E20-D, E64-D. Emissions per profile is the only "
+                "setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, "
+                "sensitivity, TGC, first gate, sound speed and duration - and alternating the order "
+                "means slow drift is sampled by both levels. They buy the one thing the ladder cannot "
+                "supply: four emissions-64 and four emissions-20 observations made contemporaneously, a "
+                "between-run floor measured inside that same campaign, and four adjacent paired "
+                "contrasts. This pass's four emissions-20 runs and its existing emissions-64 recording "
+                "stay as prior context; only the decisive comparison moves. Nothing else is "
+                "recommended, and the acceptance criterion is stated in advance below."
             ),
             evidence_refs=(
                 "emissions-ladder.json#levels",
@@ -947,35 +961,82 @@ def _campaign(
             "the pass's floors are adequate for everything it measured except one distinction, and that "
             "one is limited by how many runs a level has rather than by the rig: the E64-to-E20 "
             f"difference spans {low:+.3f} to {high:+.3f} mm/s depending on which of the four E20 runs it "
-            f"is compared with, so it straddles the {averaged:.3f} mm/s between-run floor. More "
-            "run-level realizations of E64 settle it; more conditions of the same design do not settle "
-            "anything else."
+            f"is compared with, so it straddles the {averaged:.3f} mm/s between-run floor. Acquiring "
+            "emissions 64 alone would not settle it: those runs would be made in a later campaign and "
+            "compared against emissions-20 runs from this one, and the between-run variation this pass "
+            "measured is large enough that campaign-level drift would enter the emissions comparison. "
+            "The two levels therefore have to be sampled alternately inside one campaign, so that slow "
+            "drift is shared by both levels and the decisive comparison carries a floor measured in its "
+            "own campaign. The existing four emissions-20 runs and the existing emissions-64 recording "
+            "stay as prior context; only the decisive comparison moves to the new block."
+        ),
+        sequence=(
+            "E20-A",
+            "E64-A",
+            "E20-B",
+            "E64-B",
+            "E20-C",
+            "E64-C",
+            "E20-D",
+            "E64-D",
         ),
         conditions=(
             (
-                "emissions 64 at the reference spatial window (1.850 mm, 50 gates), burst 10, in its "
-                "own reference-style jobs rather than inside a scientific job's block"
+                "emissions 20 at the reference spatial window: 1.850 mm, 50 gates, burst 10, PRF 600 us, "
+                "and every other setting identical to this pass's reference condition - power, "
+                "sensitivity, TGC, first gate, sound speed, duration - as four run-level jobs, one per "
+                "block letter"
+            ),
+            (
+                "emissions 64 at those same fixed settings - 1.850 mm, 50 gates, burst 10, PRF "
+                "600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration - "
+                "differing from the emissions-20 jobs in emissions per profile only, as four "
+                "run-level jobs alternating with them"
             ),
         ),
-        recordings=3,
+        recordings=8,
         buys=(
             (
-                "a four-run E64 level to compare like for like with the four-run E20, which turns "
-                "'suggestive but realization-dependent' into either a difference that holds at every "
-                "run or an overlap that can be stated as one"
+                "four emissions-64 and four emissions-20 run-level observations acquired inside one "
+                "campaign, which is what lets the E64-to-E20 step be compared without campaign drift "
+                "entering it"
             ),
             (
-                "a measured between-run spread for E64 on the same footing as E20's, so a later "
-                "emissions decision has two replicated levels rather than one"
+                "a between-run floor measured in that same campaign, so the comparison is screened "
+                "against contemporaneous run-to-run variation instead of against a floor this pass "
+                "measured in an earlier session"
+            ),
+            (
+                "four adjacent paired E64-to-E20 contrasts, one per block, which make the distinction a "
+                "paired comparison rather than a difference of two group means"
+            ),
+            (
+                "each level's own run-to-run spread on the same footing, so a later emissions decision "
+                "has two replicated levels rather than one"
             ),
         ),
         acceptance=(
-            "the distinction is decided when every run-level E64-to-E20 depth-averaged difference lies "
-            f"on one side of the {averaged:.3f} mm/s between-run floor; if the four E64 runs overlap the "
-            "four E20 runs instead, that overlap is itself the answer and no further recording is "
-            "indicated"
+            "the new campaign reports, separately: the four emissions-20 observations and the four "
+            "emissions-64 observations; each level's own run-to-run spread; the four adjacent paired "
+            "E64-to-E20 contrasts; the full cross-run range as context; and the depth-resolved "
+            "differences against the between-run floor measured inside that campaign. The decision is "
+            "then stated in one of two ways and no other. **Resolved difference:** the E64-to-E20 "
+            "contrasts are consistently larger than the contemporaneous between-run variation and have "
+            "a consistent direction. **Unresolved overlap:** the separation remains comparable to or "
+            "smaller than the contemporaneous run-to-run variation, in which case that overlap is the "
+            "answer and no further recording is indicated."
         ),
         refused=(
+            (
+                "an emissions-64-only acquisition screened against this pass's emissions-20 runs: the "
+                "later campaign's drift would enter the comparison, which the paired design exists to "
+                "prevent"
+            ),
+            (
+                "screening the new block against this pass's 4.235 mm/s floor: the Stage-2 comparison "
+                "uses the floor measured in the campaign that produced it, with this pass's floor kept "
+                "as context"
+            ),
             (
                 "a dense second pass over the sparse matrix: the pitch x burst interaction is limited "
                 "by movement inside the burst jobs, which the same design reproduces"
@@ -1077,15 +1138,26 @@ def _checks(
             by_key["sensitivity_d1"].scope == OUTSIDE_SCOPE
             and by_key["sensitivity_d1"].verdict == "requires diagnostic"
         ),
-        "no_dense_sweep_is_kept": (
-            by_key["dense_second_pass"].verdict != "keep"
-            and not campaign.recommended
-            or (campaign.recommended and len(campaign.conditions) == 1)
+        "no_dense_sweep_is_kept": by_key["dense_second_pass"].verdict != "keep",
+        "both_levels_are_sampled_in_one_campaign": (
+            campaign.recommended
+            and campaign.recordings == 8
+            and len(campaign.conditions) == 2
+            and len(campaign.sequence) == campaign.recordings
+            and len([name for name in campaign.sequence if name.startswith("E20")]) == 4
+            and len([name for name in campaign.sequence if name.startswith("E64")]) == 4
+            and campaign.sequence[0].startswith("E20")
+            and all(
+                campaign.sequence[index][:3] != campaign.sequence[index + 1][:3]
+                for index in range(len(campaign.sequence) - 1)
+            )
         ),
-        "the_recommended_set_is_small_and_run_level": (
-            campaign.recordings <= 4
-            and len(campaign.conditions) == 1
-            and "reference-style jobs" in campaign.conditions[0]
+        "the_stage2_comparison_carries_its_own_floor": (
+            "measured inside that campaign" in campaign.acceptance
+            and "consistently larger than the contemporaneous between-run variation"
+            in campaign.acceptance
+            and any("emissions-64-only" in text for text in campaign.refused)
+            and any("4.235" in text for text in campaign.refused)
             and any("dense second pass" in text for text in campaign.refused)
         ),
         "the_five_gate_questions_are_answered_in_order": [
@@ -1243,6 +1315,7 @@ def def_document(model: DecisionSynthesis) -> dict[str, object]:
         "campaign": {
             "recommended": model.campaign.recommended,
             "justification": model.campaign.justification,
+            "sequence": list(model.campaign.sequence),
             "conditions": list(model.campaign.conditions),
             "recordings": model.campaign.recordings,
             "buys": list(model.campaign.buys),
@@ -1338,14 +1411,17 @@ def markdown_text(model: DecisionSynthesis) -> str:
     rows.append("")
     rows.append(model.campaign.justification)
     rows.append("")
-    rows.append("| recommended | count | what each buys |")
-    rows.append("|---|---|---|")
+    rows.append(
+        "**The set, in acquisition order:** "
+        + " -> ".join(f"`{name}`" for name in model.campaign.sequence)
+        + f" - {model.campaign.recordings} run-level jobs, reported here as a set rather "
+        "than as a schedule (the acquisition layer owns ordering, and nothing in it changes)."
+    )
+    rows.append("")
+    rows.append("| condition | what it buys |")
+    rows.append("|---|---|")
     for condition in model.campaign.conditions:
-        rows.append(
-            f"| {condition} | {model.campaign.recordings} | "
-            + "; ".join(model.campaign.buys)
-            + " |"
-        )
+        rows.append(f"| {condition} | " + "; ".join(model.campaign.buys) + " |")
     rows.append("")
     rows.append(
         f"**Acceptance criterion, stated in advance:** {model.campaign.acceptance}"
@@ -1458,7 +1534,8 @@ def decision_main(argv: list[str] | None = None) -> int:
     print(
         "next    : "
         + (
-            f"{model.campaign.recordings} recording(s) - {model.campaign.conditions[0]}"
+            f"{model.campaign.recordings} recordings, both emissions levels, alternating "
+            "(paired E20/E64 campaign)"
             if model.campaign.recommended
             else "nothing recommended"
         )
