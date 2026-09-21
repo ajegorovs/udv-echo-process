@@ -398,6 +398,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
         "resolution-ladder",
         "run-all",
         "sparse-anchor-floor",
+        "sparse-decision",
         "sparse-emissions-ladder",
         "sparse-inventory",
         "sparse-pitch-burst",
