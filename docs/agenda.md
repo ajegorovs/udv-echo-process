@@ -302,6 +302,28 @@ profiles in one fixture and 4193–4927 in another.
 > touches the instrument (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`):
 > any failure that is not an understood live-state prerequisite stops the sitting before a recording is spent.
 
+**The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.** Eight run-level jobs in
+four counterbalanced pairs, emissions per profile the only hand-changed setting, 8/8 stored with
+every job's own stored word 14 matching its declaration and every other decoded setting identical
+across the eight; the artefacts are committed at
+[`../data/stage2-e20-e64/`](../data/stage2-e20-e64/README.md)
+([#29](https://github.com/ajegorovs/udv-echo-process/pull/29)). The paired analysis
+([#30](https://github.com/ajegorovs/udv-echo-process/pull/30),
+[`reports/stage2-e20-e64/`](../reports/stage2-e20-e64/README.md)) publishes the four contrasts each
+oriented `E64 - E20` whatever order its pair was acquired in — A `+7.2256`, B `-1.5733`,
+C `+0.3448`, D `+1.3418` mm/s — against the variation that campaign measured for itself
+(**9.4044** mm/s depth-averaged, **28.5481** mm/s depth-resolved), and returns **unresolved
+overlap** (*not detected*): no contrast exceeds the campaign's own variation and the directions are
+not consistent, which section 4b states is itself the answer and ends the question. The earlier
+pass's 4.235 / 14.603 mm/s are quoted there as context only — it measured the two levels in
+different campaigns — and screen nothing. The screen is set by the campaign's first job (`e20-a`,
+`+22.6053` mm/s against `+29.83 .. +32.01` for the other three emissions-20 runs); the report names
+it rather than excluding it. **The open items in this workstream:** moving the frozen decision
+table's E64-vs-E20 row
+([`../reports/sparse-mixer-live-1/decision-table.md`](../reports/sparse-mixer-live-1/decision-table.md),
+a pinned artefact) to this outcome is its own reviewed slice, and so is any decision to read the
+campaign against another floor endpoint. Nothing else is open.
+
 >
 > Everything else in this workstream is closed: the identity change and its device ladder
 > ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17)) passed, the panel-identity work is merged, and
