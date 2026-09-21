@@ -722,8 +722,8 @@ def required_block_cap(run: PlannedRun) -> int:
 
     The achieved profile period is **never shorter** than the sum of the programmed PRF periods of
     one profile — ``emissions_per_profile × prf_us`` — because that is the time the instrument
-    spends emitting them; the transfer term the runner's law adds (~1 ms,
-    ``acquire/runner.PERIOD_OVERHEAD_S``) can only make it longer. So the most profiles a point can
+    spends emitting them; the rest of the manual's law — the instrument's own 16 emissions and
+    the transfer term (``acquire/plan.profile_period_s``) — can only make it longer. So the most profiles a point can
     possibly store in the pass's window is ``ceil(T / (emissions × T_prf))``, and a cap at least
     that large cannot wrap it: the block keeps everything the point records.
 

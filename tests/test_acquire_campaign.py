@@ -59,7 +59,11 @@ from udv_echo_process.acquire.log import (
     point_records,
     read_entries,
 )
-from udv_echo_process.acquire.plan import SweepPoint, plan_sweep
+from udv_echo_process.acquire.plan import (
+    SweepPoint,
+    plan_sweep,
+    profile_period_s,
+)
 from udv_echo_process.acquire.snapshot import (
     FactSource,
     InstrumentFact,
@@ -323,9 +327,9 @@ def test_a_definition_loads_and_plans_every_point(tmp_path: Path) -> None:
         assert point.parameters.emissions_per_profile == EMISSIONS_PER_PROFILE
         assert point.parameters.burst_length == BURST_LENGTH
         assert point.profiles >= 1
-    # profiles = T / period, at the measured period law (docs/16 §15).
+    # profiles = T / period, at the manual's period law (docs/16 §15).
     assert points[0].profiles == pytest.approx(
-        CAMPAIGN_DURATION_S / (EMISSIONS_PER_PROFILE * PRF_US * 1e-6 + 1e-3), rel=0.01
+        CAMPAIGN_DURATION_S / profile_period_s(EMISSIONS_PER_PROFILE, PRF_US), rel=0.01
     )
 
 

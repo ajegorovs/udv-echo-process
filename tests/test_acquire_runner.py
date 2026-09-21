@@ -88,6 +88,7 @@ from udv_echo_process.acquire.plan import (
     SweepPoint,
     plan_point,
     plan_sweep,
+    profile_period_s,
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import (
@@ -126,16 +127,15 @@ DURATION_S = 1.0
 #: and of the committed fixture's own channel 1 (``gate_n``).
 GATES = 805
 
-#: The measured profile-period law: a profile of ``emissions_per_profile``
-#: emissions lasts ``emissions × PRF + ~1 ms`` (docs/16 §15). ``emissions`` is
-#: chosen so the law reproduces the committed recording's own profile count —
-#: ~0.0098 s per profile, i.e. ~102 profiles in a 1 s window.
+#: The profile-period law, taken from the production module rather than restated here, so
+#: this fixture cannot drift from the arithmetic the runner sizes its size expectation
+#: with: the manual's ``T_tran + T_prf · (16 + N_PRF)`` (docs/16 §15,
+#: ``acquire/plan.profile_period_s``). ``emissions`` and the PRF are chosen as before.
 EMISSIONS_PER_PROFILE = 52
-PERIOD_OVERHEAD_S = 1e-3
 
 #: The period the fake's own covariates imply — what a real recording of this
 #: window would last, and therefore what its stored file's size would be.
-PROFILE_PERIOD_S = EMISSIONS_PER_PROFILE * PRF_US * 1e-6 + PERIOD_OVERHEAD_S
+PROFILE_PERIOD_S = profile_period_s(EMISSIONS_PER_PROFILE, PRF_US)
 
 #: The documented leftover-recording size: a wedged cycle's block stored under the
 #: *next* point's name, 10x a normal point (docs/16 §15b).
@@ -154,9 +154,7 @@ def period_law_s(parameters: ParameterSet) -> float | None:
     """The profile period a point's own covariates imply; ``None`` without them."""
     if parameters.emissions_per_profile is None or parameters.prf_us is None:
         return None
-    return (
-        parameters.emissions_per_profile * parameters.prf_us * 1e-6 + PERIOD_OVERHEAD_S
-    )
+    return profile_period_s(parameters.emissions_per_profile, parameters.prf_us)
 
 
 class PointStoreFailed(RuntimeError):
@@ -2020,11 +2018,12 @@ def test_a_bare_run_point_still_verifies_the_channel(
 def test_the_record_carries_the_window_the_stored_file_covers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """0.02 s of profiles behind a 1.0 s request is recorded as 0.02 s, not as 1.0 s.
+    """0.052 s of profiles behind a 1.0 s request is recorded as 0.052 s, not as 1.0 s.
 
-    The fixture stores five profiles 5 ms apart, so the window is known exactly: 0.02 s
+    The fixture stores five profiles 13 ms apart, so the window is known exactly: 0.052 s
     from first to last, and a measured period that *equals* the plan's law for this point
-    (8 emissions at a 500 µs PRF plus the ~1 ms transfer term) — that makes this a case
+    (8 emissions at a 500 µs PRF, the instrument's own 16 emissions and the ~1 ms transfer
+    term) — that makes this a case
     about which quantity reaches the record, not about the rig being early or late. The
     size guard is widened on purpose (a synthetic file is mostly header; the guard has
     its own cases in section 5), and the run's channel 2 is what those profiles carry.
@@ -2033,7 +2032,7 @@ def test_the_record_carries_the_window_the_stored_file_covers(
         tmp_path / "window.BDD",
         words=CHANNEL_TWO_WORDS,
         other_channel=CHANNEL_ONE_WORDS,
-        period_raw=50,  # 5 ms in the reader's 0.1 ms timestamp units
+        period_raw=130,  # 13 ms in the reader's 0.1 ms timestamp units
     )
     fake, engine, log_path, _ = make_runner(
         tmp_path,
@@ -2051,24 +2050,25 @@ def test_the_record_carries_the_window_the_stored_file_covers(
     record = point_records(read_entries(log_path))[0]
     assert record.requested_duration_s == DURATION_S
     assert record.stored_profiles == 5
-    assert record.stored_span_s == pytest.approx(0.02, abs=1e-9)
-    assert record.retained_fraction == pytest.approx(0.02, abs=1e-9)
+    assert record.stored_span_s == pytest.approx(0.052, abs=1e-9)
+    assert record.retained_fraction == pytest.approx(0.052, abs=1e-9)
     # Five profiles against the default cap of 257: the block did not wrap, and the
     # record says so from numbers that are both in it.
     assert record.block_at_cap is False  # five profiles against a cap of 257
     assert record.block_wrapped is False
     # The measurement, and the plan's law beside it: two quantities, kept apart on
     # purpose, and here they agree because the fixture was built that way.
-    assert record.timing.achieved_s == pytest.approx(0.005, abs=1e-9)
+    assert record.timing.achieved_s == pytest.approx(0.013, abs=1e-9)
     assert record.timing.target_s == pytest.approx(
-        channel_two_point().parameters.emissions_per_profile * 500e-6
-        + PERIOD_OVERHEAD_S
+        profile_period_s(
+            channel_two_point().parameters.emissions_per_profile, 500.0
+        )
     )
     assert record.timing.within_tolerance() is True
     # A uniform fixture, so the diagnostic and the interval coincide and the deviation
     # is zero; the committed point below is where they part.
     assert record.decoded is not None
-    assert record.decoded.median_interval_s == pytest.approx(0.005, abs=1e-9)
+    assert record.decoded.median_interval_s == pytest.approx(0.013, abs=1e-9)
     assert record.decoded.interval_deviation == pytest.approx(0.0, abs=1e-9)
     assert record.decoded.span_s == pytest.approx(
         (record.decoded.n_profiles - 1) * record.decoded.achieved_period_s
@@ -2146,10 +2146,10 @@ def test_the_committed_point_records_its_measured_period_beside_the_planned_one(
     assert record.decoded.emissions_per_profile == 150
     assert record.timing.within_tolerance() is False
     assert record.timing.target_s == pytest.approx(
-        point_for(1).parameters.emissions_per_profile
-        * point_for(1).parameters.prf_us
-        * 1e-6
-        + PERIOD_OVERHEAD_S
+        profile_period_s(
+            point_for(1).parameters.emissions_per_profile,
+            point_for(1).parameters.prf_us,
+        )
     )
 
 

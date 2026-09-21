@@ -93,11 +93,11 @@ from udv_echo_process.acquire.plan import (
     fits_depth_budget,
     max_usable_depth_mm,
     nearest_rung_index,
+    profile_period_s,
     profiles_for_duration,
     resolution_for_rung,
 )
 from udv_echo_process.acquire.runner import (
-    PERIOD_OVERHEAD_S,
     PointOutcome,
     SweepActuator,
     SweepRunner,
@@ -318,8 +318,9 @@ class PlannedPoint(ValueModel):
     inserting a point renumbers the keys without re-running anything.
 
     ``profiles`` is derived, and deliberately by the *same* law the runner sizes the
-    stored file with (``runner.PERIOD_OVERHEAD_S`` for the transfer term), so the plan and
-    the size guard cannot disagree about what a point is.
+    stored file with (:func:`~udv_echo_process.acquire.plan.profile_period_s`, the manual's
+    ``T_tran + T_prf · (16 + N_PRF)``), so the plan and the size guard cannot disagree
+    about what a point is.
     """
 
     key: int = Field(ge=1)
@@ -1881,13 +1882,13 @@ def _check_depth_budget(
 def _profile_period_s(parameters: ParameterSet) -> float:
     """The profile period a point's own covariates imply — the runner's own law.
 
-    ``T_profile ≈ T_prf × (16 + N_PRF)`` from the manual, used here as its measured
-    equivalent ``emissions × PRF + ~1 ms`` (docs/16 §15) with the runner's own constant,
-    so the profile count in the plan is the profile count the size guard derives.
+    The manual's ``T_profile ≈ T_tran + T_prf · (16 + N_PRF)``
+    (:func:`~udv_echo_process.acquire.plan.profile_period_s`), so the profile count in the
+    plan is the profile count the size guard derives.
     """
     emissions = parameters.emissions_per_profile or 0
     period = parameters.prf_us or 0.0
-    return emissions * period * 1e-6 + PERIOD_OVERHEAD_S
+    return profile_period_s(emissions, period)
 
 
 def _store_directory(

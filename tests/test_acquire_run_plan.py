@@ -665,13 +665,13 @@ def test_a_point_that_overrides_its_window_length_above_the_cap_is_refused(
     """A one-off longer window is the one way a point can wrap a cap the pass itself satisfies."""
     path = pass_copy(tmp_path)
     payload = job_payload(path, "burst-4")
-    # 60 s at the job's own period is 4616 profiles, well past the pass's declared 2500: the
-    # requirement check is satisfied (2400 is not involved) and the point's own note is what fires.
+    # 60 s at the job's own period is 2655 profiles, well past the pass's declared 2500: the
+    # requirement check is satisfied (2500 *is* the requirement) and the point's own note fires.
     payload["points"][1]["duration_s"] = 60.0
     write_job(path, "burst-4", payload)
     message = refuses(path)
     assert "wraps the pass's own declared block cap" in message
-    assert "4616 profiles" in message
+    assert "2655 profiles" in message
 
 
 def test_a_file_that_names_a_sensitivity_is_refused_by_field(tmp_path: Path) -> None:
