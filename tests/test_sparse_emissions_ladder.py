@@ -621,18 +621,26 @@ def test_the_rate_nyquist_and_resolution_arithmetic_holds(ladder) -> None:
         assert row.frequency_resolution_hz == pytest.approx(
             1.0 / row.record_duration_s, rel=1e-12
         )
-        assert row.transfer_term_s == pytest.approx(
+        assert row.fixed_overhead_s == pytest.approx(
             row.achieved_period_s - row.emissions_times_prf_s, rel=1e-12
         )
-        assert row.transfer_term_s > 0.0
+        assert row.fixed_overhead_s > 0.0
+        # the intercept is not the transfer term: it is 16 PRF terms plus the transfer
+        assert row.internal_emission_s == pytest.approx(16 * 600e-6, rel=1e-12)
+        assert row.transfer_term_s == pytest.approx(
+            row.fixed_overhead_s - row.internal_emission_s, rel=1e-12
+        )
     # the emissions term is the declared one: emissions x 600 us, from the record itself
     emissions = {row.label: row.emissions_per_profile for row in ladder.records}
     for row in ladder.temporal:
         assert row.emissions_times_prf_s == pytest.approx(
             emissions[row.label] * 600e-6, rel=1e-9
         )
-        assert row.transfer_term_s == pytest.approx(
+        assert row.fixed_overhead_s == pytest.approx(
             row.achieved_period_s - emissions[row.label] * 600e-6, rel=1e-12
+        )
+        assert row.transfer_term_s == pytest.approx(
+            row.fixed_overhead_s - 16 * 600e-6, rel=1e-12
         )
     rates = [row.profile_rate_hz for row in ladder.temporal]
     nyquists = [row.nyquist_hz for row in ladder.temporal]
@@ -1002,3 +1010,95 @@ def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_root(
     assert refused.value.code == 1
     assert "udv-sparse-emissions-ladder:" in capsys.readouterr().err
     assert not (tmp_path / "broken-reports" / sel.CSV_NAME).exists()
+
+
+# ── the review's interpretation pins ─────────────────────────────────
+
+
+def _plain(text: str) -> str:
+    """The report with markdown emphasis and wrapping removed, for prose pins."""
+    for marker in ("**", "*", "`"):
+        text = text.replace(marker, "")
+    return " ".join(text.split())
+
+
+def test_the_e20_to_e64_step_is_reported_as_straddling_the_floor(ladder) -> None:
+    """The review's defect: a 6.405 mm/s span was called smaller than 4.235 mm/s."""
+    step = ladder.steps[1]
+    assert abs(step.mean_difference_min_mm_s) > 4.235  # the number the report denied
+    floor = sel.REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S
+    assert abs(step.mean_difference_min_mm_s) > floor
+    assert abs(step.mean_difference_max_mm_s) < floor
+
+    doc = _plain((REPORT_DIR / sel.MD_NAME).read_text(encoding="utf-8"))
+    assert "smaller in magnitude" not in doc
+    reading = doc[doc.index("The depth-averaged steps") :]
+    bubble = reading[reading.index("E20->E64") : reading.index("E64->E128")]
+    assert "straddles" in bubble
+    assert "some of the four E20" in bubble
+    assert "suggestive against E20 and unresolved by this pass" in bubble
+    e64_to_e128 = reading[reading.index("E64->E128") :]
+    assert "within" in e64_to_e128[:400]
+
+
+def test_the_intercept_is_named_and_decomposed_not_called_the_transfer_term(
+    ladder, document
+) -> None:
+    """The review's defect: the fixed intercept was labelled the transfer term."""
+    rows = ladder.temporal
+    assert all(
+        row.fixed_overhead_s == pytest.approx(row.achieved_period_s - row.emissions_times_prf_s)
+        for row in rows
+    )
+    assert all(row.internal_emission_s == pytest.approx(16 * 600e-6) for row in rows)
+    assert all(
+        row.transfer_term_s == pytest.approx(row.fixed_overhead_s - 16 * 600e-6)
+        for row in rows
+    )
+    # the intercept is constant at 10.400 ms; the transfer term proper is ~0.800 ms
+    assert {round(row.fixed_overhead_s * 1e3, 3) for row in rows} == {10.4}
+    assert {round(row.transfer_term_s * 1e3, 3) for row in rows} == {0.8}
+
+    definitions = document["definitions"]
+    assert "NOT the transfer term" in definitions["fixed_overhead_s"]
+    assert "16 PRF terms" in definitions["fixed_overhead_s"]
+    assert "internal_emission_s" in definitions["fixed_overhead_s"]
+    assert "16 x prf" in definitions["internal_emission_s"]
+    assert "minus internal_emission_s" in definitions["transfer_term_s"]
+
+    prose = _plain((REPORT_DIR / sel.MD_NAME).read_text(encoding="utf-8"))
+    assert "fixed overhead" in prose.lower()
+    assert "fixed overhead / intercept = 10.4" not in prose  # no invented notation
+    assert "transfer term proper" in prose or "transfer term (`achieved" in prose
+
+
+def test_the_autocorrelation_reading_reports_both_units_with_the_right_direction(
+    ladder,
+) -> None:
+    """The review's defect: the physical-time direction was stated backwards."""
+    at_gate = {
+        row.label: row
+        for row in ladder.acf
+        if row.requested_depth_mm == sel.ACF_DEPTHS_MM[0]
+    }
+    # the fact the sentence must follow: larger first-lag time = slower decorrelation
+    assert (
+        at_gate["e128"].first_lag_below_half_s > at_gate["e8"].first_lag_below_half_s
+    ), "the physical-time direction the report must state"
+    assert (
+        at_gate["e64"].first_lag_below_half_s > at_gate["e128"].first_lag_below_half_s
+    ), "the non-monotonicity the report must not smooth over"
+    assert at_gate["e8"].first_lag_below_half > at_gate["e128"].first_lag_below_half
+
+    doc = _plain((REPORT_DIR / sel.MD_NAME).read_text(encoding="utf-8"))
+    reading = doc[doc.index("Two readings, reported independently") :]
+    assert "decorrelate faster" not in reading
+    assert "survives longer" in reading
+    assert f"{at_gate['e8'].first_lag_below_half_s:.3f} s at e8" in reading
+    assert f"{at_gate['e128'].first_lag_below_half_s:.3f} s at e128" in reading
+    assert "slower" in reading
+    # the two units are reported independently, and the non-monotonicity is named
+    assert "In profile lags" in reading
+    assert "not monotone" in reading
+    assert f"{at_gate['e64'].first_lag_below_half_s:.3f} s" in reading
+    assert "rather than as one ordering" in reading

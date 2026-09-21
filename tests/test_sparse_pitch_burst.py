@@ -681,3 +681,66 @@ def test_a_refusal_writes_no_half_artefact(tmp_path, decoded) -> None:
         spb.measure(decoded, analysis_commit="   ")
     with pytest.raises(SparseIngestError):
         spb.build_pitch_burst(ROOT / "data" / "not-a-pass", analysis_commit=COMMIT)
+
+
+# ── the review's interpretation pins ─────────────────────────────────
+
+
+def _plain(text: str) -> str:
+    """The report with markdown emphasis and wrapping removed, for prose pins."""
+    for marker in ("**", "*", "`"):
+        text = text.replace(marker, "")
+    return " ".join(text.split())
+
+
+def test_the_scalar_interaction_is_screened_against_the_depth_averaged_endpoint(
+    model,
+) -> None:
+    """The review's defect: a scalar was compared with the depth-resolved endpoint.
+
+    A scalar and a per-knot magnitude are different quantities, so the scalar's bullet
+    must carry the 4.235 mm/s floor, must say it *exceeds* it, and must not quote the
+    depth-resolved endpoint's own value at all.
+    """
+    doc = _plain((REPORT_DIR / spb.MD_NAME).read_text(encoding="utf-8"))
+    magnitude = abs(model.interaction_reduction_mm_s)
+    assert model.depth_averaged_floor_mm_s == pytest.approx(4.235, abs=1e-9)
+    assert magnitude > model.depth_averaged_floor_mm_s  # the headline correction
+
+    # the scalar bullet: the depth-averaged floor, the exceedance and its factor
+    bullet = next(
+        sentence
+        for sentence in doc.split("- ")
+        if sentence.startswith("The scalar reduction")
+    )
+    assert f"{model.depth_averaged_floor_mm_s:.3f}" in bullet
+    assert "exceeds" in bullet
+    assert f"{magnitude / model.depth_averaged_floor_mm_s:.2f}" in bullet
+    assert f"{model.depth_resolved_floor_mm_s:.3f}" not in bullet, (
+        "the scalar bullet must not quote the depth-resolved endpoint"
+    )
+
+    # the per-knot bullet keeps the depth-resolved endpoint, where it belongs
+    per_knot = next(
+        sentence
+        for sentence in doc.split("- ")
+        if "depth-resolved endpoint" in sentence and "|I(z)|" in sentence
+    )
+    assert f"{model.depth_resolved_floor_mm_s:.3f}" in per_knot
+    assert f"{model.knots_above_depth_resolved_floor} of {model.knot_count}" in per_knot
+
+    # and the conservative guard is still stated, with both anchor spreads
+    guard = next(
+        sentence for sentence in doc.split("- ") if sentence.startswith("It stays")
+    )
+    for job, floor in model.anchor_floors_mm_s.items():
+        assert f"{floor:.3f}" in guard, job
+    assert magnitude < min(model.anchor_floors_mm_s.values())
+
+
+def test_the_reports_reading_states_both_sides_of_the_scalar_comparison(model) -> None:
+    doc = _plain((REPORT_DIR / spb.MD_NAME).read_text(encoding="utf-8"))
+    reading = doc[doc.index("So the honest reading of this pass") :]
+    assert "exceeds the campaign's own between-run reference floor" in reading
+    assert "sits inside the anchors' own movement" in reading
+    assert "Neither proves" in reading
