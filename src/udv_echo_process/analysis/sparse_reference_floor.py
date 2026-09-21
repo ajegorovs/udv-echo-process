@@ -17,7 +17,8 @@ artefacts gain one.
 **The floor is one scalar with a stated endpoint.** The compact reduction is
 
     the largest absolute per-depth window-mean difference over the common support,
-    taken over all six ordered pairs of the four runs
+    taken over the six unique run pairs of the four runs, each oriented earlier-to-later
+    by campaign order
 
 published with the pair and the depth that realise it, and with the per-pair table
 beside it so the reduction is checkable rather than a number to be trusted. It is an
@@ -117,7 +118,7 @@ class RunValue(ValueModel):
 
 
 class PairDifference(ValueModel):
-    """One ordered pair of reference runs, on the common support.
+    """One unique pair of reference runs, on the common support.
 
     ``mean_difference_mm_s`` is the unweighted mean over the supported gates of the
     per-depth difference — a descriptive summary of the pair — while
@@ -273,7 +274,7 @@ def _reference_runs(decoded: PassDecoding) -> _Runs:
 
 
 def _pairs(runs: _Runs) -> tuple[PairDifference, ...]:
-    """The six ordered pairs, each reduced on the common support."""
+    """The six unique run pairs, each oriented in campaign order."""
     windows = {
         str(run.binding.point.label): (
             run.binding.job.started_at,
@@ -323,13 +324,16 @@ def _depth_resolved(runs: _Runs) -> DepthResolved:
 
 FLOOR_ENDPOINT = (
     "the largest absolute per-depth window-mean difference over the common support, "
-    "taken over all six ordered pairs of the four reference runs: the endpoint a "
+    "taken over the six unique run pairs of the four reference runs, each oriented "
+    "earlier-to-later by campaign order, so reversed pairs are not counted twice: "
+    "the endpoint a "
     "depth-resolved comparison is screened against"
 )
 
 AVERAGED_ENDPOINT = (
     "the largest absolute difference between the four runs' depth-averaged window "
-    "means, taken over all six ordered pairs: the same reduction WP1's anchor floors "
+    "means, taken over the same six unique run pairs: the same reduction WP1's anchor "
+    "floors "
     "use, so the two floors are compared like for like"
 )
 
@@ -422,7 +426,7 @@ def _checks(
         == sorted(run.job_started_at for run in runs),
         "supported_gate_count_is_shared": len({run.supported_gates for run in runs})
         == 1,
-        "six_ordered_pairs": len(pairs) == 6
+        "six_unique_run_pairs": len(pairs) == 6
         and len({(pair.left, pair.right) for pair in pairs}) == 6,
         "pairs_are_separated_by_their_job_starts": all(
             pair.job_start_separation_min > 0 for pair in pairs
