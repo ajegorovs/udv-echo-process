@@ -126,7 +126,7 @@ class PairDifference(ValueModel):
 
     left: str
     right: str
-    minutes_apart: float
+    job_start_separation_min: float
     mean_difference_mm_s: float
     rms_difference_mm_s: float
     max_abs_difference_mm_s: float
@@ -193,8 +193,15 @@ def _condition_of(point: DecodedPoint) -> dict[str, float]:
     }
 
 
-def _minutes_apart(left: str, right: str, job: str) -> float:
-    """The two runs' separation in minutes, from their jobs' own manifest windows."""
+def _job_start_separation_min(left: str, right: str, job: str) -> float:
+    """The two runs' **job-start** separation in minutes, from their own manifest windows.
+
+    This is the separation of the two *jobs*' start timestamps, not a recording-to-recording
+    interval: the pass carries no per-recording clock (a file name's ``YYYYMMDDTHHMMSS``
+    segment is the job's ``sweep_id``), so the recordings cannot be placed at instants. It
+    orders the four runs and it is what the floor's "not a rate" statement rests on; it is
+    not the elapsed recording time between two measurements.
+    """
     try:
         first = datetime.fromisoformat(left)
         second = datetime.fromisoformat(right)
@@ -284,7 +291,7 @@ def _pairs(runs: _Runs) -> tuple[PairDifference, ...]:
                 PairDifference(
                     left=left,
                     right=right,
-                    minutes_apart=_minutes_apart(
+                    job_start_separation_min=_job_start_separation_min(
                         windows[left][0], windows[right][0], f"{left}/{right}"
                     ),
                     mean_difference_mm_s=float(np.mean(difference)),
@@ -417,7 +424,9 @@ def _checks(
         == 1,
         "six_ordered_pairs": len(pairs) == 6
         and len({(pair.left, pair.right) for pair in pairs}) == 6,
-        "pairs_are_separated_in_time": all(pair.minutes_apart > 0 for pair in pairs),
+        "pairs_are_separated_by_their_job_starts": all(
+            pair.job_start_separation_min > 0 for pair in pairs
+        ),
         "floor_is_the_worst_pair": worst.max_abs_difference_mm_s
         == max(pair.max_abs_difference_mm_s for pair in pairs),
         "the_two_endpoints_are_distinct_quantities": (
@@ -456,12 +465,41 @@ CSV_COLUMNS: tuple[str, ...] = (
 PAIR_COLUMNS: tuple[str, ...] = (
     "left",
     "right",
-    "minutes_apart",
+    "job_start_separation_min",
     "mean_difference_mm_s",
     "rms_difference_mm_s",
     "max_abs_difference_mm_s",
     "max_abs_depth_mm",
 )
+
+#: What each pair column means, published in the document's ``pair_columns``. The first
+#: entry is the review's correction: the separation is of the two *job starts*, because a
+#: recording-to-recording interval is not available from this pass at all.
+PAIR_COLUMNS_DEFINITIONS: dict[str, str] = {
+    "job_start_separation_min": (
+        "the difference between the two runs' jobs' *manifest start timestamps*, in "
+        "minutes - the separation of the two job starts, and NOT a recording-to-recording "
+        "interval or an elapsed time between two measurements. The pass carries no "
+        "per-recording clock (a file name's YYYYMMDDTHHMMSS segment is the job's "
+        "sweep_id, identical for every point of that job), so the recordings cannot be "
+        "placed at instants. This quantity orders the four runs and it is what the floor's "
+        "'not a rate' statement rests on."
+    ),
+    "mean_difference_mm_s": (
+        "the unweighted mean over the supported gates of the per-depth window-mean "
+        "difference (left minus right), in mm/s: a descriptive summary of the pair"
+    ),
+    "rms_difference_mm_s": (
+        "the root mean square over the supported gates of the same difference, in mm/s"
+    ),
+    "max_abs_difference_mm_s": (
+        "the largest absolute per-depth window-mean difference over the supported gates, "
+        "in mm/s - the reduction the depth-resolved floor endpoint is taken from"
+    ),
+    "max_abs_depth_mm": (
+        "the depth, in mm, at which that largest absolute difference occurs"
+    ),
+}
 
 
 def _unit_of(statistic: str) -> str:
@@ -502,7 +540,7 @@ def csv_text(model: ReferenceFloor) -> str:
             [
                 pair.left,
                 pair.right,
-                format_cell(pair.minutes_apart),
+                format_cell(pair.job_start_separation_min),
                 format_cell(pair.mean_difference_mm_s),
                 format_cell(pair.rms_difference_mm_s),
                 format_cell(pair.max_abs_difference_mm_s),
@@ -545,10 +583,13 @@ def def_document(model: ReferenceFloor) -> dict[str, object]:
             "declared": REFERENCE_CONDITION,
             "note": (
                 "the one condition this pass observes in more than one run: burst 10, "
-                "emissions 20, 50 gates at 1.85 mm. The four recordings are four runs, "
-                "not four replicates of one run, and they are the only reference "
-                "realizations in the pass - the WP1 anchors are block-local and belong "
-                "to other conditions"
+                "emissions 20, 50 gates at 1.85 mm. The four recordings are four repeated "
+                "observations of that condition across four distinct runs - four runs, not "
+                "four replicates of one run - and they are the only reference realizations "
+                "in the pass: the WP1 anchors are block-local and belong to other "
+                "conditions. What they do not provide is independent replication of the "
+                "pitch, burst or emissions treatment levels, each of which stays a single "
+                "realization per level."
             ),
         },
         "floor": {
@@ -599,7 +640,7 @@ def def_document(model: ReferenceFloor) -> dict[str, object]:
             {
                 "left": pair.left,
                 "right": pair.right,
-                "minutes_apart": pair.minutes_apart,
+                "job_start_separation_min": pair.job_start_separation_min,
                 "mean_difference_mm_s": pair.mean_difference_mm_s,
                 "rms_difference_mm_s": pair.rms_difference_mm_s,
                 "max_abs_difference_mm_s": pair.max_abs_difference_mm_s,
@@ -629,6 +670,7 @@ def def_document(model: ReferenceFloor) -> dict[str, object]:
             else WP0_DEFINITIONS["zero_fraction"]
             for statistic in STATISTICS
         },
+        "pair_columns": PAIR_COLUMNS_DEFINITIONS,
         "checks": dict(sorted(model.checks.items())),
         "ok": model.ok,
     }
@@ -708,8 +750,11 @@ def render_figure(model: ReferenceFloor, path: Path) -> Path:
             f"endpoint: {model.averaged_endpoint} = "
             f"{model.averaged_floor_mm_s:.4f} mm/s ({model.averaged_floor_pair[0]} - "
             f"{model.averaged_floor_pair[1]}). Four runs over four reference jobs, "
-            f"{model.pairs[0].minutes_apart:.1f} minutes apart at the closest and "
-            f"{max(pair.minutes_apart for pair in model.pairs):.1f} at the widest. "
+            f"separated by their job starts: {model.pairs[0].job_start_separation_min:.1f} "
+            f"min at the closest and "
+            f"{max(pair.job_start_separation_min for pair in model.pairs):.1f} at the widest "
+            "(job-start separation, not a recording interval - the pass carries no "
+            "per-recording clock). "
             f"Primary window {model.window_s:g} s ({model.window_revolutions} nominal "
             f"revolutions), common support {model.support_min_mm:.3f}-"
             f"{model.support_max_mm:.3f} mm, {int(depths.size)} supported gates. An "
@@ -837,7 +882,8 @@ def reference_floor_main(argv: list[str] | None = None) -> None:
         )
     for pair in model.pairs:
         print(
-            f"{pair.left}-{pair.right}: {pair.minutes_apart:5.1f} min apart, "
+            f"{pair.left}-{pair.right}: job starts {pair.job_start_separation_min:5.1f} min "
+            "apart, "
             f"mean {pair.mean_difference_mm_s:+8.3f}, "
             f"max |.| {pair.max_abs_difference_mm_s:7.3f} at "
             f"{pair.max_abs_depth_mm:6.2f} mm"
