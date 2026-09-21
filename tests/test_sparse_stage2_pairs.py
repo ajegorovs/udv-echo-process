@@ -373,6 +373,33 @@ def test_the_committed_report_is_reproducible_with_the_recorded_revision(
         assert fresh == committed, name
 
 
+def test_the_depth_resolved_prose_cannot_be_read_as_gates_above_the_floor(
+    analysis, document
+) -> None:
+    """The review's wording item: with a 0% share, say that no gate meets both requirements."""
+    prose = _plain((REPORT_DIR / s2.MD_NAME).read_text(encoding="utf-8"))
+    if analysis.depth_resolved_resolved_share == 0.0:
+        assert "No supported gate satisfies both requirements at once" in prose
+        assert "all four" in prose
+        # the old phrasing invited reading the per-pair maxima as gates that were resolved
+        assert "every pair above the depth-resolved floor there" not in prose
+    # the per-gate counts are data-derived, so the prose can be checked against the model
+    matrix = np.asarray(
+        [np.asarray(analysis.profiles.contrast(pair), dtype=float) for pair in "ABCD"]
+    )
+    above = np.abs(matrix) > analysis.depth_resolved_floor_mm_s
+    gates_any = int(np.count_nonzero(np.any(above, axis=0)))
+    gates_all = int(np.count_nonzero(np.all(above, axis=0)))
+    assert (
+        f"{gates_any} have at least one pair above the floor and {gates_all} have all four "
+        "above it" in prose
+    )
+    assert (
+        f"{analysis.depth_resolved_resolved_share:.1%} of the "
+        f"{analysis.runs[0].supported_gates} supported gates"
+    ) in prose or analysis.depth_resolved_resolved_share == 0.0
+
+
 def test_the_report_prose_states_the_design_and_the_outcome() -> None:
     doc = _plain((REPORT_DIR / s2.MD_NAME).read_text(encoding="utf-8"))
     assert "counterbalanced" in doc

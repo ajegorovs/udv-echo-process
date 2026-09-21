@@ -1196,6 +1196,15 @@ def def_document(model: Stage2Pairs) -> dict[str, object]:
     }
 
 
+def _gate_counts(gates_any: int, gates_all: int, gates: int) -> str:
+    """The per-gate arithmetic behind a depth-resolved share, stated so it cannot be misread."""
+    return (
+        f"Of the {gates} supported gates, {gates_any} have at least one pair above the floor and "
+        f"{gates_all} have all four above it; neither count is the resolved share, which also "
+        "requires the four signs to agree."
+    )
+
+
 def render_markdown(model: Stage2Pairs) -> str:
     """Render ``pairs.md``: the design, the four contrasts, the floor, and the verdict."""
     lines: list[str] = []
@@ -1371,11 +1380,31 @@ def render_markdown(model: Stage2Pairs) -> str:
     )
     lines.append(f"**{model.depth_resolved_outcome}** (depth-resolved){depth_kind}.")
     lines.append("")
-    lines.append(
-        f"{model.depth_resolved_resolved_share:.1%} of the "
-        f"{model.runs[0].supported_gates} supported gates are individually resolved — every pair "
-        "above the depth-resolved floor there *and* all four agreeing in direction."
+    matrix = np.asarray(
+        [
+            np.asarray(model.profiles.contrast(pair), dtype=float)
+            for pair in ("A", "B", "C", "D")
+        ]
     )
+    gates = int(model.runs[0].supported_gates)
+    above = np.abs(matrix) > model.depth_resolved_floor_mm_s
+    gates_any = int(np.count_nonzero(np.any(above, axis=0)))
+    gates_all = int(np.count_nonzero(np.all(above, axis=0)))
+    share = model.depth_resolved_resolved_share
+    if share > 0.0:
+        lines.append(
+            f"{share:.1%} of the {gates} supported gates are resolved. A gate counts as resolved "
+            "only when **all four** paired contrasts at that gate are above the depth-resolved "
+            "floor *and* the four agree in sign. " + _gate_counts(gates_any, gates_all, gates)
+        )
+    else:
+        lines.append(
+            "**No supported gate satisfies both requirements at once.** A gate counts as "
+            "resolved only when **all four** paired contrasts at that gate are above the "
+            "depth-resolved floor *and* the four agree in sign — so a gate where one pair clears "
+            "the floor, while another does not or disagrees in sign, is not resolved. "
+            + _gate_counts(gates_any, gates_all, gates)
+        )
     lines.append("")
     lines.append(
         "The criterion has exactly two allowed outcomes and this is one of them: a **resolved "
