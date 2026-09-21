@@ -257,21 +257,25 @@ def test_the_recommendation_samples_both_levels_in_one_campaign(model) -> None:
     assert campaign.sequence == (
         "E20-A",
         "E64-A",
-        "E20-B",
         "E64-B",
+        "E20-B",
         "E20-C",
         "E64-C",
-        "E20-D",
         "E64-D",
+        "E20-D",
     )
     assert len(campaign.sequence) == campaign.recordings
     assert sum(name.startswith("E20") for name in campaign.sequence) == 4
     assert sum(name.startswith("E64") for name in campaign.sequence) == 4
-    # alternating, so slow drift is sampled by both levels
-    assert all(
-        campaign.sequence[index][:3] != campaign.sequence[index + 1][:3]
-        for index in range(len(campaign.sequence) - 1)
-    )
+    # four pairs, each holding one of each level, so slow drift is shared
+    pairs = [
+        (campaign.sequence[index], campaign.sequence[index + 1])
+        for index in range(0, len(campaign.sequence), 2)
+    ]
+    assert len(pairs) == 4
+    assert all({first[:3], second[:3]} == {"E20", "E64"} for first, second in pairs)
+    # and the within-pair order is counterbalanced: the level that leads alternates
+    assert [first[:3] for first, _ in pairs] == ["E20", "E64", "E20", "E64"]
     assert len(campaign.conditions) == 2
     assert "emissions 20" in campaign.conditions[0]
     assert "emissions 64" in campaign.conditions[1]
@@ -283,6 +287,12 @@ def test_the_recommendation_samples_both_levels_in_one_campaign(model) -> None:
         "contemporaneous" in text or "inside one campaign" in text
         for text in campaign.buys
     )
+    # the pair design is a design decision, published with the set
+    assert "part of the design" in campaign.pair_design
+    assert "counterbalanced" in campaign.pair_design
+    assert "one campaign block, not two" in campaign.pair_design
+    assert "oriented as E64 minus E20" in campaign.pair_design
+    assert "no acquisition-layer change" in campaign.pair_design
     assert any("emissions-64-only" in text for text in campaign.refused)
     assert any("4.235" in text for text in campaign.refused)
     assert any("dense second pass" in text for text in campaign.refused)
@@ -298,7 +308,7 @@ def test_the_acceptance_criterion_is_stated_in_advance_and_is_contemporaneous(
         "the four emissions-20 observations",
         "the four emissions-64 observations",
         "each level's own run-to-run spread",
-        "the four adjacent paired E64-to-E20 contrasts",
+        "the four adjacent paired E64-to-E20 contrasts individually and oriented E64 minus E20",
         "the full cross-run range as context",
         "measured inside that campaign",
     ):
@@ -335,6 +345,23 @@ def test_the_e64_row_overturns_on_both_levels_measured_together(model) -> None:
 
 
 # ── the artefacts and the refusals ─────────────────────────────────────
+
+
+def test_the_dense_pass_row_describes_the_set_it_actually_recommends(model) -> None:
+    """The row must not describe the earlier pointwise surface's automation.
+
+    The Stage-2 block changes neither resolution nor gates: it is eight run-level jobs at the
+    reference window's own settings, and its one varying run-wide value is emissions per
+    profile - set by the operator and verified by the compile's read-back.
+    """
+    row = next(row for row in model.rows if row.key == "dense_second_pass")
+    assert row.verdict == "defer"
+    assert "changes neither resolution nor gates" in row.automation
+    assert "emissions per profile" in row.automation
+    assert "operator sets before each job" in row.automation
+    assert "read-back verifies" in row.automation
+    assert "writes only resolution and gates" not in row.automation
+    assert "paired block inside one campaign" in row.interpretation
 
 
 def test_the_csv_is_the_column_contract(model) -> None:

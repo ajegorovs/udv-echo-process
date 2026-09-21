@@ -300,34 +300,46 @@ outside the table as its own capability project.
 ## 4b. What the Stage-2 campaign is
 
 The synthesis recommends one acquisition and no other: **eight run-level jobs in a single
-campaign, sampling both emissions levels alternately** -
+campaign** at emissions per profile the only setting that differs (1.850 mm, 50 gates,
+burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and
+duration), each job its own run-level job. The pairs are acquired in this order:
 
 ```text
-E20-A   E64-A   E20-B   E64-B   E20-C   E64-C   E20-D   E64-D
+E20-A   E64-A      E64-B   E20-B      E20-C   E64-C      E64-D   E20-D
 ```
 
-- with emissions per profile the only setting that differs (1.850 mm, 50 gates, burst 10,
-  PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration),
-  each job its own run-level job. Two design points are load-bearing rather than stylistic:
+Three design points are load-bearing rather than stylistic:
 
 - **Contemporaneity.** The cheaper design - three further emissions-64 realizations compared
   against the four emissions-20 runs this pass already has - mixes the emissions question with
   session drift, because those two sets would be recorded in different campaigns and this pass
-  measured the between-run floor at 4.235 mm/s. Sampling both levels alternately inside one
-  campaign gives the decisive comparison its own between-run floor, measured there.
+  measured the between-run floor at 4.235 mm/s. Sampling both levels inside one campaign gives
+  the decisive comparison its own between-run floor, measured there.
+- **Counterbalanced pair order.** Alternating the levels keeps slow drift shared, but always
+  acquiring emissions 20 before emissions 64 would confound a short-timescale order effect
+  (handling time, thermal or mixer evolution, settling after an emissions change, directional
+  drift across adjacent jobs) with the emissions contrast. The level that leads therefore
+  alternates across the four pairs, so each level is first twice and second twice and any such
+  effect appears as pair-to-pair scatter. **Pair and order assignment are part of the design,
+  not an implementation detail.**
 - **Replication on both sides.** Four runs per level is the replication the emissions-20 level
   already has; what the eight jobs buy is the contemporaneous floor and four *paired*
   contrasts, not more runs on one side.
 
-The acceptance criterion is stated in advance and has exactly two allowed outcomes: a
-**resolved difference** (the four paired contrasts consistently larger than the
-contemporaneous variation, with a consistent direction) or an **unresolved overlap** (the
-separation comparable to or smaller than that variation, which is itself the answer and ends
-the question). This pass's four emissions-20 runs and its existing emissions-64 recording stay
-as prior context; only the decisive comparison moves. Nothing in the acquisition layer
-changes: the run-wide values are set by hand between jobs, as they were for every job in this
-pass, and a job whose setting disagrees with its plan is refused by the compile's own fact
-table.
+The analysis publishes the four paired contrasts **individually**, each oriented E64 minus E20
+whatever order its pair was acquired in, with that pair's acquisition orientation recorded
+beside it - the orientation is retained, not discarded. The acceptance criterion is stated in
+advance and has exactly two allowed outcomes: a **resolved difference** (the four paired
+contrasts consistently larger than the contemporaneous variation, with a consistent direction)
+or an **unresolved overlap** (the separation comparable to or smaller than that variation,
+which is itself the answer and ends the question). This pass's four emissions-20 runs and its
+existing emissions-64 recording stay as prior context; only the decisive comparison moves.
+
+It is **one campaign block, not two interleaved campaigns** - one run-plan, one manifest, one
+ordered sequence and one failure/resume state - and nothing in the acquisition layer changes:
+the run-wide emissions value is set by the operator before each job, exactly as every job's
+run-wide values were set in this pass, the compile's own fact table verifies the setting from
+the read-back, and a job whose setting disagrees with its plan is refused.
 
 ## 5. Implementation order and commits
 
@@ -371,8 +383,10 @@ uv run --extra dev ruff format --check src tests
   verifier or the driver. The one acquisition-side number this analysis measures — the
   planner's transfer term on this pass — is recorded in the report README as a
   measurement; acting on it would be an acquisition change with its own justification.
-- **No second acquisition** is designed here. WP5 either names the small set that is
-  worth acquiring or says that none is.
+- **No broad second acquisition** is designed here. WP5 either names the small set that is
+  worth acquiring or says that none is, and it names exactly one: the bounded paired E20/E64
+  block in section 4b. Designing that block is the plan's endpoint - compiling its eight-job
+  run plan is a separate piece of work, and it is not part of this analysis.
 - The historical sweep's artefacts are **not** regenerated or compared field by field:
   they answer a different design's question, and the only values quoted across the two are
   the floors, each named with the dataset it came from.
