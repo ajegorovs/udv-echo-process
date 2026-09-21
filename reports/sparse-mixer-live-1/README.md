@@ -17,12 +17,12 @@ ingest is the evidence a *later* step needs; the contrasts are that step's own.
 
 ## Reproduce
 
-The generator is `a822b3f` (the commit before the artefacts); the command that
+The generator is `a82e56f` (the commit before the artefacts); the command that
 reproduces both files byte for byte is
 
 ```bash
 .venv/Scripts/python.exe -m udv_echo_process.cli sparse-inventory \
-    --analysis-commit a822b3f
+    --analysis-commit a82e56f
 ```
 
 The bare command records the **current HEAD** instead, which changes
@@ -33,13 +33,19 @@ runs that comparison, LF-normalized so a checkout's `core.autocrlf` cannot decid
 
 ## The two views
 
-Both are **derived from the decoded recordings**, never declared:
+The support is **derived** from the recordings; the primary window is **declared**, and
+the declaration is the point:
 
-- **common window** — the largest whole number of nominal 500-RPM revolutions every
-  recording retained: **103 revolutions = 12.36 s**. A recording is cut by its own
-  stored timestamps, so the cut is at the same *duration* though the profile counts
-  differ — 814 profiles in the window at the fine window's rate, 551–553 at the
-  reference rate, and 142 as the emission level lengthens the period.
+- **primary window** — the pass's **designed exposure**: the declared 12 s, **100
+  nominal 500-RPM revolutions = 12.0 s**. A recording is cut by its own stored
+  timestamps, so the cut is at the same *duration* though the profile counts differ
+  across the emission levels and windows. The files retain more (12.4686 – 12.5888 s):
+  that **0.47 – 0.59 s surplus is the acquisition's own stopping latency**, so it is kept
+  for the full-record view (spectra, autocorrelation) where extra duration is an asset,
+  and it is deliberately *not* the analysed exposure — taking it would let the rig's
+  overrun set the interval and would quietly widen the exposure past the design. The
+  ingest **refuses** a dataset whose shortest recording cannot cover the design instead
+  of narrowing to a shorter window.
 - **common physical support** — the intersection of the recordings' decoded depth
   ranges: **10.138 – 98.938 mm**. The supported metrics are computed on each
   recording's own native gate grid inside it; no interpolation, no resampling, and
@@ -56,11 +62,12 @@ reader — the run is the reproduction command above.
 | recordings | **26** (nine jobs: 5 + 1 + 5 + 1 + 4 + 1 + 4 + 1 + 4) |
 | decode failures / NaNs / non-monotone timestamp files | 0 / 0 / 0 |
 | non-zero fraction per recording | 0.9864 – 0.9939 (the rig was live for every point) |
-| retained span | 12.4686 – 12.5888 s, every recording above the pass's 11.52 s usable interval |
+| retained span | 12.4686 – 12.5888 s: every recording covers the designed 12.0 s and overruns it by 0.47 – 0.59 s (the surplus belongs to the full-record view) |
+| stored words (14 / 27 / 84) | each job's own emissions / **1** / 0 in all 26 — word 27 is the instrument's option-list *index*, not a length, and not the historical sweep's 4 |
 | achieved period from the stored timestamps | 15.193 / 22.393 / 48.793 / 87.193 ms (median interval) at emissions 8 / 20 / 64 / 128 |
 | profiles per recording | 826–829 / 559–562 / 257–259 / 144–145 at those four levels |
 | requested vs stored pitch | 0.617 → 0.6166667, 1.85 → 1.85, 2.96 → 2.96 mm (the ladder's own snapping) |
-| common support / window | 10.138 – 98.938 mm / 103 rev = 12.36 s |
+| common support / primary window | 10.138 – 98.938 mm / 100 rev = the designed 12.0 s |
 | job wall clock | 12:32:32 → 12:49:15 (16 min 43 s), nine jobs in plan order |
 
 ### The achieved period, and the planner's law
@@ -108,13 +115,15 @@ half-written artefact. The ingest refuses when
 
 and the QC gate — `ok` — holds only when all twelve of the summary's checks pass:
 recordings, per-job counts, decode failures, NaN cells, timestamp monotonicity, signal
-content (non-zero fraction ≥ 0.5), retention (≥ 11.52 s), the common window, the common
-support, the achieved period inside the planner's law (≤ 1 ms), the retired target
-recorded, and the recorded analysis commit.
+content (non-zero fraction ≥ 0.5), retention of the designed 12.0 s, the primary window,
+the common support, the achieved period inside the planner's law (≤ 1 ms), the retired
+target recorded, and the recorded analysis commit.
 
 ## What is deliberately not here
 
-The within-job control drift, the CR1–CR4 reference drift, the 2×2 pitch × burst
-interaction and the emissions 8/20/64/128 behaviour are WP1–WP4 of the plan. They
+The within-job **block-local anchor control** drift, the CR1–CR4 reference drift, the
+2×2 pitch × burst interaction and the emissions 8/20/64/128 behaviour are WP1–WP4 of the
+plan. A control records its own job's anchor condition at the reference *window*; only
+CR1–CR4 record the reference *condition*. They
 select from this table by **decoded settings**, never by filename, and they must not
 change these artefacts: later work packages add documents beside them.
