@@ -47,9 +47,6 @@ are marked.
   gates took the full 805. Write the resolution first, then the gate count, then verify — the order is
   part of the recipe, not an implementation detail, so pin it as data (`PARAMETER_WRITE_ORDER` in
   `acquire/actuator.py`; `udop-automation.md` §3).
-  Measured again, and stated without the pinned data: with automatic resolution/gate-count
-  selection active, writing the gate count first gets silently clamped (805 -> 474). Write
-  the resolution first, then the gate count, then verify.
 - **Verify against the artifact, never against the control's text.** A control can read back
   what you wrote while the application keeps something else; re-open a dialog to re-read it,
   and treat the stored file as the authority for what a point actually was.

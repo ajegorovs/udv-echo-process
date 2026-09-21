@@ -211,7 +211,7 @@ from elapsed time.
   that re-derived this as `row[0]` pressed an indicator and left the dialog open while its own tests —
   written from the same wrong assumption — stayed green; when a port and the reference script disagree on
   an index, the reference wins, and the fake's rows must be re-measured from the live dialog.
-  filter buttons by width either: two labels in one row measured 134 px and 138 px, four pixels apart,
+  **Do not filter buttons by width either:** two labels in one row measured 134 px and 138 px, four pixels apart,
   so a width band silently picks the neighbour (that mistake pressed a data-loss action instead of
   `Clear and restart` and raised a warning nobody asked for). Identify a button by its **order within
   the view that is currently showing**, re-resolved after every press, since the same position carries

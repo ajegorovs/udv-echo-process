@@ -107,7 +107,7 @@ times from an interactive session), a probe dispatched into a *separate* session
 and a console window opened by the launcher is the usual thief — so put the guard **before** the first
 hover, where a refusal has opened nothing and stranded nothing, and the remedy is for the operator to
 click the window or Alt+Tab to it and re-run the **same** command (`docs/dop3000/live-bringup.md` §4,
-plan §15.1). An inactiveAn inactive
+plan §15.1). An inactive
 window ignores hover and gives its first click to activation, which is indistinguishable from a surface
 that does not answer input at all. Message-based control is also bitness-agnostic, which matters because
 `pywinauto` warns loudly when a 64-bit interpreter drives a 32-bit target.
@@ -132,18 +132,21 @@ it just opened, which is why every click-based attempt failed and why the one me
 so with the operator's cursor already over the button. Once open, its **entries take ordinary posted
 clicks**, which performs the action *and* consumes the popup: that is the whole recipe for menu-driven
 setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
-button again, clicking the plot, and `ESC` (posted or real) all leave it on screen, and opening a
-different menu merely replaces it; a posted `WM_CANCELMODE` is no better (measured: it leaves the popup
-up too). So menus are the one place that should not be in a per-point loop. **If a popup is open when a run resumes, stop and raise the failure;
-do not try to close it.** **A gesture that opens a popup owns its cleanup in a `finally`.** A probe
-that dies between the hover and the cursor restore — an exception anywhere in the read it was doing —
-leaves that popup on the desktop with nothing able to close it programmatically, and every run
-afterwards refuses with "a menu popup is already open"; the operator has to clear it by hand. Restore
-in a `finally`, and have the next run *report* that state rather than try to clear it. Escape closes nothing here, and a hover-opened popup cannot be dismissed
-programmatically: the only clean exit is a *press*, which selects an entry and closes the popup. When a probe has to
-leave the application as it found it, say what it found and what it left in its own output: a state the
-operator has to fix by hand must never be discovered by them.
-**The policy for one that has already stranded the application is the
+button again, clicking the plot, and `ESC` (posted or real) and a posted `WM_CANCELMODE` all leave it on
+screen (measured: the posted `WM_CANCELMODE` leaves it up too), and opening a different menu merely
+replaces it. **Escape closes nothing here, and a hover-opened popup cannot be dismissed
+programmatically: the only clean exit is a *press*, which selects an entry and closes the popup.** So
+menus are the one place that should not be in a per-point loop. **If a popup is open when a run
+resumes, stop and raise the failure; do not try to close it.** **A gesture that opens a popup owns its
+cleanup in a `finally`.** A probe that dies between the hover and the cursor restore — an exception
+anywhere in the read it was doing — leaves that popup on the desktop with nothing able to close it
+programmatically, and every run afterwards refuses with "a menu popup is already open"; the operator has
+to clear it by hand. Restore in a `finally`, then **re-read the popup state on the failing exit** and
+report that the application is unverified plus the operator/restart remedy; an attempted entry press and
+a restored cursor are not proof that the popup was consumed, and this diagnostic must never replace the
+original failure if its own read errors. When a probe has to leave the application as it found it, say
+what it found and what it left in its own output: a state the operator has to fix by hand must never be
+discovered by them. **The policy for one that has already stranded the application is the
 operator's restart:** abort the run, mark the application's state unverified, and require the operator —
 no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
 it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
@@ -294,16 +297,16 @@ wasted re-run. Keep what such a count *classifies into* instead (the view a pres
 the binding is resolved live at press time, so nothing about driving depends on the identity carrying
 the count. And a fact's **explanatory prose** goes out too: an identity is each value plus its
 *source*, never the sentence explaining why — that sentence is written for a human and rewritten as it
-improves. Exclude a fact's explanatory `reason` for the same class of reason: it is written to be
+improves. Exclude a fact's explanatory `reason` on the same principle: it is written to be
 rewritten, so hashing it turns a documentation improvement into "a different instrument" and re-runs a
-finished job — put the value and the *source* in the projection and leave the prose in the reading.into "a different instrument". Make that structural
+finished job — put the value and the *source* in the projection and leave the prose in the reading. Make that structural
 (a projection model with a value field and a source field, plus a case asserting the identity's fact
 fields are that type) rather than a convention in a comment. The **source stays in**: a fact that moved
 from read to unreadable, or from *declared* to *verified by the step that established it*, is a
 weaker or stronger claim about the same instrument, and the two must not share a name. When a value
 rests on another step's verification, give it its own source
 name (a channel the router selected and read back is neither "the caller declared it" nor "this
-reading read it") andmake the caller hand it over as a **required** argument — a
+reading read it") and make the caller hand it over as a **required** argument — a
 reading that pressed nothing, with an optional parameter, implies a verification that never ran.
 
 **5b. Read the instrument's own fixed facts before the first recording, and refuse a disagreement
