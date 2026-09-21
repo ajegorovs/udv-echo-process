@@ -113,3 +113,5 @@ the pass holds fixed, with no reader here (docs/dop3000/sparse-parameter-set.md 
     sensitivity: medium — D1's `high` is not acquired in this pass
     skipped profiles: 0 (word 84)
     assisted mode / filtering during acquisition / alias auto-correction: OFF
+                none of these is machine-verifiable: no reader in this repository reaches them, so the pass is enforced by the compile only where a reader exists (the run-wide burst, emissions and PRF above) and by the operator everywhere else
+                confirm every one of them ONCE at the start of the campaign, record what the application says, and do not touch any of them between jobs: "the same settings except emissions" is a property of the sitting, not of the files

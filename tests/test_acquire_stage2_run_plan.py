@@ -2,7 +2,7 @@
 
 ``test_acquire_run_plan.py`` pins the *sweep* pass (nine jobs, block-local controls, common
 references between scientific jobs). This module pins the other design the layer now encodes: the
-one ``sparse-pass-analysis-plan.md`` §4b freezes — **eight run-level jobs in four counterbalanced
+``docs/dop3000/stage2-run-plan.md`` records — **eight run-level jobs in four counterbalanced
 pairs, in one campaign, with emissions per profile the only varying run-wide setting**.
 
 What the cases assert is the law of that design rather than its prose:
@@ -25,6 +25,7 @@ What the cases assert is the law of that design rather than its prose:
 from __future__ import annotations
 
 import json
+import re
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
@@ -41,7 +42,7 @@ REPO = Path(__file__).resolve().parents[1]
 STAGE2_DIR = REPO / "examples" / "stage2-e20-e64"
 PLAN_FILE = STAGE2_DIR / "run-plan.json"
 
-#: The frozen acquisition order (§4b): pair, job, emissions, role. ``B`` and ``D`` run emissions
+#: The frozen acquisition order: pair, job, emissions, role. ``B`` and ``D`` run emissions
 #: 64 first, which is what makes the pairs counterbalanced.
 EXPECTED_ORDER: tuple[tuple[str, str, int, str], ...] = (
     ("A", "e20-a", 20, "lead"),
@@ -150,7 +151,7 @@ def test_the_pass_is_its_own_campaign_and_compiles(run: run_plan.PlannedRun) -> 
 
 
 def test_the_eight_jobs_are_the_frozen_sequence(run: run_plan.PlannedRun) -> None:
-    """Pair, job, level and role, in the order §4b fixes — the design's own sequence."""
+    """Pair, job, level and role, in the order the frozen design fixes."""
     assert (
         tuple(
             (job.pair, job.job, job.condition.emissions_per_profile, job.role.value)
@@ -704,3 +705,74 @@ def test_the_committed_sheet_names_what_to_set_before_each_job() -> None:
         ), job
     assert committed.count("the stored file's own word has to agree as well") == 8
     assert "raised facts: ['emissions_per_profile']" in committed
+
+
+# --------------------------------------------------------------------------------------------
+# Provenance: this package cites only what the tree it runs from carries
+# --------------------------------------------------------------------------------------------
+
+#: Documents the Stage-2 package cites that belong to the frozen analysis rather than to this pass.
+#: They arrive with PR #27's rebase; until then the code cites this pass's own document and this
+#: pass's document names them as stack-dependent. An entry here is an allowance, not a licence: the
+#: guard below still requires every other cited path to exist in the tree.
+STACK_DEPENDENT_CITATIONS: tuple[str, ...] = (
+    "docs/dop3000/sparse-pass-analysis-plan.md",
+    "reports/sparse-mixer-live-1/decision-table.md",
+)
+
+CITED_PATTERN = re.compile(r"(?:docs|reports)/[A-Za-z0-9_./-]+\.(?:md|json)")
+
+
+def _cited_paths() -> dict[str, list[str]]:
+    """Every ``docs/…`` or ``reports/…`` path cited by the Stage-2 package, by where it is cited."""
+    sources = {
+        "docs/dop3000/stage2-run-plan.md": REPO / "docs/dop3000/stage2-run-plan.md",
+        "src/udv_echo_process/acquire/run_plan.py": REPO
+        / "src/udv_echo_process/acquire/run_plan.py",
+        "tests/test_acquire_stage2_run_plan.py": Path(__file__).resolve(),
+    }
+    found: dict[str, list[str]] = {}
+    for name, path in sources.items():
+        text = path.read_text(encoding="utf-8")
+        found[name] = sorted(set(CITED_PATTERN.findall(text)))
+    return found
+
+
+def test_every_document_this_package_cites_exists_in_the_tree_it_runs_from() -> None:
+    """A compiled campaign may not cite a design authority its own tree does not carry.
+
+    This is the provenance rule the review asked for, as a check rather than a promise: the design's
+    authority lives on the frozen analysis branch and lands with PR #27, so until the rebase this
+    package cites its own document and that document *names* the analysis as stack-dependent. Any
+    other cited path has to exist — and when the rebase brings the analysis documents in, the
+    allowance becomes inert rather than wrong.
+    """
+    for where, cited in _cited_paths().items():
+        for path in cited:
+            if path in STACK_DEPENDENT_CITATIONS:
+                continue
+            assert (REPO / path).exists(), (
+                f"{where} cites {path}, which is not in this tree: cite what the campaign's own "
+                "checkout carries, or name the document as stack-dependent beside the other "
+                "STACK_DEPENDENT_CITATIONS"
+            )
+
+
+def test_the_analysis_documents_are_named_as_stack_dependent_while_they_are_absent() -> (
+    None
+):
+    """The gap is stated where a reader meets it, not left to be discovered.
+
+    While they are absent, the pass's own document has to say so — and once the rebase brings them
+    in, this check is vacuous rather than stale, so no future session inherits a red suite for
+    landing the documents the design belongs to.
+    """
+    doc = (REPO / "docs/dop3000/stage2-run-plan.md").read_text(encoding="utf-8")
+    for path in STACK_DEPENDENT_CITATIONS:
+        if (REPO / path).exists():
+            continue
+        assert Path(path).name in doc, (
+            f"{path} is absent and unnamed in the pass's document"
+        )
+    assert "PR #27" in doc
+    assert "depends on the stack rather than on the" in doc

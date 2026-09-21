@@ -133,7 +133,8 @@ CONTROL_LABELS: tuple[str, ...] = ("ctrl-begin", "ctrl-mid", "ctrl-end")
 RUN_MANIFEST_SUFFIX = ".run.json"
 
 #: The fixed analysis orientation of a paired pass: every pair is read **E64 minus E20**, whatever
-#: order it was acquired in (the Stage-2 decision table, ``sparse-pass-analysis-plan.md`` §4b). A
+#: order it was acquired in. The design is recorded in ``docs/dop3000/stage2-run-plan.md``, which
+#: ships with the pass it describes and cites the analysis that decided it. A
 #: paired pass states it and the plan refuses any other value, because an orientation that could
 #: differ from pair to pair is an analysis that would have to infer it — and the acquisition order
 #: of a counterbalanced design is precisely what must *not* carry the comparison's sign.
@@ -196,7 +197,7 @@ class JobKind(str, Enum):
         no block-local controls — the unit of a **paired** pass, where two of them, counterbalanced,
         make one pair whose only difference is emissions per profile. A pass of run-level jobs has
         no scientific job at all: nothing inside it is being crossed, the *between-pair* comparison
-        is the experiment (``sparse-pass-analysis-plan.md`` §4b).
+        is the experiment (``docs/dop3000/stage2-run-plan.md``).
     """
 
     SCIENTIFIC = "scientific"
@@ -524,8 +525,8 @@ class RunPlan(ValueModel):
     def _check_run_level_pass(self) -> None:
         """The paired design: counterbalanced pairs of run-level jobs, emissions the only variable.
 
-        Every rule here is a property of the frozen Stage-2 design (``sparse-pass-analysis-plan.md``
-        §4b) rather than a matter of taste:
+        Every rule here is a property of the paired design the Stage-2 campaign states
+        (``docs/dop3000/stage2-run-plan.md``) rather than a matter of taste:
 
         * the pass is run-level jobs only — a scientific or reference-only job belongs to the sweep
           design, and mixing the two would leave a pair with nothing to compare against;
@@ -1870,6 +1871,16 @@ def operator_setup_sheet(run: PlannedRun) -> str:
     )
     for name, value in MANUAL_SETTINGS:
         lines.append(f"    {name}: {value}")
+    lines.append(
+        "                none of these is machine-verifiable: no reader in this repository reaches "
+        "them, so the pass is enforced by the compile only where a reader exists (the run-wide "
+        "burst, emissions and PRF above) and by the operator everywhere else"
+    )
+    lines.append(
+        "                confirm every one of them ONCE at the start of the campaign, record what "
+        'the application says, and do not touch any of them between jobs: "the same settings '
+        'except emissions" is a property of the sitting, not of the files'
+    )
     return "\n".join(lines)
 
 

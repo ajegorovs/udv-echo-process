@@ -1,10 +1,7 @@
 # The Stage-2 pass, compiled — eight run-level jobs, four counterbalanced pairs
 
 > **Status:** the executable form of the design the Stage-2 analysis froze as its one
-> recommendation — `docs/dop3000/sparse-pass-analysis-plan.md` §4b, whose decision table is
-> `reports/sparse-mixer-live-1/decision-table.md`. Both live on `analysis/sparse-pass-ingest` (PR
-> #27) and land on `master` with it; this pass is compiled against them, not re-derived from them.
-> The pass is
+> recommendation. The pass is
 > [`examples/stage2-e20-e64/run-plan.json`](../../examples/stage2-e20-e64/run-plan.json), with one
 > definition per job under `jobs/` and the operator's sheet committed beside it as
 > [`operator-sheet.txt`](../../examples/stage2-e20-e64/operator-sheet.txt).
@@ -13,6 +10,25 @@
 > levels and the pair structure are the frozen design's, and nothing here changes them. Compiling a
 > run plan is a separate work package from the analysis that decided it — the analysis is closed and
 > this is acquisition work.
+
+### Provenance of the design this compiles
+
+The design is **not re-derived here.** Its authority is
+`docs/dop3000/sparse-pass-analysis-plan.md` §4b, with the decision table at
+`reports/sparse-mixer-live-1/decision-table.md`.
+
+Whether the tree a given checkout carries both documents depends on the stack rather than on the
+design: they belong to the frozen analysis on `analysis/sparse-pass-ingest` (PR #27), and this pass
+is stacked on the acquisition layer (PR #25), so a checkout of this branch alone has the executable
+pass **without** the analysis documents that decided it. The intended sequence removes the gap
+before anything is recorded — #25 lands, #27 rebases onto master and lands, this branch rebases onto
+that — and after it the pass, its authority and its decision table are one tree.
+
+Either way the pass states its own design in full: the eight jobs, their four pairs, the roles, the
+orientation rule, the fixed frame and the compile's own checks are all in this document, in the run
+plan and in the operator's sheet. Nothing here asks a reader to trust a file the campaign's own tree
+may not carry, which is why the code cites this document and this document cites the analysis — a
+chain that resolves in-tree at every step.
 
 ## 1. The pass
 
@@ -67,6 +83,12 @@ them (`pair`, `role` per job) and the layer refuses an order that disagrees with
 
 Statically, with no instrument (the compile):
 
+- the manual settings — emitting frequency, Doppler angle, velocity scale, TGC, power, sensitivity,
+  skipped profiles and the acquisition switches — are listed on the sheet for the operator to set
+  **once at the start of the campaign and not touch between jobs**, because no reader in this
+  repository reaches them. "The same settings except emissions" is therefore partly machine-enforced
+  (burst, emissions, PRF: read back and refused on disagreement) and partly an operator assertion,
+  and the sheet says which is which;
 - each job's definition file agrees with the plan on the job name, the name prefix, the duration,
   the window, the burst, the PRF **and the emissions level** — the pass's only variable is checked
   first;
