@@ -42,6 +42,7 @@ from udv_echo_process.analysis import (
     prf_ladder,
     reference_repeat,
     resolution_ladder,
+    sparse_anchor_floor,
     sparse_inventory,
     sweep_inventory,
 )
@@ -1786,6 +1787,7 @@ _COMMANDS = {
     "reference-repeat": reference_repeat_main,
     "resolution-ladder": resolution_ladder_main,
     "run-all": run_all_main,
+    "sparse-anchor-floor": sparse_anchor_floor.anchor_floor_main,
     "sparse-inventory": sparse_inventory_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
