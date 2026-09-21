@@ -241,7 +241,16 @@ def test_the_five_gate_questions_are_answered_in_the_plans_order(model) -> None:
     )
     assert "not as a dense pass" in model.answers[3].answer
     assert "eight run-level jobs in one campaign" in model.answers[4].answer
-    assert "E64-D" in model.answers[4].answer
+    # the answer quotes the campaign's own sequence, in its own order - the whole sequence, so
+    # a second copy of it cannot drift back to the pre-counterbalancing design unnoticed
+    answer = model.answers[4].answer
+    assert ", ".join(model.campaign.sequence) in answer
+    assert [name for name in model.campaign.sequence if name in answer] == list(
+        model.campaign.sequence
+    )
+    assert "E20-A, E64-A, E20-B" not in answer
+    for name in model.campaign.sequence:
+        assert answer.count(name) == 1, name
 
 
 def test_the_recommendation_samples_both_levels_in_one_campaign(model) -> None:

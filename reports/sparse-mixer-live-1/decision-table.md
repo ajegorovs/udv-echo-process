@@ -32,7 +32,7 @@ not as a dense pass. The pitch x burst interaction is limited by the burst jobs'
 
 **5. if it is, which small set of new conditions, and what does each buy?**
 
-eight run-level jobs in one campaign, sampling the two levels alternately: E20-A, E64-A, E20-B, E64-B, E20-C, E64-C, E20-D, E64-D. Emissions per profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration - and alternating the order means slow drift is sampled by both levels. They buy the one thing the ladder cannot supply: four emissions-64 and four emissions-20 observations made contemporaneously, a between-run floor measured inside that same campaign, and four adjacent paired contrasts. This pass's four emissions-20 runs and its existing emissions-64 recording stay as prior context; only the decisive comparison moves. Nothing else is recommended, and the acceptance criterion is stated in advance below.
+eight run-level jobs in one campaign, and this is their acquisition order: E20-A, E64-A, E64-B, E20-B, E20-C, E64-C, E64-D, E20-D. They are four counterbalanced pairs, so each level leads two pairs and follows in two and slow drift is sampled by both. Emissions per profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration. They buy the one thing the ladder cannot supply: four emissions-64 and four emissions-20 observations made contemporaneously, a between-run floor measured inside that same campaign, and four adjacent paired contrasts oriented E64 minus E20. This pass's four emissions-20 runs and its existing emissions-64 recording stay as prior context; only the decisive comparison moves. Nothing else is recommended, and the acceptance criterion is stated in advance below.
 
 ## The decision table
 
@@ -152,6 +152,7 @@ the pass's floors are adequate for everything it measured except one distinction
 | `no_dense_sweep_is_kept` | yes |
 | `not_detected_is_not_read_as_absent` | yes |
 | `the_engine_revision_is_recorded` | yes |
+| `the_fifth_answer_quotes_the_campaigns_own_sequence` | yes |
 | `the_first_answer_names_the_unresolved_axis_as_unresolved` | yes |
 | `the_five_gate_questions_are_answered_in_order` | yes |
 | `the_floors_are_read_not_declared` | yes |

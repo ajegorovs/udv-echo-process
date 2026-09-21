@@ -380,9 +380,13 @@ uv run --extra dev ruff format --check src tests
   blocks nothing above, and nothing above may claim an SNR or saturation result without
   it.
 - **No acquisition change.** Nothing in this plan re-opens the sweep, the run plan, the
-  verifier or the driver. The one acquisition-side number this analysis measures — the
-  planner's transfer term on this pass — is recorded in the report README as a
-  measurement; acting on it would be an acquisition change with its own justification.
+  verifier or the driver. The one acquisition-side number this analysis measures is the
+  **fixed profile overhead** on this pass: the intercept `T_profile − N_em · T_PRF`, which
+  WP4 measures at **10.400 ms** and decomposes into the internal-emission term
+  (`16 · T_PRF` = 9.600 ms) and a residual of **~0.800 ms**. The residual is the transfer
+  term; the intercept is never called the transfer term, and no earlier estimate (such as
+  the ~0.77 ms this pass's planner *law* implied) is quoted as the measurement. Acting on
+  any of it would be an acquisition change with its own justification.
 - **No broad second acquisition** is designed here. WP5 either names the small set that is
   worth acquiring or says that none is, and it names exactly one: the bounded paired E20/E64
   block in section 4b. Designing that block is the plan's endpoint - compiling its eight-job
