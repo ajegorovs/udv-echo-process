@@ -88,7 +88,7 @@ Nothing in `reports/sparse-mixer-live-1/decision-table.md` is rewritten: its E64
 ## Reproduce
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 960c729
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 72a6994
 ```
 
 The table is `pairs.csv`, the definition document `pairs.json` (it carries the definitions, the gate checks and the table's SHA-256), and the figure `figures/pairs.png`.

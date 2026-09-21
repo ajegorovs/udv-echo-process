@@ -5,7 +5,7 @@
   "plan": "stage2-e20-e64",
   "plan_path": "examples/stage2-e20-e64/run-plan.json",
   "plan_fingerprint": "16a1f060053ad09fed3817076cf1fc96fc8a8e446c6aacbfabd2173b49bee427",
-  "analysis_commit": "960c729",
+  "analysis_commit": "72a6994",
   "channel": 1,
   "duration_s": 12.0,
   "window_s": 12.0,
@@ -310,6 +310,7 @@
     "overlap_kind_is_consistent": true,
     "prior_floors_are_context_only": true
   },
+  "ok": true,
   "figure": "figures/pairs.png",
   "table_sha256": "sha256:eeeda5453e82099f319f166b996b81ab54ff69bb4a8646a4db4217f917ced48c"
 }

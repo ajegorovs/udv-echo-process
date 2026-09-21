@@ -72,19 +72,45 @@ from udv_echo_process.models.base import ValueModel
 # ── constants ──────────────────────────────────────────────────────────
 
 #: The frozen slices this synthesis reads, by the key its own document uses.
-SLICES: tuple[tuple[str, str, str], ...] = (
+SLICES: tuple[tuple[str, str, str, str], ...] = (
     (
         "WP0",
         "qc-summary.json",
         "the ingest: the pass's points, its window and its checks",
+        "",
     ),
-    ("WP1", "anchor-floor.json", "each scientific job's own block-local anchor floor"),
-    ("WP2", "reference-floor.json", "the between-run reference floor, both endpoints"),
-    ("WP3", "pitch-burst.json", "the pitch x burst interaction on the common knots"),
+    (
+        "WP1",
+        "anchor-floor.json",
+        "each scientific job's own block-local anchor floor",
+        "",
+    ),
+    (
+        "WP2",
+        "reference-floor.json",
+        "the between-run reference floor, both endpoints",
+        "",
+    ),
+    (
+        "WP3",
+        "pitch-burst.json",
+        "the pitch x burst interaction on the common knots",
+        "",
+    ),
     (
         "WP4",
         "emissions-ladder.json",
         "the emissions ladder's stability and temporal cost",
+        "",
+    ),
+    (
+        "stage2",
+        "pairs.json",
+        (
+            "the counterbalanced Stage-2 campaign that ran the recommendation below: its four "
+            "paired contrasts, the floor measured inside that campaign, and its outcome"
+        ),
+        "reports/stage2-e20-e64",
     ),
 )
 
@@ -173,6 +199,9 @@ class DecisionRow(ValueModel):
     verdict: str
     scope: str
     overturning_measurement: str
+    #: What the row said before a later campaign moved it, quoted rather than rewritten:
+    #: a revised decision that cannot show its own prior state cannot be audited.
+    prior_state: str | None = None
 
 
 class OrderedAnswer(ValueModel):
@@ -182,6 +211,21 @@ class OrderedAnswer(ValueModel):
     question: str
     answer: str
     evidence_refs: tuple[str, ...]
+
+
+class Stage2Execution(ValueModel):
+    """The recommendation above, as it was actually run - and what it returned."""
+
+    dataset: str
+    plan: str
+    artefacts: str
+    revision: str
+    jobs: int
+    outcome: str
+    contrast_mm_s: dict[str, float]
+    scalar_floor_mm_s: float
+    depth_floor_mm_s: float
+    note: str
 
 
 class Stage2Campaign(ValueModel):
@@ -196,6 +240,9 @@ class Stage2Campaign(ValueModel):
     buys: tuple[str, ...]
     acceptance: str
     refused: tuple[str, ...]
+    #: The campaign block above is the recommendation this pass published; once it has been
+    #: acquired, the record of what it returned belongs beside it.
+    execution: Stage2Execution | None = None
 
 
 class DecisionSynthesis(ValueModel):
@@ -314,8 +361,11 @@ def read_slices(
     """Read the five slices, refusing anything that is missing or failed."""
     documents: dict[str, dict] = {}
     refs: list[SliceRef] = []
-    for name, filename, what in SLICES:
-        document, digest, _ = _load(report_dir, filename, name)
+    for name, filename, what, directory in SLICES:
+        # ``directory`` names a slice that lives outside this report directory; an empty
+        # entry is this pass's own slice, read from ``report_dir``.
+        location = Path(directory) if directory else Path(report_dir)
+        document, digest, _ = _load(location, filename, name)
         refs.append(_slice_ref(name, filename, what, document, digest))
         documents[name] = document
     return documents, tuple(refs)
@@ -333,6 +383,9 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
     worse than no decision.
     """
     wp2, wp3, wp4 = documents["WP2"], documents["WP3"], documents["WP4"]
+    stage2 = documents["stage2"]
+    s2_scalar = _number(stage2, "screening_floor_mm_s", "stage2")
+    s2_depth = _number(stage2, "depth_resolved_floor_mm_s", "stage2")
     w2_resolved = _number(wp2, "floor.depth_resolved.value_mm_s", "WP2")
     w2_averaged = _number(wp2, "floor.depth_averaged.value_mm_s", "WP2")
     w3_resolved = _number(wp3, "floors.depth_resolved.value_mm_s", "WP3")
@@ -417,6 +470,27 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
             source_slice="WP1",
             applies_to="the E8, E64 and E128 rows' within-job bracketing",
         ),
+        FloorRef(
+            name="the Stage-2 campaign's own scalar floor",
+            value_mm_s=s2_scalar,
+            endpoint=(
+                "the campaign's own observed run-to-run maximum, scalar reduction: the larger "
+                "of its two levels' largest absolute difference over that level's six unique "
+                "run pairs"
+            ),
+            source_slice="stage2",
+            applies_to="the four paired E64-minus-E20 contrasts of that campaign",
+        ),
+        FloorRef(
+            name="the Stage-2 campaign's own per-gate floor",
+            value_mm_s=s2_depth,
+            endpoint=(
+                "the campaign's own observed run-to-run maximum, per gate, over the common "
+                "support"
+            ),
+            source_slice="stage2",
+            applies_to="the depth-resolved reading of the same four contrasts",
+        ),
     )
 
 
@@ -426,6 +500,8 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
 def read_story(documents: dict[str, dict]) -> dict[str, object]:
     """Every number the rows quote, read from the slice that published it."""
     wp1, wp2, wp3, wp4 = (documents[key] for key in ("WP1", "WP2", "WP3", "WP4"))
+    s2_scalar = _number(documents["stage2"], "screening_floor_mm_s", "stage2")
+    s2_depth = _number(documents["stage2"], "depth_resolved_floor_mm_s", "stage2")
     jobs = {str(job["job"]): job for job in _at(wp1, "jobs", "WP1")}
     levels = {str(level["level"]): level for level in _at(wp4, "levels", "WP4")}
     steps = _at(wp4, "steps", "WP4")
@@ -522,6 +598,41 @@ def read_story(documents: dict[str, dict]) -> dict[str, object]:
         "e128_ratio_mid": float(e128["ratio_to_job_anchor_floor_vs_mid"]),
         "e128_positive_vs_begin": int(e128["knots_positive_vs_begin"]),
         "e128_gates": int(e128["gates"]),
+        "stage2": {
+            "contrasts": {
+                str(contrast["pair"]): float(contrast["oriented_mm_s"])
+                for contrast in _at(documents["stage2"], "contrasts", "stage2")
+            },
+            "orientations": {
+                str(contrast["pair"]): str(contrast["acquisition_orientation"])
+                for contrast in _at(documents["stage2"], "contrasts", "stage2")
+            },
+            "scalar_floor_mm_s": float(s2_scalar),
+            "scalar_floor_level": str(
+                _at(documents["stage2"], "screening_floor_level", "stage2")
+            ),
+            "depth_floor_mm_s": float(s2_depth),
+            "depth_floor_depth_mm": float(
+                _at(documents["stage2"], "depth_resolved_floor_depth_mm", "stage2")
+            ),
+            "outcome": str(_at(documents["stage2"], "outcome", "stage2")),
+            "overlap_kind": str(_at(documents["stage2"], "overlap_kind", "stage2")),
+            "resolved_share": float(
+                _at(documents["stage2"], "depth_resolved_resolved_share", "stage2")
+            ),
+            "level_scalar_floors": {
+                str(floor["level"]): float(floor["depth_averaged_mm_s"])
+                for floor in _at(documents["stage2"], "floors", "stage2")
+            },
+            "level_depth_floors": {
+                str(floor["level"]): float(floor["depth_resolved_mm_s"])
+                for floor in _at(documents["stage2"], "floors", "stage2")
+            },
+            "dataset": str(_at(documents["stage2"], "dataset", "stage2")),
+            "revision": str(_at(documents["stage2"], "analysis_commit", "stage2")),
+            "plan": str(_at(documents["stage2"], "plan", "stage2")),
+            "runs": len(_at(documents["stage2"], "runs", "stage2")),
+        },
     }
 
 
@@ -544,6 +655,17 @@ def _rows(
     spreads = story["stated_variation"]
     rates = story["rates_hz"]
     profiles = story["profiles_per_block"]
+    stage2 = story["stage2"]
+    assert isinstance(stage2, dict)  # the slice's numbers, quoted and never re-derived here
+    contrasts = {pair: float(value) for pair, value in stage2["contrasts"].items()}
+    orientations = {pair: str(value) for pair, value in stage2["orientations"].items()}
+    s2_scalar = float(stage2["scalar_floor_mm_s"])
+    s2_depth = float(stage2["depth_floor_mm_s"])
+    s2_depth_depth = float(stage2["depth_floor_depth_mm"])
+    share = float(stage2["resolved_share"])
+    scalar_level = str(stage2["scalar_floor_level"])
+    above = sum(1 for value in contrasts.values() if abs(value) > s2_scalar)
+    largest = max(abs(value) for value in contrasts.values())
 
     return (
         DecisionRow(
@@ -647,46 +769,84 @@ def _rows(
         ),
         DecisionRow(
             key="e64_versus_e20",
-            question="does emissions 64 improve the velocity estimate over emissions 20?",
+            question=(
+                "does emissions 64 improve the estimate enough over emissions 20 to justify its "
+                "slower profile rate?"
+            ),
             evidence=(
-                "WP4's ladder: E64 is one scientific recording inside its job's three block-local "
-                "anchors; E20 is the four common-reference runs, so the step is four run-resolved "
-                "differences and no averaged E20 profile exists to take it from."
+                "the counterbalanced Stage-2 campaign - the one this table's own recommendation "
+                "asked for, since acquired and frozen - read through its own slice: eight run-level "
+                "jobs in four pairs, emissions per profile the only run-wide setting that differs, "
+                "every pair read E64 minus E20 whatever order it was acquired in, with each pair's "
+                "acquisition orientation retained. This pass's ladder is kept beside it as the prior "
+                "context that made the campaign necessary."
             ),
             evidence_refs=(
+                "pairs.json#contrasts",
+                "pairs.json#floors",
+                "pairs.json#scalar_verdict",
                 "emissions-ladder.json#steps",
-                "emissions-ladder.json#brackets",
-                "emissions-ladder.json#levels",
             ),
             applicable_floor=(
-                f"WP2's depth-averaged endpoint, {averaged:.3f} mm/s, as the between-run reference; E64's "
-                f"own anchor spread, {spreads['E64']:.3f} mm/s, as its within-job context"
+                f"the campaign's own scalar floor, {s2_scalar:.3f} mm/s - measured on its own eight "
+                f"runs, from the larger of its two levels' six-pair maxima - applied to its four "
+                f"paired contrasts; depth-resolved, the campaign's own per-gate floor, "
+                f"{s2_depth:.3f} mm/s at {s2_depth_depth:.3f} mm. The earlier pass's "
+                f"{averaged:.3f} mm/s is quoted as prior context and screens nothing here: that pass "
+                "measured the two levels in different campaigns, which is the confounding the "
+                "campaign exists to remove."
             ),
-            floor_mm_s=averaged,
+            floor_mm_s=s2_scalar,
             observed_effect=(
-                f"the E64-to-E20 depth-averaged differences span {e64_low:+.3f} to {e64_high:+.3f} mm/s "
-                f"depending on which E20 run E64 is compared with, with a per-gate extreme of "
-                f"{story['step_e20_e64_extreme']:.3f} mm/s at "
-                f"{story['step_e20_e64_extreme_depth']:.3f} mm; the span straddles the "
-                f"{averaged:.3f} mm/s floor"
+                "the four paired contrasts are "
+                + ", ".join(
+                    f"{pair} {value:+.4f}" for pair, value in sorted(contrasts.items())
+                )
+                + " mm/s, i.e. "
+                + ", ".join(
+                    f"{pair} acquired {orientations[pair]}" for pair in sorted(contrasts)
+                )
+                + f", all oriented E64 - E20; {above} of the four exceed the {s2_scalar:.4f} mm/s "
+                f"floor and their directions are not consistent, so the largest |contrast| is "
+                f"{largest:.4f} mm/s. Depth-resolved, {share:.1%} of the 50 supported gates are "
+                f"resolved and no gate has even one pair above the {s2_depth:.4f} mm/s per-gate "
+                "floor. The scalar floor is set by this level's own worst same-level disagreement "
+                f"({scalar_level} at {s2_scalar:.4f} mm/s) rather than by the emissions-64 side, "
+                "whose four runs are tight."
             ),
-            observed_effect_mm_s=e64_low,
+            observed_effect_mm_s=largest,
             interpretation=(
-                "the comparison changes classification with the reference realization: against one of the "
-                "four E20 runs the difference exceeds the between-run floor and against others it does "
-                "not. E64 is therefore suggestive against E20 and unresolved by this pass - it is neither "
-                "shown better nor shown the same, and one realization per level is what makes that "
-                "undecidable."
+                "no emissions-64 improvement over emissions 20 is detected at this experiment's "
+                "resolving power: all four contemporaneous paired contrasts sit inside the floor "
+                "that same campaign measured for itself and they do not share a direction, so the "
+                "step is neither shown better nor shown the same. **Not detected is not the same as "
+                "absent** - it is a statement about this campaign's resolving power, and the floor "
+                "is set by one emissions-20 run rather than by the emissions-64 side. The practical "
+                "consequence is a cost decision, not a supersession: no evidence-based reason "
+                "remains to pay emissions 64's slower profile rate for this setup, so `replace` here "
+                "means **do not spend further acquisition effort on emissions 64 in this design and "
+                "keep emissions 20's higher rate**. `defer` would now mean waiting for a measurement "
+                "that this campaign was designed to supply and did."
             ),
-            decision_class="not resolvable with this design",
-            automation="none: E64 is already writable and was written in this pass",
-            verdict="defer",
+            decision_class="not detected at this design's floors",
+            automation="none: E64 is already writable and was written in the campaign",
+            verdict="replace",
             scope=STAGE_SCOPE,
             overturning_measurement=(
-                "run-level realizations of *both* levels inside one campaign - the paired alternating "
-                "set recommended below - so that the step becomes a contemporaneous four-against-four "
-                "comparison carrying its own measured between-run floor, rather than new emissions-64 "
-                "runs screened against an older reference"
+                "an emissions-64-minus-20 difference that exceeds a contemporaneous campaign's own "
+                "floor in a consistent direction - more runs per level inside one campaign, or a "
+                "setup where the longer coherent integration is needed for a reason this campaign "
+                "did not test (a slower or noisier flow). A single extra pair would not do it: this "
+                "campaign's floor is one level's own worst same-level disagreement, so it takes "
+                "replication on both sides rather than one more recording."
+            ),
+            prior_state=(
+                "`defer` / not resolvable with this pass's design: with one realization per level "
+                "and the two levels measured in different campaigns, the E64-to-E20 step changed "
+                "classification with whichever reference realization it was compared against, so "
+                "the pass could neither show E64 better nor show it the same. The overturning "
+                "measurement it named - realizations of both levels inside one campaign - is the "
+                "campaign this row now reads."
             ),
         ),
         DecisionRow(
@@ -800,33 +960,48 @@ def _rows(
             floor_mm_s=None,
             observed_effect=(
                 f"the largest unresolved effect this pass can see is the scalar pitch x burst interaction "
-                f"at {abs(interaction):.3f} mm/s, which is inside the burst jobs' own anchor movement; the "
-                f"only unresolved *distinction* that additional run-level realizations can settle is "
-                f"E20 against E64, whose span ({e64_low:+.3f} to {e64_high:+.3f} mm/s) straddles the "
-                f"{averaged:.3f} mm/s floor"
+                f"at {abs(interaction):.3f} mm/s, which is inside the burst jobs' own anchor movement and "
+                f"is not settled by more points of the same design. The one *distinction* additional "
+                f"run-level realizations could settle was E20 against E64, whose span "
+                f"({e64_low:+.3f} to {e64_high:+.3f} mm/s) then straddled the {averaged:.3f} mm/s floor "
+                f"- and that distinction has since been measured: the targeted campaign returned four "
+                f"paired contrasts whose largest is {largest:.4f} mm/s, all inside the "
+                f"{s2_scalar:.4f} mm/s floor that campaign measured for itself, with no consistent "
+                "direction"
             ),
             observed_effect_mm_s=None,
             interpretation=(
                 "a dense second pass would reproduce these floors: the pitch x burst interaction is "
                 "limited by movement *inside* the burst jobs, and adding more pitch or burst conditions "
-                "of the same design does not shrink that. Only the E20/E64 realization dependence is "
-                "bounded by the number of runs rather than by the rig, and only it is worth measuring "
-                "again - as a bounded paired block inside one campaign, not a matrix."
+                "of the same design does not shrink that. The E20/E64 realization dependence was the one "
+                "limitation bounded by the number of runs rather than by the rig, and it was addressed "
+                "by the bounded paired block rather than by density: **that measurement has been "
+                "performed and did not detect a stable emissions-64 benefit above its contemporaneous "
+                "floor**, so it is no longer an open distinction and nothing here remains worth "
+                "measuring again by density or by a further emission level."
             ),
             decision_class="not resolvable with this design",
             automation=(
-                "none, and for a different reason than the pointwise surface's: the recommended block "
-                "changes neither resolution nor gates - it is eight run-level jobs at the reference "
-                "window's own settings - and its one varying run-wide setting is emissions per profile, "
-                "which the operator sets before each job and the compile's read-back verifies. No "
-                "acquisition-layer change is needed to run it."
+                "none. The bounded block this row pointed to has been acquired and analysed: it was "
+                "eight run-level jobs at the reference window's own settings, its one varying run-wide "
+                "setting (emissions per profile) was set by the operator and verified by the compile's "
+                "read-back, and no acquisition-layer change was needed to run it. Nothing about that "
+                "block is future work."
             ),
             verdict="defer",
             scope=STAGE_SCOPE,
             overturning_measurement=(
                 "a diagnostic that shows the within-job anchor movement is an artefact of the schedule "
-                "rather than the rig, or a named question that the recommended targeted set does not "
-                "answer"
+                "rather than the rig, or a named question that density could answer and the targeted "
+                "set could not - the E20/E64 realization dependence this row once pointed to is no "
+                "longer one of those, having been measured and reported not detected"
+            ),
+            prior_state=(
+                "this row said that the only unresolved distinction additional run-level realizations "
+                "could settle was E20 against E64, that it was worth measuring again as a bounded "
+                "paired block inside one campaign, and that the eight-job block was the next "
+                "acquisition. That block has since been run (see the campaign record above) and its "
+                "result is not detected at that campaign's floors."
             ),
         ),
         DecisionRow(
@@ -868,21 +1043,34 @@ def _rows(
 
 
 def _answers(
-    story: dict[str, object], rows: tuple[DecisionRow, ...]
+    story: dict[str, object],
+    rows: tuple[DecisionRow, ...],
+    floors: tuple[FloorRef, ...],
 ) -> tuple[OrderedAnswer, ...]:
     """The five questions the plan's gate requires, in its order."""
     by_key = {row.key: row for row in rows}
-    averaged = float(by_key["e64_versus_e20"].floor_mm_s or 0.0)
+    del by_key
+    averaged = next(
+        floor.value_mm_s
+        for floor in floors
+        if floor.name == "between-run reference, depth-averaged"
+    )
     profiles = story["profiles_per_block"]
     return (
         OrderedAnswer(
             order=1,
             question="which axes can be collapsed or fixed?",
             answer=(
-                "the emissions axis partly: E128 is replaced by E64 on cost, since no measured quantity "
-                "prefers it and its period is a factor of "
-                f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} longer; E8 and E20 are "
-                "kept, E8 having shown no stability loss and E20 being the pass's own reference. The "
+                "the emissions axis, on cost at both upper levels: **E20 is retained as the reference "
+                "and default condition**, E8 stays useful for bandwidth, and neither upper level is "
+                "worth acquiring again in this design - E128 because no measured quantity prefers it "
+                "and its period is a factor of "
+                f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} longer than E64's, and "
+                "E64 because the targeted contemporaneous campaign this pass recommended has since "
+                "been run and detected no improvement over E20 large enough to separate from the "
+                "variation that campaign measured for itself (answer 4). **`E128 is replaced by E64` "
+                "is no longer the current state of the axis**: E64 is not the level to move to, E20 "
+                "is. The "
                 "pitch axis is not collapsed: its interaction is unresolved at this design's floors, "
                 "which is a statement about separability rather than about the axis being irrelevant. "
                 "The burst axis stays at the two levels the historical table already fixed (4 and 18 "
@@ -916,14 +1104,20 @@ def _answers(
             order=3,
             question="which levels are redundant?",
             answer=(
-                f"E128 is not a level worth acquiring further: no depth-averaged improvement over E64 is "
-                f"detected, and a fixed {story['block_s']:g} s block holds {profiles['E128']} profiles "
-                f"against {profiles['E64']} at E64. E8 and E20 are not redundant - E8 carries the "
-                "ladder's bandwidth advantage with no measured stability cost, and E20 is the only "
-                "condition observed in more than one run, so it is what makes any between-run statement "
-                "possible at all. The emissions levels' three block-local anchor sets are not redundant "
-                "either: they are each job's own drift diagnostic and the reason every E-level "
-                "comparison has a within-job context."
+                "on current evidence, **neither E64 nor E128 is justified for further acquisition in "
+                f"this design**. E128 because no depth-averaged improvement over E64 is detected and a "
+                f"fixed {story['block_s']:g} s block holds {profiles['E128']} profiles against "
+                f"{profiles['E64']} at E64; E64 because the contemporaneous test of it has now been run "
+                "and no emissions-64 improvement over emissions 20 was detected above that campaign's "
+                "own floor (answer 4). **E20 remains the reference and default condition**: it is the "
+                "only level with more than one realization of its own *and* the level the paired "
+                "campaign measured against, which is what makes any between-run statement possible at "
+                "all. **E8 remains useful for bandwidth**: it carries the ladder's advantage with no "
+                "measured stability cost. Not detected is not the same as absent at any of these "
+                "levels - it is a statement about the floors each one was screened against. The "
+                "emissions levels' three block-local anchor sets are not redundant either: they are "
+                "each job's own drift diagnostic and the reason every E-level comparison has a "
+                "within-job context."
             ),
             evidence_refs=("emissions-ladder.json#temporal", "anchor-floor.json#jobs"),
         ),
@@ -931,16 +1125,19 @@ def _answers(
             order=4,
             question="is a denser second acquisition justified at all?",
             answer=(
-                "not as a dense pass. The pitch x burst interaction is limited by the burst jobs' own "
-                "anchor movement, which more points of the same design do not shrink; the emissions "
-                "ladder's one unresolved distinction (E20 against E64) is limited by how many runs each "
-                f"level has, and the observed difference straddles the {averaged:.3f} mm/s floor "
-                "depending on which E20 run is used. Only that second limitation is worth spending "
-                "recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign "
-                "and screened against this pass's emissions-20 runs would be separated by a campaign "
-                "as well as by an emission level, and the pass has measured that between-run variation "
-                "is large enough for that to enter the comparison. It takes realizations of both "
-                "levels inside one campaign."
+                "not as a dense pass, and no longer as a bounded one either. The pitch x burst "
+                "interaction is limited by the burst jobs' own anchor movement, which more points of "
+                "the same design do not shrink. The emissions ladder's one unresolved distinction "
+                "(E20 against E64) was limited by how many runs each level has rather than by the rig, "
+                f"and the observed difference then straddled the {averaged:.3f} mm/s floor depending on "
+                "which E20 run was used - so that one distinction was worth spending recordings on, and "
+                "not by acquiring emissions 64 alone: runs made in a later campaign and screened "
+                "against this pass's emissions-20 runs would be separated by a campaign as well as by "
+                "an emission level. Realizations of both levels inside one campaign were therefore "
+                "acquired (answer 5), and **that campaign's result closes the question at its own "
+                "resolving power**: no emissions-64 improvement over emissions 20 was detected above "
+                "the variation the campaign measured for itself, in either direction, depth-averaged "
+                "or per gate. Nothing measured here now argues for a denser acquisition of any kind."
             ),
             evidence_refs=(
                 "pitch-burst.json#conservative_reading",
@@ -951,20 +1148,25 @@ def _answers(
             order=5,
             question="if it is, which small set of new conditions, and what does each buy?",
             answer=(
-                "eight run-level jobs in one campaign, and this is their acquisition order: "
-                f"{', '.join(STAGE2_SEQUENCE)}. They are four counterbalanced pairs, so each level "
-                "leads two pairs and follows in two and slow drift is sampled by both. Emissions per "
-                "profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, "
-                "and the same power, sensitivity, TGC, first gate, sound speed and duration. They buy "
-                "the one thing the ladder cannot supply: four emissions-64 and four emissions-20 "
-                "observations made contemporaneously, a between-run floor measured inside that same "
-                "campaign, and four adjacent paired contrasts oriented E64 minus E20. This pass's four "
-                "emissions-20 runs and its existing emissions-64 recording stay as prior context; only "
-                "the decisive comparison moves. Nothing else is recommended, and the acceptance "
-                "criterion is stated in advance below."
+                "**the one bounded set this pass recommended was the eight-job Stage-2 campaign**, and "
+                "this is the record of it: "
+                f"{', '.join(STAGE2_SEQUENCE)} - four counterbalanced pairs, so each level led two "
+                "pairs and followed in two and slow drift was sampled by both, with emissions per "
+                "profile the only setting that differed (1.850 mm, 50 gates, burst 10, PRF 600 us, and "
+                "the same power, sensitivity, TGC, first gate, sound speed and duration). It bought the "
+                "one thing the ladder could not supply: four emissions-64 and four emissions-20 "
+                "observations made contemporaneously, a floor measured inside that same campaign, and "
+                "four adjacent paired contrasts oriented E64 minus E20. **It has since been run**, and "
+                "its result is unresolved overlap / not detected: every one of the four contrasts sits "
+                "inside the floor that campaign measured for itself and they do not share a direction. "
+                "**No further emissions acquisition is currently recommended from this workstream** - "
+                "the set recommended by this pass has been acquired, analysed and incorporated into "
+                "the E64-vs-E20 row above, and nothing in its result names a measurement worth buying "
+                "next."
             ),
             evidence_refs=(
                 "emissions-ladder.json#levels",
+                "pairs.json#contrasts",
                 "decision-table.json#campaign",
             ),
         ),
@@ -972,26 +1174,36 @@ def _answers(
 
 
 def _campaign(
-    story: dict[str, object], rows: tuple[DecisionRow, ...]
+    story: dict[str, object],
+    rows: tuple[DecisionRow, ...],
+    floors: tuple[FloorRef, ...],
 ) -> Stage2Campaign:
-    averaged = float(
-        next(row for row in rows if row.key == "e64_versus_e20").floor_mm_s or 0.0
+    del rows  # the recommendation quotes the floors it was drafted against, not a row's
+    averaged = next(
+        floor.value_mm_s
+        for floor in floors
+        if floor.name == "between-run reference, depth-averaged"
     )
+    stage2 = story["stage2"]
+    assert isinstance(stage2, dict)
+    contrasts = {pair: float(value) for pair, value in stage2["contrasts"].items()}
     low, high = story["step_e20_e64"]
+    stage2_outcome = str(stage2["outcome"])
     return Stage2Campaign(
-        recommended=True,
+        recommended=False,
         justification=(
-            "the pass's floors are adequate for everything it measured except one distinction, and that "
-            "one is limited by how many runs a level has rather than by the rig: the E64-to-E20 "
-            f"difference spans {low:+.3f} to {high:+.3f} mm/s depending on which of the four E20 runs it "
-            f"is compared with, so it straddles the {averaged:.3f} mm/s between-run floor. Acquiring "
-            "emissions 64 alone would not settle it: those runs would be made in a later campaign and "
-            "compared against emissions-20 runs from this one, and the between-run variation this pass "
-            "measured is large enough that campaign-level drift would enter the emissions comparison. "
-            "The two levels therefore have to be sampled alternately inside one campaign, so that slow "
-            "drift is shared by both levels and the decisive comparison carries a floor measured in its "
-            "own campaign. The existing four emissions-20 runs and the existing emissions-64 recording "
-            "stay as prior context; only the decisive comparison moves to the new block."
+            "**this block was this pass's one recommendation, and it has been acquired.** It existed "
+            "because the pass's floors were adequate for everything it measured except one distinction, "
+            "and that one was limited by how many runs a level has rather than by the rig: the "
+            f"E64-to-E20 difference spanned {low:+.3f} to {high:+.3f} mm/s depending on which of the "
+            f"four E20 runs it was compared with, straddling the {averaged:.3f} mm/s between-run floor, "
+            "and acquiring emissions 64 alone would not have settled it - those runs would have been "
+            "made in a later campaign and compared against emissions-20 runs from this one, so "
+            "campaign-level drift would have entered the emissions comparison. Sampling both levels "
+            "alternately inside one campaign was the answer, and the block below is what was designed "
+            f"and run. Its result is {stage2_outcome} / not detected: no emissions-64 improvement over "
+            "emissions 20 was separable from the variation that campaign measured for itself. "
+            "**No further acquisition is recommended from this workstream.**"
         ),
         pair_design=(
             "The four pairs are **acquired in the order below**, and that assignment is part of the "
@@ -1090,6 +1302,27 @@ def _campaign(
                 "fixed 600 us law at every emissions level"
             ),
         ),
+        execution=Stage2Execution(
+            dataset=str(stage2["dataset"]),
+            plan=str(stage2["plan"]),
+            artefacts="reports/stage2-e20-e64/",
+            revision=str(stage2["revision"]),
+            jobs=int(stage2["runs"]),
+            outcome=str(stage2["outcome"]),
+            contrast_mm_s={pair: float(value) for pair, value in contrasts.items()},
+            scalar_floor_mm_s=float(stage2["scalar_floor_mm_s"]),
+            depth_floor_mm_s=float(stage2["depth_floor_mm_s"]),
+            note=(
+                "Its four paired contrasts are "
+                + ", ".join(
+                    f"{pair} {value:+.4f} mm/s" for pair, value in sorted(contrasts.items())
+                )
+                + f", every one inside the {float(stage2['scalar_floor_mm_s']):.4f} mm/s floor it "
+                "measured for itself and with no consistent direction; depth-resolved, no gate has "
+                "even one pair above its per-gate floor. The E64-vs-E20 row above is updated to "
+                "that outcome, and the acquisition itself is a separate reviewed slice."
+            ),
+        ),
     )
 
 
@@ -1106,6 +1339,18 @@ def _checks(
     """The WP5 gate: what has to hold before a decision is published."""
     keys = {row.key for row in rows}
     by_key = {row.key: row for row in rows}
+    #: Everything the synthesis says about what should be measured next. The gate below reads it
+    #: as one text so a stale future-tense claim cannot survive anywhere in it.
+    post_campaign_prose = " ".join(
+        (
+            *(answer.answer for answer in answers),
+            campaign.justification,
+            by_key["dense_second_pass"].interpretation,
+            by_key["dense_second_pass"].automation,
+            by_key["dense_second_pass"].observed_effect,
+            by_key["dense_second_pass"].overturning_measurement,
+        )
+    )
     return {
         "every_frozen_slice_is_cited_and_held_its_gate": all(
             ref.ok and ref.checks_passed == ref.checks_total and ref.recorded_revision
@@ -1175,9 +1420,58 @@ def _checks(
             and by_key["sensitivity_d1"].verdict == "requires diagnostic"
         ),
         "no_dense_sweep_is_kept": by_key["dense_second_pass"].verdict != "keep",
+        "the_campaign_row_reads_the_campaigns_own_floor": by_key[
+            "e64_versus_e20"
+        ].floor_mm_s
+        == next(
+            floor.value_mm_s
+            for floor in floors
+            if floor.name == "the Stage-2 campaign's own scalar floor"
+        ),
+        "the_e64_row_records_the_state_it_moved_from": bool(
+            by_key["e64_versus_e20"].prior_state
+        )
+        and "not resolvable with this pass's design" in by_key["e64_versus_e20"].prior_state,
+        "a_block_that_has_run_is_not_still_recommended": (
+            campaign.recommended is (campaign.execution is None)
+        ),
+        "the_answers_carry_the_post_campaign_state": (
+            "E20 is retained as the reference and default condition" in answers[0].answer
+            and "no longer the current state of the axis" in answers[0].answer
+            and "neither E64 nor E128 is justified for further acquisition" in answers[2].answer
+            and "closes the question at its own resolving power" in answers[3].answer
+            and "No further emissions acquisition is currently recommended" in answers[4].answer
+            and "It has since been run" in answers[4].answer
+        ),
+        "the_old_future_state_is_gone": all(
+            forbidden not in post_campaign_prose for forbidden in (
+                "Only that second limitation is worth spending recordings on",
+                "only it is worth measuring again",
+                "Nothing else is recommended, and the acceptance",
+                "is what should be measured next",
+                "the recommended block changes neither resolution nor gates",
+            )
+        ),
+        "the_dense_row_records_the_measurement_it_pointed_to": (
+            "has been performed and did not detect a stable emissions-64 benefit" 
+            in by_key["dense_second_pass"].interpretation
+            and "no longer an open distinction" in by_key["dense_second_pass"].interpretation
+            and "Nothing about that block is future work" in by_key["dense_second_pass"].automation
+            and by_key["dense_second_pass"].prior_state is not None
+        ),
+        "the_stage2_campaign_is_recorded_as_run": (
+            campaign.execution is not None
+            and campaign.execution.dataset == str(story["stage2"]["dataset"])  # type: ignore[index]
+            and campaign.execution.outcome == str(story["stage2"]["outcome"])  # type: ignore[index]
+            and campaign.execution.jobs == campaign.recordings
+            and (
+                story["stage2"]["overlap_kind"] != "not detected"  # type: ignore[index]
+                or by_key["e64_versus_e20"].decision_class
+                == "not detected at this design's floors"
+            )
+        ),
         "both_levels_are_sampled_in_one_campaign": (
-            campaign.recommended
-            and campaign.recordings == 8
+            campaign.recordings == 8
             and len(campaign.conditions) == 2
             and len(campaign.sequence) == campaign.recordings
             and len([name for name in campaign.sequence if name.startswith("E20")]) == 4
@@ -1240,7 +1534,7 @@ def _checks(
             < 1e-12
             and abs(
                 by_key["e64_versus_e20"].observed_effect_mm_s
-                - float(story["step_e20_e64"][0])
+                - max(abs(float(value)) for value in story["stage2"]["contrasts"].values())
             )
             < 1e-12
             and abs(
@@ -1268,8 +1562,8 @@ def build_decision_synthesis(
     story = read_story(documents)
     rows = _rows(story, floors)
     plan = documents["WP0"]
-    answers = _answers(story, rows)
-    campaign = _campaign(story, rows)
+    answers = _answers(story, rows, floors)
+    campaign = _campaign(story, rows, floors)
     checks = _checks(
         rows=rows,
         floors=floors,
@@ -1313,6 +1607,7 @@ CSV_COLUMNS: tuple[str, ...] = (
     "verdict",
     "scope",
     "overturning_measurement",
+    "prior_state",
 )
 
 
@@ -1475,8 +1770,14 @@ def markdown_text(model: DecisionSynthesis) -> str:
         rows.append(f"- **interpretation:** {row.interpretation}")
         rows.append(f"- **automation needed:** {row.automation}")
         rows.append(f"- **would be overturned by:** {row.overturning_measurement}")
+        if row.prior_state:
+            rows.append(f"- **what this row said before:** {row.prior_state}")
         rows.append("")
-    rows.append("## What is recommended next, and what is refused")
+    rows.append(
+        "## What was recommended, what it returned, and what is refused"
+        if model.campaign.execution is not None
+        else "## What is recommended next, and what is refused"
+    )
     rows.append("")
     rows.append(model.campaign.justification)
     rows.append("")
@@ -1499,6 +1800,17 @@ def markdown_text(model: DecisionSynthesis) -> str:
     rows.append(
         f"**Acceptance criterion, stated in advance:** {model.campaign.acceptance}"
     )
+    execution = model.campaign.execution
+    if execution is not None:
+        rows.append("")
+        rows.append("**This campaign has since been acquired, and this is what it returned:**")
+        rows.append("")
+        rows.append(
+            f"The recommendation above is no longer pending. It was run as `{execution.plan}` "
+            f"({execution.jobs} run-level jobs), and its bytes are frozen at `{execution.dataset}` "
+            f"with the report at `{execution.artefacts}` (generator `{execution.revision}`). "
+            + execution.note
+        )
     rows.append("")
     rows.append("**Refused, on this pass's own evidence:**")
     rows.append("")
