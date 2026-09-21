@@ -47,7 +47,12 @@ trial's first gate off the stored file, which belongs to the ingest.
 3. **the remaining seven jobs** only if that trial is clean, on the same frozen plan;
 4. **the analysis ingest** after the data exists (the user's plan step 4: ingestion and QC of the stored
    files, per-job drift, the reference checks across runs, the pitch × burst contrast, and a Stage-2
-   recommendation) — deliberately not started, because it reads files that do not exist yet;
+   recommendation) — deliberately not started, because it reads files that do not exist yet. The trial
+   hands it two numbers that the review of that trial made **requirements rather than observations**:
+   **temporal analysis uses the period measured from the stored timestamps** (22.37 ms in the trial), not
+   the nominal sizing period (12.99 ms assumed), and **the size-signature model is re-examined** so it is
+   not implicitly calibrated against that wrong period — `expected_size_bytes` ran up to 0.54× off while
+   the files themselves are sound;
 5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
    surface) and blocks nothing above it.
 
