@@ -16,7 +16,10 @@ from that manifest, ``resolution-ladder`` writes the WP2 resolution axis,
 ``burst-ladder`` the WP2 burst-length axis, ``prf-ladder`` the WP2
 pulse-repetition-frequency axis and ``gain-power-screen`` the velocity-only
 TGC and emitting-power screening — levels, pairs and figure — all against the WP1
-screening_threshold, and none of them touches an instrument.
+screening_threshold, and none of them touches an instrument. ``sparse-inventory``
+is the sparse pass's own WP0: it writes the live pass's point table and QC summary
+from the committed recordings, the pass record and the plan, and it checks what it
+reads against them rather than trusting a filename.
 """
 
 from __future__ import annotations
@@ -39,6 +42,12 @@ from udv_echo_process.analysis import (
     prf_ladder,
     reference_repeat,
     resolution_ladder,
+    sparse_anchor_floor,
+    sparse_decision_synthesis,
+    sparse_emissions_ladder,
+    sparse_inventory,
+    sparse_pitch_burst,
+    sparse_reference_floor,
     sweep_inventory,
 )
 from udv_echo_process.io import load
@@ -1695,6 +1704,81 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
     raise SystemExit(0)
 
 
+def sparse_inventory_main(argv: list[str] | None = None) -> None:
+    """``sparse-inventory`` — write the sparse pass's WP0 table and QC summary.
+
+    Reads the committed recordings of ``data/sparse-mixer-live-1`` through the public
+    reader, binds every one of them to the planned point the pass's own record claims
+    for it, and writes ``points.csv`` and ``qc-summary.json`` into the report
+    directory. It exits 0 when every WP0 gate check holds and 1 otherwise, naming the
+    failed checks on stderr; a pass the dataset does not answer to refuses by name
+    with exit 1 and writes nothing. It touches nothing but those two files: no
+    instrument, no cache, no analysis beyond the ingest.
+    """
+    parser = argparse.ArgumentParser(
+        prog="udv-sparse-inventory",
+        description=(
+            "Ingest the committed sparse mixer pass: one table row per stored "
+            "recording plus the WP0 QC summary"
+        ),
+    )
+    parser.add_argument(
+        "--dataset-root",
+        default=sparse_inventory.DATASET_ROOT.as_posix(),
+        help="directory of committed .BDD recordings plus the pass's own record",
+    )
+    parser.add_argument(
+        "--plan",
+        default=sparse_inventory.PLAN_PATH.as_posix(),
+        help="the frozen plan the pass is a realization of",
+    )
+    parser.add_argument(
+        "--report-dir",
+        default=sparse_inventory.REPORT_DIR.as_posix(),
+        help="directory to write points.csv and qc-summary.json into",
+    )
+    parser.add_argument(
+        "--analysis-commit",
+        default=None,
+        help=(
+            "revision to record in the QC summary (default: the checkout's short "
+            "git SHA)"
+        ),
+    )
+    args = parser.parse_args(argv)
+
+    report_dir = Path(args.report_dir)
+    try:
+        ingest = sparse_inventory.write_sparse_ingest(
+            Path(args.dataset_root),
+            report_dir,
+            plan_path=Path(args.plan),
+            analysis_commit=args.analysis_commit,
+        )
+    except sparse_inventory.SparseIngestError as exc:
+        print(f"udv-sparse-inventory: {exc}", file=sys.stderr)
+        raise SystemExit(1) from None
+    print(
+        f"{ingest.recordings} / {ingest.expected_recordings} recordings, jobs "
+        f"{ingest.job_counts}"
+    )
+    print(
+        f"support : {ingest.support_mm[0]:.6g}-{ingest.support_mm[1]:.6g} mm, common "
+        f"window {ingest.window_revolutions} rev = {ingest.window_s:.4g} s"
+    )
+    print(
+        f"timing  : achieved period from the stored timestamps; worst departure from "
+        f"the planner's law {ingest.max_abs_period_residual_s:.4g} s"
+    )
+    print(f"points  : {report_dir / sparse_inventory.POINTS_NAME}")
+    print(f"summary : {report_dir / sparse_inventory.QC_NAME}")
+    print(f"commit  : {ingest.analysis_commit}")
+    failed = [name for name, ok in sorted(ingest.checks.items()) if not ok]
+    for name in failed:
+        print(f"udv-sparse-inventory: check failed: {name}", file=sys.stderr)
+    raise SystemExit(0 if ingest.ok else 1)
+
+
 #: The command a module-level invocation names first: `python -m udv_echo_process.cli <name> ...`
 #: — the form the live path uses, because a command that drives the GUI has to be started in the
 #: session that owns the screen and a dispatcher can only name a module (`tools/live/README.md`).
@@ -1707,6 +1791,12 @@ _COMMANDS = {
     "reference-repeat": reference_repeat_main,
     "resolution-ladder": resolution_ladder_main,
     "run-all": run_all_main,
+    "sparse-anchor-floor": sparse_anchor_floor.anchor_floor_main,
+    "sparse-inventory": sparse_inventory_main,
+    "sparse-decision": sparse_decision_synthesis.decision_main,
+    "sparse-emissions-ladder": sparse_emissions_ladder.emissions_ladder_main,
+    "sparse-pitch-burst": sparse_pitch_burst.pitch_burst_main,
+    "sparse-reference-floor": sparse_reference_floor.reference_floor_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
 }

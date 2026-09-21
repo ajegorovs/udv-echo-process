@@ -386,7 +386,8 @@ def test_the_module_dispatcher_names_every_command() -> None:
     """`python -m udv_echo_process.cli <command>` is the form the live dispatcher uses."""
     from udv_echo_process import cli
 
-    # WP0, WP1 and WP2 add the read-only analysis verbs beside the four live ones.
+    # WP0, WP1 and WP2 add the read-only analysis verbs beside the four live ones,
+    # and the sparse pass adds its ingest and its two measurement slices beside them.
     assert set(cli._COMMANDS) == {
         "acquire",
         "burst-ladder",
@@ -396,6 +397,12 @@ def test_the_module_dispatcher_names_every_command() -> None:
         "reference-repeat",
         "resolution-ladder",
         "run-all",
+        "sparse-anchor-floor",
+        "sparse-decision",
+        "sparse-emissions-ladder",
+        "sparse-inventory",
+        "sparse-pitch-burst",
+        "sparse-reference-floor",
         "sweep-inventory",
         "viz",
     }

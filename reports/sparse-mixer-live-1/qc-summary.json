@@ -1,0 +1,125 @@
+{
+  "dataset_root": "data/sparse-mixer-live-1",
+  "plan": "sparse-mixer-live-1",
+  "plan_path": "examples/sparse-mixer-live-1/run-plan.json",
+  "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
+  "analysis_commit": "a82e56f",
+  "points": "points.csv",
+  "points_rows": 26,
+  "points_sha256": "sha256:4f0f6972421bdf8f4e284d43f2364a1fb233f78928906f34e8f87aef25451cfc",
+  "recordings": 26,
+  "expected_recordings": 26,
+  "job_counts": {
+    "burst-18": 5,
+    "burst-4": 5,
+    "common-reference-1": 1,
+    "common-reference-2": 1,
+    "common-reference-3": 1,
+    "common-reference-4": 1,
+    "emissions-128": 4,
+    "emissions-64": 4,
+    "emissions-8": 4
+  },
+  "expected_job_counts": {
+    "burst-18": 5,
+    "burst-4": 5,
+    "common-reference-1": 1,
+    "common-reference-2": 1,
+    "common-reference-3": 1,
+    "common-reference-4": 1,
+    "emissions-128": 4,
+    "emissions-64": 4,
+    "emissions-8": 4
+  },
+  "decode_failures": 0,
+  "decode_failure_files": [],
+  "nan_cells": 0,
+  "non_monotone_files": [],
+  "not_live_files": [],
+  "short_retention_files": [],
+  "max_abs_period_residual_s": 0.000223529411765,
+  "observed_words": {
+    "op_word_14": {
+      "values": [
+        "128",
+        "20",
+        "64",
+        "8"
+      ],
+      "counts": {
+        "128": 4,
+        "20": 14,
+        "64": 4,
+        "8": 4
+      }
+    },
+    "op_word_27": {
+      "values": [
+        "1"
+      ],
+      "counts": {
+        "1": 26
+      }
+    },
+    "op_word_84": {
+      "values": [
+        "0"
+      ],
+      "counts": {
+        "0": 26
+      }
+    },
+    "note": "the stored op words of the 26 recordings, decoded independently by this reader and re-published here so the prose that cites them has one machine-readable authority. Word 14 is each point's own emissions request; word 84 is the stored skipped-profile count. Word 27 is the instrument's option-list INDEX, not a length: the index-to-mm relation is medium- and burst-dependent and was only ever measured at one sound speed, so the historical sweep's stored index (4) and this pass's (1) are not the same measurement of a shared setting, and neither states an acoustic averaging length. No analysis may read the two as one setting"
+  },
+  "views": {
+    "point_table": "one row per committed recording; the full record for the shape, the retention and the whole-record counters",
+    "common_window": {
+      "revolutions": 100,
+      "nominal_rpm": 500.0,
+      "revolution_s": 0.12,
+      "window_s": 12.0,
+      "rule": "the interval the pass asked every recording for, 100 nominal 500-RPM revolutions = 12 s, cut in each recording by that recording's own stored timestamps. It is NOT widened to the largest interval the files happen to support: the surplus span (12.4686-12.5888 s retained) is the acquisition's stopping latency, so it belongs to the full-record view (spectra, autocorrelation) and not to the primary exposure"
+    },
+    "common_support": {
+      "support_min_mm": 10.138,
+      "support_max_mm": 98.93800000000002,
+      "rule": "the intersection of every recording's decoded depth range; the supported metrics are computed on each recording's own native gate grid inside it, and no interpolation or resampling is applied anywhere in this report"
+    },
+    "achieved_timing": "the profile period is measured from each recording's own stored timestamps; the logs' timing.target_s is carried as provenance (emissions_per_profile x prf_us + 1 ms) and is never used as a measurement"
+  },
+  "definitions": {
+    "achieved_period_s": "the profile period measured from the recording's own stored timestamps, (t_last - t_first) / (profiles - 1), in seconds; never the log's timing.target_s, which records the retired planning expectation",
+    "duration_s": "the retained span of the recording, t_last - t_first from its stored timestamps, in seconds",
+    "op_word_27": "the stored sampling-volume word: the instrument's option-list INDEX, not a length. The index-to-mm relation is medium- and burst-dependent and was only ever measured at one sound speed, so this index states no acoustic averaging length and is not comparable with the historical sweep's own stored index (4). The historical value is quoted only to keep the two apart",
+    "op_word_14": "the stored emissions-per-profile word, which is each point's own request",
+    "op_word_84": "the stored skipped-profile word (0 throughout this pass)",
+    "retained_fraction": "duration_s / requested_duration_s, dimensionless",
+    "retains_designed_window": "duration_s >= 12 s (100 nominal 500-RPM revolutions): whether the recording covers the pass's designed exposure in full, which is what the primary view uses",
+    "period_expectation_s": "the planner's own law, acquire/plan.py::profile_period_s (the manual's T_tran + T_prf x (16 + N_PRF)), for the point's decoded emissions and PRF",
+    "period_residual_s": "achieved_period_s - period_expectation_s, in seconds",
+    "zero_fraction": "count of samples exactly equal to 0.0 divided by the record length, dimensionless (the whole record, every gate)",
+    "supported_*": "the same distributional metrics as reference_repeat.gate_metrics, computed over the common window (window_s, the pass's designed exposure: the declared 12 s = 100 nominal revolutions) restricted to the common physical support (support_min_mm..support_max_mm); each per-gate statistic is then aggregated across the supported gates by an unweighted mean, so one row is comparable with another whatever its gate count",
+    "is_control": "true for the pass's three block-local anchor controls (ctrl-begin, ctrl-mid, ctrl-end): each records its own job's anchor condition at the reference spatial window, so a burst-4 job's controls are burst 4 and not the reference condition. 'Reference' in this table means the reference condition that CR1-CR4 record; a control is not a reference realization",
+    "declared_accepted_resolution_mm": "the pitch the application accepts for the point's requested declared_resolution_mm: the resolution ladder is quantized to c / 12000 mm and snapping is to the nearest rung (acquire/plan.py::clamp_resolution), so a requested 0.617 mm is stored as 0.6166666666666667 mm. resolution_mm is the file's own achieved value and must equal this",
+    "log_target_s": "the log's own timing.target_s, carried as provenance: it reproduces the retired law (emissions_per_profile x prf_us + 1 ms) the planner used on the day of the run, and it is not the achieved period. The logs are not rewritten to match a later law"
+  },
+  "checks": {
+    "achieved_period_within_the_planners_law": true,
+    "analysis_commit": true,
+    "common_support": true,
+    "common_window": true,
+    "decode_failures": true,
+    "job_counts": true,
+    "nan_cells": true,
+    "recordings": true,
+    "retention": true,
+    "retired_target_recorded": true,
+    "signal_content": true,
+    "timestamps_monotone": true
+  },
+  "ok": true,
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli sparse-inventory --analysis-commit a82e56f",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}

@@ -20,3 +20,18 @@ reports/mixer-sensitivity-analysis/*.md text eol=lf
 
 # Committed figures are binary evidence: never translated, never diffed as text.
 reports/mixer-sensitivity-analysis/figures/*.png binary
+
+# The sparse pass's WP0 artefacts bind themselves the same way: qc-summary.json
+# records the SHA-256 of the points.csv bytes beside it, so a checkout whose
+# core.autocrlf is true would make the two documents disagree about their own
+# identity and the committed-artefact regeneration test would fail on a hash rather
+# than on a number. The README travels with them because it names the same values.
+reports/sparse-mixer-live-1/*.csv text eol=lf
+reports/sparse-mixer-live-1/*.json text eol=lf
+reports/sparse-mixer-live-1/*.md text eol=lf
+
+# The pass's own logs are the provenance the ingest re-reads (the retired target each
+# entry records): a translated line still parses, and pinning LF keeps the bytes a
+# reviewer checks identical in every checkout.
+data/sparse-mixer-live-1/*.jsonl text eol=lf
+data/sparse-mixer-live-1/*.json text eol=lf

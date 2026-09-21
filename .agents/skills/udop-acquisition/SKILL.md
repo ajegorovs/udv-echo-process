@@ -341,6 +341,34 @@ wrong rung. Read the constants out of the app (its dialog readouts, or the artif
 computing a plan, and where a derived readout exists — total depth as a function of first gate, gate
 count and resolution — compute the plan so that it is checkable against that one number. **Assert the plan against the artefact's own derived quantity, not against the UI's text:** the app's painted first-gate/depth values are control values, and a decoder that reproduced the file's own depth profile matched it to within the quantisation step while the UI's stated first gate was 0.2-0.3 mm out — close enough to look right, and wrong enough to bias every planned point.
 
+## The measured timing law: the achieved profile period
+
+**The stored timestamps, never the log's `timing.target_s`.** The period a recording actually
+achieved is the median of the successive differences of its own per-profile time array. The
+retired planning field stays provenance only — it is what the planner *asked* for, and using it
+as a measurement silently substitutes intent for observation.
+
+**The fixed intercept is what you measure; the transfer term is only its remainder.** Do not
+call the intercept a transfer term - this instrument's period law carries 16 PRF terms before
+the transfer term, so at 600 us the intercept is 9.6 ms of internal emission plus the transfer
+proper. On the mixer-enabled sparse pass, every level's achieved period was exactly
+
+```
+achieved period = emissions_per_profile × 600 µs + 10.400 ms
+```
+
+measured at all four values of emissions (8, 20, 64, 128): 15.200 / 22.400 / 48.800 / 87.200 ms,
+i.e. 65.789 / 44.643 / 20.492 / 11.468 Hz, Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz. The
+intercept decomposes as the manual's 16-term (16 × 600 µs = 9.600 ms) plus a 0.800 ms transfer
+term proper — which is what makes it worth stating: it is the instrument's own overhead, not a
+rounding artefact, and it is what any period *prediction* must add to match what the files show.
+
+Two consequences for an acquisition that trades time for stability: the sampling rate falls with
+emissions exactly as this law says, so the bandwidth cost is computable before running; and
+levels must be compared on **equal physical duration**, not equal profile counts — the same 2 s
+block holds 132 / 89 / 41 / 23 profiles at emissions 8 / 20 / 64 / 128, so an equal-count
+comparison silently gives the low-emissions level more time.
+
 ## Pitfalls
 
 The measured failure modes of this class, each with the observation behind it and the rule it

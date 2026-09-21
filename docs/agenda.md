@@ -19,6 +19,8 @@ transcript.
   [`marimo-integration-log.md`](marimo-integration-log.md)
 - Historical timeline and superseded concepts:
   [`agenda-history.md`](agenda-history.md)
+- The sparse pass's analysis work plan (WP0–WP5):
+  [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md)
 
 ---
 
@@ -241,20 +243,64 @@ profiles in one fixture and 4193–4927 in another.
 > the first sparse pass is complete, and acquisition logic stops changing here** — it re-opens only if
 > the analysis exposes a real problem, never because an abstraction looks improvable.
 >
-> **What a fresh session does next: the scientific ingest, and nothing else.** It reads committed files
-> and needs no instrument, so it is unblocked the moment a session starts. The review names its
-> outputs: common-support normalization, within-job drift, the CR1–CR4 reference drift, the 2×2
-> pitch × burst interaction, the emissions 8 / 20 / 64 / 128 behaviour, and then a Stage-2
-> recommendation (item 4 of
-> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It analyses
-> [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md), whose 26 recordings all carry
-> signal; the zero-signal first pass stays acquisition-qualification evidence. Two facts about that
-> directory the ingest must respect: the period comes from the **stored timestamps** (the logs'
-> `timing.target_s` records the retired expectation — provenance, not to be rewritten), and the two
-> plans are pinned equivalent by a test, so the repeat cannot silently become another experiment. The
-> live-dependent suites stay the first preflight at any sitting that touches the instrument
-> (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
-> that is not an understood live-state prerequisite stops the sitting before a recording is spent.
+> **What a fresh session does next: the scientific analysis, and nothing else.** It reads committed files
+> and needs no instrument, so it is unblocked the moment a session starts. **WP0 of it has landed**
+> (`analysis/sparse-pass-ingest`): the ingest table and its gate —
+> [`reports/sparse-mixer-live-1/points.csv`](../reports/sparse-mixer-live-1/points.csv) (26 rows: identity,
+> order, condition, requested and stored window, decoded settings, the achieved period from the stored
+> timestamps, retention, signal statistics on the common window and support, and the provenance of both
+> sides) plus `qc-summary.json`, produced by `python -m udv_echo_process.cli sparse-inventory` and pinned by
+> 23 tests to the pass's own record, the plan, and the two provenance rules. Two measured facts it hands the
+> later work packages: the three windows are co-located on one physical interval (10.138–98.938 mm at three
+> pitches, the 1.85 mm window's last gate outside the cut), and the planner's transfer term measures
+> ~0.77 ms here — the law sits 0.21–0.22 ms above the achieved period at every emission level, in one
+> direction. **WP1 and WP2 have landed beside it** (cleared in parallel by the review of WP0, which is
+> frozen): [`reports/sparse-mixer-live-1/anchor-floor.md`](../reports/sparse-mixer-live-1/anchor-floor.md)
+> gives each scientific job's own anchor floor — drift (`M - B`, `E - M`, `E - B`) and spread (`max - min`
+> over the three) kept apart, with the scientific rows bracketed in acquisition order — and
+> [`reference-floor.md`](../reports/sparse-mixer-live-1/reference-floor.md) gives CR1–CR4 as four runs in
+> campaign order with their six pairwise depth-resolved differences and both floor endpoints. **The floors,
+> measured:** the burst jobs' anchors move 9.646 and 11.980 mm/s (burst-18's *turns*, so its range is not
+> its drift), the emissions jobs' 1.521 / 2.829 / 3.304, and the between-run reference floor is 4.235 mm/s
+> depth-averaged (14.603 mm/s per depth at 21.238 mm). Two consequences bind what follows: a burst contrast
+> under ~10 mm/s cannot be separated from its own controls, and the between-run floor is not ordered by
+> elapsed time (the two runs 5.3 minutes apart differ most), so it is not a rate. **WP3 and WP4 have now
+> landed too**: `reports/sparse-mixer-live-1/pitch-burst.md` (the 2x2 on 31 common knots no finer than
+> 2.960 mm, `I(z) = -7.922 mm/s` depth-averaged, 9/31 knots over the depth-resolved endpoint and 10/31 over
+> burst-18's own anchor spread, so no depth-averaged pitch x burst effect is separable) and
+> `reports/sparse-mixer-live-1/emissions-ladder.md` (achieved periods 15.200 / 22.400 / 48.800 / 87.200 ms,
+> Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz, 2 s physical-duration blocks of 132 / 89 / 41 / 23 profiles,
+> and the e128 observation measured at 1.007x / 1.421x its own job's anchor spread). **Next: WP5, the
+> Stage-2 decision table, which consumes all four measured floors and is the only thing that may justify a
+> second acquisition.** **WP5 has now landed too**:
+> [`reports/sparse-mixer-live-1/decision-table.md`](../reports/sparse-mixer-live-1/decision-table.md)
+> reads the four frozen slices rather than recomputing anything and carries the seven outstanding
+> questions with their evidence, floor, observed effect, interpretation, verdict and overturning
+> measurement — the pitch x burst interaction `defer` (not resolvable with this design and not
+> evidence of absence), E8 against E20 `keep`, E64 against E20 `defer`, E128 against E64 `replace`,
+> the PRF `keep`, a dense second pass refused, and D1 `requires diagnostic` outside the Stage-2
+> scope. Its one recommendation is the smallest set that can settle that last distinction: **eight
+> run-level jobs in **one** campaign, sampling both levels in counterbalanced pairs**
+> (`E20-A E64-A | E64-B E20-B | E20-C E64-C | E64-D E20-D`), with emissions per profile the only
+> setting that differs, pair and order assignment part of the design, and the decisive comparison
+> screened against a between-run floor measured **inside that campaign**. An emissions-64-only top-up was rejected in
+> review and by the analysis itself: new emissions-64 runs compared against this pass's emissions-20
+> runs would be separated by a campaign as well as by an emission level, which is the nuisance
+> variation WP2 exists to warn about. It refuses a broad sweep on the pass's own evidence.
+> **The analysis phase is now complete: WP0–WP5 are all reviewed and frozen** (WP5 at head
+> `ad2913c`), and PR #27's scientific decision logic is closed — it changes again only for an actual
+> defect. **Next, and it is acquisition work rather than analysis: compile the eight-job
+> counterbalanced Stage-2 run plan and its operator sheet** — same sequence, fixed reference-window
+> condition, pair labels, read-back verification, and provenance enough for the later Stage-2
+> analysis to reconstruct each pair and its acquisition orientation without inference. Nothing else
+> in this workstream is open. The work order and the acceptance gates are in
+> [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
+> is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
+> **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked
+> as such, never to be rewritten), and the two plans are pinned equivalent by a test, so the repeat cannot
+> silently become another experiment. The live-dependent suites stay the first preflight at any sitting that
+> touches the instrument (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`):
+> any failure that is not an understood live-state prerequisite stops the sitting before a recording is spent.
 
 >
 > Everything else in this workstream is closed: the identity change and its device ladder
