@@ -1698,12 +1698,23 @@ def markdown_text(model: PitchBurst) -> str:
     add("")
     add(
         f"- The scalar reduction of `I(z)` is "
-        f"**{model.interaction_reduction_mm_s:+.3f} mm/s**. Its magnitude is "
-        f"{abs(model.interaction_reduction_mm_s):.3f} mm/s, which is below both anchor "
-        f"floors ({model.anchor_floors_mm_s['burst-4']:.3f} and "
-        f"{model.anchor_floors_mm_s['burst-18']:.3f} mm/s) and also below the "
-        f"depth-resolved endpoint: at the depth-averaged level this interaction is not "
-        "separable from the two jobs' own anchor movement."
+        f"**{model.interaction_reduction_mm_s:+.3f} mm/s** (magnitude "
+        f"{abs(model.interaction_reduction_mm_s):.3f} mm/s). The endpoint a scalar is "
+        f"compared with is the **depth-averaged** one, and against it this interaction "
+        f"**exceeds** WP2's between-run floor of "
+        f"{model.depth_averaged_floor_mm_s:.3f} mm/s, by a factor of "
+        f"{abs(model.interaction_reduction_mm_s) / model.depth_averaged_floor_mm_s:.2f}. "
+        "The depth-resolved endpoint is not the right comparator for a scalar and is not "
+        "used here."
+    )
+    add(
+        f"- It stays **below both burst jobs' own anchor spreads** "
+        f"({model.anchor_floors_mm_s['burst-4']:.3f} and "
+        f"{model.anchor_floors_mm_s['burst-18']:.3f} mm/s), so the conservative "
+        "within-job criterion still prevents calling the depth-averaged interaction "
+        "resolved: it is larger than the campaign's own between-run reference variation "
+        "and smaller than the movement of the anchors inside the very jobs it was "
+        "measured from."
     )
     add(
         f"- Depth-resolved, `|I(z)|` is a screening outcome above the `burst-4` guard at "
@@ -1725,8 +1736,9 @@ def markdown_text(model: PitchBurst) -> str:
         "near and mid field, where its local magnitudes reach "
         f"{model.interaction_max_abs_mm_s:.3f} mm/s at "
         f"{model.interaction_max_abs_depth_mm:.3f} mm and change sign around the middle "
-        "of the profile, while its depth-averaged value stays inside the anchors' own "
-        "movement. Both statements are observations. Neither proves that the pitch, the "
+        "of the profile, while its depth-averaged value exceeds the campaign's own "
+        "between-run reference floor and still sits inside the anchors' own movement. "
+        "Both statements are observations. Neither proves that the pitch, the "
         "burst or their combination caused anything — the two jobs differ in condition "
         "*and* in their own drift, and this pass has one realization per corner."
     )
