@@ -45,6 +45,7 @@ from udv_echo_process.analysis._native_grid import (
 from udv_echo_process.analysis.reference_repeat import gate_metrics
 from udv_echo_process.analysis.sparse_inventory import (
     DATASET_ROOT,
+    PLAN_NAME,
     PLAN_PATH,
     DecodedPoint,
     PlannedJobRecord,
@@ -114,9 +115,15 @@ class PassDecoding(NamedTuple):
 
 
 def decode_pass(
-    dataset_root: Path = DATASET_ROOT, *, plan_path: Path = PLAN_PATH
+    dataset_root: Path = DATASET_ROOT,
+    *,
+    plan_path: Path = PLAN_PATH,
+    plan_name: str = PLAN_NAME,
 ) -> PassDecoding:
     """Bind and decode every committed recording of the pass, or refuse by name.
+
+    ``plan_name`` names the pass record inside the dataset root and defaults to this
+    pass's own, so a later pass reuses this loader (and every refusal below) unchanged.
 
     Raises:
         SparseIngestError: for any condition the frozen WP0 ingest refuses — a pass
@@ -128,7 +135,7 @@ def decode_pass(
     """
     root = Path(dataset_root)
     plan = run_plan.plan_run_file(Path(plan_path))
-    run = read_run_record(root)
+    run = read_run_record(root, plan_name=plan_name)
     records = read_job_records(root, plan, run)
     bindings = bind_recordings(root, records)
 

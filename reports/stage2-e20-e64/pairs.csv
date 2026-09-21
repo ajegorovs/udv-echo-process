@@ -1,0 +1,35 @@
+kind,pair,job,step,role,level,emissions_per_profile,acquisition_orientation,value_name,value,unit
+run,A,e20-a,1,lead,E20,20,,depth_averaged_mean_mm_s,22.6053478206,mm/s
+run,A,e64-a,2,follow,E64,64,,depth_averaged_mean_mm_s,29.830967882,mm/s
+run,B,e64-b,3,lead,E64,64,,depth_averaged_mean_mm_s,30.4363965001,mm/s
+run,B,e20-b,4,follow,E20,20,,depth_averaged_mean_mm_s,32.0096994862,mm/s
+run,C,e20-c,5,lead,E20,20,,depth_averaged_mean_mm_s,30.333525158,mm/s
+run,C,e64-c,6,follow,E64,64,,depth_averaged_mean_mm_s,30.6783134011,mm/s
+run,D,e64-d,7,lead,E64,64,,depth_averaged_mean_mm_s,31.175853543,mm/s
+run,D,e20-d,8,follow,E20,20,,depth_averaged_mean_mm_s,29.8340518085,mm/s
+contrast,A,,,,,,20 -> 64,oriented_mm_s,7.22562006139,mm/s
+contrast,A,,,,,,20 -> 64,order_difference_mm_s,7.22562006139,mm/s
+contrast,A,,,,,,20 -> 64,rms_mm_s,8.74365464416,mm/s
+contrast,A,,,,,,20 -> 64,max_abs_mm_s,15.703567805,mm/s
+contrast,A,,,,,,20 -> 64,exceeds_floor,false,count
+contrast,B,,,,,,64 -> 20,oriented_mm_s,-1.57330298604,mm/s
+contrast,B,,,,,,64 -> 20,order_difference_mm_s,1.57330298604,mm/s
+contrast,B,,,,,,64 -> 20,rms_mm_s,4.75818625684,mm/s
+contrast,B,,,,,,64 -> 20,max_abs_mm_s,10.970058446,mm/s
+contrast,B,,,,,,64 -> 20,exceeds_floor,false,count
+contrast,C,,,,,,20 -> 64,oriented_mm_s,0.344788243058,mm/s
+contrast,C,,,,,,20 -> 64,order_difference_mm_s,0.344788243058,mm/s
+contrast,C,,,,,,20 -> 64,rms_mm_s,5.34556325697,mm/s
+contrast,C,,,,,,20 -> 64,max_abs_mm_s,17.4012251407,mm/s
+contrast,C,,,,,,20 -> 64,exceeds_floor,false,count
+contrast,D,,,,,,64 -> 20,oriented_mm_s,1.34180173451,mm/s
+contrast,D,,,,,,64 -> 20,order_difference_mm_s,-1.34180173451,mm/s
+contrast,D,,,,,,64 -> 20,rms_mm_s,7.52630296713,mm/s
+contrast,D,,,,,,64 -> 20,max_abs_mm_s,17.7326321675,mm/s
+contrast,D,,,,,,64 -> 20,exceeds_floor,false,count
+floor,,"e20-a, e20-b, e20-c, e20-d",,,E20,20,,depth_averaged_mm_s,9.4043516656,mm/s
+floor,,"e20-a, e20-b, e20-c, e20-d",,,E20,20,,depth_resolved_mm_s,28.5480741848,mm/s
+floor,,"e64-a, e64-b, e64-c, e64-d",,,E64,64,,depth_averaged_mm_s,1.34488566101,mm/s
+floor,,"e64-a, e64-b, e64-c, e64-d",,,E64,64,,depth_resolved_mm_s,10.8573793263,mm/s
+floor,,E20,,,E20,,,screening_floor_mm_s,9.4043516656,mm/s
+floor,,E20,,,E20,,,depth_resolved_floor_mm_s,28.5480741848,mm/s
