@@ -11,11 +11,17 @@ Nothing here measures a scientific effect, and nothing here changes acquisition.
 ingest is the evidence a *later* step needs; the contrasts are that step's own.
 
 **Status of the whole report:** WP0–WP5 are **implemented, reviewed and frozen**
-(`analysis/sparse-pass-ingest`; WP5 at head `ad2913c`), so every table indexed below is now a
+(`analysis/sparse-pass-ingest`; WP5 at head `ad2913c`), so every table indexed below is a
 frozen artefact and the scientific decision logic here changes again only for an actual defect.
 The decision table's one recommendation — eight run-level jobs in one campaign, counterbalanced
-pairs, emissions per profile the only varying setting — is a *design*; compiling its run plan
-and operator sheet is the next, separate acquisition work package.
+pairs, emissions per profile the only varying setting — was compiled
+([`examples/stage2-e20-e64/`](../../examples/stage2-e20-e64/)), **acquired on 2026-09-21**
+([`data/stage2-e20-e64/`](../../data/stage2-e20-e64/README.md)) and analysed
+([`../stage2-e20-e64/`](../stage2-e20-e64/README.md)). The table now **reads that campaign's own
+slice** as a sixth evidence source, and the E64-vs-E20 row above has moved from `defer` /
+not resolvable with this pass's design to `replace` / not detected at this design's floors — the
+one row this report's decision logic has changed for, with the state it moved from recorded in
+the row itself.
 
 | artefact | what it is |
 |---|---|
@@ -34,6 +40,12 @@ table are their own documents, each with its own artefacts and its own gate:
 | WP3 — pitch x burst interaction | [`pitch-burst.md`](pitch-burst.md) | `pitch-burst.csv`, `pitch-burst.json`, `figures/pitch-burst.png` | `sparse-pitch-burst` |
 | WP4 — emissions ladder and its temporal cost | [`emissions-ladder.md`](emissions-ladder.md) | `emissions-ladder.csv`, `emissions-ladder.json`, `figures/emissions-ladder-stability.png`, `figures/emissions-ladder-temporal.png` | `sparse-emissions-ladder` |
 | WP5 — the Stage-2 decision | [`decision-table.md`](decision-table.md) | `decision-table.csv`, `decision-table.json` | `sparse-decision` |
+
+The decision table also reads one slice that is not a work package of this pass: the Stage-2
+campaign's own [`pairs.json`](../stage2-e20-e64/pairs.json), produced by
+`sparse-stage2-pairs`, which supplies the E64-vs-E20 row's updated floor, observed effect and
+outcome. It is cited with its digest and generator revision like every other slice, and the
+synthesis refuses to build if it is missing or has not held its own gate.
 
 ## Reproduce
 

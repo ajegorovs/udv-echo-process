@@ -318,11 +318,14 @@ not consistent, which section 4b states is itself the answer and ends the questi
 pass's 4.235 / 14.603 mm/s are quoted there as context only — it measured the two levels in
 different campaigns — and screen nothing. The screen is set by the campaign's first job (`e20-a`,
 `+22.6053` mm/s against `+29.83 .. +32.01` for the other three emissions-20 runs); the report names
-it rather than excluding it. **The open items in this workstream:** moving the frozen decision
-table's E64-vs-E20 row
-([`../reports/sparse-mixer-live-1/decision-table.md`](../reports/sparse-mixer-live-1/decision-table.md),
-a pinned artefact) to this outcome is its own reviewed slice, and so is any decision to read the
-campaign against another floor endpoint. Nothing else is open.
+it rather than excluding it. **That workstream is now closed, one step further than this entry
+first recorded:** the frozen decision table's E64-vs-E20 row
+([`../reports/sparse-mixer-live-1/decision-table.md`](../reports/sparse-mixer-live-1/decision-table.md))
+has been updated to this outcome in its own reviewed slice — `replace` / not detected at this
+design's floors, citing the campaign's own slice as evidence, with the state it moved from
+(`defer` / not resolvable with the earlier design) retained inside the row. The one item the
+review named as still open is the explicitly **secondary** sensitivity reading: what the
+campaign would say without its first run. Nothing else is open.
 
 >
 > Everything else in this workstream is closed: the identity change and its device ladder

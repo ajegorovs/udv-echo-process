@@ -11,6 +11,8 @@ The five measurement slices are frozen; this document decides nothing about what
 | burst-4 job's own anchor spread | 9.646 | block-local anchor spread inside one job | WP1 | the conservative guard on the burst-4 job's contrasts |
 | burst-18 job's own anchor spread | 11.980 | block-local anchor spread inside one job | WP1 | the conservative guard on the burst-18 job's contrasts |
 | emissions-8 / 64 / 128 jobs' own anchor spreads | 2.829 | block-local anchor spread inside one job | WP1 | the E8, E64 and E128 rows' within-job bracketing |
+| the Stage-2 campaign's own scalar floor | 9.404 | the campaign's own observed run-to-run maximum, scalar reduction: the larger of its two levels' largest absolute difference over that level's six unique run pairs | stage2 | the four paired E64-minus-E20 contrasts of that campaign |
+| the Stage-2 campaign's own per-gate floor | 28.548 | the campaign's own observed run-to-run maximum, per gate, over the common support | stage2 | the depth-resolved reading of the same four contrasts |
 
 ## The five questions the plan's gate asks, in its order
 
@@ -60,16 +62,17 @@ The seven columns are the historical sweep's, so the two tables compare: the evi
 - **automation needed:** none: E8 is already writable and was written in this pass
 - **would be overturned by:** an E8-to-E20 difference outside the four-run spread at replicated realizations, or an E8 residual against its own anchors exceeding that job's own anchor spread
 
-### does emissions 64 improve the velocity estimate over emissions 20?
+### does emissions 64 improve the estimate enough over emissions 20 to justify its slower profile rate?
 
-- **verdict:** `defer` - stage-2 decision
-- **decision class:** `not resolvable with this design`
-- **evidence:** WP4's ladder: E64 is one scientific recording inside its job's three block-local anchors; E20 is the four common-reference runs, so the step is four run-resolved differences and no averaged E20 profile exists to take it from.
-- **floor:** WP2's depth-averaged endpoint, 4.235 mm/s, as the between-run reference; E64's own anchor spread, 2.829 mm/s, as its within-job context
-- **observed effect:** the E64-to-E20 depth-averaged differences span -6.405 to -2.170 mm/s depending on which E20 run E64 is compared with, with a per-gate extreme of 17.504 mm/s at 19.388 mm; the span straddles the 4.235 mm/s floor
-- **interpretation:** the comparison changes classification with the reference realization: against one of the four E20 runs the difference exceeds the between-run floor and against others it does not. E64 is therefore suggestive against E20 and unresolved by this pass - it is neither shown better nor shown the same, and one realization per level is what makes that undecidable.
-- **automation needed:** none: E64 is already writable and was written in this pass
-- **would be overturned by:** run-level realizations of *both* levels inside one campaign - the paired alternating set recommended below - so that the step becomes a contemporaneous four-against-four comparison carrying its own measured between-run floor, rather than new emissions-64 runs screened against an older reference
+- **verdict:** `replace` - stage-2 decision
+- **decision class:** `not detected at this design's floors`
+- **evidence:** the counterbalanced Stage-2 campaign - the one this table's own recommendation asked for, since acquired and frozen - read through its own slice: eight run-level jobs in four pairs, emissions per profile the only run-wide setting that differs, every pair read E64 minus E20 whatever order it was acquired in, with each pair's acquisition orientation retained. This pass's ladder is kept beside it as the prior context that made the campaign necessary.
+- **floor:** the campaign's own scalar floor, 9.404 mm/s - measured on its own eight runs, from the larger of its two levels' six-pair maxima - applied to its four paired contrasts; depth-resolved, the campaign's own per-gate floor, 28.548 mm/s at 15.688 mm. The earlier pass's 4.235 mm/s is quoted as prior context and screens nothing here: that pass measured the two levels in different campaigns, which is the confounding the campaign exists to remove.
+- **observed effect:** the four paired contrasts are A +7.2256, B -1.5733, C +0.3448, D +1.3418 mm/s, i.e. A acquired 20 -> 64, B acquired 64 -> 20, C acquired 20 -> 64, D acquired 64 -> 20, all oriented E64 - E20; 0 of the four exceed the 9.4044 mm/s floor and their directions are not consistent, so the largest |contrast| is 7.2256 mm/s. Depth-resolved, 0.0% of the 50 supported gates are resolved and no gate has even one pair above the 28.5481 mm/s per-gate floor. The scalar floor is set by this level's own worst same-level disagreement (E20 at 9.4044 mm/s) rather than by the emissions-64 side, whose four runs are tight.
+- **interpretation:** no emissions-64 improvement over emissions 20 is detected at this experiment's resolving power: all four contemporaneous paired contrasts sit inside the floor that same campaign measured for itself and they do not share a direction, so the step is neither shown better nor shown the same. **Not detected is not the same as absent** - it is a statement about this campaign's resolving power, and the floor is set by one emissions-20 run rather than by the emissions-64 side. The practical consequence is a cost decision, not a supersession: no evidence-based reason remains to pay emissions 64's slower profile rate for this setup, so `replace` here means **do not spend further acquisition effort on emissions 64 in this design and keep emissions 20's higher rate**. `defer` would now mean waiting for a measurement that this campaign was designed to supply and did.
+- **automation needed:** none: E64 is already writable and was written in the campaign
+- **would be overturned by:** an emissions-64-minus-20 difference that exceeds a contemporaneous campaign's own floor in a consistent direction - more runs per level inside one campaign, or a setup where the longer coherent integration is needed for a reason this campaign did not test (a slower or noisier flow). A single extra pair would not do it: this campaign's floor is one level's own worst same-level disagreement, so it takes replication on both sides rather than one more recording.
+- **what this row said before:** `defer` / not resolvable with this pass's design: with one realization per level and the two levels measured in different campaigns, the E64-to-E20 step changed classification with whichever reference realization it was compared against, so the pass could neither show E64 better nor show it the same. The overturning measurement it named - realizations of both levels inside one campaign - is the campaign this row now reads.
 
 ### does emissions 128 improve the estimate enough over emissions 64 to pay its cost?
 
@@ -130,6 +133,10 @@ the pass's floors are adequate for everything it measured except one distinction
 
 **Acceptance criterion, stated in advance:** the new campaign reports, separately: the four emissions-20 observations and the four emissions-64 observations; each level's own run-to-run spread; the four adjacent paired E64-to-E20 contrasts individually and oriented E64 minus E20, with each pair's acquisition orientation retained; the full cross-run range as context; and the depth-resolved differences against the between-run floor measured inside that campaign. The decision is then stated in one of two ways and no other. **Resolved difference:** the E64-to-E20 contrasts are consistently larger than the contemporaneous between-run variation and have a consistent direction. **Unresolved overlap:** the separation remains comparable to or smaller than the contemporaneous run-to-run variation, in which case that overlap is the answer and no further recording is indicated.
 
+**This campaign has since been acquired, and this is what it returned:**
+
+The recommendation above is no longer pending. It was run as `stage2-e20-e64` (8 run-level jobs), and its bytes are frozen at `data/stage2-e20-e64` with the report at `reports/stage2-e20-e64/` (generator `72a6994`). Its four paired contrasts are A +7.2256 mm/s, B -1.5733 mm/s, C +0.3448 mm/s, D +1.3418 mm/s, every one inside the 9.4044 mm/s floor it measured for itself and with no consistent direction; depth-resolved, no gate has even one pair above its per-gate floor. The E64-vs-E20 row above is updated to that outcome, and the acquisition itself is a separate reviewed slice.
+
 **Refused, on this pass's own evidence:**
 
 - an emissions-64-only acquisition screened against this pass's emissions-20 runs: the later campaign's drift would enter the comparison, which the paired design exists to prevent
@@ -151,6 +158,8 @@ the pass's floors are adequate for everything it measured except one distinction
 | `every_verdict_is_one_of_the_plans_four` | yes |
 | `no_dense_sweep_is_kept` | yes |
 | `not_detected_is_not_read_as_absent` | yes |
+| `the_campaign_row_reads_the_campaigns_own_floor` | yes |
+| `the_e64_row_records_the_state_it_moved_from` | yes |
 | `the_engine_revision_is_recorded` | yes |
 | `the_fifth_answer_quotes_the_campaigns_own_sequence` | yes |
 | `the_first_answer_names_the_unresolved_axis_as_unresolved` | yes |
@@ -159,6 +168,7 @@ the pass's floors are adequate for everything it measured except one distinction
 | `the_numbers_are_the_slices_own` | yes |
 | `the_pair_order_is_counterbalanced_and_part_of_the_design` | yes |
 | `the_seven_questions_are_the_reviews_own` | yes |
+| `the_stage2_campaign_is_recorded_as_run` | yes |
 | `the_stage2_comparison_carries_its_own_floor` | yes |
 | `the_two_endpoints_are_kept_apart` | yes |
 
