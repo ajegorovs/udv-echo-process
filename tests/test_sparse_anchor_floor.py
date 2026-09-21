@@ -516,6 +516,75 @@ def test_a_refusal_writes_no_half_artefact(tmp_path) -> None:
     assert not (report / saf.FIGURES_DIRNAME).exists()
 
 
+def _plain(text: str) -> str:
+    """The report's text with markdown emphasis and wrapping removed, for prose pins."""
+    for marker in ("**", "*", "`"):
+        text = text.replace(marker, "")
+    return " ".join(text.split())
+
+
+def _job_table_cells(markdown: str) -> dict[str, str]:
+    """The report's job table as ``{job: condition cell}``, from the rendered markdown."""
+    cells: dict[str, str] = {}
+    for line in markdown.splitlines():
+        row = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if len(row) == 8 and row[0].startswith(("burst-", "emissions-")):
+            cells[row[0]] = row[1]
+    return cells
+
+
+def test_the_report_table_agrees_with_the_table_it_summarises(floor) -> None:
+    """The review's find: the report transposed the emissions jobs' condition.
+
+    The generator was right and only the markdown was wrong, which is exactly why this is
+    checked against the published table rather than read by eye: the cells must agree with
+    the CSV (and the model) for every job.
+    """
+    markdown = (REPORT_DIR / saf.MD_NAME).read_text(encoding="utf-8")
+    cells = _job_table_cells(markdown)
+    assert set(cells) == {job.job for job in floor.jobs}
+
+    raw = (REPORT_DIR / saf.CSV_NAME).read_bytes().decode("utf-8")
+    published: dict[str, str] = {}
+    for row in csv.DictReader(raw.splitlines()):
+        if row["quantity"] == "drift_end_minus_begin" and row["statistic"] == "mean":
+            published[row["job"]] = (
+                f"{row['burst_length']} / {row['emissions_per_profile']}"
+            )
+    assert set(published) == set(cells)
+    for job in floor.jobs:
+        assert cells[job.job] == published[job.job], job.job
+        assert cells[job.job] == (
+            f"{job.burst_length} / {job.emissions_per_profile}"
+        ), job.job
+
+    # the three emissions jobs are the ones that were transposed: burst 10, emissions ladder
+    assert cells["emissions-8"] == "10 / 8"
+    assert cells["emissions-64"] == "10 / 64"
+    assert cells["emissions-128"] == "10 / 128"
+
+
+def test_the_report_states_the_measured_ratio_not_an_order_of_magnitude(floor) -> None:
+    """The floors are several-fold apart, and the report must say what was measured."""
+    burst = [
+        job.spread["mean"] for job in floor.jobs if job.job.startswith("burst")
+    ]
+    emissions = [
+        job.spread["mean"] for job in floor.jobs if job.job.startswith("emissions")
+    ]
+    low = min(burst) / max(emissions)
+    high = max(burst) / min(emissions)
+    assert 2.5 < low < 3.5
+    assert 7.0 < high < 8.5
+
+    doc = _plain((REPORT_DIR / saf.MD_NAME).read_text(encoding="utf-8"))
+    assert "order of magnitude" not in doc
+    assert f"{low:.1f}×" in doc
+    assert f"{high:.1f}×" in doc
+    assert f"{min(burst):.3f}" in doc and f"{max(burst):.3f}" in doc
+    assert f"{min(emissions):.3f}" in doc and f"{max(emissions):.3f}" in doc
+
+
 def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_one(
     tmp_path, capsys
 ) -> None:

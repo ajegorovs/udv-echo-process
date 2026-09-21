@@ -34,6 +34,13 @@ COMMIT = "0123456789012345678901234567890123456789"
 REPORT_DIR = ROOT / "reports" / "sparse-mixer-live-1"
 
 
+def _plain(text: str) -> str:
+    """The document's text with markdown emphasis and wrapping removed, for prose pins."""
+    for marker in ("**", "*", "`"):
+        text = text.replace(marker, "")
+    return " ".join(text.split())
+
+
 @pytest.fixture(scope="module")
 def decoded():
     return decode_pass()
@@ -161,7 +168,7 @@ def test_the_six_pairs_are_depth_resolved_and_recomputable(floor, decoded) -> No
             float(abs(difference[worst])), rel=1e-12, abs=1e-15
         )
         assert pair.max_abs_depth_mm == pytest.approx(float(depths[worst]), rel=1e-12)
-        assert pair.minutes_apart > 0
+        assert pair.job_start_separation_min > 0
 
 
 def test_the_two_endpoints_are_different_numbers_from_the_same_pairs(floor) -> None:
@@ -181,10 +188,10 @@ def test_the_two_endpoints_are_different_numbers_from_the_same_pairs(floor) -> N
 def test_the_floor_is_not_ordered_by_elapsed_time(floor) -> None:
     """The widest separation in time is not the largest difference."""
     by_pair = {(pair.left, pair.right): pair for pair in floor.pairs}
-    widest = max(floor.pairs, key=lambda pair: pair.minutes_apart)
+    widest = max(floor.pairs, key=lambda pair: pair.job_start_separation_min)
     assert (widest.left, widest.right) == ("cr1", "cr4")
     assert widest.max_abs_difference_mm_s < floor.floor_mm_s
-    assert by_pair[floor.floor_pair].minutes_apart < widest.minutes_apart
+    assert by_pair[floor.floor_pair].job_start_separation_min < widest.job_start_separation_min
 
 
 def test_the_depth_resolved_floor_exceeds_the_averaged_one_and_lands_near_field(
@@ -271,8 +278,8 @@ def test_the_csv_carries_the_runs_then_the_pairs(floor) -> None:
         assert float(row["max_abs_difference_mm_s"]) == pytest.approx(
             match.max_abs_difference_mm_s, rel=1e-11
         )
-        assert float(row["minutes_apart"]) == pytest.approx(
-            match.minutes_apart, rel=1e-11
+        assert float(row["job_start_separation_min"]) == pytest.approx(
+            match.job_start_separation_min, rel=1e-11
         )
 
 
@@ -322,7 +329,7 @@ def test_the_prose_states_the_endpoints_and_the_three_consequences() -> None:
     assert "depth-resolved floor" in doc and "depth-averaged floor" in doc
     assert "not a confidence interval" in doc
     assert "no per-minute" not in doc  # the rate claim must not be made at all
-    assert "Time is not the ordering" in doc
+    assert "The ordering by time is not the ordering by difference" in doc
     assert "WP3" in doc and "WP4" in doc
 
 
@@ -344,7 +351,45 @@ def test_a_pass_with_fewer_than_four_reference_runs_is_refused(decoded) -> None:
 
 def test_a_malformed_manifest_window_is_refused() -> None:
     with pytest.raises(srf.ReferenceFloorError, match="ISO timestamps"):
-        srf._minutes_apart("nonsense", "also-nonsense", "cr1/cr2")
+        srf._job_start_separation_min("nonsense", "also-nonsense", "cr1/cr2")
+
+
+def test_the_pair_separation_is_recomputed_from_the_jobs_manifest_windows(floor) -> None:
+    """`job_start_separation_min` is the jobs' starts apart, not a recording interval."""
+    windows = {run.job: run.job_started_at for run in floor.runs}
+    by_job = {run.label: run.job for run in floor.runs}
+    for pair in floor.pairs:
+        left = datetime.fromisoformat(windows[by_job[pair.left]])
+        right = datetime.fromisoformat(windows[by_job[pair.right]])
+        expected = abs((right - left).total_seconds()) / 60.0
+        assert pair.job_start_separation_min == pytest.approx(expected, rel=1e-12)
+        # the campaign is minutes long, so none of these is a recording-to-recording gap
+        assert pair.job_start_separation_min > 1.0
+
+
+def test_the_document_labels_the_separation_and_defines_it(document) -> None:
+    """The review's ask: the artifact must not let 5.3 min read as a recording interval."""
+    assert set(document["pair_columns"]) | {"left", "right"} == set(srf.PAIR_COLUMNS)
+    separation = document["pair_columns"]["job_start_separation_min"]
+    assert separation.startswith("the difference between the two runs' jobs'")
+    assert "NOT a recording-to-recording interval" in separation
+    assert "no per-recording clock" in separation
+    assert "sweep_id" in separation
+    assert all(
+        value for value in document["pair_columns"].values()
+    ), "every pair column carries a definition"
+
+
+def test_the_prose_labels_the_separation_and_narrows_the_replication_claim() -> None:
+    doc = _plain((REPORT_DIR / srf.MD_NAME).read_text(encoding="utf-8"))
+    assert "job-start separation" in doc.lower()
+    assert "not a recording-to-recording interval" in doc
+    assert "repeated observations of the common-reference condition" in doc
+    assert (
+        "independent replication of the pitch, burst or emissions treatment levels" in doc
+    )
+    assert "do not replicate anything" not in doc
+    assert "| pair | apart |" not in doc
 
 
 def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_one(
