@@ -84,6 +84,23 @@ Emissions 8 — the level a review of the planning law named as a credible
 false-rejection risk — verified at **0.508**, 1.6 % inside the guard's lower edge. It
 passed, but on a margin a slightly different profile count would have removed.
 
+### The logs record the expectation of the day, and are not to be rewritten
+
+The nine JSONL logs were written while the planner still used the retired
+`emissions × PRF + 1 ms` form, so their `timing.target_s` fields hold those targets
+against the achieved period the same files measure:
+
+| job | `target_s` in the log | `achieved_s` from the timestamps |
+|---|---|---|
+| `emissions-8` | 0.0058 s | 0.015193 s |
+| `burst-4` | 0.0130 s | 0.022393 s |
+
+That is **provenance, not a defect to repair**: the logs truthfully record what the
+software expected when the data were collected, and the two commits that corrected the
+law sit above this pass rather than inside its logs. Do not edit these files to match a
+later law — an analysis that needs the period takes the achieved one from the stored
+timestamps, as `docs/dop3000/sparse-run-plan.md` §5 requires.
+
 ### The structural size law
 
 A `.BDD` is the container plus its blocks:

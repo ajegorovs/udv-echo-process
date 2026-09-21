@@ -235,13 +235,23 @@ profiles in one fixture and 4193–4927 in another.
 > that sat at 0.508 (1.6 % inside its lower edge, the level a review flagged as a false-rejection risk)
 > verified as the guard's own arithmetic, not the files: it is 1.037 once the period law is corrected.
 >
-> **What a fresh session does next, in order:** (1) the review's findings on the delta since `e408b8e`
-> are **landed** on `feat/acquire-sparse-run-plan` — the period law (`521aaa6`), its wording (`51a6b80`)
-> and the mixer pass below; (2) **the analysis ingest**, which the live pass unblocks and which is now
-> the only open item: per-job drift, the reference checks across runs, the pitch × burst contrast and a
-> Stage-2 recommendation (item 4 of
-> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It is analysis over
-> committed files and needs no instrument, so it is unblocked the moment a session starts. The
+> **The review of the whole delta is in and it accepts it** (2026-09-21, `b9043db..9d6706c`): the
+> mixer-enabled 26-point rerun, the separate run identity, the corrected profile-period model, the
+> closed E8 and E128 guard findings, and the unchanged scientific design. **The acquisition phase for
+> the first sparse pass is complete, and acquisition logic stops changing here** — it re-opens only if
+> the analysis exposes a real problem, never because an abstraction looks improvable.
+>
+> **What a fresh session does next: the scientific ingest, and nothing else.** It reads committed files
+> and needs no instrument, so it is unblocked the moment a session starts. The review names its
+> outputs: common-support normalization, within-job drift, the CR1–CR4 reference drift, the 2×2
+> pitch × burst interaction, the emissions 8 / 20 / 64 / 128 behaviour, and then a Stage-2
+> recommendation (item 4 of
+> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It analyses
+> [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md), whose 26 recordings all carry
+> signal; the zero-signal first pass stays acquisition-qualification evidence. Two facts about that
+> directory the ingest must respect: the period comes from the **stored timestamps** (the logs'
+> `timing.target_s` records the retired expectation — provenance, not to be rewritten), and the two
+> plans are pinned equivalent by a test, so the repeat cannot silently become another experiment. The
 > live-dependent suites stay the first preflight at any sitting that touches the instrument
 > (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
 > that is not an understood live-state prerequisite stops the sitting before a recording is spent.

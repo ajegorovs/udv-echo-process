@@ -73,20 +73,19 @@ and the burst / emissions / drift contrasts wait for a rig that is measuring.
    all stored. One job (`emissions-128`) was marked failed by the size signature; that was a false
    negative in the guard, not in the files (`data/sparse-mixer-first-pass/README.md` carries the
    measurement and the corrected law);
-4. **the analysis ingest — its two requirements are settled, and the pass has no signal yet.** The trial
-   handed the ingest two numbers as **requirements**, and both are now closed here:
-   **temporal analysis uses the period measured from the stored timestamps** — the 26 files give
-   `period = emissions × PRF + 10.369 ms` across all four emission levels (1 tick = 0.1 ms; the
-   achieved periods are 871.685, 487.690, 223.688 and 151.689 ticks at emissions 128/64/20/8), which
-   is the manual's `T_prf × (16 + N_PRF)` together with its transfer term (9.6 ms + ~0.77 ms at 600 µs),
-   now computed by the planner — and
-   **the size signature now models the BDD structure** exactly, on 26/26 files. Both landed, the second
-   with the pass and the first as its own two commits. **The ingest can now start:** the mixer-enabled
-   realization of the same frozen design ran on 2026-09-21 (nine jobs, 26 points, every point
-   payload-bearing) and is committed at
-   [`../../data/sparse-mixer-live-1/`](../../data/sparse-mixer-live-1/README.md), beside the zero-signal
-   first pass it does not replace. What the ingest owes is unchanged: per-job drift, the reference checks
-   across runs, the pitch × burst contrast, and a Stage-2 recommendation;
+4. **the analysis ingest — the only open item, and it is unblocked.** The review of the whole delta
+   (2026-09-21, `b9043db..9d6706c`) accepted the mixer-enabled rerun, closed the two guard findings and
+   stops the acquisition phase here: acquisition logic changes again only if this ingest exposes a real
+   problem. It reads [`../../data/sparse-mixer-live-1/`](../../data/sparse-mixer-live-1/README.md) — 26
+   recordings of the same frozen design, every one carrying signal — beside the zero-signal first pass it
+   does not replace, and it needs no instrument. What it owes, named by that review: **common-support
+   normalization, within-job drift, the CR1–CR4 reference drift, the 2×2 pitch × burst interaction, the
+   emissions 8 / 20 / 64 / 128 behaviour, and a Stage-2 recommendation.** The two requirements the trial
+   handed it are settled and stand: temporal analysis uses the period measured from the **stored
+   timestamps** — the files give `emissions × PRF + 10.369 ms` across all four emission levels, the
+   manual's `T_prf × (16 + N_PRF)` together with its transfer term, and the logs' `timing.target_s` is the
+   retired expectation kept as provenance and not to be rewritten — and the size signature models the BDD
+   structure exactly on 26/26 files of each pass;
 5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
    surface) and blocks nothing above it.
 
