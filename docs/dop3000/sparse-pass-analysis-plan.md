@@ -63,12 +63,16 @@ on 31 common knots no finer than 2.960 mm, `I(z) = -7.922 mm/s` depth-averaged (
 -21.743 at 45.658 mm, maximum +7.615 at 60.458 mm), with the four corner contrasts -5.787
 (pitch at burst 4), +2.135 (pitch at burst 18), -4.373 (burst at 0.617 mm) and +3.550
 (burst at 2.960 mm); 9 of 31 knots exceed the depth-resolved endpoint (14.603) and 10
-exceed even burst-18's own anchor spread (11.980), while the depth-averaged interaction
-lies below both anchor guards - so at the depth-averaged endpoint there is no pitch x
-burst effect this pass can separate from the burst jobs' own anchor movement. WP4: the
+exceed even burst-18's own anchor spread (11.980). Compared with the endpoint that belongs
+to a scalar, the depth-averaged interaction (7.922) **exceeds** the between-run floor of
+4.235 mm/s - by a factor of 1.87 - and still lies **below both burst jobs' anchor guards**, so
+the conservative within-job criterion prevents calling it resolved. WP4: the
 four levels' achieved periods are 15.200 / 22.400 / 48.800 / 87.200 ms (65.789 / 44.643 /
 20.492 / 11.468 Hz, Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz), a transfer term of
-+10.400 ms over the planning law at every level, and 2 s physical-duration blocks holding
+a fixed profile overhead (intercept) of
++10.400 ms over the planning law at every level - 9.600 ms of it the internal-emission term
+the law carries (16 x 600 us) and ~0.800 ms the transfer term proper - and 2 s
+physical-duration blocks holding
 132 / 89 / 41 / 23 profiles - the bandwidth price of higher emissions. The `e128`
 observation WP1 raised measures +3.327 and +4.696 mm/s depth-averaged against its own
 anchors (1.007x and 1.421x that job's own anchor spread), 35/49 and 37/49 knots of one
