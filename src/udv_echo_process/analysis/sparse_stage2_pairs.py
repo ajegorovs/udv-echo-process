@@ -1192,6 +1192,10 @@ def def_document(model: Stage2Pairs) -> dict[str, object]:
         "prior_context_note": model.prior_context_note,
         "definitions": DEFINITIONS,
         "checks": model.checks,
+        #: The gate's own verdict, carried beside the checks the way every other slice's
+        #: document carries it, so a later reader (the decision table among them) can cite
+        #: this slice under the same rule as the rest without re-deriving it.
+        "ok": model.ok,
         "figure": f"{FIGURES_DIRNAME}/{FIGURE_NAME}",
     }
 
