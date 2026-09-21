@@ -48,6 +48,7 @@ from udv_echo_process.analysis import (
     sparse_inventory,
     sparse_pitch_burst,
     sparse_reference_floor,
+    sparse_stage2_pairs,
     sweep_inventory,
 )
 from udv_echo_process.io import load
@@ -1797,6 +1798,7 @@ _COMMANDS = {
     "sparse-emissions-ladder": sparse_emissions_ladder.emissions_ladder_main,
     "sparse-pitch-burst": sparse_pitch_burst.pitch_burst_main,
     "sparse-reference-floor": sparse_reference_floor.reference_floor_main,
+    "sparse-stage2-pairs": sparse_stage2_pairs.stage2_pairs_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
 }

@@ -423,9 +423,14 @@ class PlannedJobRecord(NamedTuple):
         return (self.burst_length, self.emissions_per_profile, self.prf_us)
 
 
-def read_run_record(dataset_root: Path) -> dict[str, object]:
-    """Read ``<plan>.run.json`` — the pass's own record — from the dataset root."""
-    return _read_json(Path(dataset_root) / f"{PLAN_NAME}.run.json", "pass record")
+def read_run_record(dataset_root: Path, *, plan_name: str = PLAN_NAME) -> dict[str, object]:
+    """Read ``<plan_name>.run.json`` — the pass's own record — from the dataset root.
+
+    ``plan_name`` defaults to this pass's own name, so every existing caller and every
+    committed artefact is unchanged; a second pass whose record is named differently
+    passes its own, and the record's schema and refusals are the same for both.
+    """
+    return _read_json(Path(dataset_root) / f"{plan_name}.run.json", "pass record")
 
 
 def read_job_records(
