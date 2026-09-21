@@ -19,7 +19,7 @@ planned for it, and writes the two reviewer-visible WP0 artefacts into
   increasing timestamps, every committed recording bound to exactly one planned
   point and every planned point present, the acquisition layer's own decode
   reproduced by this reader, the declared window and condition reproduced by the
-  stored words, retention above the pass's usable interval, the achieved period
+  stored words, retention of the pass's designed exposure, the achieved period
   against the planner's own law, and the signal content of every recording.
 
 **Two provenance rules this module exists to keep.** The achieved profile period
@@ -31,7 +31,7 @@ law. And every identity in a row comes from decoding, or from the pass's own
 record of what it planned: a row is bound to a planned point and the binding is
 re-checked against the reader, never taken on a filename.
 
-Nothing here measures a scientific effect. The within-job controls, the
+Nothing here measures a scientific effect. The within-job anchor controls, the
 cross-run reference checks, the pitch x burst corners, the emissions ladder and
 the Stage-2 decision are the later work packages of
 ``docs/dop3000/sparse-pass-analysis-plan.md``; this module freezes the table they
@@ -94,13 +94,16 @@ EXPECTED_JOB_COUNTS: dict[str, int] = {
     "emissions-128": 4,
 }
 
-#: The interval each recording was asked for, and the interval the pass counts as
-#: usable under the existing normalization rule (96 nominal 500-RPM revolutions).
+#: The interval each recording was asked for — the pass's **designed exposure**, and
+#: the primary distributional window. The files retain more than this (12.4686-12.5888 s):
+#: that overshoot is the acquisition's own stopping latency, not a longer experiment, so
+#: it is reached for by the full-record view (spectra, autocorrelation) and never by the
+#: primary one, which would quietly widen the exposure past the design.
 REQUESTED_DURATION_S = 12.0
 NOMINAL_RPM = 500.0
 REVOLUTION_S = 60.0 / NOMINAL_RPM
-USABLE_REVOLUTIONS = 96
-USABLE_INTERVAL_S = USABLE_REVOLUTIONS * REVOLUTION_S
+DESIGNED_REVOLUTIONS = 100  # the declared 12 s, in nominal revolutions
+DESIGNED_WINDOW_S = DESIGNED_REVOLUTIONS * REVOLUTION_S  # 12.0 s
 
 #: The three windows the pass acquires, as the plan *requests* them —
 #: ``(resolution_mm, gates)``. A point's requested window must be one of these, and
@@ -110,7 +113,7 @@ USABLE_INTERVAL_S = USABLE_REVOLUTIONS * REVOLUTION_S
 #: construction rather than by convention.
 PLAN_WINDOWS: tuple[tuple[float, int], ...] = ((0.617, 145), (1.85, 50), (2.96, 31))
 
-#: The block-local controls' own label prefix, as the plan's vocabulary spells it.
+#: The block-local anchor controls' own label prefix, as the plan spells it.
 CONTROL_PREFIX = "ctrl-"
 
 #: Tolerances. ``LOG_*`` bound the cross-check against the acquisition layer's own
@@ -197,7 +200,8 @@ COLUMNS: tuple[str, ...] = (
     "achieved_period_s",
     "retained_fraction",
     "usable_interval_s",
-    "meets_usable_interval",
+    "designed_window_s",
+    "retains_designed_window",
     "period_expectation_s",
     "period_residual_s",
     "timestamps_monotone",
@@ -244,10 +248,22 @@ DEFINITIONS: dict[str, str] = {
         "the retained span of the recording, t_last - t_first from its stored "
         "timestamps, in seconds"
     ),
+    "op_word_27": (
+        "the stored sampling-volume word: the instrument's option-list INDEX, not a "
+        "length. The index-to-mm relation is medium- and burst-dependent and was only "
+        "ever measured at one sound speed, so this index states no acoustic averaging "
+        "length and is not comparable with the historical sweep's own stored index "
+        "(4). The historical value is quoted only to keep the two apart"
+    ),
+    "op_word_14": (
+        "the stored emissions-per-profile word, which is each point's own request"
+    ),
+    "op_word_84": "the stored skipped-profile word (0 throughout this pass)",
     "retained_fraction": "duration_s / requested_duration_s, dimensionless",
-    "meets_usable_interval": (
-        f"duration_s >= {USABLE_INTERVAL_S:g} s ({USABLE_REVOLUTIONS} nominal "
-        f"{NOMINAL_RPM:g}-RPM revolutions), the pass's usable comparison interval"
+    "retains_designed_window": (
+        f"duration_s >= {DESIGNED_WINDOW_S:g} s ({DESIGNED_REVOLUTIONS} nominal "
+        f"{NOMINAL_RPM:g}-RPM revolutions): whether the recording covers the "
+        "pass's designed exposure in full, which is what the primary view uses"
     ),
     "period_expectation_s": (
         "the planner's own law, acquire/plan.py::profile_period_s (the manual's "
@@ -260,15 +276,18 @@ DEFINITIONS: dict[str, str] = {
     ),
     "supported_*": (
         "the same distributional metrics as reference_repeat.gate_metrics, computed "
-        "over the common window (window_s, the largest whole number of nominal "
-        "revolutions fitting every recording) restricted to the common physical "
+        "over the common window (window_s, the pass's designed exposure: the "
+        "declared 12 s = 100 nominal revolutions) restricted to the common physical "
         "support (support_min_mm..support_max_mm); each per-gate statistic is then "
         "aggregated across the supported gates by an unweighted mean, so one row is "
         "comparable with another whatever its gate count"
     ),
     "is_control": (
-        "true for the pass's three block-local controls (ctrl-begin, ctrl-mid, "
-        "ctrl-end), which record the reference condition at the reference window"
+        "true for the pass's three block-local anchor controls (ctrl-begin, "
+        "ctrl-mid, ctrl-end): each records its own job's anchor condition at the "
+        "reference spatial window, so a burst-4 job's controls are burst 4 and not "
+        "the reference condition. 'Reference' in this table means the reference "
+        "condition that CR1-CR4 record; a control is not a reference realization"
     ),
     "declared_accepted_resolution_mm": (
         "the pitch the application accepts for the point's requested "
@@ -896,21 +915,27 @@ def require_retired_target(point: DecodedPoint) -> None:
 
 
 def common_window_s(spans_s: Sequence[float]) -> float:
-    """The largest whole number of nominal revolutions every recording covers.
+    """The pass's designed exposure, once every recording is shown to cover it.
 
-    The pass's requested 12 s is what was *asked for*; this is what every recording
-    actually retained overlap on, and it is derived from the stored timestamps rather
-    than declared, so a short record narrows the shared window instead of being
-    silently compared outside its own coverage.
+    The primary distributional view is the interval the pass **asked for** — the
+    declared 12 s, 100 nominal 500-RPM revolutions — and not the largest whole
+    interval the stored timestamps happen to support. Every recording here retained
+    more than 12 s (12.4686-12.5888 s), but that extra span is the acquisition's
+    stopping latency: taking it as exposure would let the rig's overrun set the
+    analysed interval, so it is left to the full-record view (spectra,
+    autocorrelation) and this function *refuses* a dataset where the designed window
+    does not fit rather than narrowing to a shorter one.
     """
     if not spans_s:
         raise SparseIngestError("no recording decoded, so no common window exists")
-    count = math.floor(min(spans_s) / REVOLUTION_S)
-    if count < 1:
+    shortest = min(spans_s)
+    if shortest + TOLERANCE_S < DESIGNED_WINDOW_S:
         raise SparseIngestError(
-            f"no whole {REVOLUTION_S:g}-s revolution fits {min(spans_s)!r} s"
+            f"the shortest recording retains {shortest!r} s, less than the pass's "
+            f"designed {DESIGNED_WINDOW_S:g} s ({DESIGNED_REVOLUTIONS} nominal "
+            f"{NOMINAL_RPM:g}-RPM revolutions): the primary view would leave the design"
         )
-    return count * REVOLUTION_S
+    return DESIGNED_WINDOW_S
 
 
 def build_row(
@@ -1007,8 +1032,8 @@ def build_row(
         ),
         "achieved_period_s": cell(achieved),
         "retained_fraction": cell(span / REQUESTED_DURATION_S),
-        "usable_interval_s": cell(USABLE_INTERVAL_S),
-        "meets_usable_interval": cell(span >= USABLE_INTERVAL_S),
+        "designed_window_s": cell(DESIGNED_WINDOW_S),
+        "retains_designed_window": cell(span + TOLERANCE_S >= DESIGNED_WINDOW_S),
         "period_expectation_s": cell(expected_period),
         "period_residual_s": cell(achieved - expected_period),
         "timestamps_monotone": cell(bool(np.all(intervals > 0.0))),
@@ -1152,6 +1177,14 @@ def regeneration_command(commit: str | None) -> str:
     )
 
 
+def _word_summary(rows: Sequence[Mapping[str, str]], column: str) -> dict[str, object]:
+    """The distinct stored values of one op word across the table, with their counts."""
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row[column]] = counts.get(row[column], 0) + 1
+    return {"values": sorted(counts), "counts": dict(sorted(counts.items()))}
+
+
 def qc_document(ingest: SparseIngest) -> dict[str, object]:
     """The QC summary document: the pass-level assertions, never the table rows.
 
@@ -1178,6 +1211,22 @@ def qc_document(ingest: SparseIngest) -> dict[str, object]:
         "not_live_files": list(ingest.not_live_files),
         "short_retention_files": list(ingest.short_retention_files),
         "max_abs_period_residual_s": ingest.max_abs_period_residual_s,
+        "observed_words": {
+            "op_word_14": _word_summary(ingest.rows, "op_word_14"),
+            "op_word_27": _word_summary(ingest.rows, "op_word_27"),
+            "op_word_84": _word_summary(ingest.rows, "op_word_84"),
+            "note": (
+                "the stored op words of the 26 recordings, decoded independently by this "
+                "reader and re-published here so the prose that cites them has one "
+                "machine-readable authority. Word 14 is each point's own emissions "
+                "request; word 84 is the stored skipped-profile count. Word 27 is the "
+                "instrument's option-list INDEX, not a length: the index-to-mm relation "
+                "is medium- and burst-dependent and was only ever measured at one sound "
+                "speed, so the historical sweep's stored index (4) and this pass's (1) "
+                "are not the same measurement of a shared setting, and neither states an "
+                "acoustic averaging length. No analysis may read the two as one setting"
+            ),
+        },
         "views": {
             "point_table": (
                 "one row per committed recording; the full record for the shape, the "
@@ -1189,8 +1238,13 @@ def qc_document(ingest: SparseIngest) -> dict[str, object]:
                 "revolution_s": REVOLUTION_S,
                 "window_s": ingest.window_s,
                 "rule": (
-                    "the largest whole number of nominal revolutions fitting every "
-                    "recording, truncated per recording by its own stored timestamps"
+                    "the interval the pass asked every recording for, 100 nominal "
+                    f"{NOMINAL_RPM:g}-RPM revolutions = {DESIGNED_WINDOW_S:g} s, cut in each "
+                    "recording by that recording's own stored timestamps. It is NOT "
+                    "widened to the largest interval the files happen to support: the "
+                    "surplus span (12.4686-12.5888 s retained) is the acquisition's "
+                    "stopping latency, so it belongs to the full-record view "
+                    "(spectra, autocorrelation) and not to the primary exposure"
                 ),
             },
             "common_support": {
@@ -1274,7 +1328,7 @@ def build_sparse_ingest(
         decoded.append(result)
 
     # The two shared views are read off the decoded set, never declared: the window is
-    # the largest whole number of nominal revolutions every recording covers, and the
+    # the designed exposure, refused rather than narrowed if a recording is short, and
     # support is the intersection of their decoded depth ranges.
     spans = [float(point.time_s[-1] - point.time_s[0]) for point in decoded]
     window_s = common_window_s(spans)
@@ -1315,7 +1369,7 @@ def build_sparse_ingest(
     short = tuple(
         row["relative_path"]
         for row in rows
-        if not row["decode_error"] and row["meets_usable_interval"] != "true"
+        if not row["decode_error"] and row["retains_designed_window"] != "true"
     )
     residuals = [
         abs(float(row["period_residual_s"])) for row in rows if not row["decode_error"]
@@ -1331,7 +1385,7 @@ def build_sparse_ingest(
         "timestamps_monotone": not non_monotone,
         "signal_content": not not_live,
         "retention": not short,
-        "common_window": window_s >= USABLE_INTERVAL_S,
+        "common_window": min(spans) + TOLERANCE_S >= DESIGNED_WINDOW_S,
         "common_support": support[1] > support[0],
         "achieved_period_within_the_planners_law": worst_residual
         <= PERIOD_MODEL_TOLERANCE_S,

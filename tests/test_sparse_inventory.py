@@ -11,8 +11,14 @@ so this module failed at import. The tests pin:
 - the two provenance rules the pass's README states: the achieved period is
   measured from the stored timestamps and the logs' ``timing.target_s`` still
   reproduces the *retired* planning expectation;
-- the two shared views (a common window derived from the retained spans, and the
-  common physical support) and the QC gate;
+- the two shared views (a primary window fixed at the pass's *designed* exposure,
+  and the common physical support) and the QC gate, including the refusal when a
+  recording is too short to cover the design;
+- the corrections of the first review round, each pinned so it cannot come back:
+  the stored words the prose cites are this pass's own (word 27 is an index, not the
+  historical sweep's value), the controls are *block-local anchor* controls rather
+  than reference realizations, and the primary window is the declared interval
+  rather than the interval the files' overshoot happens to support;
 - byte-for-byte reproducibility, and the committed report artefacts against a
   fresh regeneration with the recorded commit;
 - the refusal paths: a log rewritten to the later law, a recording the pass does
@@ -34,6 +40,8 @@ import pytest
 from udv_echo_process.analysis.sparse_inventory import (
     COLUMNS,
     DATASET_ROOT,
+    DESIGNED_REVOLUTIONS,
+    DESIGNED_WINDOW_S,
     EXPECTED_JOB_COUNTS,
     EXPECTED_RECORDINGS,
     PLAN_PATH,
@@ -42,7 +50,6 @@ from udv_echo_process.analysis.sparse_inventory import (
     QC_NAME,
     REQUESTED_DURATION_S,
     RETIRED_PERIOD_TRANSFER_S,
-    USABLE_INTERVAL_S,
     SparseIngestError,
     build_sparse_ingest,
     common_window_s,
@@ -137,8 +144,13 @@ def test_row_identity_label_and_stamp_come_from_the_pass_record(ingest) -> None:
         assert row["kind"] in {"scientific", "common-reference"}
 
 
-def test_controls_are_the_reference_window_at_the_jobs_own_condition() -> None:
-    """A control is the reference window recorded at its job's run-wide condition."""
+def test_controls_are_block_local_anchor_controls_at_the_jobs_own_condition() -> None:
+    """A control is the reference *window* at its own job's anchor *condition*.
+
+    The distinction the first review round asked for: a control is not a reference
+    realization. A burst-4 job's controls are burst 4, an emissions-128 job's are
+    emissions 128; only CR1-CR4 record the reference condition.
+    """
     rows = _rows()
     conditions = {
         row["job"]: (
@@ -215,15 +227,18 @@ def test_declared_condition_and_window_are_the_stored_words(ingest) -> None:
         assert row["log_status"] == "ok" and row["decode_error"] == ""
 
 
-def test_every_recording_is_live_and_retains_the_usable_interval(ingest) -> None:
+def test_every_recording_is_live_and_retains_the_designed_exposure(ingest) -> None:
     assert ingest.decode_failures == 0
     for row in ingest.rows:
         assert int(row["profiles"]) > 100
         assert float(row["non_zero_fraction"]) > 0.5
-        assert float(row["duration_s"]) >= USABLE_INTERVAL_S
-        # The window is what was asked for; every recording of this pass ran a little
-        # past it (12.4686-12.5888 s for a 12 s request), so the retention is >= 1 and
-        # must not silently exceed the request by more than the store's own overshoot.
+        assert float(row["duration_s"]) >= DESIGNED_WINDOW_S
+        assert row["retains_designed_window"] == "true"
+        assert float(row["designed_window_s"]) == DESIGNED_WINDOW_S
+        # The primary view is the designed exposure; every recording of this pass ran
+        # a little past it (12.4686-12.5888 s for a 12 s request). That surplus is the
+        # acquisition's stopping latency: the retention is >= 1, bounded so a reader
+        # can see the overshoot, and it is *not* the analysed exposure.
         assert 1.0 <= float(row["retained_fraction"]) <= 1.06
         assert row["timestamps_monotone"] == "true"
 
@@ -317,14 +332,28 @@ def test_the_committed_logs_are_not_rewritten(ingest) -> None:
 # ── the two shared views ──────────────────────────────────────────────
 
 
-def test_common_window_is_derived_from_the_retained_spans(ingest) -> None:
+def test_the_primary_window_is_the_designed_exposure_not_the_retained_surplus(
+    ingest,
+) -> None:
+    """The window is what the pass asked for, not what the store happened to keep."""
     spans = [float(row["duration_s"]) for row in ingest.rows]
     assert ingest.window_s == pytest.approx(common_window_s(spans), rel=1e-11)
-    assert ingest.window_revolutions * 0.12 == pytest.approx(ingest.window_s, abs=1e-12)
-    assert ingest.window_s >= USABLE_INTERVAL_S
+    assert ingest.window_s == DESIGNED_WINDOW_S == REQUESTED_DURATION_S
+    assert ingest.window_revolutions == DESIGNED_REVOLUTIONS == 100
+    # Every recording covers the design, and every one of them also overran it: the
+    # surplus is real, kept by the full-record view, and deliberately not the exposure.
+    assert min(spans) > DESIGNED_WINDOW_S
+    assert common_window_s(spans) == DESIGNED_WINDOW_S
     for row in ingest.rows:
         assert float(row["window_s"]) == pytest.approx(ingest.window_s, abs=1e-12)
         assert float(row["window_profiles"]) <= int(row["profiles"])
+
+
+def test_a_recording_too_short_for_the_design_is_refused_not_narrowed() -> None:
+    with pytest.raises(SparseIngestError, match="designed"):
+        common_window_s([12.4686, 11.9, 12.5])
+    with pytest.raises(SparseIngestError, match="no recording decoded"):
+        common_window_s([])
 
 
 def test_common_support_is_the_intersection_of_the_decoded_depth_ranges(ingest) -> None:
@@ -498,3 +527,88 @@ def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_plan(
         )
     assert failed.value.code == 1
     assert "udv-sparse-inventory:" in capsys.readouterr().err
+
+
+# ── the first review round's corrections ──────────────────────────────
+
+PLAN_DOC = Path("docs/dop3000/sparse-pass-analysis-plan.md")
+REPORT_README = Path("reports/sparse-mixer-live-1/README.md")
+
+
+def test_the_declared_words_in_the_prose_are_this_passs_own(ingest) -> None:
+    """Word 27 is this pass's stored index, never the historical sweep's value.
+
+    The first review round caught the plan quoting the *historical* sweep's stored
+    word 27 (4) as this pass's, beside a table that says 1. The two are different
+    measurements of an option-list *index*, so the value is re-read here from the
+    committed bytes and from the 26 decodes, and the plan is held to both.
+    """
+    words = json.loads((REPORT_DIR / QC_NAME).read_text(encoding="utf-8"))[
+        "observed_words"
+    ]
+    observed = {
+        word: words[word]["values"]
+        for word in ("op_word_14", "op_word_27", "op_word_84")
+    }
+    assert observed["op_word_27"] == ["1"]
+    assert observed["op_word_84"] == ["0"]
+    assert observed["op_word_14"] == ["128", "20", "64", "8"]
+    # the same facts, re-decoded from the files rather than read from the artefacts
+    assert {row["op_word_27"] for row in ingest.rows} == set(observed["op_word_27"])
+    assert {row["op_word_84"] for row in ingest.rows} == set(observed["op_word_84"])
+    assert {row["op_word_14"] for row in ingest.rows} == set(observed["op_word_14"])
+    # the decoding-semantic distinction the correction turns on is named, not implied
+    assert "INDEX" in words["note"]
+    assert "not a length" in words["note"]
+    assert "historical sweep" in words["note"]
+
+    plan = (ROOT / PLAN_DOC).read_text(encoding="utf-8")
+    assert "word 27 is 1" in plan, "the plan must quote this pass's own stored word 27"
+    assert "word 84 is 0" in plan
+    assert re.search(r"word 27 is 4\b", plan) is None, (
+        "the historical sweep's word 27 must not be stated as this pass's"
+    )
+    assert "index" in plan and "not a length" in plan
+
+
+def test_the_prose_names_the_controls_as_block_local_anchors() -> None:
+    """A control is an anchor for its own job, not a reference realization.
+
+    The reference *window* is what a control records; the reference *condition* is
+    CR1-CR4's, and only theirs. The first review round asked for the vocabulary to
+    say so everywhere the pass's controls are described.
+    """
+    sources = {
+        "the module": ROOT / "src/udv_echo_process/analysis/sparse_inventory.py",
+        "the plan": ROOT / PLAN_DOC,
+        "the report README": ROOT / REPORT_README,
+    }
+    for label, path in sources.items():
+        text = path.read_text(encoding="utf-8")
+        assert "block-local anchor control" in text, label
+        assert "record the reference condition" not in text, label
+        assert "records the reference condition" not in text, label
+    # and the machine-readable column says it too
+    from udv_echo_process.analysis.sparse_inventory import DEFINITIONS
+
+    description = DEFINITIONS["is_control"]
+    assert "block-local anchor controls" in description
+    assert "not a reference realization" in description
+
+
+def test_the_primary_window_decision_is_stated_in_the_artefacts_and_the_plan(
+    ingest,
+) -> None:
+    """The 12 s vs 12.36 s choice is a stated decision, not an accident of the files."""
+    document = json.loads((REPORT_DIR / QC_NAME).read_text(encoding="utf-8"))
+    rule = document["views"]["common_window"]["rule"]
+    assert "asked every recording for" in rule
+    assert "stopping latency" in rule
+    assert "full-record view" in rule
+    assert document["views"]["common_window"]["window_s"] == DESIGNED_WINDOW_S
+    assert document["views"]["common_window"]["revolutions"] == DESIGNED_REVOLUTIONS
+
+    plan = (ROOT / PLAN_DOC).read_text(encoding="utf-8")
+    assert "designed exposure" in plan
+    assert "12.36" in plan, "the plan must name the interval it declined, and why"
+    assert "stopping latency" in plan

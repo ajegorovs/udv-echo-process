@@ -48,12 +48,27 @@ each), not conclusions about the flow:
   sampled at 0.6167 / 1.85 / 2.96 mm. The 1.85 mm window reaches 100.788 mm, so its last
   gate falls outside the common support and 49 of its 50 gates are compared. Cross-window
   comparisons therefore need the support cut, not a re-registration;
-- word 14 (emissions) is each job's own; word 27 is 4 and word 84 is 0 in all 26; PRF is
+- word 14 (emissions) is each job's own; **word 27 is 1 and word 84 is 0 in all 26**; PRF is
   600 µs and sound speed 1480 m/s in all 26; the stored pitch is the ladder's snap of the
   request (0.617 → 0.6166666666666667, the other two exact);
-- the **retained span** is 12.4686 – 12.5888 s for a 12 s request, all above the pass's
-  11.52 s usable interval, and the common window derived from them is 103 nominal
-  500-RPM revolutions = 12.36 s;
+- word 27 is the instrument's option-list **index**, not a length: the index → mm relation
+  is medium- and burst-dependent and was only ever measured at one sound speed, so the
+  index states no acoustic averaging length — and the **historical sweep's files store 4**
+  where this pass's store 1. The two are not the same measurement of a shared setting, and
+  no analysis may read them as one. (This pass never swept or set the sampling volume; the
+  parameter set lists it as read-back-only, and the index is the only form the instrument
+  publishes. `qc-summary.json` `observed_words` is the machine-readable authority for the
+  three stored words, with the same caveat in its `note`;)
+- the **retained span** is 12.4686 – 12.5888 s for a 12 s request: every recording covers
+  the designed exposure **and overruns it**, by 0.47 – 0.59 s. The primary distributional
+  window is the **designed** interval — the declared 12 s, 100 nominal 500-RPM revolutions
+  — and *not* the 103 revolutions = 12.36 s the files' surplus happens to support: the
+  surplus is the acquisition's own stopping latency, and letting it set the analysed
+  interval would silently widen the exposure past the design and make this pass's
+  distributional numbers incomparable with the declared one. The surplus is kept for the
+  full-record view (spectra, autocorrelation), which is where extra duration is an asset
+  rather than a change of exposure. `common_window_s()` **refuses** a dataset whose
+  shortest recording cannot cover the design, rather than narrowing to a shorter window;
 - the achieved period is `emissions × PRF + ~10.37 ms`, measured from the stored
   timestamps. The logs' `timing.target_s` records the **retired** `emissions × PRF + 1 ms`
   expectation the planner used on the day; it is provenance, it is not rewritten, and no
@@ -76,8 +91,12 @@ fixture before producing any scientific output.
 
 ### 3.1 Two views, and which one each metric uses
 
-1. **Common-duration view** — the WP0 common window, 103 revolutions = 12.36 s, cut by
-   each recording's own timestamps. Every distributional comparison uses it.
+1. **Common-duration view** — the WP0 primary window: the pass's **designed exposure**,
+   the declared 12 s = 100 nominal 500-RPM revolutions, cut in each recording by its own
+   stored timestamps. Every distributional comparison uses it. It is the interval the
+   pass asked for; the 0.47 – 0.59 s of retained surplus is not part of it (§2), so a
+   later work package that wants the surplus must say so, name the view it is using and
+   keep it out of the distributional tables.
 2. **Full-record view** — for autocorrelation and spectra. Segments must have one shared
    *duration*, not one shared profile count: the emission levels differ by a factor of
    5.7 in profile rate, so a fixed segment length in profiles would compare 15 ms of one
@@ -102,13 +121,18 @@ fixture before producing any scientific output.
 This pass generates its own floors, and they are of **two different kinds**. Neither is a
 confidence interval, and neither is created by counting profiles or gates:
 
-- **Within-job floor** — a scientific job's three **within-run reference controls**
-  (`ctrl-begin`, `ctrl-mid`, `ctrl-end`) are the same condition and the same window
-  recorded at its beginning, its middle and its end, with the job's scientific rows
-  between them. Their spread is *short-timescale drift plus measurement repeatability*
-  for that job, and it is the floor that job's own contrasts are screened against: a
-  difference measured **inside** the job is compared with its own controls' spread, and
-  neither outcome proves the parameter caused it.
+- **Within-job floor** — a scientific job's three **block-local anchor controls**
+  (`ctrl-begin`, `ctrl-mid`, `ctrl-end`) record the **reference spatial window** at their
+  own job's **anchor condition**: a burst-4 job's controls are burst 4, an emissions-128
+  job's are emissions 128, and none of them is a realization of the reference condition.
+  They sit at the job's beginning, middle and end with its scientific rows between them,
+  so their spread is *short-timescale drift plus measurement repeatability* for that job,
+  and it is the floor that job's own contrasts are screened against: a difference measured
+  **inside** the job is compared with its own controls' spread, and neither outcome proves
+  the parameter caused it. Vocabulary: **anchor** is the controls' own condition,
+  **reference** is reserved for the one condition CR1–CR4 record (the recordings
+  themselves are what the historical sweep's vocabulary calls the within-run reference
+  controls; what is corrected here is calling their condition the reference one).
 - **Between-run floor** — CR1–CR4 are four recordings of the one condition observed in
   four distinct runs (burst 10 / emissions 20 / 1.85 mm), spread over the campaign's
   16 min 43 s. Their spread is the *between-run* baseline drift, and it is the floor
@@ -134,22 +158,26 @@ both.
 
 Gate (all twelve QC checks hold, and they do on the committed pair): 26 recordings, the
 nine jobs' counts, zero decode failures, zero NaNs, monotone timestamps, a live payload
-in every recording, retention above 11.52 s, a common window and a common support, the
-achieved period inside the planner's law, the retired target present in every log, and a
-recorded generator revision.
+in every recording, retention of the **designed** exposure, a primary window and a common
+support, the achieved period inside the planner's law, the retired target present in
+every log, and a recorded generator revision.
 
 **The reviewer's steps 1 and 2 are one package here** because the common-support
 discipline is a property of the table rather than a later pass over it: the window and
-the support are *derived* in the ingest from the retained spans and the decoded depth
-ranges, and every supported metric is computed inside them on the recording's own native
-grid. What remains for WP3 is the cross-pitch *alignment* (knots at 2.96 mm), which only
-the pitch axis needs.
+the support are both fixed in the ingest, and every supported metric is computed inside
+them on the recording's own native gate grid. They differ in one respect and the
+difference is deliberate: the **support is derived** (the intersection of the decoded
+depth ranges, which only the files can state), while the **window is declared** (the
+pass's designed exposure, which every recording merely has to cover). What remains for
+WP3 is the cross-pitch *alignment* (knots at 2.96 mm), which only the pitch axis needs.
 
 ### WP1 — within-job drift and measurement repeatability
 
-Deliver, per scientific job: the three controls' own metrics (mean/median/IQR/RMS/zero
-fraction on the common window and support), their pairwise differences, the job's
-scientific rows against the controls that bracket them, and one figure per job.
+Deliver, per scientific job: the three **block-local anchor controls'** own metrics
+(mean/median/IQR/RMS/zero fraction on the primary window and support), their pairwise
+differences, the job's scientific rows against the controls that bracket them, and one
+figure per job. The floor they produce is *that job's*: a burst-18 job's anchor floor
+says nothing about a burst-4 job's, and no anchor floor is a reference-condition result.
 
 Gate: every later contrast states which floor it was screened against (the job's own
 control spread for a within-job contrast, the CR floor for a cross-job one) and where in
@@ -169,8 +197,11 @@ comparison uses, stated with its endpoint and reduction.
 Gate: the floor is derived from the four recorded runs only, is stated as an interval
 with the reduction that produced it (for example the largest absolute per-depth mean
 difference over the common support), and is compared like-for-like with the within-job
-floor of WP1. Report the depth ranges where the four differ most. Do not pool CR1–CR4
-into one "reference" row: the point of four runs is that they are four.
+floor of WP1 — a comparison the anchor controls' *extra* condition spread must not be
+allowed to blur, which is why the two floors are reported side by side rather than
+pooled. Report the depth ranges where the four differ most. Do not pool CR1–CR4 into one
+"reference" row: the point of four runs is that they are four, and here — and only here —
+does the pass observe the reference condition.
 
 ### WP3 — the pitch × burst interaction
 

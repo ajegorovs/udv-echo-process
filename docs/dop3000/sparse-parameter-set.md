@@ -44,7 +44,7 @@ achieved values, and nothing below is assumed where the file can be read.
 | velocity scale | 1 | plan; fixed unless quantisation becomes a question |
 | assisted mode / filtering during acquisition / alias auto-correction | OFF | the run's own recorded state |
 | skipped profiles | 0 | word 84 = 0 in all 40 rows |
-| sampling volume | read back only — word 27 is the instrument's bandwidth-list index (4), not a length, so `sampling_volume_mm` stays unset | plan §2; matrix §9 |
+| sampling volume | never set — read back only: word 27 is the instrument's bandwidth-list **index**, not a length, so `sampling_volume_mm` stays unset. The pass's own files store **1** (the historical sweep's store 4: the index is physics-driven, so the two are not one setting and neither states an acoustic averaging length — `reports/sparse-mixer-live-1/qc-summary.json` `observed_words`) | plan §2; matrix §9 |
 
 The reference condition is **one** condition. In the committed sweep it is realized by the two reference
 recordings (`prf/600.BDD` and `res/1-8.BDD`); on every axis that analyses it the two are two named
