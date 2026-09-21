@@ -10,7 +10,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 1 of 8: e20-a [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e20-a.json
-    log        : outputs\live\store\stage2-e20-e64-e20-a.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e20-a.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -22,7 +22,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 2 of 8: e64-a [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e64-a.json
-    log        : outputs\live\store\stage2-e20-e64-e64-a.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e64-a.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -34,7 +34,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 3 of 8: e64-b [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e64-b.json
-    log        : outputs\live\store\stage2-e20-e64-e64-b.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e64-b.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -46,7 +46,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 4 of 8: e20-b [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e20-b.json
-    log        : outputs\live\store\stage2-e20-e64-e20-b.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e20-b.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -58,7 +58,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 5 of 8: e20-c [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e20-c.json
-    log        : outputs\live\store\stage2-e20-e64-e20-c.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e20-c.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -70,7 +70,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 6 of 8: e64-c [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e64-c.json
-    log        : outputs\live\store\stage2-e20-e64-e64-c.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e64-c.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -82,7 +82,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 7 of 8: e64-d [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e64-d.json
-    log        : outputs\live\store\stage2-e20-e64-e64-d.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e64-d.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
@@ -94,7 +94,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
 
 --- step 8 of 8: e20-d [run-level] ---
     definition : examples/stage2-e20-e64/jobs/e20-d.json
-    log        : outputs\live\store\stage2-e20-e64-e20-d.jsonl
+    log        : outputs/live/store/stage2-e20-e64-e20-d.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
                     burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')

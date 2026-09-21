@@ -776,3 +776,39 @@ def test_the_analysis_documents_are_named_as_stack_dependent_while_they_are_abse
         )
     assert "PR #27" in doc
     assert "depends on the stack rather than on the" in doc
+
+
+def test_the_sheet_displays_paths_repo_style_and_the_runtime_keeps_native_ones() -> (
+    None
+):
+    """A displayed path and a runtime path are different objects with different jobs.
+
+    The sheet is committed to a repository and read on other machines, so it may not carry the
+    host's separators; the record's ``log`` field is opened by the process that recorded at the
+    instrument, so it stays native, as ``job_log_path`` itself does. Pinned together, because
+    normalizing the two the same way in either direction is the defect: a committed sheet nobody
+    can diff across platforms, or a log path the recorder cannot open.
+    """
+    run = run_plan.plan_run_file(PLAN_FILE)
+    job = run.jobs[0]
+    log = run_plan.job_log_path(run, job)
+    sheet = run_plan.operator_setup_sheet(run)
+    record = next(
+        row
+        for row in run_plan.new_run_manifest(run, store_dir="outputs/live/store").jobs
+        if row.job == job.job
+    )
+    assert isinstance(log, Path)
+    assert log == Path(run.store_dir) / f"{run.plan}-{job.job}.jsonl"
+    assert f"    log        : {log.as_posix()}" in sheet
+    assert record.log == str(log)
+    assert chr(92) not in sheet
+
+
+def test_the_committed_sheet_carries_no_host_native_separator() -> None:
+    """The committed rendering is diffable on any platform: no backslash anywhere in it."""
+    rendered = run_plan.operator_setup_sheet(run_plan.plan_run_file(PLAN_FILE))
+    committed = (STAGE2_DIR / "operator-sheet.txt").read_text(encoding="utf-8")
+    assert chr(92) not in rendered
+    assert chr(92) not in committed
+    assert "outputs/live/store/" in rendered

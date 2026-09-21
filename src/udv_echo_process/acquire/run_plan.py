@@ -1818,7 +1818,8 @@ def operator_setup_sheet(run: PlannedRun) -> str:
         f"{run.first_gate_mm} mm (both dialog-only — set by hand; a disagreement refuses)"
     )
     lines.append(
-        f"window      : {run.duration_s:g} s per recording; store {run.store_dir}; names "
+        f"window      : {run.duration_s:g} s per recording; "
+        f"store {Path(run.store_dir).as_posix()}; names "
         f"{run.name_prefix}-<job>-<label>-<stamp>"
     )
     lines.append(
@@ -1854,7 +1855,10 @@ def operator_setup_sheet(run: PlannedRun) -> str:
             f"--- step {job.step} of {len(run.jobs)}: {job.job} [{job.kind.value}] ---"
         )
         lines.append(f"    definition : {directory}/{job.definition}")
-        lines.append(f"    log        : {job_log_path(run, job)}")
+        # Displayed, not used: the sheet is committed to a repository and read on other machines,
+        # so it renders separators repo-style, while the path the recorder opens stays the native
+        # one (the record's own ``log`` field, and ``job_log_path`` itself).
+        lines.append(f"    log        : {job_log_path(run, job).as_posix()}")
         for line in job_requirements(run, job):
             lines.append(f"    {line}")
         lines.append("    points     :")
