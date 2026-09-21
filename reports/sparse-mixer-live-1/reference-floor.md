@@ -2,7 +2,7 @@
 
 **Status:** WP2 deliverable of
 [`docs/dop3000/sparse-pass-analysis-plan.md`](../../docs/dop3000/sparse-pass-analysis-plan.md).
-Generated against the revision `36446be` — the commit before these artefacts, and the
+Generated against the revision `0bef557` — the commit before these artefacts, and the
 revision `reference-floor.json` records. Regenerate with
 
 ```bash
@@ -66,7 +66,9 @@ and only the second is like for like with WP1's per-job anchor floors:
 
 - **depth-resolved floor — 14.603 mm/s at 21.238 mm**, pair `cr3`–`cr4`, from *the
   largest absolute per-depth window-mean difference over the common support, over all
-  six ordered pairs*. Any depth-resolved comparison of two jobs is screened against
+  six unique run pairs, each oriented earlier-to-later by campaign order* — with four
+  runs there are six combinations, not twelve orderings. Any depth-resolved comparison of
+  two jobs is screened against
   this number.
 - **depth-averaged floor — 4.235 mm/s**, pair `cr3`–`cr4`, from *the largest absolute
   difference between the four runs' depth-averaged window means, over all six ordered
@@ -116,7 +118,8 @@ four do not share one decoded condition — the pass's declared burst 10 / emiss
 50 gates at 1.85 mm — or when their native depth grids differ. The gate then holds only
 when all ten structural checks pass: four runs over the four reference jobs with four
 distinct labels, one condition, campaign order increasing, one supported-gate count, six
-distinct ordered pairs, every pair separated by its job starts, the floor equal to the
+unique run pairs oriented in campaign order, every pair separated by its job starts, the floor
+equal to the
 worst pair, the two endpoints distinct and recomputable, no synthetic reference, and the
 primary window and support the WP0 ones.
 

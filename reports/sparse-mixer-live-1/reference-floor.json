@@ -3,7 +3,7 @@
   "plan": "sparse-mixer-live-1",
   "plan_path": "examples/sparse-mixer-live-1/run-plan.json",
   "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
-  "analysis_commit": "36446be",
+  "analysis_commit": "0bef557",
   "table": "reference-floor.csv",
   "views": {
     "primary_window": {
@@ -29,7 +29,7 @@
   "floor": {
     "statistic": "mean",
     "depth_resolved": {
-      "endpoint": "the largest absolute per-depth window-mean difference over the common support, taken over all six ordered pairs of the four reference runs: the endpoint a depth-resolved comparison is screened against",
+      "endpoint": "the largest absolute per-depth window-mean difference over the common support, taken over the six unique run pairs of the four reference runs, each oriented earlier-to-later by campaign order, so reversed pairs are not counted twice: the endpoint a depth-resolved comparison is screened against",
       "value_mm_s": 14.603170079597177,
       "pair": [
         "cr3",
@@ -38,7 +38,7 @@
       "depth_mm": 21.238000000000003
     },
     "depth_averaged": {
-      "endpoint": "the largest absolute difference between the four runs' depth-averaged window means, taken over all six ordered pairs: the same reduction WP1's anchor floors use, so the two floors are compared like for like",
+      "endpoint": "the largest absolute difference between the four runs' depth-averaged window means, taken over the same six unique run pairs: the same reduction WP1's anchor floors use, so the two floors are compared like for like",
       "value_mm_s": 4.234827623428042,
       "pair": [
         "cr3",
@@ -763,7 +763,7 @@
     "no_synthetic_reference": true,
     "one_condition": true,
     "pairs_are_separated_by_their_job_starts": true,
-    "six_ordered_pairs": true,
+    "six_unique_run_pairs": true,
     "supported_gate_count_is_shared": true,
     "the_two_endpoints_are_distinct_quantities": true,
     "window_and_support_are_the_wp0_ones": true
