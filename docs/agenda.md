@@ -193,23 +193,48 @@ profiles in one fixture and 4193–4927 in another.
 
 ## Active work — DOP3010 acquisition: stabilize before extending
 
-> **Outstanding — next on this workstream (2026-09-20).** The accepted sparse set is **encoded** and in review:
-> [PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25) (draft, `feat/acquire-sparse-run-plan`) carries
-> `examples/sparse-mixer-first-pass/` — the nine jobs in the design's order, each scientific job's three
-> block-local controls at beginning/middle/end, the four reference-only jobs between them — with
-> `acquire/run_plan.py` checking the whole pass statically and the pass keeping its own record (`udv-acquire
-> run-plan --check|--sheet|--status|--next`). Its review asked for five changes, all landed: the pass **raises
-> `emissions_per_profile` to a refusal** (the compile refuses a disagreement, and the stored file's `word 14` is
-> compared into the verdict rather than recorded as an advisory), the block cap is a **declared retention
-> requirement rather than verified device capacity**, the trial's acceptance gates come from the stored files
-> themselves, and the concrete `scientific → reference → … → scientific` sequence has its own test. Description,
-> gates and the stop condition: [`dop3000/sparse-run-plan.md`](dop3000/sparse-run-plan.md).
+> **Outstanding — next on this workstream (2026-09-21). The nine-job pass has run and is complete:** 26
+> points across nine jobs, all stored, under the frozen plan in `examples/sparse-mixer-first-pass/` and
+> [PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25) (draft, `feat/acquire-sparse-run-plan`).
+> Its review's five changes are all landed (the pass raises `emissions_per_profile` to a refusal, the
+> block cap is a declared retention requirement, the trial's gates come from the stored files, and the
+> `scientific → reference → … → scientific` sequence has its own test). The pass's own record is
+> committed: [`../data/sparse-mixer-first-pass/`](../data/sparse-mixer-first-pass/README.md) carries the
+> 26 `.BDD` recordings, the nine job logs, the nine job manifests, the pass manifest and the verdict with
+> its reproduction commands.
 >
-> **Next:** the remaining seven jobs of the frozen pass — the trial is done: `burst-4` and
-> `common-reference-1` stored six points that hold all six §5 gates (retention 562-563 profiles over
-> 12.545-12.571 s each, CR1's words equal to the committed reference's), and step 3 is `burst-18`. Each job's
-> run-wide burst and emissions are set by hand before it. The analysis ingest follows the data, not the other
-> way round, and D1 (sensitivity read/write plus an echo/energy surface) stays a separate capability project.
+> **Two findings came out of the run.** First, `emissions-128` was logged `invalid: 0/4` and **the guard
+> was wrong, not the files**: the size signature modelled bytes as `1.7 × gates × profiles` (the payload
+> alone) while a `.BDD` is `31,268 + (19 + 2 × gates) + profiles × (19 + gates)` — container, one depth
+> block, one signal block per profile. That equation reproduces **all 26 recordings byte-for-byte**; the
+> four refused files are structurally exact at 144 profiles (`41,323 B`), carry emissions 128 in their own
+> `word 14`, span 12.4651 s and end their block chain at EOF. `acquire/log.py` now models that structure
+> and the regression reads every committed recording back. Second, and **measured but deliberately not
+> landed**: the profile period is `emissions × PRF + 10.369 ms` — 151.689 / 223.688 / 487.690 / 871.685
+> ticks (0.1 ms each) at emissions 8 / 20 / 64 / 128 — the manual's `T_prf × (16 + N_PRF)` term, which the
+> runner and the campaign both drop (`emissions × PRF + 1 ms`). It is why the per-point profile estimate
+> runs ~1.6× high at emissions 20 and worse as emissions rise; it moves every `--sheet` estimate and the
+> block-cap arithmetic, so it wants its own commit and a plan re-freeze decision. Until it lands the size
+> guard sits ~1 % inside its lower band at emissions 8 (0.503 measured) — no live risk at this pass's
+> 12 s windows, because a *longer* window is what would push it out.
+>
+> **The rig is not producing signal yet, and that is the operator's decision, not a defect.** Every stored
+> profile in all 26 recordings is zero; the historical reference is not
+> (`4MHz/0500RPM/001/res/1-8.BDD`: 25,594 of 25,850 samples non-zero). So the burst / emissions / drift
+> contrasts the pass was designed for stay unanalysed on purpose — the alternative is keeping the
+> instrument running for days while the capture functionality is developed. The zero payload is written
+> down in the data README so a later reader does not mistake it for a file defect.
+>
+> **What a fresh session does next, in order:** (1) land the review's findings on
+> `feat/acquire-sparse-run-plan` if the size-signature fix draws any; (2) the period-law change — one
+> commit, with the plan's declared counts re-derived and the fingerprint consequence stated;
+> (3) the analysis ingest, which cannot start until the rig measures again and whose debt is item 4 of
+> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) (per-job drift, the
+> reference checks across runs, the pitch × burst contrast, a Stage-2 recommendation). The live-dependent
+> suites stay the first preflight at any sitting that touches the instrument
+> (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
+> that is not an understood live-state prerequisite stops the sitting before a recording is spent.
+
 >
 > Everything else in this workstream is closed: the identity change and its device ladder
 > ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17)) passed, the panel-identity work is merged, and

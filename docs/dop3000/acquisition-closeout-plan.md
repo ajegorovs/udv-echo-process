@@ -21,7 +21,7 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
-**Resume here — 2026-09-20, after the review of PR #25.** The design branch is on `master` (`#23`, `87fd947`),
+**Resume here — 2026-09-21, after the nine-job pass completed.** The design branch is on `master` (`#23`, `87fd947`),
 and the encoding of the accepted set is **[PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25)**
 (draft, `feat/acquire-sparse-run-plan`): the first sparse pass as one run plan and nine job definitions, the
 static check of the whole pass, the operator sheet, and the pass's own record. The review asked for five
@@ -35,6 +35,28 @@ with the plan frozen while it runs. Its two non-blocking items are recorded in
 [`sparse-run-plan.md`](sparse-run-plan.md) §7 — per-point provenance for a *raised* fact, and reading the
 trial's first gate off the stored file, which belongs to the ingest.
 
+**The pass then ran to completion: nine jobs, 26 points, all stored** — and its own record is committed at
+[`../../data/sparse-mixer-first-pass/`](../../data/sparse-mixer-first-pass/README.md) (26 `.BDD`
+recordings, nine job logs, nine job manifests, the pass manifest, and the verdict with the commands that
+reproduce it). Two findings came out of the run, both in `sparse-run-plan.md` §5:
+
+- **The size signature was mis-specified, and it was the guard that was wrong, not the files.** It modelled
+  bytes as `1.7 × gates × profiles` — the payload alone — so at 144 profiles the fixed container dominated
+  and the four `emissions-128` points were refused at 3.14× before their words were read. A `.BDD` is
+  `31,268 + (19 + 2 × gates) + profiles × (19 + gates)`, which reproduces **all 26 recordings
+  byte-for-byte**; `acquire/log.py` now models that, and the regression reads every committed recording back.
+- **The profile period is measured, not assumed:** `emissions × PRF + 10.369 ms` (151.689 / 223.688 /
+  487.690 / 871.685 ticks at emissions 8 / 20 / 64 / 128 at PRF 600 µs) — the manual's
+  `T_prf × (16 + N_PRF)` term, which the runner and the campaign both drop in favour of `+ 1 ms`. That is
+  why the plan's per-point estimate runs ~1.6× high at emissions 20 and worse as emissions rise. It moves
+  every `--sheet` count and the block-cap arithmetic, so it is its **own** change with a plan re-freeze
+  decision, not part of this one.
+
+**The rig is not producing signal, so every stored profile is zero** — including the six independently
+committed trial files, while the historical reference file is not zero (25,594 of 25,850 samples non-zero).
+That is the operator's deliberate deferral, not a defect: the pass is evidence about the acquisition layer,
+and the burst / emissions / drift contrasts wait for a rig that is measuring.
+
 **What runs next, in order:**
 
 1. **the review of that delta — done.** (`5946185..2f929ea`, no blocking finding; the plan is frozen for the trial.)
@@ -44,15 +66,23 @@ trial's first gate off the stored file, which belongs to the ingest.
    points store" but "does each stored file still cover the ≈12 s window it was asked for" — the block cap is
    an application preference nothing here reads, and the installation once accepted a large cap while a block
    stopped far short of it. Five of five stored points is not a pass; a short-retention file is a stop;
-3. **the remaining seven jobs** only if that trial is clean, on the same frozen plan;
-4. **the analysis ingest** after the data exists (the user's plan step 4: ingestion and QC of the stored
-   files, per-job drift, the reference checks across runs, the pitch × burst contrast, and a Stage-2
-   recommendation) — deliberately not started, because it reads files that do not exist yet. The trial
-   hands it two numbers that the review of that trial made **requirements rather than observations**:
-   **temporal analysis uses the period measured from the stored timestamps** (22.37 ms in the trial), not
-   the nominal sizing period (12.99 ms assumed), and **the size-signature model is re-examined** so it is
-   not implicitly calibrated against that wrong period — `expected_size_bytes` ran up to 0.54× off while
-   the files themselves are sound;
+3. **the remaining seven jobs — done, and the pass is complete** (2026-09-21): nine jobs, 26 points,
+   all stored. One job (`emissions-128`) was marked failed by the size signature; that was a false
+   negative in the guard, not in the files (`data/sparse-mixer-first-pass/README.md` carries the
+   measurement and the corrected law);
+4. **the analysis ingest — its two requirements are settled, and the pass has no signal yet.** The trial
+   handed the ingest two numbers as **requirements**, and both are now closed here:
+   **temporal analysis uses the period measured from the stored timestamps** — the 26 files give
+   `period = emissions × PRF + 10.369 ms` across all four emission levels (1 tick = 0.1 ms; the
+   achieved periods are 871.685, 487.690, 223.688 and 151.689 ticks at emissions 128/64/20/8), which
+   is the manual's `T_prf × (16 + N_PRF)` term that the runner and the campaign both drop — and
+   **the size signature now models the BDD structure** exactly, on 26/26 files. The first is a
+   planning-number change (it moves every per-point estimate), so it is recorded rather than bundled;
+   the second landed with this pass. What the ingest still cannot do is start: the rig is not yet
+   producing signal, so every stored profile is zero — a situational fact the operator has deferred
+   deliberately rather than keeping the instrument running while the capture functionality is
+   developed. When it is live, the ingest owes per-job drift, the reference checks across runs, the
+   pitch × burst contrast, and a Stage-2 recommendation;
 5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
    surface) and blocks nothing above it.
 

@@ -643,12 +643,19 @@ decoded to **403 gates**, resolution **index 1** (0.2433 mm at `c = 1460`),
 **depth 100 mm**, burst 4, emissions 150, PRF 169 µs — the depth law of §3,
 confirmed from the file's own words on a point the *driver* wrote.
 
-**The size signature catches the 60× case.** It is about **1.7 bytes per
-gate-profile** (8,272,897 B / (6,045 × 805)), so a point whose file is off by a
-large factor is rejected before it is decoded (§7 rule 4). It is an
-**approximate factor check, not an exact profile count**: two clean 1.5 s points
-implied 64 and 88 profiles, and file size is not perfectly linear in
-profiles × gates.
+**The size signature catches the 60× case.** It is the BDD's own structure, not a
+payload-only rate: **31,268 fixed bytes**, one depth block of `19 + 2×gates` bytes, then
+one signal block of `19 + gates` bytes per profile. The two clean 1.5 s points are **79 and
+78 profiles** at 805 gates (`31,268 + 1,629 + 79×824 = 97,993 B`, and 78 for the 97,169 B
+file) — the earlier "~71 profiles" was the request-derived estimate, and the earlier
+"1.7 bytes per gate-profile" was a rate that only happened to fit because those files
+carried many profiles. The complete sparse pass reproduces the structural equation
+**byte-for-byte on 26/26 files**; the payload-only rate was wrong by 23 % at 50 gates, 50 % at
+145 gates and 5 % low at 31 gates, and it falsely rejected the four valid emissions-128
+points at 3.14× when their 144 profiles made the fixed bytes dominant
+(`data/sparse-mixer-first-pass/README.md`). The band stays a gross factor of two, because
+the profile count before storage is the requested period's estimate while the file's
+timestamps establish the achieved count only afterwards.
 
 **Consequence for the runner:**
 

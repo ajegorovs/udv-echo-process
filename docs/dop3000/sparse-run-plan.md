@@ -223,11 +223,24 @@ six hold does the plan stay frozen and the remaining jobs run.
   `covariates_enforced` with an empty advisory list, so the raised fact is enforced in the stored file
   itself; no modal or overlay was left up.
 
-Two numbers belong to the ingest rather than to the gates. The achieved period is **22.37 ms**, not the
-12.99 ms the plan assumed, so a point carries ~562 profiles rather than 924 — the per-point estimate is
-~1.6× optimistic, and the declared block cap stays conservative at either rate. And `expected_size_bytes`
-is off by up to 0.54× (`cc1`), because the size signature is calibrated on that nominal period: a number
-to recalibrate, not evidence against the files.
+**Both of those numbers are now measured rather than deferred.** The achieved period is
+**emissions × PRF + 10.369 ms** — the 26 recorded points give 151.689 / 223.688 / 487.690 / 871.685
+ticks (1 tick = 0.1 ms) at emissions 8 / 20 / 64 / 128 — so a point carries ~562 profiles at the
+reference level, not the 924 the requested-period law estimated. That law
+(`emissions × PRF + 1 ms`, in the runner and in the campaign) drops the manual's
+`T_prf × (16 + N_PRF)` term, which is why the estimate runs ~1.6× high at emissions 20 and worse as
+emissions rise. It is a planning-number change, so it is recorded here and gets its own commit; the
+other number, the size signature, was wrong in the code and is corrected in this pass.
+
+**The pass then ran to completion (2026-09-21): nine jobs, 26 points, all stored.** The record is
+`data/sparse-mixer-first-pass/` — 26 recordings, nine job logs, nine job manifests, the pass manifest,
+and a README with the verdict and the reproduction commands. One job's four points were refused
+(`emissions-128`) and the refusal was the guard's, not the files': the signature modelled only the
+payload, so at 144 profiles the fixed container bytes dominated and the ratio read 3.14×. All four
+files are structurally exact (`41,323 = 31,268 + 119 + 144 × 69`), carry emissions 128 in their own
+word 14, span 12.4651 s, and end their block chain exactly at EOF — they are the same files the other
+jobs produced, at a smaller profile count. The rig is not yet producing signal, so every stored
+profile is zero: a situational fact about the experiment, not a measurement this slice has to explain.
 
 **The trial's own six recordings are committed** under `data/sparse-mixer-first-pass-trial/` (with
 `retention.json` and a README giving the two commands that reproduce either half), so every number above
