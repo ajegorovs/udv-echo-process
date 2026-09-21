@@ -1,0 +1,71 @@
+{
+  "job": "e20-a",
+  "fingerprint": "3217c5c2539aae6571dfd5c6221fbfe1c93bd84dd15f0b3466af58d0d0728bfc",
+  "channel": 1,
+  "planned": 1,
+  "skipped": [],
+  "started_at": "2026-09-21T18:17:10.228310+03:00",
+  "finished_at": "2026-09-21T18:17:39.000514+03:00",
+  "outcomes": [
+    {
+      "key": 1,
+      "label": "ref",
+      "identity": "stage2-e20-a-ref",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\stage2-e20-a-ref-20260921T181717.BDD",
+      "reason": null,
+      "aborted": false
+    }
+  ],
+  "store_dir": "outputs\\live\\store",
+  "log_path": "outputs\\live\\store\\stage2-e20-e64-e20-a.jsonl",
+  "definition_path": "examples\\stage2-e20-e64\\jobs\\e20-a.json",
+  "log_errors": [],
+  "compilation_identity": {
+    "channel": {
+      "value": "1",
+      "source": "routed"
+    },
+    "mode": {
+      "value": "manual",
+      "source": "read"
+    },
+    "process_mode": {
+      "value": "instrument",
+      "source": "read"
+    },
+    "prf_us": {
+      "value": "600",
+      "source": "read"
+    },
+    "emissions_per_profile": {
+      "value": "20",
+      "source": "read"
+    },
+    "burst_length": {
+      "value": "10",
+      "source": "read"
+    },
+    "sound_speed_ms": {
+      "value": "1480",
+      "source": "read"
+    },
+    "first_gate_mm": {
+      "value": "10",
+      "source": "read"
+    },
+    "max_profiles_per_block": {
+      "value": null,
+      "source": "unreadable"
+    },
+    "class_name": "TMain_Scr",
+    "panels": 4,
+    "strip_view": "ready",
+    "strip_has_slider": false
+  },
+  "declared_only": false,
+  "skipped_without_evidence": [],
+  "expected_process_mode": "instrument",
+  "observed_process_mode": "instrument"
+}
