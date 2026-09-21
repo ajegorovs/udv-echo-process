@@ -123,17 +123,13 @@ sampling-volume read-out, not the parameter.
 - The stored depth word is the application's own derivation and deviates a few tenths of a
   mm from `first_gate + gates * resolution` - there is no consistent floor-or-round rule, so
   compare depth with a tolerance (~1.5 mm) rather than exactly.
-- **Profile period is computable, not measured:** `T_profile ~= T_tran + T_prf * (16 + N_PRF)`
-  where `N_PRF` is emissions per profile and 16 is the fixed constant stored as word 17.
-  Deviations are expected (mechanics, electrical, a non-real-time OS), so log the achieved
-  value as a per-point certificate instead of calibrating models from it. Measured at the production
-  length (12 s, 797 gates at 0.122 mm) the law predicts 366 profiles (33 ms) while the block holds
-  228 — an achieved period of **53 ms**, and **46 ms** at 399 gates: the transfer term is ~1.6x larger
-  than the law and it scales with the gate count, as that term implies. So compute the achieved period
-  from the artefact itself (size / (gates x 1.7 B) -> profile count; period = T / profiles; flag a wrap
-  when the count reaches the block cap) and carry it on the point's record — a point log whose timing
-  field is empty cannot support a duration-based comparison, and the size guard's factor-of-2 tolerance
-  is loose enough to pass a 0.62 ratio.
+- **Profile period is measured from the artefact, not assumed by the planner.** The sparse pass fixes it
+  at `emissions × PRF + 10.369 ms`: 151.689 / 223.688 / 487.690 / 871.685 ticks (1 tick = 0.1 ms) at
+  emissions 8 / 20 / 64 / 128. The runner's planning law (`emissions × PRF + 1 ms`) drops the manual's
+  16-emission transfer term and therefore overestimates the profile count (~924 planned versus ~562
+  stored at the reference level); it is not evidence that the file is short. Read the timestamps and
+  count from the decoded blocks, carry the achieved period/span on the point's record, and use the period
+  estimate only for pre-run sizing (`docs/dop3000/sparse-run-plan.md` §5).
 
 ## Run safety
 
@@ -141,10 +137,12 @@ sampling-volume read-out, not the parameter.
   profiles from an earlier failed cycle) produced a stored file ~60x the expected size that
   still decoded as a perfectly valid point - silent corruption. Clearing first produced the
   correct size. On screen the symptom is large **negative** `Time between profile` values.
-- **Keep the size guard gross, not precise.** Contamination shows up as 10x/60x. Profile
-  timing carries OS and mechanical jitter, so a tight expectation is illusory: ~1.7 bytes per
-  gate-profile with a factor of 2-4 is the right shape. Note the ratio drifts with gate count
-  (a per-profile overhead plus ~1.2 bytes per gate), so do not enforce it across rungs.
+- **Keep the size guard structural and gross, not empirical.** Contamination shows up as 10x/60x.
+  The file is the container plus its blocks: `31,268 + (19 + 2 × gates) + profiles × (19 + gates)` for
+  this topology, exact on all 26 sparse-pass files. The old payload-only `1.7 × gates × profiles` rate
+  falsely rejected all four valid emissions-128 files at 3.14x because their 144 profiles made the fixed
+  container bytes dominant. Keep the factor-of-2 band around the structural expectation for pre-store
+  gross-contamination detection; decode the block chain, count and timestamps for the verdict.
 - **Circuit breaker: stop the run when the application's state is unverified** - unknown
   overlay, unstartable strip, a cycle that raised - instead of cascading the failure across
   every remaining point. Refuse and stop on an unrecognised panel; never press a button on a
@@ -176,8 +174,9 @@ sampling-volume read-out, not the parameter.
   file is `<prefix>-<label>-<stamp>`, which means a label that repeats the prefix doubles it. Only the
   sidebar parameters (resolution, gate count) vary per point — sound speed, first gate and burst length
   are dialog-only, so a point may repeat them but never change them, and the plan refuses such a change
-  by name. The block cap is an input to state, not a law to assert on: the 12 s production point keeps
-  ~8.4 s, so the plan reports that per point and runs. Measured: 6/6 points in 104 s at 12 s each on
+  by name. The block cap is an input to state, not a law to assert on: the completed sparse pass kept
+  12.4651-12.5713 s against each 12 s request, so the cap never became the limiter and the plan reports
+  achieved retention per point. Measured: 6/6 points in 104 s at 12 s each on
   channel 1, one parameters dialog for the whole job, `--resume` skipping every recorded point in 4 s
   (gates 797/399/199/100 read back as planned). An assisted-mode channel has no sidebar at all, so a
   campaign must target a manual one. One axis per sweep, and keep the window, channel and duration fixed across
@@ -185,7 +184,7 @@ sampling-volume read-out, not the parameter.
 - Print the field names and types of an unfamiliar model when construction fails; it turns a
   guess into one exact fix (`rungs` being 1-based multipliers was found this way).
 
-## A pass: several jobs, one order (the run plan) — measured 2026-09-20
+## A pass: several jobs, one order (the run plan) — completed 2026-09-21
 
 - **A definition is one job; a *pass* is several.** `acquire/run_plan.py` + a run plan JSON
   (`examples/sparse-mixer-first-pass/`) carry the three things no single definition can: the job
@@ -212,11 +211,12 @@ sampling-volume read-out, not the parameter.
   declares its own requirement: the achieved profile period is never shorter than `emissions × PRF`, so
   `ceil(T / (emissions × PRF))` over the pass cannot wrap any point whatever the transfer term is. The
   plan's own per-point note fires instead when a *point* overrides `duration_s` past the cap.
-- **Declared ≠ retained.** A large accepted value for *"Do not keep in a block more profiles than"* did
-  not stop an observed block from ending far short of it, so **effective retention is only ever measured
-  from the stored file** — profile count, first→last stamp span, achieved period — never read off the
-  preference and never inferred from a clean decode. At a 12 s window this is the first thing to check on
-  a new configuration, and a short file stops the run rather than being noted.
+- **Declared != retained, so retention is read from each stored file.** An earlier profile-count estimate
+  made one observed block look far short of a large accepted *"Do not keep in a block more profiles
+  than"* value; the completed pass proved the files were not short. Effective retention is still only
+  ever measured from the stored file — profile count, first-to-last stamp span, achieved period — never
+  read off the preference and never inferred from a clean decode. At a 12 s window this is the first
+  thing to check on a new configuration, and a short file stops the run rather than being noted.
 - **Declare the frame from the files, and expect the dialog to speak last.** The reference frame is
   derived from the committed recordings' own decoded values (c = 1480 m/s, and a first gate of
   10.1626666667 ± 0.5 mm implied by their depth words), and the pre-run check compares numerically
@@ -227,3 +227,13 @@ sampling-volume read-out, not the parameter.
   confirms after the recording. Before treating the difference as a scientific loss, check whether the
   rungs in play can see it at all: at 1.85, 0.617 and 2.96 mm the two candidates round to the same
   stored depth word.
+- **The pass is complete, and the record is the authority.** Nine jobs, 26/26 points stored under
+  `data/sparse-mixer-first-pass/`: 26 BDD files, nine job logs, nine job manifests, the pass manifest
+  and its verdict README. All files retain at least the requested 12 s window; all carry their requested
+  frame and run-wide words. The rig produced zero-valued profiles, an operator-deferred signal problem,
+  so the designed scientific contrasts remain unanalysed.
+- **A refusal can indict the guard rather than the file.** The `emissions-128` job was first logged
+  `invalid: 0/4` because the payload-only size signature expected `1.7 × gates × profiles`; at 144
+  profiles, the fixed 31,268-byte container made every valid file read 3.14x. The structural law above
+  reproduces all 26 files byte-for-byte and each block chain ends exactly at EOF. Preserve a refused
+  file, decode it independently, and fix the guard when the structure and stored words agree.

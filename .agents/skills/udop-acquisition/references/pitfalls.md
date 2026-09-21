@@ -385,9 +385,10 @@ unrecognised prompt is one you must not answer blind.
   deposited — it was picked up by the **next** cycle's store and written under that point's name at
   roughly 10x the expected size, in a file that still looked perfectly valid. So design for both ends:
   assert `duration <= cap x period` from the period you measured, detect the warning, sanity-check
-  every stored artefact against a **size signature** (bytes per gate-profile, calibrated once on a
-  known-good point), and never store a point whose cycle failed — a failed cycle must be stopped and
-  cleared before the next point, never left to roll into it.
+  every stored artefact against the **structural size law** (`31,268 + (19 + 2 × gates) + profiles ×
+  (19 + gates)`, exact on all 26 sparse-pass files — `acquire/log.py::SizeSignature`), and never store a
+  point whose cycle failed — a failed cycle must be stopped and cleared before the next point, never left
+  to roll into it.
   Blocks carry meaning only where the unit of work is a *repeat* — rolling/multiplexed multi-channel
   acquisition, each roll contributing N blocks, where the store's block selector is exactly the right
   handle. A single-channel parameter sweep needs no block management at all.
@@ -399,9 +400,11 @@ unrecognised prompt is one you must not answer blind.
   accepted a million) while the value *in force* does truncate a long point's start (plan §18;
   `docs/dop3000/udop-automation.md` §7, §12.4).
   **Treat the cap as an input you were told, not as a law you measured, and never let it refuse the
-  project's own operating point.** Measured: the production point length stores less than it asks for
-  (12 s asked, ~8.4 s kept — the last ~257 profiles), and that recording *is* the deliverable, so a plan
-  guard that refuses it makes the goal unrunnable while proving nothing. State the consequence instead —
+  project's own operating point.** Measured: the production point length keeps its whole window
+  (12.4651-12.5713 s against a 12 s request, the block cap never the limiter), and that recording *is*
+  the deliverable, so a plan guard that refuses it makes the goal unrunnable while proving nothing. An
+  earlier "12 s asked, ~8.4 s kept" reading came from the planning law running ~1.6x high, not from a
+  short file. State the consequence instead —
   N profiles above a cap of C covers its last `C x period` seconds — and let the run continue, keeping
   the refusal for the genuinely unsatisfiable (a window outside the period law's depth budget, a pitch
   that would snap to another rung). **And never let a shipped example or definition dodge that guard
@@ -423,16 +426,19 @@ unrecognised prompt is one you must not answer blind.
   definition or the point is invalid by rule. Re-check the guard at the production point length before
   trusting it — short scaffolding points are not the operating condition: at a 12 s production length a
   factor-2 guard accepted a block holding **0.62** of what the period law predicted, while those same
-  settings at 4 s matched that law to within measurement (32.5 ms against 33 ms). So the loose factor is
-  not what let it pass — **a long point stores less than the duration it asked for**, and the shortfall
-  grows with the length (one configuration, measured: 3 s asked, ~3 s stored; 6 s asked, ~4.4 s stored;
-  12 s asked, ~8.4 s stored). Measure that at the production length with a **two-duration linearity
-  run** — two points, identical settings, one delay double the other, the buffer reset before each — and
-  read the stored window off the artefacts. Never explain the gap by a period-law error: that is a cause
-  to be measured against the app's own counters, not inferred from file sizes, and size arithmetic has
-  already produced two wrong readings in one session (a claimed per-item mode toggle, and a claimed
-  1.6x period-law error — both retracted once the artefacts that actually record those quantities were
-  read). **A tolerance guard is never a stand-in for the achieved quantity:** carry the achieved
+  settings at 4 s matched that law to within measurement (32.5 ms against 33 ms). The loose factor was
+  not what let it pass, and neither was the file short — **the planning law was wrong.** The period is
+  `emissions × PRF + 10.369 ms`, not `emissions × PRF + 1 ms`: the code's law drops the manual's
+  16-emission transfer term, so a point carries ~562 profiles at the reference level where it estimated
+  924. The completed pass then retained the full window on every point (12.4651-12.5713 s spans against
+  a 12 s request, no truncation, the block cap never the limiter). Measure it at the production length
+  with a **two-duration linearity run** — two points, identical settings, one delay double the other, the
+  buffer reset before each — read the stored window off the artefacts, and read the period off the files'
+  own timestamps. Never infer a period law from file sizes: size arithmetic has already produced two
+  wrong readings in one session (a claimed per-item mode toggle, and a claimed
+  1.6x period-law error — the ratio was right and the reasoning was not, and only the stamps settled it;
+  `docs/dop3000/sparse-run-plan.md` §5). **A tolerance guard is never a stand-in for the achieved
+  quantity:** carry the achieved
   period/duration on the point's own record, because the guard passing only means "not grossly
   contaminated", and a duration-based comparison needs the achieved window. **And check that the read
   exists:** a cycle whose own docstring promised the achieved period was read from the status bar and
@@ -495,7 +501,7 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   in parallel against the interface, and the whole loop is exercised through a fake with no app
   present, which is the only way this class of code is testable at all.
 - **Transcribe the verified rules as table-driven tests with the measured numbers in the tables.**
-  Ladder rungs, gate counts, expected depths and the byte-per-gate-profile signature belong in the
+  Ladder rungs, gate counts, expected depths and the size law's own constants belong in the
   test data, so an arithmetic change that silently moves a plan fails in CI instead of at the rig.
   Pin the artefact decode against a real capture committed as a fixture — a decode nobody can re-run
   is a claim, not a test.

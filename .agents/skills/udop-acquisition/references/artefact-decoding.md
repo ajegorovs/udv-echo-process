@@ -71,21 +71,21 @@ in minutes; without them it re-runs the instrument to ask the same questions aga
 
 Two questions the file is asked to settle, and neither is answered by one file alone.
 
-- **Requested duration is not stored duration.** A cycle that presses record, holds `T` seconds and
-  presses stop has set an exact delay — verify that from the run's own stage notes or per-stage
-  timestamps, never from the file. What the file *holds* is separate: measured on one instrument at a
-  single configuration, a 3 s delay stored ~3 s, 6 s stored ~4.4 s, 12 s stored ~8.4 s, so the
-  shortfall grows with the length. Settle it with a **two-duration linearity run** — two points,
-  identical settings, one delay double the other, the buffer reset before each and nothing else
-  varied. If the stored quantity doubles, the delay sets the window; if it does not, the instrument is
-  truncating, and a duration-based comparison needs the *achieved* window on each point's own record.
-  A size calculation cannot tell a ring cap from a slower rate, so do not name the cause from it.
+- **Requested duration is checked against the stored duration.** A cycle that presses record, holds `T`
+  seconds and presses stop has set an exact delay — verify that from the run's own stage notes or
+  per-stage timestamps, never from the file. What the file *holds* is separate, but the completed sparse
+  pass settled the operating case: all 26 requested 12 s windows span 12.4651-12.5713 s, so the full
+  window is retained and the block cap is not the limiter. The earlier "3 s -> ~3 s, 6 s -> ~4.4 s,
+  12 s -> ~8.4 s" series compared profile counts against the wrong planning period; the files were not
+  short. A **two-duration linearity run** remains the portable way to settle a new configuration — two
+  points, identical settings, one delay double the other, the buffer reset before each and nothing else
+  varied — but compare each file's own timestamp span, not a count divided by a nominal rate.
 - **Count records, not only bytes.** Where the file carries repeating records, the record count *is*
-  the profile/frame count and is read directly (difference two files to find the stride). A bytes-per-
-  unit **signature** calibrated on a different configuration yields a number rather than a measurement:
-  report it as an inference, and prefer the instrument's own counter wherever one exists — and check
-  that the read you are relying on exists in the code, since a docstring can promise a counter read
-  that was never implemented.
+  the profile/frame count and is read directly from the decoded block chain; the per-profile timestamps
+  establish the achieved period and span. File size has its own structural law, not a calibrated rate:
+  for the one-depth-block/one-signal-block files here it is `31,268 + (19 + 2 × gates) + profiles ×
+  (19 + gates)`, exact on all 26 sparse-pass files. Use that law as a gross contamination/truncation
+  guard, never as a substitute for decoding the count or timestamps.
 - **A per-item configuration word dates a state change.** When a per-item mode or state is suspected
   of having been changed by your own step, read the field the file records for that item across the
   *older* files on disk before touching the driver: measured, that flag read the same in files written
