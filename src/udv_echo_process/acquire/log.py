@@ -171,24 +171,37 @@ class DecodedBlock(ValueModel):
 
 
 class SizeSignature(ValueModel):
-    """The cheap contamination guard: bytes per gate-profile, with a factor.
+    """The cheap BDD-contamination guard: container + depth block + signal blocks.
 
-    Calibrated on the recorded points: 805 gates over ~71 profiles (1.5 s at a
-    21.2 ms period) produced 97,993 B and 97,169 B — 1.71 and 1.70 bytes per
-    gate-profile. A file off by more than ``factor`` is not this point's data
-    (the leftover-recording case was 10× the signature).
+    The format itself gives the expectation (``io/dop/bdd.py``): 31,268 fixed bytes,
+    one depth block of ``19 + 2*gates`` bytes, then one signal block of
+    ``19 + gates`` bytes per profile. The complete sparse pass reproduces that equation
+    byte-for-byte on all 26 files. The earlier payload-only calibration
+    (``1.7*gates*profiles``) omitted the container; it tolerated ordinary blocks only
+    because they carried many profiles, then falsely rejected the four valid
+    emissions-128 files at 3.14x when their 144 profiles made the fixed bytes dominant.
+
+    ``factor`` remains deliberately gross: the requested period predicts the profile
+    count before storage, while the file's timestamps establish the achieved count only
+    afterwards. A leftover recording stored under the next point's name was still more
+    than 10x a normal point and remains outside the band.
     """
 
-    bytes_per_gate_profile: float = Field(default=1.7, gt=0)
+    container_bytes: int = Field(default=31_268, ge=0)
+    block_overhead_bytes: int = Field(default=19, ge=0)
+    depth_bytes_per_gate: float = Field(default=2.0, gt=0)
+    bytes_per_gate_profile: float = Field(default=1.0, gt=0)
     factor: float = Field(default=2.0, ge=1)
 
     def expected_bytes(self, n_gates: int, profiles: int) -> int:
-        """Expected file size in bytes for a block of ``profiles`` × gates."""
+        """Expected BDD bytes for one depth block and ``profiles`` signal blocks."""
         if n_gates <= 0:
             raise ValueError(f"n_gates must be > 0, got {n_gates}")
         if profiles <= 0:
             raise ValueError(f"profiles must be > 0, got {profiles}")
-        return round(self.bytes_per_gate_profile * n_gates * profiles)
+        depth_block = self.block_overhead_bytes + self.depth_bytes_per_gate * n_gates
+        signal_block = self.block_overhead_bytes + self.bytes_per_gate_profile * n_gates
+        return round(self.container_bytes + depth_block + profiles * signal_block)
 
     def ratio(self, size_bytes: int, n_gates: int, profiles: int) -> float:
         """Observed size over the expected size."""

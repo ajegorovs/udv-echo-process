@@ -150,9 +150,11 @@ Rules that follow:
   ```
 
   verified as `4 → 0.6083 mm` at `c = 1460` and `1 → 0.250 mm` at `c = 1500`.
-- The app writes its own derived window to **word 2 (`Depth`)**, so
-  `depth = first gate + gates × resolution` can be checked inside the file
-  without re-deriving the physics.
+- The app writes its own derived window to **word 2**, so the depth can be checked inside the
+  file without re-deriving the physics. What word 2 holds is the window's *last* gate —
+  `first gate + (gates - 1) × pitch`, rounded — not the dialog's `Depth` one pitch beyond it
+  (`dop3000/handoff-dop3010-acquisition.md` §3, measured on the committed sweep; the two
+  coincide inside the rounding only at rungs narrower than the check's 1.5 mm tolerance).
 
 **Burst length is a dialog-only write.** There is no sidebar field for it, so
 any burst sweep must drive `Parameters → Operating parameters`. Changing it
@@ -420,7 +422,13 @@ profiles are an output.**
 - **The manual's formula is the expectation; the instrument's own read-out is the
   certificate.** `T_profile ≈ T_tran + T_prf · (16 + N_PRF)`, and the parameter
   block corroborates it structurally: **word 17 = 16 in every file**, i.e. the
-  formula's constant term is a real, stored constant of the acquisition. Earlier
+  formula's constant term is a real, stored constant of the acquisition. **Keep the
+  formula's two terms apart when reading a measurement.** At the sparse pass's
+  600 µs PRF the fixed emission term alone is `16 × 600 µs = 9.6 ms`, while the
+  ~10.369 ms intercept the 26 committed pass files measure is that 9.6 ms *and* the
+  transfer term `T_tran` (~0.77 ms as they imply); the intercept is not the
+  16-emission term on its own, and docs that read it that way are wrong. The planner
+  implements the whole law (`acquire/plan.py::profile_period_s`). Earlier
   first evidence (`100 emissions × 200 µs PRF` observed at `21.2 ms`) was read as
   a contradiction of the formula; it is not — an earlier revision of this section
   said "measure the period, do not trust the formula", and that line is withdrawn.
@@ -641,12 +649,19 @@ decoded to **403 gates**, resolution **index 1** (0.2433 mm at `c = 1460`),
 **depth 100 mm**, burst 4, emissions 150, PRF 169 µs — the depth law of §3,
 confirmed from the file's own words on a point the *driver* wrote.
 
-**The size signature catches the 60× case.** It is about **1.7 bytes per
-gate-profile** (8,272,897 B / (6,045 × 805)), so a point whose file is off by a
-large factor is rejected before it is decoded (§7 rule 4). It is an
-**approximate factor check, not an exact profile count**: two clean 1.5 s points
-implied 64 and 88 profiles, and file size is not perfectly linear in
-profiles × gates.
+**The size signature catches the 60× case.** It is the BDD's own structure, not a
+payload-only rate: **31,268 fixed bytes**, one depth block of `19 + 2×gates` bytes, then
+one signal block of `19 + gates` bytes per profile. The two clean 1.5 s points are **79 and
+78 profiles** at 805 gates (`31,268 + 1,629 + 79×824 = 97,993 B`, and 78 for the 97,169 B
+file) — the earlier "~71 profiles" was the request-derived estimate, and the earlier
+"1.7 bytes per gate-profile" was a rate that only happened to fit because those files
+carried many profiles. The complete sparse pass reproduces the structural equation
+**byte-for-byte on 26/26 files**; the payload-only rate was wrong by 23 % at 50 gates, 50 % at
+145 gates and 5 % low at 31 gates, and it falsely rejected the four valid emissions-128
+points at 3.14× when their 144 profiles made the fixed bytes dominant
+(`data/sparse-mixer-first-pass/README.md`). The band stays a gross factor of two, because
+the profile count before storage is the requested period's estimate while the file's
+timestamps establish the achieved count only afterwards.
 
 **Consequence for the runner:**
 

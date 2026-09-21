@@ -193,36 +193,73 @@ profiles in one fixture and 4193–4927 in another.
 
 ## Active work — DOP3010 acquisition: stabilize before extending
 
-> **Outstanding — next on this workstream (2026-09-19).** The panel-identity change is merged
-> ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17); planned and corrected in
-> [`dop3000/identity-classification-plan.md`](dop3000/identity-classification-plan.md)) and **its §5
-> device ladder has been run on the merged code** (`master` `665573d`, the change `4644abf`): five of
-> its six rungs pass read-only — the clean read unchanged field for field, `Define TGC` putting the
-> overlay clause first with `layout_evidence` reading `'overlay'` where the old head said `'dialog'`,
-> both grown `store` rows (413x123 three-button, 551x123 four-button) resolving as the strip with no
-> dialog clause, a raised warning guard reporting the identity `warning` and `blocking_surface`
-> `warning` while its `SurfaceKind` reads `'overlay'`, and the cleanup probe closing only the real
-> `Operating parameters` dialog. **V3 now passes** — the sitting C failure is closed — and V1 still
-> does. The sixth rung (the cursor info box) was **not taken**: the operator has cursors disabled and
-> the experiment does not use that feature, so `CURSOR_INFO` rests on the block-held read that first
-> measured the mis-resolution plus the cloud tests, and the record says so instead of implying a pass.
-> Readings, times and artifact names:
-> [`dop3000/device-verification.md`](dop3000/device-verification.md), *the identity change's device
-> ladder*.
+> **Outstanding — next on this workstream (2026-09-21). The nine-job pass has run and is complete:** 26
+> points across nine jobs, all stored, under the frozen plan in `examples/sparse-mixer-first-pass/` and
+> [PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25) (draft, `feat/acquire-sparse-run-plan`).
+> Its review's five changes are all landed (the pass raises `emissions_per_profile` to a refusal, the
+> block cap is a declared retention requirement, the trial's gates come from the stored files, and the
+> `scientific → reference → … → scientific` sequence has its own test). The pass's own record is
+> committed: [`../data/sparse-mixer-first-pass/`](../data/sparse-mixer-first-pass/README.md) carries the
+> 26 `.BDD` recordings, the nine job logs, the nine job manifests, the pass manifest and the verdict with
+> its reproduction commands.
 >
-> **Sitting D has since run, and its writes are verified (2026-09-19).** `ensure_channel` left the screen as
-> it found it; the compile accepted this machine's own frame, refused a declaration-only `burst_length: 5`
-> before any recording, refused the committed ladder against a frame it does not declare, and accepted it
-> once the operator set the instrument to what the ladder declares; the six-point campaign ran **6/6 ok**
-> with the stored `.BDD` files' own words agreeing; the resume skipped all six with
-> `skipped_without_evidence: []`; and recovery found the frame intact, no popup/dialog/overlay, the expected
-> store directory and an unclipped pointer. **V5–V8 pass** (V7's TGC item taken live too: a one-point job recorded, TGC changed, and the resume still skipped), so nothing left in this workstream is device-pending.
+> **Two findings came out of the run.** First, `emissions-128` was logged `invalid: 0/4` and **the guard
+> was wrong, not the files**: the size signature modelled bytes as `1.7 × gates × profiles` (the payload
+> alone) while a `.BDD` is `31,268 + (19 + 2 × gates) + profiles × (19 + gates)` — container, one depth
+> block, one signal block per profile. That equation reproduces **all 26 recordings byte-for-byte**; the
+> four refused files are structurally exact at 144 profiles (`41,323 B`), carry emissions 128 in their own
+> `word 14`, span 12.4651 s and end their block chain at EOF. `acquire/log.py` now models that structure
+> and the regression reads every committed recording back. Second, and **measured but deliberately not
+> landed on `feat/acquire-sparse-run-plan`: the profile period is `emissions × PRF + 10.369 ms` —
+> 151.689 / 223.688 / 487.690 / 871.685 ticks (0.1 ms each) at emissions 8 / 20 / 64 / 128 — against the
+> retired `emissions × PRF + 1 ms` form, which was ~1.6× high on profiles at emissions 20 and worse as
+> emissions rose. The intercept's two terms are separate: the manual's `T_prf × (16 + N_PRF)` is 9.6 ms at
+> 600 µs and the transfer term is the remaining ~0.77 ms. `acquire/plan.py::profile_period_s` computes the
+> whole law for both the runner's size expectation and the campaign's profile count, so it moves every
+> `--sheet` estimate; **the sparse parameter set itself is untouched**, so no plan re-freeze follows. The
+> guard's own margin moved with it and is now safe: the emissions-8 ratio goes from 0.508 (1.6 % inside its
+> lower band, the level the review named as a false-rejection risk) to 1.037.
 >
-> What remains is the **matrix question**
-> ([`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md) §4): is
-> `experiment_data\mixer\sensitivity-analysis\4MHz\0500RPM\001\burst_len` the experiment this work is for?
-> The first sparse matrix is still being re-derived around the reference point, and the writers it funds
-> wait on that answer.
+> **The rig was not producing signal for that pass, and the operator has since run the same design live.**
+> Every stored profile in the first pass's 26 recordings is zero; the historical reference is not
+> (`4MHz/0500RPM/001/res/1-8.BDD`: 25,594 of 25,850 samples non-zero). The zero payload is written down in
+> the data README so a later reader does not mistake it for a file defect.
+>
+> **The mixer-enabled realization ran 2026-09-21 (nine jobs, 26 points, 16 min 43 s)** under a derived copy
+> of the same frozen plan (own name, own root `sparse2`, own run record), so nothing in the first pass was
+> overwritten: `examples/sparse-mixer-live-1/` and [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md).
+> Every point stored and verified; **zero-payload recordings: 0** (non-zero fraction 0.9864–0.9939 per
+> recording); spans 12.4686–12.5888 s; word 14 matches each point's own request; the structural size law is
+> exact on 26/26 and the regression now reads both passes back. The measured period law is confirmed at all
+> four emission levels on a live rig (15.2 / 22.4 / 48.8 / 87.2 ms), and the emissions-8 size-guard ratio
+> that sat at 0.508 (1.6 % inside its lower edge, the level a review flagged as a false-rejection risk)
+> verified as the guard's own arithmetic, not the files: it is 1.037 once the period law is corrected.
+>
+> **The review of the whole delta is in and it accepts it** (2026-09-21, `b9043db..9d6706c`): the
+> mixer-enabled 26-point rerun, the separate run identity, the corrected profile-period model, the
+> closed E8 and E128 guard findings, and the unchanged scientific design. **The acquisition phase for
+> the first sparse pass is complete, and acquisition logic stops changing here** — it re-opens only if
+> the analysis exposes a real problem, never because an abstraction looks improvable.
+>
+> **What a fresh session does next: the scientific ingest, and nothing else.** It reads committed files
+> and needs no instrument, so it is unblocked the moment a session starts. The review names its
+> outputs: common-support normalization, within-job drift, the CR1–CR4 reference drift, the 2×2
+> pitch × burst interaction, the emissions 8 / 20 / 64 / 128 behaviour, and then a Stage-2
+> recommendation (item 4 of
+> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It analyses
+> [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md), whose 26 recordings all carry
+> signal; the zero-signal first pass stays acquisition-qualification evidence. Two facts about that
+> directory the ingest must respect: the period comes from the **stored timestamps** (the logs'
+> `timing.target_s` records the retired expectation — provenance, not to be rewritten), and the two
+> plans are pinned equivalent by a test, so the repeat cannot silently become another experiment. The
+> live-dependent suites stay the first preflight at any sitting that touches the instrument
+> (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
+> that is not an understood live-state prerequisite stops the sitting before a recording is spent.
+
+>
+> Everything else in this workstream is closed: the identity change and its device ladder
+> ([#17](https://github.com/ajegorovs/udv-echo-process/pull/17)) passed, the panel-identity work is merged, and
+> sittings A–D verified **V1–V8** on the instrument, so nothing below is device-pending.
 
 An independent repository-wide review of the acquisition subsystem was assessed
 against the checkout on 2026-09-18: **all eight findings verified, the direction

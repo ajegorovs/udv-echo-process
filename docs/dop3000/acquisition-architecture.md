@@ -73,11 +73,11 @@ layout gate) as the refactor base`), branch `refactor/acquire-foundation`:
 |---|---|---|---|
 | `acquire/driver.py` | 1,783 | 91,946 | **the facade module**, **re-measured at this tip (`3ea7c1c`)** (every other row here is the freeze-commit count): `class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface)` plus the facade's own methods (the transport, the cursor, the enumeration and the resolve, the class's state, the read-only surface and the protocol surface), its own `COMBO_ORDER`/`_same_directory`, and every name it re-exports — so `from …driver import Win32Actuator` and every `driver._gui`/`_user32`/`_post` patch point are this module's own objects. `acquire/udop/session.py` (41 lines) is its compatibility name |
 | `acquire/campaign.py` | 1,836 | 94,417 | definitions, planning, compilation/reconciliation, resume identity, manifest IO, execution orchestration |
-| `acquire/runner.py` | 1,151 | 60,144 | `SweepRunner` — per-point orchestration, logging, verification call sites |
+| `acquire/runner.py` | 1,165 | 61,187 | `SweepRunner` — per-point orchestration, logging, verification call sites |
 | `acquire/actuator.py` | 694 | 30,715 | the pure `Actuator` protocol, the ported binding tables (`STRIP_BUTTON_ORDER`, `PARAM_COLUMN_ORDER`, `DIALOG_FIELD_ORDER`, …), `StripView`, `ParamRole` (`actuator.py:115`), `ScreenFingerprint` (`actuator.py:435`), `PreflightReport` (`actuator.py:490`) |
 | `acquire/verify.py` | 552 | 23,198 | stored-artifact verification against the requested point; `verify_stored_point` at `verify.py:391`, `check_covariates: bool = False` at `verify.py:397`, `CHANNEL_1_OFFSET_BYTES = 548` at `verify.py:90` |
 | `acquire/snapshot.py` | 498 | 27,187 | `InstrumentSnapshot` / `CompilationIdentity` / provenance (`FactSource`) |
-| `acquire/log.py` | 462 | 21,016 | the JSONL job log and the size signature (`bytes_per_gate_profile: float = Field(default=1.7, gt=0)` at `log.py:182`) |
+| `acquire/log.py` | 475 | 21,990 | the JSONL job log and the size signature — the BDD's own structure (31,268 container bytes + one depth block + one signal block of `19 + gates` per profile), `SizeSignature` at `log.py:173`, exact on all 26 recorded points |
 | `acquire/plan.py` | 387 | 15,779 | pure sweep arithmetic (ladder, gates, window depth, cap assertion) |
 | `acquire/config.py` | 308 | 14,007 | configuration value objects and `ChannelSetting` |
 | `acquire/live.py` | 179 | 7,480 | live-route defaults and helpers |
@@ -349,9 +349,11 @@ never restated** here. The surface and binding invariants have one authoritative
 7. **The artifact is the authority.** GUI success is not verification: a stored `.BDD`
    decoded **for the requested channel** is what makes a point count
    (`acquire/verify.py:391`, `verify_stored_point`, called with the run's channel at
-   `acquire/runner.py`). The size signature (`acquire/log.py:182`,
-   `bytes_per_gate_profile = 1.7`, acceptance band a factor of two) stays a gross
-   corruption detector, never a statement of how much valid observation time exists.
+   `acquire/runner.py`). The size signature (`acquire/log.py:173`) models that same
+   structure — the container, the depth block, one signal block per profile — and
+   reproduces all 26 recorded points byte-for-byte; with an acceptance band a factor
+   of two it stays a gross corruption detector, never a statement of how much valid
+   observation time exists.
 8. **One authoritative copy per fact.** Where a fact lives elsewhere, the text here links.
    Duplicated prose is how the chronology became the truth in the first place.
 

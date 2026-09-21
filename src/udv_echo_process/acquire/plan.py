@@ -156,7 +156,19 @@ def gates_for_depth(
 
 
 def depth_mm(first_gate_mm: float, gates: int, resolution_mm: float) -> float:
-    """The window law: ``first_gate + gates × resolution`` (docs/13 §1)."""
+    """The window law the planning layer applies: ``first_gate + gates × resolution`` (docs/13 §1).
+
+    What the *stored file* carries is a different quantity and is measured: word 2 follows
+    ``first_gate + (gates - 1) × pitch`` — the window's last gate — in 40 of 40 files of the
+    committed sweep, against 4 of 40 for this form. The two differ by exactly one pitch, which
+    sits inside the file check's 1.5 mm tolerance at the fine rungs (0.12-0.49 mm) every
+    campaign before this pass ran at and outside it at this pass's 1.85 mm and 2.96 mm rungs.
+    So this form is the plan's aim, and the file check predicts the last gate
+    (:func:`~udv_echo_process.acquire.verify._check_depth`). Whether the dialog's own ``Depth``
+    shows the last gate or one pitch beyond it is still open — the two readings coincide
+    inside the rounding at every rung measured so far — and this pass does not depend on the
+    answer, because its points declare resolution and gates directly.
+    """
     return first_gate_mm + gates * resolution_mm
 
 
@@ -208,6 +220,44 @@ def gate_drift(requested_gates: int, readback_gates: int) -> float:
     if requested_gates <= 0:
         raise ValueError(f"requested_gates must be > 0, got {requested_gates}")
     return 1.0 - readback_gates / requested_gates
+
+
+#: The instrument's fixed number of extra emissions per profile, ``N_Stb`` in the manual's
+#: law (docs/dop3000/manual-reference/08-the-parameters.md §8.8): emissions the instrument
+#: spends on its own internal computation, beyond the ``N_PRF`` that make up the profile.
+PROFILE_INTERNAL_EMISSIONS = 16
+
+#: The transfer term ``T_tran`` of that same law, in seconds — the mean time the internal
+#: processor spends handing a profile's data to memory. The manual calls it a mean that
+#: "may occasionally vary quite a lot due to the Windows environment", so this is an
+#: estimate of that mean at the historical ``~1 ms``, not a measured constant.
+PROFILE_TRANSFER_S = 1e-3
+
+
+def profile_period_s(emissions_per_profile: int, prf_us: float) -> float:
+    """The profile period the manual's law predicts for one configuration, in seconds.
+
+    ``T_profile ≈ T_tran + T_prf · (N_Stb + N_PRF)`` (docs/08 §8.8), with the two terms as
+    :data:`PROFILE_TRANSFER_S` and :data:`PROFILE_INTERNAL_EMISSIONS`. At the pass's 600 µs
+    PRF that is ``9.6 ms + 1 ms``. The first term is worth naming separately: 9.6 ms is the
+    instrument's own 16 emissions, while the ~10.4 ms intercept a stored file measures is
+    that 9.6 ms **and** the transfer term together — two quantities that are close at
+    600 µs and are not the same thing.
+
+    This is the *expectation* the profile count and the gross size guard are derived from.
+    It is never a substitute for the achieved period, which is read back from each stored
+    file's own profile timestamps and is that point's certificate.
+    """
+    if emissions_per_profile < 0:
+        raise ValueError(
+            f"emissions_per_profile must be >= 0, got {emissions_per_profile}"
+        )
+    if prf_us <= 0:
+        raise ValueError(f"prf_us must be > 0, got {prf_us}")
+    return (
+        prf_us * 1e-6 * (emissions_per_profile + PROFILE_INTERNAL_EMISSIONS)
+        + PROFILE_TRANSFER_S
+    )
 
 
 def profiles_for_duration(duration_s: float, period_s: float) -> int:

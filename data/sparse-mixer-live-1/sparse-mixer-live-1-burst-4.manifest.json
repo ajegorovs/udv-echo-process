@@ -1,0 +1,111 @@
+{
+  "job": "burst-4",
+  "fingerprint": "f4493225adbb74d49d92182ab9bdef59ad15642e4c322f7600cec6514e4fbc69",
+  "channel": 1,
+  "planned": 5,
+  "skipped": [],
+  "started_at": "2026-09-21T12:32:32.705552+03:00",
+  "finished_at": "2026-09-21T12:34:05.912041+03:00",
+  "outcomes": [
+    {
+      "key": 1,
+      "label": "ctrl-begin",
+      "identity": "sparse2-burst-4-ctrl-begin",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\sparse2-burst-4-ctrl-begin-20260921T123240.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 2,
+      "label": "cc1",
+      "identity": "sparse2-burst-4-cc1",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\sparse2-burst-4-cc1-20260921T123240.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 3,
+      "label": "ctrl-mid",
+      "identity": "sparse2-burst-4-ctrl-mid",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\sparse2-burst-4-ctrl-mid-20260921T123240.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 4,
+      "label": "cc3",
+      "identity": "sparse2-burst-4-cc3",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\sparse2-burst-4-cc3-20260921T123240.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 5,
+      "label": "ctrl-end",
+      "identity": "sparse2-burst-4-ctrl-end",
+      "status": "ok",
+      "ok": true,
+      "file": "outputs\\live\\store\\sparse2-burst-4-ctrl-end-20260921T123240.BDD",
+      "reason": null,
+      "aborted": false
+    }
+  ],
+  "store_dir": "outputs\\live\\store",
+  "log_path": "outputs\\live\\store\\sparse-mixer-live-1-burst-4.jsonl",
+  "definition_path": "examples\\sparse-mixer-live-1\\jobs\\burst-4.json",
+  "log_errors": [],
+  "compilation_identity": {
+    "channel": {
+      "value": "1",
+      "source": "routed"
+    },
+    "mode": {
+      "value": "manual",
+      "source": "read"
+    },
+    "process_mode": {
+      "value": "instrument",
+      "source": "read"
+    },
+    "prf_us": {
+      "value": "600",
+      "source": "read"
+    },
+    "emissions_per_profile": {
+      "value": "20",
+      "source": "read"
+    },
+    "burst_length": {
+      "value": "4",
+      "source": "read"
+    },
+    "sound_speed_ms": {
+      "value": "1480",
+      "source": "read"
+    },
+    "first_gate_mm": {
+      "value": "10",
+      "source": "read"
+    },
+    "max_profiles_per_block": {
+      "value": null,
+      "source": "unreadable"
+    },
+    "class_name": "TMain_Scr",
+    "panels": 4,
+    "strip_view": "ready",
+    "strip_has_slider": false
+  },
+  "declared_only": false,
+  "skipped_without_evidence": [],
+  "expected_process_mode": "instrument",
+  "observed_process_mode": "instrument"
+}

@@ -275,6 +275,66 @@ def test_the_emissions_disagreement_is_recorded_and_the_run_proceeds() -> None:
     assert "150" in compiled.advisories[0]
 
 
+def test_a_run_that_raises_the_advisory_fact_refuses_and_says_so() -> None:
+    """A run whose axis *is* word 14 does not accept the advisory: it supplies the policy.
+
+    ``COVARIATE_ACCEPTANCE`` calls the fact a warning because a definition's value for it used to
+    be *derived* from the period law rather than read. A run that moves the value between jobs on
+    purpose is in the opposite situation, so it raises the fact — and the refusal names both sides
+    exactly as the table's own refusal does, plus the reason the acceptance is stricter here.
+    """
+    with pytest.raises(campaign.CampaignError) as caught:
+        campaign.compile_campaign(
+            definition(),
+            reading(emissions_per_profile=read("150")),
+            strict_facts=("emissions_per_profile",),
+        )
+
+    message = str(caught.value)
+    assert "emissions_per_profile" in message
+    assert "the campaign declares" in message and "'150'" in message
+    assert "raises the fact to a refusal" in message
+    assert "'warn'" in message
+
+
+def test_a_raised_fact_is_carried_on_the_compiled_plan() -> None:
+    """The policy a job was compiled under outlives the command line that set it."""
+    compiled = campaign.compile_campaign(
+        definition(),
+        reading(emissions_per_profile=read(str(EMISSIONS_PER_PROFILE))),
+        strict_facts=("emissions_per_profile",),
+    )
+
+    assert compiled.strict_facts == ("emissions_per_profile",)
+    assert compiled.fact("emissions_per_profile").acceptance is campaign.Acceptance.REFUSE
+    assert compiled.advisories == ()
+
+
+def test_a_campaign_that_raises_nothing_keeps_the_tables_own_policy() -> None:
+    compiled = campaign.compile_campaign(
+        definition(), reading(emissions_per_profile=read("150"))
+    )
+
+    assert compiled.strict_facts == ()
+    assert compiled.fact("emissions_per_profile").acceptance is campaign.Acceptance.WARN
+    assert len(compiled.advisories) == 1
+
+
+def test_raising_a_fact_no_stored_file_carries_is_refused() -> None:
+    """A raise is enforced before *and* after the recording, or it is not offered at all."""
+    with pytest.raises(campaign.CampaignError) as caught:
+        campaign.compile_campaign(
+            definition(),
+            reading(),
+            strict_facts=("max_profiles_per_block",),
+        )
+
+    message = str(caught.value)
+    assert "max_profiles_per_block" in message
+    assert "raiseable facts are" in message
+    assert "max_profiles_per_block" not in campaign.STRICTABLE_FACTS
+
+
 def test_every_fact_that_can_disagree_has_an_acceptance() -> None:
     """The policy is the verifier's own table, not a second opinion about which facts matter."""
     refuses = {

@@ -287,7 +287,9 @@ src/udv_echo_process/
 │   │                                  (DIALOG_FIELD_ORDER, DIALOG_ANCHORS, the roles)
 │   ├── driver.py                    — the Windows half (pywin32; lazily imported)
 │   ├── plan.py  config.py           — the sweep math and its value objects (pure)
-│   ├── campaign.py runner.py        — points, permutations, resume, per-point cycle
+│   ├── campaign.py  runner.py       — points, permutations, resume, per-point cycle
+│   ├── run_plan.py                  — the pass above a job: its order, its control
+│   │                                  placement, its record (pure)
 │   ├── verify.py                    — requested vs GUI read-back vs the decoded words
 │   ├── snapshot.py  log.py  live.py — instrument reading, JSONL log, live commands
 │   └── __init__.py                  — the public surface; import-safe off Windows
@@ -324,7 +326,8 @@ tests/data/*.json                    — committed tree fixtures; each names the
 references/wolfram/                  — original Wolfram notebooks + porting map
 data/<experiment>/                   — per-experiment .ADD/.BDD/notes (raw+stat mixed)
 examples/                            — a working campaign definition
-                                       (examples/campaign-single-channel.json)
+                                       (examples/campaign-single-channel.json) and the first
+                                       sparse pass (examples/sparse-mixer-first-pass/)
 tools/live/                          — the interactive-session route for anything that must
                                        touch the screen: dispatch.sh, task_run.py, probes/
                                        (Windows-only; its README is the entry point)

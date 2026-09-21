@@ -1,0 +1,191 @@
+{
+  "plan": "sparse-mixer-first-pass",
+  "plan_fingerprint": "c22d46236726add4e7c1f8d12b9653a633a173799efc60116742191c48b3dc54",
+  "channel": 1,
+  "duration_s": 12.0,
+  "store_dir": "C:\\Repos\\udv-echo-process\\outputs\\live\\store",
+  "created_at": "2026-09-20T22:25:08.808905+03:00",
+  "updated_at": "2026-09-21T10:42:45.932333+03:00",
+  "jobs": [
+    {
+      "step": 1,
+      "job": "burst-4",
+      "kind": "scientific",
+      "definition": "jobs/burst-4.json",
+      "definition_fingerprint": "ca7659f00462aaf5bd145fd6a0d43f3a170f3b424c8c91245b6e8c28ab7ae64a",
+      "condition": {
+        "burst_length": 4,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 5,
+      "ok_recordings": 5,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-burst-4.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-burst-4.manifest.json",
+      "finished_at": "2026-09-20T22:26:42.143383+03:00",
+      "note": "5/5 point(s) ok"
+    },
+    {
+      "step": 2,
+      "job": "common-reference-1",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-1.json",
+      "definition_fingerprint": "7c60f4c7133f7d9285b76382a3bbab396e03aaf33924f473987d8151861c1f97",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-1.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-1.manifest.json",
+      "finished_at": "2026-09-20T22:29:37.820987+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 3,
+      "job": "burst-18",
+      "kind": "scientific",
+      "definition": "jobs/burst-18.json",
+      "definition_fingerprint": "3d16e8b985186ba4703269aad1fbc88f882bcb36f28330930fd7d0173041bd3e",
+      "condition": {
+        "burst_length": 18,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 5,
+      "ok_recordings": 5,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-burst-18.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-burst-18.manifest.json",
+      "finished_at": "2026-09-21T10:28:47.607193+03:00",
+      "note": "5/5 point(s) ok"
+    },
+    {
+      "step": 4,
+      "job": "common-reference-2",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-2.json",
+      "definition_fingerprint": "39e57728cc6c3472f57d4c359707d47541354c0c13266015fa9ccc9383e6a6b9",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-2.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-2.manifest.json",
+      "finished_at": "2026-09-21T10:31:06.677650+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 5,
+      "job": "emissions-8",
+      "kind": "scientific",
+      "definition": "jobs/emissions-8.json",
+      "definition_fingerprint": "3a00d25e28e6c56a8adcb86ca47fb50affd314ab8e22868d4ba8e71c3a7c46d7",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 8,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 4,
+      "ok_recordings": 4,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-8.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-8.manifest.json",
+      "finished_at": "2026-09-21T10:34:10.020228+03:00",
+      "note": "4/4 point(s) ok"
+    },
+    {
+      "step": 6,
+      "job": "common-reference-3",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-3.json",
+      "definition_fingerprint": "1b9d2c72a2f4276547df6aa155af3b33a59d4d093372f3049845df220da57db4",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-3.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-3.manifest.json",
+      "finished_at": "2026-09-21T10:35:55.404754+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 7,
+      "job": "emissions-64",
+      "kind": "scientific",
+      "definition": "jobs/emissions-64.json",
+      "definition_fingerprint": "d6ee5983ac7863a5a751f813343a59c3a55f2e2fb58af948d035a47e7574957a",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 64,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 4,
+      "ok_recordings": 4,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-64.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-64.manifest.json",
+      "finished_at": "2026-09-21T10:38:28.989372+03:00",
+      "note": "4/4 point(s) ok"
+    },
+    {
+      "step": 8,
+      "job": "common-reference-4",
+      "kind": "common-reference",
+      "definition": "jobs/common-reference-4.json",
+      "definition_fingerprint": "c7cc92354a65414dc24ff2a9288cc389099d4cccbb208d668160eddd4940b666",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 20,
+        "prf_us": 600.0
+      },
+      "status": "ok",
+      "expected_recordings": 1,
+      "ok_recordings": 1,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-4.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-common-reference-4.manifest.json",
+      "finished_at": "2026-09-21T10:40:27.621581+03:00",
+      "note": "1/1 point(s) ok"
+    },
+    {
+      "step": 9,
+      "job": "emissions-128",
+      "kind": "scientific",
+      "definition": "jobs/emissions-128.json",
+      "definition_fingerprint": "0476bdf2b519fd31b29aff9923f4b3d63535928183a0d94b5c1e4f2916e040c7",
+      "condition": {
+        "burst_length": 10,
+        "emissions_per_profile": 128,
+        "prf_us": 600.0
+      },
+      "status": "failed",
+      "expected_recordings": 4,
+      "ok_recordings": 0,
+      "skipped": [],
+      "log": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-128.jsonl",
+      "manifest": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-128.manifest.json",
+      "finished_at": "2026-09-21T10:42:45.931283+03:00",
+      "note": "0/4 point(s) ok; 4 failed; not ok: ctrl-begin, e128, ctrl-mid, ctrl-end"
+    }
+  ]
+}

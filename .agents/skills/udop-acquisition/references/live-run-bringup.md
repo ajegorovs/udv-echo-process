@@ -88,6 +88,7 @@ stage passed.
 | stage | how | pass criterion |
 |---|---|---|
 | 0. the logic arrived intact | the project's test suite, headless | the automation suites pass with no application present — this is the only stage that can tell "the code is wrong here" from "this machine is different" |
+| 0b. the application surface is there | with the application **open**, the modules that need a real window: `pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py` | green. These fail — identically, and not as a regression — whenever the application is closed or the session has no interactive window station, so run them as the **first preflight at each sitting**: green means the integration layer still recognises this build, and any failure that is not an understood live-state prerequisite stops the sitting **before a recording is spent** |
 | 1. inventory | `acquire status` | the window is found by **class**, the strip reports a view, and the layout note is **clean**. Any other note names the problem (a dialog left open, an item in a mode that removes a panel, a different build's layout) |
 | 2. selector read | `acquire channel <n>` | the selector verifies, the panel counts are reported, the run's notes name the mode it found, and the cursor is where it started |
 | 3. the cycle, storing nothing | `acquire preflight` | open the store dialog, read its fields, cancel it, end on a clean view. Nothing written |
@@ -102,6 +103,15 @@ reason per item. Stage 5b is the gate the writing stages sit behind: it costs no
 no stored file, and it is where a wrong declaration is caught before a recording is spent.
 Stated once more in the shorter form it takes where nothing gates the writing stages:
 reason per item.
+
+**Stage 0b was added after a sitting whose only suite failures were these two modules** — five
+tests dying on `no visible TMain_Scr window` with the application closed, identical with that
+sitting's new data directory moved out of the tree, and green again once it was open. The
+distinction is worth keeping: stage 0 says the logic is intact and says nothing about the
+application surface, and stage 1 reaches that surface through one command's path. Stage 0b
+exercises the paths `status` does not — reading a dialog on the routed channel, refusing a
+reading with the reader's own reason, reading the screen while the cursor sits where this
+session cannot read it — and it costs one test run before the operator has spent anything.
 
 ## The measurements folded in from the first machine
 

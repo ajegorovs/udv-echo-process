@@ -1,0 +1,111 @@
+{
+  "job": "burst-18",
+  "fingerprint": "3d16e8b985186ba4703269aad1fbc88f882bcb36f28330930fd7d0173041bd3e",
+  "channel": 1,
+  "planned": 5,
+  "skipped": [],
+  "started_at": "2026-09-21T10:27:14.603209+03:00",
+  "finished_at": "2026-09-21T10:28:47.607193+03:00",
+  "outcomes": [
+    {
+      "key": 1,
+      "label": "ctrl-begin",
+      "identity": "sparse1-burst-18-ctrl-begin",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-burst-18-ctrl-begin-20260921T102722.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 2,
+      "label": "cc2",
+      "identity": "sparse1-burst-18-cc2",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-burst-18-cc2-20260921T102722.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 3,
+      "label": "ctrl-mid",
+      "identity": "sparse1-burst-18-ctrl-mid",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-burst-18-ctrl-mid-20260921T102722.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 4,
+      "label": "cc4",
+      "identity": "sparse1-burst-18-cc4",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-burst-18-cc4-20260921T102722.BDD",
+      "reason": null,
+      "aborted": false
+    },
+    {
+      "key": 5,
+      "label": "ctrl-end",
+      "identity": "sparse1-burst-18-ctrl-end",
+      "status": "ok",
+      "ok": true,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-burst-18-ctrl-end-20260921T102722.BDD",
+      "reason": null,
+      "aborted": false
+    }
+  ],
+  "store_dir": "C:\\Repos\\udv-echo-process\\outputs\\live\\store",
+  "log_path": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-burst-18.jsonl",
+  "definition_path": "examples\\sparse-mixer-first-pass\\jobs\\burst-18.json",
+  "log_errors": [],
+  "compilation_identity": {
+    "channel": {
+      "value": "1",
+      "source": "routed"
+    },
+    "mode": {
+      "value": "manual",
+      "source": "read"
+    },
+    "process_mode": {
+      "value": "instrument",
+      "source": "read"
+    },
+    "prf_us": {
+      "value": "600",
+      "source": "read"
+    },
+    "emissions_per_profile": {
+      "value": "20",
+      "source": "read"
+    },
+    "burst_length": {
+      "value": "18",
+      "source": "read"
+    },
+    "sound_speed_ms": {
+      "value": "1480",
+      "source": "read"
+    },
+    "first_gate_mm": {
+      "value": "10",
+      "source": "read"
+    },
+    "max_profiles_per_block": {
+      "value": null,
+      "source": "unreadable"
+    },
+    "class_name": "TMain_Scr",
+    "panels": 4,
+    "strip_view": "ready",
+    "strip_has_slider": false
+  },
+  "declared_only": false,
+  "skipped_without_evidence": [],
+  "expected_process_mode": "instrument",
+  "observed_process_mode": "instrument"
+}

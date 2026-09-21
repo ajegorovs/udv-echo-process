@@ -196,25 +196,34 @@ def test_live_point_verifies_with_the_exact_rung_pitch(
     assert result.ok, result.mismatches
 
 
-def test_live_point_depth_word_is_the_floor_of_the_snapped_derivation(
+def test_live_point_depth_word_confirms_the_last_gate_form_inside_tolerance(
     tmp_path: Path,
 ) -> None:
-    """Word 2 tracks first gate + gates x rung pitch, floored — within tolerance.
+    """One pitch separates the two depth forms, and this ladder's rungs sit under 1.5 mm.
 
-    Rung 0 at 805 gates derives 99.94 mm and the app stored 100, rung 3 at 201
-    gates derives 99.82 mm and the app stored 99; both are inside the 1.5 mm
-    default. This is why the depth check is a tolerance, not an equality.
+    Rung 0 at 805 gates: window end 99.942 mm, last gate 99.820 mm, and the app stored 100.
+    Rung 3 at 201 gates: 99.820 / 99.333, stored 99. The stored word is the last gate's,
+    rounded — and both forms land inside the 1.5 mm default on this ladder, which is exactly
+    why the convention could not be separated here. The committed coarse-rung sweep separates
+    them (``test_the_stored_depth_is_the_last_gates_depth_not_the_window_end``).
     """
-    derived = {
+    window_end = {
         0: FIRST_GATE_MM + 805 * RUNG_MM,   # 99.942
         1: FIRST_GATE_MM + 403 * 2 * RUNG_MM,  # 100.062
         3: FIRST_GATE_MM + 201 * 4 * RUNG_MM,  # 99.820
     }
+    last_gate = {
+        0: FIRST_GATE_MM + 804 * RUNG_MM,   # 99.820
+        1: FIRST_GATE_MM + 402 * 2 * RUNG_MM,  # 99.820
+        3: FIRST_GATE_MM + 200 * 4 * RUNG_MM,  # 99.333
+    }
     stored = {0: 100, 1: 100, 3: 99}
     for point in LIVE_POINTS:
         rung = int(point["rung"])
-        assert abs(derived[rung] - stored[rung]) <= 1.5
-        assert abs(derived[rung] - stored[rung]) > 0.0
+        pitch = (rung + 1) * RUNG_MM
+        assert window_end[rung] - last_gate[rung] == pytest.approx(pitch)
+        assert abs(last_gate[rung] - stored[rung]) <= 0.5
+        assert abs(window_end[rung] - stored[rung]) <= 1.5
 
 
 def test_default_depth_tolerance_is_one_and_a_half_mm() -> None:
@@ -263,14 +272,14 @@ def test_a_prf_that_disagrees_is_enforced(tmp_path: Path) -> None:
 
 
 def test_emissions_that_disagree_are_an_advisory_not_a_mismatch(tmp_path: Path) -> None:
-    """Word 14 is read and reported — and does not refuse the point.
+    """Word 14 is read and reported — and does not refuse the point *by default*.
 
     The request says 52 emissions; the file says 150. The 52 is not a reading off the
     instrument: it is the period law inverted to reproduce the committed recording's
     own profile count (``EMISSIONS_PER_PROFILE`` in ``test_acquire_runner.py``). So the
     *declaration* is what disagrees, and refusing the point over it would refuse a file
-    whose core words are all exactly right. It becomes an enforceable covariate when a
-    campaign compiles against a live instrument snapshot instead of a definition.
+    whose core words are all exactly right. A caller whose request *is* that value raises
+    it (:func:`test_a_raised_fact_refuses_instead_of_advising`); the default stays advisory.
     """
     path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
 
@@ -307,6 +316,87 @@ def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
     assert result.advisories == (
         "emissions_per_profile: requested 52, found 150 in word 14",
     )
+
+
+def test_a_raised_fact_refuses_instead_of_advising(tmp_path: Path) -> None:
+    """The same bytes and the same request, with the caller requiring word 14 to agree.
+
+    This is the post-storage half of a run's policy: a pass whose axis *is* the emissions value
+    raises the fact, and then a file whose word disagrees is not that pass's point — ``ok`` false,
+    the mismatch naming the field and both sides, and nothing left in the advisories.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+        check_covariates=True,
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is False
+    assert result.advisories == ()
+    assert result.mismatches == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+    # Raised fields are enforced fields, and the record says a caller raised them.
+    assert "emissions_per_profile" in result.enforced_covariates
+    assert result.strict_covariates == ("emissions_per_profile",)
+    # And the field is no longer reported as compared-without-enforcing.
+    assert result.advisory_covariates == ()
+
+
+def test_a_raised_fact_that_agrees_is_recorded_as_enforced(tmp_path: Path) -> None:
+    """A raise that holds leaves no trace but the statement that it was required."""
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122),
+        check_covariates=True,
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is True
+    assert result.mismatches == ()
+    assert "emissions_per_profile" in result.enforced_covariates
+    assert result.strict_covariates == ("emissions_per_profile",)
+
+
+def test_a_raise_applies_without_the_covariate_switch(tmp_path: Path) -> None:
+    """The raise is per fact and does not depend on ``check_covariates``.
+
+    A caller that only cares about word 14 says so by naming it; the switch governs the *table's*
+    enforced covariates, and turning it off must not silently turn a raised fact back into an
+    advisory.
+    """
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, emissions_per_profile=52),
+        strict_covariates=("emissions_per_profile",),
+    )
+
+    assert result.ok is False
+    assert result.advisories == ()
+    assert result.strict_covariates == ("emissions_per_profile",)
+
+
+def test_raising_a_fact_no_stored_file_carries_is_refused(tmp_path: Path) -> None:
+    """A fact nothing can compare must not read as enforced."""
+    path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
+
+    with pytest.raises(ValueError) as caught:
+        verify_stored_point(
+            path,
+            params_for(gates=805, rung=0, resolution_mm=0.122),
+            strict_covariates=("max_profiles_per_block",),
+        )
+
+    message = str(caught.value)
+    assert "max_profiles_per_block" in message
+    assert "raiseable fields are" in message
 
 
 def test_a_covariate_nobody_declared_is_not_a_mismatch(tmp_path: Path) -> None:
@@ -486,7 +576,7 @@ def test_wrong_depth_is_reported(tmp_path: Path) -> None:
     )
     assert result.ok is False
     assert len(result.mismatches) == 1
-    assert result.mismatches[0].startswith("depth_mm: requested 99.9417")
+    assert result.mismatches[0].startswith("depth_mm: requested 99.82")
     assert "found 250 in word 2" in result.mismatches[0]
     assert "tolerance 1.5" in result.mismatches[0]
 
@@ -769,5 +859,124 @@ def test_real_c1500_point_verifies_against_its_plan() -> None:
         check_covariates=True,
     )
     assert result.ok, result.mismatches
-    # 2 + 378 x 0.125 = 49.25 mm: the file stores the floor, within 1.5 mm.
+    # The last gate: 2 + 377 x 0.125 = 49.125 mm and the file stores 49, 0.125 mm off.
+    assert abs((FIRST_GATE_MM + 377 * 0.125) - facts.depth_mm) <= 0.5
+    # The window-end form (49.25) is inside the tolerance here too: this rung cannot separate
+    # the two forms, which is why the committed coarse-rung sweep is the case below.
     assert abs(49.25 - facts.depth_mm) <= 1.5
+
+
+# --------------------------------------------------------------------------- #
+# The committed sweep separates the two depth forms: this pass's rungs are coarse.
+# --------------------------------------------------------------------------- #
+
+#: The pass's own point configurations, read off the committed sweep's files:
+#: (file, resolution_mm, gates, does the window-end form fall outside 1.5 mm?).
+COARSE_RUNG_DEPTH_CASES = (
+    ("res/1-8.BDD", 1.85, 50, True),
+    ("res/3-0.BDD", 2.96, 31, True),
+    ("res/0-6.BDD", 0.617, 145, False),
+)
+
+#: The committed 40-file mixer sensitivity sweep, and the frame its dialogs held.
+MIXER_SWEEP = REPO_ROOT / "data/mixer-sensitivity-analysis" / "4MHz" / "0500RPM" / "001"
+#: The committed sweep's 40 files imply this start from their own depth words (the dialog that
+#: recorded them states it as an integer, so the *pass* declares 10.0 and the file's word 2 is what
+#: confirms the derived window — see the case below).
+COMMITTED_FIRST_GATE_MM = 10.1626666667
+
+
+@pytest.mark.parametrize(
+    ("relative", "resolution_mm", "gates", "window_end_separates"),
+    COARSE_RUNG_DEPTH_CASES,
+)
+def test_the_stored_depth_is_the_last_gates_depth_not_the_window_end(
+    relative: str, resolution_mm: float, gates: int, window_end_separates: bool
+) -> None:
+    """Word 2 is gate ``gates``, not the window end one pitch beyond it.
+
+    Over all 40 committed files and their 13 distinct gates x resolution pairs,
+    ``first_gate + (gates - 1) x pitch`` reproduces the stored word in 40 of 40; the
+    window-end form reproduces 4 of 40 floored and 2 of 40 rounded, and no single first gate
+    fits it. The two differ by exactly one pitch, so only a rung wider than the 1.5 mm default
+    separates them — 1.85 mm and 2.96 mm here, against 0.12-0.49 mm in every campaign before
+    this pass. While the window-end form was predicted, a correct 1.85 mm control recording
+    read as a ``depth_mm`` mismatch, so these are the regression cases that pin the
+    convention.
+    """
+    path = MIXER_SWEEP / relative
+    facts = read_words(path, 1)
+    pitch = facts.resolution_mm
+    last_gate = COMMITTED_FIRST_GATE_MM + (gates - 1) * pitch
+    window_end = COMMITTED_FIRST_GATE_MM + gates * pitch
+
+    assert abs(last_gate - facts.depth_mm) <= 1.5
+    assert (abs(window_end - facts.depth_mm) > 1.5) is window_end_separates
+
+    params = ParameterSet(
+        sound_speed_ms=1480.0,
+        first_gate_mm=COMMITTED_FIRST_GATE_MM,
+        resolution_mm=resolution_mm,
+        gates=gates,
+    )
+    result = verify_stored_point(path, params, 1)
+    assert result.ok, result.mismatches
+
+
+# --------------------------------------------------------------------------- #
+# The declared frame: the chain runs from the dialog's number to a stored file.
+# --------------------------------------------------------------------------- #
+
+#: The first gate the pass actually declares — the number the dialog can state (it is integer-only).
+DECLARED_FIRST_GATE_MM = 10.0
+
+#: (file, resolution_mm, gates, the last gate that declaration predicts, the word the file stores).
+DECLARED_FRAME_CASES = (
+    ("res/1-8.BDD", 1.85, 50, 100.65, 101),
+    ("res/3-0.BDD", 2.96, 31, 98.8, 99),
+    ("res/0-6.BDD", 0.617, 145, 98.8, 99),
+)
+
+
+@pytest.mark.parametrize(
+    ("relative", "resolution_mm", "gates", "predicted_last_gate_mm", "stored_depth_mm"),
+    DECLARED_FRAME_CASES,
+)
+def test_the_declared_first_gate_verifies_the_committed_windows(
+    relative: str,
+    resolution_mm: float,
+    gates: int,
+    predicted_last_gate_mm: float,
+    stored_depth_mm: int,
+) -> None:
+    """The declaration the dialog can state still verifies the files recorded under it.
+
+    The pass declares ``10.0`` mm because that is the number the ``Operating parameters`` dialog
+    states. The cross-check that matters is downstream, and this is it: files the sweep recorded
+    under that setting verify through the corrected last-gate law, so the chain closes end to end —
+    request 10 mm, the pass's own gate count and rung, the file's word 2, the law, accepted geometry.
+
+    The declaration is deliberately *not* what pins the law: predicting the window end at 1.85 mm
+    x 50 gives 102.5 mm against this sweep's 101, exactly the 1.5 mm tolerance, and at 0.617 mm it
+    stays well inside it. The case above, at the frame the files' own depths imply, is the one that
+    separates the two forms — 2 of these 3 rungs do it there.
+    """
+    path = MIXER_SWEEP / relative
+    facts = read_words(path, 1)
+
+    assert (facts.gates, facts.resolution_mm) == (gates, pytest.approx(resolution_mm, abs=5e-3))
+    assert facts.sound_speed_ms == 1480.0
+
+    predicted = DECLARED_FIRST_GATE_MM + (gates - 1) * facts.resolution_mm
+    assert predicted == pytest.approx(predicted_last_gate_mm, abs=1e-6)
+    assert facts.depth_mm == stored_depth_mm
+    assert abs(predicted - facts.depth_mm) <= 1.5
+
+    params = ParameterSet(
+        sound_speed_ms=1480.0,
+        first_gate_mm=DECLARED_FIRST_GATE_MM,
+        resolution_mm=resolution_mm,
+        gates=gates,
+    )
+    result = verify_stored_point(path, params, 1)
+    assert result.ok, result.mismatches

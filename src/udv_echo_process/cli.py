@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, driver, live
+from udv_echo_process.acquire import campaign, driver, live, run_plan
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
@@ -379,7 +379,9 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
+            screening_threshold_path=None
+            if args.screening_threshold is None
+            else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except resolution_ladder.ResolutionLadderError as exc:
@@ -403,7 +405,7 @@ def resolution_ladder_main(argv: list[str] | None = None) -> None:
         f"threshold   : {model.screening_threshold.value_mm_s:.4g} mm/s "
         f"({model.screening_threshold.metric}, {model.screening_threshold.path}); "
         f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
-    "screening count, not proof of an effect), worst "
+        "screening count, not proof of an effect), worst "
         f"{gate['max_ratio_to_screening_threshold']:.3g} x"
     )
     print(
@@ -492,7 +494,9 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
+            screening_threshold_path=None
+            if args.screening_threshold is None
+            else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except burst_ladder.BurstLadderError as exc:
@@ -518,7 +522,7 @@ def burst_ladder_main(argv: list[str] | None = None) -> None:
     print(
         f"screening_threshold    : {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}); "
         f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
-    "screening count, not proof of an effect), worst "
+        "screening count, not proof of an effect), worst "
         f"{gate['max_ratio_to_screening_threshold']:.3g} x, "
         f"{gate['clearances_involving_the_longest_bursts']} of them at the longest bursts"
     )
@@ -609,7 +613,9 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
+            screening_threshold_path=None
+            if args.screening_threshold is None
+            else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except prf_ladder.PrfLadderError as exc:
@@ -641,7 +647,7 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     print(
         f"screening_threshold    : {model.screening_threshold.value_mm_s:.4g} mm/s ({model.screening_threshold.metric}); "
         f"{gate['pairs_above_screening_threshold']} / {gate['pairs']} pairs fall above it (a "
-    "screening count, not proof of an effect), worst "
+        "screening count, not proof of an effect), worst "
         f"{gate['max_ratio_to_screening_threshold']:.3g} x at {gate['max_abs_difference_mm_s']:.4g} mm/s"
     )
     print(
@@ -659,7 +665,9 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     print(f"levels table: {report_dir / prf_ladder.LEVELS_NAME}")
     print(f"pairs table : {report_dir / prf_ladder.PAIRS_NAME}")
     print(f"provenance  : {report_dir / prf_ladder.PROVENANCE_NAME}")
-    print(f"figure      : {report_dir / prf_ladder.FIGURES_DIRNAME / prf_ladder.FIGURE_NAME}")
+    print(
+        f"figure      : {report_dir / prf_ladder.FIGURES_DIRNAME / prf_ladder.FIGURE_NAME}"
+    )
     print(f"commit      : {model.analysis_commit}")
     raise SystemExit(0)
 
@@ -844,9 +852,7 @@ def _campaign_compile(args: argparse.Namespace, notes: list[str], as_json: bool)
     return 0
 
 
-def _campaign_run(
-    args: argparse.Namespace, notes: list[str], as_json: bool
-) -> int:
+def _campaign_run(args: argparse.Namespace, notes: list[str], as_json: bool) -> int:
     """``campaign``: run a definition point by point through the runner, and write its manifest.
 
     The store directory is the flag's, else the definition's, else the live commands' own
@@ -913,7 +919,9 @@ def _campaign_report(args: argparse.Namespace, as_json: bool) -> int:
     log_path = Path(args.log)
     try:
         records = point_records(read_entries(log_path))
-        manifest = campaign.read_manifest_if_present(campaign.manifest_path_for(log_path))
+        manifest = campaign.read_manifest_if_present(
+            campaign.manifest_path_for(log_path)
+        )
     # Includes campaign.CampaignError, and the driver's own refusals, which are not ValueErrors
     # (§16.2): a refusal from the driver is still a refusal — one line and exit 2.
     except (driver.AcquisitionError, ValueError, OSError) as exc:
@@ -994,6 +1002,259 @@ def _campaign_report(args: argparse.Namespace, as_json: bool) -> int:
     return 0
 
 
+def _run_plan_payload(run: run_plan.PlannedRun) -> dict[str, object]:
+    """The whole checked pass as one document — ``--check``'s ``--json`` form."""
+    return {
+        "plan": run.plan,
+        "plan_fingerprint": run.plan_fingerprint,
+        "directory": run.directory,
+        "channel": run.channel,
+        "duration_s": run.duration_s,
+        "name_prefix": run.name_prefix,
+        "store_dir": run.store_dir,
+        "max_profiles_per_block": run.max_profiles_per_block,
+        "required_block_cap": run.required_block_cap,
+        "sound_speed_ms": run.sound_speed_ms,
+        "first_gate_mm": run.first_gate_mm,
+        "reference_window": run.reference_window.model_dump(mode="json"),
+        "reference_condition": run.reference_condition.model_dump(mode="json"),
+        "strict_facts": list(run.strict_facts),
+        "counts": run.counts,
+        "jobs": [
+            {
+                "step": job.step,
+                "job": job.job,
+                "kind": job.kind.value,
+                "definition": job.definition,
+                "definition_fingerprint": job.definition_fingerprint,
+                "condition": job.condition.model_dump(mode="json"),
+                "recordings": job.recordings,
+                "scientific_labels": list(job.scientific_labels),
+                "control_labels": list(job.control_labels),
+                "separates": list(run_plan.separates(run, job.job)),
+                "points": [_campaign_point_payload(point) for point in job.points],
+            }
+            for job in run.jobs
+        ],
+    }
+
+
+def _run_plan_check(run: run_plan.PlannedRun, as_json: bool) -> int:
+    """``run-plan --check``: the nine jobs planned statically, and what each one holds."""
+    if as_json:
+        print(json.dumps(_run_plan_payload(run), indent=2, default=str))
+        return 0
+
+    print(f"plan        : {run.plan} ({run.plan_fingerprint[:12]})")
+    print(f"directory   : {run.directory}")
+    print(
+        f"pass        : {len(run.jobs)} job(s), {run.recordings} recording(s), "
+        f"{run.duration_s:g} s each, channel {run.channel}"
+    )
+    print(
+        f"counts      : {', '.join(f'{key}={value}' for key, value in run.counts.items())}"
+    )
+    print(
+        f"block cap   : declared {run.max_profiles_per_block}, required {run.required_block_cap}"
+    )
+    print(
+        f"frame       : c = {run.sound_speed_ms} m/s, first gate {run.first_gate_mm} mm"
+    )
+    print(
+        f"raised      : {list(run.strict_facts) or 'none'} "
+        "(a raised fact refuses before a recording and is enforced in the stored file's own word)"
+    )
+    for job in run.jobs:
+        before, after = run_plan.separates(run, job.job)
+        placement = "" if before is None else f"  between {before} and {after}"
+        print(
+            f"{job.step:>2}. {job.job:<20} {job.kind.value:<17} "
+            f"burst {job.condition.burst_length:<3} emissions "
+            f"{job.condition.emissions_per_profile:<4} {job.recordings} recording(s)"
+            f"{placement}"
+        )
+        for point in job.points:
+            note = "" if point.note is None else f"  NOTE {point.note}"
+            print(
+                f"      {point.key:>2}. {point.label:<12} {point.identity:<28} "
+                f"{point.parameters.resolution_text} mm x {point.parameters.gates} gates  "
+                f"({point.profiles} profiles){note}"
+            )
+    print(
+        "the jobs run in this order; each one's run-wide burst and emissions are set by hand "
+        "before it (udv-acquire run-plan --plan ... --sheet)"
+    )
+    return 0
+
+
+def _run_plan_status(
+    args: argparse.Namespace,
+    run: run_plan.PlannedRun,
+    plan: run_plan.RunPlan,
+    as_json: bool,
+) -> int:
+    """``run-plan --status``: where the pass stands, read from its own record — no instrument."""
+    store_dir = args.store_dir
+    path = run_plan.run_manifest_path(plan, store_dir=store_dir)
+    if not path.is_file():
+        if as_json:
+            print(json.dumps({"manifest": str(path), "started": False}, indent=2))
+            return 0
+        print(f"no run manifest at {path}: no job of this pass has run")
+        return 0
+    manifest = run_plan.read_run_manifest(path)
+    following = run_plan.next_job(run, manifest)
+    if as_json:
+        payload = manifest.model_dump(mode="json")
+        payload["next"] = None if following is None else following.job
+        print(json.dumps(payload, indent=2, default=str))
+        return 0
+    print(f"plan        : {manifest.plan} ({manifest.plan_fingerprint[:12]})")
+    print(f"store       : {manifest.store_dir}")
+    for record in manifest.jobs:
+        before, after = run_plan.separates(run, record.job)
+        placement = "" if before is None else f"  between {before} and {after}"
+        print(
+            f"{record.step:>2}. {record.job:<20} {record.status.value:<8} "
+            f"{record.ok_recordings}/{record.expected_recordings} ok"
+            f"{placement}"
+        )
+        if record.note:
+            print(f"      {record.note}")
+    print(f"summary     : {manifest.summary}")
+    if following is not None:
+        print(
+            f"next        : step {following.step} {following.job} "
+            f"({run.directory}/{following.definition})"
+        )
+        for line in run_plan.job_requirements(run, following):
+            print(f"              {line}")
+    return 0
+
+
+def _run_plan_next(
+    args: argparse.Namespace,
+    run: run_plan.PlannedRun,
+    plan: run_plan.RunPlan,
+    notes: list[str],
+    as_json: bool,
+) -> int:
+    """``run-plan --next``: run the next job of the pass, then record it on the pass's own record.
+
+    The one action of this verb that records, and it changes nothing about how a job runs: the
+    definition goes to :func:`~udv_echo_process.acquire.campaign.run_campaign` with its own log, so
+    the instrument-facing steps — route, read, compile against the definition's declared run-wide
+    values, resume by identity — are the campaign layer's, unchanged and verified. What this adds is
+    the two things a single definition cannot express: *which* job comes next, and the pass-level
+    record that says so afterwards.
+
+    The pass's record is read, not assumed: the first job of a pass writes it (every job pending),
+    and a job that is not next is refused by :func:`~udv_echo_process.acquire.run_plan.record_job`
+    **after** it has run, which is the point at which its outcome would otherwise be filed against
+    the wrong step. ``--resume`` is passed on, so a job interrupted mid-way continues rather than
+    repeating its stored points.
+    """
+    if args.expect_mode is None:
+        print(
+            "udv-acquire: --next records, so it declares the process this pass was measured "
+            "against: pass --expect-mode (--check, --sheet and --status need no declaration)",
+            file=sys.stderr,
+        )
+        return 2
+
+    directory = Path(plan.store_dir if args.store_dir is None else args.store_dir)
+    path = run_plan.run_manifest_path(plan, store_dir=directory)
+    manifest = (
+        run_plan.read_run_manifest(path)
+        if path.is_file()
+        else run_plan.new_run_manifest(run, store_dir=directory)
+    )
+    following = run_plan.next_job(run, manifest)
+    if following is None:
+        print(f"the pass is complete: {manifest.summary}")
+        return 0
+
+    channel = plan.channel if args.channel is None else args.channel
+    definition_path = Path(run.directory) / following.definition
+    log_path = run_plan.job_log_path(run, following, store_dir=directory)
+    if not as_json:
+        print(
+            f"step {following.step} of {len(run.jobs)}: {following.job} — "
+            f"{definition_path}"
+        )
+        for line in run_plan.job_requirements(run, following):
+            print(f"  {line}")
+    try:
+        definition = campaign.load_campaign(definition_path)
+        # The pass's record is written *before* the first job, so a job that ends the process early
+        # still leaves a record naming the pass it belonged to.
+        if not path.is_file():
+            run_plan.write_run_manifest(path, manifest)
+        job_manifest = campaign.run_campaign(
+            definition,
+            live.live_actuator(channel, notes),
+            store_dir=directory,
+            log_path=log_path,
+            resume=True,
+            channel=channel,
+            definition_path=definition_path,
+            notes=notes,
+            expected_mode=ProcessMode(args.expect_mode),
+            strict_facts=run.strict_facts,
+        )
+        manifest = run_plan.record_job(manifest, run, following, job_manifest)
+        run_plan.write_run_manifest(path, manifest)
+    # Includes RunPlanError (a CampaignError), and the driver's refusals, which are not ValueErrors.
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "job": job_manifest.model_dump(mode="json"),
+                    "pass": manifest.model_dump(mode="json"),
+                },
+                indent=2,
+                default=str,
+            )
+        )
+    else:
+        for outcome in job_manifest.outcomes:
+            detail = outcome.file or ""
+            if not outcome.ok and outcome.reason:
+                detail = f"{detail}  {outcome.reason}".strip()
+            elif not detail:
+                detail = outcome.reason or ""
+            print(f"{outcome.label:<20} {outcome.status.value:<8} {detail}")
+        print(f"log         : {job_manifest.log_path}")
+        print(f"manifest    : {run_plan.run_manifest_path(plan, store_dir=directory)}")
+        print(f"job         : {job_manifest.summary}")
+        print(f"pass        : {manifest.summary}")
+    return 0 if job_manifest.failed_count == 0 and not job_manifest.aborted else 1
+
+
+def _run_plan(args: argparse.Namespace, notes: list[str], as_json: bool) -> int:
+    """``run-plan``: the pass above the campaign layer — check, sheet, status, or the next job."""
+    try:
+        plan = run_plan.load_run_plan(Path(args.plan))
+        run = run_plan.plan_run(plan, directory=Path(args.plan).parent)
+    # RunPlanError is a CampaignError and therefore a ValueError; a driver refusal is not (§16.2).
+    except (driver.AcquisitionError, ValueError, OSError) as exc:
+        print(f"udv-acquire: {exc}", file=sys.stderr)
+        return 2
+
+    if args.sheet:
+        print(run_plan.operator_setup_sheet(run))
+        return 0
+    if args.status:
+        return _run_plan_status(args, run, plan, as_json)
+    if args.next:
+        return _run_plan_next(args, run, plan, notes, as_json)
+    return _run_plan_check(run, as_json)
+
+
 def acquire_main(argv: list[str] | None = None) -> None:
     """``udv-acquire`` — the live path: read the screen, exercise a cycle, store a point, sweep.
 
@@ -1015,6 +1276,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
     store, no log, no manifest, which is what makes a compiled plan checkable before a job is
     spent. Only ``campaign`` records: it compiles, then runs the points through the same live
     actuator the other subcommands use.
+
+    ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
+    sparse mixer pass, one JSON file and nine job definitions under
+    ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
+    all nine jobs against the existing writer surface and print what each holds, or the sheet an
+    operator sets the run-wide burst and emissions from — and ``--status`` reads the pass's own
+    record to say which job is next. ``--next`` is the only action that records: it hands the next
+    job's definition to the campaign path unchanged, with its own log, and folds the result into
+    the pass's record. The one thing it adds is the cross-job order, which no single definition can
+    carry.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -1054,7 +1325,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
             ),
         )
 
-    status_parser = subcommands.add_parser("status", help="read the screen, pressing nothing")
+    status_parser = subcommands.add_parser(
+        "status", help="read the screen, pressing nothing"
+    )
     channel_argument(status_parser)
     status_parser.add_argument("--json", action="store_true")
 
@@ -1083,12 +1356,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "sweep", help="a multi-point sweep, one JSONL entry per point"
     )
     sweep_parser.add_argument("--seconds", type=float, required=True)
-    sweep_parser.add_argument("--rungs", required=True, help="1-based ladder indices, e.g. 1,2")
+    sweep_parser.add_argument(
+        "--rungs", required=True, help="1-based ladder indices, e.g. 1,2"
+    )
     channel_argument(sweep_parser)
     expect_mode_argument(sweep_parser)
     sweep_parser.add_argument("--store-dir", default=None)
     sweep_parser.add_argument("--name-prefix", default="sweep")
-    sweep_parser.add_argument("--log", default=None, help="JSONL log (default: <store-dir>/sweep.jsonl)")
+    sweep_parser.add_argument(
+        "--log", default=None, help="JSONL log (default: <store-dir>/sweep.jsonl)"
+    )
     sweep_parser.add_argument(
         "--sound-speed", type=float, default=live.DEFAULT_MEASUREMENT["sound_speed_ms"]
     )
@@ -1098,15 +1375,21 @@ def acquire_main(argv: list[str] | None = None) -> None:
     sweep_parser.add_argument(
         "--depth", type=float, default=live.DEFAULT_MEASUREMENT["target_depth_mm"]
     )
-    sweep_parser.add_argument("--prf", type=float, default=live.DEFAULT_MEASUREMENT["prf_us"])
     sweep_parser.add_argument(
-        "--emissions", type=int, default=int(live.DEFAULT_MEASUREMENT["emissions_per_profile"])
+        "--prf", type=float, default=live.DEFAULT_MEASUREMENT["prf_us"]
+    )
+    sweep_parser.add_argument(
+        "--emissions",
+        type=int,
+        default=int(live.DEFAULT_MEASUREMENT["emissions_per_profile"]),
     )
     sweep_parser.add_argument(
         "--burst", type=int, default=int(live.DEFAULT_MEASUREMENT["burst_length"])
     )
 
-    decode_parser = subcommands.add_parser("decode", help="a stored file's own operation words")
+    decode_parser = subcommands.add_parser(
+        "decode", help="a stored file's own operation words"
+    )
     decode_parser.add_argument("path")
     channel_argument(decode_parser)
     decode_parser.add_argument("--json", action="store_true")
@@ -1136,7 +1419,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
     campaign_parser.add_argument("--definition", required=True)
     campaign_parser.add_argument("--store-dir", default=None)
     campaign_parser.add_argument(
-        "--log", default=None, help="JSONL job log (default: <store-dir>/campaign.jsonl)"
+        "--log",
+        default=None,
+        help="JSONL job log (default: <store-dir>/campaign.jsonl)",
     )
     campaign_parser.add_argument(
         "--resume",
@@ -1164,10 +1449,59 @@ def acquire_main(argv: list[str] | None = None) -> None:
     campaign_parser.add_argument("--json", action="store_true")
 
     report_parser = subcommands.add_parser(
-        "report", help="a job log's per-point status and summary (touches no instrument)"
+        "report",
+        help="a job log's per-point status and summary (touches no instrument)",
     )
     report_parser.add_argument("--log", required=True)
     report_parser.add_argument("--json", action="store_true")
+
+    run_plan_parser = subcommands.add_parser(
+        "run-plan",
+        help=(
+            "a pass of jobs: check the whole plan, print the operator sheet, report where the "
+            "pass stands, or run its next job"
+        ),
+    )
+    run_plan_parser.add_argument("--plan", required=True)
+    actions = run_plan_parser.add_mutually_exclusive_group(required=True)
+    actions.add_argument(
+        "--check",
+        action="store_true",
+        help="plan all nine jobs statically and print what each holds (touches no instrument)",
+    )
+    actions.add_argument(
+        "--sheet",
+        action="store_true",
+        help="print the operator setup sheet: what to set by hand before each job",
+    )
+    actions.add_argument(
+        "--status",
+        action="store_true",
+        help="read the pass's own record and say which job is next (touches no instrument)",
+    )
+    actions.add_argument(
+        "--next",
+        action="store_true",
+        help="run the next job of the pass through the compiled campaign path",
+    )
+    run_plan_parser.add_argument(
+        "--store-dir",
+        default=None,
+        help="override the plan's store directory (where the logs and the pass record live)",
+    )
+    channel_argument(run_plan_parser)
+    # DEVIATION from the record paths' own spelling: `--expect-mode` is *required* on every path
+    # that records, and `run-plan` has three actions that record nothing (`--check`, `--sheet`,
+    # `--status`). Making the flag unconditionally required would force a declaration out of a
+    # diagnostic, so it is optional here and **refused by name** when `--next` — the one action
+    # that records — is given without it.
+    run_plan_parser.add_argument(
+        "--expect-mode",
+        default=None,
+        choices=[mode.value for mode in ProcessMode],
+        help="the process this pass was measured against (required with --next)",
+    )
+    run_plan_parser.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)
     notes: list[str] = []
@@ -1186,6 +1520,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
             code = _campaign_run(args, notes, as_json)
         elif args.command == "report":
             code = _campaign_report(args, as_json)
+        elif args.command == "run-plan":
+            code = _run_plan(args, notes, as_json)
         elif args.command == "channel":
             verified, fingerprint = live.select_channel(args.number, notes)
             print(f"verified channel: {verified}")
@@ -1228,12 +1564,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
             for outcome in outcomes:
                 key = getattr(outcome.point, "key", "?")
                 reason = "" if outcome.reason is None else f" reason={outcome.reason}"
-                print(f"k={key} ok={outcome.ok} status={outcome.status} file={outcome.file}{reason}")
+                print(
+                    f"k={key} ok={outcome.ok} status={outcome.status} file={outcome.file}{reason}"
+                )
             if as_json:
                 _acquire_report([outcome.__dict__ for outcome in outcomes], True)
             code = 0 if outcomes and all(outcome.ok for outcome in outcomes) else 1
         else:  # decode
-            measured = args.channel if args.channel is not None else ChannelSetting().channel
+            measured = (
+                args.channel if args.channel is not None else ChannelSetting().channel
+            )
             _acquire_report(live.decode(Path(args.path), measured), as_json)
     except driver.AcquisitionError as exc:
         # The live verbs drive the instrument through the same driver and have no handler of
@@ -1312,7 +1652,9 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             manifest_path=None if args.manifest is None else Path(args.manifest),
-            screening_threshold_path=None if args.screening_threshold is None else Path(args.screening_threshold),
+            screening_threshold_path=None
+            if args.screening_threshold is None
+            else Path(args.screening_threshold),
             analysis_commit=args.analysis_commit,
         )
     except gain_power_screen.GainPowerScreenError as exc:
@@ -1337,9 +1679,11 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
         f"{screen['pairs_above_screening_threshold']} of {screen['pairs']} pairs fall above the "
         f"{model.screening_threshold.value_mm_s:.6g} mm/s screening threshold (screening only)"
     )
-    print(f"diagnostic: justified={diagnostic['justified']} "
-          f"wider_ladder_justified={diagnostic['wider_ladder_justified']} "
-          f"outcome_claimed={diagnostic['outcome_claimed']}")
+    print(
+        f"diagnostic: justified={diagnostic['justified']} "
+        f"wider_ladder_justified={diagnostic['wider_ladder_justified']} "
+        f"outcome_claimed={diagnostic['outcome_claimed']}"
+    )
     print(f"levels      : {report_dir / gain_power_screen.LEVELS_NAME}")
     print(f"pairs       : {report_dir / gain_power_screen.PAIRS_NAME}")
     print(f"depths      : {report_dir / gain_power_screen.DEPTHS_NAME}")

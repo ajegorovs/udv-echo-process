@@ -84,10 +84,13 @@ worth recording, because each could otherwise be mistaken for an error:
   i.e. rate byte ``6`` → 6000 kHz. The rung law has no rate term at all; the two
   forms only diverge if a file ever packs a different rate byte, and such a file
   would trip the stored-depth validation below rather than decode silently.
-* Word 2 (the session's "``Depth`` = first gate + gates x resolution") is the
-  *UI's* integer window depth. It is not the last gate of the canonical axis —
-  they differ by up to ~0.5 mm — so it is deliberately not decoded or used here;
-  word 9 (first gate) and word 46 (hardware delay) carry the offset instead.
+* Word 2 is an integer window depth, and the committed sweep says which one: the window's
+  *last* gate — ``first_gate + (gates - 1) x pitch``, rounded — in 40 of 40 files of
+  ``data/mixer-sensitivity-analysis/4MHz/0500RPM/001``. The session's ``Depth``
+  (``first gate + gates x resolution``) is one pitch beyond it: the two coincide inside the
+  rounding at the fine rungs every earlier campaign used, and do not at a 1.85 or 2.96 mm
+  rung. Word 2 is deliberately not decoded or used here, and word 9 and word 46 carry an
+  offset instead.
 * Words 3 (velocity scale x100), 14 (emissions/profile), 27 (sampling-volume
   index), 42 (the session's *probable* ``Tgc [dB]``, which the manual's table
   calls "internal use") and 84 (skipped profiles) are verified by that session.

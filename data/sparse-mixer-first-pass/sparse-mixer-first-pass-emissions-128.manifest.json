@@ -1,0 +1,101 @@
+{
+  "job": "emissions-128",
+  "fingerprint": "0476bdf2b519fd31b29aff9923f4b3d63535928183a0d94b5c1e4f2916e040c7",
+  "channel": 1,
+  "planned": 4,
+  "skipped": [],
+  "started_at": "2026-09-21T10:41:29.209037+03:00",
+  "finished_at": "2026-09-21T10:42:45.931283+03:00",
+  "outcomes": [
+    {
+      "key": 1,
+      "label": "ctrl-begin",
+      "identity": "sparse1-emissions-128-ctrl-begin",
+      "status": "invalid",
+      "ok": false,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-emissions-128-ctrl-begin-20260921T104136.BDD",
+      "reason": "the stored file is 41323 B where the signature expects ~13175 B for 50 gates x 155 profiles (3.14x, limit 2x): a file this far off the signature is not this point's data",
+      "aborted": false
+    },
+    {
+      "key": 2,
+      "label": "e128",
+      "identity": "sparse1-emissions-128-e128",
+      "status": "invalid",
+      "ok": false,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-emissions-128-e128-20260921T104136.BDD",
+      "reason": "the stored file is 41323 B where the signature expects ~13175 B for 50 gates x 155 profiles (3.14x, limit 2x): a file this far off the signature is not this point's data",
+      "aborted": false
+    },
+    {
+      "key": 3,
+      "label": "ctrl-mid",
+      "identity": "sparse1-emissions-128-ctrl-mid",
+      "status": "invalid",
+      "ok": false,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-emissions-128-ctrl-mid-20260921T104136.BDD",
+      "reason": "the stored file is 41323 B where the signature expects ~13175 B for 50 gates x 155 profiles (3.14x, limit 2x): a file this far off the signature is not this point's data",
+      "aborted": false
+    },
+    {
+      "key": 4,
+      "label": "ctrl-end",
+      "identity": "sparse1-emissions-128-ctrl-end",
+      "status": "invalid",
+      "ok": false,
+      "file": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse1-emissions-128-ctrl-end-20260921T104136.BDD",
+      "reason": "the stored file is 41323 B where the signature expects ~13175 B for 50 gates x 155 profiles (3.14x, limit 2x): a file this far off the signature is not this point's data",
+      "aborted": false
+    }
+  ],
+  "store_dir": "C:\\Repos\\udv-echo-process\\outputs\\live\\store",
+  "log_path": "C:\\Repos\\udv-echo-process\\outputs\\live\\store\\sparse-mixer-first-pass-emissions-128.jsonl",
+  "definition_path": "examples\\sparse-mixer-first-pass\\jobs\\emissions-128.json",
+  "log_errors": [],
+  "compilation_identity": {
+    "channel": {
+      "value": "1",
+      "source": "routed"
+    },
+    "mode": {
+      "value": "manual",
+      "source": "read"
+    },
+    "process_mode": {
+      "value": "instrument",
+      "source": "read"
+    },
+    "prf_us": {
+      "value": "600",
+      "source": "read"
+    },
+    "emissions_per_profile": {
+      "value": "128",
+      "source": "read"
+    },
+    "burst_length": {
+      "value": "10",
+      "source": "read"
+    },
+    "sound_speed_ms": {
+      "value": "1480",
+      "source": "read"
+    },
+    "first_gate_mm": {
+      "value": "10",
+      "source": "read"
+    },
+    "max_profiles_per_block": {
+      "value": null,
+      "source": "unreadable"
+    },
+    "class_name": "TMain_Scr",
+    "panels": 4,
+    "strip_view": "ready",
+    "strip_has_slider": false
+  },
+  "declared_only": false,
+  "skipped_without_evidence": [],
+  "expected_process_mode": "instrument",
+  "observed_process_mode": "instrument"
+}

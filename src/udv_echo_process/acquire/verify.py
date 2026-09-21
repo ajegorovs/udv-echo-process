@@ -17,7 +17,7 @@ Word map (verified on real files — uint32 little-endian, 256 words per channel
 stride 1024 B, channel 1 at byte offset 548, so word ``i`` of channel ``c`` is at
 ``548 + (c - 1) * 1024 + i * 4``)::
 
-    2   depth in mm (the FLOOR of ``first_gate + gates x resolution``)
+   2   depth in mm — the window's *last* gate, ``first_gate + (gates - 1) x pitch`` rounded
     5   PRF in microseconds
     8   burst length
     10  0-based resolution rung index; ``resolution_mm = (word10 + 1) * c / 12000``
@@ -72,6 +72,7 @@ __all__ = [
     "CHANNEL_1_OFFSET_BYTES",
     "CHANNEL_STRIDE_BYTES",
     "ENFORCED_COVARIATES",
+    "STRICTABLE_COVARIATES",
     "WORDS_PER_CHANNEL",
     "WORD_BURST_LENGTH",
     "WORD_DEPTH_MM",
@@ -124,7 +125,7 @@ ENFORCED_COVARIATES = (
     "burst_length",
 )
 
-#: Read, reported and returned, but **not** enforced: word 14
+#: Read, reported and returned, but **not** enforced by default: word 14
 #: (``emissions_per_profile``). Its value in a definition is not an instrument
 #: reading yet — it is derived from the period law to reproduce a stored profile
 #: count (``52`` in ``test_acquire_runner.py`` is exactly that derivation), which is
@@ -133,9 +134,22 @@ ENFORCED_COVARIATES = (
 #: a disagreement the *request* caused. It becomes enforceable when a campaign is
 #: compiled against a live instrument snapshot instead of against a definition (the
 #: review's Phase 6); until then its disagreement is an advisory on the record.
+#:
+#: **A caller may raise it** — ``verify_stored_point(strict_covariates=...)`` — and that is the
+#: right answer for a run whose *axis* is this value: a campaign that moves emissions per profile
+#: between jobs has deliberately requested it, so the historical derivation rationale does not
+#: apply, and a stored file whose word 14 disagrees is not that run's point.
 ADVISORY_COVARIATES = ("emissions_per_profile",)
 
 _COVARIATES = ENFORCED_COVARIATES + ADVISORY_COVARIATES
+
+#: The fixed facts a stored file carries a word for, so a caller can require them to agree:
+#: :data:`ENFORCED_COVARIATES` are compared into ``ok`` for every caller, and the advisory one can
+#: be *raised* by a caller that treats it as mandatory (:func:`verify_stored_point`'s
+#: ``strict_covariates``) — which is how a run whose axis **is** that value makes the dataset it
+#: produces self-validating. The block cap is deliberately absent: no word in a stored file states
+#: it, so a requirement on it could be enforced before a recording and never afterwards.
+STRICTABLE_COVARIATES: tuple[str, ...] = _COVARIATES
 
 #: The app writes integer microseconds; a requested value may carry a fraction.
 PRF_TOLERANCE_US = 1.0
@@ -174,6 +188,11 @@ class VerificationResult:
     looked" — for both classes. A field the request left unset appears in neither: it was
     never compared, and listing it would claim a verification that did not happen. When
     ``check_covariates=False`` both are empty, since nothing was compared.
+
+    ``strict_covariates`` names the fields of :data:`STRICTABLE_COVARIATES` this **caller**
+    raised (:func:`verify_stored_point`'s own argument), so a record says whether an advisory
+    field was compared against a request that treated it as mandatory. Empty when the caller
+    raised nothing, which is every caller whose request does not rest on that value.
     """
 
     ok: bool
@@ -182,6 +201,7 @@ class VerificationResult:
     advisories: tuple[str, ...] = ()
     enforced_covariates: tuple[str, ...] = ()
     advisory_covariates: tuple[str, ...] = ()
+    strict_covariates: tuple[str, ...] = ()
 
 
 def _word_offset(word_index: int, channel: int) -> int:
@@ -340,10 +360,17 @@ def _check_depth(
 ) -> None:
     """Compare word 2 with the depth the *requested* window should have.
 
-    The prediction is ``first_gate + gates x rung_pitch``: the app writes its own
-    derived depth, and the pitch it uses is the *snapped* rung (the requested
-    pitch is only a request — ``plan`` and docs/16 §12a), so the snapped rung,
-    not the requested decimal, is what the prediction multiplies.
+    The prediction is ``first_gate + (gates - 1) x rung_pitch`` — the depth of the window's
+    **last** gate, which is the depth the application stores: word 2 is the depth of gate
+    ``gates``, not of the window end one pitch beyond it. Measured on the committed sweep
+    (``data/mixer-sensitivity-analysis/4MHz/0500RPM/001``: 40 files, 13 distinct gates x
+    resolution pairs) this form reproduces the stored word in **40 of 40** files, the
+    window-end form in 4 of 40, and no single first gate fits the window-end form. The pitch
+    is the *snapped* rung, never the requested decimal (``plan`` and docs/16 §12a), so the
+    snapped rung is what the prediction multiplies. One pitch separates the two forms, so at
+    the fine rungs every earlier campaign ran at (0.12-0.49 mm) they are indistinguishable
+    inside the 1.5 mm default; at this pass's coarse rungs (1.85 mm, 2.96 mm) they are not,
+    and there the window-end form reports a correct recording as a mismatch.
     """
     word = WORD_DEPTH_MM
     requested_resolution = _as_float(_requested(requested_parameters, "resolution_mm"))
@@ -378,12 +405,12 @@ def _check_depth(
 
     index = _rung_index_for(requested_resolution, sound_speed_ms)
     pitch_mm = (index + 1) * sound_speed_ms / RUNG_DIVISOR
-    predicted_mm = requested_first_gate + requested_gates * pitch_mm
+    predicted_mm = requested_first_gate + (requested_gates - 1) * pitch_mm
     if abs(predicted_mm - facts.depth_mm) > tolerance_mm:
         mismatches.append(
             f"depth_mm: requested {_number(predicted_mm)} "
             f"(first gate {_number(requested_first_gate)} + "
-            f"{_number(requested_gates)} x {_number(pitch_mm)}), found "
+            f"{_number(requested_gates - 1)} x {_number(pitch_mm)}, the last gate), found "
             f"{facts.depth_mm} in word {word} (tolerance {tolerance_mm:g})"
         )
 
@@ -395,13 +422,14 @@ def verify_stored_point(
     *,
     depth_tolerance_mm: float = 1.5,
     check_covariates: bool = False,
+    strict_covariates: tuple[str, ...] = (),
 ) -> VerificationResult:
     """Verify a stored point's own words against the parameters requested.
 
     Checked, in order: gates exactly (word 13), the resolution rung the requested
-    pitch inverts to (word 10), the window depth within ``depth_tolerance_mm``
-    (word 2). Every disagreement and every *unverifiable* field becomes a string
-    naming the field, the request and the found value.
+    pitch inverts to (word 10), the depth of the window's last gate within
+    ``depth_tolerance_mm`` (word 2). Every disagreement and every *unverifiable* field
+    becomes a string naming the field, the request and the found value.
 
     With ``check_covariates=True`` the dialog-only words are enforced as well:
     sound speed (word 19), PRF (word 5, within :data:`PRF_TOLERANCE_US`) and burst
@@ -411,13 +439,16 @@ def verify_stored_point(
     module's own callers, which verify a *file*, not a run.
 
     Emissions per profile (word 14) is read, returned in :class:`WordFacts` and
-    compared into :attr:`VerificationResult.advisories` — never into ``ok``. The
-    disagreement that forced that decision is a real committed point
-    (``sw100-k1-161738.BDD``, 805 gates at rung 0, all three core words as
-    requested) storing word 14 = 150 against a plan that said 52; the 52 is the
-    period law inverted to reproduce that recording's profile count, not a reading
-    off the instrument, so the *request* is what is wrong. It becomes enforceable
-    once a campaign compiles against a live snapshot instead of a definition.
+    compared into :attr:`VerificationResult.advisories` — never into ``ok`` — **unless
+    the caller raises it**: ``strict_covariates`` names the facts of
+    :data:`STRICTABLE_COVARIATES` this request rests on, and those comparisons go into
+    ``mismatches`` like an enforced covariate's. The default stays advisory for the reason
+    it always was — a definition's value for word 14 used to be a *derivation* rather than
+    a reading (:data:`ADVISORY_COVARIATES`), so enforcing it would refuse a point whose
+    core words are all correct. A caller that moved that value between points on purpose
+    is in the opposite situation: its request is the experiment, and a stored file whose
+    word 14 disagrees is not its point. An unknown name raises, naming the vocabulary,
+    because a fact nothing can compare must not read as enforced.
 
     ``requested_parameters`` is duck-typed: ``gates``, ``resolution_mm``,
     ``first_gate_mm`` and the optional covariates are read with ``getattr``, so a
@@ -431,8 +462,13 @@ def verify_stored_point(
     of its own derivation, and it derives from the snapped rung while the request
     is a 3-decimal display value.
 
-    Never raises: a missing file is ``ok=False`` with a reason, because a point
-    whose parameters cannot be confirmed must not read as fine.
+    Never raises on what it *reads*: a missing file is ``ok=False`` with a reason, because a point
+    whose parameters cannot be confirmed must not read as fine. The one raise is a caller error
+    rather than a file one — ``strict_covariates`` naming a fact outside
+    :data:`STRICTABLE_COVARIATES` raises ``ValueError``, because a fact no stored word can be
+    compared against must never read as enforced. The run plan that supplies the tuple refuses
+    that vocabulary before any recording (``RunPlan._check_strict_facts``), so a pass cannot
+    reach this function with one; a caller reaching it directly can.
     """
     tolerance_mm = abs(float(depth_tolerance_mm))
     mismatches: list[str] = []
@@ -527,12 +563,31 @@ def verify_stored_point(
             )
 
     # Read and reported even when not enforced: a disagreement the request caused is
-    # evidence, and it is only visible at all if something writes it down.
+    # evidence, and it is only visible at all if something writes it down. A field the
+    # caller *raised* is not read this way — it goes to the mismatches, because for that
+    # caller it is not evidence but a wrong point.
+    unknown = [name for name in strict_covariates if name not in STRICTABLE_COVARIATES]
+    if unknown:
+        raise ValueError(
+            f"strict_covariates names {unknown}, which no stored file carries a word for: a fact "
+            "that cannot be compared must not read as enforced. The raiseable fields are "
+            f"{list(STRICTABLE_COVARIATES)}"
+        )
+    raised = tuple(name for name in STRICTABLE_COVARIATES if name in strict_covariates)
     advisories: list[str] = []
     advisory_compared: list[str] = []
     for field in ADVISORY_COVARIATES:
         requested = _requested(requested_parameters, field)
         if requested is None:
+            continue
+        if field in raised:
+            enforced.append(field)
+            _compare_number(
+                mismatches,
+                field=field,
+                requested=requested,
+                found=getattr(facts, field),
+            )
             continue
         advisory_compared.append(field)
         _compare_number(
@@ -549,4 +604,5 @@ def verify_stored_point(
         advisories=tuple(advisories),
         enforced_covariates=tuple(enforced),
         advisory_covariates=tuple(advisory_compared),
+        strict_covariates=raised,
     )

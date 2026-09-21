@@ -21,8 +21,76 @@ in `acquisition-campaign-compilation-plan.md` §11.1, which was written before t
 
 ---
 
-**Resume here — after 2026-09-19's sessions, with nothing left stacked.** Everything those sessions
-produced is on `master`: the sittings' records ([#12](https://github.com/ajegorovs/udv-echo-process/pull/12),
+**Resume here — 2026-09-21, after the nine-job pass completed.** The design branch is on `master` (`#23`, `87fd947`),
+and the encoding of the accepted set is **[PR #25](https://github.com/ajegorovs/udv-echo-process/pull/25)**
+(draft, `feat/acquire-sparse-run-plan`): the first sparse pass as one run plan and nine job definitions, the
+static check of the whole pass, the operator sheet, and the pass's own record. The review asked for five
+changes and they are in the branch: the **emissions per profile acceptance is raised to a refusal for this
+pass** — before the first recording *and* in the stored file's own `word 14` (the review's correctness gap) —
+the block cap is documented as a **declared retention requirement, not verified device capacity**, the trial's
+acceptance gates are stated in advance from the stored files, and the concrete
+`scientific → reference → … → scientific` sequence has its own test. That delta was then reviewed itself
+(`5946185..2f929ea`) and **cleared**: five acceptances, no blocking finding, and it allows the bounded trial
+with the plan frozen while it runs. Its two non-blocking items are recorded in
+[`sparse-run-plan.md`](sparse-run-plan.md) §7 — per-point provenance for a *raised* fact, and reading the
+trial's first gate off the stored file, which belongs to the ingest.
+
+**The pass then ran to completion: nine jobs, 26 points, all stored** — and its own record is committed at
+[`../../data/sparse-mixer-first-pass/`](../../data/sparse-mixer-first-pass/README.md) (26 `.BDD`
+recordings, nine job logs, nine job manifests, the pass manifest, and the verdict with the commands that
+reproduce it). Two findings came out of the run, both in `sparse-run-plan.md` §5:
+
+- **The size signature was mis-specified, and it was the guard that was wrong, not the files.** It modelled
+  bytes as `1.7 × gates × profiles` — the payload alone — so at 144 profiles the fixed container dominated
+  and the four `emissions-128` points were refused at 3.14× before their words were read. A `.BDD` is
+  `31,268 + (19 + 2 × gates) + profiles × (19 + gates)`, which reproduces **all 26 recordings
+  byte-for-byte**; `acquire/log.py` now models that, and the regression reads every committed recording back.
+- **The profile period is measured, not assumed — and the planner now computes the whole law:**
+  `emissions × PRF + 10.369 ms` (151.689 / 223.688 / 487.690 / 871.685 ticks at emissions 8 / 20 / 64 /
+  128 at PRF 600 µs) against the retired `emissions × PRF + 1 ms`, which was ~1.6× high on profiles at
+  emissions 20 and worse as emissions rose. The intercept's two terms are separate: the manual's law is
+  `T_profile ≈ T_tran + T_prf · (16 + N_PRF)`, so at 600 µs the fixed emission term is 9.6 ms and the
+  remaining ~0.77 ms is the transfer term — the 10.369 ms is the two together, never the 16-emission term
+  alone. `acquire/plan.py::profile_period_s` implements all of it, the runner's size expectation and the
+  campaign's profile count both call it, and nothing re-freezes: the sparse parameter set is untouched,
+  because this was planning arithmetic and not experimental design.
+
+**The rig is not producing signal, so every stored profile is zero** — including the six independently
+committed trial files, while the historical reference file is not zero (25,594 of 25,850 samples non-zero).
+That is the operator's deliberate deferral, not a defect: the pass is evidence about the acquisition layer,
+and the burst / emissions / drift contrasts wait for a rig that is measuring.
+
+**What runs next, in order:**
+
+1. **the review of that delta — done.** (`5946185..2f929ea`, no blocking finding; the plan is frozen for the trial.)
+2. **the operator-attended trial — done (2026-09-20): `burst-4` and `common-reference-1` ran and all six
+   §5 gates hold**, with the gates and
+   the stop condition in [`sparse-run-plan.md`](sparse-run-plan.md) §5. Its first question is not "did the
+   points store" but "does each stored file still cover the ≈12 s window it was asked for" — the block cap is
+   an application preference nothing here reads, and the installation once accepted a large cap while a block
+   stopped far short of it. Five of five stored points is not a pass; a short-retention file is a stop;
+3. **the remaining seven jobs — done, and the pass is complete** (2026-09-21): nine jobs, 26 points,
+   all stored. One job (`emissions-128`) was marked failed by the size signature; that was a false
+   negative in the guard, not in the files (`data/sparse-mixer-first-pass/README.md` carries the
+   measurement and the corrected law);
+4. **the analysis ingest — the only open item, and it is unblocked.** The review of the whole delta
+   (2026-09-21, `b9043db..9d6706c`) accepted the mixer-enabled rerun, closed the two guard findings and
+   stops the acquisition phase here: acquisition logic changes again only if this ingest exposes a real
+   problem. It reads [`../../data/sparse-mixer-live-1/`](../../data/sparse-mixer-live-1/README.md) — 26
+   recordings of the same frozen design, every one carrying signal — beside the zero-signal first pass it
+   does not replace, and it needs no instrument. What it owes, named by that review: **common-support
+   normalization, within-job drift, the CR1–CR4 reference drift, the 2×2 pitch × burst interaction, the
+   emissions 8 / 20 / 64 / 128 behaviour, and a Stage-2 recommendation.** The two requirements the trial
+   handed it are settled and stand: temporal analysis uses the period measured from the **stored
+   timestamps** — the files give `emissions × PRF + 10.369 ms` across all four emission levels, the
+   manual's `T_prf × (16 + N_PRF)` together with its transfer term, and the logs' `timing.target_s` is the
+   retired expectation kept as provenance and not to be rewritten — and the size signature models the BDD
+   structure exactly on 26/26 files of each pass;
+5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
+   surface) and blocks nothing above it.
+
+Everything this workstream produced before that is on `master`: the sittings' records
+([#12](https://github.com/ajegorovs/udv-echo-process/pull/12),
 [#13](https://github.com/ajegorovs/udv-echo-process/pull/13)), the landing lessons (§1.1), the
 stale-claim reconciliation ([#15](https://github.com/ajegorovs/udv-echo-process/pull/15)), the identity
 plan and its corrections

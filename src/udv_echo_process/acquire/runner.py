@@ -56,7 +56,8 @@ module can produce, so:
   rule may never be derived from the file it is checking.)
 
 **The expectation is built from the specification, never from the file.** The
-expected size is ``signature.expected_bytes(requested_gates, profiles)``, with
+expected size is ``signature.expected_bytes(requested_gates, profiles)``: the BDD
+container's fixed 31,268 bytes, its one depth block, and the signal blocks implied by
 ``profiles = T / period`` from the point's own ``emissions_per_profile`` and
 ``prf_us`` (the measured ``emissions × PRF + ~1 ms`` law). An expectation taken
 from the file under test would simply agree with it — 6,000 stale profiles would
@@ -124,6 +125,7 @@ from udv_echo_process.acquire.plan import (
     SweepPoint,
     gate_drift,
     plan_sweep,
+    profile_period_s,
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
@@ -144,7 +146,6 @@ except ImportError:  # pragma: no cover - a broken install, and it must not pass
 __all__ = [
     "ABORT_NOTE",
     "GATE_DRIFT_LIMIT",
-    "PERIOD_OVERHEAD_S",
     "RESET_TIMEOUT_S",
     "PointOutcome",
     "SweepActuator",
@@ -159,15 +160,6 @@ RESET_TIMEOUT_S = 20.0
 #: reference implementation's 5 % (``plan.GATE_DRIFT_NOTE``); beyond it the app has
 #: recomputed the window for us.
 GATE_DRIFT_LIMIT = GATE_DRIFT_NOTE
-
-#: The constant term of the manual's profile-period law, ``T_profile ≈ T_tran +
-#: T_prf · (16 + N_PRF)``: the transfer term, kept as the 16-emission equivalent of
-#: the measured ``~1 ms``. The law is corroborated structurally — word 17 of the
-#: parameter block is 16 in every file, i.e. that constant is stored by the
-#: application itself (docs/dop3000/udop-automation.md §8, corrected) — so this is
-#: the *expectation* the profile count is sized from, never a substitute for the
-#: achieved period, which is read back per configuration as the certificate.
-PERIOD_OVERHEAD_S = 1e-3
 
 #: The sentence every aborted point's reason carries. An abort is not a worse point
 #: failure — it is the run being cut short — and the reason is the only part of that
@@ -370,11 +362,14 @@ class SweepRunner:
         *,
         channel: int | None = None,
         expected_mode: ProcessMode,
+        strict_covariates: tuple[str, ...] = (),
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
-        ``signature=None`` means the calibrated default (1.7 B per gate-profile,
-        factor 2); ``log_path=None`` returns outcomes without writing a JSONL log.
+        ``signature=None`` means the default structural
+        :class:`~udv_echo_process.acquire.log.SizeSignature` (the ``.BDD`` container,
+        one depth block and one signal block per profile, with a factor-2 band);
+        ``log_path=None`` returns outcomes without writing a JSONL log.
 
         ``channel`` is the measurement channel, taken from the one knob
         (:class:`~udv_echo_process.acquire.config.ChannelSetting`): explicit here,
@@ -389,8 +384,15 @@ class SweepRunner:
         cannot be built without one. It is checked against the caption at the top of every point
         (:meth:`_execute`, before a parameter is written) and handed to the per-point record call
         as well, and a campaign persists both halves on its manifest.
+
+        ``strict_covariates`` names the words a *caller* requires a stored file to agree with,
+        over the verifier's own default (``verify.STRICTABLE_COVARIATES``): a field named here is
+        compared into the verdict instead of the advisories, so `word 14` disagrees and the point
+        is invalid rather than recorded-with-a-note. Empty by default, because that default is the
+        right answer for a request whose emissions value was derived rather than asked for.
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
+        self._strict_covariates = tuple(strict_covariates)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
@@ -622,8 +624,9 @@ class SweepRunner:
         # specification only: a failed store still logs what the size should have been.
         period: float | None = None
         if parameters.emissions_per_profile and parameters.prf_us:
-            period = parameters.emissions_per_profile * parameters.prf_us * 1e-6
-            period += PERIOD_OVERHEAD_S
+            period = profile_period_s(
+                parameters.emissions_per_profile, parameters.prf_us
+            )
         attempt.period_s = period
         profiles = profiles_for_duration(duration_s, period) if period else None
         if profiles:
@@ -766,6 +769,7 @@ class SweepRunner:
                 parameters,
                 channel=self._channel_setting.channel,
                 check_covariates=True,
+                strict_covariates=self._strict_covariates,
             )
         except Exception as exc:  # noqa: BLE001 - no verdict is not a pass
             return self._fail(
