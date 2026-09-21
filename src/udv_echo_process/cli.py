@@ -43,7 +43,9 @@ from udv_echo_process.analysis import (
     reference_repeat,
     resolution_ladder,
     sparse_anchor_floor,
+    sparse_emissions_ladder,
     sparse_inventory,
+    sparse_pitch_burst,
     sparse_reference_floor,
     sweep_inventory,
 )
@@ -1790,6 +1792,8 @@ _COMMANDS = {
     "run-all": run_all_main,
     "sparse-anchor-floor": sparse_anchor_floor.anchor_floor_main,
     "sparse-inventory": sparse_inventory_main,
+    "sparse-emissions-ladder": sparse_emissions_ladder.emissions_ladder_main,
+    "sparse-pitch-burst": sparse_pitch_burst.pitch_burst_main,
     "sparse-reference-floor": sparse_reference_floor.reference_floor_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
