@@ -1,5 +1,5 @@
 {
-  "analysis_commit": "4faf8e8",
+  "analysis_commit": "28cd7e3",
   "autocorrelation": [
     {
       "depth_mm": 21.238000000000003,
@@ -1832,7 +1832,9 @@
     "block_duration_s": "the physical duration every record is segmented by. The blocks are equal in duration and not in profile count, because the levels differ by a factor of 5.7 in profile rate: a fixed profile count would compare 15 ms of one level with 87 ms of another",
     "depth_resolved_difference": "the signed per-gate difference of two window-mean profiles on the common support, each profile computed on its own native gate grid with no interpolation or resampling. The extreme is the largest absolute per-gate value and its depth is reported with it",
     "first_lag_below_half": "the first lag, in profiles, at which the absolute autocorrelation falls below 0.5, searched over the whole record; when it does not fall below 0.5 the field reports the last available lag and reaches_half is false",
+    "fixed_overhead_s": "achieved_period_s minus emissions x prf: the whole fixed intercept of the achieved period - the part that is not the emissions block - and NOT the transfer term. It comprises internal_emission_s (the manual's law carries 16 PRF terms: 9.600 ms at 600 us) and transfer_term_s (the remainder), both published beside it. It is a measurement of this pass's files, not a change to the planner's law and not an acquisition result",
     "frequency_resolution_hz": "1 / record_duration_s: the bin spacing of a spectrum taken over this record's own retained duration, which is the only duration the levels are compared at",
+    "internal_emission_s": "16 x prf: the internal-emission term of the manual's period law, 9.600 ms at 600 us, identical at every level",
     "iqr": "iqr",
     "lag1_autocorrelation": "the biased normalized autocovariance of the record's full stored series at one native gate, at lag 1 profile: the same convention the spatial correlation length uses on a gate profile. It is descriptive of that one series on that one record",
     "mean": "mean",
@@ -1844,7 +1846,7 @@
     "residual_vs_anchor": "a scientific row's per-gate window mean minus one bracketing anchor's, on the same grid. The pass carries no per-recording clock (a file name's YYYYMMDDTHHMMSS segment is the job's sweep_id, identical for every point of that job), so the row is reported against each bracketing anchor rather than at an invented instant between them",
     "rms": "rms",
     "stated_variation_mm_s": "the level's own variation, from the evidence it has: for E20 the spread of its four runs' depth-averaged window means (between-run variation, WP2's own data), for E8/E64/E128 the spread of that job's three block-local anchors (within-job bracketing context). Neither is a confidence interval, and three anchors are three recordings rather than replicates",
-    "transfer_term_s": "achieved_period_s minus emissions x prf: the part of the achieved period that is not the emissions block, published per level so the four levels can be read against one another. It is a measurement of this pass's files, not a change to the planner's law and not an acquisition result",
+    "transfer_term_s": "fixed_overhead_s minus internal_emission_s: the transfer term proper, the part of the fixed intercept the manual's 16 PRF terms do not account for",
     "zero_fraction": "count of samples exactly equal to 0.0 divided by the record length, dimensionless (the whole record, every gate)"
   },
   "depth_resolved": {
@@ -3679,7 +3681,7 @@
   ],
   "table": "emissions-ladder.csv",
   "table_rows": 78,
-  "table_sha256": "sha256:1086710bec811bdf54452dada0c82f3b1c955a2a932647c4fb7a6d6709f8f4b1",
+  "table_sha256": "sha256:3dcbedbb013ac25d757d14b86dea93b90f9272ca638d303844ac38c4818c2898",
   "temporal": [
     {
       "achieved_period_s": 0.015200000000000102,
@@ -3696,7 +3698,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.0048,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010400000000000104,
       "frequency_resolution_hz": 0.0795874188208328,
+      "internal_emission_s": 0.0096,
       "job": "emissions-8",
       "label": "e8",
       "last_block_start_s": 10.0,
@@ -3710,7 +3714,7 @@
       "profiles_per_block_median": 132,
       "profiles_per_block_min": 131,
       "record_duration_s": 12.5648,
-      "transfer_term_s": 0.010400000000000104
+      "transfer_term_s": 0.0008000000000001044
     },
     {
       "achieved_period_s": 0.022399999999999975,
@@ -3727,7 +3731,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.012,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010399999999999975,
       "frequency_resolution_hz": 0.07974290886182946,
+      "internal_emission_s": 0.0096,
       "job": "common-reference-1",
       "label": "cr1",
       "last_block_start_s": 10.0,
@@ -3741,7 +3747,7 @@
       "profiles_per_block_median": 89,
       "profiles_per_block_min": 89,
       "record_duration_s": 12.5403,
-      "transfer_term_s": 0.010399999999999975
+      "transfer_term_s": 0.0007999999999999761
     },
     {
       "achieved_period_s": 0.022399999999999975,
@@ -3758,7 +3764,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.012,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010399999999999975,
       "frequency_resolution_hz": 0.07960135640711317,
+      "internal_emission_s": 0.0096,
       "job": "common-reference-2",
       "label": "cr2",
       "last_block_start_s": 10.0,
@@ -3772,7 +3780,7 @@
       "profiles_per_block_median": 89,
       "profiles_per_block_min": 89,
       "record_duration_s": 12.5626,
-      "transfer_term_s": 0.010399999999999975
+      "transfer_term_s": 0.0007999999999999761
     },
     {
       "achieved_period_s": 0.022399999999999975,
@@ -3789,7 +3797,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.012,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010399999999999975,
       "frequency_resolution_hz": 0.07974290886182946,
+      "internal_emission_s": 0.0096,
       "job": "common-reference-3",
       "label": "cr3",
       "last_block_start_s": 10.0,
@@ -3803,7 +3813,7 @@
       "profiles_per_block_median": 89,
       "profiles_per_block_min": 89,
       "record_duration_s": 12.5403,
-      "transfer_term_s": 0.010399999999999975
+      "transfer_term_s": 0.0007999999999999761
     },
     {
       "achieved_period_s": 0.022399999999999975,
@@ -3820,7 +3830,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.012,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010399999999999975,
       "frequency_resolution_hz": 0.07974354476005167,
+      "internal_emission_s": 0.0096,
       "job": "common-reference-4",
       "label": "cr4",
       "last_block_start_s": 10.0,
@@ -3834,7 +3846,7 @@
       "profiles_per_block_median": 89,
       "profiles_per_block_min": 89,
       "record_duration_s": 12.5402,
-      "transfer_term_s": 0.010399999999999975
+      "transfer_term_s": 0.0007999999999999761
     },
     {
       "achieved_period_s": 0.048799999999999955,
@@ -3851,7 +3863,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.0384,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010399999999999958,
       "frequency_resolution_hz": 0.0800570005844161,
+      "internal_emission_s": 0.0096,
       "job": "emissions-64",
       "label": "e64",
       "last_block_start_s": 10.0,
@@ -3865,7 +3879,7 @@
       "profiles_per_block_median": 41,
       "profiles_per_block_min": 41,
       "record_duration_s": 12.491100000000001,
-      "transfer_term_s": 0.010399999999999958
+      "transfer_term_s": 0.0007999999999999587
     },
     {
       "achieved_period_s": 0.08720000000000006,
@@ -3882,7 +3896,9 @@
       "blocks": 6,
       "emissions_times_prf_s": 0.0768,
       "first_block_start_s": 0.0,
+      "fixed_overhead_s": 0.010400000000000062,
       "frequency_resolution_hz": 0.07964383277980869,
+      "internal_emission_s": 0.0096,
       "job": "emissions-128",
       "label": "e128",
       "last_block_start_s": 10.0,
@@ -3896,7 +3912,7 @@
       "profiles_per_block_median": 23,
       "profiles_per_block_min": 23,
       "record_duration_s": 12.555900000000001,
-      "transfer_term_s": 0.010400000000000062
+      "transfer_term_s": 0.0008000000000000628
     }
   ],
   "view_1_velocity_stability": {

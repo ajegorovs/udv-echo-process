@@ -19,7 +19,7 @@
     "rule": "the four corners are compared on common physical knots no finer than 2.96 mm, and the knot set is the 2.96 mm measurement's own native supported gate depths (the coarsest participating grid). Each corner is read at its nearest NATIVE gate to each knot: no interpolation, no resampling, no fit. The native depth used and its offset from the knot are published per knot in the table",
     "why_no_interpolation": "a resampled profile is not the recording's own measurement: interpolating a 2.96 mm grid onto 0.6167 mm knots would manufacture structure the coarse recording never resolved, and interpolating the fine grid would hide the width of the gates it actually averaged. The pass therefore compares what was measured"
   },
-  "analysis_commit": "9eb11ae",
+  "analysis_commit": "2321b76",
   "blocks": [
     {
       "anchor_floor_mm_s": 9.645932573047823,

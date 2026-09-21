@@ -2,12 +2,12 @@
 
 **Status:** WP4 deliverable of
 [`docs/dop3000/sparse-pass-analysis-plan.md`](../../docs/dop3000/sparse-pass-analysis-plan.md)
-§4. Generated against the revision `4faf8e8`, the revision
+§4. Generated against the revision `28cd7e3`, the revision
 `emissions-ladder.json` records. Regenerate with
 
 ```bash
 .venv/Scripts/python.exe -m udv_echo_process.cli sparse-emissions-ladder \
-    --analysis-commit 4faf8e8
+    --analysis-commit 28cd7e3
 ```
 
 **What it measures.** Four emissions-per-profile levels — E8, E20, E64 and E128 — at the
@@ -94,17 +94,23 @@ Each step's own reduction, its extreme taken over every difference that realizes
 
 Two readings follow, and they are the ones the numbers support:
 
-1. **The depth-averaged step differences sit with the campaign's own between-run endpoint.**
-   The reference endpoint is 4.235 mm/s; the E8->E20 step's mean
-   differences span -1.827 to
-   +2.408 mm/s (spread
-   4.235 mm/s, which is
-   the E20 level's own run-to-run spread, because a constant offset cannot change a spread),
-   so E8 sits **inside** the spread the four E20 runs show between themselves. The
-   E20->E64 step's means span -6.405 to
-   -2.170 mm/s, and E64->E128 is
-   -2.365 mm/s, both smaller in magnitude than the
-   reference's own four-run spread. Screening outcomes, not proofs of an axis effect.
+1. **The depth-averaged steps, each read against the campaign's own between-run endpoint.**
+   The reference endpoint is 4.235 mm/s, and the three steps do
+   not sit with it in the same way:
+   - *E8->E20*: the step's means span -1.827 to
+     +2.408 mm/s (spread
+     4.235 mm/s, which is
+     the E20 level's own run-to-run spread, because a constant offset cannot change a spread),
+     so **E8 sits inside the spread the four E20 runs show between themselves**.
+   - *E20->E64*: the step's means span -6.405 to
+     -2.170 mm/s. That span straddles the
+     4.235 mm/s reference floor, so **some of the four E20
+     realizations put the difference above it and some below it**: which realization E20 is taken
+     as decides the answer. E64 therefore reads as *suggestive against E20 and unresolved by this
+     pass*, not as sitting inside the pass's baseline variation.
+   - *E64->E128*: -2.365 mm/s, which lies **within** the
+     4.235 mm/s reference floor.
+   Screening outcomes, not proofs of an axis effect.
 2. **The per-gate extremes are the larger numbers, and they are what the depth-resolved
    endpoint screens.** The depth-resolved endpoint is
    14.603 mm/s at 21.238 mm; the
@@ -167,15 +173,15 @@ Every number below is measured on the **full retained record** from that file's 
 per-profile time array. The achieved period is the median of the successive differences of
 that array; the mean is published beside it:
 
-| level | record | profiles | record [s] | median period [ms] | mean period [ms] | rate [Hz] | Nyquist [Hz] | resolution [Hz] | transfer term [ms] | blocks | profiles/block | range |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| E8 | e8 | 828 | 12.5648 | 15.200 | 15.193 | 65.789 | 32.895 | 0.0796 | 10.400 | 6 | 132 | 131-132 |
-| E20 | cr1 | 561 | 12.5403 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 6 | 89 | 89-90 |
-| E20 | cr2 | 562 | 12.5626 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0796 | 10.400 | 6 | 89 | 89-90 |
-| E20 | cr3 | 561 | 12.5403 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 6 | 89 | 89-90 |
-| E20 | cr4 | 561 | 12.5402 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 6 | 89 | 89-90 |
-| E64 | e64 | 257 | 12.4911 | 48.800 | 48.793 | 20.492 | 10.246 | 0.0801 | 10.400 | 6 | 41 | 41-41 |
-| E128 | e128 | 145 | 12.5559 | 87.200 | 87.194 | 11.468 | 5.734 | 0.0796 | 10.400 | 6 | 23 | 23-23 |
+| level | record | profiles | record [s] | median period [ms] | mean period [ms] | rate [Hz] | Nyquist [Hz] | resolution [Hz] | fixed overhead [ms] | internal emission [ms] | transfer [ms] | blocks | profiles/block | range |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| E8 | e8 | 828 | 12.5648 | 15.200 | 15.193 | 65.789 | 32.895 | 0.0796 | 10.400 | 9.600 | 0.800 | 6 | 132 | 131-132 |
+| E20 | cr1 | 561 | 12.5403 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 9.600 | 0.800 | 6 | 89 | 89-90 |
+| E20 | cr2 | 562 | 12.5626 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0796 | 10.400 | 9.600 | 0.800 | 6 | 89 | 89-90 |
+| E20 | cr3 | 561 | 12.5403 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 9.600 | 0.800 | 6 | 89 | 89-90 |
+| E20 | cr4 | 561 | 12.5402 | 22.400 | 22.393 | 44.643 | 22.321 | 0.0797 | 10.400 | 9.600 | 0.800 | 6 | 89 | 89-90 |
+| E64 | e64 | 257 | 12.4911 | 48.800 | 48.793 | 20.492 | 10.246 | 0.0801 | 10.400 | 9.600 | 0.800 | 6 | 41 | 41-41 |
+| E128 | e128 | 145 | 12.5559 | 87.200 | 87.194 | 11.468 | 5.734 | 0.0796 | 10.400 | 9.600 | 0.800 | 6 | 23 | 23-23 |
 
 The four levels' achieved grids fall by a factor of 5.7 in rate from E8 to E128
 (65.789 Hz against
@@ -190,8 +196,12 @@ resolution is essentially the same at every level
 (0.0796 to
 0.0801 Hz), because every record retains
 about 12.5 s: the ladder's temporal cost lies in the *rate*, not in the resolution. The
-transfer term (`achieved - emissions x PRF`) is
-10.400 ms at every level.
+**fixed profile overhead** (`achieved - emissions x PRF`, the *intercept* of the period and
+not the transfer term) is 10.400 ms at every level,
+composed of 9.600 ms of internal emission - the 16
+PRF terms the manual's law carries, 16 x
+600 us - and
+0.800 ms of transfer term proper.
 
 ### The request's expected periods, beside this pass's measurements
 
@@ -239,12 +249,28 @@ and one mid-support:
 | e128 | E128 | 48.988 | 0.549 | 2 | 0.174 | 57.685 | 20.586 |
 | e128 | E128 | 76.738 | 0.572 | 2 | 0.174 | 24.607 | 15.617 |
 
-Read at a fixed *lag in seconds*, the higher levels decorrelate faster
-(0.087 s at e128
-against 0.046 s at e8), because each
-profile of a higher level averages a longer emissions block; read at a fixed *lag in
-profiles*, the ordering reverses. Both readings are one record per series, so neither is a
-replication statement.
+Two readings, reported independently because they answer different questions. *In physical
+time*, the correlation at these gates survives **longer** at the higher levels than at the
+lowest: the first lag below half is
+0.046 s at e8
+against
+0.087 s at e128, i.e. **slower**
+decorrelation in seconds at the higher emissions level - which is what a longer per-profile
+acoustic averaging interval predicts, since each E128 profile spans 87.2 ms
+against 15.2 ms at E8, so the recorded series is the
+smoother and lower-bandwidth one. It is not monotone across the ladder: at this gate E64's
+first lag below half is
+0.098 s,
+**longer** in physical time than E128's
+0.087 s, so the readings are
+"longer at higher emissions than at the lowest" and not "longer at every step". *In profile lags*, the ordering runs the other way: 
+3 profiles at
+e8 against
+1 at e128, i.e. fewer
+profiles when each profile covers more time. The two are consequences of the same grid
+difference read in two different units, and are published as two readings rather than as one
+ordering that "reverses". Both are one record per series (E20's four runs are the only level
+with repeats) at the three stated gates, so neither is a replication statement.
 
 ## The floors, and which endpoint applies where
 
@@ -284,8 +310,9 @@ bound drift, and they are not confidence intervals.
    slice says so rather than naming a winner.
 2. **Does E8 lose useful estimator stability?** It has the smallest within-job anchor spread
    of the ladder (1.521 mm/s), the highest profile rate
-   (65.789 Hz) and a series that decorrelates fastest in
-   seconds; nothing measured here shows E8's estimate degrading against E20's.
+   (65.789 Hz) and, at the gates measured, the shortest
+   physical correlation time of the four levels
+   (0.046 s, i.e. its series decorrelates fastest in seconds and slowest in profiles); nothing measured here shows E8's estimate degrading against E20's.
 3. **What is the bandwidth cost of each level?** The achieved period and profile rate above,
    with the profiles per 2 s block as the concrete price:
    E8 132, E20 89, E64 41, E128 23
