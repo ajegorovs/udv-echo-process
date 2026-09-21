@@ -286,8 +286,14 @@ profiles in one fixture and 4193–4927 in another.
 > screened against a between-run floor measured **inside that campaign**. An emissions-64-only top-up was rejected in
 > review and by the analysis itself: new emissions-64 runs compared against this pass's emissions-20
 > runs would be separated by a campaign as well as by an emission level, which is the nuisance
-> variation WP2 exists to warn about. It refuses a broad sweep on the pass's own evidence. **Next: the review's freeze, then whatever Stage-2 campaign that decision
-> justifies — and nothing else.** The work order and the acceptance gates are in
+> variation WP2 exists to warn about. It refuses a broad sweep on the pass's own evidence.
+> **The analysis phase is now complete: WP0–WP5 are all reviewed and frozen** (WP5 at head
+> `ad2913c`), and PR #27's scientific decision logic is closed — it changes again only for an actual
+> defect. **Next, and it is acquisition work rather than analysis: compile the eight-job
+> counterbalanced Stage-2 run plan and its operator sheet** — same sequence, fixed reference-window
+> condition, pair labels, read-back verification, and provenance enough for the later Stage-2
+> analysis to reconstruct each pair and its acquisition orientation without inference. Nothing else
+> in this workstream is open. The work order and the acceptance gates are in
 > [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
 > is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
 > **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked

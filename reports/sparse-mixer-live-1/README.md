@@ -10,6 +10,13 @@ documents the drift, reference, interaction and emissions work packages select f
 Nothing here measures a scientific effect, and nothing here changes acquisition. The
 ingest is the evidence a *later* step needs; the contrasts are that step's own.
 
+**Status of the whole report:** WP0–WP5 are **implemented, reviewed and frozen**
+(`analysis/sparse-pass-ingest`; WP5 at head `ad2913c`), so every table indexed below is now a
+frozen artefact and the scientific decision logic here changes again only for an actual defect.
+The decision table's one recommendation — eight run-level jobs in one campaign, counterbalanced
+pairs, emissions per profile the only varying setting — is a *design*; compiling its run plan
+and operator sheet is the next, separate acquisition work package.
+
 | artefact | what it is |
 |---|---|
 | [`points.csv`](points.csv) | one row per committed recording: identity, order, condition, requested and stored window, decoded settings, the achieved timing measured from the stored timestamps, the retention the file covers, the signal statistics of the common window on the common support, and the provenance that ties the row to the bytes, the log, the manifest and the plan |

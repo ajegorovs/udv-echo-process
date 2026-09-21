@@ -1,10 +1,12 @@
 # The sparse pass analysis — work plan
 
-> **Status:** the whole plan is **implemented and committed**
-> (`analysis/sparse-pass-ingest`): WP0–WP4 as the measurement slices and WP5 as the
-> decision synthesis built on their frozen artefacts
-> (`<report>/decision-table.{csv,json,md}`). WP0–WP4 were reviewed and **frozen**; WP5 is
-> in review. The earlier pair:
+> **Status:** the whole plan is **implemented, reviewed and frozen**, and this analysis
+> phase is complete (`analysis/sparse-pass-ingest`, WP5 frozen at head `ad2913c`): WP0–WP4 as
+> the measurement slices and WP5 as the decision synthesis built on their frozen artefacts
+> (`<report>/decision-table.{csv,json,md}`). Its scientific decision logic is **closed** —
+> it changes again only for an actual defect. The plan's endpoint is a *design*, not a run
+> plan: compiling the eight-job counterbalanced Stage-2 campaign of section 4b is the next,
+> separate acquisition work package. The earlier pair:
 > `<report>/anchor-floor.{csv,json,md}` with a figure per job, and
 > `<report>/reference-floor.{csv,json,md}` with its figure — and now
 > `<report>/pitch-burst.{csv,json,md}` with its figure and
