@@ -41,6 +41,7 @@ from udv_echo_process.acquire.log import (
     sweep_id_for,
 )
 from udv_echo_process.acquire.plan import SweepDefinition
+from udv_echo_process.io.dop.bdd import read
 
 MEASURED_SIZE_BYTES = 97_993  # the first point's file at 805 gates, 1.5 s
 MEASURED_SIZE_BYTES_ALT = 97_169
@@ -141,12 +142,48 @@ def test_decoded_block_can_be_built_from_a_word_mapping() -> None:
 
 
 def test_size_signature_matches_the_measured_points() -> None:
-    """805 gates over ~71 profiles: 97,993 B and 97,169 B were both real points."""
+    """The old 805-gate points are 79 and 78 structural BDD blocks exactly."""
     signature = SizeSignature()
-    assert signature.expected_bytes(805, 71) == 97_164
+    assert signature.expected_bytes(805, 79) == MEASURED_SIZE_BYTES
+    assert signature.expected_bytes(805, 78) == MEASURED_SIZE_BYTES_ALT
+    # The pre-recording estimate used ~71 profiles; its deliberately gross factor accepts
+    # the achieved 78-79 without learning the answer from the file under test.
     assert signature.matches(MEASURED_SIZE_BYTES, 805, 71) is True
     assert signature.matches(MEASURED_SIZE_BYTES_ALT, 805, 71) is True
-    assert signature.ratio(MEASURED_SIZE_BYTES, 805, 71) == pytest.approx(1.0085, abs=1e-4)
+    assert signature.ratio(MEASURED_SIZE_BYTES, 805, 71) == pytest.approx(1.0721, abs=1e-4)
+
+
+def test_size_signature_includes_the_bdd_container_at_low_profile_counts() -> None:
+    """The high-emissions files are small in profiles, not truncated or contaminated.
+
+    A BDD is not payload alone. It starts with 31,268 fixed bytes, then one depth block
+    (19 + 2 bytes per gate), then one signal block per profile (19 + 1 byte per gate).
+    The four live emissions-128 files are therefore 41,323 B **exactly** at their 144
+    measured profiles. The nominal period predicted 155 profiles; that expectation is
+    42,082 B and must accept the real file. The old ``1.7 * gates * profiles`` model
+    predicted only 13,175 B and falsely rejected every point at 3.14x.
+    """
+    signature = SizeSignature()
+
+    assert signature.expected_bytes(50, 144) == 41_323
+    assert signature.expected_bytes(50, 155) == 42_082
+    assert signature.matches(41_323, 50, 155) is True
+
+
+def test_size_signature_reproduces_every_committed_point() -> None:
+    """The law is exact on all 26 pass recordings, not merely close."""
+    signature = SizeSignature()
+    pass_root = Path(__file__).resolve().parents[1] / "data" / "sparse-mixer-first-pass"
+    paths = sorted(pass_root.glob("*.BDD"))
+    assert len(paths) == 26
+
+    for path in paths:
+        stream = read(path).recording.streams[0]
+        gates = stream.data.values.shape[1]
+        profiles = len(stream.data.time_s)
+        size = path.stat().st_size
+        assert signature.expected_bytes(gates, profiles) == size
+        assert signature.matches(size, gates, profiles) is True
 
 
 def test_size_signature_rejects_the_contaminated_point() -> None:
@@ -154,13 +191,13 @@ def test_size_signature_rejects_the_contaminated_point() -> None:
     signature = SizeSignature()
     assert signature.matches(CONTAMINATED_SIZE_BYTES, 805, 71) is False
     assert signature.ratio(CONTAMINATED_SIZE_BYTES, 805, 71) == pytest.approx(
-        10.7018, abs=1e-3
+        11.3765, abs=1e-3
     )
 
 
 @pytest.mark.parametrize(
     ("size_bytes", "expected"),
-    [(50_000, True), (97_164, True), (180_000, True), (200_000, False), (48_000, False)],
+    [(50_000, True), (91_401, True), (180_000, True), (200_000, False), (45_000, False)],
 )
 def test_size_signature_factor_is_a_band(size_bytes: int, expected: bool) -> None:
     assert SizeSignature(factor=2.0).matches(size_bytes, 805, 71) is expected

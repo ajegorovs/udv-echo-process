@@ -56,7 +56,8 @@ module can produce, so:
   rule may never be derived from the file it is checking.)
 
 **The expectation is built from the specification, never from the file.** The
-expected size is ``signature.expected_bytes(requested_gates, profiles)``, with
+expected size is ``signature.expected_bytes(requested_gates, profiles)``: the BDD
+container's fixed 31,268 bytes, its one depth block, and the signal blocks implied by
 ``profiles = T / period`` from the point's own ``emissions_per_profile`` and
 ``prf_us`` (the measured ``emissions × PRF + ~1 ms`` law). An expectation taken
 from the file under test would simply agree with it — 6,000 stale profiles would

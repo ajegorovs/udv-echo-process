@@ -208,7 +208,17 @@ def _block_for(path: Path | None, *, fake: FakeActuator | None = None) -> Script
     profiles = None if fake is None else fake.profiles_for(DURATION_S)
     gates = GATES
     if size is not None and profiles:
-        gates = max(1, round(size / (signature.bytes_per_gate_profile * profiles)))
+        numerator = (
+            size
+            - signature.container_bytes
+            - signature.block_overhead_bytes
+            - profiles * signature.block_overhead_bytes
+        )
+        denominator = (
+            signature.depth_bytes_per_gate
+            + profiles * signature.bytes_per_gate_profile
+        )
+        gates = max(1, round(numerator / denominator))
     return ScriptedBlock(
         channel=1,
         n_gates=gates,
