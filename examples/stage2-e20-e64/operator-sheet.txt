@@ -1,0 +1,117 @@
+run plan    : stage2-e20-e64
+directory   : examples/stage2-e20-e64
+jobs        : 8 (8 run-level), 8 recording(s)
+fixed frame : sound speed 1480.0 m/s, first gate 10.0 mm (both dialog-only — set by hand; a disagreement refuses)
+window      : 12 s per recording; store outputs/live/store; names stage2-<job>-<label>-<stamp>
+block cap   : at least 2500 profiles — the pass's own requirement (the active cap is an application preference no reader here reaches; confirm it by hand and record what it says)
+raised facts: ['emissions_per_profile'] — a disagreement on any of them refuses before the first recording, and the stored file's own word must agree as well
+pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64, D: 64 -> 20
+              each pair is read E64 - E20 whatever order it was recorded in; the order is the counterbalancing, not the comparison's sign
+
+--- step 1 of 8: e20-a [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e20-a.json
+    log        : outputs/live/store/stage2-e20-e64-e20-a.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : A, lead of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-a' at 64
+                    acquisition orientation 20 -> 64; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e20-a-ref                 1.850 mm x 50 gates  (531 profiles)
+
+--- step 2 of 8: e64-a [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e64-a.json
+    log        : outputs/live/store/stage2-e20-e64-e64-a.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : A, follow of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-a' at 20
+                    acquisition orientation 20 -> 64; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e64-a-ref                 1.850 mm x 50 gates  (245 profiles)
+
+--- step 3 of 8: e64-b [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e64-b.json
+    log        : outputs/live/store/stage2-e20-e64-e64-b.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : B, lead of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-b' at 20
+                    acquisition orientation 64 -> 20; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e64-b-ref                 1.850 mm x 50 gates  (245 profiles)
+
+--- step 4 of 8: e20-b [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e20-b.json
+    log        : outputs/live/store/stage2-e20-e64-e20-b.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : B, follow of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-b' at 64
+                    acquisition orientation 64 -> 20; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e20-b-ref                 1.850 mm x 50 gates  (531 profiles)
+
+--- step 5 of 8: e20-c [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e20-c.json
+    log        : outputs/live/store/stage2-e20-e64-e20-c.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : C, lead of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-c' at 64
+                    acquisition orientation 20 -> 64; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e20-c-ref                 1.850 mm x 50 gates  (531 profiles)
+
+--- step 6 of 8: e64-c [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e64-c.json
+    log        : outputs/live/store/stage2-e20-e64-e64-c.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : C, follow of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-c' at 20
+                    acquisition orientation 20 -> 64; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e64-c-ref                 1.850 mm x 50 gates  (245 profiles)
+
+--- step 7 of 8: e64-d [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e64-d.json
+    log        : outputs/live/store/stage2-e20-e64-e64-d.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : D, lead of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-d' at 20
+                    acquisition orientation 64 -> 20; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e64-d-ref                 1.850 mm x 50 gates  (245 profiles)
+
+--- step 8 of 8: e20-d [run-level] ---
+    definition : examples/stage2-e20-e64/jobs/e20-d.json
+    log        : outputs/live/store/stage2-e20-e64-e20-d.jsonl
+    run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
+                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
+                    prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
+    pair       : D, follow of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-d' at 64
+                    acquisition orientation 64 -> 20; analysis orientation E64 - E20 for every pair, whatever its order
+    points     :
+         1. ref          stage2-e20-d-ref                 1.850 mm x 50 gates  (531 profiles)
+
+the pass holds fixed, with no reader here (docs/dop3000/sparse-parameter-set.md §1):
+    emitting frequency: 4 MHz
+    Doppler angle: 0
+    velocity scale factor: 1
+    TGC: uniform ≈20 dB (word 23 = 0, word 25 = 255, word 24 start ≈19.92 dB)
+    emitting power: medium
+    sensitivity: medium — D1's `high` is not acquired in this pass
+    skipped profiles: 0 (word 84)
+    assisted mode / filtering during acquisition / alias auto-correction: OFF
+                none of these is machine-verifiable: no reader in this repository reaches them, so the pass is enforced by the compile only where a reader exists (the run-wide burst, emissions and PRF above) and by the operator everywhere else
+                confirm every one of them ONCE at the start of the campaign, record what the application says, and do not touch any of them between jobs: "the same settings except emissions" is a property of the sitting, not of the files

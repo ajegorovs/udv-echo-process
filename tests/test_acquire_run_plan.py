@@ -85,7 +85,9 @@ REFERENCE_WINDOW = (1.85, 50)
 
 def _load_decision_layer():
     """Import the WP4 validator from ``tools/`` (it is not an installed package)."""
-    spec = importlib.util.spec_from_file_location("validate_decision_layer_plan", TOOL_PATH)
+    spec = importlib.util.spec_from_file_location(
+        "validate_decision_layer_plan", TOOL_PATH
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -196,8 +198,13 @@ def test_the_committed_pass_plans_clean() -> None:
     """The acceptance criterion in one case: nine jobs compile as written, statically."""
     run = committed_run()
     assert [
-        (job.step, job.job, job.kind.value, job.condition.burst_length,
-         job.condition.emissions_per_profile)
+        (
+            job.step,
+            job.job,
+            job.kind.value,
+            job.condition.burst_length,
+            job.condition.emissions_per_profile,
+        )
         for job in run.jobs
     ] == list(EXPECTED_ORDER)
     assert len(run.scientific_jobs) == 5
@@ -312,7 +319,9 @@ def test_every_control_is_the_passes_reference_window() -> None:
             ) == REFERENCE_WINDOW
 
 
-def test_every_common_reference_job_is_one_recording_of_the_reference_condition() -> None:
+def test_every_common_reference_job_is_one_recording_of_the_reference_condition() -> (
+    None
+):
     run = committed_run()
     for job in run.common_reference_jobs:
         assert job.recordings == 1
@@ -328,8 +337,14 @@ def test_the_separations_are_the_order_the_design_intends() -> None:
     run = committed_run()
     assert run_plan.separates(run, "common-reference-1") == ("burst-4", "burst-18")
     assert run_plan.separates(run, "common-reference-2") == ("burst-18", "emissions-8")
-    assert run_plan.separates(run, "common-reference-3") == ("emissions-8", "emissions-64")
-    assert run_plan.separates(run, "common-reference-4") == ("emissions-64", "emissions-128")
+    assert run_plan.separates(run, "common-reference-3") == (
+        "emissions-8",
+        "emissions-64",
+    )
+    assert run_plan.separates(run, "common-reference-4") == (
+        "emissions-64",
+        "emissions-128",
+    )
     assert run_plan.separates(run, "burst-4") == (None, None)
 
 
@@ -339,9 +354,10 @@ def test_identities_are_unique_across_the_whole_pass() -> None:
     identities = [point.identity for job in run.jobs for point in job.points]
     assert len(set(identities)) == len(identities) == run.recordings
     assert identities[0] == "sparse1-burst-4-ctrl-begin"
-    assert run_plan.job_prefix(
-        run_plan.load_run_plan(PLAN_FILE), "burst-4"
-    ) == "sparse1-burst-4"
+    assert (
+        run_plan.job_prefix(run_plan.load_run_plan(PLAN_FILE), "burst-4")
+        == "sparse1-burst-4"
+    )
 
 
 def test_the_declared_block_cap_is_the_passes_own_requirement() -> None:
@@ -362,9 +378,9 @@ def test_the_log_and_record_paths_are_derived_from_the_plan() -> None:
     assert run_plan.run_manifest_path(plan) == Path(
         "outputs/live/store/sparse-mixer-first-pass.run.json"
     )
-    assert run_plan.job_log_path(
-        plan, job, store_dir="C:/tmp/store"
-    ) == Path("C:/tmp/store/sparse-mixer-first-pass-burst-4.jsonl")
+    assert run_plan.job_log_path(plan, job, store_dir="C:/tmp/store") == Path(
+        "C:/tmp/store/sparse-mixer-first-pass-burst-4.jsonl"
+    )
 
 
 def test_the_expected_point_order_is_begin_middle_end_for_one_and_two_rows() -> None:
@@ -435,7 +451,9 @@ def test_every_job_of_the_pass_is_a_job_of_the_accepted_rows() -> None:
     """Each job's run-wide values and recordings are the rows' own, field for field."""
     tool = _load_decision_layer()
     text = (REPO / tool.DECISION_TABLE).read_text(encoding="utf-8")
-    rows = [row for row in tool.parse_rows(text, tool.DECISION_TABLE) if row.job != "none"]
+    rows = [
+        row for row in tool.parse_rows(text, tool.DECISION_TABLE) if row.job != "none"
+    ]
     run = committed_run()
     for job in run.jobs:
         job_rows = [row for row in rows if row.job == job.job]
@@ -501,7 +519,9 @@ def test_no_file_of_the_pass_names_a_sensitivity() -> None:
 # --------------------------------------------------------------------------------------------
 
 
-def test_a_job_that_disagrees_with_the_plans_run_wide_value_is_refused(tmp_path: Path) -> None:
+def test_a_job_that_disagrees_with_the_plans_run_wide_value_is_refused(
+    tmp_path: Path,
+) -> None:
     path = pass_copy(tmp_path)
     payload = job_payload(path, "burst-4")
     payload["burst_length"] = 18
@@ -546,7 +566,9 @@ def test_a_declared_window_that_nothing_acquires_is_refused(tmp_path: Path) -> N
     assert "windows nothing acquires" in refuses(path)
 
 
-def test_a_block_local_control_off_the_reference_window_is_refused(tmp_path: Path) -> None:
+def test_a_block_local_control_off_the_reference_window_is_refused(
+    tmp_path: Path,
+) -> None:
     path = pass_copy(tmp_path)
     payload = job_payload(path, "burst-4")
     payload["points"][0]["parameters"]["gates"] = 31
@@ -580,7 +602,9 @@ def test_a_job_that_moves_the_prf_is_refused(tmp_path: Path) -> None:
     assert "PRF 400 us" in message and "holds 600" in message
 
 
-def test_a_job_whose_plan_entry_disagrees_with_its_file_is_refused(tmp_path: Path) -> None:
+def test_a_job_whose_plan_entry_disagrees_with_its_file_is_refused(
+    tmp_path: Path,
+) -> None:
     """The plan states a job's run-wide values and the definition states them again."""
     path = pass_copy(tmp_path)
     payload = job_payload(path, "burst-4")
@@ -611,7 +635,9 @@ def test_a_common_reference_job_with_two_points_is_refused(tmp_path: Path) -> No
     assert "one recording" in refuses(path)
 
 
-def test_a_common_reference_record_labelled_as_a_control_is_refused(tmp_path: Path) -> None:
+def test_a_common_reference_record_labelled_as_a_control_is_refused(
+    tmp_path: Path,
+) -> None:
     path = pass_copy(tmp_path)
     payload = job_payload(path, "common-reference-1")
     payload["points"][0]["label"] = "ctrl-begin"
@@ -629,7 +655,9 @@ def test_two_jobs_sharing_a_label_are_refused(tmp_path: Path) -> None:
     assert "name_prefix" in message and "identity" not in message.split("\n")[0]
 
 
-def test_a_job_whose_controls_are_not_at_begin_middle_end_is_refused(tmp_path: Path) -> None:
+def test_a_job_whose_controls_are_not_at_begin_middle_end_is_refused(
+    tmp_path: Path,
+) -> None:
     path = pass_copy(tmp_path)
     payload = job_payload(path, "burst-4")
     points = payload["points"]
@@ -706,7 +734,9 @@ def test_the_live_pass_is_the_same_design_under_a_new_identity() -> None:
     assert [job.step for job in live.jobs] == [job.step for job in first.jobs]
     assert [job.kind for job in live.jobs] == [job.kind for job in first.jobs]
     assert [job.condition for job in live.jobs] == [job.condition for job in first.jobs]
-    assert [job.definition for job in live.jobs] == [job.definition for job in first.jobs]
+    assert [job.definition for job in live.jobs] == [
+        job.definition for job in first.jobs
+    ]
     # The definition hash covers the naming prefix, so it moves with the run identity — and it
     # is the only per-job field that does.
     assert [job.definition_fingerprint for job in live.jobs] != [
@@ -777,7 +807,9 @@ def test_a_definition_outside_the_plans_directory_is_refused(tmp_path: Path) -> 
     assert "climbs out" in str(error.value)
 
 
-def test_the_job_sequence_must_alternate_scientific_and_reference(tmp_path: Path) -> None:
+def test_the_job_sequence_must_alternate_scientific_and_reference(
+    tmp_path: Path,
+) -> None:
     path = pass_copy(tmp_path)
     payload = plan_payload(path)
     payload["jobs"][0]["kind"] = "common-reference"
@@ -874,7 +906,9 @@ def test_a_job_that_is_not_next_is_refused_by_name(tmp_path: Path) -> None:
     assert "burst-4" in message and "pending" in message
 
 
-def test_raising_a_fact_no_stored_file_carries_is_refused_by_the_plan(tmp_path: Path) -> None:
+def test_raising_a_fact_no_stored_file_carries_is_refused_by_the_plan(
+    tmp_path: Path,
+) -> None:
     """The plan's own vocabulary check: a raise has to be enforceable on both sides of a recording."""
     path = pass_copy(tmp_path)
     payload = plan_payload(path)
@@ -997,7 +1031,12 @@ def test_a_resumed_job_reports_what_it_skipped() -> None:
         manifest,
         run,
         job,
-        job_manifest_for(run, job, ok=3, skipped=("sparse1-burst-4-ctrl-begin", "sparse1-burst-4-cc1")),
+        job_manifest_for(
+            run,
+            job,
+            ok=3,
+            skipped=("sparse1-burst-4-ctrl-begin", "sparse1-burst-4-cc1"),
+        ),
     )
     assert manifest.jobs[0].skipped == (
         "sparse1-burst-4-ctrl-begin",
@@ -1055,12 +1094,18 @@ def test_the_sheet_says_which_run_wide_fact_refuses_and_which_only_advises() -> 
         "prf_us: read from the measurement screen's parameter column; a disagreement refuses"
         in sheet
     )
-    assert "emissions_per_profile: read from the measurement screen's parameter column" in sheet
+    assert (
+        "emissions_per_profile: read from the measurement screen's parameter column"
+        in sheet
+    )
     assert "this pass raises it to a refusal" in sheet
     assert "the stored file's own word has to agree as well" in sheet
     assert "raised facts: ['emissions_per_profile']" in sheet
     # The default sentence is what an ordinary campaign keeps, and it is not this pass's.
-    assert "is advisory to the stored-file verifier — confirm it on the screen" not in sheet
+    assert (
+        "is advisory to the stored-file verifier — confirm it on the screen"
+        not in sheet
+    )
 
 
 def test_the_sheet_names_the_settings_no_reader_reaches_and_the_cap() -> None:
@@ -1075,7 +1120,10 @@ def test_the_sheet_names_the_settings_no_reader_reaches_and_the_cap() -> None:
 def test_the_sheet_places_each_reference_check_between_its_two_jobs() -> None:
     sheet = run_plan.operator_setup_sheet(committed_run())
     assert "placement  : the reference check between 'burst-4' and 'burst-18'" in sheet
-    assert "placement  : the reference check between 'emissions-64' and 'emissions-128'" in sheet
+    assert (
+        "placement  : the reference check between 'emissions-64' and 'emissions-128'"
+        in sheet
+    )
 
 
 # --------------------------------------------------------------------------------------------
@@ -1083,7 +1131,9 @@ def test_the_sheet_places_each_reference_check_between_its_two_jobs() -> None:
 # --------------------------------------------------------------------------------------------
 
 
-def test_the_cli_check_prints_the_jobs_and_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_cli_check_prints_the_jobs_and_exits_zero(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     with pytest.raises(SystemExit) as exit_info:
         acquire_main(["run-plan", "--plan", str(PLAN_FILE), "--check"])
     assert exit_info.value.code == 0
@@ -1114,7 +1164,9 @@ def test_the_cli_check_json_is_the_only_thing_on_stdout(
     assert payload["strict_facts"] == ["emissions_per_profile"]
 
 
-def test_the_cli_sheet_prints_the_operator_sheet(capsys: pytest.CaptureFixture[str]) -> None:
+def test_the_cli_sheet_prints_the_operator_sheet(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     with pytest.raises(SystemExit) as exit_info:
         acquire_main(["run-plan", "--plan", str(PLAN_FILE), "--sheet"])
     assert exit_info.value.code == 0
@@ -1148,10 +1200,13 @@ def test_the_cli_status_reports_a_record_and_the_next_job(
     store = tmp_path / "store"
     store.mkdir()
     manifest = run_plan.new_run_manifest(run, store_dir=store)
-    manifest = run_plan.record_job(manifest, run, run.jobs[0], job_manifest_for(run, run.jobs[0]))
-    run_plan.write_run_manifest(run_plan.run_manifest_path(
-        run_plan.load_run_plan(PLAN_FILE), store_dir=store
-    ), manifest)
+    manifest = run_plan.record_job(
+        manifest, run, run.jobs[0], job_manifest_for(run, run.jobs[0])
+    )
+    run_plan.write_run_manifest(
+        run_plan.run_manifest_path(run_plan.load_run_plan(PLAN_FILE), store_dir=store),
+        manifest,
+    )
 
     with pytest.raises(SystemExit) as exit_info:
         acquire_main(
@@ -1245,11 +1300,88 @@ def test_the_cli_next_hands_the_next_job_to_the_campaign_path(
     assert seen["strict_facts"] == ("emissions_per_profile",)
     # The pass's record is written and stands at step 2 afterwards.
     written = run_plan.read_run_manifest(
-        run_plan.run_manifest_path(
-            run_plan.load_run_plan(PLAN_FILE), store_dir=store
-        )
+        run_plan.run_manifest_path(run_plan.load_run_plan(PLAN_FILE), store_dir=store)
     )
     assert written.next_step == 2
     assert written.jobs[0].status is run_plan.RunJobStatus.OK
     out = capsys.readouterr().out
     assert "step 1 of 9: burst-4" in out
+
+
+# --------------------------------------------------------------------------------------------
+# The plan fingerprint covers what a plan states, and nothing it leaves absent
+# --------------------------------------------------------------------------------------------
+
+#: The two committed passes' fingerprints as they were recorded when those passes ran. They are
+#: pinned here, not recomputed, because they are the *provenance* the pass records answer: a change
+#: that moves them would mean a record of a recording that already happened no longer describes the
+#: plan it ran against, and reconciling it could only mean rewriting the record.
+RECORDED_PLAN_FINGERPRINTS: tuple[tuple[str, str], ...] = (
+    ("sparse-mixer-first-pass", "c22d46236726"),
+    ("sparse-mixer-live-1", "655298032dab"),
+)
+
+
+def test_the_committed_passes_still_hash_to_their_recorded_fingerprints() -> None:
+    """A schema addition must not move a fingerprint a stored pass record answers."""
+    for name, recorded in RECORDED_PLAN_FINGERPRINTS:
+        plan = run_plan.load_run_plan(REPO / "examples" / name / "run-plan.json")
+        assert run_plan.plan_fingerprint(plan).startswith(recorded), name
+
+
+def test_an_absent_optional_is_not_part_of_a_plans_identity() -> None:
+    """Stating an optional as null and leaving it out are the same design, and hash alike.
+
+    This is what lets a field be added additively: the plans already on disk do not carry the new
+    keys, so they have to keep hashing as they did.
+    """
+    payload = json.loads(LIVE_PLAN_FILE.read_text(encoding="utf-8"))
+    plan = run_plan.load_run_plan(LIVE_PLAN_FILE)
+    stated_null = {**payload, "analysis_orientation": None}
+    assert run_plan.RunPlan.model_validate(stated_null).analysis_orientation is None
+    assert run_plan.plan_fingerprint(plan) == run_plan.plan_fingerprint(
+        run_plan.RunPlan.model_validate(stated_null)
+    )
+    changed = {**payload, "duration_s": payload["duration_s"] + 1}
+    assert run_plan.plan_fingerprint(
+        run_plan.RunPlan.model_validate(changed)
+    ) != run_plan.plan_fingerprint(plan), (
+        "a changed *stated* value must move the fingerprint"
+    )
+
+
+def test_the_stage2_passs_pair_metadata_is_inside_its_fingerprint() -> None:
+    """The exception to the rule above: what the pass *does* state is covered, pair design included.
+
+    The Stage-2 campaign declares its pairs, roles and analysis orientation, so the fingerprint a
+    later reader checks its record against depends on them - an additive field is only invisible
+    while it is absent.
+    """
+    plan_file = REPO / "examples" / "stage2-e20-e64" / "run-plan.json"
+    plan = run_plan.load_run_plan(plan_file)
+    payload = json.loads(plan_file.read_text(encoding="utf-8"))
+    marked = plan.model_dump(mode="json")
+    assert marked["analysis_orientation"] == run_plan.ANALYSIS_ORIENTATION
+    assert [job["pair"] for job in marked["jobs"]] == [
+        "A",
+        "A",
+        "B",
+        "B",
+        "C",
+        "C",
+        "D",
+        "D",
+    ]
+    assert [job["role"] for job in marked["jobs"]] == ["lead", "follow"] * 4
+
+    # a different — and still valid — pair labelling is a different design, so it must hash apart
+    relabelled = {
+        **payload,
+        "jobs": [
+            {**job, "pair": {"A": "C", "C": "A"}.get(job["pair"], job["pair"])}
+            for job in payload["jobs"]
+        ],
+    }
+    assert run_plan.plan_fingerprint(
+        run_plan.RunPlan.model_validate(relabelled)
+    ) != run_plan.plan_fingerprint(plan)

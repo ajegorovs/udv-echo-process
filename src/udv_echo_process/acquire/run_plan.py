@@ -79,12 +79,14 @@ from udv_echo_process.acquire.snapshot import SUPPORTED_READ_FACTS
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "ANALYSIS_ORIENTATION",
     "CONTROL_LABELS",
     "CONTROL_PREFIX",
     "MANUAL_SETTINGS",
     "REFERENCE_DOCUMENT",
     "RUN_MANIFEST_SUFFIX",
     "JobKind",
+    "PairRole",
     "PlannedJob",
     "PlannedRun",
     "PlannedWindow",
@@ -129,6 +131,14 @@ CONTROL_LABELS: tuple[str, ...] = ("ctrl-begin", "ctrl-mid", "ctrl-end")
 
 #: ``<log>.jsonl`` -> ``<plan>.run.json``: the pass's own record, beside the store it describes.
 RUN_MANIFEST_SUFFIX = ".run.json"
+
+#: The fixed analysis orientation of a paired pass: every pair is read **E64 minus E20**, whatever
+#: order it was acquired in. The design is recorded in ``docs/dop3000/stage2-run-plan.md``, which
+#: ships with the pass it describes and cites the analysis that decided it. A
+#: paired pass states it and the plan refuses any other value, because an orientation that could
+#: differ from pair to pair is an analysis that would have to infer it — and the acquisition order
+#: of a counterbalanced design is precisely what must *not* carry the comparison's sign.
+ANALYSIS_ORIENTATION = "E64 - E20"
 
 #: The settings of the pass that **no writer and no reader of this repository reaches**, stated on
 #: the operator's sheet because the design fixes them (``sparse-parameter-set.md`` §1) and a pass
@@ -182,10 +192,29 @@ class JobKind(str, Enum):
         A reference-only job: one recording of the true reference condition, intended to be
         executed **between** two scientific jobs. It acquires no new condition, which is why it has
         no controls and exactly one point (design §3.2).
+    ``RUN_LEVEL``
+        One run-level observation of the pass's reference window at its own emissions level, with
+        no block-local controls — the unit of a **paired** pass, where two of them, counterbalanced,
+        make one pair whose only difference is emissions per profile. A pass of run-level jobs has
+        no scientific job at all: nothing inside it is being crossed, the *between-pair* comparison
+        is the experiment (``docs/dop3000/stage2-run-plan.md``).
     """
 
     SCIENTIFIC = "scientific"
     COMMON_REFERENCE = "common-reference"
+    RUN_LEVEL = "run-level"
+
+
+class PairRole(str, Enum):
+    """A run-level job's place in its pair: the one that opens the pair, or the one that closes it.
+
+    Both roles are recorded, because the pair is counterbalanced: which level leads is a design
+    fact (two pairs each way) and the later analysis must be able to read it off the record rather
+    than infer it from a sequence.
+    """
+
+    LEAD = "lead"
+    FOLLOW = "follow"
 
 
 class RunJobStatus(str, Enum):
@@ -259,6 +288,35 @@ class RunPlanJob(ValueModel):
     #: Where the job's definition lives, **relative to the run plan's own directory**.
     definition: str = Field(min_length=1)
     condition: RunCondition
+    #: The pair this job belongs to, for a run-level pass: one capital letter, shared by exactly two
+    #: consecutive jobs. ``None`` in a sweep pass, where pairing is not a notion.
+    pair: str | None = None
+    #: This job's place in that pair. Stated rather than derived, so the record carries it.
+    role: PairRole | None = None
+
+    @field_validator("pair")
+    @classmethod
+    def _check_pair(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if len(value) != 1 or not value.isupper() or not value.isalpha():
+            raise ValueError(
+                f"{value!r} is not a pair id: a pair is named by one capital letter (A, B, ...), "
+                "so that a pair is named the same way in the plan, the sheet and the run record"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _check_pairing(self) -> RunPlanJob:
+        """A pair id and a role are one statement: half of it names nothing."""
+        if (self.pair is None) != (self.role is None):
+            raise ValueError(
+                f"step {self.step} ({self.job!r}) states "
+                f"{'a pair' if self.pair is not None else 'a role'} without "
+                f"{'a role' if self.pair is not None else 'a pair'}: a job is in a pair *as* its "
+                "lead or its follow, and half of that is a job nobody can place"
+            )
+        return self
 
     @field_validator("job")
     @classmethod
@@ -337,6 +395,9 @@ class RunPlan(ValueModel):
     windows: tuple[PlannedWindow, ...]
     #: The fixed facts this pass raises to refusal (:data:`~udv_echo_process.acquire.campaign.STRICTABLE_FACTS`).
     strict_facts: tuple[str, ...] = ()
+    #: A paired pass states the orientation its pairs are *read* at (:data:`ANALYSIS_ORIENTATION`).
+    #: ``None`` for a sweep pass, which has no pairs to orient.
+    analysis_orientation: str | None = None
     jobs: tuple[RunPlanJob, ...]
 
     @field_validator("plan", "name_prefix", "store_dir")
@@ -428,9 +489,20 @@ class RunPlan(ValueModel):
             )
         kinds = [job.kind for job in self.jobs]
         if JobKind.SCIENTIFIC not in kinds:
+            self._check_run_level_pass()
+            return self
+        if any(job.kind is JobKind.RUN_LEVEL for job in self.jobs):
             raise ValueError(
-                "a pass must hold at least one scientific job: common-reference jobs exist to "
-                "separate scientific ones (" + REFERENCE_DOCUMENT + " §3.2)"
+                "a pass holds either scientific jobs with common references between them, or "
+                "run-level jobs in pairs, and this one holds both "
+                f"({[kind.value for kind in kinds]}): the two are different designs, and a "
+                "run-level job inside a sweep is a pair with no partner to compare against"
+            )
+        if any(job.pair is not None or job.role is not None for job in self.jobs):
+            raise ValueError(
+                "this pass names pairs where it holds scientific jobs: pairing is the run-level "
+                "design's own structure, and a sweep pass reads its comparisons off its jobs' "
+                "conditions instead"
             )
         if kinds[0] is not JobKind.SCIENTIFIC or kinds[-1] is not JobKind.SCIENTIFIC:
             raise ValueError(
@@ -450,6 +522,133 @@ class RunPlan(ValueModel):
                 )
         return self
 
+    def _check_run_level_pass(self) -> None:
+        """The paired design: counterbalanced pairs of run-level jobs, emissions the only variable.
+
+        Every rule here is a property of the paired design the Stage-2 campaign states
+        (``docs/dop3000/stage2-run-plan.md``) rather than a matter of taste:
+
+        * the pass is run-level jobs only — a scientific or reference-only job belongs to the sweep
+          design, and mixing the two would leave a pair with nothing to compare against;
+        * jobs come in pairs: the count is even, and each pair is a *consecutive* pair of steps with
+          one lead and one follow, so the pass's order is the counterbalancing it claims;
+        * the two jobs of a pair differ in emissions per profile and in nothing else, and every pair
+          compares the same two levels — otherwise the pass would be measuring more than one thing
+          at once;
+        * the level that **leads** is the lower one in exactly half the pairs. That is what makes
+          the design counterbalanced: with one level always first, a short-timescale order effect
+          would be confounded with the emissions contrast the pairs exist to measure;
+        * the pass raises emissions per profile to a refusal, because it is the pass's only varying
+          run-wide setting: without the raise, a job recorded at the wrong level would be accepted
+          and the pair would compare two jobs that are not two levels;
+        * the analysis orientation is stated and is :data:`ANALYSIS_ORIENTATION`.
+        """
+        jobs = self.jobs
+        if any(job.kind is not JobKind.RUN_LEVEL for job in jobs):
+            raise ValueError(
+                "a pass with no scientific job is the run-level design, so every job of it is a "
+                f"run-level job, got {[kind.value for kind in (job.kind for job in jobs)]}"
+            )
+        if len(jobs) % 2:
+            raise ValueError(
+                f"a run-level pass is run in pairs, so its job count is even, got {len(jobs)}: "
+                "the counterbalancing *is* the pairing, and an odd job is a pair with no partner"
+            )
+        if self.analysis_orientation != ANALYSIS_ORIENTATION:
+            raise ValueError(
+                f"a run-level pass is read at {ANALYSIS_ORIENTATION!r} for every pair, whatever "
+                f"order it was acquired in, and this plan states {self.analysis_orientation!r}: the "
+                "orientation is a property of the design, not of the sequence the jobs happen to "
+                "be listed in"
+            )
+        if "emissions_per_profile" not in self.strict_facts:
+            raise ValueError(
+                "a run-level pass varies emissions per profile and nothing else, so it has to "
+                "raise that fact to a refusal (strict_facts): the pair's whole meaning is which "
+                "level each job recorded at, and without the raise a job run at the wrong level "
+                "would be accepted as the one the plan asked for"
+            )
+        reference = self.reference_condition
+        for job in jobs:
+            if (
+                job.condition.burst_length != reference.burst_length
+                or job.condition.prf_us != reference.prf_us
+            ):
+                raise ValueError(
+                    f"step {job.step} ({job.job!r}) records at burst "
+                    f"{job.condition.burst_length} / PRF {job.condition.prf_us} where a run-level "
+                    f"pass fixes both at its reference condition's {reference.burst_length} / "
+                    f"{reference.prf_us}: emissions per profile is the only run-wide setting a "
+                    "pair varies"
+                )
+        pairs: dict[str, list[RunPlanJob]] = {}
+        for index in range(0, len(jobs), 2):
+            first, second = jobs[index], jobs[index + 1]
+            assert first.pair is not None and second.pair is not None
+            if first.pair != second.pair:
+                raise ValueError(
+                    f"steps {first.step} and {second.step} are consecutive but sit in different "
+                    f"pairs ({first.pair!r} and {second.pair!r}): a pair is two consecutive jobs, "
+                    "so the acquisition order is the counterbalancing the design states"
+                )
+            if first.role is not PairRole.LEAD or second.role is not PairRole.FOLLOW:
+                raise ValueError(
+                    f"pair {first.pair!r} labels {first.job!r} "
+                    f"{first.role.value if first.role else None!r} and {second.job!r} "
+                    f"{second.role.value if second.role else None!r}, where the job that runs first "
+                    "is the pair's lead: the role *is* which job opens the pair, so a set of labels "
+                    "that disagrees with the pass's own order would put an orientation on the "
+                    "record that no job acquired"
+                )
+            levels = {
+                first.condition.emissions_per_profile,
+                second.condition.emissions_per_profile,
+            }
+            if len(levels) != 2:
+                raise ValueError(
+                    f"pair {first.pair!r} records both of its jobs at emissions "
+                    f"{first.condition.emissions_per_profile}: a pair exists to compare two levels, "
+                    "and a pair at one level compares the same job with itself"
+                )
+            pairs.setdefault(first.pair, []).extend((first, second))
+        if any(len(members) != 2 for members in pairs.values()):
+            repeated = sorted(
+                name for name, members in pairs.items() if len(members) != 2
+            )
+            raise ValueError(
+                f"pair id(s) {repeated} name more than one pair: a pair letter names one pair of "
+                "the pass, so a later pair cannot reuse its letter"
+            )
+        ladders = {
+            tuple(sorted(levels))
+            for levels in (
+                [m.condition.emissions_per_profile for m in members]
+                for members in pairs.values()
+            )
+        }
+        if len(ladders) != 1:
+            raise ValueError(
+                f"the pairs do not compare the same two levels: {sorted(ladders)}. A pass is one "
+                "comparison repeated for replication, so every pair holds the same pair of levels"
+            )
+        ladder = next(iter(ladders))
+        if len(ladder) != 2:
+            raise ValueError(
+                f"the pass's pairs compare {list(ladder)}, which is one level rather than two"
+            )
+        low = ladder[0]
+        leads = [
+            members[0].condition.emissions_per_profile for members in pairs.values()
+        ]
+        if leads.count(low) * 2 != len(pairs):
+            raise ValueError(
+                f"the pair order is not counterbalanced: {leads.count(low)} of {len(pairs)} pairs "
+                f"lead with the lower level {low}, where half of them must ({len(pairs) // 2}). "
+                "With one level always first, a short-timescale order effect — handling time, "
+                "thermal or mixer evolution, settling after an emissions change — is confounded "
+                "with the emissions contrast the pairs exist to measure"
+            )
+
 
 class PlannedJob(ValueModel):
     """One job as it will run: the plan's entry plus the points ``plan_campaign`` produced.
@@ -467,6 +666,11 @@ class PlannedJob(ValueModel):
     condition: RunCondition
     definition_fingerprint: str
     points: tuple[PlannedPoint, ...]
+    #: The pair this job belongs to and its place in it, carried from the plan (``None`` in a
+    #: sweep pass). Copied rather than looked up, so a record built from this job names its pair
+    #: even if the plan's job list is later reordered.
+    pair: str | None = None
+    role: PairRole | None = None
 
     @property
     def recordings(self) -> int:
@@ -518,6 +722,9 @@ class PlannedRun(ValueModel):
     #: The facts the pass raises to refusal, carried so the sheet, the record and the run all state
     #: the same policy.
     strict_facts: tuple[str, ...] = ()
+    #: The orientation this pass's pairs are read at, copied from the plan
+    #: (:data:`ANALYSIS_ORIENTATION` for a paired pass; ``None`` for a sweep pass).
+    analysis_orientation: str | None = None
     jobs: tuple[PlannedJob, ...]
 
     @property
@@ -534,6 +741,50 @@ class PlannedRun(ValueModel):
     def common_reference_jobs(self) -> tuple[PlannedJob, ...]:
         """The reference-only jobs, in the order they run."""
         return tuple(job for job in self.jobs if job.kind is JobKind.COMMON_REFERENCE)
+
+    @property
+    def run_level_jobs(self) -> tuple[PlannedJob, ...]:
+        """The run-level jobs of a paired pass, in the order they run."""
+        return tuple(job for job in self.jobs if job.kind is JobKind.RUN_LEVEL)
+
+    @property
+    def pairs(self) -> tuple[tuple[PlannedJob, ...], ...]:
+        """The pass's pairs, in acquisition order — each ``(lead, follow)`` as planned.
+
+        Read off the compiled jobs' own pair ids, not off their steps: a pair is the unit the
+        design counterbalances, and the two are the same thing only while the plan says so.
+        """
+        groups: list[list[PlannedJob]] = []
+        for job in self.jobs:
+            if job.pair is None:
+                raise RunPlanError(
+                    f"job {job.job!r} belongs to no pair, so this pass has no pairs: a paired pass "
+                    "is the run-level design's own shape, and its jobs all carry one"
+                )
+            if groups and groups[-1][0].pair == job.pair:
+                groups[-1].append(job)
+            else:
+                groups.append([job])
+        return tuple(tuple(group) for group in groups)
+
+    def acquisition_orientation(self, job: PlannedJob) -> str | None:
+        """The order this job's pair records its two emissions levels in, e.g. ``'64 -> 20'``.
+
+        ``None`` for a job of a sweep pass. This is the fact the counterbalancing is *for*: the
+        analysis reads the pair at the fixed :data:`ANALYSIS_ORIENTATION` and can point at the
+        acquisition order it actually ran in.
+        """
+        if job.pair is None:
+            return None
+        for group in self.pairs:
+            if group[0].pair == job.pair:
+                return " -> ".join(
+                    str(member.condition.emissions_per_profile) for member in group
+                )
+        raise RunPlanError(
+            f"job {job.job!r} names pair {job.pair!r}, which the pass does not hold: "
+            f"{[group[0].pair for group in self.pairs]}"
+        )
 
     @property
     def scientific_recordings(self) -> int:
@@ -606,6 +857,13 @@ class RunJobRecord(ValueModel):
     manifest: str | None = None
     finished_at: datetime | None = None
     note: str | None = None
+    #: The pair this job belongs to and its place in it, for a paired pass (``None`` otherwise).
+    pair: str | None = None
+    role: PairRole | None = None
+    #: The order this job's pair recorded its two levels in, e.g. ``'20 -> 64'`` — stored on the
+    #: row, so a later reader reconstructs pair membership and orientation from the run record
+    #: rather than from file names or from the order the jobs happen to be listed in.
+    orientation: str | None = None
 
 
 class RunManifest(ValueModel):
@@ -626,6 +884,9 @@ class RunManifest(ValueModel):
     store_dir: str
     created_at: datetime
     updated_at: datetime
+    #: The orientation this pass's pairs are read at (:data:`ANALYSIS_ORIENTATION`), copied from
+    #: the plan so the record states the design's own rule beside the jobs it applies to.
+    analysis_orientation: str | None = None
     jobs: tuple[RunJobRecord, ...] = ()
 
     @property
@@ -758,9 +1019,17 @@ def plan_fingerprint(plan: RunPlan) -> str:
     definition, so a stored plan hashes the same on every host and any change to a job, a
     condition or a window changes it. The run manifest carries it beside the per-job fingerprints,
     which is what ties a pass's record to the plan it answered.
+
+    Absent optionals are not part of the identity: ``exclude_none`` drops them, so a plan that does
+    not state an optional field and one that states it as null hash alike, and an *additive*
+    optional field cannot move the fingerprint of a plan already recorded. Every value a plan does
+    carry is still covered — including the Stage-2 pass's pair, role and analysis orientation, which
+    it states. The alternative breaks provenance rather than tests: without this, adding a field
+    would move the fingerprint a stored pass record answers, and the record of a recording that
+    already happened could only be reconciled by rewriting it.
     """
     canonical = json.dumps(
-        plan.model_dump(mode="json"),
+        plan.model_dump(mode="json", exclude_none=True),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
@@ -844,6 +1113,8 @@ def plan_run(plan: RunPlan, *, directory: Path | str) -> PlannedRun:
                 condition=entry.condition,
                 definition_fingerprint=campaign_fingerprint(definition),
                 points=points,
+                pair=entry.pair,
+                role=entry.role,
             )
         )
 
@@ -862,6 +1133,7 @@ def plan_run(plan: RunPlan, *, directory: Path | str) -> PlannedRun:
         reference_window=plan.reference_window,
         reference_condition=plan.reference_condition,
         strict_facts=plan.strict_facts,
+        analysis_orientation=plan.analysis_orientation,
         jobs=tuple(planned),
     )
     _check_block_cap(run)
@@ -1018,6 +1290,10 @@ def _check_job_points(
         _check_common_reference_job(plan, entry, points)
         return
 
+    if entry.kind is JobKind.RUN_LEVEL:
+        _check_run_level_job(plan, entry, points)
+        return
+
     if entry.condition.as_triple == plan.reference_condition.as_triple:
         raise RunPlanError(
             f"{where} is a scientific job recording at the reference condition "
@@ -1075,6 +1351,42 @@ def _check_control_window(
             f"reference window {plan.reference_window.as_pair} "
             f"({REFERENCE_DOCUMENT} §3.2: it repeats the job's own anchor, so it is the reference "
             "spatial window at that job's run-wide burst and emissions values)"
+        )
+
+
+def _check_run_level_job(
+    plan: RunPlan, entry: RunPlanJob, points: tuple[PlannedPoint, ...]
+) -> None:
+    """One run-level observation: the reference window, no controls, and its own emissions level.
+
+    The run-level job is the paired design's unit, so what it must be is narrow: exactly one
+    recording, at the window every job of the pass shares, carrying no block-local control (there
+    is no within-job comparison for a control to anchor). Its burst and PRF are held to the
+    reference's by the plan's own structure check, which is where "emissions only" belongs; this
+    function refuses a job that is not an observation of the pass's own reference window, or one
+    that is dressed as a scientific job's block.
+    """
+    where = f"step {entry.step} ({entry.job!r}, {entry.definition})"
+    if len(points) != 1:
+        raise RunPlanError(
+            f"{where} holds {len(points)} point(s) where a run-level job is one observation of "
+            "the reference window: a pair compares two levels, and a job that records two windows "
+            "would have its pair comparing something else as well"
+        )
+    point = points[0]
+    if point.label.startswith(CONTROL_PREFIX):
+        raise RunPlanError(
+            f"{where} labels its only point {point.label!r}: a run-level job carries no "
+            "block-local control — it *is* the observation, not an anchor for one"
+        )
+    if (point.parameters.resolution_mm, point.parameters.gates) != (
+        plan.reference_window.as_pair
+    ):
+        raise RunPlanError(
+            f"{where} records at {point.parameters.resolution_mm} mm x "
+            f"{point.parameters.gates} gates where a run-level job records the pass's reference "
+            f"window {plan.reference_window.as_pair}: every pair is a comparison at one window, so "
+            "the pass's jobs cannot sit at different ones"
         )
 
 
@@ -1228,6 +1540,7 @@ def new_run_manifest(
         plan_fingerprint=run.plan_fingerprint,
         channel=run.channel,
         duration_s=run.duration_s,
+        analysis_orientation=run.analysis_orientation,
         store_dir=str(directory),
         created_at=moment,
         updated_at=moment,
@@ -1239,6 +1552,9 @@ def new_run_manifest(
                 definition=job.definition,
                 definition_fingerprint=job.definition_fingerprint,
                 condition=job.condition,
+                pair=job.pair,
+                role=job.role,
+                orientation=run.acquisition_orientation(job),
                 expected_recordings=job.recordings,
                 log=str(job_log_path(run, job, store_dir=directory)),
             )
@@ -1349,6 +1665,9 @@ def record_job(
         definition=record.definition,
         definition_fingerprint=record.definition_fingerprint,
         condition=record.condition,
+        pair=record.pair,
+        role=record.role,
+        orientation=record.orientation,
         status=status,
         expected_recordings=record.expected_recordings,
         ok_recordings=job_manifest.ok_count,
@@ -1444,6 +1763,30 @@ def job_requirements(run: PlannedRun, job: PlannedJob) -> tuple[str, ...]:
         lines.append(
             f"placement  : the reference check between {before!r} and {after!r}"
         )
+    if job.pair is not None:
+        partner = next(
+            (
+                candidate
+                for candidate in run.jobs
+                if candidate.pair == job.pair and candidate.step != job.step
+            ),
+            None,
+        )
+        lines.append(
+            f"pair       : {job.pair}, "
+            f"{job.role.value if job.role else 'unstated'} of 2 — set emissions_per_profile "
+            f"{job.condition.emissions_per_profile} for this job"
+            + (
+                ""
+                if partner is None
+                else f"; its partner is {partner.job!r} at "
+                f"{partner.condition.emissions_per_profile}"
+            )
+        )
+        lines.append(
+            f"                acquisition orientation {run.acquisition_orientation(job)}; "
+            f"analysis orientation {ANALYSIS_ORIENTATION} for every pair, whatever its order"
+        )
     return tuple(lines)
 
 
@@ -1463,17 +1806,28 @@ def operator_setup_sheet(run: PlannedRun) -> str:
     """
     lines: list[str] = []
     lines.append(f"run plan    : {run.plan}")
-    lines.append(f"directory   : {run.directory}")
+    #: The plan's own directory, rendered repo-style: the sheet is copied into session records and
+    #: compared as an artefact, so a backslash on Windows and a slash elsewhere would be two sheets
+    #: for one pass.
+    directory = Path(run.directory).as_posix()
+    lines.append(f"directory   : {directory}")
+    counted = [
+        (len(run.scientific_jobs), "scientific"),
+        (len(run.common_reference_jobs), "common-reference"),
+        (len(run.run_level_jobs), "run-level"),
+    ]
     lines.append(
-        f"jobs        : {len(run.jobs)} ({len(run.scientific_jobs)} scientific, "
-        f"{len(run.common_reference_jobs)} common-reference), {run.recordings} recording(s)"
+        f"jobs        : {len(run.jobs)} "
+        f"({', '.join(f'{count} {name}' for count, name in counted if count)}), "
+        f"{run.recordings} recording(s)"
     )
     lines.append(
         f"fixed frame : sound speed {run.sound_speed_ms} m/s, first gate "
         f"{run.first_gate_mm} mm (both dialog-only — set by hand; a disagreement refuses)"
     )
     lines.append(
-        f"window      : {run.duration_s:g} s per recording; store {run.store_dir}; names "
+        f"window      : {run.duration_s:g} s per recording; "
+        f"store {Path(run.store_dir).as_posix()}; names "
         f"{run.name_prefix}-<job>-<label>-<stamp>"
     )
     lines.append(
@@ -1491,13 +1845,28 @@ def operator_setup_sheet(run: PlannedRun) -> str:
             "raised facts: none — every fixed fact of this pass keeps the acceptance of the "
             "stored-file verifier's own table"
         )
+    if run.run_level_jobs:
+        lines.append(
+            f"pairs       : {len(run.pairs)} counterbalanced pairs — "
+            + ", ".join(
+                f"{group[0].pair}: {run.acquisition_orientation(group[0])}"
+                for group in run.pairs
+            )
+        )
+        lines.append(
+            f"              each pair is read {ANALYSIS_ORIENTATION} whatever order it was "
+            "recorded in; the order is the counterbalancing, not the comparison's sign"
+        )
     lines.append("")
     for job in run.jobs:
         lines.append(
             f"--- step {job.step} of {len(run.jobs)}: {job.job} [{job.kind.value}] ---"
         )
-        lines.append(f"    definition : {run.directory}/{job.definition}")
-        lines.append(f"    log        : {job_log_path(run, job)}")
+        lines.append(f"    definition : {directory}/{job.definition}")
+        # Displayed, not used: the sheet is committed to a repository and read on other machines,
+        # so it renders separators repo-style, while the path the recorder opens stays the native
+        # one (the record's own ``log`` field, and ``job_log_path`` itself).
+        lines.append(f"    log        : {job_log_path(run, job).as_posix()}")
         for line in job_requirements(run, job):
             lines.append(f"    {line}")
         lines.append("    points     :")
@@ -1514,6 +1883,16 @@ def operator_setup_sheet(run: PlannedRun) -> str:
     )
     for name, value in MANUAL_SETTINGS:
         lines.append(f"    {name}: {value}")
+    lines.append(
+        "                none of these is machine-verifiable: no reader in this repository reaches "
+        "them, so the pass is enforced by the compile only where a reader exists (the run-wide "
+        "burst, emissions and PRF above) and by the operator everywhere else"
+    )
+    lines.append(
+        "                confirm every one of them ONCE at the start of the campaign, record what "
+        'the application says, and do not touch any of them between jobs: "the same settings '
+        'except emissions" is a property of the sitting, not of the files'
+    )
     return "\n".join(lines)
 
 
