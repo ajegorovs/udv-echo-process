@@ -1019,9 +1019,17 @@ def plan_fingerprint(plan: RunPlan) -> str:
     definition, so a stored plan hashes the same on every host and any change to a job, a
     condition or a window changes it. The run manifest carries it beside the per-job fingerprints,
     which is what ties a pass's record to the plan it answered.
+
+    Absent optionals are not part of the identity: ``exclude_none`` drops them, so a plan that does
+    not state an optional field and one that states it as null hash alike, and an *additive*
+    optional field cannot move the fingerprint of a plan already recorded. Every value a plan does
+    carry is still covered — including the Stage-2 pass's pair, role and analysis orientation, which
+    it states. The alternative breaks provenance rather than tests: without this, adding a field
+    would move the fingerprint a stored pass record answers, and the record of a recording that
+    already happened could only be reconciled by rewriting it.
     """
     canonical = json.dumps(
-        plan.model_dump(mode="json"),
+        plan.model_dump(mode="json", exclude_none=True),
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
