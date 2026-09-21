@@ -19,11 +19,11 @@ decision table's E64-vs-E20 row is reported against, not rewritten.
 
 ## Reproduce
 
-The generator is `960c729` (the commit before the artefacts); the command that reproduces all
+The generator is `72a6994` (the commit before the artefacts); the command that reproduces all
 three files byte for byte is
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 960c729
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 72a6994
 ```
 
 The bare command records the **current HEAD** instead, which changes `analysis_commit` and
