@@ -46,6 +46,16 @@ def test_udop_skill_records_sparse_pass_status_exactly() -> None:
     assert "the files were not short" in text
 
 
+def test_udop_skill_states_the_period_law_as_the_planner_now_computes_it() -> None:
+    """The law's two terms are kept apart, and the correction is not still described as pending."""
+    text = _skill_text()
+
+    assert "emissions × PRF + 10.369 ms" in text
+    assert "16 × 600 µs = 9.6 ms" in text
+    assert "profile_period_s" in text
+    assert "still pending in code" not in text
+
+
 def test_udop_skill_is_the_instrument_overlay() -> None:
     skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
     live_readme = (ROOT / "tools" / "live" / "README.md").read_text(encoding="utf-8")

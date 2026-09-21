@@ -123,13 +123,18 @@ sampling-volume read-out, not the parameter.
 - The stored depth word is the application's own derivation and deviates a few tenths of a
   mm from `first_gate + gates * resolution` - there is no consistent floor-or-round rule, so
   compare depth with a tolerance (~1.5 mm) rather than exactly.
-- **Profile period is measured from the artefact, not assumed by the planner.** The sparse pass fixes it
-  at `emissions × PRF + 10.369 ms`: 151.689 / 223.688 / 487.690 / 871.685 ticks (1 tick = 0.1 ms) at
-  emissions 8 / 20 / 64 / 128. The runner's planning law (`emissions × PRF + 1 ms`) drops the manual's
-  16-emission transfer term and therefore overestimates the profile count (~924 planned versus ~562
-  stored at the reference level); it is not evidence that the file is short. Read the timestamps and
-  count from the decoded blocks, carry the achieved period/span on the point's record, and use the period
-  estimate only for pre-run sizing (`docs/dop3000/sparse-run-plan.md` §5).
+- **Profile period is measured from the artefact, and the planner now computes the whole law.** The
+  sparse pass fixes the achieved period at `emissions × PRF + 10.369 ms`: 151.689 / 223.688 / 487.690 /
+  871.685 ticks (1 tick = 0.1 ms) at emissions 8 / 20 / 64 / 128. That intercept is the manual's
+  `T_tran + T_prf · (16 + N_PRF)` as **two** terms and not one: at PRF 600 µs the fixed emission term is
+  `16 × 600 µs = 9.6 ms`, and the transfer term is the remaining ~0.77 ms. Read the timestamps and count
+  from the decoded blocks, carry the achieved period/span on the point's record, and use the planner's
+  estimate only for pre-run sizing (`docs/dop3000/sparse-run-plan.md` §5). The planner implements all of
+  it — `acquire/plan.py::profile_period_s`, called by the runner's size expectation and by the campaign's
+  profile count alike. The retired `emissions × PRF + 1 ms` form dropped the 16-emission term and
+  overestimated the count by ~1.6× at the reference level (~924 planned against ~562 stored): that was the
+  planner's error, never evidence that a file was short, and it is why a size disagreement is a finding
+  about the *plan* until the file's own words and stamps say otherwise.
 
 ## Run safety
 

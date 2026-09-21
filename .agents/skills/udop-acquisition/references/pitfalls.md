@@ -430,10 +430,11 @@ unrecognised prompt is one you must not answer blind.
   trusting it — short scaffolding points are not the operating condition: at a 12 s production length a
   factor-2 guard accepted a block holding **0.62** of what the period law predicted, while those same
   settings at 4 s matched that law to within measurement (32.5 ms against 33 ms). The loose factor was
-  not what let it pass, and neither was the file short — **the planning law was wrong.** The period is
-  `emissions × PRF + 10.369 ms`, not `emissions × PRF + 1 ms`: the code's law drops the manual's
-  16-emission transfer term, so a point carries ~562 profiles at the reference level where it estimated
-  924. The completed pass then retained the full window on every point (12.4651-12.5713 s spans against
+  not what let it pass, and neither was the file short — **the planning law was wrong.** The achieved
+  period is `emissions × PRF + 10.369 ms`, not `emissions × PRF + 1 ms`: the retired planner form dropped
+  the manual's 16-emission term (9.6 ms of that intercept at 600 µs PRF; the remaining ~0.77 ms is the
+  transfer term), so it estimated ~924 profiles at the reference level where a point carries ~562. The
+  planner now computes the whole law (`acquire/plan.py::profile_period_s`). The completed pass then retained the full window on every point (12.4651-12.5713 s spans against
   a 12 s request, no truncation, the block cap never the limiter). Measure it at the production length
   with a **two-duration linearity run** — two points, identical settings, one delay double the other, the
   buffer reset before each — read the stored window off the artefacts, and read the period off the files'

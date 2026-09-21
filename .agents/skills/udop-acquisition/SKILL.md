@@ -47,8 +47,8 @@ B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verif
 `docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
 chain — `docs/dop3000/udop-automation.md`; the state of the work —
 `docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
-quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, current structural-size and
-measured-period laws, and the planning-law change still pending in code —
+quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, the current structural-size
+and measured-period laws, and the planner that now computes the whole period law —
 `docs/dop3000/sparse-run-plan.md`. A rule learned while driving the instrument
 belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
 a second copy in a skill is how the two forks drifted apart before.
