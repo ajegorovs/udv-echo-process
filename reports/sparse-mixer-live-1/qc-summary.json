@@ -1,0 +1,89 @@
+{
+  "dataset_root": "data/sparse-mixer-live-1",
+  "plan": "sparse-mixer-live-1",
+  "plan_path": "examples/sparse-mixer-live-1/run-plan.json",
+  "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
+  "analysis_commit": "a822b3f",
+  "points": "points.csv",
+  "points_rows": 26,
+  "points_sha256": "sha256:ab08915c5d329b3dd087250a2e14426bedb9586357ac1661434c51dc2e10af85",
+  "recordings": 26,
+  "expected_recordings": 26,
+  "job_counts": {
+    "burst-18": 5,
+    "burst-4": 5,
+    "common-reference-1": 1,
+    "common-reference-2": 1,
+    "common-reference-3": 1,
+    "common-reference-4": 1,
+    "emissions-128": 4,
+    "emissions-64": 4,
+    "emissions-8": 4
+  },
+  "expected_job_counts": {
+    "burst-18": 5,
+    "burst-4": 5,
+    "common-reference-1": 1,
+    "common-reference-2": 1,
+    "common-reference-3": 1,
+    "common-reference-4": 1,
+    "emissions-128": 4,
+    "emissions-64": 4,
+    "emissions-8": 4
+  },
+  "decode_failures": 0,
+  "decode_failure_files": [],
+  "nan_cells": 0,
+  "non_monotone_files": [],
+  "not_live_files": [],
+  "short_retention_files": [],
+  "max_abs_period_residual_s": 0.000223529411765,
+  "views": {
+    "point_table": "one row per committed recording; the full record for the shape, the retention and the whole-record counters",
+    "common_window": {
+      "revolutions": 103,
+      "nominal_rpm": 500.0,
+      "revolution_s": 0.12,
+      "window_s": 12.36,
+      "rule": "the largest whole number of nominal revolutions fitting every recording, truncated per recording by its own stored timestamps"
+    },
+    "common_support": {
+      "support_min_mm": 10.138,
+      "support_max_mm": 98.93800000000002,
+      "rule": "the intersection of every recording's decoded depth range; the supported metrics are computed on each recording's own native gate grid inside it, and no interpolation or resampling is applied anywhere in this report"
+    },
+    "achieved_timing": "the profile period is measured from each recording's own stored timestamps; the logs' timing.target_s is carried as provenance (emissions_per_profile x prf_us + 1 ms) and is never used as a measurement"
+  },
+  "definitions": {
+    "achieved_period_s": "the profile period measured from the recording's own stored timestamps, (t_last - t_first) / (profiles - 1), in seconds; never the log's timing.target_s, which records the retired planning expectation",
+    "duration_s": "the retained span of the recording, t_last - t_first from its stored timestamps, in seconds",
+    "retained_fraction": "duration_s / requested_duration_s, dimensionless",
+    "meets_usable_interval": "duration_s >= 11.52 s (96 nominal 500-RPM revolutions), the pass's usable comparison interval",
+    "period_expectation_s": "the planner's own law, acquire/plan.py::profile_period_s (the manual's T_tran + T_prf x (16 + N_PRF)), for the point's decoded emissions and PRF",
+    "period_residual_s": "achieved_period_s - period_expectation_s, in seconds",
+    "zero_fraction": "count of samples exactly equal to 0.0 divided by the record length, dimensionless (the whole record, every gate)",
+    "supported_*": "the same distributional metrics as reference_repeat.gate_metrics, computed over the common window (window_s, the largest whole number of nominal revolutions fitting every recording) restricted to the common physical support (support_min_mm..support_max_mm); each per-gate statistic is then aggregated across the supported gates by an unweighted mean, so one row is comparable with another whatever its gate count",
+    "is_control": "true for the pass's three block-local controls (ctrl-begin, ctrl-mid, ctrl-end), which record the reference condition at the reference window",
+    "declared_accepted_resolution_mm": "the pitch the application accepts for the point's requested declared_resolution_mm: the resolution ladder is quantized to c / 12000 mm and snapping is to the nearest rung (acquire/plan.py::clamp_resolution), so a requested 0.617 mm is stored as 0.6166666666666667 mm. resolution_mm is the file's own achieved value and must equal this",
+    "log_target_s": "the log's own timing.target_s, carried as provenance: it reproduces the retired law (emissions_per_profile x prf_us + 1 ms) the planner used on the day of the run, and it is not the achieved period. The logs are not rewritten to match a later law"
+  },
+  "checks": {
+    "achieved_period_within_the_planners_law": true,
+    "analysis_commit": true,
+    "common_support": true,
+    "common_window": true,
+    "decode_failures": true,
+    "job_counts": true,
+    "nan_cells": true,
+    "recordings": true,
+    "retention": true,
+    "retired_target_recorded": true,
+    "signal_content": true,
+    "timestamps_monotone": true
+  },
+  "ok": true,
+  "regeneration": {
+    "command": ".venv/Scripts/python.exe -m udv_echo_process.cli sparse-inventory --analysis-commit a822b3f",
+    "note": "pass the recorded analysis_commit to reproduce these artefacts byte for byte; the bare command records the current HEAD"
+  }
+}
