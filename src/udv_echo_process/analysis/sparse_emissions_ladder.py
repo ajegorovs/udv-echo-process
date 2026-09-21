@@ -151,6 +151,9 @@ EVIDENCE_FOUR_RUNS = (
 #: The decoded condition each level's records must hold: the same reference spatial
 #: window and the same burst at the four emissions settings of the ladder. The pass's
 #: PRF and sound speed are identical at every point (600 us, 1480 m/s).
+#: The manual's period law carries this many PRF terms before the transfer term; the
+#: fixed intercept a recording shows is ``INTERNAL_EMISSION_TERMS x PRF + transfer``.
+INTERNAL_EMISSION_TERMS = 16
 DECLARED_CONDITIONS: dict[str, dict[str, float]] = {
     "E8": {
         "burst_length": 10.0,
@@ -288,9 +291,12 @@ class TemporalValue(ValueModel):
     Every number is measured from the record's stored per-profile time array. The
     achieved period is the **median** of the successive differences; the mean is
     published beside it, and it is what the whole retained span divided by the intervals
-    gives. ``transfer_term_s`` is ``achieved - emissions x PRF``: the part of the period
-    that is not the emissions block, published so the ladder's four levels can be read
-    against one another without reading it as a rate of anything else.
+    gives. ``fixed_overhead_s`` is ``achieved - emissions x PRF``: the whole **fixed
+    intercept** of the period, not the transfer term. It comprises the internal-emission
+    term the manual's law carries (``INTERNAL_EMISSION_TERMS`` x PRF, 9.600 ms at 600 us)
+    and the transfer term proper (the remainder), both published beside it, so the ladder's
+    four levels can be read against one another without reading the intercept as a rate of
+    anything else.
     """
 
     level: str
@@ -305,6 +311,8 @@ class TemporalValue(ValueModel):
     nyquist_hz: float
     frequency_resolution_hz: float
     emissions_times_prf_s: float
+    fixed_overhead_s: float
+    internal_emission_s: float
     transfer_term_s: float
     blocks: int
     block_duration_s: float
@@ -762,7 +770,11 @@ def _timing(
         nyquist_hz=0.5 * rate,
         frequency_resolution_hz=1.0 / span,
         emissions_times_prf_s=emissions_times_prf,
-        transfer_term_s=period - emissions_times_prf,
+        fixed_overhead_s=period - emissions_times_prf,
+        internal_emission_s=INTERNAL_EMISSION_TERMS * prf_us * 1e-6,
+        transfer_term_s=period
+        - emissions_times_prf
+        - INTERNAL_EMISSION_TERMS * prf_us * 1e-6,
         blocks=segmentation.blocks,
         block_duration_s=segmentation.block_duration_s,
         block_bounds_s=segmentation.bounds_s,
@@ -1917,6 +1929,8 @@ TEMPORAL_COLUMNS: tuple[str, ...] = (
     "nyquist_hz",
     "frequency_resolution_hz",
     "emissions_times_prf_s",
+    "fixed_overhead_s",
+    "internal_emission_s",
     "transfer_term_s",
     "blocks",
     "block_duration_s",
@@ -2027,6 +2041,8 @@ def csv_text(model: EmissionsLadder) -> str:
                 format_cell(row.nyquist_hz),
                 format_cell(row.frequency_resolution_hz),
                 format_cell(row.emissions_times_prf_s),
+                format_cell(row.fixed_overhead_s),
+                format_cell(row.internal_emission_s),
                 format_cell(row.transfer_term_s),
                 format_cell(row.blocks),
                 format_cell(row.block_duration_s),
@@ -2079,11 +2095,21 @@ DEFINITIONS: dict[str, str] = {
         "1 / record_duration_s: the bin spacing of a spectrum taken over this record's own "
         "retained duration, which is the only duration the levels are compared at"
     ),
+    "fixed_overhead_s": (
+        "achieved_period_s minus emissions x prf: the whole fixed intercept of the achieved "
+        "period - the part that is not the emissions block - and NOT the transfer term. It "
+        "comprises internal_emission_s (the manual's law carries 16 PRF terms: 9.600 ms at "
+        "600 us) and transfer_term_s (the remainder), both published beside it. It is a "
+        "measurement of this pass's files, not a change to the planner's law and not an "
+        "acquisition result"
+    ),
+    "internal_emission_s": (
+        "16 x prf: the internal-emission term of the manual's period law, 9.600 ms at 600 us, "
+        "identical at every level"
+    ),
     "transfer_term_s": (
-        "achieved_period_s minus emissions x prf: the part of the achieved period that is "
-        "not the emissions block, published per level so the four levels can be read "
-        "against one another. It is a measurement of this pass's files, not a change to "
-        "the planner's law and not an acquisition result"
+        "fixed_overhead_s minus internal_emission_s: the transfer term proper, the part of "
+        "the fixed intercept the manual's 16 PRF terms do not account for"
     ),
     "block_duration_s": (
         "the physical duration every record is segmented by. The blocks are equal in "
@@ -2181,6 +2207,8 @@ def _temporal_document(row: TemporalValue) -> dict[str, object]:
         "nyquist_hz": row.nyquist_hz,
         "frequency_resolution_hz": row.frequency_resolution_hz,
         "emissions_times_prf_s": row.emissions_times_prf_s,
+        "fixed_overhead_s": row.fixed_overhead_s,
+        "internal_emission_s": row.internal_emission_s,
         "transfer_term_s": row.transfer_term_s,
         "blocks": row.blocks,
         "block_duration_s": row.block_duration_s,
@@ -2912,6 +2940,8 @@ def markdown_text(model: EmissionsLadder) -> str:
             f"{row.profile_rate_hz:.3f}",
             f"{row.nyquist_hz:.3f}",
             f"{row.frequency_resolution_hz:.4f}",
+            f"{row.fixed_overhead_s * 1e3:.3f}",
+            f"{row.internal_emission_s * 1e3:.3f}",
             f"{row.transfer_term_s * 1e3:.3f}",
             str(row.blocks),
             str(row.profiles_per_block_median),
@@ -3030,17 +3060,23 @@ Each step's own reduction, its extreme taken over every difference that realizes
 
 Two readings follow, and they are the ones the numbers support:
 
-1. **The depth-averaged step differences sit with the campaign's own between-run endpoint.**
-   The reference endpoint is {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s; the E8->E20 step's mean
-   differences span {model.steps[0].mean_difference_min_mm_s:+.3f} to
-   {model.steps[0].mean_difference_max_mm_s:+.3f} mm/s (spread
-   {model.steps[0].mean_difference_max_mm_s - model.steps[0].mean_difference_min_mm_s:.3f} mm/s, which is
-   the E20 level's own run-to-run spread, because a constant offset cannot change a spread),
-   so E8 sits **inside** the spread the four E20 runs show between themselves. The
-   E20->E64 step's means span {model.steps[1].mean_difference_min_mm_s:+.3f} to
-   {model.steps[1].mean_difference_max_mm_s:+.3f} mm/s, and E64->E128 is
-   {model.steps[2].mean_difference_min_mm_s:+.3f} mm/s, both smaller in magnitude than the
-   reference's own four-run spread. Screening outcomes, not proofs of an axis effect.
+1. **The depth-averaged steps, each read against the campaign's own between-run endpoint.**
+   The reference endpoint is {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s, and the three steps do
+   not sit with it in the same way:
+   - *E8->E20*: the step's means span {model.steps[0].mean_difference_min_mm_s:+.3f} to
+     {model.steps[0].mean_difference_max_mm_s:+.3f} mm/s (spread
+     {model.steps[0].mean_difference_max_mm_s - model.steps[0].mean_difference_min_mm_s:.3f} mm/s, which is
+     the E20 level's own run-to-run spread, because a constant offset cannot change a spread),
+     so **E8 sits inside the spread the four E20 runs show between themselves**.
+   - *E20->E64*: the step's means span {model.steps[1].mean_difference_min_mm_s:+.3f} to
+     {model.steps[1].mean_difference_max_mm_s:+.3f} mm/s. That span straddles the
+     {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s reference floor, so **some of the four E20
+     realizations put the difference above it and some below it**: which realization E20 is taken
+     as decides the answer. E64 therefore reads as *suggestive against E20 and unresolved by this
+     pass*, not as sitting inside the pass's baseline variation.
+   - *E64->E128*: {model.steps[2].mean_difference_min_mm_s:+.3f} mm/s, which lies **within** the
+     {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s reference floor.
+   Screening outcomes, not proofs of an axis effect.
 2. **The per-gate extremes are the larger numbers, and they are what the depth-resolved
    endpoint screens.** The depth-resolved endpoint is
    {REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S:.3f} mm/s at {REFERENCE_DEPTH_RESOLVED_FLOOR_DEPTH_MM:.3f} mm; the
@@ -3096,7 +3132,7 @@ Every number below is measured on the **full retained record** from that file's 
 per-profile time array. The achieved period is the median of the successive differences of
 that array; the mean is published beside it:
 
-{_md_table(temporal_rows, ["level", "record", "profiles", "record [s]", "median period [ms]", "mean period [ms]", "rate [Hz]", "Nyquist [Hz]", "resolution [Hz]", "transfer term [ms]", "blocks", "profiles/block", "range"])}
+{_md_table(temporal_rows, ["level", "record", "profiles", "record [s]", "median period [ms]", "mean period [ms]", "rate [Hz]", "Nyquist [Hz]", "resolution [Hz]", "fixed overhead [ms]", "internal emission [ms]", "transfer [ms]", "blocks", "profiles/block", "range"])}
 
 The four levels' achieved grids fall by a factor of 5.7 in rate from E8 to E128
 ({model.predictions[0].measured_rate_hz:.3f} Hz against
@@ -3111,8 +3147,12 @@ resolution is essentially the same at every level
 ({model.temporal[0].frequency_resolution_hz:.4f} to
 {max(row.frequency_resolution_hz for row in model.temporal):.4f} Hz), because every record retains
 about 12.5 s: the ladder's temporal cost lies in the *rate*, not in the resolution. The
-transfer term (`achieved - emissions x PRF`) is
-{model.temporal[0].transfer_term_s * 1e3:.3f} ms at every level.
+**fixed profile overhead** (`achieved - emissions x PRF`, the *intercept* of the period and
+not the transfer term) is {model.temporal[0].fixed_overhead_s * 1e3:.3f} ms at every level,
+composed of {model.temporal[0].internal_emission_s * 1e3:.3f} ms of internal emission - the 16
+PRF terms the manual's law carries, 16 x
+{model.temporal[0].internal_emission_s / 16 * 1e6:.0f} us - and
+{model.temporal[0].transfer_term_s * 1e3:.3f} ms of transfer term proper.
 
 ### The request's expected periods, beside this pass's measurements
 
@@ -3135,12 +3175,28 @@ and one mid-support:
 
 {_md_table(acf_rows, ["record", "level", "depth [mm]", "lag-1", "first lag below half", "at [s]", "series mean [mm/s]", "series std [mm/s]"])}
 
-Read at a fixed *lag in seconds*, the higher levels decorrelate faster
-({next(row for row in model.acf if row.label == "e128" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s at e128
-against {next(row for row in model.acf if row.label == "e8" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s at e8), because each
-profile of a higher level averages a longer emissions block; read at a fixed *lag in
-profiles*, the ordering reverses. Both readings are one record per series, so neither is a
-replication statement.
+Two readings, reported independently because they answer different questions. *In physical
+time*, the correlation at these gates survives **longer** at the higher levels than at the
+lowest: the first lag below half is
+{next(row for row in model.acf if row.label == "e8" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s at e8
+against
+{next(row for row in model.acf if row.label == "e128" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s at e128, i.e. **slower**
+decorrelation in seconds at the higher emissions level - which is what a longer per-profile
+acoustic averaging interval predicts, since each E128 profile spans {model.temporal[-1].achieved_period_s * 1e3:.1f} ms
+against {model.temporal[0].achieved_period_s * 1e3:.1f} ms at E8, so the recorded series is the
+smoother and lower-bandwidth one. It is not monotone across the ladder: at this gate E64's
+first lag below half is
+{next(row for row in model.acf if row.label == "e64" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s,
+**longer** in physical time than E128's
+{next(row for row in model.acf if row.label == "e128" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s, so the readings are
+"longer at higher emissions than at the lowest" and not "longer at every step". *In profile lags*, the ordering runs the other way: 
+{next(row for row in model.acf if row.label == "e8" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half} profiles at
+e8 against
+{next(row for row in model.acf if row.label == "e128" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half} at e128, i.e. fewer
+profiles when each profile covers more time. The two are consequences of the same grid
+difference read in two different units, and are published as two readings rather than as one
+ordering that "reverses". Both are one record per series (E20's four runs are the only level
+with repeats) at the three stated gates, so neither is a replication statement.
 
 ## The floors, and which endpoint applies where
 
@@ -3174,8 +3230,9 @@ bound drift, and they are not confidence intervals.
    slice says so rather than naming a winner.
 2. **Does E8 lose useful estimator stability?** It has the smallest within-job anchor spread
    of the ladder ({levels["E8"].stated_variation_mm_s:.3f} mm/s), the highest profile rate
-   ({model.predictions[0].measured_rate_hz:.3f} Hz) and a series that decorrelates fastest in
-   seconds; nothing measured here shows E8's estimate degrading against E20's.
+   ({model.predictions[0].measured_rate_hz:.3f} Hz) and, at the gates measured, the shortest
+   physical correlation time of the four levels
+   ({next(row for row in model.acf if row.label == "e8" and row.requested_depth_mm == ACF_DEPTHS_MM[0]).first_lag_below_half_s:.3f} s, i.e. its series decorrelates fastest in seconds and slowest in profiles); nothing measured here shows E8's estimate degrading against E20's.
 3. **What is the bandwidth cost of each level?** The achieved period and profile rate above,
    with the profiles per {model.block_duration_s:g} s block as the concrete price:
    {", ".join(f"{row.level} {row.profiles_per_block_median}" for row in model.temporal if row.label in ("e8", "cr1", "e64", "e128"))}
