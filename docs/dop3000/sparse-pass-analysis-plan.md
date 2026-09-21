@@ -99,7 +99,14 @@ each), not conclusions about the flow:
   it carries. This moves no recording and is recorded, not corrected;
 - the acquisition order is **recoverable** (the plan's step order and each job's key
   order, with the jobs' own wall-clock windows beside them) — unlike the historical
-  sweep, where file metadata could not recover order and drift could only be bounded;
+  sweep, where file metadata could not recover order and drift could only be bounded —
+  but the pass carries **no per-recording clock**: the `YYYYMMDDTHHMMSS` segment of a
+  file name is the job's **`sweep_id`**, identical for every point of that job as its own
+  log entries spell it, so a recording cannot be placed at a time between its neighbours
+  and no later package may weight a comparison by elapsed time. WP0's column for it is
+  named `recording_stamp`, which reads as a per-recording time and is not one: the name
+  is kept (WP0 is frozen) and the semantics is stated here, in WP1's document and in the
+  slices' own documents;
 - the noise is not white and no profile is an independent replicate: the rig is a mixer,
   the nominal 500-RPM marker (8.33 Hz, one revolution = 0.12 s) is a marker only — these
   files carry no tachometer — and every interval and floor below is a *within-run*
