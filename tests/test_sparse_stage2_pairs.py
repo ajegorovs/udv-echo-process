@@ -379,7 +379,7 @@ def test_the_report_prose_states_the_design_and_the_outcome() -> None:
     assert "contemporaneous" in doc
     assert "E64 - E20" in doc
     assert "4.235" in doc and s2.PRIOR_DATASET in doc
-    assert "one campaign block" in doc
+    assert "one campaign block" in doc.lower()
     assert "the orientation is retained" in doc.lower() or "recorded beside" in doc.lower()
 
 
