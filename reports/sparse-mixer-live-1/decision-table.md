@@ -28,11 +28,11 @@ E128 is not a level worth acquiring further: no depth-averaged improvement over 
 
 **4. is a denser second acquisition justified at all?**
 
-not as a dense pass. The pitch x burst interaction is limited by the burst jobs' own anchor movement, which more points of the same design do not shrink; the emissions ladder's one unresolved distinction (E20 against E64) is limited by how many runs each level has, and the observed difference straddles the 4.235 mm/s floor depending on which E20 run is used. Only that second limitation is worth spending recordings on, and it takes a few run-level realizations rather than a matrix.
+not as a dense pass. The pitch x burst interaction is limited by the burst jobs' own anchor movement, which more points of the same design do not shrink; the emissions ladder's one unresolved distinction (E20 against E64) is limited by how many runs each level has, and the observed difference straddles the 4.235 mm/s floor depending on which E20 run is used. Only that second limitation is worth spending recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign and screened against this pass's emissions-20 runs would be separated by a campaign as well as by an emission level, and the pass has measured that between-run variation is large enough for that to enter the comparison. It takes realizations of both levels inside one campaign.
 
 **5. if it is, which small set of new conditions, and what does each buy?**
 
-three additional run-level realizations of the E64 condition, in their own reference-style jobs and at the same decoded condition E64 already has. They buy the one thing the ladder cannot currently supply: a four-run E64 against the four-run E20, so that the E64-to-E20 step is a like-for-like run-level comparison whose realization dependence is visible instead of inferred. Nothing else is recommended, and the acceptance criterion is stated in advance below.
+eight run-level jobs in one campaign, sampling the two levels alternately: E20-A, E64-A, E20-B, E64-B, E20-C, E64-C, E20-D, E64-D. Emissions per profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration - and alternating the order means slow drift is sampled by both levels. They buy the one thing the ladder cannot supply: four emissions-64 and four emissions-20 observations made contemporaneously, a between-run floor measured inside that same campaign, and four adjacent paired contrasts. This pass's four emissions-20 runs and its existing emissions-64 recording stay as prior context; only the decisive comparison moves. Nothing else is recommended, and the acceptance criterion is stated in advance below.
 
 ## The decision table
 
@@ -69,7 +69,7 @@ The seven columns are the historical sweep's, so the two tables compare: the evi
 - **observed effect:** the E64-to-E20 depth-averaged differences span -6.405 to -2.170 mm/s depending on which E20 run E64 is compared with, with a per-gate extreme of 17.504 mm/s at 19.388 mm; the span straddles the 4.235 mm/s floor
 - **interpretation:** the comparison changes classification with the reference realization: against one of the four E20 runs the difference exceeds the between-run floor and against others it does not. E64 is therefore suggestive against E20 and unresolved by this pass - it is neither shown better nor shown the same, and one realization per level is what makes that undecidable.
 - **automation needed:** none: E64 is already writable and was written in this pass
-- **would be overturned by:** additional independent run-level realizations of the E64 condition, so that the step is a four-run against four-run comparison whose realization dependence can be seen rather than inferred (this is the targeted campaign below)
+- **would be overturned by:** run-level realizations of *both* levels inside one campaign - the paired alternating set recommended below - so that the step becomes a contemporaneous four-against-four comparison carrying its own measured between-run floor, rather than new emissions-64 runs screened against an older reference
 
 ### does emissions 128 improve the estimate enough over emissions 64 to pay its cost?
 
@@ -78,7 +78,7 @@ The seven columns are the historical sweep's, so the two tables compare: the evi
 - **evidence:** WP4's ladder and its temporal view measured from the stored per-profile timestamps, at the same 12 s window and support for the velocity side.
 - **floor:** WP2's depth-averaged endpoint, 4.235 mm/s; E128's own anchor spread, 3.304 mm/s, as its within-job context
 - **observed effect:** the E64-to-E128 depth-averaged difference is -2.365 mm/s, inside the 4.235 mm/s floor; meanwhile the achieved period rises from 48.800 to 87.200 ms and the rate falls from 20.492 to 11.468 Hz, so a fixed 2 s physical block holds 41 profiles at E64 against 23 at E128, and the Nyquist frequency halves from 10.246 to 5.734 Hz
-- **interpretation:** no depth-averaged improvement of E128 over E64 is detected - the observed difference is inside the between-run floor - while the bandwidth cost is a factor of 1.79 in period and a halving of Nyquist. The information rationale is therefore cost, not effect: no measured quantity prefers 128 over 64, so the shorter period is taken.
+- **interpretation:** no depth-averaged improvement of E128 over E64 is detected - the observed difference is inside the between-run floor - while the bandwidth cost is a factor of 1.79 in period and a halving of Nyquist. The information rationale is therefore cost, not effect: no measured quantity prefers 128 over 64, so the shorter period is taken. **`replace` here means do not spend further acquisition effort on emissions 128 in this design** - it is not a claim that emissions 64 is scientifically proven superior, and a future measurement that needs the extra profiles, such as a slower flow, a noisier one or a longer coherent window, could reopen it.
 - **automation needed:** none: both levels are already writable
 - **would be overturned by:** a replicated E64-to-E128 difference outside the between-run floor, or a measurement that needs the extra profiles more than it needs the bandwidth (nothing in this pass shows such a quantity)
 
@@ -117,16 +117,21 @@ The seven columns are the historical sweep's, so the two tables compare: the evi
 
 ## What is recommended next, and what is refused
 
-the pass's floors are adequate for everything it measured except one distinction, and that one is limited by how many runs a level has rather than by the rig: the E64-to-E20 difference spans -6.405 to -2.170 mm/s depending on which of the four E20 runs it is compared with, so it straddles the 4.235 mm/s between-run floor. More run-level realizations of E64 settle it; more conditions of the same design do not settle anything else.
+the pass's floors are adequate for everything it measured except one distinction, and that one is limited by how many runs a level has rather than by the rig: the E64-to-E20 difference spans -6.405 to -2.170 mm/s depending on which of the four E20 runs it is compared with, so it straddles the 4.235 mm/s between-run floor. Acquiring emissions 64 alone would not settle it: those runs would be made in a later campaign and compared against emissions-20 runs from this one, and the between-run variation this pass measured is large enough that campaign-level drift would enter the emissions comparison. The two levels therefore have to be sampled alternately inside one campaign, so that slow drift is shared by both levels and the decisive comparison carries a floor measured in its own campaign. The existing four emissions-20 runs and the existing emissions-64 recording stay as prior context; only the decisive comparison moves to the new block.
 
-| recommended | count | what each buys |
-|---|---|---|
-| emissions 64 at the reference spatial window (1.850 mm, 50 gates), burst 10, in its own reference-style jobs rather than inside a scientific job's block | 3 | a four-run E64 level to compare like for like with the four-run E20, which turns 'suggestive but realization-dependent' into either a difference that holds at every run or an overlap that can be stated as one; a measured between-run spread for E64 on the same footing as E20's, so a later emissions decision has two replicated levels rather than one |
+**The set, in acquisition order:** `E20-A` -> `E64-A` -> `E20-B` -> `E64-B` -> `E20-C` -> `E64-C` -> `E20-D` -> `E64-D` - 8 run-level jobs, reported here as a set rather than as a schedule (the acquisition layer owns ordering, and nothing in it changes).
 
-**Acceptance criterion, stated in advance:** the distinction is decided when every run-level E64-to-E20 depth-averaged difference lies on one side of the 4.235 mm/s between-run floor; if the four E64 runs overlap the four E20 runs instead, that overlap is itself the answer and no further recording is indicated
+| condition | what it buys |
+|---|---|
+| emissions 20 at the reference spatial window: 1.850 mm, 50 gates, burst 10, PRF 600 us, and every other setting identical to this pass's reference condition - power, sensitivity, TGC, first gate, sound speed, duration - as four run-level jobs, one per block letter | four emissions-64 and four emissions-20 run-level observations acquired inside one campaign, which is what lets the E64-to-E20 step be compared without campaign drift entering it; a between-run floor measured in that same campaign, so the comparison is screened against contemporaneous run-to-run variation instead of against a floor this pass measured in an earlier session; four adjacent paired E64-to-E20 contrasts, one per block, which make the distinction a paired comparison rather than a difference of two group means; each level's own run-to-run spread on the same footing, so a later emissions decision has two replicated levels rather than one |
+| emissions 64 at those same fixed settings - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration - differing from the emissions-20 jobs in emissions per profile only, as four run-level jobs alternating with them | four emissions-64 and four emissions-20 run-level observations acquired inside one campaign, which is what lets the E64-to-E20 step be compared without campaign drift entering it; a between-run floor measured in that same campaign, so the comparison is screened against contemporaneous run-to-run variation instead of against a floor this pass measured in an earlier session; four adjacent paired E64-to-E20 contrasts, one per block, which make the distinction a paired comparison rather than a difference of two group means; each level's own run-to-run spread on the same footing, so a later emissions decision has two replicated levels rather than one |
+
+**Acceptance criterion, stated in advance:** the new campaign reports, separately: the four emissions-20 observations and the four emissions-64 observations; each level's own run-to-run spread; the four adjacent paired E64-to-E20 contrasts; the full cross-run range as context; and the depth-resolved differences against the between-run floor measured inside that campaign. The decision is then stated in one of two ways and no other. **Resolved difference:** the E64-to-E20 contrasts are consistently larger than the contemporaneous between-run variation and have a consistent direction. **Unresolved overlap:** the separation remains comparable to or smaller than the contemporaneous run-to-run variation, in which case that overlap is the answer and no further recording is indicated.
 
 **Refused, on this pass's own evidence:**
 
+- an emissions-64-only acquisition screened against this pass's emissions-20 runs: the later campaign's drift would enter the comparison, which the paired design exists to prevent
+- screening the new block against this pass's 4.235 mm/s floor: the Stage-2 comparison uses the floor measured in the campaign that produced it, with this pass's floor kept as context
 - a dense second pass over the sparse matrix: the pitch x burst interaction is limited by movement inside the burst jobs, which the same design reproduces
 - any new pitch or burst condition: nothing this pass measured suggests a third level on either axis
 - the sensitivity condition (D1): the recording surface carries no echo/energy channel, so it is a capability project rather than a Stage-2 acquisition
@@ -136,6 +141,7 @@ the pass's floors are adequate for everything it measured except one distinction
 
 | check | holds |
 |---|---|
+| `both_levels_are_sampled_in_one_campaign` | yes |
 | `d1_is_outside_the_stage_2_scope` | yes |
 | `every_frozen_slice_is_cited_and_held_its_gate` | yes |
 | `every_question_carries_its_class` | yes |
@@ -148,8 +154,8 @@ the pass's floors are adequate for everything it measured except one distinction
 | `the_five_gate_questions_are_answered_in_order` | yes |
 | `the_floors_are_read_not_declared` | yes |
 | `the_numbers_are_the_slices_own` | yes |
-| `the_recommended_set_is_small_and_run_level` | yes |
 | `the_seven_questions_are_the_reviews_own` | yes |
+| `the_stage2_comparison_carries_its_own_floor` | yes |
 | `the_two_endpoints_are_kept_apart` | yes |
 
 ## Artefacts

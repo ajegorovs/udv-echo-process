@@ -279,8 +279,13 @@ profiles in one fixture and 4193–4927 in another.
 > measurement — the pitch x burst interaction `defer` (not resolvable with this design and not
 > evidence of absence), E8 against E20 `keep`, E64 against E20 `defer`, E128 against E64 `replace`,
 > the PRF `keep`, a dense second pass refused, and D1 `requires diagnostic` outside the Stage-2
-> scope. Its one recommendation is three run-level E64 recordings; it refuses a broad sweep on the
-> pass's own evidence. **Next: the review's freeze, then whatever Stage-2 campaign that decision
+> scope. Its one recommendation is the smallest set that can settle that last distinction: **eight
+> run-level jobs sampling both levels alternately in one campaign** (`E20-A E64-A ... E64-D`), with
+> emissions per profile the only setting that differs and the decisive comparison screened against a
+> between-run floor measured **inside that campaign**. An emissions-64-only top-up was rejected in
+> review and by the analysis itself: new emissions-64 runs compared against this pass's emissions-20
+> runs would be separated by a campaign as well as by an emission level, which is the nuisance
+> variation WP2 exists to warn about. It refuses a broad sweep on the pass's own evidence. **Next: the review's freeze, then whatever Stage-2 campaign that decision
 > justifies — and nothing else.** The work order and the acceptance gates are in
 > [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
 > is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the

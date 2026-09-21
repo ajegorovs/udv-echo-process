@@ -240,23 +240,98 @@ def test_the_five_gate_questions_are_answered_in_the_plans_order(model) -> None:
         "E128" in model.answers[2].answer and "not redundant" in model.answers[2].answer
     )
     assert "not as a dense pass" in model.answers[3].answer
-    assert "three additional run-level realizations" in model.answers[4].answer
+    assert "eight run-level jobs in one campaign" in model.answers[4].answer
+    assert "E64-D" in model.answers[4].answer
 
 
-def test_the_recommendation_is_small_run_level_and_has_an_acceptance_criterion(
-    model,
-) -> None:
+def test_the_recommendation_samples_both_levels_in_one_campaign(model) -> None:
+    """The review's correction: an emissions-64-only top-up is not enough.
+
+    Comparing new emissions-64 runs with this pass's emissions-20 runs would separate them
+    by a campaign as well as by an emission level, so the recommendation samples both
+    levels alternately inside one campaign and refuses the one-sided design by name.
+    """
     campaign = model.campaign
     assert campaign.recommended is True
-    assert campaign.recordings == 3
-    assert len(campaign.conditions) == 1
-    assert "emissions 64" in campaign.conditions[0]
-    assert "reference-style jobs" in campaign.conditions[0]
-    assert "one side of the" in campaign.acceptance
-    assert "overlap" in campaign.acceptance
-    assert len(campaign.buys) >= 2
-    assert any("four-run E64" in text for text in campaign.buys)
+    assert campaign.recordings == 8
+    assert campaign.sequence == (
+        "E20-A",
+        "E64-A",
+        "E20-B",
+        "E64-B",
+        "E20-C",
+        "E64-C",
+        "E20-D",
+        "E64-D",
+    )
+    assert len(campaign.sequence) == campaign.recordings
+    assert sum(name.startswith("E20") for name in campaign.sequence) == 4
+    assert sum(name.startswith("E64") for name in campaign.sequence) == 4
+    # alternating, so slow drift is sampled by both levels
+    assert all(
+        campaign.sequence[index][:3] != campaign.sequence[index + 1][:3]
+        for index in range(len(campaign.sequence) - 1)
+    )
+    assert len(campaign.conditions) == 2
+    assert "emissions 20" in campaign.conditions[0]
+    assert "emissions 64" in campaign.conditions[1]
+    for setting in ("1.850 mm", "50 gates", "burst 10", "PRF 600 us"):
+        assert setting in campaign.conditions[0], setting
+        assert setting in campaign.conditions[1], setting
+    assert len(campaign.buys) >= 4
+    assert any(
+        "contemporaneous" in text or "inside one campaign" in text
+        for text in campaign.buys
+    )
+    assert any("emissions-64-only" in text for text in campaign.refused)
+    assert any("4.235" in text for text in campaign.refused)
+    assert any("dense second pass" in text for text in campaign.refused)
     assert len(campaign.refused) >= 4
+
+
+def test_the_acceptance_criterion_is_stated_in_advance_and_is_contemporaneous(
+    model,
+) -> None:
+    """What the Stage-2 campaign must report, and the only two decisions allowed."""
+    acceptance = model.campaign.acceptance
+    for required in (
+        "the four emissions-20 observations",
+        "the four emissions-64 observations",
+        "each level's own run-to-run spread",
+        "the four adjacent paired E64-to-E20 contrasts",
+        "the full cross-run range as context",
+        "measured inside that campaign",
+    ):
+        assert required in acceptance, required
+    assert "Resolved difference" in acceptance
+    assert (
+        "consistently larger than the contemporaneous between-run variation"
+        in acceptance
+    )
+    assert "Unresolved overlap" in acceptance
+    # the correction: the new block is not screened against this pass's floor
+    assert "one side of the 4.235 mm/s between-run floor" not in acceptance
+    assert "this pass's floor kept as context" in " ".join(model.campaign.refused)
+
+
+def test_the_verdict_replace_is_a_cost_decision_not_a_superiority_claim(model) -> None:
+    """`replace` on E128 means stop acquiring it here, not that E64 is proven better."""
+    row = next(row for row in model.rows if row.key == "e128_versus_e64")
+    assert row.verdict == "replace"
+    assert (
+        "do not spend further acquisition effort on emissions 128 in this design"
+        in (row.interpretation)
+    )
+    assert "scientifically proven superior" in row.interpretation
+    assert "cost, not effect" in row.interpretation
+
+
+def test_the_e64_row_overturns_on_both_levels_measured_together(model) -> None:
+    """The row that motivates the campaign names the contemporaneity requirement."""
+    row = next(row for row in model.rows if row.key == "e64_versus_e20")
+    assert "*both* levels inside one campaign" in row.overturning_measurement
+    assert "contemporaneous four-against-four" in row.overturning_measurement
+    assert "screened against an older reference" in row.overturning_measurement
 
 
 # ── the artefacts and the refusals ─────────────────────────────────────
@@ -299,7 +374,8 @@ def test_the_document_carries_the_slices_the_definitions_and_the_gate(
 ) -> None:
     assert document["ok"] is True
     assert all(document["checks"].values())
-    assert len(document["checks"]) == len(model.checks) == 15
+    assert len(document["checks"]) == len(model.checks)
+    assert len(model.checks) >= 15
     assert set(document["slices"]) == {ref.name for ref in model.slices}
     assert all(entry["recorded_revision"] for entry in document["slices"].values())
     assert (
@@ -308,7 +384,8 @@ def test_the_document_carries_the_slices_the_definitions_and_the_gate(
     assert "NOT evidence of absence" in document["definitions"]["decision_class"]
     assert "measures nothing" in document["definitions"]["no_measurement_here"]
     assert document["table"] == sds.CSV_NAME
-    assert document["campaign"]["recordings"] == 3
+    assert document["campaign"]["recordings"] == 8
+    assert document["campaign"]["sequence"] == list(model.campaign.sequence)
     assert document["analysis_commit"] == COMMIT
 
 
@@ -432,7 +509,11 @@ def test_the_prose_carries_the_answers_the_table_and_the_campaign() -> None:
     ):
         assert answer in doc, answer
     assert "## The decision table" in doc
-    assert "three additional run-level realizations of the E64 condition" in doc
+    assert "The set, in acquisition order" in doc
+    assert "`E20-A` -> `E64-A`" in doc
+    assert "`E64-D`" in doc
+    assert "8 run-level jobs" in doc
+    assert "eight run-level jobs in one campaign" in doc
     assert "Acceptance criterion, stated in advance" in doc
     assert "Refused, on this pass's own evidence" in doc
     assert "No new measurement" in doc

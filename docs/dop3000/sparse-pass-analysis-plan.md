@@ -297,6 +297,38 @@ acquisition is justified at all, and (5) if it is, the small set of new conditio
 what each one buys. A row may not be retained because the instrument accepts it. D1 stays
 outside the table as its own capability project.
 
+## 4b. What the Stage-2 campaign is
+
+The synthesis recommends one acquisition and no other: **eight run-level jobs in a single
+campaign, sampling both emissions levels alternately** -
+
+```text
+E20-A   E64-A   E20-B   E64-B   E20-C   E64-C   E20-D   E64-D
+```
+
+- with emissions per profile the only setting that differs (1.850 mm, 50 gates, burst 10,
+  PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration),
+  each job its own run-level job. Two design points are load-bearing rather than stylistic:
+
+- **Contemporaneity.** The cheaper design - three further emissions-64 realizations compared
+  against the four emissions-20 runs this pass already has - mixes the emissions question with
+  session drift, because those two sets would be recorded in different campaigns and this pass
+  measured the between-run floor at 4.235 mm/s. Sampling both levels alternately inside one
+  campaign gives the decisive comparison its own between-run floor, measured there.
+- **Replication on both sides.** Four runs per level is the replication the emissions-20 level
+  already has; what the eight jobs buy is the contemporaneous floor and four *paired*
+  contrasts, not more runs on one side.
+
+The acceptance criterion is stated in advance and has exactly two allowed outcomes: a
+**resolved difference** (the four paired contrasts consistently larger than the
+contemporaneous variation, with a consistent direction) or an **unresolved overlap** (the
+separation comparable to or smaller than that variation, which is itself the answer and ends
+the question). This pass's four emissions-20 runs and its existing emissions-64 recording stay
+as prior context; only the decisive comparison moves. Nothing in the acquisition layer
+changes: the run-wide values are set by hand between jobs, as they were for every job in this
+pass, and a job whose setting disagrees with its plan is refused by the compile's own fact
+table.
+
 ## 5. Implementation order and commits
 
 One work package per reviewable slice, and every commit green:
