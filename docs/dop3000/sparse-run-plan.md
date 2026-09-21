@@ -200,7 +200,8 @@ short of the requested window — the shape the ~257-profile observation would p
 period — then **the trial stops there**: that invalidates the 12 s protocol assumption in
 `sparse-parameter-set.md` §4 and has to be resolved (a shorter window per recording, a cap that is
 actually raised, or a different profile period) before the remaining seven jobs are spent. Only if all
-six hold does the plan stay frozen and the remaining jobs run.
+six hold does the plan stay frozen and the remaining jobs run. The condition was never reached on this
+pass: the retention below passed on every job, and all seven remaining jobs ran to completion.
 
 **The trial ran (2026-09-20) and all six gates hold.** Step 1 `burst-4` stored five points, step 2
 `common-reference-1` one, and the pass record advanced one step per job (`--status`: 2/9 ok, next step
