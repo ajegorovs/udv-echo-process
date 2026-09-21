@@ -19,6 +19,8 @@ transcript.
   [`marimo-integration-log.md`](marimo-integration-log.md)
 - Historical timeline and superseded concepts:
   [`agenda-history.md`](agenda-history.md)
+- The sparse pass's analysis work plan (WP0–WP5):
+  [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md)
 
 ---
 
@@ -241,20 +243,26 @@ profiles in one fixture and 4193–4927 in another.
 > the first sparse pass is complete, and acquisition logic stops changing here** — it re-opens only if
 > the analysis exposes a real problem, never because an abstraction looks improvable.
 >
-> **What a fresh session does next: the scientific ingest, and nothing else.** It reads committed files
-> and needs no instrument, so it is unblocked the moment a session starts. The review names its
-> outputs: common-support normalization, within-job drift, the CR1–CR4 reference drift, the 2×2
-> pitch × burst interaction, the emissions 8 / 20 / 64 / 128 behaviour, and then a Stage-2
-> recommendation (item 4 of
-> [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md)). It analyses
-> [`../data/sparse-mixer-live-1/`](../data/sparse-mixer-live-1/README.md), whose 26 recordings all carry
-> signal; the zero-signal first pass stays acquisition-qualification evidence. Two facts about that
-> directory the ingest must respect: the period comes from the **stored timestamps** (the logs'
-> `timing.target_s` records the retired expectation — provenance, not to be rewritten), and the two
-> plans are pinned equivalent by a test, so the repeat cannot silently become another experiment. The
-> live-dependent suites stay the first preflight at any sitting that touches the instrument
-> (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`): any failure
-> that is not an understood live-state prerequisite stops the sitting before a recording is spent.
+> **What a fresh session does next: the scientific analysis, and nothing else.** It reads committed files
+> and needs no instrument, so it is unblocked the moment a session starts. **WP0 of it has landed**
+> (`analysis/sparse-pass-ingest`): the ingest table and its gate —
+> [`reports/sparse-mixer-live-1/points.csv`](../reports/sparse-mixer-live-1/points.csv) (26 rows: identity,
+> order, condition, requested and stored window, decoded settings, the achieved period from the stored
+> timestamps, retention, signal statistics on the common window and support, and the provenance of both
+> sides) plus `qc-summary.json`, produced by `python -m udv_echo_process.cli sparse-inventory` and pinned by
+> 23 tests to the pass's own record, the plan, and the two provenance rules. Two measured facts it hands the
+> later work packages: the three windows are co-located on one physical interval (10.138–98.938 mm at three
+> pitches, the 1.85 mm window's last gate outside the cut), and the planner's transfer term measures
+> ~0.77 ms here — the law sits 0.21–0.22 ms above the achieved period at every emission level, in one
+> direction. **Next: WP1 (within-job drift from the block-local controls) and WP2 (CR1–CR4 across runs).**
+> The work order, the two floors and the acceptance gates are in
+> [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
+> is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
+> **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked
+> as such, never to be rewritten), and the two plans are pinned equivalent by a test, so the repeat cannot
+> silently become another experiment. The live-dependent suites stay the first preflight at any sitting that
+> touches the instrument (`uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py`):
+> any failure that is not an understood live-state prerequisite stops the sitting before a recording is spent.
 
 >
 > Everything else in this workstream is closed: the identity change and its device ladder

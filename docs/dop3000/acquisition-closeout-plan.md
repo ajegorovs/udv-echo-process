@@ -73,19 +73,26 @@ and the burst / emissions / drift contrasts wait for a rig that is measuring.
    all stored. One job (`emissions-128`) was marked failed by the size signature; that was a false
    negative in the guard, not in the files (`data/sparse-mixer-first-pass/README.md` carries the
    measurement and the corrected law);
-4. **the analysis ingest — the only open item, and it is unblocked.** The review of the whole delta
+4. **the analysis ingest — landed (WP0); the analysis it unblocks is the open item.** The review of the whole delta
    (2026-09-21, `b9043db..9d6706c`) accepted the mixer-enabled rerun, closed the two guard findings and
    stops the acquisition phase here: acquisition logic changes again only if this ingest exposes a real
    problem. It reads [`../../data/sparse-mixer-live-1/`](../../data/sparse-mixer-live-1/README.md) — 26
    recordings of the same frozen design, every one carrying signal — beside the zero-signal first pass it
    does not replace, and it needs no instrument. What it owes, named by that review: **common-support
    normalization, within-job drift, the CR1–CR4 reference drift, the 2×2 pitch × burst interaction, the
-   emissions 8 / 20 / 64 / 128 behaviour, and a Stage-2 recommendation.** The two requirements the trial
+   emissions 8 / 20 / 64 / 128 behaviour, and a Stage-2 recommendation.** The ingest half of that is
+   committed on `analysis/sparse-pass-ingest` — the table, its QC gate and the work plan for the four
+   measurement slices and the decision table
+   ([`sparse-pass-analysis-plan.md`](sparse-pass-analysis-plan.md),
+   [`../../reports/sparse-mixer-live-1/README.md`](../../reports/sparse-mixer-live-1/README.md)) — and what
+   is left is WP1–WP5 of that plan. The two requirements the trial
    handed it are settled and stand: temporal analysis uses the period measured from the **stored
    timestamps** — the files give `emissions × PRF + 10.369 ms` across all four emission levels, the
    manual's `T_prf × (16 + N_PRF)` together with its transfer term, and the logs' `timing.target_s` is the
    retired expectation kept as provenance and not to be rewritten — and the size signature models the BDD
-   structure exactly on 26/26 files of each pass;
+   structure exactly on 26/26 files of each pass. The WP0 ingest enforces both, and measures one further
+   acquisition-side fact without acting on it: the planner's transfer term is ~0.77 ms on this pass, so its
+   period law sits 0.21–0.22 ms high at every level;
 5. **D1 stays a separate capability project** (a sensitivity write/read path plus an echo/energy recording
    surface) and blocks nothing above it.
 
