@@ -102,6 +102,21 @@ DECISION_CLASSES: tuple[str, ...] = (
 )
 
 #: A row is either part of the Stage-2 decision or explicitly outside it.
+#: The Stage-2 acquisition order, counterbalanced so that neither level always leads a pair.
+#: One definition for the campaign and for the answer that quotes it: when the two were written
+#: out separately the answer kept the pre-counterbalancing order, which is exactly the
+#: divergence a second copy invites.
+STAGE2_SEQUENCE: tuple[str, ...] = (
+    "E20-A",
+    "E64-A",
+    "E64-B",
+    "E20-B",
+    "E20-C",
+    "E64-C",
+    "E64-D",
+    "E20-D",
+)
+
 STAGE_SCOPE = "stage-2 decision"
 OUTSIDE_SCOPE = "outside the stage-2 decision: its own capability project"
 
@@ -936,16 +951,17 @@ def _answers(
             order=5,
             question="if it is, which small set of new conditions, and what does each buy?",
             answer=(
-                "eight run-level jobs in one campaign, sampling the two levels alternately: E20-A, "
-                "E64-A, E20-B, E64-B, E20-C, E64-C, E20-D, E64-D. Emissions per profile is the only "
-                "setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, "
-                "sensitivity, TGC, first gate, sound speed and duration - and alternating the order "
-                "means slow drift is sampled by both levels. They buy the one thing the ladder cannot "
-                "supply: four emissions-64 and four emissions-20 observations made contemporaneously, a "
-                "between-run floor measured inside that same campaign, and four adjacent paired "
-                "contrasts. This pass's four emissions-20 runs and its existing emissions-64 recording "
-                "stay as prior context; only the decisive comparison moves. Nothing else is "
-                "recommended, and the acceptance criterion is stated in advance below."
+                "eight run-level jobs in one campaign, and this is their acquisition order: "
+                f"{', '.join(STAGE2_SEQUENCE)}. They are four counterbalanced pairs, so each level "
+                "leads two pairs and follows in two and slow drift is sampled by both. Emissions per "
+                "profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, "
+                "and the same power, sensitivity, TGC, first gate, sound speed and duration. They buy "
+                "the one thing the ladder cannot supply: four emissions-64 and four emissions-20 "
+                "observations made contemporaneously, a between-run floor measured inside that same "
+                "campaign, and four adjacent paired contrasts oriented E64 minus E20. This pass's four "
+                "emissions-20 runs and its existing emissions-64 recording stay as prior context; only "
+                "the decisive comparison moves. Nothing else is recommended, and the acceptance "
+                "criterion is stated in advance below."
             ),
             evidence_refs=(
                 "emissions-ladder.json#levels",
@@ -995,16 +1011,7 @@ def _campaign(
             "job's run-wide values were set in this pass, and the compile's own fact table verifies "
             "the setting from the read-back, so no acquisition-layer change is needed."
         ),
-        sequence=(
-            "E20-A",
-            "E64-A",
-            "E64-B",
-            "E20-B",
-            "E20-C",
-            "E64-C",
-            "E64-D",
-            "E20-D",
-        ),
+        sequence=STAGE2_SEQUENCE,
         conditions=(
             (
                 "emissions 20 at the reference spatial window: 1.850 mm, 50 gates, burst 10, PRF 600 us, "
@@ -1215,6 +1222,11 @@ def _checks(
             and any("emissions-64-only" in text for text in campaign.refused)
             and any("4.235" in text for text in campaign.refused)
             and any("dense second pass" in text for text in campaign.refused)
+        ),
+        "the_fifth_answer_quotes_the_campaigns_own_sequence": (
+            ", ".join(campaign.sequence) in answers[4].answer
+            and [name for name in campaign.sequence if name in answers[4].answer]
+            == list(campaign.sequence)
         ),
         "the_five_gate_questions_are_answered_in_order": [
             answer.order for answer in answers
