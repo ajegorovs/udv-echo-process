@@ -24,6 +24,8 @@ table are their own documents, each with its own artefacts and its own gate:
 |---|---|---|---|
 | WP1 — per-job anchor floors | [`anchor-floor.md`](anchor-floor.md) | `anchor-floor.csv`, `anchor-floor.json`, `figures/anchor-<job>.png` | `sparse-anchor-floor` |
 | WP2 — between-run reference floor | [`reference-floor.md`](reference-floor.md) | `reference-floor.csv`, `reference-floor.json`, `figures/reference-floor.png` | `sparse-reference-floor` |
+| WP3 — pitch x burst interaction | [`pitch-burst.md`](pitch-burst.md) | `pitch-burst.csv`, `pitch-burst.json`, `figures/pitch-burst.png` | `sparse-pitch-burst` |
+| WP4 — emissions ladder and its temporal cost | [`emissions-ladder.md`](emissions-ladder.md) | `emissions-ladder.csv`, `emissions-ladder.json`, `figures/emissions-ladder-stability.png`, `figures/emissions-ladder-temporal.png` | `sparse-emissions-ladder` |
 
 ## Reproduce
 

@@ -264,9 +264,15 @@ profiles in one fixture and 4193–4927 in another.
 > its drift), the emissions jobs' 1.521 / 2.829 / 3.304, and the between-run reference floor is 4.235 mm/s
 > depth-averaged (14.603 mm/s per depth at 21.238 mm). Two consequences bind what follows: a burst contrast
 > under ~10 mm/s cannot be separated from its own controls, and the between-run floor is not ordered by
-> elapsed time (the two runs 5.3 minutes apart differ most), so it is not a rate. **Next: WP3 (the 2x2
-> pitch x burst interaction, screened against both floors) and WP4 (the emissions ladder with its achieved
-> timestamps), then WP5's Stage-2 decision table.** The work order and the acceptance gates are in
+> elapsed time (the two runs 5.3 minutes apart differ most), so it is not a rate. **WP3 and WP4 have now
+> landed too**: `reports/sparse-mixer-live-1/pitch-burst.md` (the 2x2 on 31 common knots no finer than
+> 2.960 mm, `I(z) = -7.922 mm/s` depth-averaged, 9/31 knots over the depth-resolved endpoint and 10/31 over
+> burst-18's own anchor spread, so no depth-averaged pitch x burst effect is separable) and
+> `reports/sparse-mixer-live-1/emissions-ladder.md` (achieved periods 15.200 / 22.400 / 48.800 / 87.200 ms,
+> Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz, 2 s physical-duration blocks of 132 / 89 / 41 / 23 profiles,
+> and the e128 observation measured at 1.007x / 1.421x its own job's anchor spread). **Next: WP5, the
+> Stage-2 decision table, which consumes all four measured floors and is the only thing that may justify a
+> second acquisition.** The work order and the acceptance gates are in
 > [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
 > is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
 > **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked

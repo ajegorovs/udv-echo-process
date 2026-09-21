@@ -1,10 +1,12 @@
 # The sparse pass analysis — work plan
 
-> **Status:** WP0, WP1 and WP2 are **implemented and committed**
-> (`analysis/sparse-pass-ingest`); WP3–WP5 are planned here and not started. WP0 was
-> reviewed and frozen, with WP1 and WP2 cleared to run in parallel and both landed:
+> **Status:** WP0–WP4 are **implemented and committed** (`analysis/sparse-pass-ingest`);
+> WP5 is planned here and not started. WP0, WP1 and WP2 were reviewed and **frozen**, with
+> WP3 and WP4 cleared to run in parallel and both landed:
 > `<report>/anchor-floor.{csv,json,md}` with a figure per job, and
-> `<report>/reference-floor.{csv,json,md}` with its figure. This document stays the
+> `<report>/reference-floor.{csv,json,md}` with its figure — and now
+> `<report>/pitch-burst.{csv,json,md}` with its figure and
+> `<report>/emissions-ladder.{csv,json,md}` with two. This document stays the
 > authority for what the analysis of the mixer-enabled sparse pass measures, in what
 > order, and what each step has to establish before the next one may rely on it. It adds no acquisition work: the
 > acquisition phase is closed, and it re-opens only if this analysis exposes a real
@@ -55,6 +57,23 @@ Two facts about them that bind the later packages: the burst jobs' own anchor fl
 than ~10 mm/s cannot be separated from its own controls; and the between-run floor is not
 ordered by elapsed time (the two runs 5.3 minutes apart differ most), so it may not be
 read as a rate.
+
+**What WP3 and WP4 have now measured** on those floors. WP3: the pitch × burst interaction
+on 31 common knots no finer than 2.960 mm, `I(z) = -7.922 mm/s` depth-averaged (minimum
+-21.743 at 45.658 mm, maximum +7.615 at 60.458 mm), with the four corner contrasts -5.787
+(pitch at burst 4), +2.135 (pitch at burst 18), -4.373 (burst at 0.617 mm) and +3.550
+(burst at 2.960 mm); 9 of 31 knots exceed the depth-resolved endpoint (14.603) and 10
+exceed even burst-18's own anchor spread (11.980), while the depth-averaged interaction
+lies below both anchor guards - so at the depth-averaged endpoint there is no pitch x
+burst effect this pass can separate from the burst jobs' own anchor movement. WP4: the
+four levels' achieved periods are 15.200 / 22.400 / 48.800 / 87.200 ms (65.789 / 44.643 /
+20.492 / 11.468 Hz, Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz), a transfer term of
++10.400 ms over the planning law at every level, and 2 s physical-duration blocks holding
+132 / 89 / 41 / 23 profiles - the bandwidth price of higher emissions. The `e128`
+observation WP1 raised measures +3.327 and +4.696 mm/s depth-averaged against its own
+anchors (1.007x and 1.421x that job's own anchor spread), 35/49 and 37/49 knots of one
+sign, and remains one realization against two anchors rather than evidence that E128
+caused a change.
 
 ## 2. Facts the implementation must preserve
 
@@ -231,7 +250,7 @@ pooled. Report the depth ranges where the four differ most. Do not pool CR1–CR
 "reference" row: the point of four runs is that they are four, and here — and only here —
 does the pass observe the reference condition.
 
-### WP3 — the pitch × burst interaction
+### WP3 — the pitch × burst interaction (implemented)
 
 Deliver: the crossed cells the pass actually recorded — pitch 0.617 / 1.85 / 2.96 mm at
 burst 4 and at burst 18, where 1.85 mm comes from each job's own controls and the two
@@ -245,7 +264,7 @@ the historical burst-10 and reference-pitch evidence is quoted as context only a
 substituted for a crossed cell. If the interaction falls below both floors, say so — that
 is the finding, and it is the one that allows the axes to be fixed independently.
 
-### WP4 — emissions per profile: 8, 20, 64, 128
+### WP4 — emissions per profile: 8, 20, 64, 128 (implemented)
 
 Deliver, per level: mean-profile shape stability, variance/noise reduction, the temporal
 bandwidth cost (each level's own grid and analysed band, with the profile rate, Nyquist
