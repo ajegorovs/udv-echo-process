@@ -1,8 +1,8 @@
 {
-  "analysis_commit": "dda4be3",
+  "analysis_commit": "e8ea80f",
   "answers": [
     {
-      "answer": "the emissions axis partly: E128 is replaced by E64 on cost, since no measured quantity prefers it and its period is a factor of 1.79 longer; E8 and E20 are kept, E8 having shown no stability loss and E20 being the pass's own reference. The pitch axis is not collapsed: its interaction is unresolved at this design's floors, which is a statement about separability rather than about the axis being irrelevant. The burst axis stays at the two levels the historical table already fixed (4 and 18 cycles at the reference pitch), and the new information here is that the burst jobs' own anchors move by 10-12 mm/s, which is what makes finer burst contrasts unresolvable rather than unnecessary.",
+      "answer": "the emissions axis, on cost at both upper levels: **E20 is retained as the reference and default condition**, E8 stays useful for bandwidth, and neither upper level is worth acquiring again in this design - E128 because no measured quantity prefers it and its period is a factor of 1.79 longer than E64's, and E64 because the targeted contemporaneous campaign this pass recommended has since been run and detected no improvement over E20 large enough to separate from the variation that campaign measured for itself (answer 4). **`E128 is replaced by E64` is no longer the current state of the axis**: E64 is not the level to move to, E20 is. The pitch axis is not collapsed: its interaction is unresolved at this design's floors, which is a statement about separability rather than about the axis being irrelevant. The burst axis stays at the two levels the historical table already fixed (4 and 18 cycles at the reference pitch), and the new information here is that the burst jobs' own anchors move by 10-12 mm/s, which is what makes finer burst contrasts unresolvable rather than unnecessary.",
       "evidence_refs": [
         "pitch-burst.json#conservative_reading",
         "emissions-ladder.json#steps"
@@ -20,7 +20,7 @@
       "question": "which interactions matter?"
     },
     {
-      "answer": "E128 is not a level worth acquiring further: no depth-averaged improvement over E64 is detected, and a fixed 2 s block holds 23 profiles against 41 at E64. E8 and E20 are not redundant - E8 carries the ladder's bandwidth advantage with no measured stability cost, and E20 is the only condition observed in more than one run, so it is what makes any between-run statement possible at all. The emissions levels' three block-local anchor sets are not redundant either: they are each job's own drift diagnostic and the reason every E-level comparison has a within-job context.",
+      "answer": "on current evidence, **neither E64 nor E128 is justified for further acquisition in this design**. E128 because no depth-averaged improvement over E64 is detected and a fixed 2 s block holds 23 profiles against 41 at E64; E64 because the contemporaneous test of it has now been run and no emissions-64 improvement over emissions 20 was detected above that campaign's own floor (answer 4). **E20 remains the reference and default condition**: it is the only level with more than one realization of its own *and* the level the paired campaign measured against, which is what makes any between-run statement possible at all. **E8 remains useful for bandwidth**: it carries the ladder's advantage with no measured stability cost. Not detected is not the same as absent at any of these levels - it is a statement about the floors each one was screened against. The emissions levels' three block-local anchor sets are not redundant either: they are each job's own drift diagnostic and the reason every E-level comparison has a within-job context.",
       "evidence_refs": [
         "emissions-ladder.json#temporal",
         "anchor-floor.json#jobs"
@@ -29,7 +29,7 @@
       "question": "which levels are redundant?"
     },
     {
-      "answer": "not as a dense pass. The pitch x burst interaction is limited by the burst jobs' own anchor movement, which more points of the same design do not shrink; the emissions ladder's one unresolved distinction (E20 against E64) is limited by how many runs each level has, and the observed difference straddles the 4.235 mm/s floor depending on which E20 run is used. Only that second limitation is worth spending recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign and screened against this pass's emissions-20 runs would be separated by a campaign as well as by an emission level, and the pass has measured that between-run variation is large enough for that to enter the comparison. It takes realizations of both levels inside one campaign.",
+      "answer": "not as a dense pass, and no longer as a bounded one either. The pitch x burst interaction is limited by the burst jobs' own anchor movement, which more points of the same design do not shrink. The emissions ladder's one unresolved distinction (E20 against E64) was limited by how many runs each level has rather than by the rig, and the observed difference then straddled the 4.235 mm/s floor depending on which E20 run was used - so that one distinction was worth spending recordings on, and not by acquiring emissions 64 alone: runs made in a later campaign and screened against this pass's emissions-20 runs would be separated by a campaign as well as by an emission level. Realizations of both levels inside one campaign were therefore acquired (answer 5), and **that campaign's result closes the question at its own resolving power**: no emissions-64 improvement over emissions 20 was detected above the variation the campaign measured for itself, in either direction, depth-averaged or per gate. Nothing measured here now argues for a denser acquisition of any kind.",
       "evidence_refs": [
         "pitch-burst.json#conservative_reading",
         "emissions-ladder.json#steps"
@@ -38,9 +38,10 @@
       "question": "is a denser second acquisition justified at all?"
     },
     {
-      "answer": "eight run-level jobs in one campaign, and this is their acquisition order: E20-A, E64-A, E64-B, E20-B, E20-C, E64-C, E64-D, E20-D. They are four counterbalanced pairs, so each level leads two pairs and follows in two and slow drift is sampled by both. Emissions per profile is the only setting that differs - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration. They buy the one thing the ladder cannot supply: four emissions-64 and four emissions-20 observations made contemporaneously, a between-run floor measured inside that same campaign, and four adjacent paired contrasts oriented E64 minus E20. This pass's four emissions-20 runs and its existing emissions-64 recording stay as prior context; only the decisive comparison moves. Nothing else is recommended, and the acceptance criterion is stated in advance below.",
+      "answer": "**the one bounded set this pass recommended was the eight-job Stage-2 campaign**, and this is the record of it: E20-A, E64-A, E64-B, E20-B, E20-C, E64-C, E64-D, E20-D - four counterbalanced pairs, so each level led two pairs and followed in two and slow drift was sampled by both, with emissions per profile the only setting that differed (1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration). It bought the one thing the ladder could not supply: four emissions-64 and four emissions-20 observations made contemporaneously, a floor measured inside that same campaign, and four adjacent paired contrasts oriented E64 minus E20. **It has since been run**, and its result is unresolved overlap / not detected: every one of the four contrasts sits inside the floor that campaign measured for itself and they do not share a direction. **No further emissions acquisition is currently recommended from this workstream** - the set recommended by this pass has been acquired, analysed and incorporated into the E64-vs-E20 row above, and nothing in its result names a measurement worth buying next.",
       "evidence_refs": [
         "emissions-ladder.json#levels",
+        "pairs.json#contrasts",
         "decision-table.json#campaign"
       ],
       "order": 5,
@@ -59,9 +60,9 @@
       "emissions 20 at the reference spatial window: 1.850 mm, 50 gates, burst 10, PRF 600 us, and every other setting identical to this pass's reference condition - power, sensitivity, TGC, first gate, sound speed, duration - as four run-level jobs, one per block letter",
       "emissions 64 at those same fixed settings - 1.850 mm, 50 gates, burst 10, PRF 600 us, and the same power, sensitivity, TGC, first gate, sound speed and duration - differing from the emissions-20 jobs in emissions per profile only, as four run-level jobs alternating with them"
     ],
-    "justification": "the pass's floors are adequate for everything it measured except one distinction, and that one is limited by how many runs a level has rather than by the rig: the E64-to-E20 difference spans -6.405 to -2.170 mm/s depending on which of the four E20 runs it is compared with, so it straddles the 4.235 mm/s between-run floor. Acquiring emissions 64 alone would not settle it: those runs would be made in a later campaign and compared against emissions-20 runs from this one, and the between-run variation this pass measured is large enough that campaign-level drift would enter the emissions comparison. The two levels therefore have to be sampled alternately inside one campaign, so that slow drift is shared by both levels and the decisive comparison carries a floor measured in its own campaign. The existing four emissions-20 runs and the existing emissions-64 recording stay as prior context; only the decisive comparison moves to the new block.",
+    "justification": "**this block was this pass's one recommendation, and it has been acquired.** It existed because the pass's floors were adequate for everything it measured except one distinction, and that one was limited by how many runs a level has rather than by the rig: the E64-to-E20 difference spanned -6.405 to -2.170 mm/s depending on which of the four E20 runs it was compared with, straddling the 4.235 mm/s between-run floor, and acquiring emissions 64 alone would not have settled it - those runs would have been made in a later campaign and compared against emissions-20 runs from this one, so campaign-level drift would have entered the emissions comparison. Sampling both levels alternately inside one campaign was the answer, and the block below is what was designed and run. Its result is unresolved overlap / not detected: no emissions-64 improvement over emissions 20 was separable from the variation that campaign measured for itself. **No further acquisition is recommended from this workstream.**",
     "pair_design": "The four pairs are **acquired in the order below**, and that assignment is part of the design rather than an implementation detail. Alternating the levels keeps slow drift shared, but always acquiring emissions 20 before emissions 64 would leave a short-timescale order effect - handling time, thermal or mixer evolution, settling after an emissions change, or a directional drift across adjacent jobs - confounded with the emissions contrast. The order is therefore counterbalanced: the pair is acquired E20-then-E64 in two pairs and E64-then-E20 in the other two, so each level is first twice and second twice, and an order effect of that kind shows up as pair-to-pair scatter rather than as a difference between the levels. It is one campaign block, not two interleaved campaigns: one run-plan, one manifest, one ordered sequence and one failure/resume state. The analysis publishes the four paired contrasts **individually**, each oriented as E64 minus E20 whatever order its pair was acquired in, and records that pair's acquisition orientation beside it - the orientation is retained, not discarded. The run-wide emissions value is set by the operator before each job, exactly as every job's run-wide values were set in this pass, and the compile's own fact table verifies the setting from the read-back, so no acquisition-layer change is needed.",
-    "recommended": true,
+    "recommended": false,
     "recordings": 8,
     "refused": [
       "an emissions-64-only acquisition screened against this pass's emissions-20 runs: the later campaign's drift would enter the comparison, which the paired design exists to prevent",
@@ -83,6 +84,7 @@
     ]
   },
   "checks": {
+    "a_block_that_has_run_is_not_still_recommended": true,
     "both_levels_are_sampled_in_one_campaign": true,
     "d1_is_outside_the_stage_2_scope": true,
     "every_frozen_slice_is_cited_and_held_its_gate": true,
@@ -91,7 +93,9 @@
     "every_verdict_is_one_of_the_plans_four": true,
     "no_dense_sweep_is_kept": true,
     "not_detected_is_not_read_as_absent": true,
+    "the_answers_carry_the_post_campaign_state": true,
     "the_campaign_row_reads_the_campaigns_own_floor": true,
+    "the_dense_row_records_the_measurement_it_pointed_to": true,
     "the_e64_row_records_the_state_it_moved_from": true,
     "the_engine_revision_is_recorded": true,
     "the_fifth_answer_quotes_the_campaigns_own_sequence": true,
@@ -99,6 +103,7 @@
     "the_five_gate_questions_are_answered_in_order": true,
     "the_floors_are_read_not_declared": true,
     "the_numbers_are_the_slices_own": true,
+    "the_old_future_state_is_gone": true,
     "the_pair_order_is_counterbalanced_and_part_of_the_design": true,
     "the_seven_questions_are_the_reviews_own": true,
     "the_stage2_campaign_is_recorded_as_run": true,
@@ -272,7 +277,7 @@
     },
     {
       "applicable_floor": "not a single floor: the binding constraints are the burst jobs' own anchor movement (9.646 and 11.980 mm/s) and the between-run floor (4.235 mm/s depth-averaged, 14.603 mm/s depth-resolved)",
-      "automation": "none, and for a different reason than the pointwise surface's: the recommended block changes neither resolution nor gates - it is eight run-level jobs at the reference window's own settings - and its one varying run-wide setting is emissions per profile, which the operator sets before each job and the compile's read-back verifies. No acquisition-layer change is needed to run it.",
+      "automation": "none. The bounded block this row pointed to has been acquired and analysed: it was eight run-level jobs at the reference window's own settings, its one varying run-wide setting (emissions per profile) was set by the operator and verified by the compile's read-back, and no acquisition-layer change was needed to run it. Nothing about that block is future work.",
       "decision_class": "not resolvable with this design",
       "evidence": "WP1 through WP4 together: the four floors this pass measured, and what each unresolved question is limited by.",
       "evidence_refs": [
@@ -283,12 +288,12 @@
         "decision-table.json#campaign"
       ],
       "floor_mm_s": null,
-      "interpretation": "a dense second pass would reproduce these floors: the pitch x burst interaction is limited by movement *inside* the burst jobs, and adding more pitch or burst conditions of the same design does not shrink that. Only the E20/E64 realization dependence is bounded by the number of runs rather than by the rig, and only it is worth measuring again - as a bounded paired block inside one campaign, not a matrix.",
+      "interpretation": "a dense second pass would reproduce these floors: the pitch x burst interaction is limited by movement *inside* the burst jobs, and adding more pitch or burst conditions of the same design does not shrink that. The E20/E64 realization dependence was the one limitation bounded by the number of runs rather than by the rig, and it was addressed by the bounded paired block rather than by density: **that measurement has been performed and did not detect a stable emissions-64 benefit above its contemporaneous floor**, so it is no longer an open distinction and nothing here remains worth measuring again by density or by a further emission level.",
       "key": "dense_second_pass",
-      "observed_effect": "the largest unresolved effect this pass can see is the scalar pitch x burst interaction at 7.922 mm/s, which is inside the burst jobs' own anchor movement; the only unresolved *distinction* that additional run-level realizations can settle is E20 against E64, whose span (-6.405 to -2.170 mm/s) straddles the 4.235 mm/s floor",
+      "observed_effect": "the largest unresolved effect this pass can see is the scalar pitch x burst interaction at 7.922 mm/s, which is inside the burst jobs' own anchor movement and is not settled by more points of the same design. The one *distinction* additional run-level realizations could settle was E20 against E64, whose span (-6.405 to -2.170 mm/s) then straddled the 4.235 mm/s floor - and that distinction has since been measured: the targeted campaign returned four paired contrasts whose largest is 7.2256 mm/s, all inside the 9.4044 mm/s floor that campaign measured for itself, with no consistent direction",
       "observed_effect_mm_s": null,
-      "overturning_measurement": "a diagnostic that shows the within-job anchor movement is an artefact of the schedule rather than the rig, or a named question that the recommended targeted set does not answer",
-      "prior_state": null,
+      "overturning_measurement": "a diagnostic that shows the within-job anchor movement is an artefact of the schedule rather than the rig, or a named question that density could answer and the targeted set could not - the E20/E64 realization dependence this row once pointed to is no longer one of those, having been measured and reported not detected",
+      "prior_state": "this row said that the only unresolved distinction additional run-level realizations could settle was E20 against E64, that it was worth measuring again as a bounded paired block inside one campaign, and that the eight-job block was the next acquisition. That block has since been run (see the campaign record above) and its result is not detected at that campaign's floors.",
       "question": "is a dense second acquisition across the sparse matrix justified by this pass?",
       "scope": "stage-2 decision",
       "verdict": "defer"

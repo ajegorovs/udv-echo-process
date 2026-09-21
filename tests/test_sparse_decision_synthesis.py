@@ -693,7 +693,7 @@ def test_the_prose_carries_the_answers_the_table_and_the_campaign() -> None:
     assert "`E20-A` -> `E64-A`" in doc
     assert "`E64-D`" in doc
     assert "8 run-level jobs" in doc
-    assert "eight run-level jobs in one campaign" in doc
+    assert "the one bounded set this pass recommended was the eight-job Stage-2 campaign" in doc
     assert "Acceptance criterion, stated in advance" in doc
     assert "Refused, on this pass's own evidence" in doc
     assert "No new measurement" in doc
