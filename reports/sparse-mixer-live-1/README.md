@@ -26,6 +26,7 @@ table are their own documents, each with its own artefacts and its own gate:
 | WP2 — between-run reference floor | [`reference-floor.md`](reference-floor.md) | `reference-floor.csv`, `reference-floor.json`, `figures/reference-floor.png` | `sparse-reference-floor` |
 | WP3 — pitch x burst interaction | [`pitch-burst.md`](pitch-burst.md) | `pitch-burst.csv`, `pitch-burst.json`, `figures/pitch-burst.png` | `sparse-pitch-burst` |
 | WP4 — emissions ladder and its temporal cost | [`emissions-ladder.md`](emissions-ladder.md) | `emissions-ladder.csv`, `emissions-ladder.json`, `figures/emissions-ladder-stability.png`, `figures/emissions-ladder-temporal.png` | `sparse-emissions-ladder` |
+| WP5 — the Stage-2 decision | [`decision-table.md`](decision-table.md) | `decision-table.csv`, `decision-table.json` | `sparse-decision` |
 
 ## Reproduce
 

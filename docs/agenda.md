@@ -272,7 +272,16 @@ profiles in one fixture and 4193–4927 in another.
 > Nyquist 32.895 / 22.321 / 10.246 / 5.734 Hz, 2 s physical-duration blocks of 132 / 89 / 41 / 23 profiles,
 > and the e128 observation measured at 1.007x / 1.421x its own job's anchor spread). **Next: WP5, the
 > Stage-2 decision table, which consumes all four measured floors and is the only thing that may justify a
-> second acquisition.** The work order and the acceptance gates are in
+> second acquisition.** **WP5 has now landed too**:
+> [`reports/sparse-mixer-live-1/decision-table.md`](../reports/sparse-mixer-live-1/decision-table.md)
+> reads the four frozen slices rather than recomputing anything and carries the seven outstanding
+> questions with their evidence, floor, observed effect, interpretation, verdict and overturning
+> measurement — the pitch x burst interaction `defer` (not resolvable with this design and not
+> evidence of absence), E8 against E20 `keep`, E64 against E20 `defer`, E128 against E64 `replace`,
+> the PRF `keep`, a dense second pass refused, and D1 `requires diagnostic` outside the Stage-2
+> scope. Its one recommendation is three run-level E64 recordings; it refuses a broad sweep on the
+> pass's own evidence. **Next: the review's freeze, then whatever Stage-2 campaign that decision
+> justifies — and nothing else.** The work order and the acceptance gates are in
 > [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
 > is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
 > **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked

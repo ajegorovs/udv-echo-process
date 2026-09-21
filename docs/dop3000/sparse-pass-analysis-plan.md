@@ -1,8 +1,10 @@
 # The sparse pass analysis — work plan
 
-> **Status:** WP0–WP4 are **implemented and committed** (`analysis/sparse-pass-ingest`);
-> WP5 is planned here and not started. WP0, WP1 and WP2 were reviewed and **frozen**, with
-> WP3 and WP4 cleared to run in parallel and both landed:
+> **Status:** the whole plan is **implemented and committed**
+> (`analysis/sparse-pass-ingest`): WP0–WP4 as the measurement slices and WP5 as the
+> decision synthesis built on their frozen artefacts
+> (`<report>/decision-table.{csv,json,md}`). WP0–WP4 were reviewed and **frozen**; WP5 is
+> in review. The earlier pair:
 > `<report>/anchor-floor.{csv,json,md}` with a figure per job, and
 > `<report>/reference-floor.{csv,json,md}` with its figure — and now
 > `<report>/pitch-burst.{csv,json,md}` with its figure and
@@ -281,7 +283,7 @@ directly — whether E64/E128 materially improve the velocity estimate over E20,
 loses useful estimator stability, and what the bandwidth cost of each level is. "Material"
 means above the applicable floor, and is stated in the axis's own units.
 
-### WP5 — the Stage-2 recommendation
+### WP5 — the Stage-2 recommendation (implemented)
 
 Deliver `reports/sparse-mixer-live-1/decision-table.md`: one row per candidate condition
 with existing evidence, the floor it was screened against, the information gained, the
