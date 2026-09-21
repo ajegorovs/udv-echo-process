@@ -174,6 +174,7 @@ class Stage2Campaign(ValueModel):
 
     recommended: bool
     justification: str
+    pair_design: str
     sequence: tuple[str, ...]
     conditions: tuple[str, ...]
     recordings: int
@@ -795,10 +796,16 @@ def _rows(
                 "limited by movement *inside* the burst jobs, and adding more pitch or burst conditions "
                 "of the same design does not shrink that. Only the E20/E64 realization dependence is "
                 "bounded by the number of runs rather than by the rig, and only it is worth measuring "
-                "again - and a handful of run-level realizations, not a matrix."
+                "again - as a bounded paired block inside one campaign, not a matrix."
             ),
             decision_class="not resolvable with this design",
-            automation="none for the recommended set: it writes only resolution and gates, the same as every other point",
+            automation=(
+                "none, and for a different reason than the pointwise surface's: the recommended block "
+                "changes neither resolution nor gates - it is eight run-level jobs at the reference "
+                "window's own settings - and its one varying run-wide setting is emissions per profile, "
+                "which the operator sets before each job and the compile's read-back verifies. No "
+                "acquisition-layer change is needed to run it."
+            ),
             verdict="defer",
             scope=STAGE_SCOPE,
             overturning_measurement=(
@@ -970,15 +977,33 @@ def _campaign(
             "own campaign. The existing four emissions-20 runs and the existing emissions-64 recording "
             "stay as prior context; only the decisive comparison moves to the new block."
         ),
+        pair_design=(
+            "The four pairs are **acquired in the order below**, and that assignment is part of the "
+            "design rather than an implementation detail. Alternating the levels keeps slow drift "
+            "shared, but always acquiring emissions 20 before emissions 64 would leave a "
+            "short-timescale order effect - handling time, thermal or mixer evolution, settling after "
+            "an emissions change, or a directional drift across adjacent jobs - confounded with the "
+            "emissions contrast. The order is therefore counterbalanced: the pair is acquired "
+            "E20-then-E64 in two pairs and E64-then-E20 in the other two, so each level is first twice "
+            "and second twice, and an order effect of that kind shows up as pair-to-pair scatter "
+            "rather than as a difference between the levels. It is one campaign block, not two "
+            "interleaved campaigns: one run-plan, one manifest, one ordered sequence and one "
+            "failure/resume state. The analysis publishes the four paired contrasts **individually**, "
+            "each oriented as E64 minus E20 whatever order its pair was acquired in, and records that "
+            "pair's acquisition orientation beside it - the orientation is retained, not discarded. "
+            "The run-wide emissions value is set by the operator before each job, exactly as every "
+            "job's run-wide values were set in this pass, and the compile's own fact table verifies "
+            "the setting from the read-back, so no acquisition-layer change is needed."
+        ),
         sequence=(
             "E20-A",
             "E64-A",
-            "E20-B",
             "E64-B",
+            "E20-B",
             "E20-C",
             "E64-C",
-            "E20-D",
             "E64-D",
+            "E20-D",
         ),
         conditions=(
             (
@@ -1007,8 +1032,10 @@ def _campaign(
                 "measured in an earlier session"
             ),
             (
-                "four adjacent paired E64-to-E20 contrasts, one per block, which make the distinction a "
-                "paired comparison rather than a difference of two group means"
+                "four adjacent paired E64-to-E20 contrasts published individually, one per pair, each "
+                "oriented E64 minus E20 with its pair's acquisition orientation recorded beside it, "
+                "which makes the distinction a paired comparison rather than a difference of two group "
+                "means and keeps every contrast checkable against the two jobs that produced it"
             ),
             (
                 "each level's own run-to-run spread on the same footing, so a later emissions decision "
@@ -1018,7 +1045,9 @@ def _campaign(
         acceptance=(
             "the new campaign reports, separately: the four emissions-20 observations and the four "
             "emissions-64 observations; each level's own run-to-run spread; the four adjacent paired "
-            "E64-to-E20 contrasts; the full cross-run range as context; and the depth-resolved "
+            "E64-to-E20 contrasts individually and oriented E64 minus E20, with each pair's "
+            "acquisition orientation retained; the full cross-run range as context; and the "
+            "depth-resolved "
             "differences against the between-run floor measured inside that campaign. The decision is "
             "then stated in one of two ways and no other. **Resolved difference:** the E64-to-E20 "
             "contrasts are consistently larger than the contemporaneous between-run variation and have "
@@ -1146,14 +1175,41 @@ def _checks(
             and len(campaign.sequence) == campaign.recordings
             and len([name for name in campaign.sequence if name.startswith("E20")]) == 4
             and len([name for name in campaign.sequence if name.startswith("E64")]) == 4
-            and campaign.sequence[0].startswith("E20")
             and all(
-                campaign.sequence[index][:3] != campaign.sequence[index + 1][:3]
-                for index in range(len(campaign.sequence) - 1)
+                {campaign.sequence[index][:3], campaign.sequence[index + 1][:3]}
+                == {"E20", "E64"}
+                for index in range(0, len(campaign.sequence), 2)
             )
+        ),
+        "the_pair_order_is_counterbalanced_and_part_of_the_design": (
+            [
+                campaign.sequence[index][:3]
+                for index in range(0, len(campaign.sequence), 2)
+            ]
+            == ["E20", "E64", "E20", "E64"]
+            and all(
+                {campaign.sequence[index][:3], campaign.sequence[index + 1][:3]}
+                == {"E20", "E64"}
+                for index in range(0, len(campaign.sequence), 2)
+            )
+            and len(
+                {
+                    pair
+                    for pair in zip(
+                        campaign.sequence[::2], campaign.sequence[1::2], strict=True
+                    )
+                }
+            )
+            == 4
+            and "counterbalanced" in campaign.pair_design
+            and "part of the design" in campaign.pair_design
+            and "oriented as E64 minus E20" in campaign.pair_design
+            and "one campaign block, not two" in campaign.pair_design
+            and "no acquisition-layer change" in campaign.pair_design
         ),
         "the_stage2_comparison_carries_its_own_floor": (
             "measured inside that campaign" in campaign.acceptance
+            and "individually and oriented E64 minus E20" in campaign.acceptance
             and "consistently larger than the contemporaneous between-run variation"
             in campaign.acceptance
             and any("emissions-64-only" in text for text in campaign.refused)
@@ -1315,6 +1371,7 @@ def def_document(model: DecisionSynthesis) -> dict[str, object]:
         "campaign": {
             "recommended": model.campaign.recommended,
             "justification": model.campaign.justification,
+            "pair_design": model.campaign.pair_design,
             "sequence": list(model.campaign.sequence),
             "conditions": list(model.campaign.conditions),
             "recordings": model.campaign.recordings,
@@ -1410,6 +1467,10 @@ def markdown_text(model: DecisionSynthesis) -> str:
     rows.append("## What is recommended next, and what is refused")
     rows.append("")
     rows.append(model.campaign.justification)
+    rows.append("")
+    rows.append(
+        "**The pairs, and why the order alternates:** " + model.campaign.pair_design
+    )
     rows.append("")
     rows.append(
         "**The set, in acquisition order:** "
@@ -1534,8 +1595,8 @@ def decision_main(argv: list[str] | None = None) -> int:
     print(
         "next    : "
         + (
-            f"{model.campaign.recordings} recordings, both emissions levels, alternating "
-            "(paired E20/E64 campaign)"
+            f"{model.campaign.recordings} recordings in one campaign, both emissions levels, "
+            "counterbalanced pairs"
             if model.campaign.recommended
             else "nothing recommended"
         )
