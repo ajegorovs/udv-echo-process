@@ -236,6 +236,13 @@ can be checked from the files rather than from this page.
 ## 6. Using it
 
 ```text
+# at a sitting, with the application already open: the live-dependent suites are the first preflight.
+# They need a visible window and an interactive station, so they fail identically whenever UDOP is
+# closed — green here means the integration layer still recognises this build, and any failure that
+# is not an understood live-state prerequisite stops the sitting before a recording is spent.
+# (live-run-bringup.md, stage 0b.)
+uv run --extra dev pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py
+
 # what the pass is, and that it compiles — no instrument needed
 uv run udv-acquire run-plan --plan examples/sparse-mixer-first-pass/run-plan.json --check
 
