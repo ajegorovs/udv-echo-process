@@ -20,7 +20,7 @@ run,cr4,common-reference-4,8,2026-09-21T12:46:56.968305+03:00,50,1.85,49,iqr,26.
 run,cr4,common-reference-4,8,2026-09-21T12:46:56.968305+03:00,50,1.85,49,rms,35.7262780711,mm/s
 run,cr4,common-reference-4,8,2026-09-21T12:46:56.968305+03:00,50,1.85,49,zero_fraction,0.0106609808102,dimensionless
 
-left,right,minutes_apart,mean_difference_mm_s,rms_difference_mm_s,max_abs_difference_mm_s,max_abs_depth_mm
+left,right,job_start_separation_min,mean_difference_mm_s,rms_difference_mm_s,max_abs_difference_mm_s,max_abs_depth_mm
 cr1,cr2,3.36636223333,1.25495563029,3.39687916148,7.84302565352,10.138
 cr1,cr3,6.5544487,-1.11236266657,2.41099738942,6.38944857021,89.688
 cr1,cr4,11.8591969,3.12246495686,5.95868771629,13.1698127702,19.388

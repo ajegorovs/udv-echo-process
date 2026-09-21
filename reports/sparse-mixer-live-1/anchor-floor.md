@@ -41,17 +41,20 @@ statistics (`mean`, `median`, `iqr`, `rms`, `zero_fraction`) and all four quanti
 |---|---|---|---|---|---|---|---|
 | burst-4 | 4 / 20 | 29.666 | 28.432 | 20.020 | −1.234 | **−8.412** | 9.646 |
 | burst-18 | 18 / 20 | 27.636 | 35.126 | 23.146 | **+7.491** | **−11.980** | 11.980 |
-| emissions-8 | 8 / 20 | 29.180 | 27.659 | 28.068 | −1.521 | +0.409 | 1.521 |
-| emissions-64 | 64 / 20 | 31.018 | 32.504 | 29.675 | +1.486 | −2.829 | 2.829 |
-| emissions-128 | 128 / 20 | 30.001 | 28.632 | 31.937 | −1.369 | +3.304 | 3.304 |
+| emissions-8 | 10 / 8 | 29.180 | 27.659 | 28.068 | −1.521 | +0.409 | 1.521 |
+| emissions-64 | 10 / 64 | 31.018 | 32.504 | 29.675 | +1.486 | −2.829 | 2.829 |
+| emissions-128 | 10 / 128 | 30.001 | 28.632 | 31.937 | −1.369 | +3.304 | 3.304 |
 
 Four things follow, and they are what WP3 and WP4 must screen against:
 
-1. **The two job kinds carry floors an order of magnitude apart.** The burst jobs'
+1. **The two job kinds carry floors several-fold apart — 2.9× to 7.9×.** The burst jobs'
    anchor spread is 9.6 and 12.0 mm/s; the emissions jobs' is 1.5, 2.8 and 3.3 mm/s.
-   Any contrast measured inside a burst job is therefore screened against roughly
-   10 mm/s of its own anchor movement before a pitch or burst effect may be claimed,
-   while the emissions ladder is compared against ~1.5–3.3 mm/s.
+   The smallest burst floor (9.646, `burst-4`) is 2.9× the largest emissions floor
+   (3.304, `emissions-128`), and the largest burst floor (11.980, `burst-18`) is 7.9×
+   the smallest emissions floor (1.521, `emissions-8`). Any contrast measured inside a
+   burst job is therefore screened against roughly 10 mm/s of its own anchor movement
+   before a pitch or burst effect may be claimed, while the emissions ladder is compared
+   against ~1.5–3.3 mm/s.
 2. **`burst-4` and `burst-18` differ in kind, not only in size.** `burst-4`'s anchors
    fall monotonically: `E - B = -9.646` and the spread is the same 9.646, i.e. the
    whole range is the drift. `burst-18`'s rise then fall (+7.491, then −11.980), so its

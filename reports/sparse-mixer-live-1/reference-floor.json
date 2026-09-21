@@ -3,7 +3,7 @@
   "plan": "sparse-mixer-live-1",
   "plan_path": "examples/sparse-mixer-live-1/run-plan.json",
   "plan_fingerprint": "655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86",
-  "analysis_commit": "98257e3",
+  "analysis_commit": "36446be",
   "table": "reference-floor.csv",
   "views": {
     "primary_window": {
@@ -24,7 +24,7 @@
       "resolution_mm": 1.85,
       "n_gates": 50.0
     },
-    "note": "the one condition this pass observes in more than one run: burst 10, emissions 20, 50 gates at 1.85 mm. The four recordings are four runs, not four replicates of one run, and they are the only reference realizations in the pass - the WP1 anchors are block-local and belong to other conditions"
+    "note": "the one condition this pass observes in more than one run: burst 10, emissions 20, 50 gates at 1.85 mm. The four recordings are four repeated observations of that condition across four distinct runs - four runs, not four replicates of one run - and they are the only reference realizations in the pass: the WP1 anchors are block-local and belong to other conditions. What they do not provide is independent replication of the pitch, burst or emissions treatment levels, each of which stays a single realization per level."
   },
   "floor": {
     "statistic": "mean",
@@ -127,7 +127,7 @@
     {
       "left": "cr1",
       "right": "cr2",
-      "minutes_apart": 3.366362233333333,
+      "job_start_separation_min": 3.366362233333333,
       "mean_difference_mm_s": 1.2549556302940374,
       "rms_difference_mm_s": 3.3968791614814307,
       "max_abs_difference_mm_s": 7.843025653519057,
@@ -136,7 +136,7 @@
     {
       "left": "cr1",
       "right": "cr3",
-      "minutes_apart": 6.5544487,
+      "job_start_separation_min": 6.5544487,
       "mean_difference_mm_s": -1.1123626665654869,
       "rms_difference_mm_s": 2.4109973894202197,
       "max_abs_difference_mm_s": 6.389448570211426,
@@ -145,7 +145,7 @@
     {
       "left": "cr1",
       "right": "cr4",
-      "minutes_apart": 11.8591969,
+      "job_start_separation_min": 11.8591969,
       "mean_difference_mm_s": 3.122464956862555,
       "rms_difference_mm_s": 5.958687716292079,
       "max_abs_difference_mm_s": 13.169812770245933,
@@ -154,7 +154,7 @@
     {
       "left": "cr2",
       "right": "cr3",
-      "minutes_apart": 3.188086466666667,
+      "job_start_separation_min": 3.188086466666667,
       "mean_difference_mm_s": -2.367318296859525,
       "rms_difference_mm_s": 3.832303143531491,
       "max_abs_difference_mm_s": 8.61137706386095,
@@ -163,7 +163,7 @@
     {
       "left": "cr2",
       "right": "cr4",
-      "minutes_apart": 8.492834666666667,
+      "job_start_separation_min": 8.492834666666667,
       "mean_difference_mm_s": 1.8675093265685179,
       "rms_difference_mm_s": 4.957463146820503,
       "max_abs_difference_mm_s": 10.026761240806493,
@@ -172,7 +172,7 @@
     {
       "left": "cr3",
       "right": "cr4",
-      "minutes_apart": 5.304748200000001,
+      "job_start_separation_min": 5.304748200000001,
       "mean_difference_mm_s": 4.234827623428042,
       "rms_difference_mm_s": 6.439961078410694,
       "max_abs_difference_mm_s": 14.603170079597177,
@@ -749,18 +749,25 @@
     "rms": "rms",
     "zero_fraction": "count of samples exactly equal to 0.0 divided by the record length, dimensionless (the whole record, every gate)"
   },
+  "pair_columns": {
+    "job_start_separation_min": "the difference between the two runs' jobs' *manifest start timestamps*, in minutes - the separation of the two job starts, and NOT a recording-to-recording interval or an elapsed time between two measurements. The pass carries no per-recording clock (a file name's YYYYMMDDTHHMMSS segment is the job's sweep_id, identical for every point of that job), so the recordings cannot be placed at instants. This quantity orders the four runs and it is what the floor's 'not a rate' statement rests on.",
+    "mean_difference_mm_s": "the unweighted mean over the supported gates of the per-depth window-mean difference (left minus right), in mm/s: a descriptive summary of the pair",
+    "rms_difference_mm_s": "the root mean square over the supported gates of the same difference, in mm/s",
+    "max_abs_difference_mm_s": "the largest absolute per-depth window-mean difference over the supported gates, in mm/s - the reduction the depth-resolved floor endpoint is taken from",
+    "max_abs_depth_mm": "the depth, in mm, at which that largest absolute difference occurs"
+  },
   "checks": {
     "campaign_order_is_increasing": true,
     "floor_is_the_worst_pair": true,
     "four_runs": true,
     "no_synthetic_reference": true,
     "one_condition": true,
-    "pairs_are_separated_in_time": true,
+    "pairs_are_separated_by_their_job_starts": true,
     "six_ordered_pairs": true,
     "supported_gate_count_is_shared": true,
     "the_two_endpoints_are_distinct_quantities": true,
     "window_and_support_are_the_wp0_ones": true
   },
   "ok": true,
-  "table_sha256": "sha256:705f5e52f39aae4635ab92a0105d5d1982a8bb5aaf239bb8ab5848eba4b152d8"
+  "table_sha256": "sha256:e175449ffef35617a8a535aa29fcb81365123f5347a35496575ed007c3f27777"
 }
