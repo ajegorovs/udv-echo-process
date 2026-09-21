@@ -1,38 +1,35 @@
 ---
 name: udop-acquisition
-description: "Use when driving the DOP3010/UDOP Windows GUI, when its labels read empty, or a menu will not open. Reconnaissance, role binding, the record/store cycle and the sweep/campaign workflow for this instrument."
-version: 1.1.0
+description: Drive and verify DOP3010/UDOP acquisition runs.
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 platforms: [windows]
 metadata:
   hermes:
-    tags: [windows, gui, automation, pywinauto, win32, uia, legacy, delphi, vcl, reconnaissance, dop3010, udop, acquisition]
+    tags: [windows, gui, automation, win32, dop3010, udop, acquisition]
     category: software-development
-    related_skills: [computer-use, spike]
+    related_skills: [windows-gui-automation, udv-live-gui-probe]
 ---
 
-# Driving the DOP3010/UDOP application, and the Windows-GUI craft it needs
+# Driving the DOP3010/UDOP application
 
-This is the single authoritative copy of this skill for this repository, and it travels with a
-clone: the repository is where this automation lives, so a lesson about *this* instrument belongs
-here. The generic cross-project craft remains the Hermes skill `windows-gui-automation`, which
-serves other projects — a lesson about GUI automation in general belongs there, a lesson about this
-instrument belongs here, and the two must not be allowed to fork again. (The name matters: a
-project-local skill of the same name as a profile-global one **shadows** it, so a repo copy that
-falls behind silently hides the newer global one for every session in this repository. That is how
-this file's two halves drifted apart in the first place. The global copy is also at its own size
-limit (100,831 characters against a 100,000 cap, as of the merge that produced this file), so it
-can no longer be patched at all: a lesson learned here has to land here. The `references/` files
-were merged from both forks by the same rule — nothing was dropped, and where the two copies stated
-the same fact in different words both statements are kept, so a passage that reads as a repetition
-is usually a preserved duplicate from the other fork rather than an editing error.)
+This is the repository's instrument-specific overlay, and it travels with a clone. Load the profile-global
+`windows-gui-automation` skill for the reusable craft — control classification, surface predicates, held
+presses, modal recovery and operator-attended verification — then load this skill for the DOP3010/UDOP
+facts, commands and evidence. A project-local skill shadows a profile-global skill of the same name, so
+this overlay stays named `udop-acquisition`; do not rename it to `windows-gui-automation` or copy that
+skill wholesale back into this repository.
 
-The project-specific half is the acquisition work: the instrument's own screen, its parameter
-dialog, the record/store cycle, the sweep/campaign commands in `src/udv_echo_process/acquire/`, the
-probes in `tools/live/`, the crops and their tooling in `tools/ui/`, and the bring-up for a second
-machine. Everything else here is the reusable craft, and `docs/dev-handoff.md` in this repository
-is the entry point for a machine that cannot reach the instrument at all.
+Put a lesson in exactly one authority. A general Windows-GUI rule belongs in `windows-gui-automation`;
+a fact about this instrument belongs here or in `docs/dop3000/`; and the session-0/session-1 dispatch
+route belongs in the profile-global `udv-live-gui-probe` skill plus `tools/live/README.md`. When those
+sources disagree, measure the current process and application state rather than preserving both claims.
+
+The project-specific work is the instrument's own screen, its parameter dialog, the record/store cycle,
+the sweep/campaign commands in `src/udv_echo_process/acquire/`, the probes in `tools/live/`, the crops
+and their tooling in `tools/ui/`, and the bring-up for a second machine. `docs/dev-handoff.md` is the
+entry point for a machine that cannot reach the instrument at all.
 
 **Where the DOP3010 facts live (frozen 2026-09-18).** The repository holds a small set of
 authoritative documents for this instrument, and this skill **points at them instead of repeating

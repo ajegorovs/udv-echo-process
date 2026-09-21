@@ -36,6 +36,18 @@ def test_udop_skill_records_completed_sparse_pass() -> None:
     assert "the files were not short" in text
 
 
+def test_udop_skill_is_the_instrument_overlay() -> None:
+    skill = (SKILL / "SKILL.md").read_text(encoding="utf-8")
+    live_readme = (ROOT / "tools" / "live" / "README.md").read_text(encoding="utf-8")
+
+    assert "description: Drive and verify DOP3010/UDOP acquisition runs." in skill
+    assert "version: 1.2.0" in skill
+    assert "related_skills: [windows-gui-automation, udv-live-gui-probe]" in skill
+    assert "100,831 characters against a 100,000 cap" not in skill
+    assert "Do not assume every agent shell is session 0" in live_readme
+    assert "This is a runtime precondition, not a fact about Hermes" in live_readme
+
+
 def test_udop_skill_support_files_resolve() -> None:
     required = [
         "references/app-lifecycle-and-state.md",

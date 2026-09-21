@@ -163,7 +163,10 @@ prints nothing and writes no log — so the poller waits out its whole budget an
 exactly like a slow run. Measured: two "probe runs" that never ran, one of them reported to the operator as
 slowness, and the read that was supposed to establish a baseline never happened. Check the invocation form
 against the dispatcher's own usage, and look for the run's first marker line before drawing any conclusion
-from elapsed time.
+from elapsed time. **The dispatcher removes `outputs/live/task-<slug>.log` before each run, and two
+runs of the same target share a slug.** A pre/post `acquire status` bracket therefore loses its pre-read
+when the post-read starts. Copy the first log aside as soon as that run returns and name the copy in the
+record; a remembered comparison is not recoverable evidence.
 - **A documented input rule is only as good as the context it was measured in — A/B it on the live
   widget.** "The strip ignores posted messages" was measured with an *instant* posted click (both
   messages in the same millisecond); a posted press **held** ~180 ms works fine, and a real

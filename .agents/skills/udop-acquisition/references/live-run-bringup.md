@@ -40,6 +40,20 @@ desktop, in front of the target; an inactive window ignores hover, and the first
 step then silently does nothing (the mechanism and the measurement are in `SKILL.md`, §the
 non-interactive-session bullet).
 
+### Direct reads and comparisons
+
+**Measure the caller instead of assuming session 0.** Check its session id, window-station name and
+ability to resolve `TMain_Scr` as specified in `evidence-discipline.md`. A session-1/`WinSta0` shell can
+run `./.venv/Scripts/python.exe -m udv_echo_process.cli acquire status` directly for a non-gesture
+control read. That does not prove pixel access: measured in the same shell, the window resolved while
+`ImageGrab` returned a flat frame. Keep screenshots, foreground, real-cursor and write paths on the
+dispatcher unless the direct process proves the capability with its own non-blank/foreground guard.
+
+**Match the comparator to the read shape.** `tools/live/compare_reads.py` accepts the geometry and dialog
+JSON shapes; it does not parse `acquire status` output. For a status bracket, save the first log before the
+second run overwrites it, remove the dispatch header/footer and volatile `cursor` line, then use a literal
+text diff. An empty diff is the field-for-field pass.
+
 ## The package interface the dispatcher drives
 
 Capabilities are commands, not scripts, so a clone carries them and a test can drive them:
