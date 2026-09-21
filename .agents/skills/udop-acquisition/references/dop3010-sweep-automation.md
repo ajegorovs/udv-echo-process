@@ -227,13 +227,17 @@ sampling-volume read-out, not the parameter.
   confirms after the recording. Before treating the difference as a scientific loss, check whether the
   rungs in play can see it at all: at 1.85, 0.617 and 2.96 mm the two candidates round to the same
   stored depth word.
-- **The pass is complete, and the record is the authority.** Nine jobs, 26/26 points stored under
-  `data/sparse-mixer-first-pass/`: 26 BDD files, nine job logs, nine job manifests, the pass manifest
-  and its verdict README. All files retain at least the requested 12 s window; all carry their requested
-  frame and run-wide words. The rig produced zero-valued profiles, an operator-deferred signal problem,
-  so the designed scientific contrasts remain unanalysed.
+- **The pass's files and its own record say different things, and both have to be read.** Nine jobs ran
+  and `data/sparse-mixer-first-pass/` holds 26 BDD files, nine job logs (`.jsonl`), nine job manifests and
+  the pass record `sparse-mixer-first-pass.run.json` — but that record marks eight jobs `ok` and
+  `emissions-128` **`failed`**, because the payload-only size signature refused its four points
+  (`0/4 invalid`). A job that is not `ok` is not done, so a `--resume` re-runs it: the four files on disk
+  are valid and structurally exact, the record simply does not say so yet. Fix the guard (above) and
+  re-run the job so the record matches the files, rather than carrying a pass that reads complete in one
+  artefact and incomplete in another.
 - **A refusal can indict the guard rather than the file.** The `emissions-128` job was first logged
   `invalid: 0/4` because the payload-only size signature expected `1.7 × gates × profiles`; at 144
   profiles, the fixed 31,268-byte container made every valid file read 3.14x. The structural law above
-  reproduces all 26 files byte-for-byte and each block chain ends exactly at EOF. Preserve a refused
-  file, decode it independently, and fix the guard when the structure and stored words agree.
+  reproduces all 26 files byte-for-byte and each block chain ends exactly at EOF, and `word 14` of each
+  file states the emissions value the point asked for. Preserve a refused file, decode it independently,
+  and fix the guard when the structure and the stored words agree.

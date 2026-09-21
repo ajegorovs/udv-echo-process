@@ -369,11 +369,10 @@ def test_point_records_and_names_are_the_resume_inputs(tmp_path: Path) -> None:
 #
 # `timing` was carried by every record ever written and populated by none of them
 # (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
-# and no field said how much observation a point had bought. The app's block is a ring:
-# a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
-# point, so without the retained window "12 s requested" and "8.4 s stored" are the same
-# record. These cases pin the model's side of it; the runner's side is asserted against
-# real files in `test_acquire_runner.py`.
+# and no field said how much observation a point had bought. These synthetic cases preserve
+# the model's ability to describe a short retained window without claiming that this was the
+# instrument's production behavior. The completed sparse pass later retained 12.4651-12.5713 s
+# for 12 s requests; the runner side is asserted against real files in `test_acquire_runner.py`.
 
 
 def _windowed(**overrides: object) -> SweepPointRecord:
@@ -396,11 +395,11 @@ def _windowed(**overrides: object) -> SweepPointRecord:
 
 
 def test_a_wrapped_block_is_recorded_as_the_window_it_really_covers() -> None:
-    """12 s asked for, 8.4 s retained: 0.7 of the window, at the cap, not a 12 s point.
+    """Model a synthetic case with 12 s requested and 8.4 s retained.
 
-    The wrap is a claim here, and both of its facts are present: 257 profiles is the cap,
-    and the request implies ~566 of them (12 s at the 0.0212 s law) — 2.2x what could be
-    kept, so profiles were certainly discarded.
+    This pins the model semantics, not a production-instrument claim. The synthetic block
+    has 257 profiles at the cap, while the request implies ~566 of them (12 s at the
+    0.0212 s law) — 2.2x what could be kept, so profiles were certainly discarded.
     """
     record = _windowed()
     assert record.requested_duration_s == 12.0

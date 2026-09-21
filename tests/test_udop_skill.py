@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from udv_echo_process.acquire.log import SizeSignature
@@ -27,11 +28,20 @@ def test_udop_skill_states_current_bdd_size_law() -> None:
     assert "~1.7 bytes per" not in text
 
 
-def test_udop_skill_records_completed_sparse_pass() -> None:
+def test_udop_skill_records_sparse_pass_status_exactly() -> None:
     text = _skill_text()
+    run_record = json.loads(
+        (
+            ROOT / "data/sparse-mixer-first-pass/sparse-mixer-first-pass.run.json"
+        ).read_text(encoding="utf-8")
+    )
+    status_by_job = {job["job"]: job["status"] for job in run_record["jobs"]}
 
     assert "emissions × PRF + 10.369 ms" in text
-    assert "Nine jobs, 26/26 points stored" in text
+    assert "marks eight jobs `ok`" in text
+    assert "`emissions-128` **`failed`**" in text
+    assert status_by_job["emissions-128"] == "failed"
+    assert list(status_by_job.values()).count("ok") == 8
     assert "12.4651-12.5713 s" in text
     assert "the files were not short" in text
 
@@ -41,8 +51,10 @@ def test_udop_skill_is_the_instrument_overlay() -> None:
     live_readme = (ROOT / "tools" / "live" / "README.md").read_text(encoding="utf-8")
 
     assert "description: Drive and verify DOP3010/UDOP acquisition runs." in skill
-    assert "version: 1.2.0" in skill
     assert "related_skills: [windows-gui-automation, udv-live-gui-probe]" in skill
+    assert (
+        "The profile-global copies are not the authority for this instrument" in skill
+    )
     assert "100,831 characters against a 100,000 cap" not in skill
     assert "Do not assume every agent shell is session 0" in live_readme
     assert "This is a runtime precondition, not a fact about Hermes" in live_readme

@@ -169,9 +169,9 @@ HALF_DISPLAY_MM = RESOLUTION_DISPLAY_MM / 2
 
 #: The sane range for a point's window. Intent, not physics: the operator's band for this
 #: campaign is 10-15 s (handoff §4), a sub-second point cannot carry a profile series
-#: worth comparing, and ten minutes is beyond any block the application was measured to
-#: hold — the ring stopped at ~257 profiles, i.e. ~8.4 s at the measured period (handoff
-#: §4), so a window that long stores only its tail whatever the cap says.
+#: worth comparing, and ten minutes is deliberately beyond the campaign's operating band.
+#: The earlier claim that the application retained only ~8.4 s was disproved by the completed
+#: sparse pass (12.4651-12.5713 s retained for a 12 s request; sparse-run-plan §5).
 MIN_POINT_DURATION_S = 0.5
 MAX_POINT_DURATION_S = 600.0
 

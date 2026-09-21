@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Dispatch one in-repo probe into the interactive session, and return when the probe is done.
 #
-# **Why a dispatcher at all.** The agent's shell is session 0; UDOP is session 1. Every probe
-# that touches the application has to be *started in* session 1, so it goes through
+# **Why a dispatcher at all.** When the agent shell cannot access UDOP's interactive session,
+# every probe that touches the application has to be *started there*. The dispatcher provides
 # `task_run.py` (see its docstring for the pythonw/no-console rule) and the scheduled task
 # named below.
 #

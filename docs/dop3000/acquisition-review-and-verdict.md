@@ -168,6 +168,11 @@ stay optional indefinitely — for sensitivity experiments, the parameters you
 think are fixed are just as scientifically important as the parameter being
 swept.
 
+**Update after the completed sparse pass (2026-09-21): this finding's measured example was
+misinterpreted.** All 26 production files retain 12.4651–12.5713 s for a 12 s request; the block cap
+was not the limiter. The requested-versus-achieved fields below remain necessary, but the `~8.4 s`
+example is historical evidence, not the current instrument law. See `sparse-run-plan.md` §5.
+
 **4. Nominal recording duration is not the same thing as retained observation
 duration.** The largest experiment-design concern. The campaign deliberately
 allows a requested point even when the estimated profile count exceeds the

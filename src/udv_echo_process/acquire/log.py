@@ -306,9 +306,9 @@ class SweepPointRecord(ValueModel):
         """Stored span over requested window — what the request actually bought.
 
         ``None`` when either side is unknown. Below 1 means the observation is shorter
-        than asked for, which is the app's ring behaviour once the profile count crosses
-        the block cap; it is not by itself a reason to refuse the point (the 12 s
-        request that stores ~8.4 s is the project's own operating point).
+        than asked for and deserves investigation; it is not by itself a reason to refuse
+        the point. The completed sparse pass retained 12.4651-12.5713 s for every 12 s
+        request, disproving an earlier ~8.4 s ring-buffer interpretation.
         """
         span = self.stored_span_s
         if span is None or self.requested_duration_s is None:

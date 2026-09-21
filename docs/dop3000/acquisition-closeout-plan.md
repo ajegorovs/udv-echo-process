@@ -35,10 +35,12 @@ with the plan frozen while it runs. Its two non-blocking items are recorded in
 [`sparse-run-plan.md`](sparse-run-plan.md) §7 — per-point provenance for a *raised* fact, and reading the
 trial's first gate off the stored file, which belongs to the ingest.
 
-**The pass then ran to completion: nine jobs, 26 points, all stored** — and its own record is committed at
+**All nine jobs ran and 26 point files were stored**, but the pass record still marks
+`emissions-128` failed (`0/4 invalid`) under the retired size guard. Its artefacts are committed at
 [`../../data/sparse-mixer-first-pass/`](../../data/sparse-mixer-first-pass/README.md) (26 `.BDD`
-recordings, nine job logs, nine job manifests, the pass manifest, and the verdict with the commands that
-reproduce it). Two findings came out of the run, both in `sparse-run-plan.md` §5:
+recordings, nine job logs, nine job manifests, the pass record, and the verdict with the commands that
+reproduce it). A `--resume` re-runs the refused job until the record also says `ok`. Two findings came
+out of the run, both in `sparse-run-plan.md` §5:
 
 - **The size signature was mis-specified, and it was the guard that was wrong, not the files.** It modelled
   bytes as `1.7 × gates × profiles` — the payload alone — so at 144 profiles the fixed container dominated

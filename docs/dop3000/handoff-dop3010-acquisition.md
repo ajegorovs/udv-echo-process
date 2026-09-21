@@ -320,6 +320,10 @@ Two live runs settled the channel path, and both changed what the driver may ass
   `status`, `requested`, `readback_gates`, `readback_resolution`, `file_path`,
   `file_size_bytes`, `expected_size_bytes`, `decoded`, `failure` — which is the job-tracking
   record in its minimal usable form.
+  **Superseded measurement (2026-09-21):** the completed sparse pass proved that the following
+  ring-buffer interpretation was wrong. Its 26 production files retain 12.4651–12.5713 s for a 12 s
+  request, and profile timestamps establish `emissions × PRF + 10.369 ms`; the historical paragraph
+  is retained below only to explain the older code and review findings. See `sparse-run-plan.md` §5.
   **What the record does not carry, and what that hid — measured twice, `recon/62`:** the
   block is a **ring that stops at about 257 profiles**. A 4 s recording at the same
   configuration stores 123 profiles (83,499 B) — an implied period of **32.5 ms**, i.e. the

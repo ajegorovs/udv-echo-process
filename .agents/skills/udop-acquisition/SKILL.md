@@ -14,17 +14,25 @@ metadata:
 
 # Driving the DOP3010/UDOP application
 
-This is the repository's instrument-specific overlay, and it travels with a clone. Load the profile-global
-`windows-gui-automation` skill for the reusable craft — control classification, surface predicates, held
-presses, modal recovery and operator-attended verification — then load this skill for the DOP3010/UDOP
-facts, commands and evidence. A project-local skill shadows a profile-global skill of the same name, so
-this overlay stays named `udop-acquisition`; do not rename it to `windows-gui-automation` or copy that
-skill wholesale back into this repository.
+This is the repository's instrument-specific overlay, and it travels with a clone. It also still carries
+its own copy of the shared Windows-GUI craft (the sections below), so a clone needs no profile skills to
+be useful; where the profile-global `windows-gui-automation` skill states a general rule differently,
+**the global one wins** and the copy here is the older text. That direction matters because a
+project-local skill shadows a profile-global one of the same name: this overlay stays named
+`udop-acquisition`, and no copy of the general skill may be committed here under its own name.
 
-Put a lesson in exactly one authority. A general Windows-GUI rule belongs in `windows-gui-automation`;
-a fact about this instrument belongs here or in `docs/dop3000/`; and the session-0/session-1 dispatch
-route belongs in the profile-global `udv-live-gui-probe` skill plus `tools/live/README.md`. When those
-sources disagree, measure the current process and application state rather than preserving both claims.
+**The profile-global copies are not the authority for this instrument, and two of them are stale.**
+`windows-gui-automation` carries instrument-named references (`dop3010-sweep-automation.md`,
+`dop3010-measurement-screen-surface.md`) and `udv-live-gui-probe` carries live-probe notes; both predate
+the sparse pass, so they still state the retired size signature, the planning-law period and `~8.4 s`
+retention that this file corrects. Read them for the general craft and for the dispatch route, never for
+a DOP3010 measurement. Which of their claims are superseded is settled by measuring the instrument, not
+by preferring the newer file.
+
+Put a lesson in exactly one home. A general Windows-GUI rule belongs in `windows-gui-automation`; a
+DOP3010 fact belongs here or in `docs/dop3000/`; dispatch mechanics belong in `tools/live/README.md` and
+the profile-global `udv-live-gui-probe`. When two sources disagree, measure the current process and
+application state and then correct the loser — never leave both claims standing.
 
 The project-specific work is the instrument's own screen, its parameter dialog, the record/store cycle,
 the sweep/campaign commands in `src/udv_echo_process/acquire/`, the probes in `tools/live/`, the crops
@@ -39,7 +47,9 @@ B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verif
 `docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
 chain — `docs/dop3000/udop-automation.md`; the state of the work —
 `docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
-quotes carry — `docs/dop3000/ui-element-index.md`. A rule learned while driving the instrument
+quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, current structural-size and
+measured-period laws, and the planning-law change still pending in code —
+`docs/dop3000/sparse-run-plan.md`. A rule learned while driving the instrument
 belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
 a second copy in a skill is how the two forks drifted apart before.
 

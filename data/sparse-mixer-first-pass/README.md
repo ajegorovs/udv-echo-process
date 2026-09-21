@@ -1,9 +1,11 @@
-# Sparse mixer first pass — complete nine-job run
+# Sparse mixer first pass — all nine jobs ran
 
-The complete `sparse-mixer-first-pass` record: nine jobs, 26 points, stored
+The `sparse-mixer-first-pass` artefacts: nine jobs ran and 26 points were stored
 2026-09-20–21 under the frozen plan in `examples/sparse-mixer-first-pass/`. Kept
 because the pass is the acquisition layer's own evidence — its structure,
-retention, stored words and provenance are checkable from these files.
+retention, stored words and provenance are checkable from these files. The pass record itself
+still marks `emissions-128` failed (`0/4 invalid`) under the retired size guard; the four files
+exist and verify structurally, but `--resume` will re-run that job until its record is `ok`.
 
 ## What the acquisition layer has to answer, and does
 

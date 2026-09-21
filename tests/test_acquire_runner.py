@@ -2005,10 +2005,10 @@ def test_a_bare_run_point_still_verifies_the_channel(
 #
 # `timing` was carried by every record ever written and populated by none of them
 # (`outputs/live/*.jsonl` holds nine records, all `target_s: null, achieved_s: null`),
-# and no field said how much observation a point had bought. The app's block is a ring,
-# so a 12 s request stores the last ~257 profiles (~8.4 s) and still decodes as a good
-# point — "the plan says 12 s" and "the file covers 8.4 s" were the same row of the log.
-# Only the stored file's own profile timestamps can tell them apart, and these two cases
+# and no field said how much observation a point had bought. These tests preserve the
+# distinction between a requested window and the file's achieved window; they do not assert
+# the retired interpretation that the instrument's 12 s production runs retained only ~8.4 s.
+# Only the stored file's own profile timestamps can tell the two apart, and these two cases
 # pin that they reach the record: one on a fixture whose window is known exactly, one on
 # the committed point, where the measurement and the plan's law disagree and both numbers
 # survive. The model's side is in `test_acquire_log.py` (section "the window a record has
