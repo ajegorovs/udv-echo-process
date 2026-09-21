@@ -44,6 +44,7 @@ from udv_echo_process.analysis import (
     resolution_ladder,
     sparse_anchor_floor,
     sparse_inventory,
+    sparse_reference_floor,
     sweep_inventory,
 )
 from udv_echo_process.io import load
@@ -1789,6 +1790,7 @@ _COMMANDS = {
     "run-all": run_all_main,
     "sparse-anchor-floor": sparse_anchor_floor.anchor_floor_main,
     "sparse-inventory": sparse_inventory_main,
+    "sparse-reference-floor": sparse_reference_floor.reference_floor_main,
     "sweep-inventory": sweep_inventory_main,
     "viz": viz_main,
 }

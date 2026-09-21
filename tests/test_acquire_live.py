@@ -399,6 +399,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
         "run-all",
         "sparse-anchor-floor",
         "sparse-inventory",
+        "sparse-reference-floor",
         "sweep-inventory",
         "viz",
     }
