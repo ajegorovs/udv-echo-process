@@ -1,5 +1,5 @@
 {
-  "analysis_commit": "0123456789012345678901234567890123456789",
+  "analysis_commit": "c31695a",
   "answers": [
     {
       "answer": "the emissions axis partly: E128 is replaced by E64 on cost, since no measured quantity prefers it and its period is a factor of 1.79 longer; E8 and E20 are kept, E8 having shown no stability loss and E20 being the pass's own reference. The pitch axis is not collapsed: its interaction is unresolved at this design's floors, which is a statement about separability rather than about the axis being irrelevant. The burst axis stays at the two levels the historical table already fixed (4 and 18 cycles at the reference pitch), and the new information here is that the burst jobs' own anchors move by 10-12 mm/s, which is what makes finer burst contrasts unresolvable rather than unnecessary.",

@@ -1430,12 +1430,20 @@ def decision_main(argv: list[str] | None = None) -> int:
         description="Synthesize the Stage-2 decision from the frozen sparse-pass slices.",
     )
     parser.add_argument("--report-dir", default=REPORT_DIR.as_posix())
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="where to publish; defaults to --report-dir (the artefacts belong beside "
+        "the tables they read). A caller that must not touch the frozen report passes "
+        "this, which is what the tests do.",
+    )
     parser.add_argument("--plan-path", default=None)
     parser.add_argument("--analysis-commit", default="")
     args = parser.parse_args(argv)
     try:
         model = write_decision_synthesis(
             Path(args.report_dir),
+            output_dir=Path(args.output_dir) if args.output_dir else None,
             plan_path=Path(args.plan_path) if args.plan_path else None,
             analysis_commit=args.analysis_commit,
         )

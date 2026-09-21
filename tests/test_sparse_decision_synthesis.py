@@ -21,6 +21,7 @@ from udv_echo_process.analysis import sparse_decision_synthesis as sds
 ROOT = Path(__file__).resolve().parent.parent
 COMMIT = "0123456789012345678901234567890123456789"
 REPORT_DIR = ROOT / "reports" / "sparse-mixer-live-1"
+COMMITTED_NAMES = ("decision-table.csv", "decision-table.json", "decision-table.md")
 
 QUESTIONS = {
     "pitch_x_burst_interaction",
@@ -274,6 +275,25 @@ def test_the_csv_is_the_column_contract(model) -> None:
         assert " " in row["applicable_floor"]  # a floor is described, not just numbered
 
 
+def test_the_committed_table_records_a_real_generator_revision() -> None:
+    """The committed artefacts must not carry a test's placeholder revision.
+
+    This is the check that catches a test writing into the report directory it reads:
+    the artefacts would still regenerate consistently, so only the recorded revision
+    shows that the published pair was produced by a test run.
+    """
+    document = json.loads((REPORT_DIR / sds.DOC_NAME).read_text(encoding="utf-8"))
+    recorded = str(document["analysis_commit"])
+    assert recorded, "the committed decision document records no revision"
+    assert recorded != COMMIT, (
+        "the committed decision table records the test suite's placeholder revision, "
+        "which means a test wrote into reports/"
+    )
+    assert len(recorded) >= 7 and all(
+        character in "0123456789abcdef" for character in recorded
+    ), recorded
+
+
 def test_the_document_carries_the_slices_the_definitions_and_the_gate(
     model, document
 ) -> None:
@@ -363,24 +383,42 @@ def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_report_dir(
     from udv_echo_process.cli import _COMMANDS
 
     assert "sparse-decision" in _COMMANDS
+    published = {name: (REPORT_DIR / name).read_bytes() for name in COMMITTED_NAMES}
+    output = tmp_path / "out"
     with pytest.raises(SystemExit) as exit_code:
         sds.decision_main(
             [
                 "--report-dir",
                 REPORT_DIR.as_posix(),
+                "--output-dir",
+                str(output),
                 "--analysis-commit",
                 COMMIT,
             ]
         )
     assert exit_code.value.code == 0
     assert "checks  : all pass" in capsys.readouterr().out
+    assert (output / sds.CSV_NAME).is_file() and (output / sds.MD_NAME).is_file()
+    # the command must never write into the report it reads unless it is told to
+    for name, content in published.items():
+        assert (REPORT_DIR / name).read_bytes() == content, name
 
     broken = tmp_path / "broken"
     broken.mkdir()
     with pytest.raises(SystemExit) as failed:
-        sds.decision_main(["--report-dir", str(broken), "--analysis-commit", COMMIT])
+        sds.decision_main(
+            [
+                "--report-dir",
+                str(broken),
+                "--output-dir",
+                str(tmp_path / "broken-out"),
+                "--analysis-commit",
+                COMMIT,
+            ]
+        )
     assert failed.value.code == 1
     assert "refused" in capsys.readouterr().err
+    assert not (tmp_path / "broken-out" / sds.CSV_NAME).exists()
 
 
 def test_the_prose_carries_the_answers_the_table_and_the_campaign() -> None:
