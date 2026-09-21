@@ -15,6 +15,16 @@ ingest is the evidence a *later* step needs; the contrasts are that step's own.
 | [`points.csv`](points.csv) | one row per committed recording: identity, order, condition, requested and stored window, decoded settings, the achieved timing measured from the stored timestamps, the retention the file covers, the signal statistics of the common window on the common support, and the provenance that ties the row to the bytes, the log, the manifest and the plan |
 | [`qc-summary.json`](qc-summary.json) | the pass-level assertions, the two views, the metric definitions, the gate verdict, and the SHA-256 of `points.csv`'s own bytes |
 
+## The documents beside this one
+
+This README stays the WP0 ingest's own document. The measurement slices that read its
+table are their own documents, each with its own artefacts and its own gate:
+
+| slice | document | artefacts | verb |
+|---|---|---|---|
+| WP1 — per-job anchor floors | [`anchor-floor.md`](anchor-floor.md) | `anchor-floor.csv`, `anchor-floor.json`, `figures/anchor-<job>.png` | `sparse-anchor-floor` |
+| WP2 — between-run reference floor | [`reference-floor.md`](reference-floor.md) | `reference-floor.csv`, `reference-floor.json`, `figures/reference-floor.png` | `sparse-reference-floor` |
+
 ## Reproduce
 
 The generator is `a82e56f` (the commit before the artefacts); the command that

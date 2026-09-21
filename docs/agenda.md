@@ -254,8 +254,19 @@ profiles in one fixture and 4193–4927 in another.
 > later work packages: the three windows are co-located on one physical interval (10.138–98.938 mm at three
 > pitches, the 1.85 mm window's last gate outside the cut), and the planner's transfer term measures
 > ~0.77 ms here — the law sits 0.21–0.22 ms above the achieved period at every emission level, in one
-> direction. **Next: WP1 (within-job drift from the block-local controls) and WP2 (CR1–CR4 across runs).**
-> The work order, the two floors and the acceptance gates are in
+> direction. **WP1 and WP2 have landed beside it** (cleared in parallel by the review of WP0, which is
+> frozen): [`reports/sparse-mixer-live-1/anchor-floor.md`](../reports/sparse-mixer-live-1/anchor-floor.md)
+> gives each scientific job's own anchor floor — drift (`M - B`, `E - M`, `E - B`) and spread (`max - min`
+> over the three) kept apart, with the scientific rows bracketed in acquisition order — and
+> [`reference-floor.md`](../reports/sparse-mixer-live-1/reference-floor.md) gives CR1–CR4 as four runs in
+> campaign order with their six pairwise depth-resolved differences and both floor endpoints. **The floors,
+> measured:** the burst jobs' anchors move 9.646 and 11.980 mm/s (burst-18's *turns*, so its range is not
+> its drift), the emissions jobs' 1.521 / 2.829 / 3.304, and the between-run reference floor is 4.235 mm/s
+> depth-averaged (14.603 mm/s per depth at 21.238 mm). Two consequences bind what follows: a burst contrast
+> under ~10 mm/s cannot be separated from its own controls, and the between-run floor is not ordered by
+> elapsed time (the two runs 5.3 minutes apart differ most), so it is not a rate. **Next: WP3 (the 2x2
+> pitch x burst interaction, screened against both floors) and WP4 (the emissions ladder with its achieved
+> timestamps), then WP5's Stage-2 decision table.** The work order and the acceptance gates are in
 > [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md); the review's own sequence
 > is its steps 3–7. Two facts about the dataset the ingest already enforces: the period comes from the
 > **stored timestamps** (the logs' `timing.target_s` records the retired expectation — provenance, checked

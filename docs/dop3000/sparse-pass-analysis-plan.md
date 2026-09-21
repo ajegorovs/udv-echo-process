@@ -1,9 +1,12 @@
 # The sparse pass analysis — work plan
 
-> **Status:** WP0 is **implemented and committed** (`analysis/sparse-pass-ingest`); WP1–WP5
-> are planned here and not started. This document is the authority for what the analysis
-> of the mixer-enabled sparse pass measures, in what order, and what each step has to
-> establish before the next one may rely on it. It adds no acquisition work: the
+> **Status:** WP0, WP1 and WP2 are **implemented and committed**
+> (`analysis/sparse-pass-ingest`); WP3–WP5 are planned here and not started. WP0 was
+> reviewed and frozen, with WP1 and WP2 cleared to run in parallel and both landed:
+> `<report>/anchor-floor.{csv,json,md}` with a figure per job, and
+> `<report>/reference-floor.{csv,json,md}` with its figure. This document stays the
+> authority for what the analysis of the mixer-enabled sparse pass measures, in what
+> order, and what each step has to establish before the next one may rely on it. It adds no acquisition work: the
 > acquisition phase is closed, and it re-opens only if this analysis exposes a real
 > problem (`acquisition-closeout-plan.md` §"What runs next", item 4).
 >
@@ -34,6 +37,24 @@ seven `Acquire` rows that this pass now feeds):
 
 The output is not a ranking of settings. It is an effect-size decision against a measured
 floor, plus the statement of which effects the pass *cannot* resolve.
+
+**The floors WP1 and WP2 have now measured**, in the reduction the two share (the
+unweighted mean over the common support of the per-gate window mean), so that WP3 and
+WP4 screen like for like:
+
+| floor | value | from |
+|---|---|---|
+| burst-4 anchors | 9.646 mm/s | WP1, drift `E - B` = −9.646, spread 9.646 (monotone) |
+| burst-18 anchors | 11.980 mm/s | WP1, spread 11.980; its drift *turns* (+7.491 then −11.980) |
+| emissions-8 / 64 / 128 anchors | 1.521 / 2.829 / 3.304 mm/s | WP1, per-job |
+| between-run reference | 4.235 mm/s | WP2, `cr3`–`cr4`, depth-averaged endpoint |
+| between-run reference, depth-resolved | 14.603 mm/s at 21.238 mm | WP2, the same pair |
+
+Two facts about them that bind the later packages: the burst jobs' own anchor floors are
+*larger* than the campaign's between-run reference drift, so a burst contrast smaller
+than ~10 mm/s cannot be separated from its own controls; and the between-run floor is not
+ordered by elapsed time (the two runs 5.3 minutes apart differ most), so it may not be
+read as a rate.
 
 ## 2. Facts the implementation must preserve
 
@@ -148,7 +169,7 @@ confidence interval, and neither is created by counting profiles or gates:
 
 ## 4. Work packages and acceptance gates
 
-### WP0 — the ingest table and the two shared views (implemented)
+### WP0 — the ingest table and the two shared views (implemented, reviewed, frozen)
 
 Deliver: [`reports/sparse-mixer-live-1/points.csv`](../../reports/sparse-mixer-live-1/points.csv)
 (one row per recording: identity, order, condition, requested and stored window, decoded
@@ -171,7 +192,7 @@ depth ranges, which only the files can state), while the **window is declared** 
 pass's designed exposure, which every recording merely has to cover). What remains for
 WP3 is the cross-pitch *alignment* (knots at 2.96 mm), which only the pitch axis needs.
 
-### WP1 — within-job drift and measurement repeatability
+### WP1 — within-job drift and measurement repeatability (implemented)
 
 Deliver, per scientific job: the three **block-local anchor controls'** own metrics
 (mean/median/IQR/RMS/zero fraction on the primary window and support), their pairwise
@@ -187,7 +208,7 @@ monotone drift across a job is a different statement from a scatter, and the pas
 design places the scientific rows between the controls precisely so the two can be told
 apart.
 
-### WP2 — the CR1–CR4 reference drift across runs
+### WP2 — the CR1–CR4 reference drift across runs (implemented)
 
 Deliver: CR1–CR4 as four named realizations of one decoded condition — their metrics,
 their pairwise depth-resolved differences, their spread and their drift over the campaign

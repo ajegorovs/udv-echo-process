@@ -85,7 +85,8 @@ and the burst / emissions / drift contrasts wait for a rig that is measuring.
    measurement slices and the decision table
    ([`sparse-pass-analysis-plan.md`](sparse-pass-analysis-plan.md),
    [`../../reports/sparse-mixer-live-1/README.md`](../../reports/sparse-mixer-live-1/README.md)) — and what
-   is left is WP1–WP5 of that plan. The two requirements the trial
+   is left is WP3–WP5 of that plan: WP1 (the per-job anchor floors) and WP2 (the CR1–CR4 between-run
+   reference floor) have landed beside it, each as a module, a table, a document, a figure and its own gate. The two requirements the trial
    handed it are settled and stand: temporal analysis uses the period measured from the **stored
    timestamps** — the files give `emissions × PRF + 10.369 ms` across all four emission levels, the
    manual's `T_prf × (16 + N_PRF)` together with its transfer term, and the logs' `timing.target_s` is the
