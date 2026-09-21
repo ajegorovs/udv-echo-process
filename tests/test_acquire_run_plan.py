@@ -46,6 +46,11 @@ REPO = Path(__file__).resolve().parents[1]
 PASS_DIR = REPO / "examples" / "sparse-mixer-first-pass"
 PLAN_FILE = PASS_DIR / "run-plan.json"
 
+#: The mixer-enabled realization of the *same* design, run on 2026-09-21: its own plan name
+#: and root, its own record, and nothing scientific moved. Its own test below pins that.
+LIVE_PASS_DIR = REPO / "examples" / "sparse-mixer-live-1"
+LIVE_PLAN_FILE = LIVE_PASS_DIR / "run-plan.json"
+
 #: The decision-layer validator's own parser, so the cross-check reads the documents the way the
 #: gate that guards them does.
 TOOL_PATH = REPO / "tools" / "validate_decision_layer.py"
@@ -657,6 +662,86 @@ def test_a_block_cap_below_the_requirement_is_refused(tmp_path: Path) -> None:
         write_job(path, name, body)
     message = refuses(path)
     assert "2400" in message and "at least 2500" in message
+
+
+# ------------------------------------------------ the same design, a new run identity
+
+
+def test_the_live_pass_is_the_same_design_under_a_new_identity() -> None:
+    """The mixer pass is the frozen design re-run, and only its identity may differ.
+
+    ``examples/sparse-mixer-live-1/`` is a derived copy of the frozen first pass, run on a
+    mixer that measures. Everything the *experiment* is — the nine jobs in their order, their
+    conditions, the points and their windows, the frame, the block cap and the raised facts —
+    has to be equal, and only what names *this run* may move: the plan's name, its root, the
+    directory it lives in, and the hashes that follow from those. Stating the claim in a
+    README is not enough; without this, a later edit to one plan could silently turn the
+    repeat into a different experiment.
+    """
+    first = run_plan.plan_run_file(PLAN_FILE)
+    live = run_plan.plan_run_file(LIVE_PLAN_FILE)
+
+    # Provenance, and only provenance: four fields, all of them naming this run.
+    assert live.plan != first.plan
+    assert live.name_prefix != first.name_prefix
+    assert live.directory != first.directory
+    assert live.plan_fingerprint != first.plan_fingerprint
+
+    # The experiment itself, field for field.
+    for field in (
+        "channel",
+        "duration_s",
+        "store_dir",
+        "max_profiles_per_block",
+        "sound_speed_ms",
+        "first_gate_mm",
+        "reference_window",
+        "reference_condition",
+        "strict_facts",
+    ):
+        assert getattr(live, field) == getattr(first, field), field
+
+    assert live.recordings == first.recordings == 26
+    assert [job.job for job in live.jobs] == [job.job for job in first.jobs]
+    assert [job.step for job in live.jobs] == [job.step for job in first.jobs]
+    assert [job.kind for job in live.jobs] == [job.kind for job in first.jobs]
+    assert [job.condition for job in live.jobs] == [job.condition for job in first.jobs]
+    assert [job.definition for job in live.jobs] == [job.definition for job in first.jobs]
+    # The definition hash covers the naming prefix, so it moves with the run identity — and it
+    # is the only per-job field that does.
+    assert [job.definition_fingerprint for job in live.jobs] != [
+        job.definition_fingerprint for job in first.jobs
+    ]
+
+    for live_job, first_job in zip(live.jobs, first.jobs, strict=True):
+        # The job files themselves: identical once the prefix — the one field a derived copy
+        # has to change — is taken out.
+        live_definition = campaign.load_campaign(LIVE_PASS_DIR / live_job.definition)
+        first_definition = campaign.load_campaign(PASS_DIR / first_job.definition)
+        assert live_definition.name_prefix == f"{live.name_prefix}-{live_job.job}"
+        assert first_definition.name_prefix == f"{first.name_prefix}-{first_job.job}"
+        assert live_definition.model_dump(
+            exclude={"name_prefix"}
+        ) == first_definition.model_dump(exclude={"name_prefix"})
+
+        assert [point.label for point in live_job.points] == [
+            point.label for point in first_job.points
+        ]
+        for live_point, first_point in zip(
+            live_job.points, first_job.points, strict=True
+        ):
+            assert live_point.parameters == first_point.parameters
+            assert live_point.duration_s == first_point.duration_s
+            assert live_point.profiles == first_point.profiles
+            assert live_point.expected_depth_mm == first_point.expected_depth_mm
+            # A point's identity is its label under this pass's root, so it is the point-level
+            # counterpart of the same normalization.
+            assert live_point.identity == (
+                f"{live.name_prefix}-{live_job.job}-{live_point.label}"
+            )
+            assert first_point.identity == (
+                f"{first.name_prefix}-{first_job.job}-{first_point.label}"
+            )
 
 
 def test_a_point_that_overrides_its_window_length_above_the_cap_is_refused(
