@@ -46,11 +46,11 @@ def document(model):
 
 @pytest.fixture(scope="module")
 def slice_documents():
+    """Every frozen slice's own document, read from the directory that slice lives in."""
     documents = {}
-    for name, filename, _ in sds.SLICES:
-        documents[name] = json.loads(
-            (REPORT_DIR / filename).read_text(encoding="utf-8")
-        )
+    for name, filename, _, directory in sds.SLICES:
+        location = Path(directory) if directory else REPORT_DIR
+        documents[name] = json.loads((location / filename).read_text(encoding="utf-8"))
     return documents
 
 
@@ -72,15 +72,20 @@ def _copy_report(tmp_path: Path, name: str | None = None, document: dict | None 
 # ── what it reads ──────────────────────────────────────────────────────
 
 
-def test_the_five_frozen_slices_are_read_with_their_digests_and_revisions(
+def test_the_frozen_slices_are_read_with_their_digests_and_revisions(
     model,
 ) -> None:
-    assert [ref.name for ref in model.slices] == ["WP0", "WP1", "WP2", "WP3", "WP4"]
+    assert [ref.name for ref in model.slices] == ["WP0", "WP1", "WP2", "WP3", "WP4", "stage2"]
     for ref in model.slices:
         assert ref.ok is True
         assert ref.checks_passed == ref.checks_total > 0
         assert ref.recorded_revision, ref.name
-        digest = sds.hashlib.sha256((REPORT_DIR / ref.path.split("/")[-1]).read_bytes())
+        directory = Path(sds.REPORT_DIR)
+        if ref.name == "stage2":
+            directory = Path("reports/stage2-e20-e64")
+        elif not Path(directory / ref.path).exists():
+            directory = Path(sds.REPORT_DIR)
+        digest = sds.hashlib.sha256((directory / ref.path.split("/")[-1]).read_bytes())
         assert ref.sha256 == digest.hexdigest(), ref.name
 
 
@@ -100,7 +105,7 @@ def test_every_floor_is_the_source_slices_own_number(model, slice_documents) -> 
         wp1["burst-18"]["spread"]["mean"], rel=1e-12
     )
     for floor in model.floors:
-        assert floor.source_slice in {"WP1", "WP2"}
+        assert floor.source_slice in {"WP1", "WP2", "stage2"}
 
 
 def test_the_quoted_effects_are_the_slices_own_numbers(model, slice_documents) -> None:
@@ -109,8 +114,10 @@ def test_the_quoted_effects_are_the_slices_own_numbers(model, slice_documents) -
     assert model.row("pitch_x_burst_interaction").observed_effect_mm_s == pytest.approx(
         wp3["interaction"]["scalar_reduction_mm_s"], rel=1e-12
     )
+    stage2 = slice_documents["stage2"]
     assert model.row("e64_versus_e20").observed_effect_mm_s == pytest.approx(
-        wp4["steps"][1]["mean_difference_min_mm_s"], rel=1e-12
+        max(abs(float(contrast["oriented_mm_s"])) for contrast in stage2["contrasts"]),
+        rel=1e-12,
     )
     assert model.row("e128_versus_e64").observed_effect_mm_s == pytest.approx(
         wp4["steps"][2]["mean_difference_min_mm_s"], rel=1e-12
@@ -159,7 +166,7 @@ def test_the_not_detected_and_not_resolvable_classes_are_both_present_and_distin
 ) -> None:
     classes = {row.key: row.decision_class for row in model.rows}
     assert classes["pitch_x_burst_interaction"] == "not resolvable with this design"
-    assert classes["e64_versus_e20"] == "not resolvable with this design"
+    assert classes["e64_versus_e20"] == "not detected at this design's floors"
     assert classes["e128_versus_e64"] == "not detected at this design's floors"
     assert classes["sensitivity_d1"] == "not measured"
     assert classes["prf"] == "measured and resolved"
@@ -190,13 +197,28 @@ def test_the_interaction_row_uses_the_depth_averaged_endpoint(model) -> None:
     )
 
 
-def test_the_e64_row_says_the_classification_depends_on_the_realization(model) -> None:
+def test_the_e64_row_reads_the_campaign_and_records_what_it_said_before(
+    model, slice_documents
+) -> None:
+    """The one row this follow-up moves, with the state it moved from still on the record."""
     row = model.row("e64_versus_e20")
-    assert row.verdict == "defer"
-    assert "depends on which" not in row.observed_effect  # the wording is the report's
-    assert "straddles" in row.observed_effect
-    assert "changes classification with the reference realization" in row.interpretation
-    assert "unresolved" in row.interpretation
+    stage2 = slice_documents["stage2"]
+    assert row.verdict == "replace"
+    assert row.decision_class == "not detected at this design's floors"
+    assert row.floor_mm_s == pytest.approx(stage2["screening_floor_mm_s"], rel=1e-12)
+    assert row.floor_mm_s != pytest.approx(4.235, rel=1e-6)  # never the earlier pass's screen
+    # the observed effect is the campaign's largest |contrast|, and it is inside the floor
+    assert row.observed_effect_mm_s == pytest.approx(
+        max(abs(float(c["oriented_mm_s"])) for c in stage2["contrasts"]), rel=1e-12
+    )
+    assert abs(row.observed_effect_mm_s) < row.floor_mm_s
+    assert "not detected" in row.interpretation.lower()
+    assert "not the same as absent" in row.interpretation
+    assert "do not spend further acquisition effort on emissions 64" in row.interpretation
+    # the prior state is quoted, so a revised decision can be audited
+    assert row.prior_state is not None
+    assert "not resolvable with this pass's design" in row.prior_state
+    assert "defer" in row.prior_state
 
 
 def test_the_e128_row_carries_its_cost_and_the_e8_row_its_advantage(model) -> None:
@@ -345,12 +367,52 @@ def test_the_verdict_replace_is_a_cost_decision_not_a_superiority_claim(model) -
     assert "cost, not effect" in row.interpretation
 
 
-def test_the_e64_row_overturns_on_both_levels_measured_together(model) -> None:
-    """The row that motivates the campaign names the contemporaneity requirement."""
+def test_the_e64_row_now_overturns_on_replication_not_on_one_more_recording(model) -> None:
+    """After the campaign ran, the measurement that would overturn the row is a harder one."""
     row = next(row for row in model.rows if row.key == "e64_versus_e20")
-    assert "*both* levels inside one campaign" in row.overturning_measurement
-    assert "contemporaneous four-against-four" in row.overturning_measurement
-    assert "screened against an older reference" in row.overturning_measurement
+    assert "exceeds a contemporaneous campaign's own floor" in row.overturning_measurement
+    assert "consistent direction" in row.overturning_measurement
+    assert "more runs per level inside one campaign" in row.overturning_measurement
+    assert "A single extra pair would not do it" in row.overturning_measurement
+
+
+def test_the_e64_row_cites_the_campaign_slice_and_no_other_row_moved(
+    model, slice_documents
+) -> None:
+    """The follow-up's whole point: one row reads the campaign, the other six are untouched."""
+    row = model.row("e64_versus_e20")
+    assert "pairs.json#contrasts" in row.evidence_refs
+    assert any("pairs.json" in ref for ref in row.evidence_refs)
+    stage2 = next(ref for ref in model.slices if ref.name == "stage2")
+    assert stage2.ok and stage2.checks_passed == stage2.checks_total
+    assert stage2.recorded_revision == slice_documents["stage2"]["analysis_commit"]
+    assert stage2.path == "pairs.json"
+
+    untouched = {
+        "pitch_x_burst_interaction": ("defer", "not resolvable with this design"),
+        "e8_versus_e20": ("keep", "not detected at this design's floors"),
+        "e128_versus_e64": ("replace", "not detected at this design's floors"),
+        "prf": ("keep", "measured and resolved"),
+        "dense_second_pass": ("defer", "not resolvable with this design"),
+        "sensitivity_d1": ("requires diagnostic", "not measured"),
+    }
+    for key, (verdict, decision_class) in untouched.items():
+        other = model.row(key)
+        assert (other.verdict, other.decision_class) == (verdict, decision_class), key
+        assert other.prior_state is None, key
+
+
+def test_the_campaign_is_recorded_as_executed_with_the_numbers_it_returned(model) -> None:
+    """The recommendation is no longer pending, and the block says what it returned."""
+    execution = model.campaign.execution
+    assert execution is not None
+    assert execution.dataset == "data/stage2-e20-e64"
+    assert execution.plan == "stage2-e20-e64"
+    assert execution.jobs == model.campaign.recordings == 8
+    assert "unresolved overlap" in execution.outcome
+    assert set(execution.contrast_mm_s) == set("ABCD")
+    assert execution.scalar_floor_mm_s > execution.depth_floor_mm_s * 0
+    assert "inside" in execution.note and "per-gate floor" in execution.note
 
 
 # ── the artefacts and the refusals ─────────────────────────────────────
@@ -378,12 +440,30 @@ def test_the_csv_is_the_column_contract(model) -> None:
     assert raw.endswith(b"\n") and b"\r\n" not in raw
     lines = list(csv.DictReader(raw.decode("utf-8").splitlines()))
     assert list(lines[0].keys()) == list(sds.CSV_COLUMNS)
+    assert sds.CSV_COLUMNS[-1] == "prior_state"
     assert len(lines) == len(model.rows) == 7
     assert {row["verdict"] for row in lines} == set(sds.VERDICTS)
     for row in lines:
         assert row["decision_class"] in sds.DECISION_CLASSES
         assert row["interpretation"] and row["overturning_measurement"]
         assert " " in row["applicable_floor"]  # a floor is described, not just numbered
+
+
+def test_the_two_new_floors_are_the_campaign_slices_own_numbers(
+    model, slice_documents
+) -> None:
+    stage2 = slice_documents["stage2"]
+    scalar = next(
+        floor for floor in model.floors if floor.name == "the Stage-2 campaign's own scalar floor"
+    )
+    per_gate = next(
+        floor for floor in model.floors if floor.name == "the Stage-2 campaign's own per-gate floor"
+    )
+    assert scalar.value_mm_s == pytest.approx(stage2["screening_floor_mm_s"], rel=1e-12)
+    assert per_gate.value_mm_s == pytest.approx(stage2["depth_resolved_floor_mm_s"], rel=1e-12)
+    assert scalar.source_slice == per_gate.source_slice == "stage2"
+    assert not scalar.endpoint.startswith(("depth-resolved", "depth-averaged"))
+    assert not per_gate.endpoint.startswith(("depth-resolved", "depth-averaged"))
 
 
 def test_the_committed_table_records_a_real_generator_revision() -> None:

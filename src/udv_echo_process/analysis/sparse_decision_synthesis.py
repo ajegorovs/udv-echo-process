@@ -1385,11 +1385,14 @@ def _checks(
         and "not resolvable with this pass's design" in by_key["e64_versus_e20"].prior_state,
         "the_stage2_campaign_is_recorded_as_run": (
             campaign.execution is not None
-            and campaign.execution.dataset == str(
-                getattr(story["stage2"], "get", lambda *_: "")("dataset") or ""
-            )
-            and campaign.execution.outcome == by_key["e64_versus_e20"].decision_class
+            and campaign.execution.dataset == str(story["stage2"]["dataset"])  # type: ignore[index]
+            and campaign.execution.outcome == str(story["stage2"]["outcome"])  # type: ignore[index]
             and campaign.execution.jobs == campaign.recordings
+            and (
+                story["stage2"]["overlap_kind"] != "not detected"  # type: ignore[index]
+                or by_key["e64_versus_e20"].decision_class
+                == "not detected at this design's floors"
+            )
         ),
         "both_levels_are_sampled_in_one_campaign": (
             campaign.recommended
@@ -1456,7 +1459,7 @@ def _checks(
             < 1e-12
             and abs(
                 by_key["e64_versus_e20"].observed_effect_mm_s
-                - float(story["step_e20_e64"][0])
+                - max(abs(float(value)) for value in story["stage2"]["contrasts"].values())
             )
             < 1e-12
             and abs(
