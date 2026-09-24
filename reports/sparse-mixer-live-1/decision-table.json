@@ -1,5 +1,5 @@
 {
-  "analysis_commit": "ca8e40c",
+  "analysis_commit": "6253a1d",
   "answers": [
     {
       "answer": "the emissions axis, on cost at both upper levels: **E20 is retained as the reference and default condition**, E8 stays useful for bandwidth, and neither upper level is worth acquiring again in this design - E128 because no measured quantity prefers it and its period is a factor of 1.79 longer than E64's, and E64 because the targeted contemporaneous campaign this pass recommended has since been run and detected no improvement over E20 large enough to separate from the variation that campaign measured for itself (answer 4). **`E128 is replaced by E64` is no longer the current state of the axis**: E64 is not the level to move to, E20 is. The pitch axis is not collapsed: its interaction is unresolved at this design's floors, which is a statement about separability rather than about the axis being irrelevant. The burst axis stays at the two levels the historical table already fixed (4 and 18 cycles at the reference pitch), and the new information here is that the burst jobs' own anchors move by 10-12 mm/s, which is what makes finer burst contrasts unresolvable rather than unnecessary.",
@@ -192,7 +192,7 @@
         "reference-floor.json#floor"
       ],
       "floor_mm_s": 4.234827623428042,
-      "interpretation": "an interaction-shaped difference is present and is *larger* than the campaign's own between-run reference variation, but it is *smaller* than the movement of the anchors inside the two jobs it came from: the pass cannot separate its scalar magnitude from that movement, so this is a limitation of separability and NOT evidence that the interaction is absent. Locally the effect is real-shaped and changes sign across the profile, but every local extreme sits inside a job whose own anchors move by 10-12 mm/s.",
+      "interpretation": "an interaction-shaped difference is present and is *larger* than the campaign's own between-run reference variation, but it is *smaller* than the movement of the anchors inside the two jobs it came from: the pass cannot separate its scalar magnitude from that movement, so this is a limitation of separability and NOT evidence that the interaction is absent. Locally it changes sign, and some knots exceed the anchor-spread guards; those local crossings do not establish a replicated interaction magnitude across the two moving burst jobs.",
       "key": "pitch_x_burst_interaction",
       "observed_effect": "the scalar interaction is -7.922 mm/s, i.e. 1.87x the depth-averaged floor, and it stays below both anchor guards (9.646 and 11.980 mm/s); depth-resolved it reaches -21.743 mm/s at 45.658 mm and +7.615 mm/s at 60.458 mm, with 9 of 31 knots above the depth-resolved floor, 14 above the burst-4 guard and 10 above burst-18's",
       "observed_effect_mm_s": -7.922468546951859,
@@ -375,8 +375,8 @@
       "checks_passed": 14,
       "checks_total": 14,
       "path": "pairs.json",
-      "recorded_revision": "ca8e40c",
-      "sha256": "sha256:96475a94e00f7dddaa101c757ae69acc356662d7f474ae04a6aaeb7fe588c795",
+      "recorded_revision": "6253a1d",
+      "sha256": "sha256:410fb844967f9013de2293088891f63b69119b08e9fcc474c992e0bc8035d697",
       "what_it_is": "the counterbalanced Stage-2 campaign that ran the recommendation below: its four paired contrasts, the floor measured inside that campaign, and its outcome"
     }
   },
