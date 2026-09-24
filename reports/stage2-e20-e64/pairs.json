@@ -5,7 +5,7 @@
   "plan": "stage2-e20-e64",
   "plan_path": "examples/stage2-e20-e64/run-plan.json",
   "plan_fingerprint": "16a1f060053ad09fed3817076cf1fc96fc8a8e446c6aacbfabd2173b49bee427",
-  "analysis_commit": "72a6994",
+  "analysis_commit": "ca8e40c",
   "channel": 1,
   "duration_s": 12.0,
   "window_s": 12.0,
@@ -280,7 +280,7 @@
       "depth_resolved_mm_s": 14.603
     }
   },
-  "prior_context_note": "quotations of the earlier pass (sparse-mixer-live-1)'s published between-run floors, carried as context only: that pass measured emissions 20 and emissions 64 in different campaigns, which is exactly the confounding this campaign was acquired to avoid, so its floors are not the screen for any contrast here",
+  "prior_context_note": "quotations of the earlier pass (sparse-mixer-live-1)'s published between-run floors, carried as context only: that pass recorded its four emissions-20 references and its single emissions-64 observation in one campaign, so the two levels are not split across campaigns there, but its floors are the spread of those four emissions-20 runs alone \u2014 one side of a contrast, measured in another sitting \u2014 so they are not this campaign's contemporaneous variation and screen no contrast here. The confounding section 4b avoids is prospective: comparing further emissions-64 realizations against that pass's existing emissions-20 runs would cross campaigns, which is why both levels are sampled inside one campaign here",
   "definitions": {
     "pair": "the design's pair letter (A-D); the campaign's four pairs are its four contrasts",
     "acquisition_orientation": "the order the pair was actually acquired in, retained beside its contrast: '20 -> 64' or '64 -> 20'",
@@ -291,7 +291,7 @@
     "screening_floor_mm_s": "the larger of the two within-level depth-averaged floors measured in this campaign's own eight runs, each the largest absolute difference over that level's six unique run pairs. It is this campaign's contemporaneous variation, not the earlier pass's floor",
     "depth_resolved_floor_mm_s": "the larger of the two within-level depth-resolved floors measured in this campaign's own eight runs, taken per gate over the common support, at the depth stated",
     "outcome": "one of exactly two: 'resolved difference' (the four contrasts consistently larger than the contemporaneous variation with a consistent direction) or 'unresolved overlap' (the separation comparable to or smaller than it)",
-    "overlap_kind": "'not detected' (every contrast inside the campaign's own variation) or 'not resolvable with this design' (the contrasts reach past the floor on some pairs but not consistently, or disagree in direction); null when the outcome is resolved",
+    "overlap_kind": "'not detected' (every contrast inside the campaign's own variation) or 'not resolvable with this design' (at least one contrast exceeds the floor, but the four do not consistently exceed it in one direction); null when the outcome is resolved. Direction disagreement alone does not change 'not detected' when all contrasts remain inside the floor",
     "depth_resolved_reading": "the same two rules applied per gate against the depth-resolved floor, reduced to the strongest depth-resolved separation per pair; never mixed with the depth-averaged verdict"
   },
   "checks": {

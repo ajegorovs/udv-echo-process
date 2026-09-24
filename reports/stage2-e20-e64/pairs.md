@@ -79,7 +79,7 @@ The criterion has exactly two allowed outcomes and this is one of them: a **reso
 
 ## The earlier pass, as context only
 
-quotations of the earlier pass (sparse-mixer-live-1)'s published between-run floors, carried as context only: that pass measured emissions 20 and emissions 64 in different campaigns, which is exactly the confounding this campaign was acquired to avoid, so its floors are not the screen for any contrast here. `sparse-mixer-live-1`'s published floors were **4.235 mm/s** depth-averaged and **14.603 mm/s** depth-resolved; they appear here so the two campaigns can be read side by side, and no number above was screened against them.
+quotations of the earlier pass (sparse-mixer-live-1)'s published between-run floors, carried as context only: that pass recorded its four emissions-20 references and its single emissions-64 observation in one campaign, so the two levels are not split across campaigns there, but its floors are the spread of those four emissions-20 runs alone — one side of a contrast, measured in another sitting — so they are not this campaign's contemporaneous variation and screen no contrast here. The confounding section 4b avoids is prospective: comparing further emissions-64 realizations against that pass's existing emissions-20 runs would cross campaigns, which is why both levels are sampled inside one campaign here. `sparse-mixer-live-1`'s published floors were **4.235 mm/s** depth-averaged and **14.603 mm/s** depth-resolved; they appear here so the two campaigns can be read side by side, and no number above was screened against them.
 
 ## What this does to the frozen decision table
 
@@ -88,7 +88,7 @@ Nothing in `reports/sparse-mixer-live-1/decision-table.md` is rewritten: its E64
 ## Reproduce
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 72a6994
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit ca8e40c
 ```
 
 The table is `pairs.csv`, the definition document `pairs.json` (it carries the definitions, the gate checks and the table's SHA-256), and the figure `figures/pairs.png`.
@@ -104,7 +104,7 @@ The table is `pairs.csv`, the definition document `pairs.json` (it carries the d
 - `screening_floor_mm_s` — the larger of the two within-level depth-averaged floors measured in this campaign's own eight runs, each the largest absolute difference over that level's six unique run pairs. It is this campaign's contemporaneous variation, not the earlier pass's floor
 - `depth_resolved_floor_mm_s` — the larger of the two within-level depth-resolved floors measured in this campaign's own eight runs, taken per gate over the common support, at the depth stated
 - `outcome` — one of exactly two: 'resolved difference' (the four contrasts consistently larger than the contemporaneous variation with a consistent direction) or 'unresolved overlap' (the separation comparable to or smaller than it)
-- `overlap_kind` — 'not detected' (every contrast inside the campaign's own variation) or 'not resolvable with this design' (the contrasts reach past the floor on some pairs but not consistently, or disagree in direction); null when the outcome is resolved
+- `overlap_kind` — 'not detected' (every contrast inside the campaign's own variation) or 'not resolvable with this design' (at least one contrast exceeds the floor, but the four do not consistently exceed it in one direction); null when the outcome is resolved. Direction disagreement alone does not change 'not detected' when all contrasts remain inside the floor
 - `depth_resolved_reading` — the same two rules applied per gate against the depth-resolved floor, reduced to the strongest depth-resolved separation per pair; never mixed with the depth-averaged verdict
 
 ## The gate
