@@ -63,6 +63,17 @@ The bare command records the **current HEAD** instead, which changes
 `tests/test_sparse_inventory.py::test_committed_artefacts_are_reproducible_with_the_recorded_commit`
 runs that comparison, LF-normalized so a checkout's `core.autocrlf` cannot decide it.
 
+The Stage-2 decision table in this directory is a separate generated artefact.
+Its current generator revision is recorded in `decision-table.json` as
+`analysis_commit`. Reproduce `decision-table.csv`, `.json` and `.md` with:
+
+```bash
+uv run python -m udv_echo_process.cli sparse-decision --analysis-commit 6253a1d
+```
+
+`tests/test_sparse_decision_synthesis.py::test_two_builds_are_byte_identical_and_the_committed_pair_reproduces`
+checks the committed outputs at their recorded revision.
+
 ## The two views
 
 The support is **derived** from the recordings; the primary window is **declared**, and

@@ -16,6 +16,7 @@ table. A subsequent reviewed slice updated the E64-vs-E20 row in
 | [`pairs.csv`](pairs.csv) | the eight runs, the four contrasts (oriented, plus their raw acquisition-order difference) and the two level floors, one row per published number |
 | [`pairs.json`](pairs.json) | every published number's definition, the gate checks, the floor provenance and the table's SHA-256 |
 | [`pairs.md`](pairs.md) | the report itself: the design, the four contrasts, the floor, the outcome, and what it does to the frozen table |
+| [`first-run-sensitivity.md`](first-run-sensitivity.md) | explicitly post-hoc three-pair reading without the first pair; it does not change the primary verdict |
 | [`figures/pairs.png`](figures/pairs.png) | the eight runs individually, and the four contrasts against the depth-resolved floor band |
 
 ## Reproduce
@@ -24,7 +25,7 @@ The generator for the current artefacts is the revision recorded in `pairs.json`
 (`analysis_commit`). To reproduce the committed files byte for byte, pass that revision:
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit ca8e40c
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 6253a1d
 ```
 
 The bare command records the **current HEAD** instead, which changes `analysis_commit` and
@@ -57,8 +58,9 @@ runs that comparison, LF-normalized so a checkout's `core.autocrlf` cannot decid
   the largest absolute window-mean difference over each level's six unique run pairs, the
   endpoint WP2 used on the reference runs — taken as the larger of the two levels'. The earlier
   pass's **4.235 / 14.603 mm/s** (`sparse-mixer-live-1`) are quoted as context only and screen
-  nothing here: that pass measured emissions 20 and 64 in *different* campaigns, which is the
-  confounding this campaign was acquired to avoid.
+  nothing here: the earlier mixer-enabled pass measured four E20 references and one E64
+  observation in the same campaign, but its floor covers the E20 runs alone. An E64-only
+  top-up compared with those earlier E20 runs *would* have crossed campaigns.
 
 ## The outcome, and how it was reached
 
@@ -104,5 +106,5 @@ measurement and the later decision remain distinct artefacts.
 - **No comparison with the earlier pass's residuals** beyond its two floors, quoted and named.
 - **No acquisition change**, and no re-running of the campaign: the artefact states what this
   sitting measured.
-- **No new decision row.** The outcome is published; moving the frozen table's row is a separate
-  slice.
+- **No new decision row.** The outcome was published here; the existing E64-vs-E20 row
+  was updated in a separate reviewed decision slice, not by this analysis.
