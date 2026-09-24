@@ -30,6 +30,12 @@ reports/sparse-mixer-live-1/*.csv text eol=lf
 reports/sparse-mixer-live-1/*.json text eol=lf
 reports/sparse-mixer-live-1/*.md text eol=lf
 
+# The decision table hashes Stage-2's pairs.json as raw bytes. Pin the report
+# artefacts to LF so the recorded slice digest survives Windows checkouts.
+reports/stage2-e20-e64/*.csv text eol=lf
+reports/stage2-e20-e64/*.json text eol=lf
+reports/stage2-e20-e64/*.md text eol=lf
+
 # The pass's own logs are the provenance the ingest re-reads (the retired target each
 # entry records): a translated line still parses, and pinning LF keeps the bytes a
 # reviewer checks identical in every checkout.
