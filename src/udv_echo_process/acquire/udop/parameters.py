@@ -683,9 +683,17 @@ class ParametersSurface:
            and turns the transaction into a refusal, never into a retry;
         5. **Accept, re-open, read both rows again.** A dialog just written paints what preceded
            the change (ledger B16) and ``Cancel`` discards, so the read-back that counts is taken
-           on a **re-opened** dialog — the same three-rung rule the channel write follows. A
-           re-opened dialog that states another burst raises, exactly as "the application did not
-           keep the measurement channel" raises.
+           on a **re-opened** dialog — the same three-rung rule the channel write follows. And it
+           is read through the **same gate the dialog the write used passed**: the table filled,
+           its shape is the measured one and every anchor reads what the screen reads
+           (:func:`…ui.dialog.dialog_refusal`), the channel it states is the ``routed_channel``
+           (:func:`…ui.dialog.channel_mismatch`), its mode is the panel's own statement
+           (:func:`…ui.layout.panel_mode`), and **both** rows are readable — all *before* any row
+           is read by position, because these rows are addressed by position and a re-opened table
+           of another shape, of another channel or of another mode would hand this read-back a
+           plausible wrong row. A re-opened dialog that states another burst, another channel or
+           a table this driver does not read raises, exactly as "the application did not keep the
+           measurement channel" raises.
 
         **What it never does.** It never writes the sampling volume, and it never puts a previous
         sampling volume *back*: the application's post-burst choice is evidence of the state it
@@ -879,16 +887,74 @@ class ParametersSurface:
             kept_channel = self._dialog_channel_text(
                 self._descendants_of(confirmed["hwnd"]), kept_fields
             )
+            # **The re-opened dialog is put through the same gate the dialog the write used
+            # passed.** These rows are addressed by *position*, so a table of another shape — or a
+            # dialog showing another channel's parameters — would hand this read-back a plausible
+            # wrong row and the transaction would report a burst nobody read on a table nothing
+            # verified. Nothing here is read by position until the table has been shown to be the
+            # one these bindings were measured against (:func:`…ui.dialog.dialog_refusal`).
+            kept_refusal = self._dialog_refusal(kept_fields, kept_channel)
+            if kept_refusal:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but the re-opened dialog was refused: "
+                    f"{kept_refusal} — the instrument's state is unverified"
+                )
+            # The channel the re-opened dialog states has to be the one the caller routed: the
+            # routing step proved the channel *before* the dialog was written, and a re-open that
+            # shows another one means the burst this call just committed belongs to a channel this
+            # run is not recording (ledger B17, the wrong-channel trap).
+            kept_mismatch = channel_mismatch(
+                routed_channel, DialogParameters(channel=kept_channel)
+            )
+            if kept_mismatch:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but {kept_mismatch} — "
+                    "the instrument's state is unverified"
+                )
+            # The panel and its mode are established **before** any row is read by position: the
+            # mode is the application's own structural statement of which panel this is, and it is
+            # read the way the write's own panel was read, so the two are never compared through
+            # different rules.
+            kept_mode = panel_mode(
+                confirmed, self._children_of(confirmed["hwnd"], self._resolve())
+            )
+            if kept_mode != mode:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but the re-opened dialog mode changed "
+                    f"from {mode!r} to {kept_mode!r} — the instrument's state is unverified"
+                )
             kept_burst = self._row_reading_or_none(kept_fields, DialogField.BURST_LENGTH)
             kept_volume = self._row_reading_or_none(kept_fields, DialogField.SAMPLING_VOLUME)
         finally:
             self._close_any_dialog()
+        accepted = (
+            f"burst {requested} was selected in the {PARAMETERS_ENTRY!r} dialog and the "
+            "dialog was accepted, but"
+        )
+        unverified = (
+            "the instrument's state after this transition is unverified, and a point recorded "
+            "on it would pin a burst nobody has read back"
+        )
+        unreadable: list[str] = []
         if kept_burst is None:
+            unreadable.append(
+                f"the burst row (column {column}, row {row}) is not in the table"
+            )
+        if kept_volume is None:
+            unreadable.append(
+                "the sampling volume row (column "
+                f"{volume_column}, row {volume_row}) is not in the table"
+            )
+        elif not kept_volume.text.strip():
+            unreadable.append(
+                "the sampling volume row (column "
+                f"{volume_column}, row {volume_row}) states nothing"
+            )
+        if unreadable:
             raise AcquisitionError(
-                f"burst {requested} was selected in the {PARAMETERS_ENTRY!r} dialog and the "
-                f"dialog was accepted, but the re-opened dialog holds no row at column {column}, "
-                f"row {row} — the position this driver binds the burst length to — so what the "
-                "application kept is not established: nothing in a table of another shape is read"
+                f"{accepted} {' and '.join(unreadable)} — the positions this driver binds those "
+                "rows to — so what the application kept is not established and nothing in a table "
+                f"of another shape is read: {unverified}"
             )
         stated = kept_burst.text.strip()
         if stated != str(requested):
@@ -901,7 +967,7 @@ class ParametersSurface:
         return BurstWriteResult(
             requested_burst=requested,
             state=BurstState.VERIFIED,
-            dialog_mode=mode,
+            dialog_mode=kept_mode,
             channel=kept_channel,
             before_burst=before_burst,
             before_sampling_volume=before_volume,

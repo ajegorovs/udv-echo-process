@@ -19,7 +19,13 @@ application also *derives another parameter from*. Two things are under test and
   that is never restated, a re-open that states another burst, a re-open that fails, a dialog the
   application replaced mid-write, another channel, the assisted panel, a table of another shape, a
   row that offers no choice, and a request below one. Every one of them is a case the transaction
-  has an answer for, and the answer is asserted rather than the absence of a crash.
+  has an answer for, and the answer is asserted rather than the absence of a crash. Four of them are
+  **post-``Accept``** faults — a fault only in the dialog the application hands back after the
+  write committed — and they are scripted so that the write itself is always the measured one: a
+  re-opened dialog that states another channel, one whose table is no longer the measured shape,
+  one that disagrees with the measurement screen about an anchor, and one from which the dependent
+  row cannot be read. None of them may be reported as ``VERIFIED``, and the re-opened dialog is
+  taken down on every one of those paths.
 
 **What is faked is the window layer only** — the panel set, the dialog's children, the text a
 control states, the entry list a combo offers, the selection message, the held press on the bottom
@@ -167,11 +173,23 @@ class CoupledDialogDriver(Win32Actuator):
         replace_after_write: bool = False,
         reopen_fails: str | None = None,
         assisted: str | None = None,
+        reopened_channel: str | None = None,
+        drop_reopened_sampling_volume_row: bool = False,
+        alter_reopened_table: bool = False,
+        reopened_anchor: ParamRole | None = None,
+        reopened_volume_states_nothing: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
         #: The three bound handles, per panel, resolved once off the fixture.
         self._computed: dict[int, dict[str, int]] = {}
+        #: Whether the dialog that is **up** is a re-opened one — the only open whose reads a
+        #: ``reopened_*`` script may change. False while the write's own dialog is up, so every
+        #: fault scripted below is invisible to the transaction until it re-opens the dialog.
+        self._reopened_up = False
+        #: The rows the re-opened dialog states, when it is scripted away from the measured tree;
+        #: ``None`` is "the table the write used". Set below, once the write's own rows exist.
+        self.reopened_rows: list[dict] | None = None
         self.rows = measured_rows()
         measured_positions = self._positions(DIALOG_HWND)
         if drop_burst_combo:
@@ -201,6 +219,34 @@ class CoupledDialogDriver(Win32Actuator):
                 if not (row["top"] <= centre <= row["top"] + row["h"])
             ]
         self._computed.clear()
+        # ------------------------------------------------- the re-opened dialog's own script
+        # **Only a fault in the dialog the application hands back after ``Accept`` is scripted
+        # here.** The write's own dialog is always the measured tree and its read-back always
+        # passes, so a failure observed below is a failure of what the application *kept* — never
+        # of the write that preceded it. ``reopened_rows`` ``None`` is "the re-opened dialog is the
+        # same table the write used".
+        self.reopened_rows = self._reopened_variant(
+            drop_sampling_volume_row=drop_reopened_sampling_volume_row,
+            alter_table=alter_reopened_table,
+        )
+        #: The channel the **re-opened** dialog states, when it is scripted to state another one.
+        self.reopened_channel = reopened_channel
+        #: The **re-opened** dialog's dependent row stating nothing, with its shape intact — the
+        #: one way the sampling-volume row can be unreadable without the column count moving.
+        self.reopened_volume_states_nothing = reopened_volume_states_nothing
+        self.reopened_anchor = reopened_anchor
+        self.reopened_anchor_hwnd = (
+            None if reopened_anchor is None else self._anchor_hwnd(reopened_anchor)
+        )
+        #: A text the measurement screen does **not** read, so anchor agreement fails on the
+        #: re-opened dialog and nowhere else: the screen's own read is taken from the fixture and
+        #: never from ``_get_text`` (:meth:`_screen_edit`), so overriding the dialog's read here
+        #: cannot move the other surface with it.
+        self.reopened_anchor_text = (
+            ""
+            if self.reopened_anchor_hwnd is None
+            else f"{self._fixture_text(self.rows, self.reopened_anchor_hwnd)}0"
+        )
         self.stated_channel = stated_channel
         self.burst = burst
         #: What the operator last wrote. A burst change can raise the value in force above it and
@@ -266,11 +312,88 @@ class CoupledDialogDriver(Win32Actuator):
         }
 
     def rows_for(self, hwnd: int) -> list[dict]:
-        """The fixture's rows, carrying the handles *that* panel was built with."""
+        """The fixture's rows, carrying the handles *that* panel was built with.
+
+        While a **re-opened** dialog is up, the scripted variant replaces them — that is the
+        whole of the ``reopened_*`` mechanism: the write's own dialog reads the measured tree,
+        and the fault lives only in what the transaction reads back after ``Accept``.
+        """
+        base = (
+            self.reopened_rows
+            if self._reopened_up and self.reopened_rows is not None
+            else self.rows
+        )
         offset = (
             0 if hwnd == DIALOG_HWND else REPLACEMENT_HANDLE_BASE - DIALOG_HANDLE_BASE
         )
-        return [dict(row, hwnd=row["hwnd"] + offset) for row in self.rows]
+        return [dict(row, hwnd=row["hwnd"] + offset) for row in base]
+
+    def _field_hwnd(self, rows: list[dict], column: int, row: int) -> int:
+        """The control a value row states at ``(column, row)`` of ``rows`` — by position, as the
+        driver's own reader binds it."""
+        fields = driver.dialog_value_fields(
+            rows, lambda h: self._fixture_text(rows, h)
+        )
+        return next(
+            int(field["hwnd"])
+            for field in fields
+            if (int(field["column"]), int(field["row"])) == (column, row)
+        )
+
+    def _anchor_hwnd(self, role: ParamRole) -> int:
+        """The dialog control that states anchor ``role``'s own ``(column, row)``."""
+        column, row = next(
+            (column, row) for anchor, column, row in DIALOG_ANCHORS if anchor is role
+        )
+        return self._field_hwnd(self.rows, column, row)
+
+    @staticmethod
+    def _without_field(rows: list[dict], field_hwnd: int) -> list[dict]:
+        """``rows`` without one value row: the control the reader binds for it and the
+        ``TSp_Value_Button`` that holds it.
+
+        Exactly one field leaves exactly one column, so a scripted shape fault moves the column
+        count and nothing else — and the bottom band, which is how the transaction closes the
+        dialog it faulted on, is untouched.
+        """
+        bound = next(row for row in rows if int(row["hwnd"]) == field_hwnd)
+
+        def contains(outer: dict, inner: dict) -> bool:
+            return (
+                outer["left"] <= inner["left"]
+                and outer["top"] <= inner["top"]
+                and inner["left"] + inner["w"] <= outer["left"] + outer["w"]
+                and inner["top"] + inner["h"] <= outer["top"] + outer["h"]
+            )
+
+        drop = {field_hwnd}
+        drop.update(
+            int(row["hwnd"])
+            for row in rows
+            if row.get("cls") == "TSp_Value_Button" and contains(row, bound)
+        )
+        return [row for row in rows if int(row["hwnd"]) not in drop]
+
+    def _reopened_variant(
+        self, *, drop_sampling_volume_row: bool, alter_table: bool
+    ) -> list[dict] | None:
+        """The rows the re-opened dialog states, or ``None`` for the measured table.
+
+        Two faults, and both are **shape** faults rather than value faults: the table is no longer
+        the one the positional bindings were measured against, so the counts of its columns are no
+        longer :data:`DIALOG_COLUMN_ROWS` (4, 6, 5). ``alter_table`` takes the sound-speed field out
+        of the right-hand column — not the burst row, not the dependent row and not an anchor — so
+        the shape is the only thing that changes; the volume variant takes out the dependent row
+        itself, leaving the burst row exactly where it was.
+        """
+        rows = self.rows
+        if drop_sampling_volume_row:
+            rows = self._without_field(
+                rows, self._field_hwnd(rows, *dialog_row(DialogField.SAMPLING_VOLUME))
+            )
+        if alter_table:
+            rows = self._without_field(rows, self._field_hwnd(rows, 2, 4))
+        return rows if rows is not self.rows else None
 
     @staticmethod
     def _fixture_text(rows: list[dict], hwnd: int) -> str:
@@ -346,13 +469,27 @@ class CoupledDialogDriver(Win32Actuator):
             return self._screen_edit(list(ParamRole)[hwnd - SCREEN_HANDLE_BASE])["text"]
         positions = self._positions(self.open_hwnd)
         if hwnd == positions["header"]:  # the dialog's header: its channel
+            if self._reopened_up and self.reopened_channel is not None:
+                # The re-opened dialog states **another channel**: the write's own dialog stated
+                # the routed one and its check passed, so only a read of what the application
+                # *kept* can see this — which is exactly why the read-back is taken re-opened.
+                return self.reopened_channel
             return self.stated_channel
         if hwnd == positions["burst"]:
             return str(self.burst)
         if hwnd == positions["volume"]:
             # What the dialog **paints**, which is not always what the application keeps: see
-            # ``stale_until_reopen``.
+            # ``stale_until_reopen``. A re-opened dialog scripted to state nothing here keeps its
+            # shape and its burst row, so the dependent row is the only thing missing.
+            if self._reopened_up and self.reopened_volume_states_nothing:
+                return ""
             return self.painted
+        if self._reopened_up and hwnd == self.reopened_anchor_hwnd:
+            # An anchor the measurement screen does **not** read: the re-opened dialog disagrees
+            # with the parameter column, which is what makes a positional binding refuse to be
+            # trusted. Only the dialog's read is overridden (:meth:`_screen_edit` reads the
+            # fixture), so the two surfaces genuinely disagree here.
+            return self.reopened_anchor_text
         return self._fixture_text(self.rows_for(self.open_hwnd), hwnd)
 
     def _screen_edit(self, role: ParamRole) -> dict:
@@ -426,6 +563,9 @@ class CoupledDialogDriver(Win32Actuator):
         self.painted = self.volume
         #: The state a ``Cancel`` would restore is the state the dialog found.
         self._committed = (self.burst, self.remembered, self.volume)
+        # From the second open on, this is a **re-opened** dialog: the scripted faults above become
+        # readable now and only now, so the write's own dialog was checked against the measured tree.
+        self._reopened_up = self.opened > 1
         return self.panel(self.open_hwnd)
 
     # ------------------------------------------------------------------ the controls
@@ -915,6 +1055,153 @@ def test_a_reopen_that_fails_says_the_state_is_unverified():
     with pytest.raises(AcquisitionError, match="could not be re-opened"):
         fake.write_dialog_burst_length(18, routed_channel=1)
     assert fake.accepted == 1
+
+
+# ------------------------------------ what the re-opened dialog has to be, to be believed
+
+
+def _never_verifies(fake, requested: int = 18, routed_channel: int = 1) -> str:
+    """Drive one transition, state the one thing it may **never** do, and return why it did not.
+
+    Every fault below is a fault of the dialog the application hands back after ``Accept``, so the
+    write itself ran to completion on the measured tree and only the read-back can see the fault. A
+    transition that reaches ``Accept`` and cannot establish what the application kept may carry the
+    refusal as its state or raise (the vocabulary's own rule for accepted-but-unkept); both shapes
+    are accepted on purpose, so the assertion pins the invariant rather than the mechanism. The
+    reason is returned — the raised message, or the result's own ``reason`` — so a caller can check
+    the failure names the fault it was written about.
+    """
+    try:
+        result = fake.write_dialog_burst_length(requested, routed_channel=routed_channel)
+    except AcquisitionError as exc:
+        return str(exc)
+    assert result.state is not BurstState.VERIFIED, result.reason
+    assert not result.verified
+    assert result.reason, "a transition that did not verify has to say why"
+    return result.reason
+
+
+def _the_write_ran_and_the_fault_is_post_accept(fake) -> None:
+    """The facts every post-Accept fault shares: the write was accepted, the dialog came back, it closed.
+
+    ``accepted == 1`` is the ``Accept`` press landing — a transition refused *before* the write
+    never presses it — and ``opened == 2`` is the re-open. Together they say the failure is in what
+    the application kept, not in any precondition, which is what keeps each test below from passing
+    for the wrong reason. And the re-opened dialog is closed on the failing path either way: this
+    application confines the operator's cursor to an open dialog and Escape closes nothing, so a
+    fault that leaves the modal up is not one a later step can recover from.
+    """
+    assert fake.accepted == 1, "the write's own dialog was accepted"
+    assert fake.opened == 2, "the fault is in the re-opened dialog, not in the write"
+    assert fake.open_hwnd is None, "the re-opened dialog is taken down on the failing path"
+
+
+def _column_counts(rows: list[dict]) -> tuple[int, ...]:
+    """The value fields per column a row set states, by position — the driver's own reader's rule."""
+    fields = driver.dialog_value_fields(
+        rows, lambda hwnd: str(hwnd)
+    )
+    return tuple(
+        sum(1 for field in fields if int(field["column"]) == column)
+        for column in sorted({int(field["column"]) for field in fields})
+    )
+
+
+def test_a_reopened_dialog_that_states_another_channel_never_verifies():
+    """Accepted on channel 1, read back on channel 2: the burst may match and still not be believed.
+
+    The channel is compared against the one the caller *routed* (the routing step's own
+    verification, ``routed_channel``), and the dialog that states it is the re-opened one — the
+    write's own dialog stated channel 1 and passed the pre-write check. A read-back that took the
+    burst row at face value here would pin a burst read off a dialog that is not the channel the run
+    routed, which is the wrong-channel trap the driver already refuses on a stored block (ledger
+    B17) — one level later, on the surface the read-back is taken from.
+    """
+    fake = CoupledDialogDriver(burst=10, reopened_channel="2")
+    reason = _never_verifies(fake)
+    _the_write_ran_and_the_fault_is_post_accept(fake)
+    # The refusal names **both** channels, so a run record says what was found instead of assumed.
+    assert "channel 2" in reason and "channel 1" in reason
+    # The fault is real and it is only in the re-opened read: the dialog the write used stated the
+    # routed channel, and the channel the re-opened one states is the other one.
+    assert fake.stated_channel == STATED_CHANNEL
+    assert fake.reopened_channel == "2"
+
+
+def test_a_reopened_table_of_another_shape_never_verifies():
+    """The re-opened table is not the one the bindings were measured in — so nothing in it is read.
+
+    Rows are bound by **position**: the burst row at ``(0, 1)`` and the dependent row at ``(1, 4)``.
+    A re-opened dialog whose column counts are no longer ``DIALOG_COLUMN_ROWS`` (4, 6, 5) has moved
+    a field, and a burst read out of it would be a plausible number taken from the wrong row. The
+    row removed here is the right-hand column's last — not the burst row, not the dependent row, and
+    not an anchor — so the shape is the *only* thing that changed and the refusal cannot be about
+    anything else.
+    """
+    fake = CoupledDialogDriver(burst=10, alter_reopened_table=True)
+    reason = _never_verifies(fake)
+    _the_write_ran_and_the_fault_is_post_accept(fake)
+    assert "value fields per column" in reason
+    # The write's own table was the measured shape; the re-opened one is a field short.
+    assert _column_counts(fake.rows) == DIALOG_COLUMN_ROWS
+    assert fake.reopened_rows is not None
+    assert _column_counts(fake.reopened_rows) != DIALOG_COLUMN_ROWS
+
+
+def test_a_reopened_dialog_that_disagrees_with_the_screen_never_verifies():
+    """The anchor check is what makes a positional binding evidence — and it holds after ``Accept``.
+
+    ``GATES`` is stated on the measurement screen as well as in the dialog (:data:`DIALOG_ANCHORS`),
+    so the two surfaces reading the *same* text is what proves the row at that position is the field
+    the binding names. A re-opened dialog whose anchor disagrees with the column is not the table
+    these bindings were measured against, and its burst row carries no more authority than any other
+    plausible number in it. The screen's own read is the fixture's
+    (:meth:`CoupledDialogDriver._screen_edit` never goes through ``_get_text``), so the two surfaces
+    genuinely disagree rather than moving together.
+    """
+    fake = CoupledDialogDriver(burst=10, reopened_anchor=ParamRole.GATES)
+    reason = _never_verifies(fake)
+    _the_write_ran_and_the_fault_is_post_accept(fake)
+    assert "disagrees with the measurement screen" in reason
+    assert fake.reopened_anchor_hwnd is not None
+    # The re-opened dialog states a text the measurement screen does not read.
+    assert fake._get_text(fake.reopened_anchor_hwnd) == fake.reopened_anchor_text
+    assert fake.reopened_anchor_text != fake._screen_anchor_text(ParamRole.GATES)
+
+
+@pytest.mark.parametrize("how", ["row removed", "row states nothing"])
+def test_a_reopened_dialog_that_loses_the_sampling_volume_row_never_verifies(how):
+    """The dependent row is evidence of the state that was accepted, not an optional extra.
+
+    The application re-derives the sampling volume from the burst, and the value it lands on is part
+    of the state the transaction verified (``BurstWriteResult`` carries it on both sides of the
+    write). A re-opened dialog from which the dependent row cannot be read gives the caller no such
+    evidence — and a transaction that returned ``VERIFIED`` with the covariate unread would record a
+    burst while silently dropping the coupling the whole feature exists to capture. Two ways the row
+    goes unread, and both keep the burst row exactly where it was: it is **gone** (the column is a
+    field short, so the shape is no longer the measured one), and it is **present but silent** (the
+    shape still matches and the row itself states nothing).
+    """
+    if how == "row removed":
+        fake = CoupledDialogDriver(burst=10, drop_reopened_sampling_volume_row=True)
+    else:
+        fake = CoupledDialogDriver(burst=10, reopened_volume_states_nothing=True)
+    reason = _never_verifies(fake)
+    _the_write_ran_and_the_fault_is_post_accept(fake)
+    # Either the shape gate or the dependent row's own read names it — never neither.
+    assert "value fields per column" in reason or "sampling volume" in reason
+    # The burst row survived; it is the dependent row that did not read back.
+    reopened = (
+        fake.rows_for(DIALOG_HWND) if fake.reopened_rows is not None else fake.rows
+    )
+    burst = field_at(
+        driver.dialog_value_fields(
+            reopened, lambda h: fake._fixture_text(reopened, h)
+        ),
+        *dialog_row(DialogField.BURST_LENGTH),
+    )
+    assert burst is not None
+
 
 
 def test_a_read_back_the_dialog_does_not_state_is_refused_rather_than_guessed():
