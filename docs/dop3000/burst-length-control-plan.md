@@ -1,9 +1,11 @@
 # Plan — burst length as a commanded acquisition parameter
 
-**Status: slice 1–3 landed on this branch; slice 4 (live A/B) is the next thing to run, and it
-gates slices 5 and 6.** Nothing here re-opens the acquisition architecture: the plan adds one
-parameter to the acquisition model that the model already reads, and every rule it uses is a rule
-this repository already has.
+**Status: slices B1–B3 are in PR #35; B4's 2026-09-24 live control/recording pass is
+preserved in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/). Its
+word-27 ↔ effective-volume relation remains unresolved, so B5/B6 are gated pending an offline
+adjudication and, only if necessary, a targeted live contrast.** Nothing here re-opens the
+acquisition architecture: the plan adds one parameter to the acquisition model that the model
+already reads, and every rule it uses is a rule this repository already has.
 
 Burst length is the first acquisition parameter this repository **writes through the
 `Operating parameters` dialog** (`Parameters → Operating parameters`, the third popup entry). The
@@ -169,7 +171,7 @@ applied to `parameters.py`, the suite run, and the file restored):
 | the result carries the row read in the dialog that was written, not the re-opened one | **3 tests fail** (`after_sampling_volume` = `1.825` instead of `3.285`) |
 | the writer selects by counting one step from the value in force instead of by value text | **12 tests fail** |
 
-**B4 — live A/B commissioning** *(next; small)*
+**B4 — live A/B commissioning** *(control/recording pass run 2026-09-24; index relation open)*
 
 ```bash
 # the operating instrument stays the operator's: this driver never presses a modal's right button
@@ -184,6 +186,19 @@ application left, and its entry projection; the return to burst 10 states the vo
 with. Then one tiny acquisition per burst (`4 / 10 / 18 / 10`, one short reference point each),
 requiring `word 8 == requested burst`, `word 27 == the index the recorded readback implies`, and
 every other fixed setting unchanged.
+
+**Observed 2026-09-24:** all four reopened reads verified (`4 / 10 / 18 / 10`), returned to
+the initial `10 / 1.850 mm`, and four two-second BDDs decoded word 8 as `4 / 10 / 18 / 10`.
+The readback volumes were `1.776 / 1.850 / 3.330 / 1.850 mm`, while word 27 was `1` in all
+four files; every other *decoded* configuration field stayed fixed. The inactive rig produced
+all-zero payloads, which do not bear on stored settings. See the committed recordings, SHA-256
+manifest and paired command logs in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/).
+The stated word-27 criterion remains **unproven**, not failed by an established index-to-mm
+law: an unchanged selection index might legitimately map to a raised effective volume.
+First adjudicate that interpretation offline against the manual, decoder and earlier captures;
+if ambiguous, specify a minimal discriminating live contrast and restore the starting state.
+Do not claim B4 complete or begin B5 until this decision is reviewed. No second hidden
+*decoded* configuration change was seen; unrecorded effects have not been excluded.
 
 **The stop rule, binding: if the live instrument shows a *second* hidden dependent effect beyond
 the sampling volume, stop at B4 and model that effect before any campaign integration.**
