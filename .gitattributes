@@ -41,3 +41,9 @@ reports/stage2-e20-e64/*.md text eol=lf
 # reviewer checks identical in every checkout.
 data/sparse-mixer-live-1/*.jsonl text eol=lf
 data/sparse-mixer-live-1/*.json text eol=lf
+
+# The same rule for the second realization's own records: its logs and run record
+# are the provenance a later ingest re-reads, so the bytes a reviewer checks must
+# not depend on a checkout's core.autocrlf.
+data/sparse-mixer-live-2/*.jsonl text eol=lf
+data/sparse-mixer-live-2/*.json text eol=lf
