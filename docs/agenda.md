@@ -250,19 +250,24 @@ acquisition condition the campaign cannot establish on its own.
 `Accept` → **re-open** → re-identify the dialog and read both rows back), the live verb
 (`uv run udv-acquire burst-length <N>`), and the coupled fake/refusal matrix.
 
-**B4 live control/recording pass run 2026-09-24, not yet closed:** the four
+**B4 burst-control commissioning passed (2026-09-24):** the four
 transitions verified `4 / 10 / 18 / 10`; four short BDDs store those values in word 8,
-with other decoded settings unchanged. Dialog Sampling volume was
-`1.776 / 1.850 / 3.330 / 1.850 mm`, but word 27 remained `1` throughout. The
+with other decoded settings unchanged. Dialog effective Sampling volume was
+`1.776 / 1.850 / 3.330 / 1.850 mm`, while word 27 remained `1` throughout. At
+`1480 m/s` and `4 MHz`, burst lengths `10` and `18` predict exactly `1.850` and
+`3.330 mm`. The manual defines word 27 as the receiver-bandwidth definition,
+not an index inferable from the effective millimetres when burst dominates. The
 inactive rig's payloads were all zero; this is control-path evidence, not signal
-analysis. The initial `10 / 1.850 mm` was restored. Raw files, digests, logs and
-limits: [`../data/burst-commissioning-b4/`](../data/burst-commissioning-b4/README.md).
+analysis. The initial `10 / 1.850 mm` was restored. Raw files, digests, logs,
+interpretation and limits: [`../data/burst-commissioning-b4/`](../data/burst-commissioning-b4/README.md).
 
-**Next:** adjudicate the word-27 index versus effective-mm semantics offline,
-review the B4 evidence and a revised acceptance criterion, then run a targeted
-live contrast *only if* the existing evidence cannot distinguish the mechanisms.
-B5 job-level integration and B6 stored-word promotion remain gated; a second
-hidden dependent effect found live also stops B5. Authority:
+**Next:** B5 job-level burst transitions may be developed without a second B4
+live run. Preserve the dialog's effective-mm readback as a dependent covariate;
+do not infer it from word 27 or explicitly write Sampling volume. B6 separately
+promotes stored word 8 as a strict burst oracle and treats word 27 as a stored
+bandwidth-definition covariate, not an effective-mm oracle. B5 still requires
+its own end-to-end live test before use. A second hidden dependent effect in
+that run stops the campaign. Authority:
 [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
 
 **The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**

@@ -10,5 +10,5 @@
     {"file": "b4_burst_10_b.BDD", "sha256": "c525fecb4522a11a6d22219e04d59a0b2e79836654de940054f74cbea7d2bdc6", "bytes": 33388, "requested_burst": 10, "reopened_sampling_volume_mm": "1.850", "op_word_8": 10, "op_word_27": 1, "profiles": 29, "gates": 50, "nonzero_samples": 0}
   ],
   "ending_dialog": {"burst": "10", "sampling_volume_mm": "1.850"},
-  "verdict": "word 8 and dialog transitions verified; word-27-to-effective-mm relationship not established; B5 gated"
+  "verdict": "B4 burst control passed: verified reopen and dependent effective-mm readback, word-8 agreement, decoded-setting invariance and restoration; word 27 is a constant stored bandwidth-definition index, not an effective-mm oracle; B5 may proceed, B6 semantics separate"
 }
