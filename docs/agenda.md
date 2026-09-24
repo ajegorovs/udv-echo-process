@@ -267,6 +267,18 @@ three-run floor, so the post-hoc reading leaves the primary verdict unchanged
 ([`first-run-sensitivity.md`](../reports/stage2-e20-e64/first-run-sensitivity.md)).
 Nothing else is open in this workstream.
 
+**Open decision — the store path a run's records carry.** The `sparse-mixer-live-2`
+sitting started with the absolute `--store-dir` that §6 of
+[`dop3000/sparse-run-plan.md`](dop3000/sparse-run-plan.md) documents, so its logs,
+manifests and run record carry the clone's own absolute path where the three earlier
+datasets record `outputs\live\store\…`. The committed copies of that pass are
+normalized to the relative form (see
+[`../data/sparse-mixer-live-2/README.md`](../data/sparse-mixer-live-2/README.md)), which
+is a per-sitting fix, not the rule. Decide once: either the run records the
+store-relative path while the CLI keeps accepting the absolute form, or §6 documents
+the relative `--store-dir` the live run should pass. Nothing depends on it before the
+next sitting, and no recorded digest covers a path either way.
+
 **The instrument side is verified; nothing in this workstream is device-pending.**
 Sittings A–D on `UDOP DOP3010.43` passed **V1–V8** — the V2 bracket, the
 four-button strip role map and its measured state tree, the refusal paths,
