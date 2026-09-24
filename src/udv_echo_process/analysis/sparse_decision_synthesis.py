@@ -2,11 +2,11 @@
 
 **What this is, and what it is not.** WP5 measures nothing. Every number in its table is
 **read from a frozen slice's own artefact** — WP0's ingest, WP1's per-job anchor floors,
-WP2's between-run reference floor, WP3's interaction, WP4's ladder — and the synthesis
-refuses to publish if a slice is missing, if a slice's own gate did not hold, or if two
-slices disagree about a floor they both report. It is a *decision* layer: the four
-measurement slices answer what was observed, and this one answers what may be concluded
-about the next acquisition.
+WP2's between-run reference floor, WP3's interaction, WP4's ladder and the Stage-2
+campaign's own pairs — and the synthesis refuses to publish if a slice is missing, if a
+slice's own gate did not hold, or if two slices disagree about a floor they both report.
+It is a *decision* layer: the measurement slices answer what was observed, and this one
+answers what may be concluded about the next acquisition.
 
 **The seven columns, and why those.** The table carries the same seven columns the
 historical sweep's decision table uses — the evidence, the floor it was screened against
@@ -358,7 +358,7 @@ def _slice_ref(
 def read_slices(
     report_dir: Path = REPORT_DIR,
 ) -> tuple[dict[str, dict], tuple[SliceRef, ...]]:
-    """Read the five slices, refusing anything that is missing or failed."""
+    """Read the six slices, refusing anything that is missing or failed."""
     documents: dict[str, dict] = {}
     refs: list[SliceRef] = []
     for name, filename, what, directory in SLICES:
@@ -464,11 +464,25 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
             applies_to="the conservative guard on the burst-18 job's contrasts",
         ),
         FloorRef(
-            name="emissions-8 / 64 / 128 jobs' own anchor spreads",
+            name="emissions-8 job's own anchor spread",
+            value_mm_s=float(jobs["emissions-8"]["spread"]["mean"]),
+            endpoint="block-local anchor spread inside one job",
+            source_slice="WP1",
+            applies_to="the E8 row's within-job bracketing",
+        ),
+        FloorRef(
+            name="emissions-64 job's own anchor spread",
             value_mm_s=float(jobs["emissions-64"]["spread"]["mean"]),
             endpoint="block-local anchor spread inside one job",
             source_slice="WP1",
-            applies_to="the E8, E64 and E128 rows' within-job bracketing",
+            applies_to="the E64 row's within-job bracketing",
+        ),
+        FloorRef(
+            name="emissions-128 job's own anchor spread",
+            value_mm_s=float(jobs["emissions-128"]["spread"]["mean"]),
+            endpoint="block-local anchor spread inside one job",
+            source_slice="WP1",
+            applies_to="the E128 row's within-job bracketing",
         ),
         FloorRef(
             name="the Stage-2 campaign's own scalar floor",
@@ -497,6 +511,50 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
 # ── what the slices measured, as the rows quote it ─────────────────────
 
 
+def sourced_floor_values(story: dict[str, object]) -> dict[str, tuple[float, ...]]:
+    """Every floor value the cited slices publish, keyed by the slice that publishes it.
+
+    The gate screens each :class:`FloorRef` against this mapping, so a floor that were
+    *declared* in this module rather than read from a slice's artefact would not trace to
+    any published value and the synthesis would refuse. The values are read back out of
+    ``story``, which is filled only through dotted paths into the frozen documents, so the
+    comparison is against the source and not against the list of floors themselves.
+    """
+    spreads = story["job_anchor_spreads"]
+    assert isinstance(spreads, dict)
+    stage2 = story["stage2"]
+    assert isinstance(stage2, dict)
+    return {
+        "WP1": tuple(float(value) for value in spreads.values()),
+        "WP2": (
+            float(story["reference_spread"]),
+            float(story["reference_spread_resolved"]),
+        ),
+        "stage2": (
+            float(stage2["scalar_floor_mm_s"]),
+            float(stage2["depth_floor_mm_s"]),
+        ),
+    }
+
+
+def floors_trace_to_published_values(
+    floors: tuple[FloorRef, ...], story: dict[str, object]
+) -> bool:
+    """True when every floor's value is one the slice it cites actually publishes.
+
+    A floor whose ``value_mm_s`` is not among its source slice's published values - because
+    it was written into this module instead of read from the artefact - fails here.
+    """
+    published = sourced_floor_values(story)
+    return all(
+        any(
+            abs(floor.value_mm_s - value) <= FLOOR_TOLERANCE_MM_S
+            for value in published.get(floor.source_slice, ())
+        )
+        for floor in floors
+    )
+
+
 def read_story(documents: dict[str, dict]) -> dict[str, object]:
     """Every number the rows quote, read from the slice that published it."""
     wp1, wp2, wp3, wp4 = (documents[key] for key in ("WP1", "WP2", "WP3", "WP4"))
@@ -516,6 +574,9 @@ def read_story(documents: dict[str, dict]) -> dict[str, object]:
         "job_anchor_spreads": {job: float(jobs[job]["spread"]["mean"]) for job in jobs},
         "reference_runs": len(runs),
         "reference_spread": float(_at(wp2, "floor.depth_averaged.value_mm_s", "WP2")),
+        "reference_spread_resolved": float(
+            _at(wp2, "floor.depth_resolved.value_mm_s", "WP2")
+        ),
         "interaction_scalar": float(
             _at(wp3, "interaction.scalar_reduction_mm_s", "WP3")
         ),
@@ -793,8 +854,10 @@ def _rows(
                 f"paired contrasts; depth-resolved, the campaign's own per-gate floor, "
                 f"{s2_depth:.3f} mm/s at {s2_depth_depth:.3f} mm. The earlier pass's "
                 f"{averaged:.3f} mm/s is quoted as prior context and screens nothing here: that pass "
-                "measured the two levels in different campaigns, which is the confounding the "
-                "campaign exists to remove."
+                "observed both levels inside one campaign, but with one emissions-64 realization "
+                "against four emissions-20 runs, so its floor cannot separate the step from whichever "
+                "emissions-20 run it is read against - and topping emissions 64 up alone would have "
+                "crossed a campaign, which is the confounding the paired design exists to remove."
             ),
             floor_mm_s=s2_scalar,
             observed_effect=(
@@ -841,11 +904,16 @@ def _rows(
                 "replication on both sides rather than one more recording."
             ),
             prior_state=(
-                "`defer` / not resolvable with this pass's design: with one realization per level "
-                "and the two levels measured in different campaigns, the E64-to-E20 step changed "
-                "classification with whichever reference realization it was compared against, so "
-                "the pass could neither show E64 better nor show it the same. The overturning "
-                "measurement it named - realizations of both levels inside one campaign - is the "
+                "`defer` / not resolvable with this pass's design: the emissions-20 level already had "
+                "four realizations - the four common-reference runs, the only level of the ladder "
+                "observed in more than one run - while emissions-64 had one scientific recording "
+                "bracketed by its own anchors, so the E64-to-E20 step changed classification with "
+                "whichever of the four E20 runs it was compared against, and the pass could neither "
+                "show E64 better nor show it the same. Both levels were recorded inside this one "
+                "campaign; the confound the row named was prospective rather than already present - an "
+                "emissions-64-only top-up acquired later would have been separated from these four "
+                "emissions-20 runs by a campaign as well as by an emission level - and the overturning "
+                "measurement the row named, realizations of both levels inside one campaign, is the "
                 "campaign this row now reads."
             ),
         ),
@@ -880,12 +948,14 @@ def _rows(
                 "no depth-averaged improvement of E128 over E64 is detected - the observed difference is "
                 "inside the between-run floor - while the bandwidth cost is a factor of "
                 f"{story['periods_ms']['E128'] / story['periods_ms']['E64']:.2f} in period and a halving "
-                "of Nyquist. The information rationale is therefore cost, not effect: no measured "
-                "quantity prefers 128 over 64, so the shorter period is taken. **`replace` here means "
-                "do not spend further acquisition effort on emissions 128 in this design** - it is not "
-                "a claim that emissions 64 is scientifically proven superior, and a future measurement "
-                "that needs the extra profiles, such as a slower flow, a noisier one or a longer "
-                "coherent window, could reopen it."
+                "of Nyquist. The information rationale is therefore cost, not effect: within this pair "
+                "the shorter period is E64's, and this row does not move the axis - **E20 remains the "
+                "reference and default condition** (answer 1), so no measured quantity prefers 128 over "
+                "64 and none prefers either upper level over the reference the ladder is read against. "
+                "**`replace` here means do not spend further acquisition effort on emissions 128 in this "
+                "design** - it is not a claim that emissions 64 is scientifically proven superior, and a "
+                "future measurement that needs the extra profiles, such as a slower flow, a noisier one "
+                "or a longer coherent window, could reopen it."
             ),
             decision_class="not detected at this design's floors",
             automation="none: both levels are already writable",
@@ -895,6 +965,15 @@ def _rows(
                 "a replicated E64-to-E128 difference outside the between-run floor, or a measurement "
                 "that needs the extra profiles more than it needs the bandwidth (nothing in this pass "
                 "shows such a quantity)"
+            ),
+            prior_state=(
+                "`replace` / not detected at this design's floors, drafted when the axis's own "
+                "replacement level was emissions 64: this row's cost rationale then read as `E128 is "
+                "replaced by E64`, and the level the axis moves to is no longer E64 - the campaign "
+                "above measured E64 against E20 and detected no improvement, so E20 is retained as the "
+                "reference and default condition. The row's scope is unchanged: it still reads the "
+                "E64-to-E128 step and that step's bandwidth cost, and `replace` still means only that "
+                "emissions 128 is not worth acquiring in this design."
             ),
         ),
         DecisionRow(
@@ -1090,8 +1169,12 @@ def _answers(
                 "one is estimable in this pass and it is the one the design crossed: pitch x burst. Its "
                 "scalar magnitude is larger than the between-run reference variation and smaller than "
                 "the movement of the anchors inside its own two jobs, so it matters as a *shape* "
-                "(locally up to "
-                f"{abs(float(story['interaction_max'])):.3f} mm/s and changing sign) and not as a "
+                f"(locally from {float(story['interaction_min']):+.3f} mm/s at "
+                f"{float(story['interaction_min_depth']):.3f} mm to "
+                f"{float(story['interaction_max']):+.3f} mm/s at "
+                f"{float(story['interaction_max_depth']):.3f} mm - a local magnitude as large as "
+                f"{max(abs(float(story['interaction_min'])), abs(float(story['interaction_max']))):.3f} "
+                "mm/s - and the sign changes across the profile) and not as a "
                 "statement of magnitude. No other interaction is estimable: the emissions ladder is one "
                 "axis at one set of conditions, and the pass varies nothing else in a crossed way."
             ),
@@ -1360,13 +1443,7 @@ def _checks(
         "the_floors_are_read_not_declared": all(
             floor.source_slice in {ref.name for ref in slices} for floor in floors
         )
-        and all(
-            any(
-                abs(floor.value_mm_s - other.value_mm_s) <= FLOOR_TOLERANCE_MM_S
-                for other in floors
-            )
-            for floor in floors
-        ),
+        and floors_trace_to_published_values(floors, story),
         "the_two_endpoints_are_kept_apart": (
             abs(
                 next(
@@ -1725,7 +1802,8 @@ def markdown_text(model: DecisionSynthesis) -> str:
     rows.append("# WP5 - the Stage-2 decision")
     rows.append("")
     rows.append(
-        "The five measurement slices are frozen; this document decides nothing about what was "
+        "The six slices this decision reads - the five measurement slices and the Stage-2 "
+        "campaign's own - are frozen; this document decides nothing about what was "
         "measured, and everything about what may be concluded for the next acquisition. Every "
         "number below is read from a slice's own artefact (the revision and digest of each are in "
         f"`{DOC_NAME}`), and a slice that is missing, failed its own gate, or disagrees with "
