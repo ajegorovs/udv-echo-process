@@ -30,7 +30,9 @@ cloned.
 - **An interactive desktop** (console session or RDP) that owns the screen the application is
   on, plus **a scheduled task** pointing at this clone — the one-liner is in
   [`tools/live/README.md`](../../tools/live/README.md). Without it nothing that touches the
-  application can be started: the agent's shell is session 0 and the application is session 1.
+  application can be started: in the measured deployment the agent shell was in session 0 and the
+  application in session 1. Measure this runtime precondition; a shell already in the interactive
+  session may perform read-only status checks directly.
 - **The application's own state**, before the first run: a **working directory** configured for
   stored files, at least one channel in **manual** mode (an assisted-mode channel has no
   parameter column to sweep), and the block cap set deliberately ("Do not keep in a block more
@@ -85,9 +87,13 @@ directory or the channel; a stage-5 failure carries its own reason per point in 
 | the app's **working directory** is asserted before committing a store | `driver.assert_working_directory` | set it in the application, or pass the same path as `UDV_STORE_DIR`. A mismatch refuses the point — by design |
 | the application must be **foreground** before any hover | `driver._require_foreground` | click the UDOP window (or Alt+Tab to it) and re-run. Windows' foreground lock refuses a request from anything but the user, so a dispatched probe cannot take it (measured 2026-09-18: `SetForegroundWindow` returns 0 three times), and a console window opened by the launcher is the usual thief. The guard fires **before** the hover, so nothing is opened and nothing is stranded |
 | first-run configuration values (sound speed 1460 m/s, first gate 2 mm, gates ~804, PRF 212 µs, 150 emissions/profile, burst 4) | sweep definitions | these are *this* channel's settings, not the library's: read the new instrument's own values off the application (or the first stored file) and pass them to the sweep |
-| 12 s of recording at these settings kept ~**8.4 s** of signal | measured, unexplained | check the application's block cap before trusting any delay longer than a few seconds (§5) |
+| 12 s production recordings | completed sparse pass: **12.4651–12.5713 s retained** for all 26 files | the earlier ~8.4 s reading used a wrong period/size interpretation; derive retention from decoded timestamps (§5 and `sparse-run-plan.md` §5) |
 
 ## 5. Deliberately open — do not treat these as solved
+
+> **Superseded evidence:** the profile-count interpretation below predates the structural BDD size
+> law and timestamp-derived period. The completed sparse pass retained 12.4651–12.5713 s for every
+> 12 s request. Keep the historical counts for provenance; do not use their ~8.4 s conclusion.
 
 - **How much of a long recording is kept.** The delay between the Record and Stop presses is
   exact (measured: 3.0 s and 6.0 s holds, from the confirmed recording view to the Stop press),

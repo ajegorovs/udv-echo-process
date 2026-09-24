@@ -1,4 +1,4 @@
-# tools/live — driving the instrument from a shell that cannot see it
+# tools/live — driving the instrument from any agent shell
 
 The acquisition code in `src/udv_echo_process/acquire/` is a library: it posts messages, hovers
 a menubar and presses strip buttons, but nothing here *starts* a run. This directory is the
@@ -8,13 +8,32 @@ in the repository so a machine that has only a clone can still run the test.
 Everything is relative to this file's own location: no machine name, no user, no repository
 path. Clone anywhere.
 
-## Why starting a probe is not just `python probe.py`
+## Decide whether this shell can read the application
 
-The agent shell runs in **session 0** (a service window station); UDOP runs in the interactive
-**session 1**. Measured from the service session: `GetCursorPos` fails with error 1459,
-`GetForegroundWindow()` returns 0, `FindWindow('TMain_Scr')` returns 0. Nothing that touches
-the application's screen can run there — it has to be *started in* session 1, and from session
-0 the only route is the Task Scheduler.
+Do not assume every agent shell is session 0. Measure the caller first with
+`ProcessIdToSessionId(os.getpid())`, the window-station name from
+`GetUserObjectInformationW(GetProcessWindowStation(), UOI_NAME, ...)`, and a class lookup for
+`TMain_Scr` (the exact recipe is in the repo skill's `references/evidence-discipline.md`).
+
+Two states have both been measured on this machine:
+
+- From **session 0** on a service window station, `GetCursorPos` failed with error 1459,
+  `GetForegroundWindow()` and `FindWindow('TMain_Scr')` returned 0. Nothing that touches the
+  application's screen can run there; use the Task Scheduler route below.
+- From **session 1** on `WinSta0`, a direct `.venv/Scripts/python.exe` process resolved the visible
+  `TMain_Scr` and could enumerate/read its Win32 tree. Use that route for non-gesture control reads,
+  but do not infer pixel access from the session id: a same-session `ImageGrab` also returned a flat
+  1920x1080 frame. Screenshots must pass the probe's non-blank guard; foreground, real-cursor and pixel
+  work stays on the scheduled route unless the direct process proves those capabilities in that run.
+
+This is a runtime precondition, not a fact about Hermes. A shell may be started under either state.
+For a direct, read-only status check after the measurement passes:
+
+```bash
+./.venv/Scripts/python.exe -m udv_echo_process.cli acquire status
+```
+
+## The Task Scheduler route
 
 `task_run.py` is the entry point that route runs. It launches the probe with
 `CREATE_NO_WINDOW` under `pythonw.exe` and tees the output to `outputs/live/task-<probe>.log`.

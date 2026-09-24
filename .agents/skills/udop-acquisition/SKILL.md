@@ -1,38 +1,43 @@
 ---
 name: udop-acquisition
-description: "Use when driving the DOP3010/UDOP Windows GUI, when its labels read empty, or a menu will not open. Reconnaissance, role binding, the record/store cycle and the sweep/campaign workflow for this instrument."
-version: 1.1.0
+description: Drive and verify DOP3010/UDOP acquisition runs.
+version: 1.2.0
 author: Hermes Agent
 license: MIT
 platforms: [windows]
 metadata:
   hermes:
-    tags: [windows, gui, automation, pywinauto, win32, uia, legacy, delphi, vcl, reconnaissance, dop3010, udop, acquisition]
+    tags: [windows, gui, automation, win32, dop3010, udop, acquisition]
     category: software-development
-    related_skills: [computer-use, spike]
+    related_skills: [windows-gui-automation, udv-live-gui-probe]
 ---
 
-# Driving the DOP3010/UDOP application, and the Windows-GUI craft it needs
+# Driving the DOP3010/UDOP application
 
-This is the single authoritative copy of this skill for this repository, and it travels with a
-clone: the repository is where this automation lives, so a lesson about *this* instrument belongs
-here. The generic cross-project craft remains the Hermes skill `windows-gui-automation`, which
-serves other projects — a lesson about GUI automation in general belongs there, a lesson about this
-instrument belongs here, and the two must not be allowed to fork again. (The name matters: a
-project-local skill of the same name as a profile-global one **shadows** it, so a repo copy that
-falls behind silently hides the newer global one for every session in this repository. That is how
-this file's two halves drifted apart in the first place. The global copy is also at its own size
-limit (100,831 characters against a 100,000 cap, as of the merge that produced this file), so it
-can no longer be patched at all: a lesson learned here has to land here. The `references/` files
-were merged from both forks by the same rule — nothing was dropped, and where the two copies stated
-the same fact in different words both statements are kept, so a passage that reads as a repetition
-is usually a preserved duplicate from the other fork rather than an editing error.)
+This is the repository's instrument-specific overlay, and it travels with a clone. It also still carries
+its own copy of the shared Windows-GUI craft (the sections below), so a clone needs no profile skills to
+be useful; where the profile-global `windows-gui-automation` skill states a general rule differently,
+**the global one wins** and the copy here is the older text. That direction matters because a
+project-local skill shadows a profile-global one of the same name: this overlay stays named
+`udop-acquisition`, and no copy of the general skill may be committed here under its own name.
 
-The project-specific half is the acquisition work: the instrument's own screen, its parameter
-dialog, the record/store cycle, the sweep/campaign commands in `src/udv_echo_process/acquire/`, the
-probes in `tools/live/`, the crops and their tooling in `tools/ui/`, and the bring-up for a second
-machine. Everything else here is the reusable craft, and `docs/dev-handoff.md` in this repository
-is the entry point for a machine that cannot reach the instrument at all.
+**The profile-global copies are not the authority for this instrument, and two of them are stale.**
+`windows-gui-automation` carries instrument-named references (`dop3010-sweep-automation.md`,
+`dop3010-measurement-screen-surface.md`) and `udv-live-gui-probe` carries live-probe notes; both predate
+the sparse pass, so they still state the retired size signature, the planning-law period and `~8.4 s`
+retention that this file corrects. Read them for the general craft and for the dispatch route, never for
+a DOP3010 measurement. Which of their claims are superseded is settled by measuring the instrument, not
+by preferring the newer file.
+
+Put a lesson in exactly one home. A general Windows-GUI rule belongs in `windows-gui-automation`; a
+DOP3010 fact belongs here or in `docs/dop3000/`; dispatch mechanics belong in `tools/live/README.md` and
+the profile-global `udv-live-gui-probe`. When two sources disagree, measure the current process and
+application state and then correct the loser — never leave both claims standing.
+
+The project-specific work is the instrument's own screen, its parameter dialog, the record/store cycle,
+the sweep/campaign commands in `src/udv_echo_process/acquire/`, the probes in `tools/live/`, the crops
+and their tooling in `tools/ui/`, and the bring-up for a second machine. `docs/dev-handoff.md` is the
+entry point for a machine that cannot reach the instrument at all.
 
 **Where the DOP3010 facts live (frozen 2026-09-18).** The repository holds a small set of
 authoritative documents for this instrument, and this skill **points at them instead of repeating
@@ -42,7 +47,9 @@ B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verif
 `docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
 chain — `docs/dop3000/udop-automation.md`; the state of the work —
 `docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
-quotes carry — `docs/dop3000/ui-element-index.md`. A rule learned while driving the instrument
+quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, the current structural-size
+and measured-period laws, and the planner that now computes the whole period law —
+`docs/dop3000/sparse-run-plan.md`. A rule learned while driving the instrument
 belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
 a second copy in a skill is how the two forks drifted apart before.
 
@@ -107,7 +114,7 @@ times from an interactive session), a probe dispatched into a *separate* session
 and a console window opened by the launcher is the usual thief — so put the guard **before** the first
 hover, where a refusal has opened nothing and stranded nothing, and the remedy is for the operator to
 click the window or Alt+Tab to it and re-run the **same** command (`docs/dop3000/live-bringup.md` §4,
-plan §15.1). An inactiveAn inactive
+plan §15.1). An inactive
 window ignores hover and gives its first click to activation, which is indistinguishable from a surface
 that does not answer input at all. Message-based control is also bitness-agnostic, which matters because
 `pywinauto` warns loudly when a 64-bit interpreter drives a 32-bit target.
@@ -132,18 +139,21 @@ it just opened, which is why every click-based attempt failed and why the one me
 so with the operator's cursor already over the button. Once open, its **entries take ordinary posted
 clicks**, which performs the action *and* consumes the popup: that is the whole recipe for menu-driven
 setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
-button again, clicking the plot, and `ESC` (posted or real) all leave it on screen, and opening a
-different menu merely replaces it; a posted `WM_CANCELMODE` is no better (measured: it leaves the popup
-up too). So menus are the one place that should not be in a per-point loop. **If a popup is open when a run resumes, stop and raise the failure;
-do not try to close it.** **A gesture that opens a popup owns its cleanup in a `finally`.** A probe
-that dies between the hover and the cursor restore — an exception anywhere in the read it was doing —
-leaves that popup on the desktop with nothing able to close it programmatically, and every run
-afterwards refuses with "a menu popup is already open"; the operator has to clear it by hand. Restore
-in a `finally`, and have the next run *report* that state rather than try to clear it. Escape closes nothing here, and a hover-opened popup cannot be dismissed
-programmatically: the only clean exit is a *press*, which selects an entry and closes the popup. When a probe has to
-leave the application as it found it, say what it found and what it left in its own output: a state the
-operator has to fix by hand must never be discovered by them.
-**The policy for one that has already stranded the application is the
+button again, clicking the plot, and `ESC` (posted or real) and a posted `WM_CANCELMODE` all leave it on
+screen (measured: the posted `WM_CANCELMODE` leaves it up too), and opening a different menu merely
+replaces it. **Escape closes nothing here, and a hover-opened popup cannot be dismissed
+programmatically: the only clean exit is a *press*, which selects an entry and closes the popup.** So
+menus are the one place that should not be in a per-point loop. **If a popup is open when a run
+resumes, stop and raise the failure; do not try to close it.** **A gesture that opens a popup owns its
+cleanup in a `finally`.** A probe that dies between the hover and the cursor restore — an exception
+anywhere in the read it was doing — leaves that popup on the desktop with nothing able to close it
+programmatically, and every run afterwards refuses with "a menu popup is already open"; the operator has
+to clear it by hand. Restore in a `finally`, then **re-read the popup state on the failing exit** and
+report that the application is unverified plus the operator/restart remedy; an attempted entry press and
+a restored cursor are not proof that the popup was consumed, and this diagnostic must never replace the
+original failure if its own read errors. When a probe has to leave the application as it found it, say
+what it found and what it left in its own output: a state the operator has to fix by hand must never be
+discovered by them. **The policy for one that has already stranded the application is the
 operator's restart:** abort the run, mark the application's state unverified, and require the operator —
 no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
 it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
@@ -294,16 +304,16 @@ wasted re-run. Keep what such a count *classifies into* instead (the view a pres
 the binding is resolved live at press time, so nothing about driving depends on the identity carrying
 the count. And a fact's **explanatory prose** goes out too: an identity is each value plus its
 *source*, never the sentence explaining why — that sentence is written for a human and rewritten as it
-improves. Exclude a fact's explanatory `reason` for the same class of reason: it is written to be
+improves. Exclude a fact's explanatory `reason` on the same principle: it is written to be
 rewritten, so hashing it turns a documentation improvement into "a different instrument" and re-runs a
-finished job — put the value and the *source* in the projection and leave the prose in the reading.into "a different instrument". Make that structural
+finished job — put the value and the *source* in the projection and leave the prose in the reading. Make that structural
 (a projection model with a value field and a source field, plus a case asserting the identity's fact
 fields are that type) rather than a convention in a comment. The **source stays in**: a fact that moved
 from read to unreadable, or from *declared* to *verified by the step that established it*, is a
 weaker or stronger claim about the same instrument, and the two must not share a name. When a value
 rests on another step's verification, give it its own source
 name (a channel the router selected and read back is neither "the caller declared it" nor "this
-reading read it") andmake the caller hand it over as a **required** argument — a
+reading read it") and make the caller hand it over as a **required** argument — a
 reading that pressed nothing, with an optional parameter, implies a verification that never ran.
 
 **5b. Read the instrument's own fixed facts before the first recording, and refuse a disagreement

@@ -242,8 +242,11 @@ every `--sheet` count and the guard's margin: at 12 s the estimate is now 531 pr
 20 (was 924), and the gross size guard's ratio moves from 0.508 to 1.037 at emissions 8 — the level
 the review named as a false-rejection risk, and the only one that sat near the band.
 
-**The pass then ran to completion (2026-09-21): nine jobs, 26 points, all stored.** The record is
-`data/sparse-mixer-first-pass/` — 26 recordings, nine job logs, nine job manifests, the pass manifest,
+**The pass then ran all nine jobs (2026-09-21): 26 point files were stored.** The record is
+not yet a clean completion record: it marks `emissions-128` failed (`0/4 invalid`) under the retired
+payload-only size guard, even though its four files are present and pass the structural law. A
+`--resume` will re-run that job until the pass record says `ok`; see the committed data README.
+`data/sparse-mixer-first-pass/` — 26 recordings, nine job logs, nine job manifests, the pass record,
 and a README with the verdict and the reproduction commands. One job's four points were refused
 (`emissions-128`) and the refusal was the guard's, not the files': the signature modelled only the
 payload, so at 144 profiles the fixed container bytes dominated and the ratio read 3.14×. All four

@@ -1,8 +1,8 @@
 """The scheduled task's entry point: run one in-repo probe in the interactive session.
 
-**Why this file is in the repository.** The agent's shell runs in session 0 (a service window
-station); UDOP runs in the interactive session 1. Anything that touches the application's
-screen has to be *started in* session 1, and from session 0 the only route there is the Task
+**Why this file is in the repository.** Some agent shells run in a service window station while
+UDOP runs in an interactive user session. When the current shell cannot access that session, anything
+that touches the application's screen has to be *started there*, and the repository's route is Task
 Scheduler. So a second machine needs this file, the dispatcher beside it, and the task itself —
 which is why all of it lives in the repository, with every path taken from this file's own
 location. Nothing here knows a machine name, a user, or a repository path.
