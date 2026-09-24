@@ -7,23 +7,25 @@ names, implemented as a slice beside WP0-WP5. It reads the eight committed recor
 frozen decision table recommended and the compiled run plan executed on 2026-09-21 — through the
 frozen WP0 ingest's own binding, decoding and refusals.
 
-Nothing here changes acquisition, the frozen ingest, or any earlier slice's artefacts. The
-decision table's E64-vs-E20 row is reported against, not rewritten.
+This analysis slice did not change acquisition, the frozen ingest, or the earlier decision
+table. A subsequent reviewed slice updated the E64-vs-E20 row in
+[`../sparse-mixer-live-1/decision-table.md`](../sparse-mixer-live-1/decision-table.md).
 
 | artefact | what it is |
 |---|---|
 | [`pairs.csv`](pairs.csv) | the eight runs, the four contrasts (oriented, plus their raw acquisition-order difference) and the two level floors, one row per published number |
 | [`pairs.json`](pairs.json) | every published number's definition, the gate checks, the floor provenance and the table's SHA-256 |
 | [`pairs.md`](pairs.md) | the report itself: the design, the four contrasts, the floor, the outcome, and what it does to the frozen table |
+| [`first-run-sensitivity.md`](first-run-sensitivity.md) | explicitly post-hoc three-pair reading without the first pair; it does not change the primary verdict |
 | [`figures/pairs.png`](figures/pairs.png) | the eight runs individually, and the four contrasts against the depth-resolved floor band |
 
 ## Reproduce
 
-The generator is `72a6994` (the commit before the artefacts); the command that reproduces all
-three files byte for byte is
+The generator for the current artefacts is the revision recorded in `pairs.json`
+(`analysis_commit`). To reproduce the committed files byte for byte, pass that revision:
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 72a6994
+uv run python -m udv_echo_process.cli sparse-stage2-pairs --analysis-commit 6253a1d
 ```
 
 The bare command records the **current HEAD** instead, which changes `analysis_commit` and
@@ -56,8 +58,9 @@ runs that comparison, LF-normalized so a checkout's `core.autocrlf` cannot decid
   the largest absolute window-mean difference over each level's six unique run pairs, the
   endpoint WP2 used on the reference runs — taken as the larger of the two levels'. The earlier
   pass's **4.235 / 14.603 mm/s** (`sparse-mixer-live-1`) are quoted as context only and screen
-  nothing here: that pass measured emissions 20 and 64 in *different* campaigns, which is the
-  confounding this campaign was acquired to avoid.
+  nothing here: the earlier mixer-enabled pass measured four E20 references and one E64
+  observation in the same campaign, but its floor covers the E20 runs alone. An E64-only
+  top-up compared with those earlier E20 runs *would* have crossed campaigns.
 
 ## The outcome, and how it was reached
 
@@ -83,15 +86,17 @@ emissions-64 runs are +29.8310, +30.4364, +30.6783, +31.1759 mm/s (spread **1.34
 report names that run rather than excluding or smoothing it: dropping a run *after* seeing the
 contrasts would be a choice made by the result. Whether the campaign should be read again
 against another endpoint — or whether `e20-a` belongs in this campaign's population at all — is
-a decision for review, not for this generator.
+a decision for review, not for this generator. A separate, explicitly post-hoc
+[first-run sensitivity reading](first-run-sensitivity.md) omits the whole first pair;
+it leaves the primary verdict unchanged and does not establish that the run was invalid.
 
 ## What this does to the frozen decision table
 
-`reports/sparse-mixer-live-1/decision-table.md` is **not** rewritten. Its E64-vs-E20 row was
-published as `defer` / not resolvable **with that pass's design**, and its stated
-overturning measurement was exactly this campaign. Folding this outcome into that table is a
-one-row change to a pinned artefact; it belongs in its own reviewed slice, and `pairs.md` says
-so where a reader meets it.
+**Subsequent decision update.** This Stage-2 generator did not rewrite
+`reports/sparse-mixer-live-1/decision-table.md`. Its E64-vs-E20 row originally read
+`defer` / not resolvable with that pass's design; a separate reviewed slice has since
+updated it to `replace` / not detected against this campaign's floor. The Stage-2
+measurement and the later decision remain distinct artefacts.
 
 ## What is deliberately not here
 
@@ -101,5 +106,5 @@ so where a reader meets it.
 - **No comparison with the earlier pass's residuals** beyond its two floors, quoted and named.
 - **No acquisition change**, and no re-running of the campaign: the artefact states what this
   sitting measured.
-- **No new decision row.** The outcome is published; moving the frozen table's row is a separate
-  slice.
+- **No new decision row.** The outcome was published here; the existing E64-vs-E20 row
+  was updated in a separate reviewed decision slice, not by this analysis.

@@ -219,6 +219,17 @@ def test_the_e64_row_reads_the_campaign_and_records_what_it_said_before(
     assert row.prior_state is not None
     assert "not resolvable with this pass's design" in row.prior_state
     assert "defer" in row.prior_state
+    # the corrected prior state: emissions 20 was the replicated level and emissions 64 the
+    # single recording, both recorded inside this pass's one campaign - only a later,
+    # emissions-64-only top-up would have crossed a campaign
+    assert "four realizations" in row.prior_state
+    assert "one scientific recording" in row.prior_state
+    assert "inside this one campaign" in row.prior_state
+    assert "prospective" in row.prior_state
+    assert "different campaigns" not in row.prior_state
+    # and the floor the row now screens against says the same thing
+    assert "different campaigns" not in row.applicable_floor
+    assert "one emissions-64 realization" in row.applicable_floor
 
 
 def test_the_e128_row_carries_its_cost_and_the_e8_row_its_advantage(model) -> None:
@@ -399,13 +410,13 @@ def test_the_e64_row_cites_the_campaign_slice_and_no_other_row_moved(
     assert stage2.recorded_revision == slice_documents["stage2"]["analysis_commit"]
     assert stage2.path == "pairs.json"
 
-    # two rows moved: the E64-vs-E20 row, which now reads the campaign, and the dense-pass
-    # row, whose "measure this next" claim the campaign has since answered. The other five
-    # keep both their verdicts and an empty prior state.
+    # three rows moved: the E64-vs-E20 row, which now reads the campaign; the dense-pass row,
+    # whose "measure this next" claim the campaign has since answered; and the E128 row, whose
+    # cost rationale named emissions 64 as the level the axis moves to. The other four keep
+    # both their verdicts and an empty prior state.
     unchanged = {
         "pitch_x_burst_interaction": ("defer", "not resolvable with this design"),
         "e8_versus_e20": ("keep", "not detected at this design's floors"),
-        "e128_versus_e64": ("replace", "not detected at this design's floors"),
         "prf": ("keep", "measured and resolved"),
         "sensitivity_d1": ("requires diagnostic", "not measured"),
     }
@@ -417,6 +428,16 @@ def test_the_e64_row_cites_the_campaign_slice_and_no_other_row_moved(
     assert (dense.verdict, dense.decision_class) == ("defer", "not resolvable with this design")
     assert dense.prior_state is not None
     assert "E20 against E64" in dense.prior_state
+    # the E128 row keeps its scope and verdict, and records the state its rationale named
+    e128 = model.row("e128_versus_e64")
+    assert (e128.verdict, e128.decision_class) == (
+        "replace",
+        "not detected at this design's floors",
+    )
+    assert e128.prior_state is not None
+    assert "E128 is replaced by E64" in e128.prior_state
+    assert "E20 is retained as the reference and default condition" in e128.prior_state
+    assert "The row's scope is unchanged" in e128.prior_state
 
 
 def test_the_campaign_is_recorded_as_executed_with_the_numbers_it_returned(model) -> None:
@@ -430,6 +451,124 @@ def test_the_campaign_is_recorded_as_executed_with_the_numbers_it_returned(model
     assert set(execution.contrast_mm_s) == set("ABCD")
     assert execution.scalar_floor_mm_s > execution.depth_floor_mm_s * 0
     assert "inside" in execution.note and "per-gate floor" in execution.note
+
+
+def test_the_prior_state_matches_what_the_ladder_published(
+    model, slice_documents
+) -> None:
+    """The corrected prior state reads the ladder's own evidence, not a summary of it."""
+    levels = {level["level"]: level for level in slice_documents["WP4"]["levels"]}
+    assert "four runs" in levels["E20"]["evidence"]
+    assert "one scientific recording" in levels["E64"]["evidence"]
+    assert len(slice_documents["WP2"]["runs"]) == 4  # the four common-reference runs
+    row = model.row("e64_versus_e20")
+    assert "four realizations" in row.prior_state
+    assert "one scientific recording" in row.prior_state
+    # the cross-campaign separation is prospective, never a claim about the earlier pass
+    assert "prospective" in row.prior_state
+    assert "different campaigns" not in row.prior_state
+
+
+def test_the_interaction_answer_quotes_both_local_extremes(
+    model, slice_documents
+) -> None:
+    """'locally up to +7.615' understated the effect: the larger extreme is -21.743."""
+    interaction = slice_documents["WP3"]["interaction"]
+    assert abs(interaction["min_mm_s"]) > abs(interaction["max_mm_s"])
+    answer = model.answers[1].answer
+    assert f"{interaction['min_mm_s']:+.3f}" in answer
+    assert f"{interaction['max_mm_s']:+.3f}" in answer
+    assert f"{interaction['max_abs_mm_s']:.3f}" in answer
+    assert "locally up to" not in answer
+    row = model.row("pitch_x_burst_interaction")
+    assert f"{interaction['min_mm_s']:+.3f}" in row.observed_effect
+    assert f"{interaction['max_mm_s']:+.3f}" in row.observed_effect
+    assert "some knots exceed the anchor-spread guards" in row.interpretation
+    assert "every local extreme sits inside" not in row.interpretation
+
+
+def test_each_emissions_level_carries_its_own_anchor_floor_row(
+    model, slice_documents
+) -> None:
+    """One compound label used to carry one job's spread for three levels. Now: three rows."""
+    wp1 = {job["job"]: job["spread"]["mean"] for job in slice_documents["WP1"]["jobs"]}
+    by_name = {floor.name: floor for floor in model.floors}
+    levels = (
+        ("8", "emissions-8"),
+        ("64", "emissions-64"),
+        ("128", "emissions-128"),
+    )
+    for level, job in levels:
+        floor = by_name[f"emissions-{level} job's own anchor spread"]
+        assert floor.value_mm_s == pytest.approx(wp1[job], rel=1e-12)
+        assert floor.source_slice == "WP1"
+        assert floor.endpoint == "block-local anchor spread inside one job"
+    # three distinct spreads, not one label carrying one of them
+    values = {
+        round(by_name[f"emissions-{level} job's own anchor spread"].value_mm_s, 6)
+        for level in ("8", "64", "128")
+    }
+    assert len(values) == 3
+    assert not any("/" in floor.name for floor in model.floors)
+
+
+def test_every_floor_traces_to_its_own_slice_document(model, slice_documents) -> None:
+    """Independent of the gate: each floor value is one its cited slice publishes."""
+    wp1 = [job["spread"]["mean"] for job in slice_documents["WP1"]["jobs"]]
+    wp2 = slice_documents["WP2"]["floor"]
+    stage2 = slice_documents["stage2"]
+    published = {
+        "WP1": wp1,
+        "WP2": [
+            wp2["depth_averaged"]["value_mm_s"],
+            wp2["depth_resolved"]["value_mm_s"],
+        ],
+        "stage2": [
+            stage2["screening_floor_mm_s"],
+            stage2["depth_resolved_floor_mm_s"],
+        ],
+    }
+    assert model.floors
+    for floor in model.floors:
+        assert floor.source_slice in published, floor.name
+        assert any(
+            abs(floor.value_mm_s - value) <= sds.FLOOR_TOLERANCE_MM_S
+            for value in published[floor.source_slice]
+        ), floor.name
+
+
+def test_the_floor_gate_screens_against_the_slices_and_can_fail(model) -> None:
+    """The gate compared each floor with the list it was already in; that held for any input.
+
+    It now traces every floor value back to a value the cited slice published, so a floor
+    written into the module instead of read from an artefact fails it.
+    """
+    assert sds.floors_trace_to_published_values(model.floors, model.story) is True
+    published = sds.sourced_floor_values(model.story)
+    assert published["WP1"] and published["WP2"] and published["stage2"]
+    invented = sds.FloorRef(
+        name="an invented floor",
+        value_mm_s=123.456,
+        endpoint="declared, not measured",
+        source_slice="WP1",
+        applies_to="nothing",
+    )
+    assert sds.floors_trace_to_published_values((invented,), model.story) is False
+    assert (
+        sds.floors_trace_to_published_values((*model.floors, invented), model.story)
+        is False
+    )
+    assert model.checks["the_floors_are_read_not_declared"] is True
+
+
+def test_the_document_names_all_six_slices(model) -> None:
+    """The header said five slices while the table reads six, the campaign slice included."""
+    assert len(model.slices) == 6
+    prose = sds.markdown_text(model)
+    assert "The six slices this decision reads" in prose
+    assert "five measurement slices" in prose
+    assert "The five measurement slices are frozen" not in prose
+    assert "six slices" in (sds.read_slices.__doc__ or "")
 
 
 # ── the artefacts and the refusals ─────────────────────────────────────

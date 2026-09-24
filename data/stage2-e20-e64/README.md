@@ -8,10 +8,12 @@ from both earlier sparse passes: its own plan name, its own file root (`stage2`)
 record.
 
 It exists to answer one question the earlier data could not: whether **E64 differs from E20** by
-more than the run-to-run variation of the campaign it was measured in. The earlier passes put E20
-(4 common-reference runs) and E64 (one bracketed point) in *different* campaigns, so comparing
-them would have mixed the emissions question with campaign drift; this pass measures both levels
-in one sitting, adjacent within each pair.
+more than the run-to-run variation of the campaign it was measured in. The earlier
+mixer-enabled pass measured E20 (four common-reference runs) and E64 (one bracketed
+point) in the *same* campaign, but could not separate the step from the choice of E20
+reference run. Acquiring E64 alone later and comparing it with those earlier E20 runs
+would introduce campaign drift; this pass instead measures both levels in one sitting,
+adjacent within each pair.
 
 ## The frozen order, as acquired
 

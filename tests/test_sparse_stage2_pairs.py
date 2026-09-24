@@ -227,6 +227,50 @@ def test_the_prior_passes_floor_is_context_and_not_the_screen(analysis) -> None:
     )
 
 
+def test_the_overlap_kind_definition_matches_the_decision_rule() -> None:
+    definition = s2.DEFINITIONS["overlap_kind"]
+    assert "every contrast inside" in definition
+    assert "at least one contrast exceeds" in definition
+    assert "Direction disagreement alone does not change 'not detected'" in definition
+
+
+def test_the_prior_context_note_does_not_split_the_earlier_pass_across_campaigns(
+    analysis, document
+) -> None:
+    """The earlier pass measured both levels in one campaign; the crossing is prospective only.
+
+    Its floor is the spread of its four emissions-20 runs — one side of a contrast, from another
+    sitting — so it is no screen for a paired contrast. The confounding section 4b avoids is the
+    prospective one: a top-up emissions-64 block read against that pass's existing emissions-20
+    runs would cross campaigns.
+    """
+    note = _plain(analysis.prior_context_note)
+    # the earlier pass bracketed both levels in a single sitting: four E20 references, one E64
+    assert "four emissions-20" in note
+    assert "single emissions-64" in note
+    assert "one campaign" in note
+    # its published floor is the emissions-20 level's own spread, one side of a contrast
+    assert "emissions-20 runs alone" in note
+    # the confounding is prospective, not something the earlier pass did
+    assert "prospective" in note
+    # the false attribution must not come back
+    assert "different campaigns" not in note
+    assert document["prior_context_note"] == analysis.prior_context_note
+
+
+def test_the_report_prose_carries_the_corrected_prior_context(analysis) -> None:
+    """``pairs.md`` is rendered from the note, so the correction travels with the report."""
+    prose = _plain(s2.render_markdown(analysis))
+    assert "different campaigns" not in prose
+    assert "four emissions-20" in prose
+    assert "prospective" in prose
+    assert "has since updated that row" in prose
+    assert "Folding this outcome into that table" not in prose
+    # the earlier pass's floors are still quoted, still as context and still not the screen
+    assert s2.PRIOR_DATASET in prose
+    assert "4.235" in prose
+
+
 def test_the_two_floors_are_read_at_their_own_levels(analysis) -> None:
     assert [floor.level for floor in analysis.floors] == ["E20", "E64"]
     assert analysis.depth_resolved_floor_source.find(s2.PRIOR_DATASET) == -1

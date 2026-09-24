@@ -15,10 +15,13 @@ retained, not discarded, and it is what makes the two orders comparable: read th
 acquisition-order difference instead, and the counterbalancing turns into a sign error on half
 the pairs.
 
-**The screening floor is this campaign's own.** The cheaper design — three new emissions-64
-runs compared against the earlier pass's four emissions-20 runs — would have mixed the
-emissions question with session drift, because those two sets were measured in different
-campaigns. Here the variation a contrast is screened against is measured *inside* the campaign,
+**The screening floor is this campaign's own.** The earlier pass measured its four emissions-20
+references and its single emissions-64 observation in **one** campaign, so it did bracket both
+levels; but the floor it published is the spread of those four emissions-20 runs alone — one side
+of a contrast, and measured in another sitting — and it is no screen for a paired contrast, which
+carries both members' run-to-run variation. The cheaper design that *would* cross campaigns is
+prospective: three further emissions-64 runs compared against that pass's four emissions-20 runs.
+Here the variation a contrast is screened against is measured *inside* the campaign,
 by the same endpoint WP2 used on the reference runs:
 
 - a **level floor** is the largest absolute window-mean difference over the **six unique run
@@ -29,7 +32,8 @@ by the same endpoint WP2 used on the reference runs:
   variation;
 - the earlier pass's published floors (**4.235 mm/s** depth-averaged, **14.603 mm/s**
   depth-resolved, over `sparse-mixer-live-1`) are carried here as **context only**. They are
-  never the screen and no verdict below reads them: they belong to another sitting.
+  never the screen and no verdict below reads them: they are that pass's four emissions-20 runs'
+  own spread, one side of a contrast, measured in another sitting.
 
 **The acceptance criterion has exactly two allowed outcomes** (section 4b, stated in advance):
 
@@ -153,9 +157,13 @@ PRIOR_DEPTH_RESOLVED_FLOOR_MM_S = 14.603
 
 PRIOR_CONTEXT_NOTE = (
     f"quotations of the earlier pass ({PRIOR_DATASET})'s published between-run floors, carried "
-    "as context only: that pass measured emissions 20 and emissions 64 in different campaigns, "
-    "which is exactly the confounding this campaign was acquired to avoid, so its floors are "
-    "not the screen for any contrast here"
+    "as context only: that pass recorded its four emissions-20 references and its single "
+    "emissions-64 observation in one campaign, so the two levels are not split across campaigns "
+    "there, but its floors are the spread of those four emissions-20 runs alone — one side of a "
+    "contrast, measured in another sitting — so they are not this campaign's contemporaneous "
+    "variation and screen no contrast here. The confounding section 4b avoids is prospective: "
+    "comparing further emissions-64 realizations against that pass's existing emissions-20 runs "
+    "would cross campaigns, which is why both levels are sampled inside one campaign here"
 )
 
 # ── artefacts ──────────────────────────────────────────────────────────
@@ -215,8 +223,10 @@ DEFINITIONS: dict[str, str] = {
     ),
     "overlap_kind": (
         "'not detected' (every contrast inside the campaign's own variation) or 'not resolvable "
-        "with this design' (the contrasts reach past the floor on some pairs but not "
-        "consistently, or disagree in direction); null when the outcome is resolved"
+        "with this design' (at least one contrast exceeds the floor, but the four do not "
+        "consistently exceed it in one direction); null when the outcome is resolved. "
+        "Direction disagreement alone does not change 'not detected' when all contrasts "
+        "remain inside the floor"
     ),
     "depth_resolved_reading": (
         "the same two rules applied per gate against the depth-resolved floor, reduced to the "
@@ -1431,11 +1441,12 @@ def render_markdown(model: Stage2Pairs) -> str:
     lines.append("## What this does to the frozen decision table")
     lines.append("")
     lines.append(
-        "Nothing in `reports/sparse-mixer-live-1/decision-table.md` is rewritten: its "
-        "E64-vs-E20 row was published as `defer` / not resolvable **with that pass's design**, "
-        "and this campaign was the measurement that row named as the one that would overturn "
-        "it. Folding this outcome into that table is a one-row change to a pinned artefact, so "
-        "it belongs in its own reviewed slice rather than in this one."
+        "This Stage-2 analysis does not rewrite "
+        "`reports/sparse-mixer-live-1/decision-table.md`: its E64-vs-E20 row originally "
+        "read `defer` / not resolvable **with that pass's design**, and this campaign "
+        "was its named overturning measurement. A separate reviewed decision slice "
+        "has since updated that row to `replace` / not detected at this campaign's floor; "
+        "the measurement and the later decision remain separate artefacts."
     )
     lines.append("")
     lines.append("## Reproduce")

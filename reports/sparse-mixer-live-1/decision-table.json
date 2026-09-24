@@ -1,5 +1,5 @@
 {
-  "analysis_commit": "e8ea80f",
+  "analysis_commit": "6253a1d",
   "answers": [
     {
       "answer": "the emissions axis, on cost at both upper levels: **E20 is retained as the reference and default condition**, E8 stays useful for bandwidth, and neither upper level is worth acquiring again in this design - E128 because no measured quantity prefers it and its period is a factor of 1.79 longer than E64's, and E64 because the targeted contemporaneous campaign this pass recommended has since been run and detected no improvement over E20 large enough to separate from the variation that campaign measured for itself (answer 4). **`E128 is replaced by E64` is no longer the current state of the axis**: E64 is not the level to move to, E20 is. The pitch axis is not collapsed: its interaction is unresolved at this design's floors, which is a statement about separability rather than about the axis being irrelevant. The burst axis stays at the two levels the historical table already fixed (4 and 18 cycles at the reference pitch), and the new information here is that the burst jobs' own anchors move by 10-12 mm/s, which is what makes finer burst contrasts unresolvable rather than unnecessary.",
@@ -11,7 +11,7 @@
       "question": "which axes can be collapsed or fixed?"
     },
     {
-      "answer": "one is estimable in this pass and it is the one the design crossed: pitch x burst. Its scalar magnitude is larger than the between-run reference variation and smaller than the movement of the anchors inside its own two jobs, so it matters as a *shape* (locally up to 7.615 mm/s and changing sign) and not as a statement of magnitude. No other interaction is estimable: the emissions ladder is one axis at one set of conditions, and the pass varies nothing else in a crossed way.",
+      "answer": "one is estimable in this pass and it is the one the design crossed: pitch x burst. Its scalar magnitude is larger than the between-run reference variation and smaller than the movement of the anchors inside its own two jobs, so it matters as a *shape* (locally from -21.743 mm/s at 45.658 mm to +7.615 mm/s at 60.458 mm - a local magnitude as large as 21.743 mm/s - and the sign changes across the profile) and not as a statement of magnitude. No other interaction is estimable: the emissions ladder is one axis at one set of conditions, and the pass varies nothing else in a crossed way.",
       "evidence_refs": [
         "pitch-burst.json#interaction",
         "emissions-ladder.json#levels"
@@ -143,11 +143,23 @@
       "source_slice": "WP1",
       "value_mm_s": 9.645932573047823
     },
-    "emissions-8 / 64 / 128 jobs' own anchor spreads": {
-      "applies_to": "the E8, E64 and E128 rows' within-job bracketing",
+    "emissions-128 job's own anchor spread": {
+      "applies_to": "the E128 row's within-job bracketing",
+      "endpoint": "block-local anchor spread inside one job",
+      "source_slice": "WP1",
+      "value_mm_s": 3.3041591851311516
+    },
+    "emissions-64 job's own anchor spread": {
+      "applies_to": "the E64 row's within-job bracketing",
       "endpoint": "block-local anchor spread inside one job",
       "source_slice": "WP1",
       "value_mm_s": 2.828680882067019
+    },
+    "emissions-8 job's own anchor spread": {
+      "applies_to": "the E8 row's within-job bracketing",
+      "endpoint": "block-local anchor spread inside one job",
+      "source_slice": "WP1",
+      "value_mm_s": 1.5211928106602386
     },
     "the Stage-2 campaign's own per-gate floor": {
       "applies_to": "the depth-resolved reading of the same four contrasts",
@@ -180,7 +192,7 @@
         "reference-floor.json#floor"
       ],
       "floor_mm_s": 4.234827623428042,
-      "interpretation": "an interaction-shaped difference is present and is *larger* than the campaign's own between-run reference variation, but it is *smaller* than the movement of the anchors inside the two jobs it came from: the pass cannot separate its scalar magnitude from that movement, so this is a limitation of separability and NOT evidence that the interaction is absent. Locally the effect is real-shaped and changes sign across the profile, but every local extreme sits inside a job whose own anchors move by 10-12 mm/s.",
+      "interpretation": "an interaction-shaped difference is present and is *larger* than the campaign's own between-run reference variation, but it is *smaller* than the movement of the anchors inside the two jobs it came from: the pass cannot separate its scalar magnitude from that movement, so this is a limitation of separability and NOT evidence that the interaction is absent. Locally it changes sign, and some knots exceed the anchor-spread guards; those local crossings do not establish a replicated interaction magnitude across the two moving burst jobs.",
       "key": "pitch_x_burst_interaction",
       "observed_effect": "the scalar interaction is -7.922 mm/s, i.e. 1.87x the depth-averaged floor, and it stays below both anchor guards (9.646 and 11.980 mm/s); depth-resolved it reaches -21.743 mm/s at 45.658 mm and +7.615 mm/s at 60.458 mm, with 9 of 31 knots above the depth-resolved floor, 14 above the burst-4 guard and 10 above burst-18's",
       "observed_effect_mm_s": -7.922468546951859,
@@ -212,7 +224,7 @@
       "verdict": "keep"
     },
     {
-      "applicable_floor": "the campaign's own scalar floor, 9.404 mm/s - measured on its own eight runs, from the larger of its two levels' six-pair maxima - applied to its four paired contrasts; depth-resolved, the campaign's own per-gate floor, 28.548 mm/s at 15.688 mm. The earlier pass's 4.235 mm/s is quoted as prior context and screens nothing here: that pass measured the two levels in different campaigns, which is the confounding the campaign exists to remove.",
+      "applicable_floor": "the campaign's own scalar floor, 9.404 mm/s - measured on its own eight runs, from the larger of its two levels' six-pair maxima - applied to its four paired contrasts; depth-resolved, the campaign's own per-gate floor, 28.548 mm/s at 15.688 mm. The earlier pass's 4.235 mm/s is quoted as prior context and screens nothing here: that pass observed both levels inside one campaign, but with one emissions-64 realization against four emissions-20 runs, so its floor cannot separate the step from whichever emissions-20 run it is read against - and topping emissions 64 up alone would have crossed a campaign, which is the confounding the paired design exists to remove.",
       "automation": "none: E64 is already writable and was written in the campaign",
       "decision_class": "not detected at this design's floors",
       "evidence": "the counterbalanced Stage-2 campaign - the one this table's own recommendation asked for, since acquired and frozen - read through its own slice: eight run-level jobs in four pairs, emissions per profile the only run-wide setting that differs, every pair read E64 minus E20 whatever order it was acquired in, with each pair's acquisition orientation retained. This pass's ladder is kept beside it as the prior context that made the campaign necessary.",
@@ -228,7 +240,7 @@
       "observed_effect": "the four paired contrasts are A +7.2256, B -1.5733, C +0.3448, D +1.3418 mm/s, i.e. A acquired 20 -> 64, B acquired 64 -> 20, C acquired 20 -> 64, D acquired 64 -> 20, all oriented E64 - E20; 0 of the four exceed the 9.4044 mm/s floor and their directions are not consistent, so the largest |contrast| is 7.2256 mm/s. Depth-resolved, 0.0% of the 50 supported gates are resolved and no gate has even one pair above the 28.5481 mm/s per-gate floor. The scalar floor is set by this level's own worst same-level disagreement (E20 at 9.4044 mm/s) rather than by the emissions-64 side, whose four runs are tight.",
       "observed_effect_mm_s": 7.22562006139427,
       "overturning_measurement": "an emissions-64-minus-20 difference that exceeds a contemporaneous campaign's own floor in a consistent direction - more runs per level inside one campaign, or a setup where the longer coherent integration is needed for a reason this campaign did not test (a slower or noisier flow). A single extra pair would not do it: this campaign's floor is one level's own worst same-level disagreement, so it takes replication on both sides rather than one more recording.",
-      "prior_state": "`defer` / not resolvable with this pass's design: with one realization per level and the two levels measured in different campaigns, the E64-to-E20 step changed classification with whichever reference realization it was compared against, so the pass could neither show E64 better nor show it the same. The overturning measurement it named - realizations of both levels inside one campaign - is the campaign this row now reads.",
+      "prior_state": "`defer` / not resolvable with this pass's design: the emissions-20 level already had four realizations - the four common-reference runs, the only level of the ladder observed in more than one run - while emissions-64 had one scientific recording bracketed by its own anchors, so the E64-to-E20 step changed classification with whichever of the four E20 runs it was compared against, and the pass could neither show E64 better nor show it the same. Both levels were recorded inside this one campaign; the confound the row named was prospective rather than already present - an emissions-64-only top-up acquired later would have been separated from these four emissions-20 runs by a campaign as well as by an emission level - and the overturning measurement the row named, realizations of both levels inside one campaign, is the campaign this row now reads.",
       "question": "does emissions 64 improve the estimate enough over emissions 20 to justify its slower profile rate?",
       "scope": "stage-2 decision",
       "verdict": "replace"
@@ -244,12 +256,12 @@
         "emissions-ladder.json#predictions"
       ],
       "floor_mm_s": 4.234827623428042,
-      "interpretation": "no depth-averaged improvement of E128 over E64 is detected - the observed difference is inside the between-run floor - while the bandwidth cost is a factor of 1.79 in period and a halving of Nyquist. The information rationale is therefore cost, not effect: no measured quantity prefers 128 over 64, so the shorter period is taken. **`replace` here means do not spend further acquisition effort on emissions 128 in this design** - it is not a claim that emissions 64 is scientifically proven superior, and a future measurement that needs the extra profiles, such as a slower flow, a noisier one or a longer coherent window, could reopen it.",
+      "interpretation": "no depth-averaged improvement of E128 over E64 is detected - the observed difference is inside the between-run floor - while the bandwidth cost is a factor of 1.79 in period and a halving of Nyquist. The information rationale is therefore cost, not effect: within this pair the shorter period is E64's, and this row does not move the axis - **E20 remains the reference and default condition** (answer 1), so no measured quantity prefers 128 over 64 and none prefers either upper level over the reference the ladder is read against. **`replace` here means do not spend further acquisition effort on emissions 128 in this design** - it is not a claim that emissions 64 is scientifically proven superior, and a future measurement that needs the extra profiles, such as a slower flow, a noisier one or a longer coherent window, could reopen it.",
       "key": "e128_versus_e64",
       "observed_effect": "the E64-to-E128 depth-averaged difference is -2.365 mm/s, inside the 4.235 mm/s floor; meanwhile the achieved period rises from 48.800 to 87.200 ms and the rate falls from 20.492 to 11.468 Hz, so a fixed 2 s physical block holds 41 profiles at E64 against 23 at E128, and the Nyquist frequency halves from 10.246 to 5.734 Hz",
       "observed_effect_mm_s": -2.3645651678711275,
       "overturning_measurement": "a replicated E64-to-E128 difference outside the between-run floor, or a measurement that needs the extra profiles more than it needs the bandwidth (nothing in this pass shows such a quantity)",
-      "prior_state": null,
+      "prior_state": "`replace` / not detected at this design's floors, drafted when the axis's own replacement level was emissions 64: this row's cost rationale then read as `E128 is replaced by E64`, and the level the axis moves to is no longer E64 - the campaign above measured E64 against E20 and detected no improvement, so E20 is retained as the reference and default condition. The row's scope is unchanged: it still reads the E64-to-E128 step and that step's bandwidth cost, and `replace` still means only that emissions 128 is not worth acquiring in this design.",
       "question": "does emissions 128 improve the estimate enough over emissions 64 to pay its cost?",
       "scope": "stage-2 decision",
       "verdict": "replace"
@@ -363,8 +375,8 @@
       "checks_passed": 14,
       "checks_total": 14,
       "path": "pairs.json",
-      "recorded_revision": "72a6994",
-      "sha256": "sha256:91f59d5f48b532c7e94936e84163b79331744aa542b8683201895fb9734352e3",
+      "recorded_revision": "6253a1d",
+      "sha256": "sha256:410fb844967f9013de2293088891f63b69119b08e9fcc474c992e0bc8035d697",
       "what_it_is": "the counterbalanced Stage-2 campaign that ran the recommendation below: its four paired contrasts, the floor measured inside that campaign, and its outcome"
     }
   },
