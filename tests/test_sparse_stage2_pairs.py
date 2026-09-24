@@ -227,6 +227,13 @@ def test_the_prior_passes_floor_is_context_and_not_the_screen(analysis) -> None:
     )
 
 
+def test_the_overlap_kind_definition_matches_the_decision_rule() -> None:
+    definition = s2.DEFINITIONS["overlap_kind"]
+    assert "every contrast inside" in definition
+    assert "at least one contrast exceeds" in definition
+    assert "Direction disagreement alone does not change 'not detected'" in definition
+
+
 def test_the_prior_context_note_does_not_split_the_earlier_pass_across_campaigns(
     analysis, document
 ) -> None:

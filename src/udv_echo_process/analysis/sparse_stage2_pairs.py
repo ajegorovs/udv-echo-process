@@ -223,8 +223,10 @@ DEFINITIONS: dict[str, str] = {
     ),
     "overlap_kind": (
         "'not detected' (every contrast inside the campaign's own variation) or 'not resolvable "
-        "with this design' (the contrasts reach past the floor on some pairs but not "
-        "consistently, or disagree in direction); null when the outcome is resolved"
+        "with this design' (at least one contrast exceeds the floor, but the four do not "
+        "consistently exceed it in one direction); null when the outcome is resolved. "
+        "Direction disagreement alone does not change 'not detected' when all contrasts "
+        "remain inside the floor"
     ),
     "depth_resolved_reading": (
         "the same two rules applied per gate against the depth-resolved floor, reduced to the "
