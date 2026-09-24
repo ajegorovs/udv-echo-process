@@ -24,6 +24,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import (
+    BurstWriteResult,
     PreflightReport,
     ProcessMode,
     ScreenFingerprint,
@@ -40,6 +41,7 @@ __all__ = [
     "point",
     "preflight",
     "select_channel",
+    "set_burst_length",
     "status",
     "sweep",
 ]
@@ -99,6 +101,34 @@ def preflight(
 ) -> PreflightReport:
     """One whole cycle with nothing stored: record, stop, read the Store dialog, cancel it."""
     return live_actuator(channel, notes).preflight(seconds, expect_directory=expect_directory)
+
+
+def set_burst_length(
+    requested: int,
+    channel: int | None = None,
+    notes: list[str] | None = None,
+) -> BurstWriteResult:
+    """Make the running application record at burst ``requested``, through its own dialog.
+
+    The second command that can change the instrument, and the smaller of the two: the routing
+    step runs first (:meth:`~udv_echo_process.acquire.driver.Win32Actuator.ensure_channel`), and
+    its **verified** channel is what the transition is handed as the channel it was routed to —
+    so a dialog stating another channel is refused before anything is written. The transition
+    itself is the driver's own transaction (open, read both rows, select by value, accept,
+    re-open, read both rows again); this command only composes the two steps and returns what was
+    verified.
+
+    A transition that was **refused** is a result rather than an exception
+    (:class:`~udv_echo_process.acquire.actuator.BurstWriteResult`'s ``state`` and ``reason``);
+    a transition that reached ``Accept`` and did not verify raises, and ``udv_acquire`` reports it
+    as one line and a non-zero exit code. Nothing here retries: the sampling volume the
+    application re-selected from the burst is part of the state it accepted, and this command
+    never writes that row — it reads it, before and after
+    (``docs/dop3000/burst-length-control-plan.md``).
+    """
+    actuator = live_actuator(channel, notes)
+    routed = actuator.ensure_channel()
+    return actuator.write_dialog_burst_length(requested, routed_channel=routed)
 
 
 def point(

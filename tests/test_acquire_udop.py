@@ -74,6 +74,11 @@ PARAMETERS_METHODS = (
     "_close_parameters_dialog",
     "ensure_channel",
     "read_dialog_parameters",
+    "write_dialog_burst_length",
+    "_row_reading",
+    "_row_reading_or_none",
+    "_answer_burst_rejection",
+    "_burst_refusal",
     "_poll_dialog_fields",
     "_text_at",
     "_dialog_channel_text",
@@ -220,11 +225,23 @@ FLAT_CLASS_SURFACE = frozenset(
     }
 )
 
-#: The methods the composed class carries that ``bfbbb10``'s flat class did not. One entry, and it
-#: is named rather than absorbed: ``_screen_anchor_text`` (``udop/parameters.py``) is the screen
-#: read split out of ``_dialog_refusal`` when that rule moved to ``ui/dialog.py``, so the class's own
-#: name set at this tip is 97, not 96 (``docs/dop3000/acquisition-architecture.md`` §5).
-CLASS_ADDITIONS = ("_screen_anchor_text",)
+#: The methods the composed class carries that ``bfbbb10``'s flat class did not. Named rather than
+#: absorbed, because a name that leaves a surface list would otherwise pass: ``_screen_anchor_text``
+#: (``udop/parameters.py``) is the screen read split out of ``_dialog_refusal`` when that rule moved
+#: to ``ui/dialog.py``, and the four the burst transition added to the same surface —
+#: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
+#: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
+#: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
+#: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
+#: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
+CLASS_ADDITIONS = (
+    "_screen_anchor_text",
+    "write_dialog_burst_length",
+    "_row_reading",
+    "_row_reading_or_none",
+    "_answer_burst_rejection",
+    "_burst_refusal",
+)
 
 #: The names the flat module published that no method of the facade reads any more — the workflow
 #: timings that travelled with their loops, the two helpers of the Parameters module, and the

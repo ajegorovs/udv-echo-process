@@ -49,6 +49,7 @@ from udv_echo_process.models.base import ValueModel
 __all__ = [
     "DIALOG_ANCHORS",
     "DIALOG_COLUMN_ROWS",
+    "DIALOG_DEPENDENT_FIELDS",
     "DIALOG_FIELD_ORDER",
     "DIALOG_ONLY_PARAMETERS",
     "NUMERIC_WRITE_RECIPE",
@@ -62,7 +63,10 @@ __all__ = [
     "STRIP_BUTTON_ORDER",
     "VIEW_TIMEOUT_S",
     "Actuator",
+    "BurstState",
+    "BurstWriteResult",
     "ChannelMode",
+    "ComboReading",
     "DialogControl",
     "DialogField",
     "OverlayKind",
@@ -72,6 +76,7 @@ __all__ = [
     "StripState",
     "StripView",
     "classify_strip_view",
+    "dialog_row",
     "ordered_writes",
     "overlay_answer",
     "press_index",
@@ -158,6 +163,14 @@ class DialogField(str, Enum):
     SOUND_SPEED_MS = "sound_speed_ms"
     FIRST_GATE_MM = "first_gate_mm"
     BURST_LENGTH = "burst_length"
+    #: The value the application **recomputes** when the burst length changes.
+    #:
+    #: It is deliberately *not* a member of :data:`DIALOG_FIELD_ORDER`: that table is the three
+    #: fixed facts a reading carries (:class:`~udv_echo_process.acquire.snapshot.DialogParameters`
+    #: requires every one of them through its own ``readable``), while this one is the evidence a
+    #: burst **write** has to carry beside the field it wrote — the dependent covariate, not a
+    #: fourth fact of the instrument. Its row is :data:`DIALOG_DEPENDENT_FIELDS`.
+    SAMPLING_VOLUME = "sampling_volume"
 
 
 #: Which value field of the dialog states which dialog-only fact, as
@@ -199,6 +212,51 @@ DIALOG_ANCHORS: tuple[tuple[ParamRole, int, int], ...] = (
 #: A dialog that does not build this shape is not the dialog these bindings were measured
 #: against, so nothing in it is read.
 DIALOG_COLUMN_ROWS: tuple[int, ...] = (4, 6, 5)
+
+#: The dialog row the application **recomputes** from a field this driver writes, as
+#: ``(field, column, row)`` — the burst length's dependent covariate, and the one row a burst
+#: write has to read beside the row it writes.
+#:
+#: Measured, and by two committed artefacts rather than by habit:
+#:
+#: - ``UI-OVERLAY-05`` (``docs/dop3000/ui-element-index.md``) paints the dialog's middle column
+#:   top to bottom as ``PRF [us]`` / ``First gate depth [mm]`` / ``Nb of gates`` /
+#:   ``Resolution [mm]`` / ``Sampling volume [mm]`` / ``Number of skipped profiles`` — six rows
+#:   (the column's own count, :data:`DIALOG_COLUMN_ROWS`), with the sampling volume the fifth of
+#:   them, i.e. row **4** (0-based, as :func:`…ui.dialog.dialog_value_fields` numbers them);
+#: - ``tests/data/udop-parameters-dialog-tree.json`` (the dialog read live 2026-09-18) holds, at
+#:   that position, the ``TComboBox`` stating ``0.876`` — the sampling volume at ``c`` = 1460 m/s
+#:   this repository's own corpus records (``UI-OVERLAY-24`` paints the same row at ``1.776`` in
+#:   the state it photographed, which is what makes the row's *content* a value that moves).
+#:
+#: **The value is a length in millimetres; the stored word 27 is not.** Word 27 is the
+#: instrument's **option-list index** into the physics-driven bandwidth list
+#: (``docs/dop3000/parameter-sweep-matrix.md`` §9, ``docs/dop3000/sparse-parameter-set.md``), and
+#: no reviewed index → mm law exists — which is why the write path carries this row as a
+#: *reading* (:class:`ComboReading`: the text, the entries offered, the control's own belief) and
+#: claims no index at all. Tying the two is a measurement, not a conversion
+#: (``docs/dop3000/burst-length-control-plan.md`` §B4).
+DIALOG_DEPENDENT_FIELDS: tuple[tuple[DialogField, int, int], ...] = (
+    (DialogField.SAMPLING_VOLUME, 1, 4),
+)
+
+
+def dialog_row(field: DialogField) -> tuple[int, int]:
+    """The ``(column, row)`` this driver binds ``field`` at — facts and dependents together.
+
+    One lookup for both tables on purpose: a caller that had to know which of the two a field
+    lives in would be a second copy of the binding, and the row a write reads and the row a
+    reading carries are the same kind of fact. A field bound in neither is refused by name — a
+    position that nothing measured cannot be invented here.
+    """
+    for bound, column, row in DIALOG_FIELD_ORDER + DIALOG_DEPENDENT_FIELDS:
+        if bound is field:
+            return column, row
+    raise ValueError(
+        f"{field.value!r} has no measured row in this dialog: DIALOG_FIELD_ORDER binds "
+        f"{[f.value for f, _c, _r in DIALOG_FIELD_ORDER]} and DIALOG_DEPENDENT_FIELDS binds "
+        f"{[f.value for f, _c, _r in DIALOG_DEPENDENT_FIELDS]}"
+    )
 
 
 class ChannelMode(str, Enum):
@@ -464,6 +522,177 @@ def ordered_writes(parameters: ParameterSet) -> tuple[tuple[ParamRole, str], ...
         ParamRole.GATES: str(parameters.gates),
     }
     return tuple((role, values[role]) for role in PARAMETER_WRITE_ORDER)
+
+
+class ComboReading(ValueModel):
+    """What one row of the dialog's table states, and the entries it was offering.
+
+    Three facts, and the split between them is the point:
+
+    - ``text`` — the value the **application states**, read from the control the row offers (a
+      row offering a choice is read *through its choice*, never through the ``TSp_Edit`` beside
+      it: at the burst row the combo states ``4`` while the edit inside the row states ``89``,
+      :func:`…ui.dialog.dialog_value_fields`). This is the authority this repository's read-backs
+      compare against.
+    - ``items`` — the row's own entry list (``CB_GETCOUNT``/``CB_GETLBTEXT``), in the
+      application's own order. Never sorted and never de-duplicated here: the order is the
+      application's statement, and the entry list is *not* a set (see :meth:`entry_of`).
+    - ``item_index`` — ``CB_GETCURSEL``, the control's own belief about its selection, carried as
+      a **hint** and never as the read-back. Measured: a cell stated ``4`` while ``CB_GETCURSEL``
+      returned the index of ``8`` after a programmatic selection, so an index read can report a
+      value the application does not state. It is kept because a *disagreement* between it and
+      ``text`` is evidence — of a stale selection, or of a control that was set without the
+      application taking the change — and an omitted field can carry no such reading.
+
+    A row that offers no choice is carried with an empty entry list and no index: an ``TSp_Edit``
+    states a value and holds no list, and inventing one would make the two shapes read alike.
+    """
+
+    text: str = ""
+    items: tuple[str, ...] = ()
+    item_index: int | None = None
+
+    def entry_of(self, value: str) -> int | None:
+        """The **lowest** entry index whose text states ``value`` — or ``None`` when it is absent.
+
+        Lowest, and refusal for absent, are both measured consequences rather than conventions:
+
+        - the entry list is not a set — the value currently held occupies the first slot *as well
+          as* its own, and the order is not sorted (measured: ``0.876`` appeared at slots 0 and 4
+          of an unordered seven-entry list, with the held value at slot 0), so one requested value
+          can match two entries and the first of them is the one the application means;
+        - a value the application accepts may be **absent from its own list** (measured: a floor
+          the application derived and displayed had no entry at all), so ``None`` is a real answer
+          — and a caller that picked the nearest entry instead would write a configuration nobody
+          asked for while every check that compares the field against the request still passed.
+        """
+        wanted = str(value).strip()
+        for index, item in enumerate(self.items):
+            if str(item).strip() == wanted:
+                return index
+        return None
+
+
+class BurstState(str, Enum):
+    """What one burst transition established about the instrument — the three honest outcomes.
+
+    A transition that cannot be verified is not a failure with a shrug: it is a *classification*
+    the caller can act on, and the record of the run has to carry it (plan §2). The three members
+    are therefore exhaustive by construction, and each says what is known rather than what was
+    attempted:
+
+    - :attr:`VERIFIED` — the request was selected, the dialog was **accepted**, and a re-opened
+      dialog stated the requested burst. Only this member claims the instrument moved.
+    - :attr:`UNCHANGED` — the transition was refused *before any message was sent*: a dialog that
+      is not the table these bindings were measured against, another channel, a burst the row
+      does not offer, a selection that was never applied. The dialog was closed with its left
+      (Cancel) end, which discards a pending write — the only "put it back" this driver has.
+    - :attr:`UNVERIFIED` — something **was** sent and nothing proved what the application kept: a
+      read-back that stated something else, a modal the application raised instead of applying
+      the selection, a re-open that failed. The instrument's state is then not established by
+      this call at all, and the next reading (the compile's own dialog read) is what settles it —
+      never a second guess from this one.
+    """
+
+    VERIFIED = "verified"
+    UNCHANGED = "unchanged"
+    UNVERIFIED = "unverified"
+
+
+class BurstWriteResult(ValueModel):
+    """What one burst transition carried back — the evidence, not a "write succeeded".
+
+    The requested/length pair, the dependent covariate and the state are the point of this model:
+    a caller that only learned "the burst was written" could not tell a transition that the
+    application applied from one it quietly rejected, and the sampling volume the application
+    *re-selects* from the burst is evidence of which of the two happened.
+
+    **The dependent row is recorded, never restored.** This driver never writes the sampling
+    volume back to a previous value: the application's post-burst choice is part of the state it
+    accepted, so forcing it back would record a configuration the instrument never stated
+    (plan §2). ``before_sampling_volume`` and ``after_sampling_volume`` are that choice, read on
+    both sides of the write.
+
+    **And no index is claimed.** ``after_sampling_volume`` states a length in millimetres and the
+    entries the row offered; the stored word 27 is the instrument's *option-list index* — a
+    different quantity, with no reviewed mm law between them (:data:`DIALOG_DEPENDENT_FIELDS`).
+    :attr:`verified_sampling_volume_entry` is the row's own entry-list projection of the value it
+    states, offered as evidence for the live session that ties the two, never as the stored word.
+    """
+
+    requested_burst: int = Field(ge=1)
+    #: What the transition established (see :class:`BurstState`).
+    state: BurstState
+    #: Which parameters panel the application built for the dialog this transition used — its own
+    #: statement of the channel's mode (``ui.layout.MODE_MANUAL`` / ``MODE_ASSISTED``), read from
+    #: the panel rather than inferred from a caption. The burst row exists in the manual panel;
+    #: an assisted channel is refused before a write (the panel that comes up for it does not hold
+    #: the channel combo this driver identifies the dialog by).
+    dialog_mode: str = ""
+    #: The dialog's own channel field — read on the re-opened dialog when there was one, and on
+    #: the dialog the write used otherwise. Never the caller's request.
+    channel: str = ""
+    #: Both rows before the write: the field that was written and the value it derives from it.
+    before_burst: ComboReading | None = None
+    before_sampling_volume: ComboReading | None = None
+    #: Both rows after the write, read on the dialog that was **re-opened** after ``Accept`` —
+    #: the surface that states what the application kept, where the dialog just written still
+    #: paints what preceded the change (ledger B16). ``None`` when no re-open happened.
+    after_burst: ComboReading | None = None
+    after_sampling_volume: ComboReading | None = None
+    #: The overlay the application raised instead of applying the selection, as the kind this
+    #: driver's own classifier read it (``OverlayKind.WARNING`` — the manual's own
+    #: *"the burst length should be reduced"* rejection is raised at exactly this moment). A
+    #: warning is answered with its left button, the rule every overlay in this application gets;
+    #: anything this driver has no answer for is **named and left alone**. The overlay's own
+    #: caption is paint and is not in the control tree, so it is never quoted here.
+    refusal_overlay: str = ""
+    #: Whether the pending write was discarded — the dialog closed without its ``Accept``, which
+    #: is the only "put it back" this driver has. ``False`` on the refusal paths means the
+    #: instrument's state could not be established by this call (see ``reason``).
+    discarded: bool = False
+    #: Why the state is not :attr:`BurstState.VERIFIED` — written out in full, because it lands in
+    #: a run record read by someone with no instrument in front of them. Empty exactly when the
+    #: transition verified.
+    reason: str = ""
+
+    @property
+    def verified(self) -> bool:
+        """Whether this transition established the requested burst on a re-opened dialog."""
+        return self.state is BurstState.VERIFIED
+
+    @property
+    def verified_burst(self) -> int | None:
+        """The burst the re-opened dialog stated, as an integer, or ``None`` when unreadable.
+
+        An unreadable number is ``None`` and never a parsed guess: the dialog's text is the
+        application's statement, and a text this driver cannot read as an integer (a blank field,
+        a range, a word) states no burst it may plan against.
+        """
+        if self.after_burst is None:
+            return None
+        text = self.after_burst.text.strip()
+        return int(text) if text.isdigit() else None
+
+    @property
+    def verified_sampling_volume(self) -> str | None:
+        """The sampling volume the re-opened dialog stated — millimetres, as it painted them."""
+        if self.after_sampling_volume is None:
+            return None
+        return self.after_sampling_volume.text.strip() or None
+
+    @property
+    def verified_sampling_volume_entry(self) -> int | None:
+        """Which entry of the re-opened row's own list states that volume, or ``None``.
+
+        The *dialog's* projection, and nothing more: it is offered so the live session that
+        compares the dialog against the stored word 27 has both numbers in one record, and it is
+        deliberately not named ``index`` — the stored word is the instrument's option-list index
+        and no measured law relates the two yet (plan §B4, §B6).
+        """
+        if self.after_sampling_volume is None:
+            return None
+        return self.after_sampling_volume.entry_of(self.after_sampling_volume.text)
 
 
 class ScreenFingerprint(ValueModel):
