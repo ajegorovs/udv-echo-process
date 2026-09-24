@@ -112,6 +112,42 @@ three unrelated combos.
 `SendMessageTimeoutW` with `SMTO_ABORTIFHUNG` and a ~2 s budget, so the driver
 reports a busy application instead of hanging with it.
 
+### 2.1 The one dialog parameter this repository writes: burst length
+
+The `Operating parameters` dialog's burst row is written by
+`udv_echo_process.acquire.udop.parameters.write_dialog_burst_length`
+(`uv run udv-acquire burst-length <N> --channel N`), and it is a *transaction*,
+not a field poke — the recipe is §18.9/§18.10/§19.1 of
+[`acquisition-campaign-compilation-plan.md`](acquisition-campaign-compilation-plan.md)
+and the plan it serves is [`burst-length-control-plan.md`](burst-length-control-plan.md):
+
+* `CB_SETCURSEL` + `WM_COMMAND(CBN_SELCHANGE)` **to the combo's parent** — the
+  selection is by the entry whose own text **is** the request, never by counting
+  steps from the value in force, and `CB_SETCURSEL` alone would set the
+  control's belief and leave the model alone;
+* the dialog is committed with its bottom band's **rightmost** button and
+  refused with the one before it, so a refusal leaves the application where the
+  dialog found it — a write left with the `Cancel` commits nothing (measured);
+* the read-back is taken from a **re-opened** dialog: the dialog that was
+  written states what precedes the commit, and it can state a selection that was
+  never kept at all;
+* the **sampling volume is read, never written**. A burst change does not
+  re-select the volume; it re-derives the floor the volume has to clear,
+  `floor(N) = 1000·c·N/(2·f_e)` (the manual's own length, §20.1 of the same
+  plan), and the value in force is `max(remembered, floor)` — `4 → 8` with
+  `0.876` remembered states `1.460`, `8 → 4` states `0.876` again, because a
+  floor-raise is not a remembered write. The volume's option list is `[the value
+  in force] + a fixed six-entry tail`, so the application can state a volume its
+  own combo does not offer;
+* a request below the floor raises the caption-less modal warning whose one
+  button applies nothing. This driver answers a warning with its **left** button
+  and refuses the transition; an overlay it has no answer for is named and left
+  standing, never guessed at.
+
+`word 8` (burst) and `word 27` (the volume **index**) remain the oracles a
+stored point is checked against — §9 — and no measured law relates the dialog's
+millimetre statement to the stored index yet.
+
 ---
 
 ## 3. The write-order rule

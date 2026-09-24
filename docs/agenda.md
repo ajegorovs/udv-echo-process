@@ -238,7 +238,27 @@ or abort plus "state unverified" for an unattended campaign — no automatic
 recovery, no speculative press. Full statement: campaign plan §9.1–§9.3 and
 [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md).
 
-**The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.** Eight run-level jobs in
+### The one re-opening so far: burst length, as a verified transition
+
+**Its evidence is the sparse pass's own procedure:** burst length is not a sidebar
+parameter, so every job that recorded at a different burst needed an **operator
+hand-change** through `Parameters → Operating parameters` — an essential
+acquisition condition the campaign cannot establish on its own.
+
+**Landed:** the typed contract, the Win32 transaction
+(`write_dialog_burst_length`: select by value → let the application re-derive →
+`Accept` → **re-open** → read both rows back), the live verb
+(`uv run udv-acquire burst-length <N>`), and a coupled fake that reproduces the
+measured burst ↔ sampling-volume rule with the refusal matrix beside it.
+
+**Owed, in order:** live A/B commissioning (`10 → 4 → 10 → 18 → 10`, then one
+short point per burst, `word 8`/`word 27` checked against the read-back);
+job-level campaign transitions; `word 8` strict and `word 27` promoted into the
+point's evidence. **Stop rule:** a second hidden dependent effect found live stops
+the work at the commissioning slice. Plan, scope boundaries and the measured
+coupling: [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
+
+**The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**
 four counterbalanced pairs, emissions per profile the only hand-changed setting, 8/8 stored with
 every job's own stored word 14 matching its declaration and every other decoded setting identical
 across the eight; the artefacts are committed at
