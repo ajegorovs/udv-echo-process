@@ -483,6 +483,8 @@ def test_the_interaction_answer_quotes_both_local_extremes(
     row = model.row("pitch_x_burst_interaction")
     assert f"{interaction['min_mm_s']:+.3f}" in row.observed_effect
     assert f"{interaction['max_mm_s']:+.3f}" in row.observed_effect
+    assert "some knots exceed the anchor-spread guards" in row.interpretation
+    assert "every local extreme sits inside" not in row.interpretation
 
 
 def test_each_emissions_level_carries_its_own_anchor_floor_row(

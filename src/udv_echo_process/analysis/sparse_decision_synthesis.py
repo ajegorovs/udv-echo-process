@@ -514,11 +514,9 @@ def read_floors(documents: dict[str, dict]) -> tuple[FloorRef, ...]:
 def sourced_floor_values(story: dict[str, object]) -> dict[str, tuple[float, ...]]:
     """Every floor value the cited slices publish, keyed by the slice that publishes it.
 
-    The gate screens each :class:`FloorRef` against this mapping, so a floor that were
-    *declared* in this module rather than read from a slice's artefact would not trace to
-    any published value and the synthesis would refuse. The values are read back out of
-    ``story``, which is filled only through dotted paths into the frozen documents, so the
-    comparison is against the source and not against the list of floors themselves.
+    An invented value fails the check against values read from the slices. This
+    check does not prove the name identifies a particular job within a slice;
+    the level-specific tests assert those bindings independently.
     """
     spreads = story["job_anchor_spreads"]
     assert isinstance(spreads, dict)
@@ -540,10 +538,10 @@ def sourced_floor_values(story: dict[str, object]) -> dict[str, tuple[float, ...
 def floors_trace_to_published_values(
     floors: tuple[FloorRef, ...], story: dict[str, object]
 ) -> bool:
-    """True when every floor's value is one the slice it cites actually publishes.
+    """True when every floor's value matches a value its cited slice publishes.
 
-    A floor whose ``value_mm_s`` is not among its source slice's published values - because
-    it was written into this module instead of read from the artefact - fails here.
+    This check catches an invented value, but does not prove the name identifies the
+    correct job when several values come from the same slice.
     """
     published = sourced_floor_values(story)
     return all(
@@ -769,8 +767,9 @@ def _rows(
                 "between-run reference variation, but it is *smaller* than the movement of the anchors "
                 "inside the two jobs it came from: the pass cannot separate its scalar magnitude from "
                 "that movement, so this is a limitation of separability and NOT evidence that the "
-                "interaction is absent. Locally the effect is real-shaped and changes sign across the "
-                "profile, but every local extreme sits inside a job whose own anchors move by 10-12 mm/s."
+                "interaction is absent. Locally it changes sign, and some knots exceed the "
+                "anchor-spread guards; those local crossings do not establish a replicated "
+                "interaction magnitude across the two moving burst jobs."
             ),
             decision_class="not resolvable with this design",
             automation=(

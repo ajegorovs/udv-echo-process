@@ -264,6 +264,8 @@ def test_the_report_prose_carries_the_corrected_prior_context(analysis) -> None:
     assert "different campaigns" not in prose
     assert "four emissions-20" in prose
     assert "prospective" in prose
+    assert "has since updated that row" in prose
+    assert "Folding this outcome into that table" not in prose
     # the earlier pass's floors are still quoted, still as context and still not the screen
     assert s2.PRIOR_DATASET in prose
     assert "4.235" in prose

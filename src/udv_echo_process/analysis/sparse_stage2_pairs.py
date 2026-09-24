@@ -1441,11 +1441,12 @@ def render_markdown(model: Stage2Pairs) -> str:
     lines.append("## What this does to the frozen decision table")
     lines.append("")
     lines.append(
-        "Nothing in `reports/sparse-mixer-live-1/decision-table.md` is rewritten: its "
-        "E64-vs-E20 row was published as `defer` / not resolvable **with that pass's design**, "
-        "and this campaign was the measurement that row named as the one that would overturn "
-        "it. Folding this outcome into that table is a one-row change to a pinned artefact, so "
-        "it belongs in its own reviewed slice rather than in this one."
+        "This Stage-2 analysis does not rewrite "
+        "`reports/sparse-mixer-live-1/decision-table.md`: its E64-vs-E20 row originally "
+        "read `defer` / not resolvable **with that pass's design**, and this campaign "
+        "was its named overturning measurement. A separate reviewed decision slice "
+        "has since updated that row to `replace` / not detected at this campaign's floor; "
+        "the measurement and the later decision remain separate artefacts."
     )
     lines.append("")
     lines.append("## Reproduce")
