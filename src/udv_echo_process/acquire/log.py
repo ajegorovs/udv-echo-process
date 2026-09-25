@@ -24,7 +24,12 @@ What the record must carry, and why:
 
 Records are stored as JSONL so a run can append as it goes and a crash leaves
 every completed point behind. A ``record_type`` literal discriminates the header
-from the point records.
+from the point records — and, since the job boundary's one instrument write
+needed a durable record of its own, from a **verified burst mutation** too
+(``docs/dop3000/failed-invocation-provenance.md`` §O4). An entry type this build
+does not know refuses the whole log rather than being read past: the log is the
+record of a job, and a reader that skipped an entry it could not understand
+would answer questions about a history it had silently shortened.
 """
 
 from __future__ import annotations
@@ -36,9 +41,10 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, TypeAdapter
+from pydantic import Field, TypeAdapter, ValidationError
 
 from udv_echo_process.acquire import plan
+from udv_echo_process.acquire.actuator import BurstWriteResult
 from udv_echo_process.acquire.config import (
     ParameterSet,
     ProfileTiming,
@@ -48,13 +54,16 @@ from udv_echo_process.acquire.plan import SweepDefinition
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "KNOWN_RECORD_TYPES",
     "DecodedBlock",
     "PointStatus",
     "SizeSignature",
+    "SweepBurstMutation",
     "SweepLogEntry",
     "SweepLogHeader",
     "SweepPointRecord",
     "append_entry",
+    "burst_mutations",
     "point_names",
     "point_records",
     "read_entries",
@@ -418,9 +427,71 @@ class SweepPointRecord(ValueModel):
         return 1.0 / sig.factor <= ratio <= sig.factor
 
 
+class SweepBurstMutation(ValueModel):
+    """The job boundary's **verified burst transition**, appended where it happened.
+
+    The boundary's write (:func:`~udv_echo_process.acquire.campaign._transit_burst_length`) is real
+    the moment the application accepts it, while the job manifest — until this record existed, its
+    only durable record — is written at the *end* of the invocation. Anything that refuses in
+    between (the post-write compile, the resume-identity comparison; the boundary's own
+    ``write -> verify -> compile -> record`` order) therefore left a real mutation in no artifact
+    at all: no manifest was rewritten, the log held no entry for it, and the next invocation seeds
+    its history from the *previous* manifest. The log is append-only and already per-job, so the
+    verified transition is appended there instead, immediately after the write and before anything
+    that can still refuse (``docs/dop3000/failed-invocation-provenance.md`` §O4, §5.1, §5.2).
+
+    Three fields are decisions rather than descriptions:
+
+    - ``mutation_id`` is the **occurrence identity**, a fresh uuid4 hex minted at the append. Two
+      genuinely distinct mutations can be semantically identical — ``10 -> 18``, the instrument
+      later returned to ``10``, ``10 -> 18`` again — and the job's ``burst_transitions`` is an
+      *ordered history of occurrences*, not a set of distinct state changes. An identity derived
+      from the transition's content (request plus the before/after rows plus the state) would
+      silently collapse the second write into the first (§5.3);
+    - ``occurred_at`` is when the instrument was moved, not when the invocation ended. It is what
+      orders repeated identical transitions, and it is a local-time moment like a sweep id and a
+      manifest's own stamps;
+    - ``transition`` is the driver's own
+      :class:`~udv_echo_process.acquire.actuator.BurstWriteResult` **verbatim**: the evidence, not
+      a boolean — the request, the state, the dialog's own channel and mode, both rows on both
+      sides of the write, the dependent sampling-volume statement, the refusal overlay and the
+      reason.
+
+    Only a ``VERIFIED`` transition is ever written here, because only a ``VERIFIED`` transition
+    moved anything: ``UNCHANGED`` and ``UNVERIFIED`` kept nothing
+    (:class:`~udv_echo_process.acquire.actuator.BurstState`), so neither is a mutation that needs a
+    record and neither must ever be read as one.
+    """
+
+    record_type: Literal["burst_mutation"] = "burst_mutation"
+    #: The **occurrence** identity — see the class docstring. Unique per mutation by construction,
+    #: and never a function of what the mutation says.
+    mutation_id: str = Field(min_length=1)
+    #: When the instrument was moved (local time, the caller's ``local now``).
+    occurred_at: datetime
+    #: The job whose boundary spent the write (``CampaignDefinition.job``).
+    job: str = Field(min_length=1)
+    #: The definition's fingerprint (``campaign.campaign_fingerprint``): attribution without the
+    #: manifest, which a refused invocation never writes.
+    fingerprint: str = Field(min_length=1)
+    #: The channel the run **routed** and the write was verified against. The transition carries the
+    #: dialog's own channel field; this is the routing answer it was compared with, which is what
+    #: makes the record tell the two apart. ``None`` only for a caller that routed nothing.
+    routed_channel: int | None = None
+    #: The driver's evidence, verbatim — the durable half of the mutation.
+    transition: BurstWriteResult
+
+
+#: Every ``record_type`` this build's :data:`SweepLogEntry` union can read. A log line whose type is
+#: not one of these **refuses the log** (:func:`read_entries`) instead of being skipped: an
+#: acquisition log is forward-schema, and an older checkout that read past an entry it could not
+#: understand would resume — and report — on a history it had silently shortened (§O4).
+KNOWN_RECORD_TYPES: tuple[str, ...] = ("sweep", "point", "burst_mutation")
+
+
 #: One log line: a discriminated union on ``record_type``.
 SweepLogEntry = Annotated[
-    SweepLogHeader | SweepPointRecord,
+    SweepLogHeader | SweepPointRecord | SweepBurstMutation,
     Field(discriminator="record_type"),
 ]
 
@@ -454,19 +525,65 @@ def append_entry(path: Path, entry: SweepLogEntry) -> None:
 def read_entries(path: Path) -> tuple[SweepLogEntry, ...]:
     """Read every record back, in order; blank lines are skipped.
 
-    A malformed line raises — a log that cannot be parsed is worse to guess at
-    than to fail on.
+    A malformed line raises, and so does a line whose ``record_type`` this build does not know: a
+    log that cannot be parsed is worse to guess at than to fail on, and a log with an entry whose
+    meaning this build cannot state is worse to read *past* — the reader would then answer
+    questions about a job from a history it had silently shortened. Refusing the whole log is the
+    honest answer to both, and the refusal names the file, the line and what it found
+    (:data:`KNOWN_RECORD_TYPES`).
     """
     path = Path(path)
     if not path.is_file():
         raise FileNotFoundError(f"no sweep log at {path}")
     entries: list[SweepLogEntry] = []
     with path.open("r", encoding="utf-8") as handle:
-        for line in handle:
+        for number, line in enumerate(handle, start=1):
             if not line.strip():
                 continue
-            entries.append(_ENTRY_ADAPTER.validate_python(json.loads(line)))
+            entries.append(_entry_from_line(line, path=path, number=number))
     return tuple(entries)
+
+
+def _entry_from_line(line: str, *, path: Path, number: int) -> SweepLogEntry:
+    """One line as an entry — or a :class:`ValueError` naming the file, the line and the problem.
+
+    The union is discriminated on ``record_type``, so pydantic's own refusal for a type this build
+    does not know is about a *tag* and says nothing about the log it came from. This makes the
+    refusal explicit and keeps the two cases apart: an **unknown type** (which refuses on the
+    policy §O4 chose) and a **damaged record** of a type this build does know (which refuses
+    because a partly-understood record is not a record).
+    """
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"{path}: line {number}: not JSON ({exc})") from exc
+    if not isinstance(payload, dict):
+        raise TypeError(
+            f"{path}: line {number}: a log entry is a JSON object, not {type(payload).__name__}"
+        )
+    declared = payload.get("record_type")
+    if declared not in KNOWN_RECORD_TYPES:
+        raise ValueError(
+            f"{path}: line {number}: record type {declared!r} is not one this build knows "
+            f"({'|'.join(KNOWN_RECORD_TYPES)}): the log is refused rather than read past an entry "
+            "whose meaning this build cannot state"
+        )
+    try:
+        return _ENTRY_ADAPTER.validate_python(payload)
+    except ValidationError as exc:
+        raise ValueError(
+            f"{path}: line {number}: not a valid {declared!r} record: {exc}"
+        ) from exc
+
+
+def burst_mutations(entries: Iterable[SweepLogEntry]) -> tuple[SweepBurstMutation, ...]:
+    """Only the burst-mutation records, in the order they were appended.
+
+    The ordered history the boundary spent, read back: each entry is one *occurrence* (its own
+    ``mutation_id``), so a caller that folds these into a job's history must consume one entry per
+    transition in sequence and never key on the transition's content (§5.3).
+    """
+    return tuple(e for e in entries if isinstance(e, SweepBurstMutation))
 
 
 def point_records(entries: Iterable[SweepLogEntry]) -> tuple[SweepPointRecord, ...]:
