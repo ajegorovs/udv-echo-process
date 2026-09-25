@@ -50,6 +50,7 @@ claim.
 | painted captions and values, and the state a crop was taken in | [`ui-element-index.md`](ui-element-index.md) + [`ui-crops/`](ui-crops/) |
 | the actionable backlog and per-phase decisions | [`acquisition-review-and-verdict.md`](acquisition-review-and-verdict.md) |
 | the campaign plan's reasoning and its live chronology | [`acquisition-campaign-compilation-plan.md`](acquisition-campaign-compilation-plan.md) (historical) |
+| durable provenance for an instrument mutation in a refused invocation | [`failed-invocation-provenance.md`](failed-invocation-provenance.md) |
 | the DOP3010 agent skill (`SKILL.md` + `references/`) | [`.agents/skills/udop-acquisition/`](../../.agents/skills/udop-acquisition/) |
 
 ## Manual reference

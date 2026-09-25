@@ -274,9 +274,10 @@ Portable plan, hashes and an instrument-free verifier:
 
 **Open follow-up, not B6: mutation provenance across a failed invocation.** A verified boundary
 write followed by a compile or resume-identity refusal writes no new job manifest, so that
-invocation's write is absent from `burst_transitions`. This is a general acquisition
-transaction/audit gap, not a word-8/word-27 interpretation question, so it stays its own item
-rather than being folded into B6.
+invocation's write is absent from `burst_transitions`. A general acquisition transaction/audit gap
+rather than a word-8/word-27 question; it stays its own item and is not folded into B6. Statement
+with `file:line` evidence, the design options and the recommended one:
+[`dop3000/failed-invocation-provenance.md`](dop3000/failed-invocation-provenance.md).
 
 **B6 stored-artifact verification is proposed on `acquire/b6-stored-burst-verification`
 (PR pending review).** Stored word 8 is compared with the
