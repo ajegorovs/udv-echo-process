@@ -25,6 +25,22 @@
 > last of them is the Stage-2 recommendation: which axes can be fixed, which interactions
 > matter, which levels are redundant, and whether a denser second acquisition is justified
 > at all — and if it is, exactly which small set of conditions buys the most information.
+>
+> **Amendment — the stack is pass-general, and making it so was a defect fix.** Applying these
+> five slices unchanged to the **second** mixer-enabled realization,
+> [`../../data/sparse-mixer-live-2/`](../../data/sparse-mixer-live-2/README.md), was impossible
+> until two of them were repaired: WP3 and WP4 carried the *first* sitting's measured floors as
+> module constants, so WP3 refused its own gate on the second pass while publishing the first
+> pass's anchor spreads as the second's screening guards, and WP4 screened the second campaign
+> against the first sitting's reference floor. Each now reads the floors from the pass's own WP1
+> and WP2 documents beside its own artefacts, refuses by name when such a document is absent or
+> answers another pass's plan fingerprint, and records that identity in its gate. The decision
+> logic, the gate names, the reductions and the tolerances are unchanged, and every artefact of
+> the first sitting regenerates byte for byte. The second sitting's report is
+> [`../../reports/sparse-mixer-live-2/`](../../reports/sparse-mixer-live-2/README.md); its slice
+> documents and its decision table carry that pass's own numbers, and reading them against the
+> first sitting's is a separate slice. Nothing in the sections below changes — what changes is
+> which pass each reading's numbers belong to.
 
 ## 1. Question this work must answer
 
