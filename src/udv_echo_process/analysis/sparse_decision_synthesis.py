@@ -57,13 +57,18 @@ import csv
 import hashlib
 import json
 import sys
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+import numpy as np
+
+from udv_echo_process.analysis import _floor_documents as fdp
 from udv_echo_process.analysis.sparse_inventory import (
     DATASET_ROOT,
     REPORT_DIR,
     SparseIngestError,
 )
+from udv_echo_process.analysis.sparse_pitch_burst import TOLERANCE as KNOT_TOLERANCE
 
 #: The plan this synthesis decides against, as the repository paths it.
 PLAN_DOC = Path("docs/dop3000/sparse-pass-analysis-plan.md")
@@ -111,6 +116,72 @@ SLICES: tuple[tuple[str, str, str, str], ...] = (
             "paired contrasts, the floor measured inside that campaign, and its outcome"
         ),
         "reports/stage2-e20-e64",
+    ),
+)
+
+#: The table each slice publishes beside the document it was reduced to, and the field that
+#: carries the digest of that table. WP0's field is named differently because it publishes a
+#: points table rather than a reduction; a slice with no entry here is refused by name rather
+#: than read on trust.
+SLICE_TABLES: dict[str, tuple[str, str]] = {
+    "WP0": ("points.csv", "points_sha256"),
+    "WP1": ("anchor-floor.csv", "table_sha256"),
+    "WP2": ("reference-floor.csv", "table_sha256"),
+    "WP3": ("pitch-burst.csv", "table_sha256"),
+    "WP4": ("emissions-ladder.csv", "table_sha256"),
+    "stage2": ("pairs.csv", "table_sha256"),
+}
+
+#: The statistic a job's anchor spread is screened in, as WP1 publishes it and WP3/WP4 quote it.
+ANCHOR_STATISTIC = "mean"
+
+#: The job each of WP4's floor bindings names, as WP1 names that job itself.
+ANCHOR_BINDING_JOBS = {
+    "e8": "emissions-8",
+    "e64": "emissions-64",
+    "e128": "emissions-128",
+}
+
+#: Every quantity this synthesis consumes that the publishing slice's own table does not carry,
+#: with the reason it cannot. These are the numbers read from a document **on trust**, and this
+#: tuple is the whole of what is: a number belongs here only when no column of that slice's
+#: authenticated table determines it, so adding to the list is a deliberate act, and a reader of
+#: the decision table sees the residual surface instead of inferring it.
+TRUSTED_QUANTITIES: tuple[tuple[str, str, str], ...] = (
+    (
+        "WP4",
+        "predictions[].expected_period_s",
+        (
+            "the slice's own planning expectation for the level, the constant "
+            "``sparse_emissions_ladder.EXPECTED_PERIOD_S`` rather than a reduction of "
+            "this pass's recordings; the measured period beside it *is* checked against "
+            "the table"
+        ),
+    ),
+    (
+        "WP4",
+        "floors.bindings[].recomputed_mm_s",
+        (
+            "the slice's own recomputation of a floor from the recordings, which that "
+            "slice's own gate screens; the *published* copy in the same row is checked "
+            "against WP1 and WP2"
+        ),
+    ),
+    (
+        "stage2",
+        "depth_resolved_floor_depth_mm",
+        (
+            "the depth of the campaign's worst depth-resolved difference: the table "
+            "carries the value and the pair, not the depth"
+        ),
+    ),
+    (
+        "stage2",
+        "depth_resolved_resolved_share",
+        (
+            "the share of depths the campaign resolves, a summary of its own pairs rather "
+            "than a column its table carries"
+        ),
     ),
 )
 
@@ -355,19 +426,657 @@ def _slice_ref(
     )
 
 
+# ── authenticating the slices' own tables ─────────────────────────────
+#
+# Every slice publishes a document **and** the table it was reduced to, tied together by the
+# digest the document carries for that table. WP3 and WP4 screen with another slice's numbers
+# and read them through ``analysis._floor_documents``, which authenticates that pair and then
+# checks each number it consumes against the table. This is the same contract for the six
+# documents read here: a synthesis that quotes a number no slice's own table supports is the
+# terminal product of the chain, and nothing downstream of it can catch that.
+#
+# Two layers, as there:
+#
+# * the **pair** — the document's digest field must equal the SHA-256 of the table's canonical
+#   (LF) bytes, so the two are the pair the generating run wrote;
+# * the **number** — every quantity consumed below is recovered from that authenticated table
+#   and must be the number the document states, compared at the published precision.
+#
+# :data:`TRUSTED_QUANTITIES` names the consumed numbers no table carries, and is the only place
+# this synthesis reads a document on trust.
+
+
+def _published_blocks(path: Path) -> tuple[tuple[dict[str, str], ...], ...]:
+    """A published table's blocks, one per header."""
+    text = Path(path).read_bytes().replace(b"\x0d\x0a", b"\n").decode("utf-8")
+    return tuple(
+        tuple(csv.DictReader(block.splitlines()))
+        for block in text.split("\n\n")
+        if block.strip()
+    )
+
+
+def _authenticated_table(
+    name: str, document_name: str, directory: Path, document: dict
+) -> tuple[tuple[dict[str, str], ...], ...]:
+    """The table one slice's document was reduced to, refused unless the two are one pair."""
+    entry = SLICE_TABLES.get(name)
+    if entry is None:
+        raise DecisionSynthesisError(
+            f"{name}: {document_name} has no published table registered in SLICE_TABLES, so "
+            "the numbers it carries cannot be traced to one: registering a slice there is how "
+            "it is admitted to this synthesis"
+        )
+    table_name, digest_field = entry
+    path = Path(directory) / table_name
+    if not path.is_file():
+        raise DecisionSynthesisError(
+            f"{name}: {document_name} has no {table_name} beside it under "
+            f"{Path(directory).as_posix()!r}: its {digest_field} is the digest of that table, "
+            "so a document without it cannot be authenticated"
+        )
+    stated = document.get(digest_field)
+    if not isinstance(stated, str) or not stated.startswith(fdp.DIGEST_PREFIX):
+        raise DecisionSynthesisError(
+            f"{name}: {document_name} publishes no {digest_field}: the numbers it carries "
+            "cannot be traced to the table they were reduced from"
+        )
+    actual = fdp.table_digest(path)
+    if actual != stated:
+        raise DecisionSynthesisError(
+            f"{name}: {document_name} publishes {digest_field} {stated} but {table_name} hashes "
+            f"to {actual}: the document and the table it was reduced from are not the pair the "
+            "run that published them wrote, so the synthesis refuses rather than quote either"
+        )
+    return _published_blocks(path)
+
+
+def _rows_matching(
+    rows: Sequence[Mapping[str, str]], **selectors: str
+) -> list[Mapping[str, str]]:
+    """Every row of one block matching a selector."""
+    return [
+        row
+        for row in rows
+        if all(str(row.get(column, "")) == value for column, value in selectors.items())
+    ]
+
+
+def _row(
+    rows: Sequence[Mapping[str, str]], where: str, **selectors: str
+) -> Mapping[str, str]:
+    """The one row a selector names, refused unless exactly one row matches it."""
+    found = _rows_matching(rows, **selectors)
+    named = ", ".join(f"{column}={value!r}" for column, value in selectors.items())
+    if len(found) != 1:
+        raise DecisionSynthesisError(
+            f"{where} has {len(found)} rows matching {named}, expected exactly one: a number "
+            "this synthesis quotes has to be one the slice's own table states once"
+        )
+    return found[0]
+
+
+def _table_number(row: Mapping[str, str], column: str, *, where: str) -> float:
+    """One published number, refused when the column is absent or is not a number."""
+    if column not in row:
+        raise DecisionSynthesisError(f"{where} has no {column!r} column")
+    try:
+        return float(row[column])
+    except (TypeError, ValueError) as exc:
+        raise DecisionSynthesisError(
+            f"{where} states {column!r} as {row[column]!r}, not a number ({exc})"
+        ) from None
+
+
+def _agrees(stated: object, tabulated: float, *, where: str, quantity: str) -> None:
+    """Refuse unless a consumed number is the one its authenticated table carries."""
+    try:
+        number = float(stated)  # type: ignore[arg-type]
+    except (TypeError, ValueError) as exc:
+        raise DecisionSynthesisError(
+            f"{where} states {quantity} as {stated!r}, not a number ({exc})"
+        ) from None
+    if fdp.at_published_precision(number) != fdp.at_published_precision(tabulated):
+        raise DecisionSynthesisError(
+            f"{where} states {quantity} as {stated!r}, while its own authenticated table "
+            f"carries {tabulated!r}: this synthesis quotes the table's numbers, not a "
+            "document's word for them"
+        )
+
+
+def _count_agrees(stated: object, tabulated: int, *, where: str, quantity: str) -> None:
+    """Refuse unless a consumed count is the one its authenticated table determines."""
+    if int(stated) != int(tabulated):  # type: ignore[arg-type]
+        raise DecisionSynthesisError(
+            f"{where} states {quantity} as {stated!r}, while its own authenticated table "
+            f"determines {tabulated!r}"
+        )
+
+
+def _pair_agrees(
+    stated: object, tabulated: tuple[str, str], *, where: str, quantity: str
+) -> None:
+    """Refuse unless a consumed pair is the one its authenticated table carries."""
+    if tuple(stated) != tabulated:  # type: ignore[arg-type]
+        raise DecisionSynthesisError(
+            f"{where} states {quantity} as {stated!r}, while its own authenticated table "
+            f"carries {tabulated!r}"
+        )
+
+
+def _anchor_spread(tables, job: str, *, where: str) -> float:
+    """The spread WP1's authenticated table carries for one job."""
+    row = _row(
+        tables["WP1"][0],
+        where,
+        job=job,
+        statistic=ANCHOR_STATISTIC,
+        quantity="anchor_range",
+    )
+    return _table_number(row, "value", where=where)
+
+
+def _verify_wp0(document: dict, blocks, *, where: str) -> None:
+    """The pass's own counts and window, against the points table it was ingested into."""
+    (points,) = blocks
+    _count_agrees(
+        _at(document, "points_rows", "WP0"),
+        len(points),
+        where=where,
+        quantity="the pass's point count",
+    )
+    windows = {round(float(row["window_s"]), fdp.PUBLISHED_DECIMALS) for row in points}
+    if len(windows) != 1:
+        raise DecisionSynthesisError(
+            f"{where} states {len(windows)} different windows across its points, so the "
+            "common window this synthesis quotes is not a number that table determines"
+        )
+    _agrees(
+        _at(document, "views.common_window.window_s", "WP0"),
+        float(next(iter(windows))),
+        where=where,
+        quantity="the common window",
+    )
+
+
+def _verify_wp1(document: dict, blocks, *, where: str) -> None:
+    """Every job's anchor spread, against the anchor table WP1 published."""
+    for job in _at(document, "jobs", "WP1"):
+        name = str(job["job"])
+        _agrees(
+            _at(job, "spread.mean", "WP1"),
+            _anchor_spread({"WP1": blocks}, name, where=where),
+            where=where,
+            quantity=f"{name!r}'s anchor spread",
+        )
+
+
+def _verify_wp2(document: dict, blocks, *, where: str) -> None:
+    """Both reference endpoints and the run count, against the reference table."""
+    runs, pairs = blocks
+    endpoints = fdp.reference_endpoints(pairs)
+    floor = _at(document, "floor", "WP2")
+    for field, tabulated, quantity in (
+        (
+            "value_mm_s",
+            endpoints.depth_resolved_value_mm_s,
+            "the depth-resolved endpoint",
+        ),
+        ("depth_mm", endpoints.depth_resolved_depth_mm, "its depth"),
+    ):
+        _agrees(
+            _at(floor, f"depth_resolved.{field}", "WP2"),
+            tabulated,
+            where=where,
+            quantity=quantity,
+        )
+    _pair_agrees(
+        _at(floor, "depth_resolved.pair", "WP2"),
+        endpoints.depth_resolved_pair,
+        where=where,
+        quantity="the depth-resolved endpoint's pair",
+    )
+    _agrees(
+        _at(floor, "depth_averaged.value_mm_s", "WP2"),
+        endpoints.depth_averaged_value_mm_s,
+        where=where,
+        quantity="the depth-averaged endpoint",
+    )
+    _pair_agrees(
+        _at(floor, "depth_averaged.pair", "WP2"),
+        endpoints.depth_averaged_pair,
+        where=where,
+        quantity="the depth-averaged endpoint's pair",
+    )
+    # the run block is per run *and* per statistic, so the runs are its distinct jobs
+    stated_runs = {str(run["job"]) for run in _at(document, "runs", "WP2")}
+    tabulated_runs = {row["job"] for row in runs}
+    if stated_runs != tabulated_runs:
+        raise DecisionSynthesisError(
+            f"{where} states the runs {sorted(stated_runs)!r}, while its own authenticated "
+            f"table carries {sorted(tabulated_runs)!r}"
+        )
+
+
+def _verify_wp3(document: dict, blocks, *, where: str, wp2_blocks, wp1_blocks) -> None:
+    """The interaction and its reduction, against the knot table WP3 published."""
+    (knots,) = blocks
+    interaction = np.array(
+        [float(row["interaction_mm_s"]) for row in knots], dtype=float
+    )
+    depths = np.array([float(row["depth_mm"]) for row in knots], dtype=float)
+    reading = _at(document, "conservative_reading", "WP3")
+    floors = _at(document, "floors", "WP3")
+    endpoints = fdp.reference_endpoints(wp2_blocks[1])
+
+    # WP3's own copies of the two floors are the numbers WP1 and WP2 published
+    for job, stated in _at(floors, "anchor_guards.value_mm_s", "WP3").items():
+        _agrees(
+            stated,
+            _anchor_spread({"WP1": wp1_blocks}, job, where=where),
+            where=where,
+            quantity=f"{job!r}'s anchor guard",
+        )
+    _agrees(
+        _at(floors, "depth_resolved.value_mm_s", "WP3"),
+        endpoints.depth_resolved_value_mm_s,
+        where=where,
+        quantity="the depth-resolved floor",
+    )
+    _agrees(
+        _at(floors, "depth_averaged.value_mm_s", "WP3"),
+        endpoints.depth_averaged_value_mm_s,
+        where=where,
+        quantity="the depth-averaged floor",
+    )
+
+    # the interaction block is a reduction of the knot table, by the slice's own rules
+    lowest = int(np.argmin(interaction))
+    highest = int(np.argmax(interaction))
+    for field, tabulated, quantity in (
+        ("scalar_reduction_mm_s", float(np.mean(interaction)), "the scalar reduction"),
+        ("min_mm_s", float(interaction[lowest]), "the interaction's minimum"),
+        ("min_depth_mm", float(depths[lowest]), "the minimum's depth"),
+        ("max_mm_s", float(interaction[highest]), "the interaction's maximum"),
+        ("max_depth_mm", float(depths[highest]), "the maximum's depth"),
+    ):
+        _agrees(
+            _at(document, f"interaction.{field}", "WP3"),
+            tabulated,
+            where=where,
+            quantity=quantity,
+        )
+    _count_agrees(
+        _at(reading, "knot_count", "WP3"),
+        len(knots),
+        where=where,
+        quantity="the knot count",
+    )
+    _count_agrees(
+        _at(reading, "knots_above_depth_resolved_floor", "WP3"),
+        int(
+            np.count_nonzero(
+                np.abs(interaction)
+                > endpoints.depth_resolved_value_mm_s + KNOT_TOLERANCE
+            )
+        ),
+        where=where,
+        quantity="the knots above the depth-resolved floor",
+    )
+    for job, stated in _at(reading, "knots_above_anchor_floor", "WP3").items():
+        guard = _anchor_spread({"WP1": wp1_blocks}, job, where=where)
+        _count_agrees(
+            stated,
+            int(np.count_nonzero(np.abs(interaction) > guard + KNOT_TOLERANCE)),
+            where=where,
+            quantity=f"the knots above {job!r}'s anchor guard",
+        )
+
+
+def _verify_wp4(document: dict, blocks, *, where: str, wp1_blocks, wp2_blocks) -> None:
+    """The ladder's levels, timing, steps and E128 residuals, against its own tables."""
+    levels_block, steps_block, residuals_block, timing_block, _acf = blocks
+    levels = {str(level["level"]): level for level in _at(document, "levels", "WP4")}
+    temporal = {str(row["label"]): row for row in _at(document, "temporal", "WP4")}
+    endpoints = fdp.reference_endpoints(wp2_blocks[1])
+
+    # a level's stated variation: E20's spread over its four runs, the others' their WP1 floor
+    runs = [
+        float(row["value"])
+        for row in levels_block
+        if row["label"].startswith("cr") and row["statistic"] == ANCHOR_STATISTIC
+    ]
+    if len(runs) != 4:
+        raise DecisionSynthesisError(
+            f"{where} carries {len(runs)} reference runs at the {ANCHOR_STATISTIC!r} "
+            "statistic, expected the level's four"
+        )
+    _agrees(
+        levels["E20"]["stated_variation_mm_s"],
+        max(runs) - min(runs),
+        where=where,
+        quantity="E20's between-run variation",
+    )
+    for level, job in (
+        ("E8", "emissions-8"),
+        ("E64", "emissions-64"),
+        ("E128", "emissions-128"),
+    ):
+        _agrees(
+            levels[level]["stated_variation_mm_s"],
+            _anchor_spread({"WP1": wp1_blocks}, job, where=where),
+            where=where,
+            quantity=f"{level}'s anchor spread",
+        )
+
+    # every timing number the rows quote is a column of the timing block
+    for level, label in (
+        ("E8", "e8"),
+        ("E20", "cr1"),
+        ("E64", "e64"),
+        ("E128", "e128"),
+    ):
+        row = _row(timing_block, where, label=label)
+        for field in (
+            "achieved_period_s",
+            "profile_rate_hz",
+            "nyquist_hz",
+            "profiles_per_block_median",
+        ):
+            _agrees(
+                temporal[label][field],
+                _table_number(row, field, where=where),
+                where=where,
+                quantity=f"{label}'s {field}",
+            )
+    overhead = _row(timing_block, where, label="e8")
+    for field in (
+        "block_duration_s",
+        "fixed_overhead_s",
+        "internal_emission_s",
+        "transfer_term_s",
+    ):
+        _agrees(
+            temporal["e8"][field],
+            _table_number(overhead, field, where=where),
+            where=where,
+            quantity=f"the {field} the rows quote",
+        )
+
+    # a step's extremes are the row its labels name, and the span the rows quote is the min and
+    # max of the pair's own rows
+    steps = _at(document, "steps", "WP4")
+    for index, (left, right) in enumerate(
+        (("E8", "E20"), ("E20", "E64"), ("E64", "E128"))
+    ):
+        step = steps[index]
+        row = _row(
+            steps_block,
+            where,
+            left_level=left,
+            right_level=right,
+            left_label=str(step["extreme_left_label"]),
+            right_label=str(step["extreme_right_label"]),
+        )
+        for field in ("extreme_abs_mm_s", "extreme_signed_mm_s", "extreme_depth_mm"):
+            _agrees(
+                step[field],
+                _table_number(row, field, where=where),
+                where=where,
+                quantity=f"the {left}->{right} step's {field}",
+            )
+        means = [
+            _table_number(other, "mean_difference_mm_s", where=where)
+            for other in _rows_matching(steps_block, left_level=left, right_level=right)
+        ]
+        if not means:
+            raise DecisionSynthesisError(
+                f"{where} carries no step row for {left}->{right}, so the span the rows quote "
+                "for it is not a number that table determines"
+            )
+        for field, tabulated in (
+            ("mean_difference_min_mm_s", min(means)),
+            ("mean_difference_max_mm_s", max(means)),
+        ):
+            _agrees(
+                step[field],
+                tabulated,
+                where=where,
+                quantity=f"the {left}->{right} step's {field}",
+            )
+
+    # E128's residuals are rows of the anchor block, one per control anchor
+    e128 = _at(document, "e128_observation", "WP4")
+    residual_rows = {
+        anchor: _row(residuals_block, where, level="E128", anchor=f"ctrl-{anchor}")
+        for anchor in ("begin", "mid")
+    }
+    for anchor, row in residual_rows.items():
+        mean = _table_number(row, "residual_mean_mm_s", where=where)
+        floor = _table_number(row, "job_anchor_floor_mm_s", where=where)
+        _agrees(
+            e128[f"residual_mean_vs_{anchor}_mm_s"],
+            mean,
+            where=where,
+            quantity=f"E128's residual against {anchor}",
+        )
+        # the ratio is the residual's *size* against the floor, so its sign is dropped: live-2's
+        # E128 residual against begin is negative and its ratio is not
+        _agrees(
+            e128[f"ratio_to_job_anchor_floor_vs_{anchor}"],
+            abs(mean) / floor,
+            where=where,
+            quantity="that residual's ratio to the job's anchor floor",
+        )
+        _count_agrees(
+            e128[f"knots_positive_vs_{anchor}"],
+            int(_table_number(row, "knots_positive", where=where)),
+            where=where,
+            quantity=f"the knots positive against {anchor}",
+        )
+    _agrees(
+        e128["job_anchor_floor_mm_s"],
+        _anchor_spread({"WP1": wp1_blocks}, "emissions-128", where=where),
+        where=where,
+        quantity="E128's own anchor floor",
+    )
+    _count_agrees(
+        e128["gates"],
+        int(_table_number(residual_rows["begin"], "gates", where=where)),
+        where=where,
+        quantity="E128's gate count",
+    )
+
+    # a measured period is the median of the level's achieved periods
+    predictions = {
+        str(row["level"]): row for row in _at(document, "predictions", "WP4")
+    }
+    for level in ("E8", "E20", "E64", "E128"):
+        achieved = [
+            _table_number(row, "achieved_period_s", where=where)
+            for row in timing_block
+            if row["level"] == level
+        ]
+        if not achieved:
+            raise DecisionSynthesisError(
+                f"{where} carries no timing row for {level!r}, so the period the rows quote "
+                "for it is not a number that table determines"
+            )
+        _agrees(
+            predictions[level]["measured_period_s"],
+            float(np.median(achieved)),
+            where=where,
+            quantity=f"{level}'s measured period",
+        )
+
+    # the floors WP4 copied are the numbers WP1 and WP2 published in their own rows
+    for binding in _at(_at(document, "floors", "WP4"), "bindings", "WP4"):
+        name = str(binding.get("name", ""))
+        if name.startswith("job_anchors_"):
+            level = name.removeprefix("job_anchors_")
+            job = ANCHOR_BINDING_JOBS.get(level)
+            if job is None:
+                raise DecisionSynthesisError(
+                    f"{where} binds the floor {name!r} to a level this synthesis does not know, "
+                    "so it cannot be checked against WP1's own row"
+                )
+            _agrees(
+                binding["published_mm_s"],
+                _anchor_spread({"WP1": wp1_blocks}, job, where=where),
+                where=where,
+                quantity=f"the published {name} floor",
+            )
+        elif name == "reference_depth_resolved":
+            _agrees(
+                binding["published_mm_s"],
+                endpoints.depth_resolved_value_mm_s,
+                where=where,
+                quantity="the published depth-resolved floor",
+            )
+        elif name == "reference_depth_averaged":
+            _agrees(
+                binding["published_mm_s"],
+                endpoints.depth_averaged_value_mm_s,
+                where=where,
+                quantity="the published depth-averaged floor",
+            )
+
+
+def _verify_stage2(document: dict, blocks, *, where: str) -> None:
+    """The campaign's floors and contrasts, against the pair table it published."""
+    (pairs,) = blocks
+    floors = [row for row in pairs if row["kind"] == "floor"]
+    for field, selector in (
+        ("screening_floor_mm_s", "screening_floor_mm_s"),
+        ("depth_resolved_floor_mm_s", "depth_resolved_floor_mm_s"),
+    ):
+        _agrees(
+            document[field],
+            _table_number(
+                _row(floors, where, value_name=selector), "value", where=where
+            ),
+            where=where,
+            quantity=field.replace("_", " "),
+        )
+    # the level the scalar floor is quoted from is a column of that floor's own row
+    scalar_row = _row(floors, where, value_name="screening_floor_mm_s")
+    stated_level = str(document["screening_floor_level"])
+    if stated_level != str(scalar_row["level"]):
+        raise DecisionSynthesisError(
+            f"{where} states the scalar floor as {stated_level!r}'s, while its own "
+            f"authenticated table carries that floor under {scalar_row['level']!r}"
+        )
+    for floor in _at(document, "floors", "stage2"):
+        for field in ("depth_averaged_mm_s", "depth_resolved_mm_s"):
+            _agrees(
+                floor[field],
+                _table_number(
+                    _row(
+                        floors,
+                        where,
+                        level=str(floor["level"]),
+                        value_name=field,
+                    ),
+                    "value",
+                    where=where,
+                ),
+                where=where,
+                quantity=f"{floor['level']}'s {field.replace('_', ' ')}",
+            )
+    for contrast in _at(document, "contrasts", "stage2"):
+        pair = str(contrast["pair"])
+        for field in ("oriented_mm_s", "order_difference_mm_s"):
+            _agrees(
+                contrast[field],
+                _table_number(
+                    _row(
+                        pairs,
+                        where,
+                        kind="contrast",
+                        pair=pair,
+                        value_name=field,
+                    ),
+                    "value",
+                    where=where,
+                ),
+                where=where,
+                quantity=f"contrast {pair}'s {field}",
+            )
+    _count_agrees(
+        len(_at(document, "runs", "stage2")),
+        len([row for row in pairs if row["kind"] == "run"]),
+        where=where,
+        quantity="the campaign's run count",
+    )
+
+
+def verify_consumed_numbers(
+    documents: dict[str, dict],
+    tables: dict[str, tuple[tuple[dict[str, str], ...], ...]],
+) -> None:
+    """Every number the rows quote is a number the publishing slice's own table carries.
+
+    Raises:
+        DecisionSynthesisError: when a document states a number at the published precision its
+            own authenticated table does not carry, when a table it should be paired with is
+            absent or has moved, when a selector does not name exactly one row, or when the
+            documents and tables do not have the shape this synthesis reads.
+    """
+    try:
+        _verify_wp0(documents["WP0"], tables["WP0"], where=f"WP0:{SLICES[0][1]}")
+        _verify_wp1(documents["WP1"], tables["WP1"], where=f"WP1:{SLICES[1][1]}")
+        _verify_wp2(documents["WP2"], tables["WP2"], where=f"WP2:{SLICES[2][1]}")
+        _verify_wp3(
+            documents["WP3"],
+            tables["WP3"],
+            where=f"WP3:{SLICES[3][1]}",
+            wp1_blocks=tables["WP1"],
+            wp2_blocks=tables["WP2"],
+        )
+        _verify_wp4(
+            documents["WP4"],
+            tables["WP4"],
+            where=f"WP4:{SLICES[4][1]}",
+            wp1_blocks=tables["WP1"],
+            wp2_blocks=tables["WP2"],
+        )
+        _verify_stage2(
+            documents["stage2"], tables["stage2"], where=f"stage2:{SLICES[5][1]}"
+        )
+    except DecisionSynthesisError:
+        raise
+    except (KeyError, TypeError, ValueError) as exc:
+        # a document or table this synthesis cannot read the way it reads a published one is a
+        # refusal too: the alternative is quoting a number that was never checked
+        raise DecisionSynthesisError(
+            "the slices' documents and tables do not have the shape this synthesis reads "
+            f"({type(exc).__name__}: {exc}), so a number it would quote could not be checked"
+        ) from None
+
+
 def read_slices(
     report_dir: Path = REPORT_DIR,
 ) -> tuple[dict[str, dict], tuple[SliceRef, ...]]:
-    """Read the six slices, refusing anything that is missing or failed."""
+    """Read the six slices, refusing anything that is missing or failed.
+
+    Each slice's document is authenticated against the table it was reduced to, and every
+    quantity this synthesis consumes is checked against that table, before either is returned
+    (see :func:`verify_consumed_numbers`): the rows this reads for quote a slice's numbers, so
+    a document whose table is missing or has moved, or that states a number its own table does
+    not carry, is refused here rather than synthesised.
+    """
     documents: dict[str, dict] = {}
     refs: list[SliceRef] = []
+    tables: dict[str, tuple[tuple[dict[str, str], ...], ...]] = {}
     for name, filename, what, directory in SLICES:
         # ``directory`` names a slice that lives outside this report directory; an empty
         # entry is this pass's own slice, read from ``report_dir``.
         location = Path(directory) if directory else Path(report_dir)
         document, digest, _ = _load(location, filename, name)
+        tables[name] = _authenticated_table(name, filename, location, document)
         refs.append(_slice_ref(name, filename, what, document, digest))
         documents[name] = document
+    verify_consumed_numbers(documents, tables)
     return documents, tuple(refs)
 
 

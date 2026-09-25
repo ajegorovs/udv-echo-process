@@ -33,7 +33,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import NamedTuple
@@ -142,28 +142,31 @@ class AuthenticatedFloor:
         The two are the reductions WP2 defines: the largest absolute per-depth difference over
         the pairs, and the largest absolute difference between the pairs' depth-averaged means.
         """
-        rows = self._block_with("left", "right")
-        resolved = max(
-            rows, key=lambda row: abs(_row_number(row, "max_abs_difference_mm_s"))
-        )
-        averaged = max(
-            rows, key=lambda row: abs(_row_number(row, "mean_difference_mm_s"))
-        )
-        return ReferenceEndpoints(
-            depth_resolved_value_mm_s=abs(
-                _row_number(resolved, "max_abs_difference_mm_s")
-            ),
-            depth_resolved_depth_mm=_row_number(resolved, "max_abs_depth_mm"),
-            depth_resolved_pair=(resolved["left"], resolved["right"]),
-            depth_averaged_value_mm_s=abs(
-                _row_number(averaged, "mean_difference_mm_s")
-            ),
-            depth_averaged_pair=(averaged["left"], averaged["right"]),
-        )
+        return reference_endpoints(self._block_with("left", "right"))
 
 
 def _row_number(row: Mapping[str, str], column: str) -> float:
     return _tabulated_number(row.get(column), where=column)
+
+
+def reference_endpoints(pairs: Sequence[Mapping[str, str]]) -> ReferenceEndpoints:
+    """The two endpoints WP2 publishes, reduced from an authenticated pair table.
+
+    One definition, used by WP2's own reader *and* by the synthesis that checks its copy of
+    them: the largest absolute per-depth difference over the pairs, and the largest absolute
+    difference between the pairs' depth-averaged means.
+    """
+    resolved = max(
+        pairs, key=lambda row: abs(_row_number(row, "max_abs_difference_mm_s"))
+    )
+    averaged = max(pairs, key=lambda row: abs(_row_number(row, "mean_difference_mm_s")))
+    return ReferenceEndpoints(
+        depth_resolved_value_mm_s=abs(_row_number(resolved, "max_abs_difference_mm_s")),
+        depth_resolved_depth_mm=_row_number(resolved, "max_abs_depth_mm"),
+        depth_resolved_pair=(resolved["left"], resolved["right"]),
+        depth_averaged_value_mm_s=abs(_row_number(averaged, "mean_difference_mm_s")),
+        depth_averaged_pair=(averaged["left"], averaged["right"]),
+    )
 
 
 def _tabulated_number(value: object, *, where: str) -> float:

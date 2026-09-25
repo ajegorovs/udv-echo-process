@@ -16,7 +16,11 @@ and refuse by name when those documents are absent or belong to another pass. Th
 [plan's status block](../../docs/dop3000/sparse-pass-analysis-plan.md) records the amendment,
 and every *generated* first-sitting artefact regenerates byte for byte unchanged. The only
 first-sitting file this work edits is a hand-written slice document, corrected in passing: a
-sentence counted twelve structural checks while the table beneath it lists fourteen.
+sentence counted twelve structural checks while the table beneath it lists fourteen. The
+synthesis that reads all six documents now holds itself to the same contract: each document is
+authenticated against the table it was reduced to, every number a row quotes is checked against
+that table at the published precision, and the few numbers no table carries are named in one
+register rather than read silently.
 
 **This report is not a comparison.** Every floor in it is this sitting's own, and it states what
 *this* pass measured. Reading it against the first sitting's report is a separate slice with its

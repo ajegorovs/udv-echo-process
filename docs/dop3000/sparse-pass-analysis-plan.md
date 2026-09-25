@@ -36,7 +36,13 @@
 and WP2 documents beside its own artefacts, refuses by name when such a document is absent,
 > answers another pass's plan fingerprint, or no longer agrees with the table it was reduced
 > from (each slice authenticates both halves of that pair, so an edited document cannot become
-> the screen), and records that identity in its gate. The decision
+> the screen), and records that identity in its gate. The synthesis that produces the decision
+> table reads those six documents and is now held to the same contract: each is authenticated
+> against the table it was reduced to, every number a row quotes is checked against that table
+> at the published precision, and the few numbers no table carries — WP4's own recomputation of
+> a floor, its planning expectation for a level, the campaign's resolved share, the depth of its
+> worst difference — are named in one register, so what is read on trust is explicit rather than
+> implied. The decision
 > logic, the gate names, the reductions and the tolerances are unchanged, and every *generated*
 > artefact of the first sitting regenerates byte for byte. The only first-sitting file this work
 > edits is a hand-written slice document, where a sentence counted twelve structural checks the
