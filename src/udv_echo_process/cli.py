@@ -1706,13 +1706,15 @@ def gain_power_screen_main(argv: list[str] | None = None) -> None:
 
 
 def sparse_inventory_main(argv: list[str] | None = None) -> None:
-    """``sparse-inventory`` — write the sparse pass's WP0 table and QC summary.
+    """``sparse-inventory`` — write a sparse pass's WP0 table and QC summary.
 
-    Reads the committed recordings of ``data/sparse-mixer-live-1`` through the public
-    reader, binds every one of them to the planned point the pass's own record claims
-    for it, and writes ``points.csv`` and ``qc-summary.json`` into the report
-    directory. It exits 0 when every WP0 gate check holds and 1 otherwise, naming the
-    failed checks on stderr; a pass the dataset does not answer to refuses by name
+    Reads the committed recordings of the pass named by ``--dataset-root`` and
+    ``--plan`` (the defaults are the first mixer-enabled pass,
+    ``data/sparse-mixer-live-1``) through the public reader, binds every one of them to
+    the planned point the pass's own record (``<plan-name>.run.json`` inside the dataset
+    root) claims for it, and writes ``points.csv`` and ``qc-summary.json`` into the
+    report directory. It exits 0 when every WP0 gate check holds and 1 otherwise, naming
+    the failed checks on stderr; a pass the dataset does not answer to refuses by name
     with exit 1 and writes nothing. It touches nothing but those two files: no
     instrument, no cache, no analysis beyond the ingest.
     """
@@ -1732,6 +1734,14 @@ def sparse_inventory_main(argv: list[str] | None = None) -> None:
         "--plan",
         default=sparse_inventory.PLAN_PATH.as_posix(),
         help="the frozen plan the pass is a realization of",
+    )
+    parser.add_argument(
+        "--plan-name",
+        default=None,
+        help=(
+            "the pass name, which names its record <plan-name>.run.json inside the "
+            "dataset root (default: the plan's own name)"
+        ),
     )
     parser.add_argument(
         "--report-dir",
@@ -1754,6 +1764,7 @@ def sparse_inventory_main(argv: list[str] | None = None) -> None:
             Path(args.dataset_root),
             report_dir,
             plan_path=Path(args.plan),
+            plan_name=args.plan_name,
             analysis_commit=args.analysis_commit,
         )
     except sparse_inventory.SparseIngestError as exc:

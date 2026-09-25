@@ -36,6 +36,20 @@ cross-run reference checks, the pitch x burst corners, the emissions ladder and
 the Stage-2 decision are the later work packages of
 ``docs/dop3000/sparse-pass-analysis-plan.md``; this module freezes the table they
 all select from.
+
+**One pass or the next, from the same code.** The ingest takes its identity from its
+inputs, not from this module's constants: the dataset root, the plan path, the plan
+name (the pass record is ``<plan_name>.run.json`` inside the dataset root) and the
+report directory are all parameters. The bare call still describes
+``sparse-mixer-live-1`` and produces its frozen artefacts byte for byte; a second
+pass whose plan names itself is ingested by pointing the same call at its own root and
+plan, and it clears the *same* gate — the same nine-job design, the same common window
+and support, the same content floor — because the design and the gate are properties of
+the pass plan, not of one sitting. The one provenance form that moved between the two
+sittings is the planner's own expectation recorded in ``timing.target_s``: the first
+pass's logs predate the manual's sixteen-emission term and the second pass's record it.
+The expected planning law is selected by pass identity; an old-law target in the
+second sitting is a refusal, not a second acceptable spelling of its provenance.
 """
 
 from __future__ import annotations
@@ -68,7 +82,10 @@ from udv_echo_process.models.channel_config import ChannelConfig
 from udv_echo_process.provenance.models import current_revision
 
 #: The pass's committed dataset (one flat directory of recordings plus the pass's
-#: own record and per-job logs and manifests), and the frozen plan it realizes.
+#: own record and per-job logs and manifests), and the frozen plan it realizes. These
+#: are the *first* pass's paths and the defaults of every entry point below; a later
+#: pass passes its own root, plan and name and inherits this module's schema, binding
+#: and gate unchanged.
 DATASET_ROOT = Path("data/sparse-mixer-live-1")
 PLAN_PATH = Path("examples/sparse-mixer-live-1/run-plan.json")
 PLAN_NAME = "sparse-mixer-live-1"
@@ -80,7 +97,10 @@ REPORT_DIR = Path("reports/sparse-mixer-live-1")
 POINTS_NAME = "points.csv"
 QC_NAME = "qc-summary.json"
 
-#: The pass's own size and shape, as the design states them.
+#: The shared design's own size and shape, as the plan states them: 26 recordings over
+#: nine jobs, and the per-job counts the plan and every realization of it must match.
+#: These are the design's, not one sitting's — both committed passes realize them, so
+#: the WP0 gate checks each pass against the same nine-job shape.
 EXPECTED_RECORDINGS = 26
 EXPECTED_JOB_COUNTS: dict[str, int] = {
     "burst-4": 5,
@@ -130,10 +150,29 @@ GRID_RTOL = 1e-6
 
 #: The retired profile-period expectation the logs record, and the fact that it is
 #: provenance rather than a measurement: ``emissions x PRF + 1 ms`` is the form the
-#: planner used while this pass ran (it dropped the manual's 16-emission term), so a
-#: log's ``timing.target_s`` reproduces *this* law and not the achieved period.
+#: planner used while the first pass ran (it dropped the manual's 16-emission term), so
+#: that pass's log ``timing.target_s`` reproduces *this* law and not the achieved period.
 RETIRED_PERIOD_LAW = "emissions_per_profile x prf_us + 1 ms"
 RETIRED_PERIOD_TRANSFER_S = 1e-3
+
+#: The planner's *corrected* law, ``acquire/plan.py::profile_period_s`` — the manual's
+#: ``T_tran + T_prf x (16 + N_PRF)``. The second pass's logs record this form, so
+#: :func:`require_retired_target` accepts it too: both are planning expectations for a
+#: point's own decoded emissions and PRF, and neither is the achieved period.
+PLANNER_PERIOD_LAW = "T_tran + T_prf x (16 + N_PRF) (acquire/plan.py::profile_period_s)"
+
+#: The planning law each pass's own logs record, by pass name. A pass named here is
+#: screened against *that* form only, so a log rewritten to the other sitting's law —
+#: or to the achieved period — is refused. A pass that is **not** named (the Stage-2
+#: campaign predates the split) is screened against **both** forms instead of being
+#: refused: that is what every pass was screened against before this table existed, and
+#: the check's job is to catch a log rewritten to the achieved period, which both forms
+#: sit far from. Naming a pass here is a tightening for that pass, never a gate on
+#: whether an older pass may be analysed at all.
+PERIOD_LAW_BY_PASS: dict[str, str] = {
+    PLAN_NAME: RETIRED_PERIOD_LAW,
+    "sparse-mixer-live-2": PLANNER_PERIOD_LAW,
+}
 
 #: The signal-content floor a live pass must clear: a recording of this pass that is
 #: mostly zero would be the first pass's payload, not a usable measurement. It is a
@@ -423,7 +462,9 @@ class PlannedJobRecord(NamedTuple):
         return (self.burst_length, self.emissions_per_profile, self.prf_us)
 
 
-def read_run_record(dataset_root: Path, *, plan_name: str = PLAN_NAME) -> dict[str, object]:
+def read_run_record(
+    dataset_root: Path, *, plan_name: str = PLAN_NAME
+) -> dict[str, object]:
     """Read ``<plan_name>.run.json`` — the pass's own record — from the dataset root.
 
     ``plan_name`` defaults to this pass's own name, so every existing caller and every
@@ -887,31 +928,46 @@ def require_declared_settings(point: DecodedPoint) -> None:
         )
 
 
-def require_retired_target(point: DecodedPoint) -> None:
-    """Refuse a log whose ``timing.target_s`` is not the retired planning expectation.
+def require_retired_target(point: DecodedPoint, *, plan_name: str = PLAN_NAME) -> None:
+    """Refuse a log whose ``timing.target_s`` is not a planning expectation at all.
 
-    The field is provenance, and this is what makes it checkable provenance: it
-    reproduces ``emissions x PRF + 1 ms`` — the form the planner used while this pass
-    ran — for that point's own decoded emissions and PRF. A log whose target had been
-    rewritten to the achieved period, or to a later law, would stop reproducing it;
-    that is exactly the edit the dataset README forbids.
+    ``timing.target_s`` is provenance: it reproduces the planner's expectation for the
+    point's own decoded emissions and PRF, never the achieved period. Two planning forms
+    have planned this repository's sparse passes — the retired
+    ``emissions x PRF + 1 ms`` and the manual's ``T_tran + T_prf x (16 + N_PRF)`` — and a
+    pass names its own form in :data:`PERIOD_LAW_BY_PASS`. A pass that names no form is
+    screened against either, so an older campaign this table does not classify keeps the
+    behaviour it had before the table existed; a log rewritten to the *achieved* period
+    is refused either way.
     """
     timing = point.binding.entry.get("timing")
     if not isinstance(timing, dict) or timing.get("target_s") is None:
         raise SparseIngestError(
             f"{point.relative_path}: the job log records no timing.target_s"
         )
-    retired = (
-        float(point.binding.job.emissions_per_profile)
-        * float(point.binding.job.prf_us)
-        * 1e-6
-        + RETIRED_PERIOD_TRANSFER_S
-    )
+    emissions = float(point.binding.job.emissions_per_profile)
+    prf_us = float(point.binding.job.prf_us)
     recorded = float(timing["target_s"])
-    if abs(recorded - retired) > LOG_TARGET_TOLERANCE_S:
+    retired = emissions * prf_us * 1e-6 + RETIRED_PERIOD_TRANSFER_S
+    planner = profile_period_s(int(emissions), prf_us)
+    pinned = PERIOD_LAW_BY_PASS.get(plan_name)
+    if pinned is None:
+        if (
+            min(abs(recorded - retired), abs(recorded - planner))
+            <= LOG_TARGET_TOLERANCE_S
+        ):
+            return
+        raise SparseIngestError(
+            f"{point.relative_path}: the log's timing.target_s is {recorded!r}, which is "
+            f"neither planning form for this point's decoded emissions and PRF "
+            f"({retired!r} {RETIRED_PERIOD_LAW}; {planner!r} {PLANNER_PERIOD_LAW}); the "
+            "logs are provenance and are not rewritten"
+        )
+    expected = retired if pinned == RETIRED_PERIOD_LAW else planner
+    if abs(recorded - expected) > LOG_TARGET_TOLERANCE_S:
         raise SparseIngestError(
             f"{point.relative_path}: the log's timing.target_s is {recorded!r}, the "
-            f"retired law ({RETIRED_PERIOD_LAW}) gives {retired!r} for this point's "
+            f"{plan_name} planning law ({pinned}) gives {expected!r} for this point's "
             "decoded emissions and PRF; the logs are provenance and are not rewritten"
         )
 
@@ -951,6 +1007,7 @@ def build_row(
     window_s: float,
     window_profiles: int,
     plan_fingerprint: str,
+    plan_name: str = PLAN_NAME,
 ) -> dict[str, str]:
     """One point's row, every cell formatted for the CSV contract.
 
@@ -1072,7 +1129,7 @@ def build_row(
         "manifest_relative_path": binding.job.manifest_relative_path,
         "job_definition": binding.job.definition,
         "job_definition_fingerprint": binding.job.definition_fingerprint,
-        "plan": PLAN_NAME,
+        "plan": plan_name,
         "plan_fingerprint": plan_fingerprint,
         "decode_error": "",
     }
@@ -1086,7 +1143,10 @@ def _mean_of(metrics: Mapping[str, np.ndarray], name: str) -> float:
 
 
 def failed_row(
-    binding: PointBinding, error: str, plan_fingerprint: str
+    binding: PointBinding,
+    error: str,
+    plan_fingerprint: str,
+    plan_name: str = PLAN_NAME,
 ) -> dict[str, str]:
     """A row for a recording that could not be decoded: its identity, and the failure.
 
@@ -1109,7 +1169,7 @@ def failed_row(
             "manifest_relative_path": binding.job.manifest_relative_path,
             "job_definition": binding.job.definition,
             "job_definition_fingerprint": binding.job.definition_fingerprint,
-            "plan": PLAN_NAME,
+            "plan": plan_name,
             "plan_fingerprint": plan_fingerprint,
             "decode_error": error,
         }
@@ -1174,12 +1234,46 @@ def points_csv_text(rows: Sequence[Mapping[str, str]]) -> str:
     return buffer.getvalue()
 
 
-def regeneration_command(commit: str | None) -> str:
-    """The exact command that reproduces the committed artefacts byte for byte."""
-    return (
-        ".venv/Scripts/python.exe -m udv_echo_process.cli sparse-inventory "
-        f"--analysis-commit {commit or '<generator commit>'}"
+def regeneration_command(
+    commit: str | None,
+    *,
+    plan_name: str = PLAN_NAME,
+    dataset_root: Path | None = None,
+    plan_path: Path | None = None,
+    report_dir: Path | None = None,
+) -> str:
+    """The exact command that reproduces a pass's committed artefacts byte for byte.
+
+    The first pass's bare form is emitted unchanged: a flag is added only for an input
+    that differs from this module's own default, so a pass whose inputs are the first
+    pass's is described by exactly the command the committed artefacts carry. A second
+    pass names its own dataset, plan, plan name and report directory, by the
+    repository's convention (``data/<plan>``, ``examples/<plan>/run-plan.json``,
+    ``reports/<plan>``) unless a caller passes explicit paths.
+    """
+    root = Path(dataset_root) if dataset_root is not None else Path("data") / plan_name
+    plan = (
+        Path(plan_path)
+        if plan_path is not None
+        else Path("examples") / plan_name / "run-plan.json"
     )
+    report = Path(report_dir) if report_dir is not None else Path("reports") / plan_name
+    parts = [
+        ".venv/Scripts/python.exe",
+        "-m",
+        "udv_echo_process.cli",
+        "sparse-inventory",
+    ]
+    if root.as_posix() != DATASET_ROOT.as_posix():
+        parts += ["--dataset-root", root.as_posix()]
+    if plan.as_posix() != PLAN_PATH.as_posix():
+        parts += ["--plan", plan.as_posix()]
+    if report.as_posix() != REPORT_DIR.as_posix():
+        parts += ["--report-dir", report.as_posix()]
+    if plan_name != PLAN_NAME:
+        parts += ["--plan-name", plan_name]
+    parts += ["--analysis-commit", commit or "<generator commit>"]
+    return " ".join(parts)
 
 
 def _word_summary(rows: Sequence[Mapping[str, str]], column: str) -> dict[str, object]:
@@ -1272,7 +1366,9 @@ def qc_document(ingest: SparseIngest) -> dict[str, object]:
         "checks": dict(sorted(ingest.checks.items())),
         "ok": ingest.ok,
         "regeneration": {
-            "command": regeneration_command(ingest.analysis_commit),
+            "command": regeneration_command(
+                ingest.analysis_commit, plan_name=ingest.plan
+            ),
             "note": (
                 "pass the recorded analysis_commit to reproduce these artefacts byte "
                 "for byte; the bare command records the current HEAD"
@@ -1285,24 +1381,35 @@ def build_sparse_ingest(
     dataset_root: Path = DATASET_ROOT,
     *,
     plan_path: Path = PLAN_PATH,
+    plan_name: str | None = None,
     analysis_commit: str | None = None,
 ) -> SparseIngest:
     """Decode every committed recording and build the WP0 ingest.
+
+    Args:
+        dataset_root: the directory holding the pass's ``.BDD`` recordings and its own
+            record, logs and manifests.
+        plan_path: the frozen plan the pass is a realization of.
+        plan_name: the pass name, which names the record ``<plan_name>.run.json`` inside
+            the dataset root. ``None`` — the default — takes the plan's own name, so a
+            pass whose plan names itself needs no second declaration; passing a name
+            that is not the plan's is refused.
+        analysis_commit: the revision to record in the QC summary.
 
     Raises:
         SparseIngestError: for a pass record or a plan the dataset does not answer
             to, a recording no planned point claims (or the reverse), two decodes of
             the same bytes that disagree, a stored word that is not the declared
-            setting, or a log whose retired target has been rewritten.
+            setting, or a log whose planning target has been rewritten.
     """
     root = Path(dataset_root)
     plan = run_plan.plan_run_file(Path(plan_path))
-    if plan.plan != PLAN_NAME:
+    name = plan.plan if plan_name is None else plan_name
+    if plan.plan != name:
         raise SparseIngestError(
-            f"the plan at {plan_path} is {plan.plan!r}, this ingest describes "
-            f"{PLAN_NAME!r}"
+            f"the plan at {plan_path} is {plan.plan!r}, this ingest describes {name!r}"
         )
-    run = read_run_record(root)
+    run = read_run_record(root, plan_name=name)
     if str(run.get("plan") or "") != plan.plan:
         raise SparseIngestError(
             f"the pass record is for plan {run.get('plan')!r}, the plan file is "
@@ -1325,11 +1432,13 @@ def build_sparse_ingest(
         result = decode_point(root / binding.relative_path, binding)
         if isinstance(result, str):
             failed.append(binding.relative_path)
-            rows.append(failed_row(binding, result, plan.plan_fingerprint))
+            rows.append(
+                failed_row(binding, result, plan.plan_fingerprint, plan_name=name)
+            )
             continue
         require_reader_agrees_with_the_log(result)
         require_declared_settings(result)
-        require_retired_target(result)
+        require_retired_target(result, plan_name=name)
         decoded.append(result)
 
     # The two shared views are read off the decoded set, never declared: the window is
@@ -1352,6 +1461,7 @@ def build_sparse_ingest(
                     window(point.values, point.time_s, window_s).shape[0]
                 ),
                 plan_fingerprint=plan.plan_fingerprint,
+                plan_name=name,
             )
         )
     rows.sort(key=lambda row: (int(row["order"]), row["relative_path"]))
@@ -1433,6 +1543,7 @@ def write_sparse_ingest(
     report_dir: Path = REPORT_DIR,
     *,
     plan_path: Path = PLAN_PATH,
+    plan_name: str | None = None,
     analysis_commit: str | None = None,
 ) -> SparseIngest:
     """Build the ingest and write ``points.csv`` + ``qc-summary.json``.
@@ -1440,9 +1551,16 @@ def write_sparse_ingest(
     Both files are written as UTF-8 with LF endings and one trailing newline, so two
     runs on the same inputs and commit produce identical bytes. Nothing is written
     when the build refuses: a failed binding leaves no half-artefact behind.
+
+    ``plan_name`` names the pass record inside ``dataset_root`` and defaults to the
+    plan's own name, so the first pass's call is unchanged and a second pass writes its
+    own artifacts by naming its own root, plan and report directory.
     """
     ingest = build_sparse_ingest(
-        dataset_root, plan_path=plan_path, analysis_commit=analysis_commit
+        dataset_root,
+        plan_path=plan_path,
+        plan_name=plan_name,
+        analysis_commit=analysis_commit,
     )
     directory = Path(report_dir)
     directory.mkdir(parents=True, exist_ok=True)
