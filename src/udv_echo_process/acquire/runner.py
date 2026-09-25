@@ -1093,6 +1093,13 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
     word through ``acquire/verify.py`` — see :func:`_stored_emissions` — as
     independent corroboration of the record's own number. Neither reading decides
     anything here.
+
+    Word 27 is carried as the reader publishes it (``ChannelConfig.sampling_volume_index``)
+    on :attr:`~udv_echo_process.acquire.log.DecodedBlock.bandwidth_definition_index`: the
+    stored receiver-bandwidth-definition index, provenance for the point beside its burst
+    (plan §B6). It decides nothing — not a check, and explicitly **not** a length in
+    millimetres; the dialog's effective Sampling-volume statement is the job boundary's own
+    evidence.
     """
     name = Path(path).name
     streams = tuple(_read_bdd(Path(path)).recording.streams)
@@ -1141,6 +1148,12 @@ def _decode(path: Path, channel: int | None = None) -> DecodedBlock:
         "sound_speed_ms": config.sound_speed_ms,
         "prf_us": _period_us(config.pulse_repetition_freq_hz),
         "burst_length": config.burst_length,
+        # Word 27, the stored receiver-bandwidth-definition index, as the canonical
+        # reader publishes it: carried as provenance (plan §B6) and compared with
+        # nothing. No millimetre counterpart is derived from it — the dialog's effective
+        # Sampling-volume statement is the job boundary's evidence, and this record
+        # never turns the index into a length.
+        "bandwidth_definition_index": config.sampling_volume_index,
         "source_freq_khz": config.source_freq_khz,
         "size_bytes": Path(path).stat().st_size,
         # The window the file actually covers — the authority on how much observation
