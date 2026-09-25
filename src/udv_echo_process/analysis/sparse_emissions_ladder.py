@@ -42,14 +42,27 @@ two views that are kept apart:
 are never mixed:
 
 - a **depth-resolved** difference (a per-gate difference array, or extreme) is screened
-  against WP2's depth-resolved endpoint, 14.603 mm/s at 21.238 mm, which this module
-  **recomputes** from the four E20 runs;
+  against WP2's depth-resolved endpoint, which this module **recomputes** from the four
+  E20 runs: the largest absolute per-depth window-mean difference over their six ordered
+  pairs;
 - a **depth-averaged** difference (one unweighted mean over the supported gates) is
-  screened against WP2's depth-averaged endpoint, 4.235 mm/s, recomputed the same way and
-  the only one of the two that is like for like with WP1's per-job floors;
+  screened against WP2's depth-averaged endpoint, recomputed the same way and the only
+  one of the two that is like for like with WP1's per-job floors;
 - a row measured **inside one job** against its own two bracketing anchors is screened
-  against that job's own anchor spread from WP1 — 1.521 mm/s (emissions-8), 2.829
-  (emissions-64), 3.304 (emissions-128).
+  against that job's own anchor spread from WP1, rebuilt here from that job's three
+  block-local anchor controls.
+
+**The published side of every floor is read, never pinned.** Each of the five rows carries
+the number the pass's **own** WP1 and WP2 artefacts publish — ``anchor-floor.json`` and
+``reference-floor.json``, beside this slice's own files in the pass's report directory —
+at the three decimals those slices publish to.
+The plan fingerprint both documents state is checked against the pass's own plan and their
+own gate must have passed, so the two documents are this pass's own or the build refuses by
+name. A second sitting therefore screens against its own campaign: the first sitting's
+numbers (14.603 mm/s at 21.238 mm depth-resolved, 4.235 depth-averaged, 1.521 / 2.829 /
+3.304 mm/s for the emissions-8, -64 and -128 jobs) are its own, read from its artefacts like
+any other pass's, and are quoted here only because they are the readings this ladder was
+first read against.
 
 **The observation WP1 left here, and its correct reading.** ``e128`` sits **larger than**
 both of its bracketing anchors in the depth-averaged mean (+3.327 against ``ctrl-begin``,
@@ -203,27 +216,22 @@ DIFFERENCE_STEPS: tuple[tuple[str, str], ...] = (
 
 # ── the floors ─────────────────────────────────────────────────────────
 
-#: WP2's depth-resolved endpoint and the depth that realises it: the largest absolute
-#: per-depth window-mean difference over all six ordered pairs of the four reference
-#: runs. Recomputed here from those runs and checked against the published value.
-REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S = 14.603
-REFERENCE_DEPTH_RESOLVED_FLOOR_DEPTH_MM = 21.238
+#: The two sibling artefacts every pass's own floors are published in, beside this slice's
+#: own files in the pass's report directory: WP1's per-job anchor spreads and WP2's
+#: between-run reference floor's two endpoints. They are read, never pinned: what this
+#: slice screens with is the number the pass's own recordings produced, not the number the
+#: first sitting's did.
+ANCHOR_FLOOR_DOC = "anchor-floor.json"
+REFERENCE_FLOOR_DOC = "reference-floor.json"
+PUBLISHED_FLOOR_DOCUMENTS: tuple[str, ...] = (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC)
 
-#: WP2's depth-averaged endpoint: the largest absolute difference between the four runs'
-#: depth-averaged window means, the same reduction WP1's per-job floors use.
-REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S = 4.235
+#: The decimals WP1 and WP2 publish a floor to, which is what ``published_mm_s`` states:
+#: the artefact's own number at this precision (the committed first-pass artefact carries
+#: ``14.603`` beside its document's ``14.603170079597177``).
+PUBLISHED_FLOOR_DECIMALS = 3
 
-#: WP1's per-job anchor spreads of the depth-averaged window mean, for the three jobs
-#: that hold a scientific row of this ladder. A row inside its own job is screened
-#: against its own job's number, never against another job's.
-JOB_ANCHOR_FLOOR_MM_S: dict[str, float] = {
-    "emissions-8": 1.521,
-    "emissions-64": 2.829,
-    "emissions-128": 3.304,
-}
-
-#: The floors are published to three decimals by WP1/WP2; the recomputation here has to
-#: reproduce them within that rounding and no further.
+#: The recomputation here has to reproduce the pass's own published floor within that
+#: rounding and no further.
 FLOOR_PUBLISHED_TOLERANCE_MM_S = 1e-3
 
 # ── the temporal view ─────────────────────────────────────────────────
@@ -417,10 +425,11 @@ class BracketValue(ValueModel):
 class FloorBinding(ValueModel):
     """One floor this slice screens against, with its endpoint and where it applies.
 
-    ``published_mm_s`` is the value WP1/WP2 committed; ``recomputed_mm_s`` is the same
-    reduction rebuilt here from the recordings, so the screening number is checkable
-    rather than trusted. The two endpoints are distinct quantities and a comparison is
-    screened against exactly one of them.
+    ``published_mm_s`` is the value the pass's own WP1/WP2 artefacts state, read from them
+    for this pass; ``recomputed_mm_s`` is the same reduction rebuilt here from the
+    recordings, so the screening number is checkable rather than trusted. The two
+    endpoints are distinct quantities and a comparison is screened against exactly one of
+    them.
     """
 
     name: str
@@ -433,6 +442,42 @@ class FloorBinding(ValueModel):
     endpoint: str
     applies_to: str
     unit: str
+
+
+class PublishedFloor(ValueModel):
+    """One floor as one of this pass's own WP1/WP2 artefacts states it.
+
+    ``value_mm_s`` is the artefact's own number, read from it and never re-derived here;
+    ``published_mm_s`` is that number at the ``PUBLISHED_FLOOR_DECIMALS`` the floors are
+    published to, and it is the number this slice screens with. ``document`` names the
+    artefact the number came from, so every floor row can be traced to the slice that
+    measured it and to the pass that slice measured.
+    """
+
+    name: str
+    document: str
+    value_mm_s: float
+    published_mm_s: float
+    job: str | None = None
+    pair: tuple[str, str] | None = None
+    depth_mm: float | None = None
+
+
+class PublishedFloors(ValueModel):
+    """This pass's own published floors, read from its WP1 and WP2 artefacts.
+
+    ``plan_fingerprint`` is the pass identity both documents state, and both are checked
+    against: a document written by another sitting is refused by name rather than adopted,
+    which is what keeps a second pass from being screened against the first pass's
+    campaign.
+    """
+
+    plan_fingerprint: str
+    directory: str
+    documents: tuple[str, ...]
+    depth_resolved: PublishedFloor
+    depth_averaged: PublishedFloor
+    job_anchors: tuple[PublishedFloor, ...]
 
 
 class PredictionValue(ValueModel):
@@ -604,6 +649,7 @@ class EmissionsLadder(ValueModel):
     steps: tuple[StepValue, ...]
     brackets: tuple[BracketValue, ...]
     floors: tuple[FloorBinding, ...]
+    published_floors: PublishedFloors
     predictions: tuple[PredictionValue, ...]
     e128_observation: E128Observation
     depth_resolved: DepthResolved
@@ -1063,8 +1109,248 @@ def _anchor_spreads(
     return spreads
 
 
+# ── this pass's own published floors ───────────────────────────────────
+
+
+def _published_number(value: object, *, where: str) -> float:
+    """One number from a sibling artefact, refused by name when it is not one."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise EmissionsLadderError(f"{where} is not a number: {value!r}")
+    if not math.isfinite(float(value)):
+        raise EmissionsLadderError(f"{where} is not finite: {value!r}")
+    return float(value)
+
+
+def _published_pair(value: object, *, where: str) -> tuple[str, str] | None:
+    """The run pair a reference endpoint is realized by, as the artefact names it."""
+    if value is None:
+        return None
+    if (
+        isinstance(value, (list, tuple))
+        and len(value) == 2
+        and all(isinstance(item, str) for item in value)
+    ):
+        return (str(value[0]), str(value[1]))
+    raise EmissionsLadderError(f"{where} is not a pair of run labels: {value!r}")
+
+
+def _published_block(value: object, *, where: str) -> Mapping[str, object]:
+    """One nested block of a sibling artefact, refused by name when it is not one."""
+    if not isinstance(value, dict):
+        raise EmissionsLadderError(f"{where} is not a block: {value!r}")
+    return value
+
+
+def _published_floor(
+    name: str,
+    document: str,
+    *,
+    value_mm_s: float,
+    job: str | None = None,
+    pair: tuple[str, str] | None = None,
+    depth_mm: float | None = None,
+) -> PublishedFloor:
+    """One floor at the artefact's own precision and at the published one."""
+    return PublishedFloor(
+        name=name,
+        document=document,
+        value_mm_s=value_mm_s,
+        published_mm_s=round(value_mm_s, PUBLISHED_FLOOR_DECIMALS),
+        job=job,
+        pair=pair,
+        depth_mm=depth_mm,
+    )
+
+
+def _published_floor_directory(report_dir: Path, plan_name: str) -> Path:
+    """The directory this pass's WP1 and WP2 documents are read from: the report directory.
+
+    One rule, the same one WP3 applies: the floors a slice screens with are the ones
+    published beside the artefacts it is writing, read from the directory the caller named
+    and nowhere else. A run into a scratch directory is therefore *not* silently screened
+    against this pass's committed ``reports/<plan>`` copy — a substitution that would leave
+    the published floors of one directory deciding the outcome recorded in another — it
+    refuses and names the document that has to be there, which is exactly what a caller
+    who wants the committed numbers gets by naming that directory instead.
+
+    Neither copy could contribute another pass's numbers: the fingerprint check below is
+    what makes the documents the pass's own.
+    """
+    directory = Path(report_dir)
+    for name in PUBLISHED_FLOOR_DOCUMENTS:
+        if not (directory / name).is_file():
+            raise EmissionsLadderError(
+                f"{plan_name}'s {name} is missing under {directory.as_posix()!r}: this "
+                "slice screens each pass against that pass's own published floors, so it "
+                "reads WP1's and WP2's documents beside this run's artefacts and never "
+                "substitutes a number of its own"
+            )
+    return directory
+
+
+def _load_published_document(path: Path, plan_fingerprint: str) -> Mapping[str, object]:
+    """One sibling artefact, loaded and checked to be this pass's own and to have passed."""
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise EmissionsLadderError(f"{path.as_posix()} cannot be read: {exc}") from None
+    except ValueError as exc:
+        raise EmissionsLadderError(f"{path.as_posix()} is not JSON: {exc}") from None
+    if not isinstance(document, dict):
+        raise EmissionsLadderError(f"{path.as_posix()} is not a document")
+    stated = str(document.get("plan_fingerprint") or "")
+    if stated != plan_fingerprint:
+        raise EmissionsLadderError(
+            f"{path.as_posix()} states plan fingerprint {stated[:12]}..., this pass's plan "
+            f"hashes to {plan_fingerprint[:12]}...: the floors this slice screens with "
+            "must be this pass's own"
+        )
+    if document.get("ok") is not True:
+        raise EmissionsLadderError(
+            f"{path.as_posix()} states ok={document.get('ok')!r}: that slice's own gate "
+            "did not pass, so its floors are not numbers this one can screen with"
+        )
+    return document
+
+
+def read_published_floors(
+    report_dir: Path = REPORT_DIR,
+    *,
+    plan_name: str,
+    plan_fingerprint: str,
+) -> PublishedFloors:
+    """This pass's own WP1 and WP2 floors, read from the pass's committed artefacts.
+
+    ``plan_name`` and ``plan_fingerprint`` are the pass being measured, as the frozen WP0
+    ingest decodes them. The fingerprint is what both documents must state, so a document
+    written by another sitting is refused by name instead of adopted.
+
+    Raises:
+        EmissionsLadderError: when neither candidate directory holds both documents, when
+            either cannot be read, when either was written by another pass or states that
+            its own gate did not pass, when it does not state the floor in the statistic
+            this slice screens in, or when a floor it must carry is not there.
+    """
+    directory = _published_floor_directory(report_dir, plan_name)
+    anchors_path = directory / ANCHOR_FLOOR_DOC
+    reference_path = directory / REFERENCE_FLOOR_DOC
+    anchors = _load_published_document(anchors_path, plan_fingerprint)
+    reference = _load_published_document(reference_path, plan_fingerprint)
+
+    entries = anchors.get("jobs")
+    if not isinstance(entries, list):
+        raise EmissionsLadderError(
+            f"{anchors_path.as_posix()} states no jobs list: the per-job anchor spreads "
+            "this slice screens with are read from it"
+        )
+    job_anchors: list[PublishedFloor] = []
+    for index, entry in enumerate(entries):
+        where = f"{anchors_path.as_posix()}: jobs[{index}]"
+        block = _published_block(entry, where=where)
+        job = str(block.get("job") or "")
+        if not job:
+            raise EmissionsLadderError(f"{where} states no job name")
+        spread = _published_block(block.get("spread"), where=f"{where} 'spread'")
+        job_anchors.append(
+            _published_floor(
+                f"job_anchors_{job}",
+                ANCHOR_FLOOR_DOC,
+                value_mm_s=_published_number(
+                    spread.get(RESIDUAL_STATISTIC),
+                    where=f"{where}: spread[{RESIDUAL_STATISTIC!r}]",
+                ),
+                job=job,
+            )
+        )
+
+    floor = _published_block(reference.get("floor"), where=f"{reference_path}: 'floor'")
+    statistic = str(floor.get("statistic") or "")
+    if statistic != RESIDUAL_STATISTIC:
+        raise EmissionsLadderError(
+            f"{reference_path.as_posix()} states its reference floors in {statistic!r}, "
+            f"this slice screens in {RESIDUAL_STATISTIC!r}: the two numbers would not be "
+            "like for like"
+        )
+    resolved = _published_block(
+        floor.get("depth_resolved"), where=f"{reference_path}: floor.depth_resolved"
+    )
+    averaged = _published_block(
+        floor.get("depth_averaged"), where=f"{reference_path}: floor.depth_averaged"
+    )
+    return PublishedFloors(
+        plan_fingerprint=plan_fingerprint,
+        directory=directory.as_posix(),
+        documents=PUBLISHED_FLOOR_DOCUMENTS,
+        depth_resolved=_published_floor(
+            "reference_depth_resolved",
+            REFERENCE_FLOOR_DOC,
+            value_mm_s=_published_number(
+                resolved.get("value_mm_s"),
+                where=f"{reference_path}: floor.depth_resolved.value_mm_s",
+            ),
+            depth_mm=_published_number(
+                resolved.get("depth_mm"),
+                where=f"{reference_path}: floor.depth_resolved.depth_mm",
+            ),
+            pair=_published_pair(
+                resolved.get("pair"),
+                where=f"{reference_path}: floor.depth_resolved.pair",
+            ),
+        ),
+        depth_averaged=_published_floor(
+            "reference_depth_averaged",
+            REFERENCE_FLOOR_DOC,
+            value_mm_s=_published_number(
+                averaged.get("value_mm_s"),
+                where=f"{reference_path}: floor.depth_averaged.value_mm_s",
+            ),
+            pair=_published_pair(
+                averaged.get("pair"),
+                where=f"{reference_path}: floor.depth_averaged.pair",
+            ),
+        ),
+        job_anchors=tuple(job_anchors),
+    )
+
+
+def published_job_floor(published: PublishedFloors, job: str) -> PublishedFloor:
+    """This pass's own anchor spread for one job, by the job's name."""
+    for floor in published.job_anchors:
+        if floor.job == job:
+            return floor
+    raise EmissionsLadderError(
+        f"the pass's own {ANCHOR_FLOOR_DOC} carries no anchor spread for job {job!r}: it "
+        f"carries {sorted(str(floor.job) for floor in published.job_anchors)}"
+    )
+
+
+def science_jobs() -> tuple[str, ...]:
+    """The three jobs that hold this ladder's single-recording levels, in ladder order."""
+    return tuple(
+        SCIENTIFIC_SOURCES[level][1] for level in LEVEL_ORDER if level != E20_LEVEL
+    )
+
+
+def published_floor_for(
+    published: PublishedFloors, row: FloorBinding
+) -> PublishedFloor:
+    """This pass's own copy of one floor row, by the name the row carries."""
+    if row.name == "reference_depth_resolved":
+        return published.depth_resolved
+    if row.name == "reference_depth_averaged":
+        return published.depth_averaged
+    source = SCIENTIFIC_SOURCES.get(row.level or "")
+    if source is None:
+        raise EmissionsLadderError(
+            f"floor row {row.name!r} names no level of this ladder"
+        )
+    return published_job_floor(published, source[1])
+
+
 def _brackets(
-    decoded: PassDecoding, records: Mapping[str, tuple[_Record, ...]]
+    decoded: PassDecoding,
+    records: Mapping[str, tuple[_Record, ...]],
+    published: PublishedFloors,
 ) -> tuple[BracketValue, ...]:
     """Every single-recording level against each of its two bracketing anchors."""
     rows: list[BracketValue] = []
@@ -1094,7 +1380,9 @@ def _brackets(
                     knots_positive=int(np.count_nonzero(residual > 0.0)),
                     knots_negative=int(np.count_nonzero(residual < 0.0)),
                     gates=int(residual.size),
-                    job_anchor_floor_mm_s=JOB_ANCHOR_FLOOR_MM_S[job],
+                    job_anchor_floor_mm_s=published_job_floor(
+                        published, job
+                    ).published_mm_s,
                 )
             )
     return tuple(rows)
@@ -1208,15 +1496,20 @@ def _depth_resolved(
 
 
 def _floors(
-    records: Mapping[str, tuple[_Record, ...]], spreads: Mapping[str, float]
+    records: Mapping[str, tuple[_Record, ...]],
+    spreads: Mapping[str, float],
+    published: PublishedFloors,
 ) -> tuple[FloorBinding, ...]:
-    """The three floors this slice screens against, recomputed from the recordings.
+    """The five floors this slice screens against, recomputed from the recordings.
 
     The two reference endpoints are rebuilt from the four E20 runs: the largest absolute
     per-depth difference over their six ordered pairs (depth-resolved) and the largest
     absolute difference between their depth-averaged means (depth-averaged). The three
     per-job anchor floors are rebuilt from each emissions job's own three block-local
-    anchor controls, whose own per-gate ``mean`` profiles this slice reads.
+    anchor controls, whose own per-gate ``mean`` profiles this slice reads. Beside each
+    recomputation sits the number **this pass's own** WP1/WP2 artefacts publish for it,
+    read from those documents: the first sitting's numbers are not adopted here, and a
+    disagreement between the two sides is what the gate above reports.
     """
     runs = records[E20_LEVEL]
     blocks = [record.block for record in runs]
@@ -1236,7 +1529,7 @@ def _floors(
             name="reference_depth_resolved",
             level=None,
             statistic=RESIDUAL_STATISTIC,
-            published_mm_s=REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S,
+            published_mm_s=published.depth_resolved.published_mm_s,
             recomputed_mm_s=worst_abs,
             depth_mm=worst_depth,
             source=(
@@ -1255,7 +1548,7 @@ def _floors(
             name="reference_depth_averaged",
             level=None,
             statistic=RESIDUAL_STATISTIC,
-            published_mm_s=REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S,
+            published_mm_s=published.depth_averaged.published_mm_s,
             recomputed_mm_s=averaged,
             depth_mm=None,
             source=(
@@ -1285,7 +1578,7 @@ def _floors(
                 name=f"job_anchors_{level.lower()}",
                 level=level,
                 statistic=RESIDUAL_STATISTIC,
-                published_mm_s=JOB_ANCHOR_FLOOR_MM_S[job],
+                published_mm_s=published_job_floor(published, job).published_mm_s,
                 recomputed_mm_s=spreads[level],
                 depth_mm=None,
                 source=(
@@ -1353,6 +1646,7 @@ def _e128_observation(
     decoded: PassDecoding,
     records: Mapping[str, tuple[_Record, ...]],
     brackets: Sequence[BracketValue],
+    published: PublishedFloors,
 ) -> E128Observation:
     """WP1's ``e128`` finding, recomputed depth-resolved against both anchors."""
     record = records["E128"][0]
@@ -1366,8 +1660,10 @@ def _e128_observation(
     run_mid = _longest_positive_run(mid_curve, depths)
     ordered = np.sort(np.abs(begin_curve))[::-1]
     share = float(np.sum(ordered[:3]) / np.sum(ordered))
-    floor = JOB_ANCHOR_FLOOR_MM_S[str(record.point.binding.job.job)]
-    depth_floor = REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S
+    floor = published_job_floor(
+        published, str(record.point.binding.job.job)
+    ).published_mm_s
+    depth_floor = published.depth_resolved.published_mm_s
     return E128Observation(
         label=str(record.point.binding.point.label),
         job=str(record.point.binding.job.job),
@@ -1417,17 +1713,19 @@ def build_emissions_ladder(
     dataset_root: Path = DATASET_ROOT,
     *,
     plan_path: Path = PLAN_PATH,
+    report_dir: Path = REPORT_DIR,
     analysis_commit: str | None = None,
 ) -> EmissionsLadder:
     """The emissions ladder of the committed pass, or a refusal by name.
 
     Raises:
-        EmissionsLadderError: for anything the frozen WP0 ingest refuses, and for a
-            level whose recording is not the one the ladder declares, a record at
-            another condition, window or native grid than its level's, a record without
-            a usable stored per-profile time array, a job whose anchors do not bracket
-            its scientific row, or a recomputed floor that does not reproduce the
-            published one.
+        EmissionsLadderError: for anything the frozen WP0 ingest refuses — including the
+            two sibling artefacts this pass's own floors are published in, which must be
+            this pass's own and must have passed their own gate — and for a level whose
+            recording is not the one the ladder declares, a record at another condition,
+            window or native grid than its level's, a record without a usable stored
+            per-profile time array, a job whose anchors do not bracket its scientific row,
+            or a recomputed floor that does not reproduce the published one.
     """
     decoded = decode_pass(dataset_root, plan_path=plan_path)
     commit = analysis_commit if analysis_commit is not None else current_revision()
@@ -1435,15 +1733,20 @@ def build_emissions_ladder(
         raise EmissionsLadderError(
             "no generator revision: pass --analysis-commit or run from a checkout"
         )
+    published = read_published_floors(
+        report_dir,
+        plan_name=str(decoded.plan.plan),
+        plan_fingerprint=decoded.plan_fingerprint,
+    )
     records = _records(decoded)
     depths = records[LEVEL_ORDER[0]][0].depths
     spreads = _anchor_spreads(decoded, records)
 
-    brackets = _brackets(decoded, records)
+    brackets = _brackets(decoded, records, published)
     differences = _differences(records, depths)
     steps = _steps(differences)
-    floors = _floors(records, spreads)
-    e128 = _e128_observation(decoded, records, brackets)
+    floors = _floors(records, spreads, published)
+    e128 = _e128_observation(decoded, records, brackets, published)
     predictions = _predictions(records)
     levels = _level_values(records, spreads)
 
@@ -1457,6 +1760,7 @@ def build_emissions_ladder(
         brackets,
         floors,
         predictions,
+        published,
     )
     return EmissionsLadder(
         dataset_root=decoded.dataset_root.as_posix(),
@@ -1509,6 +1813,7 @@ def build_emissions_ladder(
         steps=steps,
         brackets=brackets,
         floors=floors,
+        published_floors=published,
         predictions=predictions,
         e128_observation=e128,
         depth_resolved=_depth_resolved(decoded, records, brackets, depths),
@@ -1678,6 +1983,7 @@ def _checks(
     brackets: Sequence[BracketValue],
     floors: Sequence[FloorBinding],
     predictions: Sequence[PredictionValue],
+    published: PublishedFloors,
 ) -> dict[str, bool]:
     """The WP4 gate: the structural facts that must hold before a level is published."""
     every = [row for level in LEVEL_ORDER for row in records[level]]
@@ -1840,7 +2146,8 @@ def _checks(
         "bracketing_is_recomputed_for_every_single_level": (
             len(brackets) == 2 * (len(LEVEL_ORDER) - 1)
             and all(
-                row.job_anchor_floor_mm_s == JOB_ANCHOR_FLOOR_MM_S[row.job]
+                row.job_anchor_floor_mm_s
+                == published_job_floor(published, row.job).published_mm_s
                 for row in brackets
             )
         ),
@@ -1852,6 +2159,11 @@ def _checks(
                 math.isfinite(floor.recomputed_mm_s)
                 and abs(floor.published_mm_s - floor.recomputed_mm_s)
                 <= FLOOR_PUBLISHED_TOLERANCE_MM_S
+                and floor.published_mm_s
+                == round(
+                    published_floor_for(published, floor).value_mm_s,
+                    PUBLISHED_FLOOR_DECIMALS,
+                )
                 for floor in floors
             )
         ),
@@ -2565,8 +2877,9 @@ def render_stability_figure(model: EmissionsLadder, path: Path) -> Path:
     The upper panel keeps every record visible — the four E20 runs individually, on
     purpose, with no averaged profile — and the lower one draws every consecutive-level
     difference with each step's own extreme marked and the two reference endpoints beside
-    them. The caption carries the statistics, the floors and the evidence caveat, so the
-    image alone cannot be read as a level effect.
+    them, at the values this pass's own artefacts publish. The caption carries the
+    statistics, the floors and the evidence caveat, so the image alone cannot be read as a
+    level effect.
     """
     import matplotlib
 
@@ -2574,6 +2887,11 @@ def render_stability_figure(model: EmissionsLadder, path: Path) -> Path:
     from matplotlib import pyplot as plt
 
     depths = np.asarray(model.depth_resolved.depths_mm, dtype=float)
+    published = model.published_floors
+    published_jobs = " / ".join(
+        f"{published_job_floor(published, job).published_mm_s:.3f}"
+        for job in science_jobs()
+    )
     figure, (levels, differences) = plt.subplots(
         2, 1, figsize=(7.6, 8.8), sharex=True, dpi=FIGURE_DPI
     )
@@ -2647,8 +2965,8 @@ def render_stability_figure(model: EmissionsLadder, path: Path) -> Path:
             zorder=5,
         )
     for value, name in (
-        (REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S, "WP2 depth-resolved floor"),
-        (REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S, "WP2 depth-averaged floor"),
+        (published.depth_resolved.published_mm_s, "WP2 depth-resolved floor"),
+        (published.depth_averaged.published_mm_s, "WP2 depth-averaged floor"),
     ):
         for sign in (-1.0, 1.0):
             differences.axvline(
@@ -2690,9 +3008,9 @@ def render_stability_figure(model: EmissionsLadder, path: Path) -> Path:
             f"floors: {_floors_caption(model)}. {statistics_line}. Depth-resolved steps: "
             f"{steps_line}. Evidence: E20 is four runs (cr1..cr4, spread "
             f"{next(level.stated_variation_mm_s for level in model.levels if level.level == 'E20'):.3f} "
-            "mm/s between them), while e8, e64 and e128 are one scientific recording each "
-            "inside their own job's three block-local anchors (spreads 1.521 / 2.829 / "
-            "3.304 mm/s). One realization per level: an observed difference is not "
+            f"mm/s between them), while e8, e64 and e128 are one scientific recording each "
+            f"inside their own job's three block-local anchors (spreads {published_jobs} "
+            "mm/s). One realization per level: an observed difference is not "
             "evidence that the emissions setting caused it, and a screening outcome "
             "neither proves an axis effect nor bounds drift."
         ),
@@ -2864,6 +3182,7 @@ def markdown_text(model: EmissionsLadder) -> str:
     records = {row.label: row for row in model.records}
     levels = {level.level: level for level in model.levels}
     e128 = model.e128_observation
+    published = model.published_floors
     rows = [
         [
             level.level,
@@ -3061,7 +3380,7 @@ Each step's own reduction, its extreme taken over every difference that realizes
 Two readings follow, and they are the ones the numbers support:
 
 1. **The depth-averaged steps, each read against the campaign's own between-run endpoint.**
-   The reference endpoint is {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s, and the three steps do
+   The reference endpoint is {published.depth_averaged.published_mm_s:.3f} mm/s, and the three steps do
    not sit with it in the same way:
    - *E8->E20*: the step's means span {model.steps[0].mean_difference_min_mm_s:+.3f} to
      {model.steps[0].mean_difference_max_mm_s:+.3f} mm/s (spread
@@ -3070,16 +3389,16 @@ Two readings follow, and they are the ones the numbers support:
      so **E8 sits inside the spread the four E20 runs show between themselves**.
    - *E20->E64*: the step's means span {model.steps[1].mean_difference_min_mm_s:+.3f} to
      {model.steps[1].mean_difference_max_mm_s:+.3f} mm/s. That span straddles the
-     {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s reference floor, so **some of the four E20
+     {published.depth_averaged.published_mm_s:.3f} mm/s reference floor, so **some of the four E20
      realizations put the difference above it and some below it**: which realization E20 is taken
      as decides the answer. E64 therefore reads as *suggestive against E20 and unresolved by this
      pass*, not as sitting inside the pass's baseline variation.
    - *E64->E128*: {model.steps[2].mean_difference_min_mm_s:+.3f} mm/s, which lies **within** the
-     {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s reference floor.
+     {published.depth_averaged.published_mm_s:.3f} mm/s reference floor.
    Screening outcomes, not proofs of an axis effect.
 2. **The per-gate extremes are the larger numbers, and they are what the depth-resolved
    endpoint screens.** The depth-resolved endpoint is
-   {REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S:.3f} mm/s at {REFERENCE_DEPTH_RESOLVED_FLOOR_DEPTH_MM:.3f} mm; the
+   {published.depth_resolved.published_mm_s:.3f} mm/s at {published.depth_resolved.depth_mm:.3f} mm; the
    step extremes reach {model.steps[0].extreme_abs_mm_s:.3f},
    {model.steps[1].extreme_abs_mm_s:.3f} and {model.steps[2].extreme_abs_mm_s:.3f} mm/s. A
    depth-averaged comparison hides local structure, which is why both views are published.
@@ -3122,7 +3441,7 @@ rather than far outside them ({e128.ratio_to_job_anchor_floor_vs_begin:.3f} and
 {e128.ratio_to_job_anchor_floor_vs_mid:.3f} of the emissions-128 job's own anchor spread of
 {e128.job_anchor_floor_mm_s:.3f} mm/s, and {e128.ratio_to_depth_resolved_floor_vs_begin:.3f} and
 {e128.ratio_to_depth_resolved_floor_vs_mid:.3f} of WP2's depth-resolved endpoint of
-{REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S:.3f} mm/s); and the emissions axis is one realization per
+{published.depth_resolved.published_mm_s:.3f} mm/s); and the emissions axis is one realization per
 level except at E20, so no count of profiles or gates makes the comparison replicated. It is
 an observation to carry forward, not a level effect.
 
@@ -3208,13 +3527,13 @@ slices published
 (tolerance {FLOOR_PUBLISHED_TOLERANCE_MM_S:g} mm/s). Three rules, never mixed:
 
 - a **per-gate difference array or its extreme** is screened against the depth-resolved
-  endpoint, {REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S:.3f} mm/s at
-  {REFERENCE_DEPTH_RESOLVED_FLOOR_DEPTH_MM:.3f} mm;
+  endpoint, {published.depth_resolved.published_mm_s:.3f} mm/s at
+  {published.depth_resolved.depth_mm:.3f} mm;
 - a **depth-averaged difference** (one unweighted mean over the supported gates) is screened
-  against the depth-averaged endpoint, {REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S:.3f} mm/s, which is
+  against the depth-averaged endpoint, {published.depth_averaged.published_mm_s:.3f} mm/s, which is
   the only endpoint like for like with WP1's per-job floors;
 - a **residual inside one job** is screened against that job's own anchor spread:
-  {" / ".join(f"{JOB_ANCHOR_FLOOR_MM_S[job]:.3f} mm/s ({job})" for job in sorted(JOB_ANCHOR_FLOOR_MM_S))}.
+  {" / ".join(f"{published_job_floor(published, job).published_mm_s:.3f} mm/s ({job})" for job in sorted(science_jobs()))}.
 
 All five are observed differences over a handful of recordings: they screen, they do not
 bound drift, and they are not confidence intervals.
@@ -3281,12 +3600,19 @@ def write_emissions_ladder(
 ) -> EmissionsLadder:
     """Build the ladder and write the table, the document, the markdown and two figures.
 
-    Every file is UTF-8 with LF endings and one trailing newline, so two runs on the same
-    inputs and revision produce identical bytes. Nothing is written when the build refuses:
-    a refused level leaves no half-artefact behind.
+    The pass's own WP1 and WP2 artefacts are read from ``report_dir`` for the published
+    side of every floor; when they are not there the build refuses and names the missing
+    document, because a floor read from another directory would let one directory's
+    published numbers decide the outcome recorded in another. Every file is UTF-8 with LF endings and one trailing newline, so two runs on the
+    same inputs and revision produce identical bytes. Nothing is written when the build
+    refuses: a refused level, or a report directory without this pass's own published
+    floors, leaves no half-artefact behind.
     """
     model = build_emissions_ladder(
-        dataset_root, plan_path=plan_path, analysis_commit=analysis_commit
+        dataset_root,
+        plan_path=plan_path,
+        report_dir=Path(report_dir),
+        analysis_commit=analysis_commit,
     )
     directory = Path(report_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -3313,9 +3639,12 @@ def emissions_ladder_main(argv: list[str] | None = None) -> int:
     decoding, measures the four levels' velocity-estimate stability on the pass's designed
     primary window and their temporal cost on the full retained record from each file's
     achieved timestamps, and writes ``emissions-ladder.csv``, ``emissions-ladder.json``,
-    ``emissions-ladder.md`` and the two figures into the report directory. It exits 0 when
-    every WP4 gate check holds and 1 otherwise, naming the failure; a pass the ingest
-    refuses exits 1 with the ingest's own reason and writes nothing.
+    ``emissions-ladder.md`` and the two figures into the report directory. The published
+    side of every floor is read from the pass's own ``anchor-floor.json`` and
+    ``reference-floor.json`` in the report directory, and never from a pinned copy of
+    another sitting's numbers. It
+    exits 0 when every WP4 gate check holds and 1 otherwise, naming the failure; a pass the
+    ingest refuses exits 1 with the ingest's own reason and writes nothing.
     """
     parser = argparse.ArgumentParser(
         prog="udv-sparse-emissions-ladder",
@@ -3337,7 +3666,12 @@ def emissions_ladder_main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--report-dir",
         default=REPORT_DIR.as_posix(),
-        help="directory to write emissions-ladder.{csv,json,md} into",
+        help=(
+            "directory to write emissions-ladder.{csv,json,md} into, and to read this "
+            "pass's own anchor-floor.json and reference-floor.json from: both must be "
+            "there, because the floors this slice screens with are the ones published "
+            "beside its own artefacts"
+        ),
     )
     parser.add_argument(
         "--analysis-commit",

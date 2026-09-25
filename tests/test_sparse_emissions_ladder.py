@@ -12,7 +12,9 @@ The tests pin the three things the WP4 request asked this slice to keep apart or
   cut by physical *duration* rather than by profile count;
 - **the floors are not mixed** — a per-gate difference is screened against WP2's
   depth-resolved endpoint, a depth-averaged difference against its depth-averaged endpoint,
-  and a residual inside one job against that job's own anchor spread.
+  and a residual inside one job against that job's own anchor spread, **each of them the
+  number the pass's own WP1 and WP2 artefacts publish** (``anchor-floor.json`` and
+  ``reference-floor.json``) rather than a copy of another sitting's.
 
 Everything is recomputed here from the committed recordings through the shared loader, and
 the request's expected achieved periods are asserted against the measurements rather than
@@ -25,6 +27,7 @@ import csv
 import json
 import math
 import shutil
+from collections.abc import Mapping
 from pathlib import Path
 
 import numpy as np
@@ -288,7 +291,8 @@ def test_the_single_levels_state_their_own_jobs_anchor_spread(ladder, decoded) -
             max(anchors) - min(anchors), rel=1e-12
         )
         assert level.stated_variation_mm_s == pytest.approx(
-            sel.JOB_ANCHOR_FLOOR_MM_S[job], abs=1e-3
+            sel.published_job_floor(ladder.published_floors, job).published_mm_s,
+            abs=1e-3,
         )
         assert level.stated_variation_kind.startswith("within-job")
 
@@ -417,7 +421,10 @@ def test_each_single_level_is_recomputed_against_both_bracketing_anchors(
             float(depths[worst]), rel=1e-12
         )
         assert row.knots_positive == int(np.count_nonzero(residual > 0.0))
-        assert row.job_anchor_floor_mm_s == sel.JOB_ANCHOR_FLOOR_MM_S[row.job]
+        assert (
+            row.job_anchor_floor_mm_s
+            == sel.published_job_floor(ladder.published_floors, row.job).published_mm_s
+        )
         assert "not a realization of the reference condition" in row.anchor_kind
         # the depth-resolved residual the figure and the document draw
         key = f"{row.label}_minus_{row.anchor.replace('-', '_')}"
@@ -482,13 +489,19 @@ def test_the_e128_observation_is_recomputed_depth_resolved(
     assert span_low <= published.extreme_vs_begin_depth_mm <= span_high
     assert published.top_three_knots_share_of_absolute_sum < 0.25
     # the floors it sits with, and the reading that keeps it non-causal
-    assert published.job_anchor_floor_mm_s == sel.JOB_ANCHOR_FLOOR_MM_S["emissions-128"]
+    assert (
+        published.job_anchor_floor_mm_s
+        == sel.published_job_floor(
+            ladder.published_floors, "emissions-128"
+        ).published_mm_s
+    )
     assert published.ratio_to_job_anchor_floor_vs_begin == pytest.approx(
         abs(published.residual_mean_vs_begin_mm_s) / published.job_anchor_floor_mm_s,
         rel=1e-12,
     )
     assert published.ratio_to_depth_resolved_floor_vs_begin == pytest.approx(
-        published.extreme_vs_begin_abs_mm_s / sel.REFERENCE_DEPTH_RESOLVED_FLOOR_MM_S,
+        published.extreme_vs_begin_abs_mm_s
+        / ladder.published_floors.depth_resolved.published_mm_s,
         rel=1e-12,
     )
     reading = document["e128_observation"]["reading"]
@@ -528,8 +541,9 @@ def test_the_floors_are_stated_with_both_endpoints_and_reproduced_by_this_build(
                 worst_depth = float(depths[gate])
     assert depth_resolved.recomputed_mm_s == pytest.approx(worst, rel=1e-12)
     assert depth_resolved.depth_mm == pytest.approx(worst_depth, rel=1e-12)
+    # the depth it recomputes is the depth this pass's own WP2 document states
     assert depth_resolved.depth_mm == pytest.approx(
-        sel.REFERENCE_DEPTH_RESOLVED_FLOOR_DEPTH_MM, abs=1e-3
+        ladder.published_floors.depth_resolved.depth_mm, abs=1e-3
     )
     for floor in ladder.floors:
         assert floor.published_mm_s == pytest.approx(
@@ -545,7 +559,8 @@ def test_the_floors_are_stated_with_both_endpoints_and_reproduced_by_this_build(
             if item.name == f"job_anchors_{level_name.lower()}"
         )
         assert floor.published_mm_s == pytest.approx(
-            sel.JOB_ANCHOR_FLOOR_MM_S[job], rel=1e-12
+            sel.published_job_floor(ladder.published_floors, job).published_mm_s,
+            rel=1e-12,
         )
         assert "inside one job" in floor.applies_to
 
@@ -556,6 +571,289 @@ def test_the_document_says_which_endpoint_applies_where(document) -> None:
     assert "depth-averaged endpoint" in rule
     assert "that job's own anchor spread" in rule
     assert "do not bound drift" in rule
+
+
+#: What a *different* sitting's artefacts would publish for this pass's own recordings: the
+#: number one thousandth off the recomputation, in the only direction the published rounding
+#: leaves room for — so every one of them varies with the pass, every one of them stays
+#: inside ``FLOOR_PUBLISHED_TOLERANCE_MM_S``, and every one of them differs from the number
+#: the committed first-pass artefact carries (14.603 / 4.235 / 1.521 / 2.829 / 3.304).
+OTHER_PASSES_PUBLISHED: dict[str, float] = {
+    "reference_depth_resolved": 14.604,
+    "reference_depth_averaged": 4.234,
+    "emissions-8": 1.522,
+    "emissions-64": 2.828,
+    "emissions-128": 3.305,
+}
+
+#: The two artefacts this pass's own floors are published in, named as WP1 and WP2 write
+#: them: stated independently here so that a test can build a report directory before the
+#: slice under test is asked anything.
+ANCHOR_FLOOR_DOC = "anchor-floor.json"
+REFERENCE_FLOOR_DOC = "reference-floor.json"
+
+#: The decimals WP1 and WP2 publish a floor to, stated independently here so that what this
+#: file expects is never read back out of the module it is testing.
+PUBLISHED_FLOOR_DECIMALS = 3
+
+#: The same floors, far enough away that no recomputation reproduces them: a document whose
+#: own gate passed but whose numbers are another campaign's. The offset is taken at the
+#: published precision, so what these stand for is exactly what the artefact would state.
+DISAGREEING_PUBLISHED: dict[str, float] = {
+    name: round(value + 0.5, PUBLISHED_FLOOR_DECIMALS)
+    for name, value in OTHER_PASSES_PUBLISHED.items()
+}
+
+
+def _re_published_artefacts(
+    tmp_path: Path,
+    published: Mapping[str, float] | None = None,
+    *,
+    fingerprint: str | None = None,
+    where: str = "reports",
+) -> Path:
+    """A report directory holding a re-published copy of this pass's WP1/WP2 documents.
+
+    The committed documents are copied beside each other with their floor numbers rewritten,
+    so a test can tell what the slice **adopts from them** apart from what it recomputes from
+    the recordings. ``fingerprint`` replaces the pass identity both documents state.
+    """
+    report = tmp_path / where
+    report.mkdir(parents=True, exist_ok=True)
+    anchors = json.loads(
+        (ROOT / REPORT_DIR / ANCHOR_FLOOR_DOC).read_text(encoding="utf-8")
+    )
+    reference = json.loads(
+        (ROOT / REPORT_DIR / REFERENCE_FLOOR_DOC).read_text(encoding="utf-8")
+    )
+    if published is not None:
+        for entry in anchors["jobs"]:
+            if entry["job"] in published:
+                entry["spread"][sel.RESIDUAL_STATISTIC] = published[entry["job"]]
+        reference["floor"]["depth_resolved"]["value_mm_s"] = published[
+            "reference_depth_resolved"
+        ]
+        reference["floor"]["depth_averaged"]["value_mm_s"] = published[
+            "reference_depth_averaged"
+        ]
+    if fingerprint is not None:
+        anchors["plan_fingerprint"] = fingerprint
+        reference["plan_fingerprint"] = fingerprint
+    for name, document in (
+        (ANCHOR_FLOOR_DOC, anchors),
+        (REFERENCE_FLOOR_DOC, reference),
+    ):
+        (report / name).write_text(
+            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+    return report
+
+
+def test_the_reader_keeps_the_artefacts_own_numbers_beside_the_published_ones(
+    decoded,
+) -> None:
+    """The numbers are the documents' own, at the decimals the floors publish to."""
+    floors = sel.read_published_floors(
+        plan_name=str(decoded.plan.plan), plan_fingerprint=decoded.plan_fingerprint
+    )
+    anchors = json.loads(
+        (ROOT / REPORT_DIR / ANCHOR_FLOOR_DOC).read_text(encoding="utf-8")
+    )["jobs"]
+    reference = json.loads(
+        (ROOT / REPORT_DIR / REFERENCE_FLOOR_DOC).read_text(encoding="utf-8")
+    )["floor"]
+    assert floors.directory == REPORT_DIR.as_posix()
+    assert sel.ANCHOR_FLOOR_DOC == ANCHOR_FLOOR_DOC
+    assert sel.REFERENCE_FLOOR_DOC == REFERENCE_FLOOR_DOC
+    assert sel.PUBLISHED_FLOOR_DECIMALS == PUBLISHED_FLOOR_DECIMALS
+    assert floors.documents == (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC)
+    assert floors.plan_fingerprint == decoded.plan_fingerprint
+    assert floors.depth_resolved.value_mm_s == reference["depth_resolved"]["value_mm_s"]
+    assert floors.depth_resolved.published_mm_s == round(
+        reference["depth_resolved"]["value_mm_s"], PUBLISHED_FLOOR_DECIMALS
+    )
+    assert floors.depth_resolved.pair == tuple(reference["depth_resolved"]["pair"])
+    assert floors.depth_resolved.depth_mm == reference["depth_resolved"]["depth_mm"]
+    assert floors.depth_averaged.value_mm_s == reference["depth_averaged"]["value_mm_s"]
+    assert floors.depth_averaged.pair == tuple(reference["depth_averaged"]["pair"])
+    assert {floor.job: floor.value_mm_s for floor in floors.job_anchors} == {
+        entry["job"]: entry["spread"][sel.RESIDUAL_STATISTIC] for entry in anchors
+    }
+    # the published column is the artefact's number at the published precision: the
+    # committed first-pass document carries 14.603170079597177 and publishes 14.603
+    assert floors.depth_resolved.value_mm_s != floors.depth_resolved.published_mm_s
+    assert floors.depth_resolved.published_mm_s == 14.603
+
+
+def test_the_published_floors_come_from_this_passes_own_artefacts(tmp_path) -> None:
+    """The five rows carry what this pass's own WP1/WP2 documents state, not a copy."""
+    report = _re_published_artefacts(tmp_path, OTHER_PASSES_PUBLISHED)
+    # the committed documents copied verbatim: the pass's own floors and nothing else
+    plain = _re_published_artefacts(tmp_path, where="plain")
+    for directory in (report, plain):
+        sel.write_emissions_ladder(
+            ROOT / DATASET_ROOT,
+            directory,
+            plan_path=ROOT / PLAN_PATH,
+            analysis_commit=COMMIT,
+        )
+    document = json.loads((report / sel.DOC_NAME).read_text(encoding="utf-8"))
+    committed = json.loads((plain / sel.DOC_NAME).read_text(encoding="utf-8"))
+    rows = {row["name"]: row for row in document["floors"]["bindings"]}
+    before = {row["name"]: row for row in committed["floors"]["bindings"]}
+    assert rows["reference_depth_resolved"]["published_mm_s"] == 14.604
+    assert rows["reference_depth_averaged"]["published_mm_s"] == 4.234
+    for level_name, (_, job) in SINGLE.items():
+        name = f"job_anchors_{level_name.lower()}"
+        assert rows[name]["published_mm_s"] == OTHER_PASSES_PUBLISHED[job]
+        assert rows[name]["published_mm_s"] != before[name]["published_mm_s"]
+    # the recomputation beside them is still this pass's own recordings
+    assert [row["recomputed_mm_s"] for row in document["floors"]["bindings"]] == [
+        row["recomputed_mm_s"] for row in committed["floors"]["bindings"]
+    ]
+    # and the adopted numbers are the ones the reading, the table and the prose carry
+    assert document["e128_observation"]["job_anchor_floor_mm_s"] == 3.305
+    table = (report / sel.CSV_NAME).read_text(encoding="utf-8")
+    brackets = csv.DictReader(table.split("\n\n")[2].splitlines())
+    assert {
+        row["job_anchor_floor_mm_s"] for row in brackets if row["level"] == "E8"
+    } == {"1.522"}
+    markdown = (report / sel.MD_NAME).read_text(encoding="utf-8")
+    assert "14.604 mm/s at" in markdown
+    assert "3.305 mm/s (emissions-128)" in markdown
+    # every one of them is inside the published rounding, so the gate still holds
+    assert (
+        document["checks"]["floors_are_stated_with_both_endpoints_and_reproduce"]
+        is True
+    )
+    assert document["ok"] is True
+
+
+def test_the_command_publishes_this_passes_own_floors(tmp_path) -> None:
+    """The written document carries the pass's own published numbers, not this module's."""
+    report = _re_published_artefacts(tmp_path, OTHER_PASSES_PUBLISHED)
+    with pytest.raises(SystemExit) as accepted:
+        sel.emissions_ladder_main(
+            [
+                "--dataset-root",
+                (ROOT / DATASET_ROOT).as_posix(),
+                "--plan-path",
+                (ROOT / PLAN_PATH).as_posix(),
+                "--report-dir",
+                str(report),
+                "--analysis-commit",
+                COMMIT,
+            ]
+        )
+    assert accepted.value.code == 0
+    document = json.loads((report / sel.DOC_NAME).read_text(encoding="utf-8"))
+    published = {
+        row["name"]: row["published_mm_s"] for row in document["floors"]["bindings"]
+    }
+    assert published["reference_depth_resolved"] == 14.604
+    assert published["reference_depth_averaged"] == 4.234
+    assert published["job_anchors_e8"] == 1.522
+    assert published["job_anchors_e64"] == 2.828
+    assert published["job_anchors_e128"] == 3.305
+    assert document["ok"] is True
+
+
+def test_a_published_floor_the_recordings_do_not_reproduce_fails_the_gate(
+    tmp_path, capsys
+) -> None:
+    """A document that disagrees with the recordings is published as a disagreement."""
+    report = _re_published_artefacts(tmp_path, DISAGREEING_PUBLISHED)
+    with pytest.raises(SystemExit) as refused:
+        sel.emissions_ladder_main(
+            [
+                "--dataset-root",
+                (ROOT / DATASET_ROOT).as_posix(),
+                "--plan-path",
+                (ROOT / PLAN_PATH).as_posix(),
+                "--report-dir",
+                str(report),
+                "--analysis-commit",
+                COMMIT,
+            ]
+        )
+    assert refused.value.code == 1
+    assert "floors_are_stated_with_both_endpoints_and_reproduce" in (
+        capsys.readouterr().err
+    )
+    document = json.loads((report / sel.DOC_NAME).read_text(encoding="utf-8"))
+    assert [row["published_mm_s"] for row in document["floors"]["bindings"]] == [
+        DISAGREEING_PUBLISHED["reference_depth_resolved"],
+        DISAGREEING_PUBLISHED["reference_depth_averaged"],
+        DISAGREEING_PUBLISHED["emissions-8"],
+        DISAGREEING_PUBLISHED["emissions-64"],
+        DISAGREEING_PUBLISHED["emissions-128"],
+    ]
+    assert (
+        document["checks"]["floors_are_stated_with_both_endpoints_and_reproduce"]
+        is False
+    )
+    assert document["ok"] is False
+
+
+def test_another_passes_published_floors_are_refused_by_name(tmp_path) -> None:
+    """A document another sitting wrote is refused, never adopted."""
+    report = _re_published_artefacts(tmp_path, fingerprint="0" * 64)
+    with pytest.raises(SystemExit) as refused:
+        sel.emissions_ladder_main(
+            [
+                "--dataset-root",
+                (ROOT / DATASET_ROOT).as_posix(),
+                "--plan-path",
+                (ROOT / PLAN_PATH).as_posix(),
+                "--report-dir",
+                str(report),
+                "--analysis-commit",
+                COMMIT,
+            ]
+        )
+    assert refused.value.code == 1
+    assert not (report / sel.CSV_NAME).exists()
+    assert not (report / sel.DOC_NAME).exists()
+    with pytest.raises(sel.EmissionsLadderError, match="must be this pass's own"):
+        sel.build_emissions_ladder(report_dir=report, analysis_commit=COMMIT)
+
+
+def test_a_report_directory_without_this_passes_floors_is_refused_by_name(
+    tmp_path,
+) -> None:
+    """The pass's own numbers are required, not defaulted to and not invented.
+
+    No fallback reaches into the pass's committed directory: a run that writes elsewhere
+    and finds no floors there refuses, so the numbers recorded in one directory can never
+    be the ones that decided another directory's outcome.
+    """
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(SystemExit) as refused:
+        sel.emissions_ladder_main(
+            [
+                "--dataset-root",
+                (ROOT / DATASET_ROOT).as_posix(),
+                "--plan-path",
+                (ROOT / PLAN_PATH).as_posix(),
+                "--report-dir",
+                str(empty),
+                "--analysis-commit",
+                COMMIT,
+            ]
+        )
+    assert refused.value.code == 1
+    assert not (empty / sel.CSV_NAME).exists()
+    with pytest.raises(sel.EmissionsLadderError, match="anchor-floor.json is missing"):
+        sel.build_emissions_ladder(report_dir=empty, analysis_commit=COMMIT)
+    # one of the two documents is not enough either
+    half = tmp_path / "half"
+    half.mkdir()
+    shutil.copyfile(ROOT / REPORT_DIR / ANCHOR_FLOOR_DOC, half / ANCHOR_FLOOR_DOC)
+    with pytest.raises(
+        sel.EmissionsLadderError, match="reference-floor.json is missing"
+    ):
+        sel.build_emissions_ladder(report_dir=half, analysis_commit=COMMIT)
 
 
 # ── the temporal view: the achieved grid, from the stored timestamps ──
@@ -859,8 +1157,8 @@ def test_the_markdown_prose_carries_the_reading_and_the_caveats(ladder) -> None:
 def test_the_command_writes_the_same_bytes_twice_including_both_figures(
     tmp_path,
 ) -> None:
-    first = tmp_path / "a"
-    second = tmp_path / "b"
+    first = _re_published_artefacts(tmp_path, where="a")
+    second = _re_published_artefacts(tmp_path, where="b")
     for directory in (first, second):
         sel.write_emissions_ladder(
             ROOT / DATASET_ROOT,
@@ -891,6 +1189,8 @@ def test_the_committed_artefacts_are_reproducible_with_the_recorded_revision(
         "analysis_commit"
     ]
     assert recorded
+    for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
+        shutil.copyfile(ROOT / REPORT_DIR / name, tmp_path / name)
     sel.write_emissions_ladder(
         DATASET_ROOT,
         tmp_path,
@@ -973,6 +1273,10 @@ def test_a_broken_dataset_is_refused_and_writes_no_half_artefact(tmp_path) -> No
 def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_root(
     tmp_path, capsys
 ) -> None:
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
+        shutil.copyfile(ROOT / REPORT_DIR / name, reports / name)
     with pytest.raises(SystemExit) as accepted:
         sel.emissions_ladder_main(
             [
@@ -1026,7 +1330,7 @@ def test_the_e20_to_e64_step_is_reported_as_straddling_the_floor(ladder) -> None
     """The review's defect: a 6.405 mm/s span was called smaller than 4.235 mm/s."""
     step = ladder.steps[1]
     assert abs(step.mean_difference_min_mm_s) > 4.235  # the number the report denied
-    floor = sel.REFERENCE_DEPTH_AVERAGED_FLOOR_MM_S
+    floor = ladder.published_floors.depth_averaged.published_mm_s
     assert abs(step.mean_difference_min_mm_s) > floor
     assert abs(step.mean_difference_max_mm_s) < floor
 
@@ -1047,7 +1351,8 @@ def test_the_intercept_is_named_and_decomposed_not_called_the_transfer_term(
     """The review's defect: the fixed intercept was labelled the transfer term."""
     rows = ladder.temporal
     assert all(
-        row.fixed_overhead_s == pytest.approx(row.achieved_period_s - row.emissions_times_prf_s)
+        row.fixed_overhead_s
+        == pytest.approx(row.achieved_period_s - row.emissions_times_prf_s)
         for row in rows
     )
     assert all(row.internal_emission_s == pytest.approx(16 * 600e-6) for row in rows)
