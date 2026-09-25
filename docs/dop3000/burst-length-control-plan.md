@@ -308,16 +308,12 @@ the manual step disappears without changing the campaign model.
 > only after the runner has returned, so an invocation that performs a **verified** transition and is
 > *then* refused — by the compile (step 5) or by the resume's identity comparison (step 6, whose
 > refusal the run's own message scopes to "no point of this job was run and nothing was stored") —
-> raises before `write_manifest` and persists **no new job manifest**. The instrument *was* moved and
-> that write is real, but it is not in the record: the next invocation's accumulation reads the
-> *earlier* manifest, not the refused one, so the refused invocation's transition is not recovered
-> into `burst_transitions` either. Nothing here claims the run's `notes` are durable — they go to a
-> caller-supplied list and whether any of it is written down, and kept, is a property of the CLI's
-> log path that has not been established — and a driver-level log or capture is likewise unproven as
-> a durable place for it. So: a pre-record refusal after a verified burst write leaves the burst
-> moved with no durable job-manifest trace of the move. Closing that gap (a manifest written on the
-> refusal path, or a write-ahead note beside the log) is a **separate decision**, not something this
-> slice redesigned; until it is taken, the limitation is stated rather than papered over.
+> raises before `write_manifest` and persists **no new job manifest**. The next invocation's
+> accumulation reads the *earlier* manifest rather than the refused one, so the burst is left moved
+> with no durable trace of the move. This is a **general acquisition transaction/audit** question and
+> not a part of this slice: the gap with `file:line` evidence, the design options and the recommended
+> one are [`failed-invocation-provenance.md`](failed-invocation-provenance.md). Until that separate
+> decision lands, the limitation is stated rather than papered over.
 
 **B6 — stored-artifact verification** *(after B4 and B5)*
 
