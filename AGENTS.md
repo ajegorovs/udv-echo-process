@@ -58,7 +58,7 @@ in the Wolfram folder" as the roadmap.
 - Python: **≥3.14** (pinned via `.python-version`).
 - Runtime deps: numpy, matplotlib, plotly, pydantic. The optional `marimo`
   extra installs `marimo[recommended]>=0.24.0,<0.25` plus
-  `marimo-inspect` from git tag `v0.3.0`; enable it only for live notebook/MCP
+  `marimo-inspect` from git tag `v0.3.3`; enable it only for live notebook/MCP
   work. The optional `acquire` extra carries the instrument path: `pywin32`
   (Windows-only, behind a `sys_platform` marker) and `pillow` (cross-platform —
   the capture probes and the `tools/ui/` crop tooling both need it, and the crop

@@ -9,7 +9,7 @@ agreement, implemented once.
 It adds no science and no artefact. It reuses, unchanged:
 
 - :mod:`udv_echo_process.analysis.sparse_inventory` — the frozen WP0 module's public
-  binding and decoding (:func:`~sparse_inventory.read_run_record`,
+  binding and decoding (:func:`~sparse_inventory.identify_pass`,
   :func:`~sparse_inventory.read_job_records`, :func:`~sparse_inventory.bind_recordings`,
   :func:`~sparse_inventory.decode_point`, :func:`~sparse_inventory.common_window_s`)
   and its three refusals per point (the acquisition layer's own decode, the declared
@@ -36,7 +36,6 @@ from typing import NamedTuple
 
 import numpy as np
 
-from udv_echo_process.acquire import run_plan
 from udv_echo_process.analysis._native_grid import (
     common_support,
     in_support,
@@ -45,7 +44,6 @@ from udv_echo_process.analysis._native_grid import (
 from udv_echo_process.analysis.reference_repeat import gate_metrics
 from udv_echo_process.analysis.sparse_inventory import (
     DATASET_ROOT,
-    PLAN_NAME,
     PLAN_PATH,
     DecodedPoint,
     PlannedJobRecord,
@@ -53,8 +51,11 @@ from udv_echo_process.analysis.sparse_inventory import (
     bind_recordings,
     common_window_s,
     decode_point,
+    identify_pass,
     read_job_records,
-    read_run_record,
+    require_declared_settings,
+    require_reader_agrees_with_the_log,
+    require_retired_target,
 )
 
 #: The pass's five scientific jobs and the four reference jobs, as the plan names
@@ -118,24 +119,27 @@ def decode_pass(
     dataset_root: Path = DATASET_ROOT,
     *,
     plan_path: Path = PLAN_PATH,
-    plan_name: str = PLAN_NAME,
+    plan_name: str | None = None,
 ) -> PassDecoding:
     """Bind and decode every committed recording of the pass, or refuse by name.
 
-    ``plan_name`` names the pass record inside the dataset root and defaults to this
-    pass's own, so a later pass reuses this loader (and every refusal below) unchanged.
+    ``plan_name`` names the pass record inside the dataset root and defaults to the plan's
+    own name, so a later pass reuses this loader (and every refusal below) unchanged.
 
     Raises:
-        SparseIngestError: for any condition the frozen WP0 ingest refuses — a pass
-            record or plan the dataset does not answer to, a recording no planned
-            point claims (or the reverse), a decode that disagrees with the
-            acquisition layer's own, a stored word that is not the declared setting,
-            or a log whose retired target has been rewritten. Measuring a point the
-            table refused is the one thing a slice may not do.
+        SparseIngestError: for any condition the frozen WP0 ingest refuses — a pass whose
+            plan, record and fingerprint do not agree (the same pass-level identity check
+            ``build_sparse_ingest`` runs, taken from the shared ``identify_pass``), a
+            recording no planned point claims (or the reverse), a decode that disagrees with
+            the acquisition layer's own, a stored word that is not the declared setting, or a
+            log whose planned target has been rewritten. Measuring a point the table refused
+            is the one thing a slice may not do.
     """
     root = Path(dataset_root)
-    plan = run_plan.plan_run_file(Path(plan_path))
-    run = read_run_record(root, plan_name=plan_name)
+    # The pass's whole identity, from the same helper the ingest takes it from: this
+    # loader must not be able to decode a pass combination the frozen table would refuse,
+    # because a notebook holding the recordings directly is now a primary reader.
+    plan, run, name = identify_pass(root, plan_path=plan_path, plan_name=plan_name)
     records = read_job_records(root, plan, run)
     bindings = bind_recordings(root, records)
 
@@ -147,6 +151,9 @@ def decode_pass(
                 f"{binding.relative_path}: the frozen ingest reports a decode failure "
                 f"({result}); this slice measures only points the table accepted"
             )
+        require_reader_agrees_with_the_log(result)
+        require_declared_settings(result)
+        require_retired_target(result, plan_name=name)
         points.append(result)
 
     # The binding walk returns the recordings in discovery order; the pass's own order
