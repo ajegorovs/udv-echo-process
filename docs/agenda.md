@@ -278,10 +278,19 @@ invocation's write is absent from `burst_transitions`. This is a general acquisi
 transaction/audit gap, not a word-8/word-27 interpretation question, so it stays its own item
 rather than being folded into B6.
 
-**Next:** B6 promotes stored word 8 as a strict burst oracle and treats word 27 as a stored
-bandwidth-definition covariate, not an effective-mm oracle; the dialog's effective-mm readback
-stays a dependent covariate, never inferred from word 27 and never written. A second hidden
-dependent effect in a live run stops the campaign. Authority:
+**B6 stored-artifact verification is proposed on `acquire/b6-stored-burst-verification`
+(PR pending review).** Stored word 8 is compared with the
+requested burst on **every** verification, so a burst mismatch invalidates the point and no
+caller's covariate switch can skip it; stored word 27 is carried as the
+receiver-bandwidth-definition index on the verification facts and the point record, compared
+with nothing, with no millimetre derivation and never written. The 16 committed B4/B5
+recordings pin it: index `1` throughout while word 8 reads `4/10/18` and the dialog's effective
+Sampling volume read `1.776/1.850/3.330` mm, so the withdrawn `word 27 == the index the
+displayed mm implies` criterion is refuted by the bytes. That readback stays a dependent
+covariate, never inferred from word 27 and never written. **Still open:** which bandwidth
+another selection stores (no committed evidence moves the field off `1`), any index-to-mm
+relation (none reviewed), and a second hidden dependent effect in a live run, which still
+stops the campaign. Authority:
 [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
 
 **The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**
