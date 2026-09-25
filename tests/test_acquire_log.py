@@ -23,18 +23,26 @@ from pathlib import Path
 
 import pytest
 
+from udv_echo_process.acquire.actuator import (
+    BurstState,
+    BurstWriteResult,
+    ComboReading,
+)
 from udv_echo_process.acquire.config import (
     ParameterSet,
     ProfileTiming,
     RecordSettings,
 )
 from udv_echo_process.acquire.log import (
+    KNOWN_RECORD_TYPES,
     DecodedBlock,
     PointStatus,
     SizeSignature,
+    SweepBurstMutation,
     SweepLogHeader,
     SweepPointRecord,
     append_entry,
+    burst_mutations,
     point_names,
     point_records,
     read_entries,
@@ -501,3 +509,181 @@ def test_the_window_and_the_interval_are_two_views_of_one_measurement() -> None:
     # The diagnostic is not the period: this record's median differs from its interval.
     assert decoded.median_interval_s != decoded.achieved_period_s
     assert decoded.interval_deviation is not None and decoded.interval_deviation > 0
+
+
+# ------------------------------- the job boundary's own record (a verified burst mutation)
+#
+# The boundary's write (`campaign._transit_burst_length`) is real the moment the application
+# accepts it, while the manifest that used to be its only record is written at the *end* of the
+# invocation — so an invocation refused in between (a compile refusal, a resume-identity refusal)
+# lost the record of a mutation that happened. The log is append-only and already per-job, so the
+# verified transition is appended there at the boundary (docs/dop3000/failed-invocation-provenance.md
+# §O4/§5.1). These cases pin the record itself: what it carries, that it is an *occurrence* and
+# never a content key, that every existing reader of the union ignores it, and that a type this
+# build does not know refuses the whole log instead of being read past.
+
+
+def _transition(*, before: str = "10", requested: int = 18) -> BurstWriteResult:
+    """One verified transition's evidence, as the driver returns it."""
+    return BurstWriteResult(
+        requested_burst=requested,
+        state=BurstState.VERIFIED,
+        channel="1",
+        before_burst=ComboReading(text=before),
+        after_burst=ComboReading(text=str(requested)),
+        after_sampling_volume=ComboReading(text="1.460"),
+    )
+
+
+def _mutation(**overrides: object) -> SweepBurstMutation:
+    """One burst-mutation record, written the way the job boundary appends it."""
+    fields: dict[str, object] = {
+        "mutation_id": "9f2c1a4e5b6d708192a3b4c5d6e7f809",
+        "occurred_at": datetime(2026, 9, 25, 11, 59, 30, tzinfo=UTC),
+        "job": "test-single-channel",
+        "fingerprint": "a" * 64,
+        "routed_channel": 1,
+        "transition": _transition(),
+    }
+    fields.update(overrides)
+    return SweepBurstMutation(**fields)  # type: ignore[arg-type]
+
+
+def test_a_burst_mutation_round_trips_through_the_log(tmp_path: Path) -> None:
+    """The write's evidence survives the file — request, state and both rows on both sides.
+
+    The record is the durable half of the mutation, so it carries the driver's own
+    :class:`BurstWriteResult` rather than a boolean: a later reader has to be able to say *what*
+    the boundary wrote and what the application answered, with no instrument in front of them.
+    """
+    path = tmp_path / "job.jsonl"
+    entry = _mutation()
+    append_entry(path, _header())
+    append_entry(path, entry)
+
+    entries = read_entries(path)
+    assert len(entries) == 2
+    assert isinstance(entries[1], SweepBurstMutation)
+    read_back = entries[1]
+    assert read_back == entry
+    assert read_back.mutation_id == "9f2c1a4e5b6d708192a3b4c5d6e7f809"
+    assert read_back.occurred_at == datetime(2026, 9, 25, 11, 59, 30, tzinfo=UTC)
+    assert read_back.job == "test-single-channel"
+    assert read_back.fingerprint == "a" * 64
+    assert read_back.routed_channel == 1
+    assert read_back.transition == entry.transition
+    assert read_back.transition.verified_burst == 18
+    assert read_back.transition.state is BurstState.VERIFIED
+    assert read_back.transition.before_burst is not None
+    assert read_back.transition.before_burst.text == "10"
+    lines = path.read_text(encoding="utf-8").splitlines()
+    assert json.loads(lines[1])["record_type"] == "burst_mutation"
+
+
+def test_two_identical_mutations_are_two_records_and_are_not_collapsed() -> None:
+    """The occurrence is the record's own ``mutation_id``, minted per append — never its content.
+
+    ``10 -> 18`` twice is one content and **two** events, and the identity in the log has to
+    survive that: a reader keyed on the transition's content would fold the second write into the
+    first and lose a real mutation.
+    """
+    first = _mutation(mutation_id="0" * 32)
+    second = _mutation(
+        mutation_id="1" * 32, occurred_at=datetime(2026, 9, 25, 12, 5, tzinfo=UTC)
+    )
+
+    assert first.transition == second.transition, "the premise: the two writes are identical"
+    assert first.mutation_id != second.mutation_id
+    assert first.occurred_at < second.occurred_at, "elapsed time is what orders them"
+    assert first != second
+
+
+def test_a_burst_mutation_needs_an_occurrence_identity() -> None:
+    """``mutation_id`` is the identity, so an empty one is not a record of an event."""
+    with pytest.raises(ValueError):
+        _mutation(mutation_id="")
+
+
+def test_point_records_and_names_ignore_a_burst_mutation(tmp_path: Path) -> None:
+    """Every existing reader of the union has to ignore the new member, untouched.
+
+    ``point_records`` and ``point_names`` are the resume's own inputs
+    (``campaign.recorded_points`` reads them), and a mutation record is neither a point nor a
+    name — the log's readers gain a type, not a behaviour.
+    """
+    path = tmp_path / "job.jsonl"
+    record = _record(key=1, name="sw100-k1-161738")
+    append_entry(path, _header())
+    append_entry(path, _mutation())
+    append_entry(path, record)
+
+    entries = read_entries(path)
+    assert len(entries) == 3
+    assert point_records(entries) == (record,)
+    assert point_names(entries) == frozenset({"sw100-k1-161738"})
+    assert burst_mutations(entries) == (_mutation(),)
+    assert point_records(burst_mutations(entries)) == ()
+
+
+def test_a_record_type_the_build_does_not_know_refuses_the_log(tmp_path: Path) -> None:
+    """An unknown entry type is a refusal, not a line to read past — the chosen policy.
+
+    Acquisition logs are forward-schema: a newer build may write an entry this one cannot
+    understand, and an older checkout that *skipped* it while resuming would answer questions
+    about a history it had silently shortened (a mutation above all). So the whole log is
+    refused, and the refusal names the file, the line and the type it declared.
+    """
+    path = tmp_path / "job.jsonl"
+    append_entry(path, _header())
+    append_entry(path, _mutation())
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write('{"record_type": "burst_mutation_v2", "mutation_id": "x"}\n')
+    append_entry(path, _record())
+
+    with pytest.raises(ValueError) as excinfo:
+        read_entries(path)
+
+    message = str(excinfo.value)
+    assert "burst_mutation_v2" in message, message
+    assert "line 3" in message, message
+    assert path.name in message, message
+    # ... and the refusal says which types *are* known, so an operator can tell an unknown record
+    # from a damaged one.
+    assert all(record_type in message for record_type in KNOWN_RECORD_TYPES), message
+
+
+def test_a_damaged_record_of_a_known_type_refuses_the_log_too(tmp_path: Path) -> None:
+    """A known type is not read *partially* either: a body that cannot be parsed refuses the log."""
+    path = tmp_path / "job.jsonl"
+    path.write_text('{"record_type": "burst_mutation", "mutation_id": "x"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError) as excinfo:
+        read_entries(path)
+
+    message = str(excinfo.value)
+    assert "burst_mutation" in message, message
+    assert "line 1" in message, message
+
+
+def test_a_line_that_is_not_a_record_at_all_refuses_the_log(tmp_path: Path) -> None:
+    """Neither a non-object JSON line nor a non-JSON line is read past — both refuse the log."""
+    path = tmp_path / "job.jsonl"
+    path.write_text('"just a string"\n', encoding="utf-8")
+    with pytest.raises(TypeError) as excinfo:
+        read_entries(path)
+    assert "line 1" in str(excinfo.value), excinfo.value
+
+    path.write_text("not json at all\n", encoding="utf-8")
+    with pytest.raises(ValueError) as excinfo:
+        read_entries(path)
+    assert "line 1" in str(excinfo.value), excinfo.value
+
+
+def test_the_known_types_are_the_ones_the_models_declare() -> None:
+    """The known list is the union's own, so a member added without it would refuse a valid log."""
+    declared = {
+        SweepLogHeader.model_fields["record_type"].default,
+        SweepPointRecord.model_fields["record_type"].default,
+        SweepBurstMutation.model_fields["record_type"].default,
+    }
+    assert declared == set(KNOWN_RECORD_TYPES)
