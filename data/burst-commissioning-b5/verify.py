@@ -1,4 +1,15 @@
-"""Recheck the portable B5 commissioning evidence, without instrument access."""
+"""Recheck the portable B5 commissioning evidence, without instrument access.
+
+What this re-derives from the committed files: the plan's own fingerprint, each
+executed job's definition fingerprint and point list, every recording's SHA-256,
+its stored operation words, and its decoded configuration.
+
+What it cannot re-derive: the dialog transition objects and the compilation
+identities. Their inputs are the runtime manifests and logs, which stay local
+(they carry absolute machine paths), so ``manifest.json`` is a derived summary
+and is checked here against the expectations written into this file and against
+the committed plan.
+"""
 
 from __future__ import annotations
 
@@ -6,6 +17,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from udv_echo_process.acquire.run_plan import plan_run_file
 from udv_echo_process.acquire.verify import read_words
 from udv_echo_process.io.dop.bdd import read
 
@@ -25,12 +37,25 @@ assert report["pending_jobs"] == [
     "emissions-128",
 ]
 assert len(report["jobs"]) == len(expected)
+
+# The committed plan is the portable copy of the one that ran: re-planning it here
+# ties the summary's fingerprints to a plan the reader can inspect.
+plan = plan_run_file(root / "plan" / "run-plan.json")
+assert plan.plan_fingerprint == report["plan_fingerprint"]
+assert [job.step for job in plan.jobs] == list(range(1, 10))
+assert [job.job for job in plan.jobs[len(expected) :]] == report["pending_jobs"]
+planned = {job.job: job for job in plan.jobs}
+
 fixed_reference = None
 count = 0
 for step, (job, (name, before, burst, volume, point_count)) in enumerate(
     zip(report["jobs"], expected, strict=True), start=1
 ):
+    planned_job = planned[name]
     assert job["job"] == name and job["step"] == step
+    assert planned_job.step == step
+    assert planned_job.definition_fingerprint == job["definition_fingerprint"]
+    assert planned_job.condition.burst_length == burst
     assert job["status"] == "ok" and len(job["points"]) == point_count
     assert job["compilation_identity"]["burst_length"]["value"] == str(burst)
     assert len(job["burst_transitions"]) == 1
@@ -39,11 +64,20 @@ for step, (job, (name, before, burst, volume, point_count)) in enumerate(
     assert transition["before_burst"]["text"] == before
     assert transition["after_burst"]["text"] == str(burst)
     assert transition["after_sampling_volume"]["text"] == volume
-    for point in job["points"]:
+    assert [point.label for point in planned_job.points] == [
+        point["label"] for point in job["points"]
+    ]
+    for planned_point, point in zip(planned_job.points, job["points"], strict=True):
         path = root / point["file"]
         assert path.is_file() and path.parent == root
+        assert path.name.startswith(planned_point.identity)
         assert hashlib.sha256(path.read_bytes()).hexdigest() == point["sha256"]
         assert path.stat().st_size == point["bytes"]
+        # The plan's own request for this point, re-derived from the committed plan.
+        assert {
+            key: str(value)
+            for key, value in planned_point.parameters.model_dump().items()
+        } == {key: str(value) for key, value in point["requested"].items()}
         assert point["enforced_covariates"] == [
             "sound_speed_ms",
             "prf_us",
@@ -82,4 +116,7 @@ for step, (job, (name, before, burst, volume, point_count)) in enumerate(
         count += 1
     print(f"{name}: {point_count} BDD(s), {before}->{burst}, observed {volume} mm")
 assert count == 12
-print("PASS: 12 BDD hashes, four recorded transitions, word 8, decoded fixed settings")
+print(
+    f"plan {report['plan_fingerprint'][:12]}…: four definition fingerprints and 12 points tie"
+)
+print("PASS: 12 BDD hashes, plan tie, four transitions, word 8, decoded fixed settings")

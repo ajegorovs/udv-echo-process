@@ -261,13 +261,27 @@ inactive rig's payloads were all zero; this is control-path evidence, not signal
 analysis. The initial `10 / 1.850 mm` was restored. Raw files, digests, logs,
 interpretation and limits: [`../data/burst-commissioning-b4/`](../data/burst-commissioning-b4/README.md).
 
-**Next:** B5 job-level burst transitions may be developed without a second B4
-live run. Preserve the dialog's effective-mm readback as a dependent covariate;
-do not infer it from word 27 or explicitly write Sampling volume. B6 separately
-promotes stored word 8 as a strict burst oracle and treats word 27 as a stored
-bandwidth-definition covariate, not an effective-mm oracle. B5 still requires
-its own end-to-end live test before use. A second hidden dependent effect in
-that run stops the campaign. Authority:
+**B5 supervised live acceptance passed (2026-09-25); PR #38 leaves Draft.** Four job
+boundaries of a nine-job `run-plan --next` pass — `burst-4` → `common-reference-1` →
+`burst-18` → `common-reference-2` — transitioned `10 → 4 → 10 → 18 → 10` automatically, with
+the effective Sampling volume read back as `1.776 / 1.850 / 3.330 / 1.850 mm`, word 27 still
+`1`, and 12 stored BDDs whose word 8 matches each job. No burst was set by hand; the other five
+jobs of that plan were deliberately not run (they request a manual emissions change), and the
+equal-burst/no-write path is **offline-verified only** — the review accepted that boundary
+because the unexercised branch performs *less* device interaction, not an unknown gesture.
+Portable plan, hashes and an instrument-free verifier:
+[`../data/burst-commissioning-b5/`](../data/burst-commissioning-b5/README.md).
+
+**Open follow-up, not B6: mutation provenance across a failed invocation.** A verified boundary
+write followed by a compile or resume-identity refusal writes no new job manifest, so that
+invocation's write is absent from `burst_transitions`. This is a general acquisition
+transaction/audit gap, not a word-8/word-27 interpretation question, so it stays its own item
+rather than being folded into B6.
+
+**Next:** B6 promotes stored word 8 as a strict burst oracle and treats word 27 as a stored
+bandwidth-definition covariate, not an effective-mm oracle; the dialog's effective-mm readback
+stays a dependent covariate, never inferred from word 27 and never written. A second hidden
+dependent effect in a live run stops the campaign. Authority:
 [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
 
 **The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**

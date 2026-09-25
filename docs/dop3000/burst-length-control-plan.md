@@ -7,8 +7,9 @@ effective Sampling-volume thickness read in the dialog. B5 job-level integration
 on `feat/b5-job-burst-transitions` (the job boundary's transition, its manifest evidence and
 the pass row's copy of it, §B5). **The supervised live burst-boundary pass completed on
 2026-09-25** for four jobs and 12 BDDs ([portable evidence](../../data/burst-commissioning-b5/));
-its equal-burst/no-write case remains offline-only and PR #38 remains Draft pending review.
-Word-27 promotion is a separate B6 question. Nothing here re-opens
+its equal-burst/no-write case is accepted as offline-verified only (the unexercised branch
+performs *less* device interaction, not an unknown gesture) and PR #38 leaves Draft on that
+evidence. Word-27 promotion is a separate B6 question. Nothing here re-opens
 the acquisition architecture: the plan adds one parameter to the acquisition model that the model
 already reads, and every rule it uses is a rule this repository already has.
 
@@ -294,7 +295,9 @@ the manual step disappears without changing the campaign model.
 > [`data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/). The last five
 > jobs of that plan were intentionally not run; they vary emissions/profile and exceed this
 > burst-only acceptance. An equal-burst/no-write job was not exercised live and remains
-> covered by the fake tests only. The B4 stop rule still binds. `campaign --run --no-snapshot`
+> covered by the fake tests only; the review accepted that boundary, because the untested branch
+> performs no device write and the surrounding read/compile/record path was exercised four times.
+> The B4 stop rule still binds. `campaign --run --no-snapshot`
 > is the explicit bypass: it reads nothing and compiles nothing, so it also performs **no
 > transition** — the instrument's burst is not written to match the definition, and the
 > operator sets it by hand. No per-point writer, no sampling-volume write, no word-27-to-mm
