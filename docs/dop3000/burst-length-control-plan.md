@@ -246,13 +246,35 @@ the manual step disappears without changing the campaign model.
 > readable dependent sampling-volume statement; anything else raises `CampaignError` before the
 > compile and therefore before any recording. The dialog and the instrument reading are re-taken after
 > a transition, so the compile reconciles the state the write established (its own second opinion,
-> unchanged). A verified transition is persisted on `JobManifest.burst_transition` as the driver's
-> own `BurstWriteResult`, and copied onto the pass's `RunJobRecord.burst_transition` (with a
-> sentence in its `note`) so a pass reconstructed offline is not silent about it; a job that spent no
-> write carries `None` on both. The sweep port gained `write_dialog_burst_length` **additively** (the
-> primitive `Actuator` is untouched, and `tests/test_acquire_runner.py` pins the two sets apart).
-> Covered by `tests/test_acquire_campaign_burst.py` (equal / refusal / mismatch / unreadable-volume /
-> evidence-consistency / safety-ordering / persistence / resume / `no_snapshot`), headless against the
+> unchanged). A verified transition is persisted as an **ordered history** on
+> `JobManifest.burst_transitions` (a tuple of the driver's own `BurstWriteResult`, oldest first),
+> and copied onto the pass's `RunJobRecord.burst_transitions` (with a sentence in its `note`) so a
+> pass reconstructed offline is not silent about it; a job that spent no write carries the empty
+> tuple on both.
+>
+> **The history is accumulated, not replaced — a resumed run must not lose an earlier write.** A
+> resumed run rewrites the manifest beside its log, so a *scalar* transition field reported only the
+> resume's own write (usually none) and dropped the transition the job's earlier invocation spent;
+> the write is a property of the **job**, not of the invocation that happened to make it. The tuple
+> is therefore accumulated across invocations: `_previous_manifest_for` returns the prior manifest
+> and `run_campaign` prepends its history, appending this invocation's transition only when it spent
+> one. A resume that finds the instrument already at the job's burst keeps the earlier history
+> unchanged; one that writes again holds both, oldest first. The run's own `notes` state the two
+> halves separately (`N carried from the previous manifest`, `M performed by this invocation`), so
+> the history is never read as a report of the current run, and `no_snapshot` — which transitions
+> nothing, and whose resume is legal without `--resume-declaration-only` only when there is nothing
+> to skip — **retains** the earlier history while recording explicitly that this invocation wrote
+> nothing. `RunJobRecord` copies the
+> job manifest's history and merges whatever its own row already carried, so a row rewritten by a
+> resumed job keeps the earlier recording's transitions rather than only the latest. A manifest
+> written before the field existed carries none and reads as the empty history (`burst_transitions`
+> defaults to `()`), so no committed job record becomes unreadable. The sweep port gained
+> `write_dialog_burst_length` **additively** (the primitive `Actuator` is untouched, and
+> `tests/test_acquire_runner.py` pins the two sets apart). Covered by
+> `tests/test_acquire_campaign_burst.py` (equal / refusal / mismatch / unreadable-volume /
+> evidence-consistency / safety-ordering / persistence / resume / accumulation incl. the
+> `10 -> 18` then `4 -> 18` pair / legacy manifest / `no_snapshot`) and
+> `tests/test_acquire_run_plan.py` (the row's history and a resumed row), headless against the
 > runner's fake.
 >
 > **The mutation-ordering rule.** No instrument mutation precedes a **pure** refusal: the mode rung
@@ -269,6 +291,22 @@ the manual step disappears without changing the campaign model.
 > reads nothing and compiles nothing, so it also performs **no transition** — the instrument's burst
 > is not written to match the definition, and the operator sets it by hand. No per-point writer, no
 > sampling-volume write, no word-27-to-mm logic.
+>
+> **Pending limitation — a verified write in an invocation that never reaches the manifest is not
+> durably captured.** The burst write happens at the boundary (step 4) and the manifest is written
+> only after the runner has returned, so an invocation that performs a **verified** transition and is
+> *then* refused — by the compile (step 5) or by the resume's identity comparison (step 6, whose
+> refusal the run's own message scopes to "no point of this job was run and nothing was stored") —
+> raises before `write_manifest` and persists **no new job manifest**. The instrument *was* moved and
+> that write is real, but it is not in the record: the next invocation's accumulation reads the
+> *earlier* manifest, not the refused one, so the refused invocation's transition is not recovered
+> into `burst_transitions` either. Nothing here claims the run's `notes` are durable — they go to a
+> caller-supplied list and whether any of it is written down, and kept, is a property of the CLI's
+> log path that has not been established — and a driver-level log or capture is likewise unproven as
+> a durable place for it. So: a pre-record refusal after a verified burst write leaves the burst
+> moved with no durable job-manifest trace of the move. Closing that gap (a manifest written on the
+> refusal path, or a write-ahead note beside the log) is a **separate decision**, not something this
+> slice redesigned; until it is taken, the limitation is stated rather than papered over.
 
 **B6 — stored-artifact verification** *(after B4 and B5)*
 

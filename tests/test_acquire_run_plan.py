@@ -988,34 +988,120 @@ def test_a_job_whose_outcome_is_partial_is_recorded_as_such() -> None:
     assert run_plan.next_job(run, manifest).job == "burst-4"
 
 
-def test_a_jobs_burst_transition_is_reported_on_the_passs_own_row() -> None:
+def burst_transition_result(before: int, requested: int = 18) -> BurstWriteResult:
+    """One verified transition's evidence, as the driver returns it (channel 1, burst ``requested``)."""
+    return BurstWriteResult(
+        requested_burst=requested,
+        state=BurstState.VERIFIED,
+        channel="1",
+        before_burst=ComboReading(text=str(before)),
+        after_burst=ComboReading(text=str(requested)),
+        after_sampling_volume=ComboReading(text="1.460"),
+    )
+
+
+def test_a_jobs_burst_transitions_are_reported_on_the_passs_own_row() -> None:
     """A row of the pass's record is read offline, so it may not be silent about a burst write.
 
     The pass's record exists so a reader can place a job without the instrument. A job whose boundary
     transitioned the burst carries the driver's own evidence on its manifest; the pass's row has to
-    say so too, or reconstructing the pass offline would lose which job moved the dialog.
+    say so too, or reconstructing the pass offline would lose which job moved the dialog. The row
+    carries the job's **ordered history** — oldest first — so a job that wrote at two boundaries is
+    not flattened into the last one.
     """
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
     job = run.jobs[0]
-    transition = BurstWriteResult(
-        requested_burst=18,
-        state=BurstState.VERIFIED,
-        channel="1",
-        before_burst=ComboReading(text="4"),
-        after_burst=ComboReading(text="18"),
-        after_sampling_volume=ComboReading(text="1.460"),
-    )
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
     job_manifest = job_manifest_for(run, job).model_copy(
-        update={"burst_transition": transition}
+        update={"burst_transitions": (first, second)}
     )
 
     manifest = run_plan.record_job(manifest, run, job, job_manifest)
 
     record = manifest.jobs[0]
-    assert record.burst_transition is not None
-    assert record.burst_transition.verified_burst == 18
+    assert [t.verified_burst for t in record.burst_transitions] == [18, 18]
+    assert [t.before_burst.text for t in record.burst_transitions] == ["10", "4"]
     assert record.note is not None and "burst" in record.note, record.note
+    assert "accumulated" in record.note, record.note
+
+
+def test_a_resumed_jobs_row_keeps_the_transitions_of_the_earlier_recording() -> None:
+    """A row is rewritten when a resumed job finishes; its earlier transitions must survive.
+
+    The pass's row for a job is folded once per completed job, so a job that ran to a partial result
+    and was resumed overwrites its own row. The row has to carry the *accumulated* history — the
+    earlier recording's transition and the resume's — rather than only the latest write.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
+
+    partial = run_plan.record_job(
+        manifest,
+        run,
+        job,
+        job_manifest_for(run, job, ok=1, failed=1).model_copy(
+            update={"burst_transitions": (first,)}
+        ),
+    )
+    assert [t.before_burst.text for t in partial.jobs[0].burst_transitions] == ["10"]
+
+    resumed = run_plan.record_job(
+        partial,
+        run,
+        job,
+        job_manifest_for(run, job, ok=2).model_copy(
+            update={"burst_transitions": (first, second)}
+        ),
+    )
+
+    assert [t.before_burst.text for t in resumed.jobs[0].burst_transitions] == ["10", "4"], (
+        "the resume's row holds the earlier recording's transition first, then its own"
+    )
+
+
+def test_a_row_keeps_its_own_transitions_when_the_new_manifest_does_not_carry_them() -> None:
+    """The row's record and the job manifest's can be *disjoint*; neither may be dropped.
+
+    The job manifest's history is the authority and normally extends what the row carried, but it
+    does not have to: a job manifest produced by an invocation that never saw the row's earlier
+    recording (a fresh, non-accumulating invocation) carries only its own write. Both are verified
+    transitions this job's boundary spent, so the row has to keep both — the earlier one first — and
+    not overwrite its own record with the manifest's shorter one.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
+
+    partial = run_plan.record_job(
+        manifest,
+        run,
+        job,
+        job_manifest_for(run, job, ok=1, failed=1).model_copy(
+            update={"burst_transitions": (first,)}
+        ),
+    )
+
+    # The new manifest does not carry the earlier transition at all.
+    resumed = run_plan.record_job(
+        partial,
+        run,
+        job,
+        job_manifest_for(run, job, ok=2).model_copy(
+            update={"burst_transitions": (second,)}
+        ),
+    )
+
+    assert [t.before_burst.text for t in resumed.jobs[0].burst_transitions] == ["10", "4"], (
+        "the row keeps its own earlier transition and appends the manifest's newer one"
+    )
+
 
 
 def test_a_job_with_no_ok_point_is_failed() -> None:

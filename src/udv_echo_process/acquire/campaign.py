@@ -462,21 +462,30 @@ class JobManifest(ValueModel):
     #: ``expected_process_mode`` means the manifest predates this field.
     expected_process_mode: ProcessMode | None = None
     observed_process_mode: ProcessMode | None = None
-    #: The burst transition this job's boundary performed, when it had to perform one — the
-    #: evidence, not a boolean: the request, the state, both dialog rows on both sides of the
-    #: write and the dependent sampling-volume statement the application answered with.
+    #: Every burst transition this **job's** boundary has performed, in the order it performed them
+    #: — the evidence, not a boolean: for each, the request, the state, both dialog rows on both
+    #: sides of the write and the dependent sampling-volume statement the application answered with.
     #:
-    #: ``None`` means **no write was spent on this job**, and it covers two different situations a
-    #: later reader has to be able to tell apart from the log's own facts rather than from this
-    #: field: the instrument already stated the job's burst (nothing to do), or the definition
-    #: declares no burst at all (nothing to aim at). A job that *did* transition always carries one,
-    #: so a run record says which burst it wrote and what the application kept — and a job whose
-    #: transition could not be verified never reaches a manifest.
+    #: **A history, and deliberately not a scalar.** A resumed run rewrites this manifest, so a single
+    #: field would report only the resume's own write (usually none) and *lose* the transition the
+    #: job's earlier invocation performed — the write is a property of the *job*, not of the
+    #: invocation that happened to make it. The tuple is therefore accumulated across invocations,
+    #: oldest first: a resume that spends no write carries the earlier history unchanged, and a resume
+    #: that writes again appends to it. The run's own ``notes`` state which entries this invocation
+    #: contributed, so the history is never mistaken for a report of the current run.
+    #:
+    #: ``()`` means **this job has spent no burst write at all**, and it covers two different
+    #: situations a later reader has to be able to tell apart from the log's own facts rather than
+    #: from this field: the instrument already stated the job's burst on every invocation (nothing to
+    #: do, ever), or the definition declares no burst at all (nothing to aim at). A job that *did*
+    #: transition always carries the evidence, so a run record says which bursts it wrote, in which
+    #: order, and what the application kept — and a job whose transition could not be verified never
+    #: reaches a manifest.
     #:
     #: Defaulted deliberately, like every field below ``log_errors``: a manifest written before this
-    #: slice carries none of them, and a manifest a reader refuses is a job whose log can no longer
-    #: be read at all.
-    burst_transition: BurstWriteResult | None = None
+    #: slice carries no field at all and reads as the empty history, because a manifest a reader
+    #: refuses is a job whose log can no longer be read at all.
+    burst_transitions: tuple[BurstWriteResult, ...] = ()
 
     @property
     def points_skipped(self) -> int:
@@ -1410,7 +1419,8 @@ def _transit_burst_length(
         )
     if notes is not None:
         notes.append(
-            f"burst transition: {stated.strip()} → {requested}, verified on a re-opened dialog; "
+            f"burst transition (this invocation's write): {stated.strip()} → {requested}, "
+            f"verified on a re-opened dialog; "
             f"the application states sampling volume {result.verified_sampling_volume}"
         )
     return result
@@ -1503,8 +1513,10 @@ def run_campaign(
     compiled, and **no burst is transitioned** — the boundary cannot know what to write without the
     reading that step 3 takes, so an instrument whose burst differs from the definition is not moved
     by the run. The manifest is marked ``declared_only`` because the run's points then rest on the
-    definition's declaration alone (and carry no ``burst_transition``). A resume under it can never
-    prove an identity (it has no reading of its own to compare), so it refuses unless
+    definition's declaration alone (and append nothing to ``burst_transitions``: the job's earlier
+    history, if any, is carried unchanged, because the bypass transitions nothing). A resume under
+    it can never prove an identity (it has no reading of its own to compare), so a resume that would
+    *skip* anything — a log with successful records, or a previous manifest — refuses unless
     ``resume_declaration_only`` says so on purpose.
 
     ``resume_declaration_only=True`` turns each *identity* refusal above into a proceed, and
@@ -1567,6 +1579,16 @@ def run_campaign(
     # boundary's burst write on itself. The identity half of the resume needs the compile and is
     # validated at step 6.
     previous = _previous_manifest_for(definition, log) if resume else None
+    # The burst history this job's record already carries: every verified transition its **earlier
+    # invocations** spent, oldest first. It is read here, before any gesture, because it is pure —
+    # the manifest beside the log is the whole source — and because a resume that spends no write
+    # (the instrument is already at the job's burst, or ``no_snapshot`` transitions nothing) must
+    # still carry it onto the record it rewrites. The write belongs to the *job*, not to the
+    # invocation that happened to make it, so the field below is an accumulation and never a report
+    # of this run alone.
+    carried_transitions: tuple[BurstWriteResult, ...] = (
+        () if previous is None else previous.burst_transitions
+    )
 
     # Steps 3-5: route, read, refuse (pure), transition (the one write), compile — all of it before
     # the runner exists, so nothing can be stored for a job that cannot be compiled.
@@ -1650,6 +1672,26 @@ def run_campaign(
             f"{log.name}; {len(todo)} to run"
         )
 
+    # The job's burst history, **accumulated rather than replaced**: what the earlier invocations
+    # recorded, plus this invocation's own write when it spent one. The note states the two halves
+    # separately, because a reader of the run's notes must not read the whole history as this run's
+    # — a resume that spends no write (the instrument already at the job's burst, or a ``no_snapshot``
+    # bypass that transitions nothing) still carries every earlier transition unchanged.
+    burst_transitions: tuple[BurstWriteResult, ...] = (
+        (*carried_transitions, transition) if transition is not None else carried_transitions
+    )
+    if notes is not None and (carried_transitions or transition is not None):
+        notes.append(
+            f"burst history: this job's record carries {len(burst_transitions)} transition(s); "
+            f"{len(carried_transitions)} carried from the previous manifest and "
+            f"{len(burst_transitions) - len(carried_transitions)} performed by this invocation — "
+            + (
+                "this invocation performed a verified write, appended to the history"
+                if transition is not None
+                else "this invocation performed no burst write, so the history is carried unchanged"
+            )
+        )
+
     runner = SweepRunner(
         actuator,
         CampaignRecordSettings(
@@ -1700,10 +1742,12 @@ def run_campaign(
         observed_process_mode=(
             None if compiled is None else _stated_process_mode(compiled.identity.process_mode)
         ),
-        # The boundary's own evidence: which burst this job wrote, and what the application
-        # answered — ``None`` when no write was spent (the instrument was already there, or the
-        # definition declares no burst).
-        burst_transition=transition,
+        # The boundary's own evidence, as a job-level **history**: which bursts this job's boundary
+        # has written across its invocations, and what the application answered. The earlier
+        # invocations' transitions are carried first and this invocation's appended last; the empty
+        # tuple means the job has spent no write at all (the instrument stated the job's burst every
+        # time, or the definition declares none).
+        burst_transitions=burst_transitions,
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest

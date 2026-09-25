@@ -16,9 +16,10 @@ Three things are under test and nothing else:
   one whose re-opened burst is not the request, or one with no readable sampling-volume
   statement stops the job before anything is stored. The instrument's state is then unknown, and
   a recording taken on it would pin a burst nobody read back;
-* **the evidence is on the record** — a verified transition is persisted on the job manifest
-  (``JobManifest.burst_transition``), so a pass reconstructed offline says which burst the run
-  wrote and what the application answered.
+* **the evidence is on the record** — a verified transition is persisted on the job manifest as
+  the ordered history ``JobManifest.burst_transitions`` (oldest first, accumulated across every
+  invocation of the job), so a pass reconstructed offline says which bursts the run wrote, in
+  which order, and what the application answered.
 
 Everything here is headless: the run drives the runner's own in-memory fake (imported, not
 re-implemented), whose burst transition is scriptable so every refusal the boundary has an
@@ -88,8 +89,9 @@ def test_a_job_whose_burst_differs_transitions_the_dialog_before_the_compile(
     # The application's dialog now states the job's burst: the compile after the write reconciles
     # the *new* state, which is what makes the transition the first half of one transaction.
     assert job.fake.burst_length == BURST_REQUESTED
-    assert manifest.burst_transition is not None
-    assert manifest.burst_transition.verified_burst == BURST_REQUESTED
+    assert [transition.verified_burst for transition in manifest.burst_transitions] == [
+        BURST_REQUESTED
+    ]
 
 
 def test_the_reading_the_compile_sees_is_the_one_the_write_established(
@@ -146,7 +148,7 @@ def test_an_instrument_already_at_the_jobs_burst_is_not_written_at_all(
     assert job.fake.burst_writes == []
     assert "write_dialog_burst_length" not in [call[0] for call in job.fake.calls]
     assert job.fake.burst_length == BURST_LENGTH
-    assert manifest.burst_transition is None
+    assert manifest.burst_transitions == ()
     assert manifest.failed_count == 0
 
 
@@ -159,7 +161,7 @@ def test_a_definition_that_declares_no_burst_spends_no_write(
     manifest = run_job(job)
 
     assert job.fake.burst_writes == []
-    assert manifest.burst_transition is None
+    assert manifest.burst_transitions == ()
 
 
 def test_a_no_snapshot_run_neither_reads_nor_transitions(
@@ -173,7 +175,7 @@ def test_a_no_snapshot_run_neither_reads_nor_transitions(
     assert job.fake.burst_writes == []
     assert job.fake.dialog_checks == 0
     assert manifest.declared_only
-    assert manifest.burst_transition is None
+    assert manifest.burst_transitions == ()
 
 
 # ---------------------------------------------------------------- 3. a refusal refuses
@@ -315,8 +317,9 @@ def test_a_verified_transition_is_persisted_on_the_job_manifest(
 
     manifest = run_job(job)
 
-    transition = manifest.burst_transition
-    assert transition is not None
+    transitions = manifest.burst_transitions
+    assert len(transitions) == 1
+    transition = transitions[0]
     assert transition.requested_burst == BURST_REQUESTED
     assert transition.verified
     assert transition.verified_burst == BURST_REQUESTED
@@ -327,8 +330,8 @@ def test_a_verified_transition_is_persisted_on_the_job_manifest(
     # It survives a round trip through the manifest file the run wrote: the evidence is persisted,
     # not only held in memory.
     written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
-    assert written.burst_transition is not None
-    assert written.burst_transition.verified_burst == BURST_REQUESTED
+    assert len(written.burst_transitions) == 1
+    assert written.burst_transitions[0].verified_burst == BURST_REQUESTED
 
 
 def test_a_resumed_job_transitions_the_burst_the_same_way(
@@ -345,8 +348,9 @@ def test_a_resumed_job_transitions_the_burst_the_same_way(
     manifest = run_job(job, resume=True)
 
     assert job.fake.burst_writes == [(BURST_REQUESTED, 1)]
-    assert manifest.burst_transition is not None
-    assert manifest.burst_transition.verified_burst == BURST_REQUESTED
+    assert [transition.verified_burst for transition in manifest.burst_transitions] == [
+        BURST_REQUESTED
+    ]
 
 
 # -------------------------------------- 5. the order: pure refusals precede the write
@@ -543,3 +547,179 @@ def test_a_resume_identity_refusal_after_a_transition_scopes_its_claim(
     assert "Nothing was run" not in message, (
         "the run wrote the operator's dialog, so a refusal must not claim it ran nothing"
     )
+
+
+# ------------------------ 8. the history accumulates across a job's invocations
+
+
+def before_texts(manifest: campaign.JobManifest) -> list[str]:
+    """The burst each recorded transition started from, oldest first."""
+    return [
+        "?" if transition.before_burst is None else transition.before_burst.text
+        for transition in manifest.burst_transitions
+    ]
+
+
+def test_a_resume_already_at_the_burst_keeps_the_earlier_invocations_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first run writes 10 -> 18; a resume that finds 18 already keeps that record.
+
+    This is the reviewer's first variant, and the bug it pins: a resumed run rewrites the manifest
+    beside the log, so a scalar ``burst_transition`` was **replaced** by the resume's own (``None``
+    here) and the earlier write vanished from the record. The history is a job-level fact — it
+    outlives the invocation that performed it.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+    writes_after_first = list(job.fake.burst_writes)
+    assert writes_after_first == [(BURST_REQUESTED, 1)]
+
+    # The instrument is still at the burst the first run wrote, so the resume spends no write.
+    resumed = run_job(job, resume=True)
+
+    assert job.fake.burst_writes == writes_after_first, (
+        "the resume found the instrument already at the job's burst, so it must not write again"
+    )
+    assert before_texts(resumed) == ["10"], (
+        "the resume performed no write, so the earlier invocation's transition is the whole history"
+    )
+    # ... and it is the *persisted* history that survives, not only the in-memory one.
+    written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert before_texts(written) == ["10"]
+
+
+def test_a_resume_that_writes_again_holds_both_transitions_in_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reviewer's second variant: 10 -> 18 then a resume from 4 -> 18 holds both, in order.
+
+    The instrument moved between the two invocations (the operator put the dialog back to 4), so the
+    resumed boundary spends its own verified write. The history has to read oldest first — the
+    earlier invocation's transition, then this one's — because the order is the only thing that says
+    which state the dialog was moved *out of* when.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+
+    # The operator moved the dialog back to the smaller burst between the two runs.
+    job.fake.burst_length = BURST_LENGTH
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, notes=notes)
+
+    assert job.fake.burst_writes == [(BURST_REQUESTED, 1), (BURST_REQUESTED, 1)], (
+        "the resume's write is the second one this job spent"
+    )
+    assert before_texts(resumed) == ["10", "4"], (
+        "both transitions are held, oldest first: the first invocation's, then the resume's"
+    )
+    assert [transition.verified_burst for transition in resumed.burst_transitions] == [
+        BURST_REQUESTED,
+        BURST_REQUESTED,
+    ]
+    written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert before_texts(written) == ["10", "4"]
+
+
+def test_a_manifest_without_the_history_field_reads_as_an_empty_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Every manifest written before the history existed carries no field, and must still load.
+
+    A reader that refused such a manifest would make every committed job's record unreadable; one
+    that *required* the field would do the same. So it is defaulted to the empty tuple — and a
+    resume over one proceeds with an empty carried history rather than refusing.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+
+    payload = first.model_dump(mode="json")
+    payload.pop("burst_transitions")
+    legacy = campaign.JobManifest.model_validate(payload)
+    assert legacy.burst_transitions == ()
+
+    campaign.write_manifest(campaign.manifest_path_for(job.log_path), legacy)
+    # The instrument is at the burst the first run wrote, so the resume spends no write and the
+    # history it carries is the empty one the legacy manifest states.
+    resumed = run_job(job, resume=True)
+    assert resumed.burst_transitions == ()
+
+
+def test_the_notes_separate_the_accumulated_history_from_this_invocations_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A resume's notes have to say which transitions it inherited and which it performed itself.
+
+    The manifest's ``burst_transitions`` is a *history*, not a report of the current invocation, so
+    a reader of the run's own notes must be able to tell the two apart. The distinction is stated
+    where the run knows it: how many transitions were carried from the previous manifest, and what
+    this invocation did with them.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    run_job(job)
+    job.fake.burst_length = BURST_LENGTH
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, notes=notes)
+
+    text = " ".join(notes)
+    assert "carried from the previous manifest" in text, notes
+    assert "this invocation" in text, notes
+    assert "2 transition(s)" in text, notes
+    assert before_texts(resumed) == ["10", "4"]
+
+
+def test_a_resume_that_wrote_nothing_says_so_and_still_carries_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No write in this invocation is a fact the notes state, not a gap in the record."""
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    run_job(job)
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, notes=notes)
+
+    text = " ".join(notes)
+    assert "no burst write" in text, notes
+    assert before_texts(resumed) == ["10"]
+
+
+def test_a_no_snapshot_resume_retains_the_history_and_records_no_new_write(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``--no-snapshot`` reads nothing, so it transitions nothing — but it loses no history.
+
+    The flag is the explicit bypass: the boundary cannot know what to write without the reading it
+    skips, so the burst the earlier invocation wrote is **retained** on the record while this
+    invocation's contribution is explicitly none.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+    writes_after_first = list(job.fake.burst_writes)
+
+    notes: list[str] = []
+    resumed = run_job(
+        job,
+        resume=True,
+        no_snapshot=True,
+        resume_declaration_only=True,
+        notes=notes,
+    )
+
+    assert resumed.declared_only
+    assert job.fake.burst_writes == writes_after_first, (
+        "no-snapshot performs no transition, so it spends no write"
+    )
+    assert before_texts(resumed) == ["10"], (
+        "the history the earlier invocation wrote is retained, not dropped by the bypass"
+    )
+    text = " ".join(notes)
+    assert "no burst write" in text, notes
