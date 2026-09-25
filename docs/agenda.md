@@ -281,7 +281,9 @@ rather than being folded into B6.
 **B6 stored-artifact verification is proposed on `acquire/b6-stored-burst-verification`
 (PR pending review).** Stored word 8 is compared with the
 requested burst on **every** verification, so a burst mismatch invalidates the point and no
-caller's covariate switch can skip it; stored word 27 is carried as the
+caller's covariate switch can skip it — an escape hatch removed rather than strictness newly
+introduced, since at B6's base the runner already verified stored points with
+`check_covariates=True`; stored word 27 is carried as the
 receiver-bandwidth-definition index on the verification facts and the point record, compared
 with nothing, with no millimetre derivation and never written. The 16 committed B4/B5
 recordings pin it: index `1` throughout while word 8 reads `4/10/18` and the dialog's effective

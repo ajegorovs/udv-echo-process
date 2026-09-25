@@ -11,7 +11,8 @@ its equal-burst/no-write case is accepted as offline-verified only (the unexerci
 performs *less* device interaction, not an unknown gesture) and PR #38 leaves Draft on that
 evidence. **B6 stored-artifact verification is proposed on
 `acquire/b6-stored-burst-verification` (PR pending review)** (§B6): stored word 8 is
-the strict burst oracle whatever a caller's covariate switch says, and stored word 27 is
+an unconditional burst oracle — a declared burst is compared on every call, whatever a
+caller's covariate switch says — and stored word 27 is
 carried as the receiver-bandwidth-definition index with no millimetre derivation. Nothing
 here re-opens
 the acquisition architecture: the plan adds one parameter to the acquisition model that the model
@@ -44,7 +45,7 @@ Compile against the instrument's own state   (already exists: snapshot.py, campa
         │
         ▼
 Record point → stored `.BDD` → point verdict / provenance
-        ├── word 8  → burst            (strict since B6: a mismatch invalidates the point)
+        ├── word 8  → burst            (unconditional since B6: compared on every call)
         └── word 27 → receiver-bandwidth definition/index (provenance only — B6)
 ```
 
@@ -325,8 +326,10 @@ the manual step disappears without changing the campaign model.
 
 **B6 — stored-artifact verification** *(proposed on `acquire/b6-stored-burst-verification`, PR pending review)*
 
-`word 8 == requested burst` is strict on stored recordings, and word 27 is carried as the
-stored receiver-bandwidth-definition index:
+**B6 makes stored word 8 an unconditional burst oracle:** when a request declares burst length,
+word 8 is compared on **every** stored-point verification call and a mismatch invalidates the
+point, independent of `check_covariates`. Word 27 is carried as the stored
+receiver-bandwidth-definition index:
 
 ```text
 requested:            burst 18
@@ -334,11 +337,14 @@ pre-record verified:  burst 18 · effective Sampling volume 3.330 mm (dialog)
 stored:               word 8 = 18 · word 27 = 1 (bandwidth definition)
 ```
 
-**Where the strictness lives.** `acquire/verify.py` compares word 8 with the burst the
-request declares on **every** call (`ALWAYS_ENFORCED_COVARIATES`); the `check_covariates`
-switch — which governs word 19 and word 5 — does not apply to it, because a caller that
-forgot the switch must not be handed an `ok` for a file that is not the point its request
-describes. A mismatch is a `mismatches` entry, so the stored-point verdict is
+**Where the unconditional comparison lives.** `acquire/verify.py` compares word 8 with the
+burst the request declares on **every** call (`ALWAYS_ENFORCED_COVARIATES`); the
+`check_covariates` switch — which governs word 19 and word 5 — does not apply to it, because a
+caller that forgot the switch must not be handed an `ok` for a file that is not the point its
+request describes. The change is an **escape hatch removed**, not strictness newly introduced:
+at B6's base the runner already called stored verification with `check_covariates=True` and
+burst was already in `ENFORCED_COVARIATES`, so the normal acquisition path already rejected a
+word-8 disagreement. A mismatch is a `mismatches` entry, so the stored-point verdict is
 `PointStatus.INVALID` (`runner._verify_stored`), the job reads `RunJobStatus.PARTIAL` and
 the pass is refused in front of the next job (`run_plan.record_job`). The pre-record half is
 independent and unchanged: the compile refuses a dialog burst that disagrees with the
@@ -358,7 +364,11 @@ refused, and no length is derived from it — `sampling_volume_mm` stays unset i
 `1` in all 16 B4/B5 recordings while word 8 reads `4 / 10 / 18` and the dialog's effective mm
 read back as `1.776 / 1.850 / 3.330`; the four B4 files are *one* index at three different
 millimetres, which refutes the withdrawn `word 27 == the index the displayed mm implies` from
-the bytes alone.
+the bytes alone. What that refutes is the claim that the **displayed effective millimetres
+determine the stored index** — not the existence of some bandwidth-associated thickness of its
+own. The manual's two-quantity model is precisely that the bandwidth definition can carry its
+own thickness while a longer burst overrides the effective *displayed* thickness; nothing here
+derives either from the stored bytes.
 
 **Evidence.** `tests/test_acquire_stored_burst.py` reads the 16 committed recordings: the
 manifest's words against two independent reads of them, the fixed index against the moving
@@ -372,8 +382,9 @@ record carrying word 8 and word 27, and a burst-18 request against the burst-4 f
 **Open, not settled here:** which bandwidth a *different* selection stores (no committed
 evidence moves the field off `1`), any index -> mm relation (none reviewed, and nothing in
 this slice derives one), and the effective-mm readback as anything other than dialog
-provenance. Word 8's strictness was already carried end to end at B6's base; what B6 changed
-is that the comparison no longer depends on a caller's switch, plus the word-27 record.
+provenance. Word 8's comparison was already carried end to end at B6's base; what B6 changed is
+that it can no longer be skipped through `check_covariates` — an escape hatch removed rather
+than strictness introduced for the runner path — plus the word-27 record.
 
 **B7 — a miniature automated burst campaign** (`4 / 10 / 18 / 10`, all recordings and the
 restoration verified) before **B8 — the next sparse experimental run uses it**.
