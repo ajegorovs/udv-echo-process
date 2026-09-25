@@ -98,6 +98,13 @@ from typing import NamedTuple
 
 import numpy as np
 
+from udv_echo_process.analysis._floor_documents import (
+    AuthenticatedFloor,
+    FloorDocumentError,
+    ReferenceEndpoints,
+    read_floor_document,
+    require_agrees,
+)
 from udv_echo_process.analysis._sparse_pass import (
     PassDecoding,
     decode_pass,
@@ -1173,8 +1180,11 @@ def _published_floor_directory(report_dir: Path, plan_name: str) -> Path:
     refuses and names the document that has to be there, which is exactly what a caller
     who wants the committed numbers gets by naming that directory instead.
 
-    Neither copy could contribute another pass's numbers: the fingerprint check below is
-    what makes the documents the pass's own.
+    Neither copy could contribute another pass's numbers: the plan fingerprint is what makes
+    the documents the pass's own, and the shared reader in
+    :mod:`udv_echo_process.analysis._floor_documents` is what makes the *numbers* the ones
+    those documents were reduced from — the document's ``table_sha256`` is checked against the
+    table beside it, and every floor this slice screens with against that table's own row.
     """
     directory = Path(report_dir)
     for name in PUBLISHED_FLOOR_DOCUMENTS:
@@ -1188,29 +1198,67 @@ def _published_floor_directory(report_dir: Path, plan_name: str) -> Path:
     return directory
 
 
-def _load_published_document(path: Path, plan_fingerprint: str) -> Mapping[str, object]:
-    """One sibling artefact, loaded and checked to be this pass's own and to have passed."""
+def _load_published_document(
+    path: Path, plan_fingerprint: str, *, slice_name: str
+) -> AuthenticatedFloor:
+    """One sibling artefact, authenticated as this pass's own before anything is read from it.
+
+    The checks live in :mod:`udv_echo_process.analysis._floor_documents`, which WP3 reads the
+    same two documents through, so the two readers cannot drift apart: the document exists, is
+    a JSON object, states a named gate that passed, names this pass's plan fingerprint, and
+    publishes a ``table_sha256`` that is the digest of the table beside it.
+    """
     try:
-        document = json.loads(path.read_text(encoding="utf-8"))
-    except OSError as exc:
-        raise EmissionsLadderError(f"{path.as_posix()} cannot be read: {exc}") from None
-    except ValueError as exc:
-        raise EmissionsLadderError(f"{path.as_posix()} is not JSON: {exc}") from None
-    if not isinstance(document, dict):
-        raise EmissionsLadderError(f"{path.as_posix()} is not a document")
-    stated = str(document.get("plan_fingerprint") or "")
-    if stated != plan_fingerprint:
-        raise EmissionsLadderError(
-            f"{path.as_posix()} states plan fingerprint {stated[:12]}..., this pass's plan "
-            f"hashes to {plan_fingerprint[:12]}...: the floors this slice screens with "
-            "must be this pass's own"
+        return read_floor_document(
+            path.parent,
+            path.name,
+            slice_name=slice_name,
+            plan_fingerprint=plan_fingerprint,
         )
-    if document.get("ok") is not True:
+    except FloorDocumentError as exc:
+        raise EmissionsLadderError(str(exc)) from None
+
+
+def _require_agrees(
+    stated: float, tabulated: float, *, where: str, quantity: str
+) -> None:
+    """Refuse unless the document's floor is the number its authenticated table carries."""
+    try:
+        require_agrees(stated, tabulated, where=where, quantity=quantity)
+    except FloorDocumentError as exc:
+        raise EmissionsLadderError(str(exc)) from None
+
+
+def _tabulated_spread(anchors: AuthenticatedFloor, job: str) -> float:
+    """The spread the authenticated anchor table carries for one job, or a refusal."""
+    try:
+        return anchors.anchor_spread_mm_s(job, statistic=RESIDUAL_STATISTIC)
+    except FloorDocumentError as exc:
+        raise EmissionsLadderError(str(exc)) from None
+
+
+def _tabulated_endpoints(reference: AuthenticatedFloor) -> ReferenceEndpoints:
+    """Both reference endpoints, as the authenticated reference table carries them."""
+    try:
+        return reference.reference_endpoints()
+    except FloorDocumentError as exc:
+        raise EmissionsLadderError(str(exc)) from None
+
+
+def _require_same_pair(
+    document: AuthenticatedFloor,
+    path: str,
+    stated: tuple[str, str],
+    tabulated: tuple[str, str],
+) -> None:
+    """Refuse unless the pair a document says an endpoint came from is its table's pair."""
+    if stated != tabulated:
         raise EmissionsLadderError(
-            f"{path.as_posix()} states ok={document.get('ok')!r}: that slice's own gate "
-            "did not pass, so its floors are not numbers this one can screen with"
+            f"{document.slice_name}'s {document.name} publishes {path} as the pair "
+            f"{stated!r}, but the authenticated table carries that endpoint from "
+            f"{tabulated!r}: the endpoint and the pair it was reduced from have to be the "
+            "same measurement"
         )
-    return document
 
 
 def read_published_floors(
@@ -1234,10 +1282,12 @@ def read_published_floors(
     directory = _published_floor_directory(report_dir, plan_name)
     anchors_path = directory / ANCHOR_FLOOR_DOC
     reference_path = directory / REFERENCE_FLOOR_DOC
-    anchors = _load_published_document(anchors_path, plan_fingerprint)
-    reference = _load_published_document(reference_path, plan_fingerprint)
+    anchors = _load_published_document(anchors_path, plan_fingerprint, slice_name="WP1")
+    reference = _load_published_document(
+        reference_path, plan_fingerprint, slice_name="WP2"
+    )
 
-    entries = anchors.get("jobs")
+    entries = anchors.document.get("jobs")
     if not isinstance(entries, list):
         raise EmissionsLadderError(
             f"{anchors_path.as_posix()} states no jobs list: the per-job anchor spreads "
@@ -1251,19 +1301,28 @@ def read_published_floors(
         if not job:
             raise EmissionsLadderError(f"{where} states no job name")
         spread = _published_block(block.get("spread"), where=f"{where} 'spread'")
+        value_mm_s = _published_number(
+            spread.get(RESIDUAL_STATISTIC),
+            where=f"{where}: spread[{RESIDUAL_STATISTIC!r}]",
+        )
+        _require_agrees(
+            value_mm_s,
+            _tabulated_spread(anchors, job),
+            where=f"WP1's {ANCHOR_FLOOR_DOC}",
+            quantity=f"job {job!r}'s anchor spread",
+        )
         job_anchors.append(
             _published_floor(
                 f"job_anchors_{job}",
                 ANCHOR_FLOOR_DOC,
-                value_mm_s=_published_number(
-                    spread.get(RESIDUAL_STATISTIC),
-                    where=f"{where}: spread[{RESIDUAL_STATISTIC!r}]",
-                ),
+                value_mm_s=value_mm_s,
                 job=job,
             )
         )
 
-    floor = _published_block(reference.get("floor"), where=f"{reference_path}: 'floor'")
+    floor = _published_block(
+        reference.document.get("floor"), where=f"{reference_path}: 'floor'"
+    )
     statistic = str(floor.get("statistic") or "")
     if statistic != RESIDUAL_STATISTIC:
         raise EmissionsLadderError(
@@ -1277,6 +1336,57 @@ def read_published_floors(
     averaged = _published_block(
         floor.get("depth_averaged"), where=f"{reference_path}: floor.depth_averaged"
     )
+    resolved_value = _published_number(
+        resolved.get("value_mm_s"),
+        where=f"{reference_path}: floor.depth_resolved.value_mm_s",
+    )
+    resolved_depth = _published_number(
+        resolved.get("depth_mm"),
+        where=f"{reference_path}: floor.depth_resolved.depth_mm",
+    )
+    resolved_pair = _published_pair(
+        resolved.get("pair"),
+        where=f"{reference_path}: floor.depth_resolved.pair",
+    )
+    averaged_value = _published_number(
+        averaged.get("value_mm_s"),
+        where=f"{reference_path}: floor.depth_averaged.value_mm_s",
+    )
+    averaged_pair = _published_pair(
+        averaged.get("pair"),
+        where=f"{reference_path}: floor.depth_averaged.pair",
+    )
+    endpoints = _tabulated_endpoints(reference)
+    _require_agrees(
+        resolved_value,
+        endpoints.depth_resolved_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC}",
+        quantity="the depth-resolved endpoint",
+    )
+    _require_agrees(
+        resolved_depth,
+        endpoints.depth_resolved_depth_mm,
+        where=f"WP2's {REFERENCE_FLOOR_DOC}",
+        quantity="the depth-resolved endpoint's depth",
+    )
+    _require_same_pair(
+        reference,
+        "floor.depth_resolved.pair",
+        resolved_pair,
+        endpoints.depth_resolved_pair,
+    )
+    _require_agrees(
+        averaged_value,
+        endpoints.depth_averaged_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC}",
+        quantity="the depth-averaged endpoint",
+    )
+    _require_same_pair(
+        reference,
+        "floor.depth_averaged.pair",
+        averaged_pair,
+        endpoints.depth_averaged_pair,
+    )
     return PublishedFloors(
         plan_fingerprint=plan_fingerprint,
         directory=directory.as_posix(),
@@ -1284,30 +1394,15 @@ def read_published_floors(
         depth_resolved=_published_floor(
             "reference_depth_resolved",
             REFERENCE_FLOOR_DOC,
-            value_mm_s=_published_number(
-                resolved.get("value_mm_s"),
-                where=f"{reference_path}: floor.depth_resolved.value_mm_s",
-            ),
-            depth_mm=_published_number(
-                resolved.get("depth_mm"),
-                where=f"{reference_path}: floor.depth_resolved.depth_mm",
-            ),
-            pair=_published_pair(
-                resolved.get("pair"),
-                where=f"{reference_path}: floor.depth_resolved.pair",
-            ),
+            value_mm_s=resolved_value,
+            depth_mm=resolved_depth,
+            pair=resolved_pair,
         ),
         depth_averaged=_published_floor(
             "reference_depth_averaged",
             REFERENCE_FLOOR_DOC,
-            value_mm_s=_published_number(
-                averaged.get("value_mm_s"),
-                where=f"{reference_path}: floor.depth_averaged.value_mm_s",
-            ),
-            pair=_published_pair(
-                averaged.get("pair"),
-                where=f"{reference_path}: floor.depth_averaged.pair",
-            ),
+            value_mm_s=averaged_value,
+            pair=averaged_pair,
         ),
         job_anchors=tuple(job_anchors),
     )

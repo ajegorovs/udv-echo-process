@@ -24,6 +24,7 @@ adopted. Nothing here mutates the repository.
 from __future__ import annotations
 
 import csv
+import io
 import json
 import math
 import shutil
@@ -33,6 +34,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from udv_echo_process.analysis import _floor_documents as fdp
 from udv_echo_process.analysis import sparse_emissions_ladder as sel
 from udv_echo_process.analysis._sparse_pass import (
     decode_pass,
@@ -605,6 +607,107 @@ DISAGREEING_PUBLISHED: dict[str, float] = {
 }
 
 
+def _table_blocks(path: Path) -> list[list[dict[str, str]]]:
+    """A published table's blocks, one per header."""
+    text = path.read_text(encoding="utf-8").replace(chr(13) + chr(10), chr(10))
+    return [
+        list(csv.DictReader(block.splitlines()))
+        for block in text.split("\n\n")
+        if block.strip()
+    ]
+
+
+def _write_table(path: Path, blocks: list[list[dict[str, str]]]) -> None:
+    """Write a table back, one block per header, in the shape the slice publishes."""
+    parts = []
+    for block in blocks:
+        out = io.StringIO()
+        writer = csv.DictWriter(out, fieldnames=list(block[0]))
+        writer.writeheader()
+        writer.writerows(block)
+        parts.append(out.getvalue().rstrip("\n"))
+    path.write_text("\n\n".join(parts) + "\n", encoding="utf-8", newline="")
+
+
+def _copy_published_pair(destination: Path) -> None:
+    """This pass's WP1 and WP2 documents *and the tables they are authenticated against*.
+
+    The two halves travel together: a document is read only with the table its own
+    ``table_sha256`` covers, so a directory holding just the JSON cannot be read at all.
+    """
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
+        shutil.copyfile(ROOT / REPORT_DIR / name, destination / name)
+        table = Path(name).with_suffix(".csv").name
+        shutil.copyfile(ROOT / REPORT_DIR / table, destination / table)
+
+
+def _move_published_floors(report: Path, published: Mapping[str, float]) -> None:
+    """Republish the named floors: the documents **and** the tables they are checked against.
+
+    A document whose number its own table does not carry is refused — that is the point of the
+    mutation tests below — so a test that wants this slice to screen against different floors
+    has to move both halves, which is what a republish of WP1 or WP2 would do. An endpoint is a
+    *reduction* of the pair table, so moving one moves the worst pair's row and pushes the
+    others below it, leaving the pair both documents already name the worst one.
+    """
+    anchors_path = report / ANCHOR_FLOOR_DOC
+    anchors = json.loads(anchors_path.read_text(encoding="utf-8"))
+    jobs = {str(entry["job"]) for entry in anchors["jobs"]}
+    moved = {job: value for job, value in published.items() if job in jobs}
+    for entry in anchors["jobs"]:
+        if str(entry["job"]) in moved:
+            entry["spread"][sel.RESIDUAL_STATISTIC] = moved[str(entry["job"])]
+    anchors_table = anchors_path.with_suffix(".csv")
+    blocks = _table_blocks(anchors_table)
+    blocks[0] = [
+        {**row, "value": repr(moved[row["job"]])}
+        if row["job"] in moved
+        and row["statistic"] == sel.RESIDUAL_STATISTIC
+        and row["quantity"] == "anchor_range"
+        else row
+        for row in blocks[0]
+    ]
+    _write_table(anchors_table, blocks)
+    anchors["table_sha256"] = fdp.table_digest(anchors_table)
+    anchors_path.write_text(
+        json.dumps(anchors, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+
+    reference_path = report / REFERENCE_FLOOR_DOC
+    reference = json.loads(reference_path.read_text(encoding="utf-8"))
+    floor = reference["floor"]
+    resolved = published["reference_depth_resolved"]
+    averaged = published["reference_depth_averaged"]
+    resolved_pair = tuple(floor["depth_resolved"]["pair"])
+    averaged_pair = tuple(floor["depth_averaged"]["pair"])
+    reference_table = reference_path.with_suffix(".csv")
+    blocks = _table_blocks(reference_table)
+    pairs = []
+    for row in blocks[-1]:
+        pair = (row["left"], row["right"])
+        if pair == resolved_pair:
+            row = {**row, "max_abs_difference_mm_s": repr(resolved)}
+        elif abs(float(row["max_abs_difference_mm_s"])) >= resolved:
+            row = {**row, "max_abs_difference_mm_s": repr(resolved / 2)}
+        if pair == averaged_pair:
+            row = {**row, "mean_difference_mm_s": repr(-averaged)}
+        elif abs(float(row["mean_difference_mm_s"])) >= averaged:
+            row = {**row, "mean_difference_mm_s": repr(-averaged / 2)}
+        pairs.append(row)
+    _write_table(reference_table, [*blocks[:-1], pairs])
+    floor["depth_resolved"]["value_mm_s"] = resolved
+    floor["depth_averaged"]["value_mm_s"] = averaged
+    reference["table_sha256"] = fdp.table_digest(reference_table)
+    reference_path.write_text(
+        json.dumps(reference, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+
+
 def _re_published_artefacts(
     tmp_path: Path,
     published: Mapping[str, float] | None = None,
@@ -612,40 +715,27 @@ def _re_published_artefacts(
     fingerprint: str | None = None,
     where: str = "reports",
 ) -> Path:
-    """A report directory holding a re-published copy of this pass's WP1/WP2 documents.
+    """A report directory holding a re-published copy of this pass's WP1/WP2 artefacts.
 
-    The committed documents are copied beside each other with their floor numbers rewritten,
-    so a test can tell what the slice **adopts from them** apart from what it recomputes from
-    the recordings. ``fingerprint`` replaces the pass identity both documents state.
+    The committed documents are copied beside their tables, with their floor numbers rewritten
+    **in both halves**, so a test can tell what the slice **adopts from them** apart from what
+    it recomputes from the recordings while the pair stays one a generating run could have
+    published. ``fingerprint`` replaces the pass identity both documents state.
     """
     report = tmp_path / where
-    report.mkdir(parents=True, exist_ok=True)
-    anchors = json.loads(
-        (ROOT / REPORT_DIR / ANCHOR_FLOOR_DOC).read_text(encoding="utf-8")
-    )
-    reference = json.loads(
-        (ROOT / REPORT_DIR / REFERENCE_FLOOR_DOC).read_text(encoding="utf-8")
-    )
+    _copy_published_pair(report)
     if published is not None:
-        for entry in anchors["jobs"]:
-            if entry["job"] in published:
-                entry["spread"][sel.RESIDUAL_STATISTIC] = published[entry["job"]]
-        reference["floor"]["depth_resolved"]["value_mm_s"] = published[
-            "reference_depth_resolved"
-        ]
-        reference["floor"]["depth_averaged"]["value_mm_s"] = published[
-            "reference_depth_averaged"
-        ]
+        _move_published_floors(report, published)
     if fingerprint is not None:
-        anchors["plan_fingerprint"] = fingerprint
-        reference["plan_fingerprint"] = fingerprint
-    for name, document in (
-        (ANCHOR_FLOOR_DOC, anchors),
-        (REFERENCE_FLOOR_DOC, reference),
-    ):
-        (report / name).write_text(
-            json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
+            path = report / name
+            document = json.loads(path.read_text(encoding="utf-8"))
+            document["plan_fingerprint"] = fingerprint
+            path.write_text(
+                json.dumps(document, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+                newline="",
+            )
     return report
 
 
@@ -1189,8 +1279,7 @@ def test_the_committed_artefacts_are_reproducible_with_the_recorded_revision(
         "analysis_commit"
     ]
     assert recorded
-    for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
-        shutil.copyfile(ROOT / REPORT_DIR / name, tmp_path / name)
+    _copy_published_pair(tmp_path)
     sel.write_emissions_ladder(
         DATASET_ROOT,
         tmp_path,
@@ -1274,9 +1363,7 @@ def test_the_command_exits_zero_on_the_pass_and_one_on_a_broken_root(
     tmp_path, capsys
 ) -> None:
     reports = tmp_path / "reports"
-    reports.mkdir()
-    for name in (ANCHOR_FLOOR_DOC, REFERENCE_FLOOR_DOC):
-        shutil.copyfile(ROOT / REPORT_DIR / name, reports / name)
+    _copy_published_pair(reports)
     with pytest.raises(SystemExit) as accepted:
         sel.emissions_ladder_main(
             [
@@ -1407,3 +1494,120 @@ def test_the_autocorrelation_reading_reports_both_units_with_the_right_direction
     assert "not monotone" in reading
     assert f"{at_gate['e64'].first_lag_below_half_s:.3f} s" in reading
     assert "rather than as one ordering" in reading
+
+
+# ── the document and its table are read as one pair, or not at all ───
+
+
+def test_a_published_floor_edited_in_the_document_alone_is_refused(tmp_path) -> None:
+    """The digest ties the document to its table; the table ties the *number* back.
+
+    An edited ``anchor-floor.json`` keeps a valid ``table_sha256`` — the table did not move —
+    so the digest on its own would let a floor the recordings never measured become the one
+    this slice screens with. The reader takes the number only while the authenticated table
+    carries the same one, so the pair has to be moved together or not at all.
+    """
+    document_only = tmp_path / "document-only"
+    _copy_published_pair(document_only)
+    path = document_only / ANCHOR_FLOOR_DOC
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["jobs"][0]["spread"][sel.RESIDUAL_STATISTIC] = 99.0
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    with pytest.raises(
+        sel.EmissionsLadderError, match="the authenticated table carries"
+    ):
+        sel.read_published_floors(
+            document_only,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(document_only),
+        )
+
+    endpoint_only = tmp_path / "endpoint-only"
+    _copy_published_pair(endpoint_only)
+    path = endpoint_only / REFERENCE_FLOOR_DOC
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["floor"]["depth_averaged"]["value_mm_s"] = 99.0
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    with pytest.raises(
+        sel.EmissionsLadderError, match="the authenticated table carries"
+    ):
+        sel.read_published_floors(
+            endpoint_only,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(endpoint_only),
+        )
+
+    pair_only = tmp_path / "pair-only"
+    _copy_published_pair(pair_only)
+    path = pair_only / REFERENCE_FLOOR_DOC
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["floor"]["depth_resolved"]["pair"] = ["cr1", "cr4"]
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    with pytest.raises(sel.EmissionsLadderError, match="the pair"):
+        sel.read_published_floors(
+            pair_only,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(pair_only),
+        )
+
+
+def test_a_published_table_edited_alone_is_refused(tmp_path) -> None:
+    """Editing the table alone is caught by the digest the document publishes for it."""
+    moved = tmp_path / "moved"
+    _copy_published_pair(moved)
+    table = moved / Path(ANCHOR_FLOOR_DOC).with_suffix(".csv")
+    blocks = _table_blocks(table)
+    blocks[0] = [
+        {**row, "value": "1.0"}
+        if row["statistic"] == sel.RESIDUAL_STATISTIC
+        and row["quantity"] == "anchor_range"
+        else row
+        for row in blocks[0]
+    ]
+    _write_table(table, blocks)
+    with pytest.raises(sel.EmissionsLadderError, match="hashes to"):
+        sel.read_published_floors(
+            moved,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(moved),
+        )
+
+    emptied = tmp_path / "emptied"
+    _copy_published_pair(emptied)
+    (emptied / Path(REFERENCE_FLOOR_DOC).with_suffix(".csv")).write_text(
+        "", encoding="utf-8"
+    )
+    with pytest.raises(sel.EmissionsLadderError, match="hashes to"):
+        sel.read_published_floors(
+            emptied,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(emptied),
+        )
+
+    tableless = tmp_path / "tableless"
+    _copy_published_pair(tableless)
+    (tableless / Path(ANCHOR_FLOOR_DOC).with_suffix(".csv")).unlink()
+    with pytest.raises(sel.EmissionsLadderError, match="anchor-floor.csv"):
+        sel.read_published_floors(
+            tableless,
+            plan_name="sparse-mixer-live-1",
+            plan_fingerprint=_fingerprint(tableless),
+        )
+
+
+def _fingerprint(report: Path) -> str:
+    """The pass identity the documents in one directory state."""
+    document = json.loads((report / ANCHOR_FLOOR_DOC).read_text(encoding="utf-8"))
+    return str(document["plan_fingerprint"])

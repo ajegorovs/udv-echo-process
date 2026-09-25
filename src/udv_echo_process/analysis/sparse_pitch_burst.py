@@ -85,6 +85,12 @@ from typing import NamedTuple
 import numpy as np
 
 from udv_echo_process.acquire.plan import clamp_resolution
+from udv_echo_process.analysis._floor_documents import (
+    AuthenticatedFloor,
+    FloorDocumentError,
+    read_floor_document,
+    require_agrees,
+)
 from udv_echo_process.analysis._native_grid import nearest_gate_indices
 from udv_echo_process.analysis._sparse_pass import (
     PassDecoding,
@@ -534,60 +540,66 @@ def _documented_pair(document: dict, path: str, slice_name: str) -> tuple[str, s
 
 def _floor_document(
     report_dir: Path, name: str, slice_name: str, plan_fingerprint: str
-) -> dict:
-    """One floor document, refused by name unless it is **this** pass's own.
+) -> AuthenticatedFloor:
+    """One floor document, refused by name unless it is **this** pass's own and authenticated.
 
-    Four facts make a published floor evidence about this pass: the document exists and
+    The checks live in :mod:`udv_echo_process.analysis._floor_documents`, which WP4 reads the
+    same two documents through, so the two readers cannot drift apart: the document exists and
     is a JSON object, it carries a named gate that passed, it names this pass's plan
-    fingerprint, and it publishes the digest of the table it was reduced from.
+    fingerprint, and its published ``table_sha256`` is the digest of the table beside it.
+
+    What this slice then reads *out of* the document is checked against that same table — the
+    digest ties the document to the table, not the number in the document to the table's
+    number, so a document whose floor was edited would otherwise still verify.
     """
-    path = Path(report_dir) / name
-    if not path.is_file():
-        raise PitchBurstError(
-            f"{slice_name}'s {name} is missing under {Path(report_dir).as_posix()!r}: "
-            "this slice screens each pass against that pass's own published floors, so "
-            "it reads WP1's and WP2's documents beside this run's artefacts and never "
-            "substitutes a number of its own"
-        )
     try:
-        document = json.loads(path.read_bytes().decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise PitchBurstError(
-            f"{slice_name}'s {name} is not a readable JSON document ({exc})"
-        ) from exc
-    if not isinstance(document, dict):
-        raise PitchBurstError(f"{slice_name}'s {name} is not a JSON object")
-    checks = document.get("checks")
-    failed = (
-        sorted(key for key, ok in checks.items() if not ok)
-        if isinstance(checks, dict)
-        else []
-    )
-    if (
-        not isinstance(checks, dict)
-        or not checks
-        or failed
-        or document.get("ok") is not True
-    ):
-        raise PitchBurstError(
-            f"{slice_name}'s {name} did not pass its own gate "
-            f"(ok={document.get('ok')!r}, failed={failed}): a floor published by a slice "
-            "that did not hold is not evidence about anything"
+        return read_floor_document(
+            report_dir, name, slice_name=slice_name, plan_fingerprint=plan_fingerprint
         )
-    fingerprint = document.get("plan_fingerprint")
-    if fingerprint != plan_fingerprint:
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _require_agrees(
+    stated: float, tabulated: float, *, where: str, quantity: str
+) -> None:
+    """Refuse unless the document's floor is the number its authenticated table carries."""
+    try:
+        require_agrees(stated, tabulated, where=where, quantity=quantity)
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _tabulated_spread(anchors: AuthenticatedFloor, job: str) -> float:
+    """The spread the authenticated anchor table carries for one job, or a refusal."""
+    try:
+        return anchors.anchor_spread_mm_s(job, statistic=STATISTIC)
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _tabulated_endpoints(reference: AuthenticatedFloor):
+    """Both reference endpoints, as the authenticated reference table carries them."""
+    try:
+        return reference.reference_endpoints()
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _require_same_pair(
+    document: AuthenticatedFloor,
+    path: str,
+    slice_name: str,
+    tabulated: tuple[str, str],
+) -> None:
+    """Refuse unless the pair a document says an endpoint came from is its table's pair."""
+    stated = _documented_pair(document.document, path, slice_name)
+    if stated != tabulated:
         raise PitchBurstError(
-            f"{slice_name}'s {name} was measured for another pass (plan fingerprint "
-            f"{fingerprint!r}, this pass's {plan_fingerprint!r}): its floors screen the "
-            "pass they were measured on, and one pass's floors are not another's"
+            f"{slice_name}'s {document.name} publishes {path} as the pair {stated!r}, but "
+            f"the authenticated table carries that endpoint from {tabulated!r}: the endpoint "
+            "and the pair it was reduced from have to be the same measurement"
         )
-    digest = document.get("table_sha256")
-    if not isinstance(digest, str) or not digest.startswith("sha256:"):
-        raise PitchBurstError(
-            f"{slice_name}'s {name} publishes no table_sha256: the floor cannot be "
-            "traced to the table it was reduced from"
-        )
-    return document
 
 
 def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
@@ -608,13 +620,13 @@ def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
     reference = _floor_document(
         report_dir, REFERENCE_FLOOR_DOC_NAME, "WP2", plan_fingerprint
     )
-    statistics = _documented(anchors, "statistics", "WP1")
+    statistics = _documented(anchors.document, "statistics", "WP1")
     if not isinstance(statistics, dict) or STATISTIC not in statistics:
         raise PitchBurstError(
             f"WP1's {ANCHOR_FLOOR_DOC_NAME} publishes no {STATISTIC!r} statistic: the "
             "anchor guard has to be the same reduction as this slice's per-gate number"
         )
-    reference_statistic = _documented(reference, "floor.statistic", "WP2")
+    reference_statistic = _documented(reference.document, "floor.statistic", "WP2")
     if reference_statistic != STATISTIC:
         raise PitchBurstError(
             f"WP2's {REFERENCE_FLOOR_DOC_NAME} reduced its endpoints with "
@@ -622,7 +634,7 @@ def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
             "same reduction to be comparable, so this slice refuses rather than compare "
             "different quantities"
         )
-    jobs = _documented(anchors, "jobs", "WP1")
+    jobs = _documented(anchors.document, "jobs", "WP1")
     if not isinstance(jobs, list):
         raise PitchBurstError(
             f"WP1's {ANCHOR_FLOOR_DOC_NAME} publishes no job list: an anchor guard is "
@@ -647,14 +659,20 @@ def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
                 f"{spread!r} mm/s: a guard of zero or less is not a guard"
             )
         spreads[job] = spread
+        _require_agrees(
+            spread,
+            _tabulated_spread(anchors, job),
+            where=f"WP1's {ANCHOR_FLOOR_DOC_NAME}",
+            quantity=f"{job!r}'s anchor spread",
+        )
     depth_resolved = _documented_number(
-        reference, "floor.depth_resolved.value_mm_s", "WP2"
+        reference.document, "floor.depth_resolved.value_mm_s", "WP2"
     )
     depth_resolved_depth = _documented_number(
-        reference, "floor.depth_resolved.depth_mm", "WP2"
+        reference.document, "floor.depth_resolved.depth_mm", "WP2"
     )
     depth_averaged = _documented_number(
-        reference, "floor.depth_averaged.value_mm_s", "WP2"
+        reference.document, "floor.depth_averaged.value_mm_s", "WP2"
     )
     if depth_resolved <= 0.0 or depth_averaged <= 0.0:
         raise PitchBurstError(
@@ -662,16 +680,41 @@ def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
             f"({depth_resolved!r}, {depth_averaged!r} mm/s): an endpoint is the largest "
             "absolute difference over the pairs it reduced"
         )
+    endpoints = _tabulated_endpoints(reference)
+    _require_agrees(
+        depth_resolved,
+        endpoints.depth_resolved_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-resolved endpoint",
+    )
+    _require_agrees(
+        depth_resolved_depth,
+        endpoints.depth_resolved_depth_mm,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-resolved endpoint's depth",
+    )
+    _require_agrees(
+        depth_averaged,
+        endpoints.depth_averaged_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-averaged endpoint",
+    )
+    _require_same_pair(
+        reference, "floor.depth_resolved.pair", "WP2", endpoints.depth_resolved_pair
+    )
+    _require_same_pair(
+        reference, "floor.depth_averaged.pair", "WP2", endpoints.depth_averaged_pair
+    )
     return PassFloors(
         anchor_spread_mm_s=spreads,
         depth_resolved_value_mm_s=depth_resolved,
         depth_resolved_depth_mm=depth_resolved_depth,
         depth_resolved_pair=_documented_pair(
-            reference, "floor.depth_resolved.pair", "WP2"
+            reference.document, "floor.depth_resolved.pair", "WP2"
         ),
         depth_averaged_value_mm_s=depth_averaged,
         depth_averaged_pair=_documented_pair(
-            reference, "floor.depth_averaged.pair", "WP2"
+            reference.document, "floor.depth_averaged.pair", "WP2"
         ),
     )
 

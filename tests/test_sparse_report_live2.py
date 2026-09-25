@@ -14,12 +14,14 @@ and compares them is what keeps that from coming back silently.
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
 import pytest
 
+from udv_echo_process.analysis import (
+    _floor_documents as fdp,
+)
 from udv_echo_process.analysis import (
     sparse_anchor_floor,
     sparse_decision_synthesis,
@@ -79,8 +81,13 @@ def digest(path: Path) -> str:
     tree. Hashing the working-tree bytes therefore passes only in a freshly generated tree
     and fails after a `git checkout`/`reset`; hashing the canonical form is what the recorded
     field actually covers (and equals `git show HEAD:<path> | sha256sum`).
+
+    This is the same rule the slices apply to the floors they read, through
+    `analysis._floor_documents.table_digest`: one digest rule in the repository, so the test
+    that holds the report to it and the slices that hold their own inputs to it cannot
+    disagree about what a published digest covers.
     """
-    return "sha256:" + hashlib.sha256(normalized(path)).hexdigest()
+    return fdp.table_digest(path)
 
 
 def normalized(path: Path) -> bytes:

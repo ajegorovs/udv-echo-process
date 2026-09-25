@@ -14,7 +14,9 @@ and published those numbers as the second's screening guards — while refusing 
 Both now read the floors from the pass's own WP1 and WP2 documents beside their own artefacts
 and refuse by name when those documents are absent or belong to another pass. The
 [plan's status block](../../docs/dop3000/sparse-pass-analysis-plan.md) records the amendment,
-and `reports/sparse-mixer-live-1/` regenerates byte for byte unchanged.
+and every *generated* first-sitting artefact regenerates byte for byte unchanged. The only
+first-sitting file this work edits is a hand-written slice document, corrected in passing: a
+sentence counted twelve structural checks while the table beneath it lists fourteen.
 
 **This report is not a comparison.** Every floor in it is this sitting's own, and it states what
 *this* pass measured. Reading it against the first sitting's report is a separate slice with its

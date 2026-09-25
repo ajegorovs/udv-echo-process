@@ -18,12 +18,14 @@ from __future__ import annotations
 
 import csv
 import hashlib
+import io
 import json
 from pathlib import Path
 
 import numpy as np
 import pytest
 
+from udv_echo_process.analysis import _floor_documents as fdp
 from udv_echo_process.analysis import sparse_pitch_burst as spb
 from udv_echo_process.analysis._native_grid import nearest_gate_indices
 from udv_echo_process.analysis._sparse_pass import (
@@ -65,15 +67,26 @@ def floors(decoded):
 
 
 def _seed(directory: Path, *names: str) -> Path:
-    """A report directory seeded with this pass's own floor documents, byte for byte."""
+    """A report directory seeded with this pass's own floor documents and their tables.
+
+    Both halves travel together because the slice authenticates one against the other: a
+    document without the table its ``table_sha256`` covers cannot be read at all.
+    """
     directory.mkdir(parents=True, exist_ok=True)
     for name in names or (spb.ANCHOR_FLOOR_DOC_NAME, spb.REFERENCE_FLOOR_DOC_NAME):
         (directory / name).write_bytes((REPORT_DIR / name).read_bytes())
+        table = Path(name).with_suffix(".csv").name
+        (directory / table).write_bytes((REPORT_DIR / table).read_bytes())
     return directory
 
 
 def _tamper(directory: Path, name: str, mutate) -> None:
-    """One field of one published floor document, rewritten in place (never in reports/)."""
+    """One field of one published floor document, rewritten in place (never in reports/).
+
+    For anything the slice reads *out* of the document this is now a refusal by design — the
+    document no longer agrees with its authenticated table. Use :func:`_republish_*` below for a
+    pair that is meant to be read; use this for the document's own provenance fields.
+    """
     path = directory / name
     document = json.loads(path.read_text(encoding="utf-8"))
     mutate(document)
@@ -82,6 +95,119 @@ def _tamper(directory: Path, name: str, mutate) -> None:
         encoding="utf-8",
         newline="",
     )
+
+
+def _table_blocks(path: Path) -> list[list[dict[str, str]]]:
+    """A published table's blocks, one per header."""
+    text = path.read_text(encoding="utf-8").replace(chr(13) + chr(10), chr(10))
+    return [
+        list(csv.DictReader(block.splitlines()))
+        for block in text.split("\n\n")
+        if block.strip()
+    ]
+
+
+def _write_table(path: Path, blocks: list[list[dict[str, str]]]) -> None:
+    """Write a table back, one block per header, in the shape the slice publishes."""
+    parts = []
+    for block in blocks:
+        out = io.StringIO()
+        writer = csv.DictWriter(out, fieldnames=list(block[0]))
+        writer.writeheader()
+        writer.writerows(block)
+        parts.append(out.getvalue().rstrip("\n"))
+    path.write_text("\n\n".join(parts) + "\n", encoding="utf-8", newline="")
+
+
+def _republish(directory: Path, name: str, document: dict, table: Path) -> None:
+    """Write a republished document: edited numbers, and the digest of its edited table."""
+    document["table_sha256"] = fdp.table_digest(table)
+    (directory / name).write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+
+
+def _republish_anchor_spread(directory: Path, job: str, value_mm_s: float) -> None:
+    """Move one job's spread in WP1's table **and** in its document, so the pair agrees.
+
+    A test that wants this slice to *screen with* a different anchor guard has to move both:
+    a document alone is refused against its table by the authentication below, which is the
+    point of the mutation tests at the end of this file.
+    """
+    path = directory / spb.ANCHOR_FLOOR_DOC_NAME
+    document = json.loads(path.read_text(encoding="utf-8"))
+    for entry in document["jobs"]:
+        if entry["job"] == job:
+            entry["spread"]["mean"] = value_mm_s
+    table = path.with_suffix(".csv")
+    blocks = _table_blocks(table)
+    blocks[0] = [
+        {**row, "value": repr(value_mm_s)}
+        if row["job"] == job
+        and row["statistic"] == "mean"
+        and row["quantity"] == "anchor_range"
+        else row
+        for row in blocks[0]
+    ]
+    _write_table(table, blocks)
+    _republish(directory, spb.ANCHOR_FLOOR_DOC_NAME, document, table)
+
+
+def _only_worst_pair(
+    rows: list[dict[str, str]], left: str, right: str, value: float
+) -> list[dict[str, str]]:
+    """Make one pair the worst depth-averaged difference by magnitude, at ``value``.
+
+    The other rows are pushed under it, so the reduction the slice ends up comparing against is
+    the one this test chose: the endpoint is derived from the table by the same definition WP2
+    uses, not asserted by the document.
+    """
+    out = []
+    for row in rows:
+        mean = float(row["mean_difference_mm_s"])
+        if (row["left"], row["right"]) == (left, right):
+            row = {**row, "mean_difference_mm_s": repr(-value)}
+        elif abs(mean) >= value:
+            row = {
+                **row,
+                "mean_difference_mm_s": repr(-value / 2 if mean < 0 else value / 2),
+            }
+        out.append(row)
+    return out
+
+
+def _republish_reference_pairs(directory: Path, rewrite) -> None:
+    """Rewrite WP2's pair table and its document together, both endpoints re-derived.
+
+    Both endpoints are recomputed here from the rewritten rows exactly as WP2 defines them —
+    the largest absolute per-depth difference over the pairs, and the largest absolute
+    difference between their depth-averaged means — so what the test publishes is a pair that
+    agrees with itself and can only be refused by this slice's own screening.
+    """
+    path = directory / spb.REFERENCE_FLOOR_DOC_NAME
+    table = path.with_suffix(".csv")
+    blocks = _table_blocks(table)
+    pairs = rewrite([dict(row) for row in blocks[-1]])
+    resolved = max(pairs, key=lambda row: abs(float(row["max_abs_difference_mm_s"])))
+    averaged = max(pairs, key=lambda row: abs(float(row["mean_difference_mm_s"])))
+    _write_table(table, [*blocks[:-1], pairs])
+    document = json.loads(path.read_text(encoding="utf-8"))
+    document["floor"]["depth_resolved"].update(
+        {
+            "value_mm_s": abs(float(resolved["max_abs_difference_mm_s"])),
+            "depth_mm": float(resolved["max_abs_depth_mm"]),
+            "pair": [resolved["left"], resolved["right"]],
+        }
+    )
+    document["floor"]["depth_averaged"].update(
+        {
+            "value_mm_s": abs(float(averaged["mean_difference_mm_s"])),
+            "pair": [averaged["left"], averaged["right"]],
+        }
+    )
+    _republish(directory, spb.REFERENCE_FLOOR_DOC_NAME, document, table)
 
 
 def _build(report_dir: Path):
@@ -857,19 +983,9 @@ def test_the_floors_are_the_passs_own_documents_at_their_published_precision(
     that was not the one the constant was measured on.
     """
     report = _seed(tmp_path / "reports")
-
-    def move_the_burst_four_guard(document):
-        for job in document["jobs"]:
-            if job["job"] == "burst-4":
-                job["spread"]["mean"] = 4.3214321
-
-    _tamper(report, spb.ANCHOR_FLOOR_DOC_NAME, move_the_burst_four_guard)
-    _tamper(
-        report,
-        spb.REFERENCE_FLOOR_DOC_NAME,
-        lambda document: document["floor"]["depth_averaged"].update(
-            {"value_mm_s": 1.2349876, "pair": ["cr1", "cr2"]}
-        ),
+    _republish_anchor_spread(report, "burst-4", 4.3214321)
+    _republish_reference_pairs(
+        report, lambda rows: _only_worst_pair(rows, "cr1", "cr2", 1.2349876)
     )
     model = _build(report)
     assert model.anchor_floors_mm_s == {"burst-4": 4.321, "burst-18": 11.98}
@@ -887,13 +1003,7 @@ def test_the_prose_band_and_the_definitions_carry_this_passs_own_floors(
 ) -> None:
     """Nothing in the words is left at another sitting's numbers either."""
     report = _seed(tmp_path / "reports")
-
-    def move_the_burst_four_guard(document):
-        for job in document["jobs"]:
-            if job["job"] == "burst-4":
-                job["spread"]["mean"] = 4.3214321
-
-    _tamper(report, spb.ANCHOR_FLOOR_DOC_NAME, move_the_burst_four_guard)
+    _republish_anchor_spread(report, "burst-4", 4.3214321)
     model = _build(report)
     assert spb._band(model) == "~4-12 mm/s"
     document = spb.def_document(model)
@@ -945,6 +1055,10 @@ def test_a_missing_or_unreadable_floor_document_is_refused_by_name(
     )
     with pytest.raises(spb.PitchBurstError, match="not a readable JSON document"):
         spb.load_pass_floors(unreadable, plan_fingerprint=decoded.plan_fingerprint)
+    tableless = _seed(tmp_path / "tableless")
+    (tableless / Path(spb.ANCHOR_FLOOR_DOC_NAME).with_suffix(".csv")).unlink()
+    with pytest.raises(spb.PitchBurstError, match="anchor-floor.csv"):
+        spb.load_pass_floors(tableless, plan_fingerprint=decoded.plan_fingerprint)
 
 
 def test_a_floor_document_that_did_not_hold_its_own_gate_is_refused(
@@ -974,24 +1088,31 @@ def test_the_endpoints_gate_keeps_the_endpoints_distinct_and_inside_the_support(
 ) -> None:
     """The endpoints are compared with the document *and* with the recordings' support."""
     outside = _seed(tmp_path / "outside")
-    _tamper(
+    _republish_reference_pairs(
         outside,
-        spb.REFERENCE_FLOOR_DOC_NAME,
-        lambda document: document["floor"]["depth_resolved"].update(
-            {"depth_mm": 199.0}
-        ),
+        lambda rows: [
+            {**row, "max_abs_depth_mm": "199"}
+            if (row["left"], row["right"]) == ("cr3", "cr4")
+            else row
+            for row in rows
+        ],
     )
     model = _build(outside)
     assert model.depth_resolved_floor_depth_mm == 199.0
     assert model.checks["the_two_screening_endpoints_are_kept_apart"] is False
     assert model.ok is False
     swapped = _seed(tmp_path / "swapped")
-    _tamper(
+    _republish_reference_pairs(
         swapped,
-        spb.REFERENCE_FLOOR_DOC_NAME,
-        lambda document: document["floor"]["depth_resolved"].update(
-            {"value_mm_s": 1.0}
-        ),
+        lambda rows: [
+            {
+                **row,
+                "max_abs_difference_mm_s": "1"
+                if (row["left"], row["right"]) == ("cr3", "cr4")
+                else "0.5",
+            }
+            for row in rows
+        ],
     )
     assert _build(swapped).checks["the_two_screening_endpoints_are_kept_apart"] is False
 
@@ -1005,20 +1126,12 @@ def test_the_reading_reports_this_passs_own_screening_outcome(tmp_path) -> None:
     the same defect as a floor that cannot be another sitting's.
     """
     above = _seed(tmp_path / "above")
-    _tamper(
-        above,
-        spb.REFERENCE_FLOOR_DOC_NAME,
-        lambda document: document["floor"]["depth_averaged"].update(
-            {"value_mm_s": 1.234}
-        ),
+    _republish_reference_pairs(
+        above, lambda rows: _only_worst_pair(rows, "cr1", "cr2", 1.234)
     )
     below = _seed(tmp_path / "below")
-    _tamper(
-        below,
-        spb.REFERENCE_FLOOR_DOC_NAME,
-        lambda document: document["floor"]["depth_averaged"].update(
-            {"value_mm_s": 20.0}
-        ),
+    _republish_reference_pairs(
+        below, lambda rows: _only_worst_pair(rows, "cr1", "cr2", 20.0)
     )
     readings = {}
     for name, report in (("above", above), ("below", below)):
@@ -1053,3 +1166,97 @@ def test_the_reading_reports_this_passs_own_screening_outcome(tmp_path) -> None:
         in readings["below"]
     )
     assert "exceeds the campaign's own between-run reference floor" in readings["above"]
+
+
+# ── the document and its table are read as one pair, or not at all ───
+
+
+def test_a_floor_edited_in_the_document_alone_is_refused(tmp_path, decoded) -> None:
+    """The digest ties the document to its table; this ties the *number* to the table.
+
+    A document whose floor was edited keeps a perfectly valid ``table_sha256``, because the
+    table did not move — so a digest check on its own would let an edited guard through. The
+    slice screens with that number only while the authenticated table carries the same one.
+    """
+    document_only = _seed(tmp_path / "document-only")
+    _tamper(
+        document_only,
+        spb.ANCHOR_FLOOR_DOC_NAME,
+        lambda document: [
+            job.update({"spread": {**job["spread"], "mean": 99.0}})
+            for job in document["jobs"]
+            if job["job"] == "burst-4"
+        ],
+    )
+    with pytest.raises(spb.PitchBurstError, match="the authenticated table carries"):
+        spb.load_pass_floors(document_only, plan_fingerprint=decoded.plan_fingerprint)
+    with pytest.raises(spb.PitchBurstError, match="the authenticated table carries"):
+        _build(document_only)
+
+    endpoint_only = _seed(tmp_path / "endpoint-only")
+    _tamper(
+        endpoint_only,
+        spb.REFERENCE_FLOOR_DOC_NAME,
+        lambda document: document["floor"]["depth_averaged"].update(
+            {"value_mm_s": 99.0}
+        ),
+    )
+    with pytest.raises(spb.PitchBurstError, match="the authenticated table carries"):
+        spb.load_pass_floors(endpoint_only, plan_fingerprint=decoded.plan_fingerprint)
+
+    pair_only = _seed(tmp_path / "pair-only")
+    _tamper(
+        pair_only,
+        spb.REFERENCE_FLOOR_DOC_NAME,
+        lambda document: document["floor"]["depth_resolved"].update(
+            {"pair": ["cr1", "cr4"]}
+        ),
+    )
+    with pytest.raises(spb.PitchBurstError, match="the pair"):
+        spb.load_pass_floors(pair_only, plan_fingerprint=decoded.plan_fingerprint)
+
+
+def test_a_floor_table_edited_alone_is_refused(tmp_path, decoded) -> None:
+    """Editing the table alone is caught by the digest the document publishes for it."""
+    moved = _seed(tmp_path / "moved")
+    table = moved / Path(spb.ANCHOR_FLOOR_DOC_NAME).with_suffix(".csv")
+    blocks = _table_blocks(table)
+    blocks[0] = [
+        {**row, "value": "1.0"}
+        if row["job"] == "burst-4"
+        and row["statistic"] == "mean"
+        and row["quantity"] == "anchor_range"
+        else row
+        for row in blocks[0]
+    ]
+    _write_table(table, blocks)
+    with pytest.raises(spb.PitchBurstError, match="hashes to"):
+        spb.load_pass_floors(moved, plan_fingerprint=decoded.plan_fingerprint)
+    with pytest.raises(spb.PitchBurstError, match="hashes to"):
+        _build(moved)
+
+    emptied = _seed(tmp_path / "emptied")
+    emptied_table = emptied / Path(spb.REFERENCE_FLOOR_DOC_NAME).with_suffix(".csv")
+    emptied_table.write_text("", encoding="utf-8")
+    with pytest.raises(spb.PitchBurstError, match="hashes to"):
+        spb.load_pass_floors(emptied, plan_fingerprint=decoded.plan_fingerprint)
+
+
+def test_a_tables_line_endings_are_not_a_refusal(tmp_path, decoded) -> None:
+    """CRLF, which a Windows checkout materialises, is the same authenticated table as LF.
+
+    The digest is taken over the canonical form the generating slice wrote and git stores, so a
+    checkout's line endings cannot become a platform-dependent refusal — the trap the report's
+    own test hit, where a committed digest failed against the working tree.
+    """
+    seeded = _seed(tmp_path / "endings")
+    for name in (spb.ANCHOR_FLOOR_DOC_NAME, spb.REFERENCE_FLOOR_DOC_NAME):
+        table = seeded / Path(name).with_suffix(".csv")
+        canonical = table.read_bytes().replace(b"\x0d\x0a", b"\n")
+        for endings in (b"\n", b"\x0d\x0a"):
+            table.write_bytes(canonical.replace(b"\n", endings))
+            floors = spb.load_pass_floors(
+                seeded, plan_fingerprint=decoded.plan_fingerprint
+            )
+            assert set(floors.anchor_spread_mm_s) == {"burst-4", "burst-18"}
+        table.write_bytes(canonical)
