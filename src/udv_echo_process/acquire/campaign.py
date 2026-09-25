@@ -72,7 +72,13 @@ from pathlib import Path
 
 from pydantic import Field, ValidationError, field_validator
 
-from udv_echo_process.acquire.actuator import ChannelMode, ProcessMode
+from udv_echo_process.acquire.actuator import (
+    BurstState,
+    BurstWriteResult,
+    ChannelMode,
+    DialogField,
+    ProcessMode,
+)
 from udv_echo_process.acquire.config import (
     DEFAULT_CHANNEL,
     DEFAULT_MAX_PROFILES_PER_BLOCK,
@@ -106,6 +112,7 @@ from udv_echo_process.acquire.snapshot import (
     FIXED_FACT_FIELDS,
     SUPPORTED_READ_FACTS,
     CompilationIdentity,
+    DialogParameters,
     FactSource,
     InstrumentFact,
     InstrumentSnapshot,
@@ -455,6 +462,30 @@ class JobManifest(ValueModel):
     #: ``expected_process_mode`` means the manifest predates this field.
     expected_process_mode: ProcessMode | None = None
     observed_process_mode: ProcessMode | None = None
+    #: Every burst transition this **job's** boundary has performed, in the order it performed them
+    #: — the evidence, not a boolean: for each, the request, the state, both dialog rows on both
+    #: sides of the write and the dependent sampling-volume statement the application answered with.
+    #:
+    #: **A history, and deliberately not a scalar.** A resumed run rewrites this manifest, so a single
+    #: field would report only the resume's own write (usually none) and *lose* the transition the
+    #: job's earlier invocation performed — the write is a property of the *job*, not of the
+    #: invocation that happened to make it. The tuple is therefore accumulated across invocations,
+    #: oldest first: a resume that spends no write carries the earlier history unchanged, and a resume
+    #: that writes again appends to it. The run's own ``notes`` state which entries this invocation
+    #: contributed, so the history is never mistaken for a report of the current run.
+    #:
+    #: ``()`` means **this job has spent no burst write at all**, and it covers two different
+    #: situations a later reader has to be able to tell apart from the log's own facts rather than
+    #: from this field: the instrument already stated the job's burst on every invocation (nothing to
+    #: do, ever), or the definition declares no burst at all (nothing to aim at). A job that *did*
+    #: transition always carries the evidence, so a run record says which bursts it wrote, in which
+    #: order, and what the application kept — and a job whose transition could not be verified never
+    #: reaches a manifest.
+    #:
+    #: Defaulted deliberately, like every field below ``log_errors``: a manifest written before this
+    #: slice carries no field at all and reads as the empty history, because a manifest a reader
+    #: refuses is a job whose log can no longer be read at all.
+    burst_transitions: tuple[BurstWriteResult, ...] = ()
 
     @property
     def points_skipped(self) -> int:
@@ -1240,7 +1271,8 @@ def _refuse_failed_reads(checks: tuple[FactCheck, ...]) -> None:
         f"the reading did not establish {named} — each of those facts has a supported read path "
         "in this driver, so this is a read that failed rather than a fact this machine cannot "
         "state, and a campaign does not proceed on a declaration it could have checked. No "
-        "recording was spent and the application is untouched"
+        "recording was spent, no point was recorded, and the compile wrote nothing to the "
+        "instrument"
     )
 
 
@@ -1259,8 +1291,139 @@ def _refuse_disagreements(checks: tuple[FactCheck, ...]) -> None:
     if refused:
         raise CampaignError(
             "the instrument disagrees with the campaign before the first recording, so nothing "
-            "was stored and the application is untouched: " + "; ".join(refused)
+            "was stored and no point was recorded (the compile writes nothing to the instrument; "
+            "a burst transition at the job boundary, if the job needed one, is the only write "
+            "this refusal can follow): " + "; ".join(refused)
         )
+
+
+def _transit_burst_length(
+    actuator: SweepActuator,
+    definition: CampaignDefinition,
+    *,
+    routed: int | None,
+    dialog: DialogParameters,
+    notes: list[str] | None,
+) -> BurstWriteResult | None:
+    """Bring the instrument to the **job's** burst, or refuse — the boundary's transition (§B5).
+
+    The burst length is the one dialog-only parameter a run writes, and it is written here rather
+    than by a point (a point's write is the resolution and the gate count, and nothing else —
+    ``actuator.DIALOG_ONLY_PARAMETERS``): the job's burst is a property of the *job*, so the
+    boundary is the only place it can be established for the recording that follows.
+
+    Three answers, and each says something different:
+
+    - the definition declares **no** burst — there is nothing to request, and the run proceeds as
+      it always did (the compile still refuses a *declared* fact no reader established);
+    - the dialog does not state a burst this reading can compare — nothing is attempted here. The
+      reading cannot be reconciled with the definition either, so the compile refuses it by name;
+      a transition aimed at a state nothing stated would be a write spent on a guess;
+    - the dialog states the definition's own burst — the write is *not* spent. A transition that
+      rewrites the burst it is already at would press the operator's dialog for nothing, and the
+      measured asymmetry of the dependent sampling volume (``max(remembered, floor)``,
+      ``docs/dop3000/burst-length-control-plan.md`` §3) means even a re-selection is not a no-op.
+
+    Otherwise the driver's own transaction runs (``write_dialog_burst_length``: write, verify on a
+    re-opened dialog, return the evidence), and nothing but **VERIFIED** is accepted — the whole
+    point of the transaction is that a requested burst is not a burst the instrument is recording
+    at. Five things are demanded of the result, and each is a separate statement:
+
+    - the state is :attr:`BurstState.VERIFIED` — anything else (``UNCHANGED``: nothing was sent;
+      ``UNVERIFIED``: something was sent and nothing proved what was kept) leaves the instrument's
+      state unestablished, and a point recorded on it would pin a burst nobody read back;
+    - the evidence names **the channel this run routed** — the state is a classification of a
+      *dialog*, and a result about another channel's dialog is not a burst this job read back;
+    - the evidence's *before* row states **the burst this run read** — the write was aimed at the
+      state the pre-write dialog stated, so a ``before_burst`` that disagrees with it describes a
+      dialog this run never saw (the instrument moved under it), and no burst can be read off the
+      result;
+    - the re-opened dialog **states the request** (``verified_burst``) — the state is a
+      classification, and this is the number it is a classification *of*;
+    - the dependent sampling-volume row is **readable** — the application re-selects it from the
+      burst, and it is the evidence that the write was applied rather than merely accepted. Its
+      *value* is recorded and never checked against a law: the volume is the instrument's
+      dependent covariate, and this run has no law that would let it judge the instrument's answer
+      (§2, §B4).
+
+    A refusal **raises** :class:`CampaignError`, and it does so before the compile and long before
+    the first recording — so a job whose burst cannot be established costs no recording, and the
+    application is left in a state the driver's own transaction already closed. The driver's raised
+    refusals (``AcquisitionError``) propagate untouched, exactly as the compile's own refusal does:
+    they already name the fact or the state that stopped the job, and re-wrapping one cause in two
+    diagnoses is the mistake this layer's refusal order exists to avoid.
+
+    ``dialog`` is the reading taken *before* the write; the caller re-reads it after a transition,
+    because the compile reconciles against the state the write established.
+    """
+    requested = definition.burst_length
+    if requested is None:
+        return None
+    stated = dialog.value(DialogField.BURST_LENGTH.value)
+    if stated is None:
+        return None
+    if stated.strip() == str(requested):
+        return None
+
+    result = actuator.write_dialog_burst_length(requested, routed_channel=routed)
+    if result.state is not BurstState.VERIFIED:
+        raise CampaignError(
+            f"the instrument is at burst {stated.strip()} and this job records at "
+            f"{requested}, but the transition did not verify ({result.state.value}): "
+            f"{result.reason or 'the driver classified it without a reason'}. The instrument's "
+            "state is not established, so no point of this job was recorded and the application "
+            "was left as the transition's own refusal path closed it"
+        )
+    if routed is not None and result.channel.strip() != str(routed):
+        raise CampaignError(
+            f"the burst transition reported {result.state.value} for burst {requested}, but its "
+            f"own evidence names channel {result.channel.strip()!r} where this run routed channel "
+            f"{routed}: the state is a classification of a dialog this boundary did not identify, "
+            "so the burst it states cannot be read back for this job — no point of this job was "
+            "recorded"
+        )
+    if result.before_burst is None:
+        raise CampaignError(
+            f"the burst transition reported {result.state.value} for burst {requested}, but its "
+            "own evidence carries no row for the burst the write started from: the state is a "
+            "classification of a *transition*, and a write whose starting point this run cannot "
+            "compare with the dialog it read is a write this job cannot read back — no point of "
+            "this job was recorded"
+        )
+    if result.before_burst.text.strip() != stated.strip():
+        raise CampaignError(
+            f"the burst transition reported {result.state.value} for burst {requested}, but its "
+            f"evidence says the write started from {result.before_burst.text.strip()!r} where this "
+            f"run read {stated.strip()!r} from the dialog: the two are different states of the "
+            "same row, so the instrument moved under this run and no burst can be read back from "
+            "the result — no point of this job was recorded"
+        )
+    if result.verified_burst != requested:
+        kept = (
+            "no burst row at all"
+            if result.after_burst is None
+            else repr(result.after_burst.text)
+        )
+        raise CampaignError(
+            f"the burst transition reported {result.state.value} for burst {requested}, but the "
+            f"dialog states {kept} on the side this run reads back from: the state is a "
+            "classification, and a burst the instrument does not state is a burst this run cannot "
+            "record at — no point of this job was recorded"
+        )
+    if result.verified_sampling_volume is None:
+        raise CampaignError(
+            f"burst {requested} was selected and the dialog was accepted, but no readable "
+            "sampling-volume statement came back with it: the application re-selects that row "
+            "from the burst, so a transition that cannot state it leaves the state the instrument "
+            "accepted unestablished — no point of this job was recorded"
+        )
+    if notes is not None:
+        notes.append(
+            f"burst transition (this invocation's write): {stated.strip()} → {requested}, "
+            f"verified on a re-opened dialog; "
+            f"the application states sampling volume {result.verified_sampling_volume}"
+        )
+    return result
 
 
 def run_campaign(
@@ -1286,24 +1449,48 @@ def run_campaign(
     1. the definition is loaded by the caller and planned statically here
        (:func:`plan_campaign`) — every rule the application would enforce *silently* is
        enforced loudly, and an unplannable file is refused before anything else happens;
-    2. **the channel is established** — ``actuator.ensure_channel()`` opens the dialog,
+    2a. **a resume's definition is proven to be this job** — a previous manifest whose
+       definition fingerprint differs is a different job, and that is a **pure** question
+       (:func:`_previous_manifest_for`), so it is answered before the first gesture on the
+       application rather than after a write has been spent on it;
+    2b. **the channel is established** — ``actuator.ensure_channel()`` opens the dialog,
        verifies the channel and returns it. This is *routing*, not a scientific setting: it
        writes only if the channel differs from the requested one, and its own return is what
        the reading is handed;
-    3. **the instrument is read** — ``instrument_snapshot(routed_channel=<from 2>,
-       dialog_parameters=actuator.read_dialog_parameters())``. The dialog read is a step of
-       its own because the snapshot deliberately does not open that dialog (it presses
-       nothing), and the reading is what the compile is reconciled against;
-    4. **the campaign is compiled** — :func:`compile_campaign`, whose :class:`CampaignError`
+    3. **the instrument is read and the pure refusals are made** — the dialog is read and
+       handed to ``instrument_snapshot(routed_channel=<from 2b>, dialog_parameters=<read
+       here>)``. The dialog read is a step of its own because the snapshot deliberately does
+       not open that dialog (it presses nothing). The **mode rung**
+       (:func:`refuse_process_mode`) judges the caption on this read-only snapshot — it writes
+       nothing, so it precedes any write. Reads and pure refusals first, and only then:
+    4. **the job's burst is transitioned** — this is the one **write** in the boundary, and it
+       runs only after every refusal that needs no write has been made. The dialog already read
+       is compared with the definition's ``burst_length``, and written through
+       ``actuator.write_dialog_burst_length(requested, routed_channel=routed)`` when the two
+       differ (:func:`_transit_burst_length`, plan §B5). Only ``VERIFIED`` is accepted, only
+       with the evidence naming the channel this run routed, naming the burst it read, the
+       re-opened dialog stating the request and a readable dependent sampling-volume row;
+       anything else refuses **here**, before the compile and before the first recording. The
+       dialog and the reading are taken again after a transition, so the reading the compile sees
+       is the state the write established. A definition that declares no burst, or an instrument
+       already at it, spends no write;
+    5. **the campaign is compiled** — :func:`compile_campaign`, whose :class:`CampaignError`
        **propagates untouched**: it already names the state or the fact that stopped the job,
        and re-wrapping it would give one cause two diagnoses. Nothing is stored before this
-       point, which is the whole reason it exists;
-    5. **the resume's identity is validated** — *before* the todo/skipped sets are computed,
+       point, which is the whole reason it exists. The compile is the transition's **second
+       opinion**: the boundary wrote and verified the burst, and the compile independently
+       reconciles the reading against the definition — ``write → verify → compile → record``.
+       Because the boundary may already have written the burst, the compile's refusal names what
+       the *compile* did (nothing stored, no point recorded) and does not claim the whole
+       application untouched;
+    6. **the resume's identity is validated** — *before* the todo/skipped sets are computed,
        so no point can leave the todo set on an identity nothing proved
        (:func:`_validate_resume`). A previous manifest whose definition fingerprint differs
-       refuses and is not bypassable; a previous manifest with no identity, or a different
-       one, refuses by default;
-    6. the points that still have to run are the **compiled** plan's
+       refuses and is not bypassable (answered at step 2a); a previous manifest with no identity,
+       or a different one, refuses by default. This comparison needs the compile, so it can only
+       be made after step 4 — and its refusal is scoped accordingly: no *point* ran and nothing
+       was stored, not that the run did nothing;
+    7. the points that still have to run are the **compiled** plan's
        (:attr:`ExecutableCampaign.points`), and they go through ``SweepRunner.run_points`` —
        the runner's own cycle, unchanged.
 
@@ -1322,11 +1509,15 @@ def run_campaign(
     dialog's ``file already exists`` warning, which wedges the application when nothing
     answers it (docs/16 §12b).
 
-    ``no_snapshot=True`` skips steps 3 and 4 outright: no reading is taken, nothing is
-    compiled, and the manifest is marked ``declared_only`` because the run's points then rest
-    on the definition's declaration alone. A resume under it can never prove an identity (it
-    has no reading of its own to compare), so it refuses unless ``resume_declaration_only``
-    says so on purpose.
+    ``no_snapshot=True`` skips steps 3, 4 and 5 outright: no reading is taken, nothing is
+    compiled, and **no burst is transitioned** — the boundary cannot know what to write without the
+    reading that step 3 takes, so an instrument whose burst differs from the definition is not moved
+    by the run. The manifest is marked ``declared_only`` because the run's points then rest on the
+    definition's declaration alone (and append nothing to ``burst_transitions``: the job's earlier
+    history, if any, is carried unchanged, because the bypass transitions nothing). A resume under
+    it can never prove an identity (it has no reading of its own to compare), so a resume that would
+    *skip* anything — a log with successful records, or a previous manifest — refuses unless
+    ``resume_declaration_only`` says so on purpose.
 
     ``resume_declaration_only=True`` turns each *identity* refusal above into a proceed, and
     only those: a changed definition is a different job and still refuses, because that flag is
@@ -1382,47 +1573,89 @@ def run_campaign(
     # what a compiled run *executes* is the compiled plan, because that is the audited record.
     planned = plan_campaign(definition)
 
-    # Steps 3-5: route, read, compile — all of it before the runner exists, so nothing can be
-    # stored for a job that cannot be compiled. Each of the three calls is made once.
+    # (2a) the resume's *definition* proof (a changed definition is a different job) is pure: it
+    # reads the previous manifest and the definition's fingerprint, needs no instrument state, and
+    # is answered here — before the first gesture — so a job that is not this one never spends the
+    # boundary's burst write on itself. The identity half of the resume needs the compile and is
+    # validated at step 6.
+    previous = _previous_manifest_for(definition, log) if resume else None
+    # The burst history this job's record already carries: every verified transition its **earlier
+    # invocations** spent, oldest first. It is read here, before any gesture, because it is pure —
+    # the manifest beside the log is the whole source — and because a resume that spends no write
+    # (the instrument is already at the job's burst, or ``no_snapshot`` transitions nothing) must
+    # still carry it onto the record it rewrites. The write belongs to the *job*, not to the
+    # invocation that happened to make it, so the field below is an accumulation and never a report
+    # of this run alone.
+    carried_transitions: tuple[BurstWriteResult, ...] = (
+        () if previous is None else previous.burst_transitions
+    )
+
+    # Steps 3-5: route, read, refuse (pure), transition (the one write), compile — all of it before
+    # the runner exists, so nothing can be stored for a job that cannot be compiled.
     compiled: ExecutableCampaign | None = None
+    transition: BurstWriteResult | None = None
     if no_snapshot:
-        # Nothing is read and nothing is compiled, by definition of the flag. The points are
-        # the static plan's — the same list the compile builds its identity around — and the
-        # manifest states that no reading backs them.
+        # Nothing is read and nothing is compiled, by definition of the flag — and therefore no
+        # burst is transitioned either: the boundary cannot know what to write without the reading
+        # this branch skips. The points are the static plan's — the same list the compile builds its
+        # identity around — and the manifest states that no reading backs them.
         if notes is not None:
             notes.append(
-                "no-snapshot: no instrument reading was taken and nothing was compiled; the "
-                "manifest is marked declared-only and no point of this run rests on evidence"
+                "no-snapshot: no instrument reading was taken and nothing was compiled; no burst "
+                "was transitioned either, and the manifest is marked declared-only, so no point of "
+                "this run rests on evidence"
             )
     else:
-        # (3) the routing step. Its own return is the *evidence* the compile needs: the
+        # (2b) the routing step. Its own return is the *evidence* the compile needs: the
         # reading cannot read the channel itself.
         routed = actuator.ensure_channel()
-        # (4) one reading of the instrument, handed what the routing step established and
-        # what the dialog reader read.
+        # (3) the dialog read and the instrument reading — read-only, and the reading the pure
+        # refusals judge below.
+        dialog = actuator.read_dialog_parameters()
         snapshot = actuator.instrument_snapshot(
             routed_channel=routed,
-            dialog_parameters=actuator.read_dialog_parameters(),
+            dialog_parameters=dialog,
         )
-        # (4a) the mode rung — the declaration against the caption, before the compile and long
-        # before the first recording. It is the one fact a run cannot check structurally, and it
-        # refuses by naming both sides and the caption itself (plan §24.4, §24.5 D3/D5).
+        # (3a) the mode rung — the declaration against the caption on the read-only reading, before
+        # any write and long before the first recording. It is the one fact a run cannot check
+        # structurally, and it refuses by naming both sides and the caption itself
+        # (plan §24.4, §24.5 D3/D5). It is *pure*: it presses nothing, so it must precede the
+        # boundary's write.
         refuse_process_mode(snapshot, expected_mode)
-        # (5) compiled, or refused — untouched, because the refusal already names the fact or
-        # the state that stopped the job. The run's raised facts go with it, so the compiled plan
-        # records the policy it was compiled under.
+        # (4) the job boundary's burst transition (§B5) — the one **write** in this block, reached
+        # only after every refusal that needs no write. The burst is the one dialog-only parameter
+        # this run writes and it is a property of the *job*, so the boundary is where it is
+        # established; its own preconditions are checked against the channel the routing step
+        # established. A transition that does not verify raises, so it costs no recording.
+        transition = _transit_burst_length(
+            actuator, definition, routed=routed, dialog=dialog, notes=notes
+        )
+        if transition is not None:
+            # The dialog was written and accepted: these reads are the state the write established,
+            # and they are what the compile is reconciled against below.
+            dialog = actuator.read_dialog_parameters()
+            snapshot = actuator.instrument_snapshot(
+                routed_channel=routed,
+                dialog_parameters=dialog,
+            )
+        # (5) compiled, or refused — the refusal propagates untouched, because it already names the
+        # fact or the state that stopped the job, and the compile itself wrote nothing. The run's
+        # raised facts go with it, so the compiled plan records the policy it was compiled under.
         compiled = compile_campaign(definition, snapshot, strict_facts=strict_facts)
         planned = compiled.points
 
     # (6) the resume's identity, validated *before* the todo/skipped sets are computed: no
     # point may leave the todo set on an identity nothing proved. The log is read once, here,
-    # because the records are what the identity is validated *about*.
+    # because the records are what the identity is validated *about*. The previous manifest was
+    # already read (and the definition proven) at step 2a; the identity comparison needs the
+    # compile and so can only be made now.
     done = recorded_points(log) if resume else set()
     unproven_resume = False
     if resume:
         unproven_resume = _validate_resume(
             definition,
             log,
+            previous=previous,
             compiled=compiled,
             recorded=done,
             declaration_only=resume_declaration_only,
@@ -1437,6 +1670,26 @@ def run_campaign(
         notes.append(
             f"resume: {len(skipped)} of {len(planned)} point(s) are already recorded in "
             f"{log.name}; {len(todo)} to run"
+        )
+
+    # The job's burst history, **accumulated rather than replaced**: what the earlier invocations
+    # recorded, plus this invocation's own write when it spent one. The note states the two halves
+    # separately, because a reader of the run's notes must not read the whole history as this run's
+    # — a resume that spends no write (the instrument already at the job's burst, or a ``no_snapshot``
+    # bypass that transitions nothing) still carries every earlier transition unchanged.
+    burst_transitions: tuple[BurstWriteResult, ...] = (
+        (*carried_transitions, transition) if transition is not None else carried_transitions
+    )
+    if notes is not None and (carried_transitions or transition is not None):
+        notes.append(
+            f"burst history: this job's record carries {len(burst_transitions)} transition(s); "
+            f"{len(carried_transitions)} carried from the previous manifest and "
+            f"{len(burst_transitions) - len(carried_transitions)} performed by this invocation — "
+            + (
+                "this invocation performed a verified write, appended to the history"
+                if transition is not None
+                else "this invocation performed no burst write, so the history is carried unchanged"
+            )
         )
 
     runner = SweepRunner(
@@ -1489,15 +1742,55 @@ def run_campaign(
         observed_process_mode=(
             None if compiled is None else _stated_process_mode(compiled.identity.process_mode)
         ),
+        # The boundary's own evidence, as a job-level **history**: which bursts this job's boundary
+        # has written across its invocations, and what the application answered. The earlier
+        # invocations' transitions are carried first and this invocation's appended last; the empty
+        # tuple means the job has spent no write at all (the instrument stated the job's burst every
+        # time, or the definition declares none).
+        burst_transitions=burst_transitions,
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest
+
+
+def _previous_manifest_for(
+    definition: CampaignDefinition, log: Path
+) -> JobManifest | None:
+    """Step 2a: the previous manifest, or a refusal when it answers a **changed definition**.
+
+    The definition's fingerprint is the *pure* half of the resume proof: the fingerprint comes from
+    the definition file and the previous manifest, needs no instrument state at all, and is therefore
+    answered before the first gesture on the application — so a job that is not this one never spends
+    the boundary's burst write on itself. (A changed definition could otherwise be refused only after
+    the compile, which needs the post-write state.)
+
+    A changed definition is a different job, so its recorded points are points of a job this
+    definition never asked for. Never bypassable: ``--resume-declaration-only`` is about instrument
+    evidence, not about which job this is. The identity half of the resume (:func:`_validate_resume`)
+    needs the compile and is made later.
+
+    The previous manifest is returned so the caller reads it once and hands it to
+    :func:`_validate_resume` rather than reading it a second time.
+    """
+    previous = read_manifest_if_present(manifest_path_for(log))
+    fingerprint = campaign_fingerprint(definition)
+    if previous is not None and previous.fingerprint != fingerprint:
+        raise CampaignError(
+            f"{manifest_path_for(log).name} answers definition fingerprint "
+            f"{previous.fingerprint[:12]}... while this definition's is {fingerprint[:12]}...: "
+            "a changed definition is a different job, so its recorded points belong to a job "
+            "this one never asked for and a resume would silently leave them out. Nothing was "
+            "run. (--resume-declaration-only does not bypass this: that flag is about "
+            "instrument evidence, not about which job this is)"
+        )
+    return previous
 
 
 def _validate_resume(
     definition: CampaignDefinition,
     log: Path,
     *,
+    previous: JobManifest | None,
     compiled: ExecutableCampaign | None,
     recorded: set[str],
     declaration_only: bool,
@@ -1510,9 +1803,6 @@ def _validate_resume(
     fact nobody established. The proof is the previous manifest's ``compilation_identity``
     against the one this run compiled, and the refusals are:
 
-    - **the definition changed** (``fingerprint`` differs) — a different job, so its recorded
-      points are points of a job this definition never asked for. Never bypassable:
-      ``--resume-declaration-only`` is about instrument evidence, not about which job this is;
     - **there is no previous manifest but the log holds successful records** — nothing carries
       an identity for them, which is the same gap as a manifest without one;
     - **the previous manifest carries no identity** — every manifest written before this slice,
@@ -1524,6 +1814,10 @@ def _validate_resume(
     - **this run took no reading at all** (``no_snapshot``) — it has no identity of its own, so
       there is nothing to prove the previous job with.
 
+    ``previous`` is the previous manifest, read (and its *definition* fingerprint checked, which a
+    changed definition refuses on) by :func:`_previous_manifest_for` before any gesture on the
+    application. ``definition`` is still taken so this comparison can name the log it is about.
+
     ``recorded`` is the identities the log already holds as successful
     (:func:`recorded_points`), passed in rather than re-read so that one resume reads its log
     once — and read by the caller *before* this call, because these records are what the
@@ -1532,25 +1826,12 @@ def _validate_resume(
     ``declaration_only`` (the run's ``--resume-declaration-only``) turns every one of those
     *identity* refusals into a proceed and returns ``True``: the caller marks the points it let
     through as ``skipped_without_evidence``, so the record says the skip rested on a
-    declaration. The definition-changed refusal is raised before that branch — deliberately, it
-    is a different kind of claim.
+    declaration. The definition-changed refusal is a different kind of claim and is made earlier,
+    by :func:`_previous_manifest_for`.
 
     Nothing recorded and no manifest is not a refusal: there is nothing to skip, so there is
     nothing to prove.
     """
-    fingerprint = campaign_fingerprint(definition)
-    previous = read_manifest_if_present(manifest_path_for(log))
-
-    if previous is not None and previous.fingerprint != fingerprint:
-        raise CampaignError(
-            f"{manifest_path_for(log).name} answers definition fingerprint "
-            f"{previous.fingerprint[:12]}... while this definition's is {fingerprint[:12]}...: "
-            "a changed definition is a different job, so its recorded points belong to a job "
-            "this one never asked for and a resume would silently leave them out. Nothing was "
-            "run. (--resume-declaration-only does not bypass this: that flag is about "
-            "instrument evidence, not about which job this is)"
-        )
-
     refusal: str | None = None
     if previous is None:
         if recorded:
@@ -1586,7 +1867,7 @@ def _validate_resume(
     if not declaration_only:
         raise CampaignError(
             f"a resume is refused because the identity of the previous job is not proven: "
-            f"{refusal}. Nothing was run and nothing was stored. Pass "
+            f"{refusal}. No point of this job was run and nothing was stored. Pass "
             "--resume-declaration-only to proceed on the declaration alone — the points it "
             "skips are then recorded as skipped without instrument evidence"
         )

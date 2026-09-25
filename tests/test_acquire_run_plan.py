@@ -35,6 +35,11 @@ from pathlib import Path
 import pytest
 
 from udv_echo_process.acquire import campaign, run_plan
+from udv_echo_process.acquire.actuator import (
+    BurstState,
+    BurstWriteResult,
+    ComboReading,
+)
 from udv_echo_process.acquire.campaign import JobManifest, ManifestPoint
 from udv_echo_process.acquire.log import PointStatus
 from udv_echo_process.cli import acquire_main
@@ -983,6 +988,122 @@ def test_a_job_whose_outcome_is_partial_is_recorded_as_such() -> None:
     assert run_plan.next_job(run, manifest).job == "burst-4"
 
 
+def burst_transition_result(before: int, requested: int = 18) -> BurstWriteResult:
+    """One verified transition's evidence, as the driver returns it (channel 1, burst ``requested``)."""
+    return BurstWriteResult(
+        requested_burst=requested,
+        state=BurstState.VERIFIED,
+        channel="1",
+        before_burst=ComboReading(text=str(before)),
+        after_burst=ComboReading(text=str(requested)),
+        after_sampling_volume=ComboReading(text="1.460"),
+    )
+
+
+def test_a_jobs_burst_transitions_are_reported_on_the_passs_own_row() -> None:
+    """A row of the pass's record is read offline, so it may not be silent about a burst write.
+
+    The pass's record exists so a reader can place a job without the instrument. A job whose boundary
+    transitioned the burst carries the driver's own evidence on its manifest; the pass's row has to
+    say so too, or reconstructing the pass offline would lose which job moved the dialog. The row
+    carries the job's **ordered history** — oldest first — so a job that wrote at two boundaries is
+    not flattened into the last one.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
+    job_manifest = job_manifest_for(run, job).model_copy(
+        update={"burst_transitions": (first, second)}
+    )
+
+    manifest = run_plan.record_job(manifest, run, job, job_manifest)
+
+    record = manifest.jobs[0]
+    assert [t.verified_burst for t in record.burst_transitions] == [18, 18]
+    assert [t.before_burst.text for t in record.burst_transitions] == ["10", "4"]
+    assert record.note is not None and "burst" in record.note, record.note
+    assert "accumulated" in record.note, record.note
+
+
+def test_a_resumed_jobs_row_keeps_the_transitions_of_the_earlier_recording() -> None:
+    """A row is rewritten when a resumed job finishes; its earlier transitions must survive.
+
+    The pass's row for a job is folded once per completed job, so a job that ran to a partial result
+    and was resumed overwrites its own row. The row has to carry the *accumulated* history — the
+    earlier recording's transition and the resume's — rather than only the latest write.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
+
+    partial = run_plan.record_job(
+        manifest,
+        run,
+        job,
+        job_manifest_for(run, job, ok=1, failed=1).model_copy(
+            update={"burst_transitions": (first,)}
+        ),
+    )
+    assert [t.before_burst.text for t in partial.jobs[0].burst_transitions] == ["10"]
+
+    resumed = run_plan.record_job(
+        partial,
+        run,
+        job,
+        job_manifest_for(run, job, ok=2).model_copy(
+            update={"burst_transitions": (first, second)}
+        ),
+    )
+
+    assert [t.before_burst.text for t in resumed.jobs[0].burst_transitions] == ["10", "4"], (
+        "the resume's row holds the earlier recording's transition first, then its own"
+    )
+
+
+def test_a_row_keeps_its_own_transitions_when_the_new_manifest_does_not_carry_them() -> None:
+    """The row's record and the job manifest's can be *disjoint*; neither may be dropped.
+
+    The job manifest's history is the authority and normally extends what the row carried, but it
+    does not have to: a job manifest produced by an invocation that never saw the row's earlier
+    recording (a fresh, non-accumulating invocation) carries only its own write. Both are verified
+    transitions this job's boundary spent, so the row has to keep both — the earlier one first — and
+    not overwrite its own record with the manifest's shorter one.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    first = burst_transition_result(10)
+    second = burst_transition_result(4)
+
+    partial = run_plan.record_job(
+        manifest,
+        run,
+        job,
+        job_manifest_for(run, job, ok=1, failed=1).model_copy(
+            update={"burst_transitions": (first,)}
+        ),
+    )
+
+    # The new manifest does not carry the earlier transition at all.
+    resumed = run_plan.record_job(
+        partial,
+        run,
+        job,
+        job_manifest_for(run, job, ok=2).model_copy(
+            update={"burst_transitions": (second,)}
+        ),
+    )
+
+    assert [t.before_burst.text for t in resumed.jobs[0].burst_transitions] == ["10", "4"], (
+        "the row keeps its own earlier transition and appends the manifest's newer one"
+    )
+
+
+
 def test_a_job_with_no_ok_point_is_failed() -> None:
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
@@ -1082,14 +1203,29 @@ def test_the_sheet_says_which_run_wide_fact_refuses_and_which_only_advises() -> 
     (a definition's value for it used to be derived) that does not hold for a pass that *moves* it
     between jobs on purpose. This pass therefore raises it, and both halves are named: the compile
     refuses before the first recording, and the stored file's own word has to agree too.
+
+    ``burst_length`` is the exception, and the sheet has to say *that* instead: since B5 the run
+    writes it through the ``Operating parameters`` dialog at the job boundary, so it is neither a
+    setting the operator prepares by hand nor a fact a disagreement merely refuses
+    (``docs/dop3000/burst-length-control-plan.md`` §B5).
     """
     run = committed_run()
     assert run.strict_facts == ("emissions_per_profile",)
     sheet = run_plan.operator_setup_sheet(run)
     assert (
-        "burst_length: read from the Operating parameters dialog; a disagreement refuses"
-        in sheet
+        "burst_length: read from the Operating parameters dialog; the run transitions it at the "
+        "job boundary when the job's burst differs" in sheet
     )
+    # The transition is not the whole check: the compile still refuses on a disagreement it finds
+    # against the state the write established, and the sheet has to say so (plan §B5 — the compile
+    # is the transition's second opinion).
+    assert (
+        "and the compile that follows refuses on any disagreement it finds" in sheet
+    )
+    assert (
+        "burst_length: read from the Operating parameters dialog; a disagreement refuses"
+        not in sheet
+    ), "the sheet still says a burst disagreement refuses: B5 writes the burst instead"
     assert (
         "prf_us: read from the measurement screen's parameter column; a disagreement refuses"
         in sheet

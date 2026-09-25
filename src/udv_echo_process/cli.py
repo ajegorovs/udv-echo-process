@@ -1091,8 +1091,9 @@ def _run_plan_check(run: run_plan.PlannedRun, as_json: bool) -> int:
                 f"({point.profiles} profiles){note}"
             )
     print(
-        "the jobs run in this order; each one's run-wide burst and emissions are set by hand "
-        "before it (udv-acquire run-plan --plan ... --sheet)"
+        "the jobs run in this order; each one's run-wide emissions are set by hand before it, and "
+        "its burst is transitioned by the run itself at the job boundary (udv-acquire run-plan "
+        "--plan ... --sheet)"
     )
     return 0
 
@@ -1291,11 +1292,12 @@ def acquire_main(argv: list[str] | None = None) -> None:
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
     all nine jobs against the existing writer surface and print what each holds, or the sheet an
-    operator sets the run-wide burst and emissions from — and ``--status`` reads the pass's own
-    record to say which job is next. ``--next`` is the only action that records: it hands the next
-    job's definition to the campaign path unchanged, with its own log, and folds the result into
-    the pass's record. The one thing it adds is the cross-job order, which no single definition can
-    carry.
+    operator reads the run-wide values from (the run transitions each job's burst itself at the
+    boundary; the emissions per profile is the one the operator sets by hand) — and ``--status``
+    reads the pass's own record to say which job is next. ``--next`` is the only action that
+    records: it hands the next job's definition to the campaign path unchanged, with its own log,
+    and folds the result into the pass's record. The one thing it adds is the cross-job order,
+    which no single definition can carry.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -1450,8 +1452,10 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "--no-snapshot",
         action="store_true",
         help=(
-            "take no instrument reading and compile nothing: the manifest, and every point "
-            "from it, are marked 'declared only'"
+            "read nothing and compile nothing: the manifest, and every point from it, are marked "
+            "'declared only'. This is the explicit bypass — it also skips the job boundary's burst "
+            "transition, so the instrument's burst is NOT written to match the definition; set it "
+            "by hand first if the job needs another burst"
         ),
     )
     campaign_parser.add_argument(

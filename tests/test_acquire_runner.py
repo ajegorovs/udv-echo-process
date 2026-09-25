@@ -64,7 +64,10 @@ from udv_echo_process.acquire.actuator import (
     STORE_TIMEOUT_S,
     VIEW_TIMEOUT_S,
     Actuator,
+    BurstState,
+    BurstWriteResult,
     ChannelMode,
+    ComboReading,
     DialogField,
     OverlayKind,
     ParamRole,
@@ -146,6 +149,14 @@ TINY_SIZE = 128
 
 #: The two shapes of the composed store cycle an implementation may call.
 STORE_CALLS = ("record_and_store", "try_record_and_store")
+
+#: The sampling-volume text the fake's dialog states on a re-opened dialog after a burst write —
+#: the value in force at the fixture's own acoustics (``c`` = 1460 m/s, ``f_e`` = 4000 kHz) and the
+#: burst it starts at, as the measurement corpus records it
+#: (``acquisition-campaign-compilation-plan.md`` §18.10). The number is the **application's**
+#: answer: the boundary records it and never derives it (plan §3, §B4), so the fake states it
+#: rather than computing it.
+SAMPLING_VOLUME_TEXT = "0.876"
 
 CLEAR = StripControl.CLEAR_AND_RESTART.value
 
@@ -246,7 +257,9 @@ CLEAN_CONTROLS = 43
 FAKE_CAPTION = "UDOP DOP3010.43"
 
 
-def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
+def expected_snapshot(
+    routed_channel: int | None = None, *, burst: int = BURST_LENGTH
+) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
 
     The PRF, the emissions per profile **and the three dialog-only facts** are this module's measured
@@ -296,7 +309,7 @@ def expected_snapshot(routed_channel: int | None = None) -> InstrumentSnapshot:
         emissions_per_profile=InstrumentFact(
             value=str(EMISSIONS_PER_PROFILE), source=FactSource.READ
         ),
-        burst_length=InstrumentFact(value=str(BURST_LENGTH), source=FactSource.READ),
+        burst_length=InstrumentFact(value=str(burst), source=FactSource.READ),
         sound_speed_ms=InstrumentFact(value=str(int(SOUND_SPEED_MS)), source=FactSource.READ),
         first_gate_mm=InstrumentFact(value=str(int(FIRST_GATE_MM)), source=FactSource.READ),
         max_profiles_per_block=unreadable(
@@ -350,6 +363,19 @@ class FakeActuator:
         #: How often the run read the ``Operating parameters`` dialog, and each reading it got.
         self.dialog_checks = 0
         self.dialog_readings: list[DialogParameters] = []
+        #: The burst length the application's dialog states. The fake *is* the instrument, so a
+        #: transition moves it (``write_dialog_burst_length``) and the compile after the write
+        #: reconciles the **new** state. Defaults to this module's measured constant, which is what
+        #: a job whose definition declares it reads back.
+        self.burst_length = BURST_LENGTH
+        #: The sampling-volume text a re-opened dialog states after a transition.
+        self.sampling_volume_text = SAMPLING_VOLUME_TEXT
+        #: Every ``(requested, routed_channel)`` the job boundary handed the transition, in order.
+        self.burst_writes: list[tuple[int, int | None]] = []
+        #: A scripted transition result: ``None`` means the measured success — ``VERIFIED`` with the
+        #: re-opened rows restating the request and the dependent row readable. A case about the
+        #: boundary's refusals scripts one here instead of moving the fake's burst.
+        self.burst_write_result: BurstWriteResult | None = None
         self.parameters: dict[str, str] = {}
         self.timeouts: list[float] = []
         self.gates_readback: str | None = None
@@ -443,13 +469,47 @@ class FakeActuator:
         reading = DialogParameters(
             channel="1",
             fields=(
-                (DialogField.BURST_LENGTH.value, str(BURST_LENGTH)),
+                (DialogField.BURST_LENGTH.value, str(self.burst_length)),
                 (DialogField.FIRST_GATE_MM.value, str(int(FIRST_GATE_MM))),
                 (DialogField.SOUND_SPEED_MS.value, str(int(SOUND_SPEED_MS))),
             ),
         )
         self.dialog_readings.append(reading)
         return reading
+
+    def write_dialog_burst_length(
+        self, requested: int, *, routed_channel: int | None
+    ) -> BurstWriteResult:
+        """The job boundary's burst transition (plan §B5): the application moves its own dialog.
+
+        Additive on the sweep port, like ``instrument_snapshot`` and ``read_dialog_parameters``: the
+        primitive ``Actuator`` gained nothing, so an implementation that satisfied it before still
+        does. The fake answers the way the measured application does — the burst it states is the
+        one it was written at, so a compile that follows reconciles the *new* state rather than
+        refusing a stale reading — and records every ``(requested, routed_channel)`` it was handed,
+        because the routing step's own answer is what the write's preconditions are checked against
+        and a fake that took it silently could not tell a hand-over from a default.
+
+        ``burst_write_result`` scripts a refusal for the boundary's own cases: a state that is not
+        ``VERIFIED`` (``UNCHANGED`` when nothing was sent, ``UNVERIFIED`` when something was), or a
+        ``VERIFIED`` result whose re-opened row states another burst or no volume at all.
+        """
+        self.calls.append(("write_dialog_burst_length", requested, routed_channel))
+        self.burst_writes.append((requested, routed_channel))
+        if self.burst_write_result is not None:
+            return self.burst_write_result
+        before = self.burst_length
+        self.burst_length = requested
+        return BurstWriteResult(
+            requested_burst=requested,
+            state=BurstState.VERIFIED,
+            dialog_mode=ChannelMode.MANUAL.value,
+            channel="1",
+            before_burst=ComboReading(text=str(before)),
+            before_sampling_volume=ComboReading(text=self.sampling_volume_text),
+            after_burst=ComboReading(text=str(requested)),
+            after_sampling_volume=ComboReading(text=self.sampling_volume_text),
+        )
 
     def instrument_snapshot(
         self,
@@ -483,7 +543,7 @@ class FakeActuator:
         self.calls.append(("instrument_snapshot", routed_channel))
         if self.scripted_snapshot is not None:
             return self.scripted_snapshot
-        return expected_snapshot(routed_channel)
+        return expected_snapshot(routed_channel, burst=self.burst_length)
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole | str, str]:
         """The point's window, written in the committed order, and its read-back.
@@ -2179,6 +2239,10 @@ def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
         "the dialog read is the sweep port's, not a primitive: the driver has the method, but "
         "no existing implementation of the primitive ``Actuator`` is required to gain it"
     )
+    assert "write_dialog_burst_length" not in primitives, (
+        "the burst transition is the job boundary's (plan §B5) and reaches the port the campaign "
+        "drives — the primitive ``Actuator`` answers no dialog write at all"
+    )
     assert sweep - primitives == {
         "apply_point",
         "ensure_channel",
@@ -2186,6 +2250,7 @@ def test_the_snapshot_method_is_additive_on_the_sweep_port() -> None:
         "process_mode_note",
         "read_dialog_parameters",
         "try_record_and_store",
+        "write_dialog_burst_length",
     }
 
 

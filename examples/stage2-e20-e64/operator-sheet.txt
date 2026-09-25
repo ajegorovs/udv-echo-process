@@ -12,7 +12,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e20-a.json
     log        : outputs/live/store/stage2-e20-e64-e20-a.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : A, lead of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-a' at 64
@@ -24,7 +24,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e64-a.json
     log        : outputs/live/store/stage2-e20-e64-e64-a.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : A, follow of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-a' at 20
@@ -36,7 +36,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e64-b.json
     log        : outputs/live/store/stage2-e20-e64-e64-b.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : B, lead of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-b' at 20
@@ -48,7 +48,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e20-b.json
     log        : outputs/live/store/stage2-e20-e64-e20-b.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : B, follow of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-b' at 64
@@ -60,7 +60,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e20-c.json
     log        : outputs/live/store/stage2-e20-e64-e20-c.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : C, lead of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-c' at 64
@@ -72,7 +72,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e64-c.json
     log        : outputs/live/store/stage2-e20-e64-e64-c.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : C, follow of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-c' at 20
@@ -84,7 +84,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e64-d.json
     log        : outputs/live/store/stage2-e20-e64-e64-d.jsonl
     run-wide   : burst_length 10, emissions_per_profile 64, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : D, lead of 2 — set emissions_per_profile 64 for this job; its partner is 'e20-d' at 20
@@ -96,7 +96,7 @@ pairs       : 4 counterbalanced pairs — A: 20 -> 64, B: 64 -> 20, C: 20 -> 64,
     definition : examples/stage2-e20-e64/jobs/e20-d.json
     log        : outputs/live/store/stage2-e20-e64-e20-d.jsonl
     run-wide   : burst_length 10, emissions_per_profile 20, prf_us 600
-                    burst_length: read from the Operating parameters dialog; a disagreement refuses before the first recording
+                    burst_length: read from the Operating parameters dialog; the run transitions it at the job boundary when the job's burst differs from the instrument's — written, read back from a re-opened dialog and then compiled against (write → verify → compile); a transition that does not verify refuses before the first recording, and the compile that follows refuses on any disagreement it finds
                     emissions_per_profile: read from the measurement screen's parameter column; this pass raises it to a refusal, so a disagreement stops the job before the first recording and the stored file's own word has to agree as well (the verifier's own default for it is 'warn')
                     prf_us: read from the measurement screen's parameter column; a disagreement refuses before the first recording
     pair       : D, follow of 2 — set emissions_per_profile 20 for this job; its partner is 'e64-d' at 64

@@ -1,0 +1,1134 @@
+{
+  "purpose": "B5 supervised job-boundary acceptance; only steps 1-4 of a nine-job plan ran",
+  "date": "2026-09-25",
+  "plan_fingerprint": "032676289d6a62b33be7ba8d6d84909224ea30fc4f8c8b354869d3f9f45c805f",
+  "plan_record_sha256_original": "112d2df19355dd4dc516a19eb55d64276fdd1ff1d9bf6e0ae4806396caefefd6",
+  "channel": 1,
+  "created_at": "2026-09-25T14:25:09.576606+03:00",
+  "updated_at": "2026-09-25T14:31:01.451130+03:00",
+  "jobs": [
+    {
+      "job": "burst-4",
+      "step": 1,
+      "status": "ok",
+      "definition_fingerprint": "72fd11a530a5424231e09ad11847088b4e004a5b3062044f6c2313f037f58e6c",
+      "job_manifest_sha256_original": "4687c0fde5246c6e3a0129faec1f6e2e65e8bdfc66ea939e8334abaf1794157d",
+      "point_log_sha256_original": "a6da135017b2b621c3a816c5f3deeb0e6cdc89e2eca6be6cdaa16babbf4bdd35",
+      "started_at": "2026-09-25T14:25:09.577508+03:00",
+      "finished_at": "2026-09-25T14:26:51.142031+03:00",
+      "compilation_identity": {
+        "channel": {
+          "value": "1",
+          "source": "routed"
+        },
+        "mode": {
+          "value": "manual",
+          "source": "read"
+        },
+        "process_mode": {
+          "value": "instrument",
+          "source": "read"
+        },
+        "prf_us": {
+          "value": "600",
+          "source": "read"
+        },
+        "emissions_per_profile": {
+          "value": "20",
+          "source": "read"
+        },
+        "burst_length": {
+          "value": "4",
+          "source": "read"
+        },
+        "sound_speed_ms": {
+          "value": "1480",
+          "source": "read"
+        },
+        "first_gate_mm": {
+          "value": "10",
+          "source": "read"
+        },
+        "max_profiles_per_block": {
+          "value": null,
+          "source": "unreadable"
+        },
+        "class_name": "TMain_Scr",
+        "panels": 4,
+        "strip_view": "ready",
+        "strip_has_slider": false
+      },
+      "burst_transitions": [
+        {
+          "requested_burst": 4,
+          "state": "verified",
+          "dialog_mode": "manual",
+          "channel": "1",
+          "before_burst": {
+            "text": "10",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": null
+          },
+          "before_sampling_volume": {
+            "text": "1.850",
+            "items": [
+              "1.850",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "after_burst": {
+            "text": "4",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 1
+          },
+          "after_sampling_volume": {
+            "text": "1.776",
+            "items": [
+              "1.776",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "refusal_overlay": "",
+          "discarded": false,
+          "reason": ""
+        }
+      ],
+      "points": [
+        {
+          "label": "ctrl-begin",
+          "file": "b5-commissioning-burst-4-ctrl-begin-20260925T142525.BDD",
+          "sha256": "63cb27895543217020af02ce77509cd0619b551397c424f98b1e8c7c5a955cbd",
+          "bytes": 70096,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 4,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 50
+        },
+        {
+          "label": "cc1",
+          "file": "b5-commissioning-burst-4-cc1-20260925T142525.BDD",
+          "sha256": "e9ca910ff2a0e0cbcb3449b3e2d38ef13065ccafdb10ba5cb9a2c02572454494",
+          "bytes": 123089,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 0.617,
+            "gates": 145,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 4,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 145,
+            "resolution_mm": 0.6166666666666667,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 98.93800000000002,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 558,
+          "gates": 145
+        },
+        {
+          "label": "ctrl-mid",
+          "file": "b5-commissioning-burst-4-ctrl-mid-20260925T142525.BDD",
+          "sha256": "7c51146483742d079c9dad2404733bcc85cfce9f3d2cf78ecbfaaa8d84e9b6e3",
+          "bytes": 70096,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 4,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 50
+        },
+        {
+          "label": "cc3",
+          "file": "b5-commissioning-burst-4-cc3-20260925T142525.BDD",
+          "sha256": "4864d39e6a588edd7f8abbb8da7fe32ed125019eaf25421a39411cc6527b00e1",
+          "bytes": 59399,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 2.96,
+            "gates": 31,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 4,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 31,
+            "resolution_mm": 2.96,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 98.93800000000002,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 31
+        },
+        {
+          "label": "ctrl-end",
+          "file": "b5-commissioning-burst-4-ctrl-end-20260925T142525.BDD",
+          "sha256": "cf226faee9ef91c23d70d16ba91e5ada0b3f21249110ebdb6a143511eaf8ad6b",
+          "bytes": 70096,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 4,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 50
+        }
+      ]
+    },
+    {
+      "job": "common-reference-1",
+      "step": 2,
+      "status": "ok",
+      "definition_fingerprint": "a1cd4bf3e47aeea0a91b9b0b1f29e8b4cc32285b0b6ca75ccf795f26d2bafba1",
+      "job_manifest_sha256_original": "2bb2719c475f61e2aa9cbd9c53daa2b7e2121b9fbe0d307d60e2560db5b714f4",
+      "point_log_sha256_original": "e00fae7c9a123238e06a446e4a2dcc67bf7c94045d079ae3686dd084a91c5ae3",
+      "started_at": "2026-09-25T14:27:26.481115+03:00",
+      "finished_at": "2026-09-25T14:28:03.785216+03:00",
+      "compilation_identity": {
+        "channel": {
+          "value": "1",
+          "source": "routed"
+        },
+        "mode": {
+          "value": "manual",
+          "source": "read"
+        },
+        "process_mode": {
+          "value": "instrument",
+          "source": "read"
+        },
+        "prf_us": {
+          "value": "600",
+          "source": "read"
+        },
+        "emissions_per_profile": {
+          "value": "20",
+          "source": "read"
+        },
+        "burst_length": {
+          "value": "10",
+          "source": "read"
+        },
+        "sound_speed_ms": {
+          "value": "1480",
+          "source": "read"
+        },
+        "first_gate_mm": {
+          "value": "10",
+          "source": "read"
+        },
+        "max_profiles_per_block": {
+          "value": null,
+          "source": "unreadable"
+        },
+        "class_name": "TMain_Scr",
+        "panels": 4,
+        "strip_view": "ready",
+        "strip_has_slider": false
+      },
+      "burst_transitions": [
+        {
+          "requested_burst": 10,
+          "state": "verified",
+          "dialog_mode": "manual",
+          "channel": "1",
+          "before_burst": {
+            "text": "4",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 1
+          },
+          "before_sampling_volume": {
+            "text": "1.776",
+            "items": [
+              "1.776",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "after_burst": {
+            "text": "10",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 4
+          },
+          "after_sampling_volume": {
+            "text": "1.850",
+            "items": [
+              "1.850",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "refusal_overlay": "",
+          "discarded": false,
+          "reason": ""
+        }
+      ],
+      "points": [
+        {
+          "label": "cr1",
+          "file": "b5-commissioning-common-reference-1-cr1-20260925T142742.BDD",
+          "sha256": "94a0f11583a3e5f223284ce9cc38762ae30c6e2e4832a611d75843832c7bc990",
+          "bytes": 70096,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 10
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 10,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 10,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 50
+        }
+      ]
+    },
+    {
+      "job": "burst-18",
+      "step": 3,
+      "status": "ok",
+      "definition_fingerprint": "53a7c49eb131b7af62a719c8f79038117616a75ae484673fe6d1b91b56d60656",
+      "job_manifest_sha256_original": "9faa1febce65a9b26a975d715f23b76e0e5f0d5b6d2229f9c9f052cbf6fbb37c",
+      "point_log_sha256_original": "35e4ddeb767b4e7376fad0ec415f0fdeb9daa78275e98fa4409093c16d6eade9",
+      "started_at": "2026-09-25T14:28:22.758863+03:00",
+      "finished_at": "2026-09-25T14:30:04.279923+03:00",
+      "compilation_identity": {
+        "channel": {
+          "value": "1",
+          "source": "routed"
+        },
+        "mode": {
+          "value": "manual",
+          "source": "read"
+        },
+        "process_mode": {
+          "value": "instrument",
+          "source": "read"
+        },
+        "prf_us": {
+          "value": "600",
+          "source": "read"
+        },
+        "emissions_per_profile": {
+          "value": "20",
+          "source": "read"
+        },
+        "burst_length": {
+          "value": "18",
+          "source": "read"
+        },
+        "sound_speed_ms": {
+          "value": "1480",
+          "source": "read"
+        },
+        "first_gate_mm": {
+          "value": "10",
+          "source": "read"
+        },
+        "max_profiles_per_block": {
+          "value": null,
+          "source": "unreadable"
+        },
+        "class_name": "TMain_Scr",
+        "panels": 4,
+        "strip_view": "ready",
+        "strip_has_slider": false
+      },
+      "burst_transitions": [
+        {
+          "requested_burst": 18,
+          "state": "verified",
+          "dialog_mode": "manual",
+          "channel": "1",
+          "before_burst": {
+            "text": "10",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 4
+          },
+          "before_sampling_volume": {
+            "text": "1.850",
+            "items": [
+              "1.850",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "after_burst": {
+            "text": "18",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 8
+          },
+          "after_sampling_volume": {
+            "text": "3.330",
+            "items": [
+              "3.330",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "refusal_overlay": "",
+          "discarded": false,
+          "reason": ""
+        }
+      ],
+      "points": [
+        {
+          "label": "ctrl-begin",
+          "file": "b5-commissioning-burst-18-ctrl-begin-20260925T142838.BDD",
+          "sha256": "5192a9eb32df2f39d5a129da02b1fb45212aa28872635d4c528c6d2de71bafa4",
+          "bytes": 70027,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 18
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 18,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 18,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 560,
+          "gates": 50
+        },
+        {
+          "label": "cc2",
+          "file": "b5-commissioning-burst-18-cc2-20260925T142838.BDD",
+          "sha256": "bcc211ab0a27dad0c18e0d7fc205eb11dfa115406512f93cec490e400caff31d",
+          "bytes": 123253,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 0.617,
+            "gates": 145,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 18
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 18,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 18,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 145,
+            "resolution_mm": 0.6166666666666667,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 98.93800000000002,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 559,
+          "gates": 145
+        },
+        {
+          "label": "ctrl-mid",
+          "file": "b5-commissioning-burst-18-ctrl-mid-20260925T142838.BDD",
+          "sha256": "dba93a877558eaea8bd53b7c7e0fa2c938ca9fb47a04124326af9dab993446a9",
+          "bytes": 70165,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 18
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 18,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 18,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 562,
+          "gates": 50
+        },
+        {
+          "label": "cc4",
+          "file": "b5-commissioning-burst-18-cc4-20260925T142838.BDD",
+          "sha256": "56a88fa587234afa0e2e78db2d140a19ec4018a4bfec274fc26767cbb657d38c",
+          "bytes": 59399,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 2.96,
+            "gates": 31,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 18
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 18,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 18,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 31,
+            "resolution_mm": 2.96,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 98.93800000000002,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 31
+        },
+        {
+          "label": "ctrl-end",
+          "file": "b5-commissioning-burst-18-ctrl-end-20260925T142838.BDD",
+          "sha256": "6519a44094cea0e51db2f0314f2b00ed2fdabc7e2331f976ae99b40008b53839",
+          "bytes": 70165,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 18
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 18,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 18,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 562,
+          "gates": 50
+        }
+      ]
+    },
+    {
+      "job": "common-reference-2",
+      "step": 4,
+      "status": "ok",
+      "definition_fingerprint": "d0e8668a3e263e86fea4773be566a0434a77f380922fd621ffdd77add68471e4",
+      "job_manifest_sha256_original": "f35209cf8ad98c7abc13a6a10d9cf6a582a36d8d6286300abed17a5fc3deac88",
+      "point_log_sha256_original": "b454cfa53e32c3afa9c84b3a1bd81aa3a64034d484d6c39ab3b48b426f90d030",
+      "started_at": "2026-09-25T14:30:24.169686+03:00",
+      "finished_at": "2026-09-25T14:31:01.450253+03:00",
+      "compilation_identity": {
+        "channel": {
+          "value": "1",
+          "source": "routed"
+        },
+        "mode": {
+          "value": "manual",
+          "source": "read"
+        },
+        "process_mode": {
+          "value": "instrument",
+          "source": "read"
+        },
+        "prf_us": {
+          "value": "600",
+          "source": "read"
+        },
+        "emissions_per_profile": {
+          "value": "20",
+          "source": "read"
+        },
+        "burst_length": {
+          "value": "10",
+          "source": "read"
+        },
+        "sound_speed_ms": {
+          "value": "1480",
+          "source": "read"
+        },
+        "first_gate_mm": {
+          "value": "10",
+          "source": "read"
+        },
+        "max_profiles_per_block": {
+          "value": null,
+          "source": "unreadable"
+        },
+        "class_name": "TMain_Scr",
+        "panels": 4,
+        "strip_view": "ready",
+        "strip_has_slider": false
+      },
+      "burst_transitions": [
+        {
+          "requested_burst": 10,
+          "state": "verified",
+          "dialog_mode": "manual",
+          "channel": "1",
+          "before_burst": {
+            "text": "18",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 8
+          },
+          "before_sampling_volume": {
+            "text": "3.330",
+            "items": [
+              "3.330",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "after_burst": {
+            "text": "10",
+            "items": [
+              "2",
+              "4",
+              "6",
+              "8",
+              "10",
+              "12",
+              "14",
+              "16",
+              "18",
+              "20",
+              "24",
+              "28",
+              "32"
+            ],
+            "item_index": 4
+          },
+          "after_sampling_volume": {
+            "text": "1.850",
+            "items": [
+              "1.850",
+              "3.700",
+              "1.776",
+              "1.184",
+              "0.888",
+              "0.740",
+              "0.592"
+            ],
+            "item_index": 0
+          },
+          "refusal_overlay": "",
+          "discarded": false,
+          "reason": ""
+        }
+      ],
+      "points": [
+        {
+          "label": "cr2",
+          "file": "b5-commissioning-common-reference-2-cr2-20260925T143040.BDD",
+          "sha256": "4316f117277b02c10551329a60a8277054a4277820ca320a70e17e5fab2ddfb4",
+          "bytes": 70096,
+          "requested": {
+            "sound_speed_ms": 1480.0,
+            "first_gate_mm": 10.0,
+            "resolution_mm": 1.85,
+            "gates": 50,
+            "prf_us": 600.0,
+            "emissions_per_profile": 20,
+            "burst_length": 10
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "op_word_8": 10,
+          "op_word_27": 1,
+          "decoded_config": {
+            "source_freq_khz": 4000.0,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "burst_length": 10,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "sensitivity": "medium",
+            "gate1_mm": 10.138,
+            "n_gates": 50,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "max_depth_mm": 100.788,
+            "sound_speed_ms": 1480.0,
+            "doppler_angle_deg": 0.0,
+            "velo_max_ms": 154.13758351092335,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "tgc_end_db": 40.0,
+            "wall_filter": null,
+            "trigger_state": null,
+            "trigger_delay_ms": 0.0,
+            "skipped_profiles": 0,
+            "module_scale": 2048
+          },
+          "profiles": 561,
+          "gates": 50
+        }
+      ]
+    }
+  ],
+  "pending_jobs": [
+    "emissions-8",
+    "common-reference-3",
+    "emissions-64",
+    "common-reference-4",
+    "emissions-128"
+  ]
+}

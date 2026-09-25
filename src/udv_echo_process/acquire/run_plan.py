@@ -61,6 +61,7 @@ from pathlib import Path
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 
+from udv_echo_process.acquire.actuator import BurstWriteResult
 from udv_echo_process.acquire.campaign import (
     COVARIATE_ACCEPTANCE,
     STRICTABLE_FACTS,
@@ -864,6 +865,19 @@ class RunJobRecord(ValueModel):
     #: row, so a later reader reconstructs pair membership and orientation from the run record
     #: rather than from file names or from the order the jobs happen to be listed in.
     orientation: str | None = None
+    #: The burst transitions this job's boundary has performed, copied from the job's own manifest —
+    #: the driver's :class:`~udv_echo_process.acquire.actuator.BurstWriteResult` (the request, the
+    #: state, both dialog rows on both sides of the write and the dependent sampling-volume
+    #: statement), not a boolean, and an **ordered history** (oldest first) rather than one write.
+    #: An empty tuple means the job has spent no write at all (the instrument stated the job's burst
+    #: on every invocation, the definition declared no burst, or the run took no reading and
+    #: transitioned nothing).
+    #:
+    #: Copied rather than re-derived, and merged with whatever this row already carried, so a row
+    #: rewritten by a resumed job keeps the earlier recording's transitions instead of reporting only
+    #: the latest write. Defaulted, like every field a manifest written before a slice added: a row a
+    #: reader refuses is a pass whose record can no longer be read.
+    burst_transitions: tuple[BurstWriteResult, ...] = ()
 
 
 class RunManifest(ValueModel):
@@ -1675,7 +1689,15 @@ def record_job(
         log=record.log,
         manifest=str(manifest_path_for(Path(record.log))),
         finished_at=job_manifest.finished_at,
-        note=_job_note(job_manifest, status),
+        note=_job_note(job_manifest, status, carried_transitions=record.burst_transitions),
+        # The boundary's own evidence, carried onto the pass's row so reconstructing the pass
+        # offline says which job moved the dialog — and what the application answered. The job
+        # manifest's history is authoritative, and whatever this row already carried is merged in
+        # rather than dropped: a row rewritten by a resumed job keeps the earlier recording's
+        # transitions, oldest first, instead of reporting only the latest write.
+        burst_transitions=_accumulated_transitions(
+            record.burst_transitions, job_manifest.burst_transitions
+        ),
     )
     return manifest.model_copy(
         update={
@@ -1700,12 +1722,61 @@ def _status_of(job_manifest: JobManifest) -> RunJobStatus:
     return RunJobStatus.FAILED
 
 
-def _job_note(job_manifest: JobManifest, status: RunJobStatus) -> str | None:
+def _accumulated_transitions(
+    carried: tuple[BurstWriteResult, ...], recorded: tuple[BurstWriteResult, ...]
+) -> tuple[BurstWriteResult, ...]:
+    """A row's burst history: what it already carried, then what the job's own manifest records.
+
+    The two are normally the same list with the newer recording's entries appended, and then the
+    manifest's own (the authority) is the answer. They can also arrive as *disjoint* lists — a row
+    recorded once and then rewritten by a job whose manifest was produced by a fresh invocation that
+    did not accumulate — and neither may be dropped, because both are verified transitions this job's
+    boundary spent. Merging keeps the earlier entries first (the order is the record) and never
+    duplicates: a manifest that already extends what the row carried is returned unchanged.
+    """
+    if recorded[: len(carried)] == carried:
+        return recorded
+    return (*carried, *recorded)
+
+
+def _transition_text(transition: BurstWriteResult) -> str:
+    """One transition as ``before -> requested (state)``, ``?`` for an unread starting row.
+
+    The state travels with the entry for the same reason it does on the job manifest: a reader must
+    see that the write was a *verified* one (only verified transitions reach a manifest) rather than
+    take the note's word for it.
+    """
+    before = "?" if transition.before_burst is None else transition.before_burst.text
+    return f"{before} → {transition.requested_burst} ({transition.state.value})"
+
+
+def _job_note(
+    job_manifest: JobManifest,
+    status: RunJobStatus,
+    *,
+    carried_transitions: tuple[BurstWriteResult, ...] = (),
+) -> str | None:
     """The job's own summary on the pass's row, plus what a reader must not have to derive."""
     parts = [job_manifest.summary]
     if job_manifest.declared_only:
         parts.append(
             "declared only: no instrument reading was taken and nothing was compiled for this job"
+        )
+    transitions = job_manifest.burst_transitions
+    if transitions:
+        # The phrase matters: the row carries a **history** the job has accumulated across its
+        # invocations, not a report of the one that wrote this row. The entries this recording added
+        # are named separately, so a resume that inherited the earlier transitions and wrote nothing
+        # new cannot read as if it had transitioned anything.
+        added = max(len(transitions) - len(carried_transitions), 0)
+        parts.append(
+            f"burst transitions (accumulated history, oldest first): "
+            f"{', '.join(_transition_text(transition) for transition in transitions)}"
+            + (
+                f"; {added} added by this recording"
+                if added
+                else "; none added by this recording (carried from earlier invocations)"
+            )
         )
     if status is not RunJobStatus.OK:
         failed = [
@@ -1910,11 +1981,37 @@ def _readability(fact: str, *, strict: bool = False) -> str:
     refused before the first recording **and** enforced in the stored file's own word, and the
     sentence says both halves. A sheet that read an advisory fact as one the run will stop for, or a
     raised fact as one it will merely note, would be wrong in the direction that costs a job.
+
+    ``burst_length`` is the one **written** fact and gets its own sentence: since B5 the run
+    transitions it through the ``Operating parameters`` dialog at the job boundary
+    (``campaign._transit_burst_length``), so a sheet that still told the operator to prepare it by
+    hand — or that read a disagreement as a refusal — would be describing a run this repository no
+    longer performs. The transition is *not* the whole check: the compile still reconciles the
+    definition against the state the write established, and the sentence names both halves. The
+    raise, where a pass declares one, is unchanged: it lands on the stored file's own word. The
+    surface lookup sits *after* the reader check, so a fact no reader reaches is described as one no
+    reader reaches whatever its name.
     """
     if fact not in SUPPORTED_READ_FACTS:
         return (
             "no reader in this repository reaches it — confirm it on the screen by hand"
         )
+    if fact == "burst_length":
+        surface = _FACT_SURFACE.get(fact, "the Operating parameters dialog")
+        written = (
+            f"read from {surface}; the run transitions it at the job boundary when the job's "
+            "burst differs from the instrument's — written, read back from a re-opened dialog "
+            "and then compiled against (write → verify → compile); a transition that does not "
+            "verify refuses before the first recording, and the compile that follows refuses on "
+            "any disagreement it finds"
+        )
+        if strict:
+            return (
+                written
+                + ", and this pass raises it to a refusal: the stored file's own word has to "
+                "agree as well"
+            )
+        return written
     surface = _FACT_SURFACE.get(fact, "the measurement screen")
     acceptance = COVARIATE_ACCEPTANCE[fact].value
     if strict:

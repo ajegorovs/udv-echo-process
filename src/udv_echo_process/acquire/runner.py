@@ -98,6 +98,7 @@ from udv_echo_process.acquire.actuator import (
     OVERLAY_ANSWERS,
     STARTABLE_VIEWS,
     Actuator,
+    BurstWriteResult,
     OverlayKind,
     ParamRole,
     ProcessMode,
@@ -182,9 +183,10 @@ class SweepActuator(Actuator, Protocol):
     ``instrument_snapshot`` and ``read_dialog_parameters`` are **additive**: neither has a
     caller in this module's own cycle, and no existing primitive changed to make room for
     them, so an implementation that satisfied the port before still does — it gains two
-    methods. ``process_mode_note`` is additive in the same way and is the third: adding it to the
-    *sweep* port rather than to the primitive :class:`Actuator` is what keeps a pre-slice
-    implementation valid (``tests/test_acquire_runner.py`` pins the two sets apart).
+    methods. ``process_mode_note`` is additive in the same way and is the third, and
+    ``write_dialog_burst_length`` the fourth (the **job boundary's** burst transition, plan §B5):
+    adding them to the *sweep* port rather than to the primitive :class:`Actuator` is what keeps a
+    pre-slice implementation valid (``tests/test_acquire_runner.py`` pins the two sets apart).
     """
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole, str]:
@@ -211,6 +213,34 @@ class SweepActuator(Actuator, Protocol):
         It is read-only with respect to the configuration — it opens the dialog, reads the
         table and closes it again — and a dialog that states nothing is a reading with a
         ``reason``, never a raise and never a guess.
+        """
+        ...
+
+    def write_dialog_burst_length(
+        self, requested: int, *, routed_channel: int | None
+    ) -> BurstWriteResult:
+        """Make the application record at burst ``requested``, and prove it did — or classify why not.
+
+        The job boundary's transition (plan §B5), and the third **additive** method on this port:
+        ``driver.Win32Actuator`` has answered it since the burst slice
+        (``udop/parameters.py::write_dialog_burst_length``, the one acquisition parameter this
+        driver writes through the ``Operating parameters`` dialog that the application also
+        *derives another parameter from*), and no existing primitive changed to make room for it —
+        so an implementation that satisfied the port before still does, and a fake that does not
+        answer it is still a valid :class:`Actuator`.
+
+        It is called at the **job boundary** and not per point (``actuator.DIALOG_ONLY_PARAMETERS``:
+        a point's write is the resolution and the gate count, and nothing else). ``routed_channel``
+        is handed over exactly as :meth:`instrument_snapshot` takes it — the channel
+        :meth:`ensure_channel` verified, which is the fact that makes the write's own preconditions
+        checkable — and the return is the *evidence*: the state, both rows on both sides, and the
+        dependent sampling-volume row the application re-selected (:class:`BurstWriteResult`).
+
+        A refusal is a classification and not a shrug: ``UNCHANGED`` (nothing was sent) and
+        ``UNVERIFIED`` (something was sent and nothing proved what the application kept) come back
+        as results, while a transition that reached ``Accept`` without verifying **raises**
+        (:class:`~udv_echo_process.acquire.driver.AcquisitionError`) — see the driver's own
+        contract. Either way the caller must not record a point on a burst it has not read back.
         """
         ...
 
