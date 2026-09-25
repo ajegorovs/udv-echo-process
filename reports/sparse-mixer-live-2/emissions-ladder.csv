@@ -1,0 +1,87 @@
+level,label,job,evidence,burst_length,emissions_per_profile,gates,resolution_mm,supported_gates,profiles_full,profiles_window,statistic,value,unit
+E8,e8,emissions-8,"one scientific recording, bracketed by its job's three block-local anchor controls",10,8,50,1.85,49,826,790,mean,26.0420743208,mm/s
+E8,e8,emissions-8,"one scientific recording, bracketed by its job's three block-local anchor controls",10,8,50,1.85,49,826,790,median,25.7059809235,mm/s
+E8,e8,emissions-8,"one scientific recording, bracketed by its job's three block-local anchor controls",10,8,50,1.85,49,826,790,iqr,28.2618337113,mm/s
+E8,e8,emissions-8,"one scientific recording, bracketed by its job's three block-local anchor controls",10,8,50,1.85,49,826,790,rms,40.3408652423,mm/s
+E8,e8,emissions-8,"one scientific recording, bracketed by its job's three block-local anchor controls",10,8,50,1.85,49,826,790,zero_fraction,0.00852492895893,dimensionless
+E20,cr1,common-reference-1,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,mean,21.0189364508,mm/s
+E20,cr1,common-reference-1,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,median,20.9260447002,mm/s
+E20,cr1,common-reference-1,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,iqr,26.9716195637,mm/s
+E20,cr1,common-reference-1,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,rms,34.6580152579,mm/s
+E20,cr1,common-reference-1,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,zero_fraction,0.00902375875723,dimensionless
+E20,cr2,common-reference-2,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,562,536,mean,23.3628254858,mm/s
+E20,cr2,common-reference-2,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,562,536,median,23.481897488,mm/s
+E20,cr2,common-reference-2,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,562,536,iqr,25.619966647,mm/s
+E20,cr2,common-reference-2,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,562,536,rms,35.2832701656,mm/s
+E20,cr2,common-reference-2,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,562,536,zero_fraction,0.00849070971672,dimensionless
+E20,cr3,common-reference-3,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,561,536,mean,22.5966748672,mm/s
+E20,cr3,common-reference-3,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,561,536,median,22.1056690638,mm/s
+E20,cr3,common-reference-3,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,561,536,iqr,24.34818413,mm/s
+E20,cr3,common-reference-3,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,561,536,rms,34.6885799074,mm/s
+E20,cr3,common-reference-3,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,561,536,zero_fraction,0.00772921108742,dimensionless
+E20,cr4,common-reference-4,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,mean,21.2683595128,mm/s
+E20,cr4,common-reference-4,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,median,20.3976712873,mm/s
+E20,cr4,common-reference-4,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,iqr,29.6933570276,mm/s
+E20,cr4,common-reference-4,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,rms,36.1747961385,mm/s
+E20,cr4,common-reference-4,"four runs of the common-reference condition, one per reference job: the only level of this ladder observed in more than one run",10,20,50,1.85,49,560,536,zero_fraction,0.00940450807189,dimensionless
+E64,e64,emissions-64,"one scientific recording, bracketed by its job's three block-local anchor controls",10,64,50,1.85,49,257,246,mean,23.3224563901,mm/s
+E64,e64,emissions-64,"one scientific recording, bracketed by its job's three block-local anchor controls",10,64,50,1.85,49,257,246,median,22.6586179842,mm/s
+E64,e64,emissions-64,"one scientific recording, bracketed by its job's three block-local anchor controls",10,64,50,1.85,49,257,246,iqr,26.1114767985,mm/s
+E64,e64,emissions-64,"one scientific recording, bracketed by its job's three block-local anchor controls",10,64,50,1.85,49,257,246,rms,33.9567335264,mm/s
+E64,e64,emissions-64,"one scientific recording, bracketed by its job's three block-local anchor controls",10,64,50,1.85,49,257,246,zero_fraction,0.0100381616061,dimensionless
+E128,e128,emissions-128,"one scientific recording, bracketed by its job's three block-local anchor controls",10,128,50,1.85,49,145,138,mean,24.9379072701,mm/s
+E128,e128,emissions-128,"one scientific recording, bracketed by its job's three block-local anchor controls",10,128,50,1.85,49,145,138,median,24.6123708364,mm/s
+E128,e128,emissions-128,"one scientific recording, bracketed by its job's three block-local anchor controls",10,128,50,1.85,49,145,138,iqr,23.6785015486,mm/s
+E128,e128,emissions-128,"one scientific recording, bracketed by its job's three block-local anchor controls",10,128,50,1.85,49,145,138,rms,36.1873330997,mm/s
+E128,e128,emissions-128,"one scientific recording, bracketed by its job's three block-local anchor controls",10,128,50,1.85,49,145,138,zero_fraction,0.00828157349896,dimensionless
+
+left_level,right_level,left_label,right_label,mean_difference_mm_s,extreme_abs_mm_s,extreme_signed_mm_s,extreme_depth_mm,knots_positive,knots_negative,gates,unit
+E8,E20,e8,cr1,5.02313786997,28.8370150391,28.8370150391,45.288,26,23,49,mm/s
+E8,E20,e8,cr2,2.679248835,30.4329381935,30.4329381935,48.988,27,22,49,mm/s
+E8,E20,e8,cr3,3.44539945362,25.3601467014,25.3601467014,63.788,28,21,49,mm/s
+E8,E20,e8,cr4,4.77371480802,26.1036599253,26.1036599253,48.988,28,21,49,mm/s
+E20,E64,cr1,e64,-2.30351993923,10.1861084025,-10.1861084025,89.688,18,31,49,mm/s
+E20,E64,cr2,e64,0.0403690957387,7.51832202062,-7.51832202062,93.388,30,19,49,mm/s
+E20,E64,cr3,e64,-0.72578152288,9.57030943307,-9.57030943307,17.538,21,28,49,mm/s
+E20,E64,cr4,e64,-2.05409687728,11.4822013927,-11.4822013927,17.538,19,30,49,mm/s
+E64,E128,e64,e128,-1.61545088006,10.7481968354,-10.7481968354,78.588,12,37,49,mm/s
+
+level,label,job,anchor,residual_mean_mm_s,residual_extreme_abs_mm_s,residual_extreme_signed_mm_s,residual_extreme_depth_mm,knots_positive,knots_negative,gates,job_anchor_floor_mm_s,unit
+E8,e8,emissions-8,ctrl-begin,7.42867820815,21.9972257481,21.9972257481,54.538,39,10,49,4.455,mm/s
+E8,e8,emissions-8,ctrl-mid,2.97376084953,21.7137052721,21.7137052721,48.988,24,25,49,4.455,mm/s
+E64,e64,emissions-64,ctrl-begin,-1.43706779052,11.0923451548,-11.0923451548,32.338,15,34,49,0.634,mm/s
+E64,e64,emissions-64,ctrl-mid,-2.07153546779,12.0419987118,-12.0419987118,71.188,20,29,49,0.634,mm/s
+E128,e128,emissions-128,ctrl-begin,-1.50729779794,6.57074277535,-6.57074277535,48.988,15,34,49,1.59,mm/s
+E128,e128,emissions-128,ctrl-mid,-0.167398384932,9.57251636727,9.57251636727,45.288,21,28,49,1.59,mm/s
+
+level,label,job,profiles,record_duration_s,median_interval_s,mean_interval_s,achieved_period_s,profile_rate_hz,nyquist_hz,frequency_resolution_hz,emissions_times_prf_s,fixed_overhead_s,internal_emission_s,transfer_term_s,blocks,block_duration_s,profiles_per_block_median,profiles_per_block_min,profiles_per_block_max
+E8,e8,emissions-8,826,12.5346,0.0152,0.0151934545455,0.0152,65.7894736842,32.8947368421,0.079779171254,0.0048,0.0104,0.0096,0.0008,6,2,132,131,132
+E20,cr1,common-reference-1,560,12.5179,0.0224,0.0223933810376,0.0224,44.6428571429,22.3214285714,0.0798856038153,0.012,0.0104,0.0096,0.0008,6,2,89,89,90
+E20,cr2,common-reference-2,562,12.5627,0.0224,0.0223934046346,0.0224,44.6428571429,22.3214285714,0.0796007227746,0.012,0.0104,0.0096,0.0008,6,2,89,89,90
+E20,cr3,common-reference-3,561,12.5403,0.0224,0.0223933928571,0.0224,44.6428571429,22.3214285714,0.0797429088618,0.012,0.0104,0.0096,0.0008,6,2,89,89,90
+E20,cr4,common-reference-4,560,12.5179,0.0224,0.0223933810376,0.0224,44.6428571429,22.3214285714,0.0798856038153,0.012,0.0104,0.0096,0.0008,6,2,89,89,90
+E64,e64,emissions-64,257,12.4911,0.0488,0.048793359375,0.0488,20.4918032787,10.2459016393,0.0800570005844,0.0384,0.0104,0.0096,0.0008,6,2,41,41,41
+E128,e128,emissions-128,145,12.5559,0.0872,0.08719375,0.0872,11.4678899083,5.73394495413,0.0796438327798,0.0768,0.0104,0.0096,0.0008,6,2,23,23,23
+
+level,label,requested_depth_mm,depth_mm,gate_index,profiles,lag1_autocorrelation,first_lag_below_half,first_lag_below_half_s,reaches_half,series_mean_mm_s,series_std_mm_s
+E8,e8,21.238,21.238,6,826,0.856864875389,7,0.1064,true,36.9015824931,23.7940811586
+E8,e8,48.988,48.988,21,826,0.747470753479,4,0.0608,true,59.5685311578,19.4509073648
+E8,e8,76.738,76.738,36,826,0.650821722757,8,0.1216,true,7.69900668244,25.0531210121
+E20,cr1,21.238,21.238,6,560,0.799483498644,3,0.0672,true,45.7832490308,23.1939014781
+E20,cr1,48.988,48.988,21,560,0.873829000305,5,0.112,true,31.3608052166,23.3388196762
+E20,cr1,76.738,76.738,36,560,0.698591458984,4,0.0896,true,19.1510786656,16.7726245723
+E20,cr2,21.238,21.238,6,562,0.729150360995,3,0.0672,true,51.4356190528,20.7637976631
+E20,cr2,48.988,48.988,21,562,0.865188882206,6,0.1344,true,30.9020828152,22.9467867204
+E20,cr2,76.738,76.738,36,562,0.65869107387,3,0.0672,true,24.6261016361,13.9840770379
+E20,cr3,21.238,21.238,6,561,0.794181363318,3,0.0672,true,43.9629546553,20.0928376452
+E20,cr3,48.988,48.988,21,561,0.866145988139,5,0.112,true,40.0133507997,21.3093106843
+E20,cr3,76.738,76.738,36,561,0.676394951573,4,0.0896,true,20.3254341893,15.8254504483
+E20,cr4,21.238,21.238,6,560,0.786420500337,4,0.0896,true,39.1106915304,21.9035165142
+E20,cr4,48.988,48.988,21,560,0.899082319838,6,0.1344,true,34.2874409749,27.9013209556
+E20,cr4,76.738,76.738,36,560,0.808085445086,12,0.2688,true,18.9102386913,23.4438656292
+E64,e64,21.238,21.238,6,257,0.577033311553,2,0.0976,true,48.5850134796,19.3332949098
+E64,e64,48.988,48.988,21,257,0.801188735341,4,0.1952,true,34.0737021915,20.6706037647
+E64,e64,76.738,76.738,36,257,0.780740069841,4,0.1952,true,18.7424104464,14.2104540096
+E128,e128,21.238,21.238,6,145,0.497339711483,1,0.0872,true,48.1513851938,18.8717680228
+E128,e128,48.988,48.988,21,145,0.593140459171,2,0.1744,true,35.5612679199,20.2763087909
+E128,e128,76.738,76.738,36,145,0.482904230095,1,0.0872,true,28.3526783462,12.6503093779
