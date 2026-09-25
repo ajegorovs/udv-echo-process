@@ -19,6 +19,12 @@ The boundary runs `write → verify → compile → record`
 the application accepts it; the durable record of it is written at the **end** of the invocation.
 Anything that refuses in between loses the record of a mutation that already happened.
 
+**The mutation at issue is the scoped job-level burst mutation B5 introduced — not every
+instrument write.** The channel routing at `acquire/campaign.py:1611` can also move the instrument,
+and the standalone `udv-acquire burst-length` verb writes outside any job; both are named in §6 as
+separately owned writers this proposal does not make durable. Every "the write" below means *the
+job-boundary burst transition*.
+
 The sequence, as the code orders it:
 
 | # | step | where | durable effect |
@@ -133,7 +139,7 @@ boundary write and is then refused, no artifact in the tree records the move:
   `run_campaign` returns (`cli.py:1216-1217`) and the refusal is raised out of it (`cli.py:1219`);
 - the **next invocation cannot recover it**, because the accumulation reads the earlier manifest
   (`acquire/campaign.py:1589`);
-- and there is **no other durable artifact**: the run's `notes` are an in-memory list printed at
+- and there is **no other durable artifact for this mutation**: the run's `notes` are an in-memory list printed at
   the end of the CLI call (`cli.py:1529`, `:1627-1628`), and the driver writes no log at all — its
   transaction *returns* the evidence (`acquire/udop/parameters.py:642`, model at
   `acquire/actuator.py:602-657`).
@@ -246,15 +252,20 @@ transition **immediately after the write, before the compile and the resume comp
 - **Costs:** it **widens the log's schema**. `SweepLogEntry` is
   `Annotated[SweepLogHeader | SweepPointRecord, …]` (`acquire/log.py:413-418`), and every existing
   reader of that union must ignore the new member (`point_records` `acquire/log.py:463`,
-  `point_names` `:468`); the discriminator's policy decides whether a log written by a newer build
-  is *refused* by an older one, or read as far as it understands — that has to be chosen, not
-  inherited. One transition now has two records (the log entry and the manifest field), which need
-  a dedupe rule. And it does not cover a mutation made by a verb that writes no job log.
-- **Cannot guarantee:** the flush limit of §2, shared with every option; and it does not by itself
+  `point_names` `:468`). The discriminator policy for a log a newer build wrote is **chosen here,
+  not inherited: an unknown entry type refuses the log.** Acquisition logs are forward-schema, and
+  an older checkout silently resuming a log while ignoring mutation records is the dangerous
+  outcome; refusing is the honest one. One transition now has two records (the log entry and the
+  manifest field), which need an **occurrence-safe** reconciliation, not a content key (§5.3). And
+  it does not cover a mutation made by a verb that writes no job log.
+- **Cannot guarantee:** the flush limit of §2, shared with every option; that the append itself
+  succeeds — if it cannot be written, the requirement is to **abort before compiling or recording**
+  (§5.1), which keeps the gap from being compounded but does not close it; and it does not by itself
   cover the channel routing write or the standalone `burst-length` verb (§6).
 - **Requires of the resume/accumulation:** the accumulated history to be assembled from **three**
   sources — the previous manifest (`acquire/campaign.py:1589`), the log's own mutation entries, and
-  this invocation's transition (`:1680`) — with a dedupe key; and `_accumulated_transitions`
+  this invocation's transition (`:1680`) — under an **occurrence-safe** identity, so two identical
+  `10 → 18` mutations stay two events (§5.3); and `_accumulated_transitions`
   (`acquire/run_plan.py:1725-1739`) to be told that a row's history may now include entries no
   manifest ever carried.
 
@@ -291,10 +302,25 @@ here is *after* verification. Adopting it means two writes per transition and a 
 intent-with-no-outcome. The recommendation is O4 now, with the crash window recorded as an explicit
 limit of O4 rather than silently claimed closed.
 
+**When to revisit O3 — the trigger, written down now.** O4 is right for the *scoped* problem: one
+job-owned mutation falling between the job's own log and its own manifest. The escalation rule:
+
+```text
+one job-level mutable setting          → O4 (this proposal)
+several job-level mutations            → reconsider; the log approach starts to duplicate the manifest
+mutations across commands or paths     → O3 (a pipeline-wide journal) becomes preferable
+```
+
+The trigger to watch is any *second* independently owned instrument mutation entering the
+automated acquisition path — for example the channel routing write at `acquire/campaign.py:1611`, or
+a second dialog parameter commanded like burst length. When that happens, O4's per-job log stops
+being the cheapest carrier and the journal's own lifecycle question has to be answered anyway. Until
+then, introducing O3 would design a subsystem for a requirement nobody has declared.
+
 **Evidence balance, stated plainly.** The evidence for O4 being *implementable* is strong: the log
 is append-only, per-job, beside the manifest, and the append point (`acquire/campaign.py:1630-1644`)
 is decisive in the code. The evidence for O4 being *sufficient* is weaker than for O3 in exactly one
-place — O4 covers the burst boundary write and not every mutation — and that is why §6 lists the
+place — O4 covers the burst boundary mutation and not every mutation — and that is why §6 lists the
 uncovered writers rather than claiming a complete trail.
 
 ---
@@ -320,12 +346,24 @@ The append uses the function the runner already uses (`log.append_entry`, `acqui
 the path `run_campaign` already holds (`log`), so there is one append path, one JSONL file per job,
 and no new directory question.
 
-**Open question in the sketch, and it must not be swallowed:** a boundary append that *fails* leaves
-exactly the gap this document is about. The runner's own rule is a `log_errors` list that never
-fails a point (`acquire/runner.py:1026-1030`), but that list only reaches a reader through the
-manifest — which the refused invocation does not write. The implementer must choose between
-surfacing it on the returned/raised refusal (so it is visible at the moment it happens) and
-accepting a silent hole of a narrower kind, and must document the choice.
+**A failed append must fail closed — this is a requirement, not an open question.** Once the
+driver has returned a `VERIFIED` transition, the instrument has moved; if the mutation entry cannot
+be appended, the invocation must **abort before the compile and before any recording**:
+
+```text
+verified instrument mutation
+        ↓
+append the durable transition event
+        ├── succeeds → continue to the re-read, the compile and the points
+        └── fails    → abort the invocation here, naming the append failure
+```
+
+An append failure cannot make the already-performed mutation durable — nothing can, at that point —
+but it must not be *compounded* by recording points under a provenance contract that was not met.
+Folding it into the runner's existing `log_errors` model (`acquire/runner.py:1026-1030`) is
+explicitly **insufficient**, for the reason above: that list only reaches a reader through the
+manifest, and a refused invocation writes none. The abort has to raise out of `run_campaign` with
+the append error named, so the operator sees it at the moment it happens.
 
 ### 5.2 What the new record contains
 
@@ -333,11 +371,12 @@ One new `SweepLogEntry` member in `acquire/log.py`:
 
 | field | source | why it is there |
 |---|---|---|
-| the `BurstWriteResult` verbatim | `acquire/campaign.py:1630` | the **evidence**, not a boolean: request, state, `dialog_mode`, `channel`, both rows on both sides of the write, `refusal_overlay`, `discarded`, `reason` (`acquire/actuator.py:602-657`) |
+| **`mutation_id`** | a fresh uuid4 minted at the append | the **occurrence identity** — see §5.3; a content fingerprint cannot identify an event |
+| `occurred_at` | `_local_now` at the append | when the move happened, not when the invocation ended; it is what orders repeated identical transitions |
 | the job name | `definition.job` | which job's boundary moved the dialog |
 | the definition fingerprint | `campaign_fingerprint(definition)` | attribution without the manifest |
 | the routed channel | `acquire/campaign.py:1611` | the result carries the dialog's own channel field; the routed channel is what the boundary verified against (`acquire/campaign.py:1377`) |
-| the moment | `_local_now` | when the move happened, not when the invocation ended |
+| the `BurstWriteResult` verbatim | `acquire/campaign.py:1630` | the **evidence**, not a boolean: request, state, `dialog_mode`, `channel`, both rows on both sides of the write, `refusal_overlay`, `discarded`, `reason` (`acquire/actuator.py:602-657`) |
 
 Only a `VERIFIED` transition is appended. `UNCHANGED` and `UNVERIFIED` kept nothing
 (`acquire/actuator.py:586-594`) and must never be recorded as a mutation.
@@ -353,10 +392,26 @@ Three sources, oldest first, into one list:
 
 Rules the implementer has to state and test:
 
-- **On the job manifest.** The manifest stays the authority for a history it already carries; the
-  log is the authority for entries no manifest ever carried. A dedupe key has to be named (the
-  request plus the before/after row texts plus the state is the natural one) so that the normal
-  case — the transition is in both the manifest and the log — appears once.
+- **On the job manifest — and this must be occurrence-safe, not content-based.** The manifest stays
+  the authority for a history it already carries; the log is the authority for entries no manifest
+  ever carried. But the reconciliation **must not** key on the transition's content (request plus
+  the before/after row texts plus the state). Two genuinely distinct mutations can be semantically
+  identical — `10 → 18` in one invocation, the instrument later returned to `10`, `10 → 18` again in
+  another — and `burst_transitions` is an **ordered history of occurrences**, not a set of distinct
+  state changes. A content key would silently collapse the second one.
+
+  Two acceptable forms, and the first is preferred:
+
+  1. **an explicit event identity** — the `mutation_id` of §5.2 travels into whatever representation
+     the manifest accumulates (a wrapper record around the `BurstWriteResult` if its own schema is
+     not to change), so "have I already folded this occurrence in?" is a set-membership test on an
+     identifier;
+  2. **a conservative in-sequence reconciliation** — consume the manifest's transitions against the
+     log's entries in order, one matching occurrence at a time, by full result equality. Repeated
+     identical transitions then survive because each consumes its own counterpart.
+
+  What must not ship is a hash of the transition's content used as an occurrence key: it is simpler
+  to write and it loses real mutations.
 - **On the pass row.** `_accumulated_transitions` (`acquire/run_plan.py:1725-1739`) merges the
   row's carried history with the job manifest's; it needs to know that the manifest's list may now
   include entries recovered from the log, or it will report them as this invocation's own.
@@ -371,13 +426,16 @@ Rules the implementer has to state and test:
 ### 5.4 Tests that would have to be added
 
 - `tests/test_acquire_log.py` — round-trip of the new entry type; `point_records` and
-  `point_names` ignore it; the discriminator policy for a log carrying an entry an older build does
-  not know.
+  `point_names` ignore it; **an entry type the build does not know refuses the log** (the chosen
+  policy), rather than being skipped.
 - `tests/test_acquire_campaign_burst.py` — a verified transition followed by a **compile** refusal
   appends exactly one mutation entry and writes **no** new manifest; the same for a
   **resume-identity** refusal; `UNCHANGED` / `UNVERIFIED` append nothing; the next invocation folds
-  the log entry into `burst_transitions`; no duplicate when the manifest already carries it; a
-  manifest that predates the log entry; the append-failure path of §5.1.
+  the log entry into `burst_transitions`; no duplicate when the manifest already carries an
+  occurrence; a manifest that predates the log entry; **two identical `10 → 18` mutations stay two
+  ordered events** (the occurrence-safety test that a content key would fail); and the
+  **append-failure path of §5.1 aborts before the compile**, so no point of that invocation is
+  recorded under an unmet provenance contract.
 - `tests/test_acquire_run_plan.py` — a pass row for a job whose invocation was refused shows the
   recovered transition; a resumed row does not duplicate it; the `note`'s third case.
 - If the standalone verb is covered later (a separate decision): `tests/test_acquire_live.py` for
