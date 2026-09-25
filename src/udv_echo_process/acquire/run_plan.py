@@ -74,8 +74,10 @@ from udv_echo_process.acquire.campaign import (
     load_campaign,
     manifest_path_for,
     plan_campaign,
+    reconciled_burst_history,
 )
 from udv_echo_process.acquire.config import MAX_CHANNEL, MIN_CHANNEL
+from udv_echo_process.acquire.log import burst_mutations, read_entries
 from udv_echo_process.acquire.snapshot import SUPPORTED_READ_FACTS
 from udv_echo_process.models.base import ValueModel
 
@@ -1689,7 +1691,14 @@ def record_job(
         log=record.log,
         manifest=str(manifest_path_for(Path(record.log))),
         finished_at=job_manifest.finished_at,
-        note=_job_note(job_manifest, status, carried_transitions=record.burst_transitions),
+        note=_job_note(
+            job_manifest,
+            status,
+            carried_transitions=record.burst_transitions,
+            recovered_from_log=_recovered_from_log(
+                job_manifest, record.burst_transitions, log_path=record.log
+            ),
+        ),
         # The boundary's own evidence, carried onto the pass's row so reconstructing the pass
         # offline says which job moved the dialog — and what the application answered. The job
         # manifest's history is authoritative, and whatever this row already carried is merged in
@@ -1733,10 +1742,89 @@ def _accumulated_transitions(
     did not accumulate — and neither may be dropped, because both are verified transitions this job's
     boundary spent. Merging keeps the earlier entries first (the order is the record) and never
     duplicates: a manifest that already extends what the row carried is returned unchanged.
+
+    **The manifest's list may now hold entries recovered from the job's own log.** A job manifest is
+    written at the end of an invocation, so one refused after its verified write records the
+    transition only in the log; the next invocation folds it in
+    (``campaign.reconciled_burst_history``, ``docs/dop3000/failed-invocation-provenance.md`` §5.3),
+    and the manifest this row is built from then carries an occurrence no invocation that wrote
+    *this* row performed. Nothing here has to change for that: the prefix test compares full
+    results **in sequence**, one occurrence per entry, so a recovered entry is kept as its own
+    entry and never collapsed into an identical one — which is the property that matters, because
+    two identical ``10 -> 18`` transitions are two events.
     """
     if recorded[: len(carried)] == carried:
         return recorded
     return (*carried, *recorded)
+
+
+def _precedes(moment: datetime, other: datetime | None) -> bool:
+    """True only when ``moment`` is *known* to precede ``other``.
+
+    A moment the manifest does not carry, or a pair that cannot be compared at all (a naive
+    timestamp beside an aware one — a manifest written by something other than this module), answers
+    ``False``: the caller's sentence then keeps its narrower claim instead of a guess.
+    """
+    if other is None:
+        return False
+    try:
+        return moment < other
+    except TypeError:
+        return False
+
+
+def _recovered_from_log(
+    job_manifest: JobManifest,
+    carried: tuple[BurstWriteResult, ...],
+    *,
+    log_path: str | None,
+) -> int:
+    """How many of the manifest's entries beyond the row's own history the job's log records.
+
+    Almost every entry the manifest carries beyond what this row already carried was this
+    recording's own verified write — but not all of them. An entry the job's boundary appended to
+    the log in an *earlier* invocation that was then refused wrote no manifest of its own, so it
+    reaches this manifest only through the log (``campaign.reconciled_burst_history``), and the
+    sentence in :func:`_job_note` must not call it "added by this recording".
+
+    The count is by **occurrence**, using the same rule the accumulation uses: the row's own history
+    is consumed against the log first, then the entries beyond it, one log entry per manifest entry,
+    in sequence, by full result equality — never by a key derived from a transition's content, so a
+    repeated identical transition is not collapsed. An occurrence counts only when the log records
+    it as having happened **before this invocation** (``occurred_at`` earlier than the manifest's own
+    ``started_at``): an entry the log holds with a later stamp is this recording's own write, and the
+    timestamp is the only thing that tells the two apart. ``0`` when the manifest names no readable
+    log — a missing one, or a manifest that predates the log — so the older, narrower sentence is
+    kept rather than a claim nothing supports.
+    """
+    history = job_manifest.burst_transitions
+    if history[: len(carried)] != carried:
+        return 0
+    beyond = history[len(carried) :]
+    source = job_manifest.log_path or log_path
+    if not beyond or source is None:
+        return 0
+    path = Path(source)
+    if not path.is_file():
+        return 0
+    earlier = [
+        mutation.transition
+        for mutation in burst_mutations(read_entries(path))
+        if _precedes(mutation.occurred_at, job_manifest.started_at)
+    ]
+    # What the row's own history does not account for, in the log's order — the same leftovers the
+    # accumulation keeps, so the two agree on which occurrences are still unclaimed.
+    leftover = reconciled_burst_history(carried, tuple(earlier))[len(carried) :]
+    recovered = 0
+    position = 0
+    for transition in beyond:
+        scan = position
+        while scan < len(leftover) and leftover[scan] != transition:
+            scan += 1
+        if scan < len(leftover):
+            position = scan + 1
+            recovered += 1
+    return recovered
 
 
 def _transition_text(transition: BurstWriteResult) -> str:
@@ -1755,6 +1843,7 @@ def _job_note(
     status: RunJobStatus,
     *,
     carried_transitions: tuple[BurstWriteResult, ...] = (),
+    recovered_from_log: int = 0,
 ) -> str | None:
     """The job's own summary on the pass's row, plus what a reader must not have to derive."""
     parts = [job_manifest.summary]
@@ -1769,15 +1858,27 @@ def _job_note(
         # are named separately, so a resume that inherited the earlier transitions and wrote nothing
         # new cannot read as if it had transitioned anything.
         added = max(len(transitions) - len(carried_transitions), 0)
-        parts.append(
-            f"burst transitions (accumulated history, oldest first): "
-            f"{', '.join(_transition_text(transition) for transition in transitions)}"
-            + (
-                f"; {added} added by this recording"
-                if added
-                else "; none added by this recording (carried from earlier invocations)"
+        if added and recovered_from_log:
+            # The third case (§5.3): a transition an *earlier* invocation appended to the job's log
+            # and was then refused on reaches this manifest through the log alone, so "added by this
+            # recording" would be false for it. The sentence names the source instead of the writer.
+            parts.append(
+                f"burst transitions (accumulated history, oldest first): "
+                f"{', '.join(_transition_text(transition) for transition in transitions)}"
+                f"; {added} beyond this row's own history, of which {recovered_from_log} recorded "
+                "by the job's log alone (an invocation refused after its verified write records "
+                "the transition there, and no manifest of its own)"
             )
-        )
+        else:
+            parts.append(
+                f"burst transitions (accumulated history, oldest first): "
+                f"{', '.join(_transition_text(transition) for transition in transitions)}"
+                + (
+                    f"; {added} added by this recording"
+                    if added
+                    else "; none added by this recording (carried from earlier invocations)"
+                )
+            )
     if status is not RunJobStatus.OK:
         failed = [
             outcome.label or outcome.identity

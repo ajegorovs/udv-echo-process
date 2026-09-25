@@ -19,7 +19,14 @@ Three things are under test and nothing else:
 * **the evidence is on the record** — a verified transition is persisted on the job manifest as
   the ordered history ``JobManifest.burst_transitions`` (oldest first, accumulated across every
   invocation of the job), so a pass reconstructed offline says which bursts the run wrote, in
-  which order, and what the application answered.
+  which order, and what the application answered;
+* **and the transition survives an invocation that refused after it** — the write is real the
+  moment the application accepts it, while the manifest is written only at the end of an
+  invocation, so a compile refusal or a resume-identity refusal used to lose the record of a
+  mutation that happened. The verified transition is appended to the job's own log at the
+  boundary instead (``docs/dop3000/failed-invocation-provenance.md`` §O4), the next invocation
+  folds it into the history, and an append that *cannot* be written aborts the invocation rather
+  than recording points under a provenance contract that was not met.
 
 Everything here is headless: the run drives the runner's own in-memory fake (imported, not
 re-implemented), whose burst transition is scriptable so every refusal the boundary has an
@@ -28,6 +35,7 @@ answer for can be exercised without an instrument.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -40,19 +48,31 @@ from test_acquire_campaign import (
     legacy_manifest,
     run_job,
 )
+from test_acquire_run_plan import (
+    burst_transition_result,
+    committed_run,
+    job_manifest_for,
+)
 from test_acquire_runner import (
     BURST_LENGTH,
     PRF_US,
     expected_snapshot,
 )
 
-from udv_echo_process.acquire import campaign
+from udv_echo_process.acquire import campaign, run_plan
 from udv_echo_process.acquire.actuator import (
     BurstState,
     BurstWriteResult,
     ComboReading,
     DialogField,
     ProcessMode,
+)
+from udv_echo_process.acquire.log import (
+    SweepBurstMutation,
+    append_entry,
+    burst_mutations,
+    point_names,
+    read_entries,
 )
 from udv_echo_process.acquire.snapshot import FactSource, InstrumentFact
 
@@ -632,7 +652,9 @@ def test_a_manifest_without_the_history_field_reads_as_an_empty_history(
 
     A reader that refused such a manifest would make every committed job's record unreadable; one
     that *required* the field would do the same. So it is defaulted to the empty tuple — and a
-    resume over one proceeds with an empty carried history rather than refusing.
+    resume over one proceeds rather than refusing. What it *carries* is no longer only what the
+    field says: the job's own log records the transitions the boundary spent, so the resume starts
+    from the log's history instead of from nothing.
     """
     job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
     job.fake.burst_length = 10
@@ -645,10 +667,15 @@ def test_a_manifest_without_the_history_field_reads_as_an_empty_history(
     assert legacy.burst_transitions == ()
 
     campaign.write_manifest(campaign.manifest_path_for(job.log_path), legacy)
-    # The instrument is at the burst the first run wrote, so the resume spends no write and the
-    # history it carries is the empty one the legacy manifest states.
+    # The instrument is at the burst the first run wrote, so the resume spends no write. The
+    # manifest it reads carries no history at all — and the job's own **log** does, so the
+    # transition the first invocation performed is recovered from there rather than lost with the
+    # field (§O4). Losing the field on a manifest is not losing the occurrence.
     resumed = run_job(job, resume=True)
-    assert resumed.burst_transitions == ()
+    assert before_texts(resumed) == ["10"], (
+        "the history a manifest without the field cannot carry is still the job's, and the log is "
+        "where it survives"
+    )
 
 
 def test_the_notes_separate_the_accumulated_history_from_this_invocations_write(
@@ -723,3 +750,363 @@ def test_a_no_snapshot_resume_retains_the_history_and_records_no_new_write(
     )
     text = " ".join(notes)
     assert "no burst write" in text, notes
+
+
+# -------- 9. a refusal after a verified write keeps the record of it in the job's own log
+#
+# The gap this closes (docs/dop3000/failed-invocation-provenance.md §1): the write is real the
+# moment the application accepts it, while the job manifest — its only durable record until now —
+# is written at the *end* of the invocation. A compile refusal or a resume-identity refusal in
+# between therefore left the instrument moved and no artifact saying so. The verified transition
+# is appended to the job's own log at the boundary, before the compile and before the identity
+# comparison, and the next invocation folds it into the accumulated history.
+
+
+def refuse_the_compile(job: Job) -> None:
+    """Script the reading the *post-write* compile reconciles, with a fact that disagrees.
+
+    By the time the compile runs, the boundary has already written and verified the burst — which
+    is exactly the shape this slice exists for: a real instrument mutation followed by a refusal
+    that used to lose the record of it.
+    """
+    reading = expected_snapshot(routed_channel=1, burst=BURST_REQUESTED)
+    job.fake.scripted_snapshot = reading.model_copy(
+        update={"prf_us": InstrumentFact(value=str(PRF_US + 10), source=FactSource.READ)}
+    )
+
+
+def mutation_records(job: Job) -> tuple[SweepBurstMutation, ...]:
+    """Every burst-mutation record the job's log holds, in order; none when there is no log."""
+    if not job.log_path.is_file():
+        return ()
+    return burst_mutations(read_entries(job.log_path))
+
+
+def test_a_compile_refusal_after_a_verified_transition_keeps_the_mutation_in_the_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The instrument moved, no manifest was written, and the log is the record of the move.
+
+    The record is the driver's own evidence (request, state, both rows on both sides, the
+    dependent sampling-volume statement) attributed to the job and the definition it ran, and it
+    carries an occurrence identity — so a later reader can say *what* was written and can tell
+    two identical writes apart.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    refuse_the_compile(job)
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job)
+
+    assert "prf_us" in str(excinfo.value), excinfo.value
+    assert job.fake.burst_writes == [(BURST_REQUESTED, 1)], (
+        "the premise: the boundary spent a verified write before the compile refused"
+    )
+    records = mutation_records(job)
+    assert len(records) == 1, records
+    record = records[0]
+    assert record.mutation_id, "an occurrence identity, so the event is identifiable as itself"
+    assert record.occurred_at is not None
+    assert record.job == job.definition.job
+    assert record.fingerprint == campaign.campaign_fingerprint(job.definition)
+    assert record.routed_channel == 1
+    assert record.transition.state is BurstState.VERIFIED
+    assert record.transition.verified_burst == BURST_REQUESTED
+    assert record.transition.before_burst is not None
+    assert record.transition.before_burst.text == "10"
+    assert record.transition.verified_sampling_volume is not None
+    # Nothing was stored, no point was recorded, and no manifest pretends the job ran: the log
+    # entry is the whole durable record of this invocation.
+    assert job.fake.stored == []
+    assert "apply_point" not in [call[0] for call in job.fake.calls]
+    assert not campaign.manifest_path_for(job.log_path).is_file()
+
+
+def test_a_resume_identity_refusal_after_a_verified_transition_keeps_the_mutation_too(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other refusal that follows the write keeps it on the same terms.
+
+    The identity comparison needs the compile, which needs the post-write reading, so a resume
+    can be refused on its identity only *after* the boundary has transitioned the burst — and the
+    transition has to be durable before the comparison is made.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_LENGTH)
+    first = run_job(job)
+    campaign.write_manifest(
+        campaign.manifest_path_for(job.log_path), legacy_manifest(first)
+    )
+    # The operator moved the dialog between the runs: the boundary brings it back, so the refusal
+    # follows a verified write.
+    job.fake.burst_length = BURST_REQUESTED
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job, resume=True)
+
+    assert "compilation identity" in str(excinfo.value), excinfo.value
+    assert job.fake.burst_writes == [(BURST_LENGTH, 1)]
+    records = mutation_records(job)
+    assert len(records) == 1, records
+    assert records[0].transition.requested_burst == BURST_LENGTH
+    assert records[0].transition.before_burst is not None
+    assert records[0].transition.before_burst.text == str(BURST_REQUESTED)
+    # The manifest beside the log is still the one the first run wrote, and the refusal recorded
+    # no point of its own.
+    kept = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert kept.compilation_identity is None
+    assert kept.burst_transitions == ()
+    assert len(point_names(read_entries(job.log_path))) == 2
+
+
+@pytest.mark.parametrize(
+    ("state", "reason"),
+    [
+        (BurstState.UNCHANGED, "the burst row does not offer 18: nothing was sent"),
+        (
+            BurstState.UNVERIFIED,
+            "the burst row did not restate the selection: the dialog was cancelled",
+        ),
+    ],
+)
+def test_a_transition_that_did_not_verify_is_never_recorded_as_a_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    state: BurstState,
+    reason: str,
+) -> None:
+    """``UNCHANGED`` / ``UNVERIFIED`` kept nothing, so recording one as a mutation would be a lie.
+
+    The doc's own scope: neither outcome is a mutation that needs a record, and the refusal that
+    reports it already names the state and the reason.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job_with_transition(
+        job,
+        BurstWriteResult(
+            requested_burst=BURST_REQUESTED,
+            state=state,
+            channel="1",
+            discarded=True,
+            reason=reason,
+        ),
+    )
+
+    with pytest.raises(campaign.CampaignError):
+        run_job(job)
+
+    assert mutation_records(job) == ()
+    assert_no_recording(job)
+
+
+def test_a_run_that_needs_no_transition_records_no_mutation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An instrument already at the job's burst sends nothing, so there is no event to record.
+
+    The run's own log is a real point log — and holds no mutation, because no write was spent.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_LENGTH)
+
+    manifest = run_job(job)
+
+    assert manifest.burst_transitions == ()
+    assert job.fake.burst_writes == []
+    assert mutation_records(job) == ()
+    assert len(point_names(read_entries(job.log_path))) == 2, (
+        "the run's own records are still written: the mutation type is an addition, not a"
+        " replacement"
+    )
+
+
+def test_the_next_invocation_folds_the_logs_record_into_the_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A refused invocation's transition is recovered by the next one — from the log alone.
+
+    The refused invocation wrote no manifest, so the job's own log is the only source the
+    accumulation can read for it; the recovered entry has to land on the rewritten manifest (and
+    survive a round trip through the file), not only in the returning object.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = BURST_REQUESTED
+    first = run_job(job)
+    assert first.burst_transitions == (), "the premise: this invocation spent no write"
+
+    job.fake.burst_length = 10
+    refuse_the_compile(job)
+    with pytest.raises(campaign.CampaignError):
+        run_job(job, resume=True)
+    refused = mutation_records(job)
+    assert len(refused) == 1, refused
+
+    # The reading is clean again, and the instrument is at the burst the refused invocation wrote.
+    job.fake.scripted_snapshot = None
+    notes: list[str] = []
+    resumed = run_job(job, resume=True, notes=notes)
+
+    assert job.fake.burst_writes == [(BURST_REQUESTED, 1)], (
+        "the instrument is at the job's burst, so the resumed invocation spends no write of its"
+        " own — the history it carries is recovered, not spent again"
+    )
+    assert resumed.burst_transitions == (refused[0].transition,), (
+        "the recovered transition is the occurrence the log holds, by full result equality"
+    )
+    assert before_texts(resumed) == ["10"]
+    written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert before_texts(written) == ["10"], (
+        "the recovered transition survives the manifest file, not only the returned object"
+    )
+    # The mutation record is not a point: the resume's own inputs still read the run's records.
+    assert len(campaign.recorded_points(job.log_path)) == 2
+    assert len(point_names(read_entries(job.log_path))) == 2
+
+
+def test_an_occurrence_the_manifest_already_carries_is_not_folded_in_twice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """One transition has two records — the log entry and the manifest field — and they reconcile.
+
+    Every verified write reaches the log *and*, when the invocation runs to its manifest, the
+    manifest. The next invocation must not read the log as a second, unseen mutation: the
+    occurrence is consumed once, and the history stays one event long.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+    assert len(mutation_records(job)) == 1, "the same occurrence is in the log and on the manifest"
+
+    resumed = run_job(job, resume=True)
+
+    assert job.fake.burst_writes == [(BURST_REQUESTED, 1)], (
+        "the resume found the instrument at the job's burst and wrote nothing"
+    )
+    assert len(resumed.burst_transitions) == 1, (
+        "the log entry and the manifest field are one occurrence, not two"
+    )
+    assert before_texts(resumed) == ["10"]
+
+
+def test_two_identical_transitions_stay_two_ordered_events(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Occurrence-safety: ``10 -> 18``, back to ``10``, ``10 -> 18`` again is **two** events.
+
+    A reconciliation keyed on the transition's *content* — request plus both rows plus the state —
+    would fold the second write into the first: both are ``10 -> 18``. The history is an ordered
+    history of occurrences, so each log entry is consumed once, in sequence, by full result
+    equality, and the second write finds its own counterpart.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    first = run_job(job)
+    assert before_texts(first) == ["10"]
+
+    # The operator put the dialog back to 10: the resumed run has to write 10 -> 18 again.
+    job.fake.burst_length = 10
+    second = run_job(job, resume=True)
+
+    assert before_texts(second) == ["10", "10"]
+    assert second.burst_transitions[0] == second.burst_transitions[1], (
+        "the premise: the two transitions are identical in content"
+    )
+    assert len(mutation_records(job)) == 2
+
+    # A third invocation that writes nothing keeps both occurrences: neither collapses into the
+    # other, and neither is dropped.
+    notes: list[str] = []
+    third = run_job(job, resume=True, notes=notes)
+
+    assert job.fake.burst_writes == [(BURST_REQUESTED, 1), (BURST_REQUESTED, 1)]
+    assert len(third.burst_transitions) == 2, (
+        "two identical transitions are two occurrences and must never collapse into one"
+    )
+    assert before_texts(third) == ["10", "10"]
+    written = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
+    assert before_texts(written) == ["10", "10"]
+
+
+def test_an_append_failure_aborts_before_the_compile_and_before_any_recording(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fail closed: a verified write with no durable record aborts the invocation right there.
+
+    Nothing can make the already-performed mutation durable at that point, but it must not be
+    *compounded* by recording points under a provenance contract that was not met. So the failure
+    raises out of ``run_campaign`` naming the append (never routed through the runner's
+    ``log_errors`` list, which only reaches a reader through a manifest a refused invocation never
+    writes), and the compile, the points and the manifest are all never reached.
+    """
+    job = campaign_job(tmp_path, monkeypatch, burst_length=BURST_REQUESTED)
+    job.fake.burst_length = 10
+    appends: list[Path] = []
+    compiles: list[object] = []
+    real_compile = campaign.compile_campaign
+
+    def refuse_the_append(path: Path, entry: object) -> None:
+        appends.append(Path(path))
+        raise OSError("the disk is full")
+
+    def counting_compile(*args: object, **kwargs: object) -> object:
+        compiles.append(args[0] if args else kwargs)
+        return real_compile(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(campaign, "append_entry", refuse_the_append)
+    monkeypatch.setattr(campaign, "compile_campaign", counting_compile)
+
+    with pytest.raises(campaign.CampaignError) as excinfo:
+        run_job(job)
+
+    message = str(excinfo.value)
+    assert "disk is full" in message, message
+    assert str(job.log_path) in message, message
+    assert str(BURST_REQUESTED) in message, message
+    assert appends == [job.log_path], "the boundary tried exactly one append"
+    assert compiles == [], "the invocation aborts before the compile"
+    assert job.fake.stored == [], "no point was stored"
+    assert "apply_point" not in [call[0] for call in job.fake.calls]
+    assert not campaign.manifest_path_for(job.log_path).is_file()
+    assert mutation_records(job) == ()
+
+
+# ------------ 10. the pass's row says where a recovered transition came from
+
+
+def test_a_pass_row_names_the_job_log_for_a_recovered_transition(tmp_path: Path) -> None:
+    """A row may now carry an entry no invocation of its own ever wrote, and must not claim it did.
+
+    A refused invocation's transition reaches the job manifest only through the job's log, so when
+    a pass's row is folded from such a manifest the entries beyond the row's own history are not
+    necessarily "added by this recording" — the sentence names the log they were recovered from
+    (``docs/dop3000/failed-invocation-provenance.md`` §5.3).
+    """
+    run = committed_run()
+    job = run.jobs[0]
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, 12, tzinfo=UTC))
+    recovered = burst_transition_result(10)
+    log_path = tmp_path / "job.jsonl"
+    append_entry(
+        log_path,
+        SweepBurstMutation(
+            mutation_id="b" * 32,
+            # Before the invocation whose manifest is folded below: the transition was recorded by
+            # an earlier one, which is what makes it *recovered* rather than this recording's own.
+            occurred_at=datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
+            job=job.job,
+            fingerprint=job.definition_fingerprint,
+            routed_channel=run.channel,
+            transition=recovered,
+        ),
+    )
+    job_manifest = job_manifest_for(run, job).model_copy(
+        update={"burst_transitions": (recovered,), "log_path": str(log_path)}
+    )
+
+    recorded = run_plan.record_job(manifest, run, job, job_manifest)
+
+    note = recorded.jobs[0].note
+    assert note is not None
+    assert "job's log" in note, note
+    assert "added by this recording" not in note, note
+    assert [t.before_burst.text for t in recorded.jobs[0].burst_transitions] == ["10"]
