@@ -71,6 +71,31 @@ never been observed in word 27. No offline test establishes live behaviour.
    request a *manual* emissions change, which is why the 2026-09-25 pass stopped after job 4. Drive
    job boundaries with `run-plan --next`; never set the burst by hand.
 
+**In flight (2026-09-25, reviewed by nobody yet, offline-verified only).** Two Draft PRs implement
+the two items above:
+
+- **PR #44** (`acquire/refused-invocation-provenance`) — the accepted provenance mechanism itself: a
+  third log record with an explicit occurrence identity, appended at the boundary after the verified
+  write and **before** the compile and the resume-identity comparison, fail-closed if it cannot be
+  written, folded into the job's ordered history by consuming occurrences in sequence (never by a
+  content key), and an unknown entry type refusing the log. Gates: **2673 passed / 22 skipped**,
+  ruff, screening and `git diff --check` clean. Its body lists what it does not cover (no journal, no
+  channel-routing write, no manifest-schema change) and three decisions for review — the sharpest is
+  that the job's log is now read for history on **every** invocation, not only under `resume`.
+- **PR #45** (`feat/analysis-sa1-backend`) — SA1: per-gate statistics with declared depth reductions,
+  the trace-recurrence estimator with explicit unsupported-claim verdicts, and the executed notebook
+  preview. Gates: **2715 passed / 22 skipped**, `marimo check notebooks` exit 0, and an executed
+  807,089-byte HTML export (every cell ran). **Not** verified: any live notebook session (selection
+  read-back), and the export exercises only the default selection, so the undefined/unsupported
+  rendering branches are unexercised.
+
+**What those slices surfaced, for whoever reviews them** (each is a follow-up with a trigger, not a
+defect): the two SA1 modules spell the same view differently (`primary-comparison` vs
+`primary comparison`), so the notebook carries a label map; their exploration semantics differ (a
+time+depth block against a leading window); two provenance containers exist where one would do; and
+`_sparse_pass.supported_mean_of` cannot carry the extended statistics, which is why SA1 ships its own
+reductions.
+
 **Direction review (2026-09-25).** An external review judged this direction **sound** and reordered
 the work, which the list above now reflects. Its strongest counter-argument: the project risks
 over-investing in acquisition-provenance machinery **before** the two high-value live datasets are
