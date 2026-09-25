@@ -72,7 +72,15 @@ def document(name: str, *, report: Path = REPORT) -> dict:
 
 
 def digest(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    """The digest a document records: SHA-256 over the canonical form git stores.
+
+    The generator writes LF and hashes what it wrote, and git stores LF, while a Windows
+    checkout with `core.autocrlf=true` materialises the same file with CRLF in the working
+    tree. Hashing the working-tree bytes therefore passes only in a freshly generated tree
+    and fails after a `git checkout`/`reset`; hashing the canonical form is what the recorded
+    field actually covers (and equals `git show HEAD:<path> | sha256sum`).
+    """
+    return "sha256:" + hashlib.sha256(normalized(path)).hexdigest()
 
 
 def normalized(path: Path) -> bytes:
