@@ -17,19 +17,30 @@ next. Written for a fresh session starting in this repository.
 The state a fresh session needs before reading anything below. **§1's checkout, branch and
 test-count facts are from 2026-09-17 and are superseded by this section.**
 
-**Merged.** `master` is `426dd5a` (merge of PR #40), carrying the two slices below. Both were
-reviewed externally and their review dispositions are in the PR bodies.
+**Merged.** `master` is `5538b43`: both acquisition slices and the analysis track's first gate,
+each reviewed externally (the review dispositions are in the PR bodies).
 
 | slice | merge | what it delivers |
 |---|---|---|
 | **B5** — job-boundary burst transitions | `7209609` (PR #38) | the runner transitions the burst between jobs from the plan, with the ordered `burst_transitions` history, resume at an already-correct burst, and refusals ordered **before** any instrument gesture |
 | **B6** — stored-artifact verification | `33dbb44` (PR #39) | stored **word 8 is an unconditional burst oracle** (a mismatch invalidates the point, whatever `check_covariates` says); stored **word 27** is carried as receiver-bandwidth-definition provenance only — compared with nothing, never written, no millimetre derived |
 | provenance design proposal | `426dd5a` (PR #40) | `failed-invocation-provenance.md`, **no implementation**: what a verified write followed by a refusal loses, the rejected options, and the accepted recommendation |
+| **SA0** — sparse ingest and explorer | `5538b43` (PR #41) | the cross-realization signal-analysis plan (merged separately as PR #36 at `43c4a87`, revised by #41) and its first implementation gate: a pass-general sparse ingest whose identity derives from its inputs, its guards, `notebooks/signal_explorer.py`, and one pass-identity rule shared by the frozen and interactive readers |
 
 **Proven, live.** Four job boundaries of the nine-job portable plan ran on 2026-09-25 with no hand
 change: `10 → 4 → 10 → 18 → 10`, effective Sampling volume read back `1.776 / 1.850 / 3.330 /
-1.850 mm`, word 27 constant at `1`, 12 stored BDDs whose word 8 matches each job. Evidence,
-hashes and an instrument-free verifier: [`../../data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/README.md).
+1.850 mm`, word 27 constant at `1`, 12 stored BDDs whose word 8 matches each job. Evidence and
+hashes: [`../../data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/README.md).
+
+**Verification is per-package, not a repository-wide property.** Only `data/burst-commissioning-b5/`
+ships an executable instrument-free verifier: `verify.py` re-derives the plan fingerprint, each
+executed job's definition fingerprint and point list, every recording's SHA-256, its stored
+operation words and its decoded configuration, and its docstring states what it *cannot* re-derive
+(the dialog transition objects and the compilation identities, whose inputs stay local because they
+carry machine paths). The other evidence packages (`burst-commissioning-b4/`, `stage2-e20-e64/`,
+`sparse-mixer-*`) commit artifacts and a README, not a verifier; B6's evidence is the test suite plus
+its own mutation check. Say **which** package carries a verifier; do not attribute one to "the
+committed evidence" in general.
 
 **Not claimed.** The equal-burst/no-write path is offline-verified only (review accepted: it
 performs *less* device interaction, not an unknown gesture). Mutation provenance across a refused
@@ -38,27 +49,46 @@ never been observed in word 27. No offline test establishes live behaviour.
 
 **Next actions, in order.**
 
-1. **Implement the provenance recommendation** (PR #40's document) — self-contained, needs no
-   instrument: append the verified transition to the job's own log at the boundary under an
-   explicit occurrence identity, fail closed if the append cannot be written, refuse a log carrying
-   an unknown entry type. The document carries the sketch, the record fields and the tests it
-   obliges. Revisit a pipeline-wide journal only when a *second* independently owned instrument
-   mutation enters the automated path.
-2. **Open reviews.** PR **#36** (Draft) — the cross-realization sparse signal-analysis plan — awaits
-   the plan review. PR **#41** (`feat/sparse-sa0-checkpoint`, not a draft, MERGEABLE as of
-   2026-09-25) — the SA0 sparse ingest, its guards, the explorer notebook and the plan edits — was
-   **not merged**: it is substantive (`src/`, `tests/`, `notebooks/`, `AGENTS.md`, a dependency
-   pin) and had no review verdict recorded here. Decide it before building on SA0.
-3. **B7 then B8** (planned in `burst-length-control-plan.md`): miniaturise the burst campaign into a
-   handler the runner can drive, then a one-click instrument-free dry run of it. Both carry a live
-   hazard to re-probe at the instrument; neither exists yet.
+1. **SA1 first — let the science pay back the engineering.** Two 26-recording mixer-enabled sittings
+   are committed and nothing in the acquisition layer blocks them: get per-gate profiles, traces and
+   recurrence diagnostics onto both sittings and ask whether UDV settings explain the reported
+   20–40% CFD discrepancy and the apparent ~1 s vortex motion. Report each sitting's contrast
+   separately; two sittings are a reproducibility check, not a population claim, and gates/profiles
+   are correlated samples, not independent replicates.
+2. **Implement the provenance recommendation** (PR #40's document) — offline, no instrument: append
+   the verified transition to the job's own log at the boundary under an explicit occurrence
+   identity, fail closed if the append cannot be written, refuse a log carrying an unknown entry
+   type. The document carries the sketch, the record fields and the tests it obliges. Revisit a
+   pipeline-wide journal only when a *second* independently owned instrument mutation enters the
+   automated path.
+3. **Then formalize B7/B8** — the plan's definitions are authoritative and are not to be restated
+   loosely: **B7** is a miniature automated burst campaign (`4 / 10 / 18 / 10`, all recordings and
+   the restoration verified) and **B8** is the next sparse experimental run using it
+   (`burst-length-control-plan.md` §4). Nothing in the plan is an instrument-free *dry run*; do not
+   reintroduce that reading.
 4. **At the instrument** (operator present, interactive session): the **five remaining jobs** of the
    portable nine-job plan (`emissions-8/64/128` plus the two references — 14 recordings). They
    request a *manual* emissions change, which is why the 2026-09-25 pass stopped after job 4. Drive
    job boundaries with `run-plan --next`; never set the burst by hand.
 
-**Working in this repository.** Gates are `uv run --no-sync --extra dev pytest -q` (2632 passed /
-22 skipped on `master` after B6), `uv run --no-sync --extra dev ruff check src tests`, and
+**Direction review (2026-09-25).** An external review judged this direction **sound** and reordered
+the work, which the list above now reflects. Its strongest counter-argument: the project risks
+over-investing in acquisition-provenance machinery **before** the two high-value live datasets are
+exploited scientifically — so SA1 runs in parallel with the provenance work rather than after it.
+That does not make the acquisition work wrong; it stops provenance completeness from gating signal
+analysis. **What would reverse the order:** if SA1 shows the conclusions dominated by unexplained
+acquisition-state inconsistency — nominally identical common-reference records differing in a
+state-dependent way that the existing manifests and logs cannot trace — acquisition provenance, and
+likely the full journal, comes first again. **Guardrails the review named as not to be "improved":**
+no generic `Operating parameters` dialog editor; no word-27 → millimetre derivation; no statistical
+merging of the two sittings; no global mutation journal for architectural uniformity; the notebook
+stays a wrapper, never the computation layer; no forced `.ADD` → artifact bundle adapter until a real
+cross-pipeline scientific use case demands one. **On the record:** word 27 may stratify or report
+acquisition state; it must not feed spatial resolution, effective sample volume, uncertainty or
+weighting until an independent relation is measured.
+
+**Working in this repository.** Gates are `uv run --no-sync --extra dev pytest -q` (2655 passed /
+22 skipped at `5538b43`; it was 2632 / 22 at `33dbb44`, before SA0's tests landed), `uv run --no-sync --extra dev ruff check src tests`, and
 `uv run --no-sync python tools/check_screening_terms.py`. Two traps cost a session real time on
 2026-09-25: a fresh worktree needs `uv sync --extra dev --extra acquire` before the acquisition
 tests can run at all (`ModuleNotFoundError: win32con`), and **copying a `.venv` between worktrees

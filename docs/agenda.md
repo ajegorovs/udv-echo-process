@@ -301,16 +301,18 @@ relation (none reviewed), and a second hidden dependent effect in a live run, wh
 stops the campaign. Authority:
 [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
 
-**Next actions on the acquisition track (2026-09-25).** Ordered, with what blocks what; the
-durable version is [`dop3000/handoff-dop3010-acquisition.md`](dop3000/handoff-dop3010-acquisition.md)
-§Current state. (1) Implement the accepted provenance recommendation of PR #40 — self-contained,
-no instrument; the document carries the sketch, the record fields and the tests it obliges.
-(2) **B7** — miniaturise the burst campaign into a handler the runner can drive, then **B8** —
-a one-click instrument-free dry run of it; both are still only planned, and their hazard is
-re-probed in a live run at the instrument. (3) At the instrument: the five remaining jobs of the
-portable nine-job plan (`emissions-8/64/128` and the two references, 14 recordings), which need
-manual emissions changes and so cannot be driven end to end. Bash-and-analysis work on the
-committed corpus needs no instrument.
+**Next actions on the acquisition track (2026-09-25, reordered by an external direction review
+that judged the direction sound).** SA1 (per-gate profiles, traces and recurrence diagnostics on both
+committed mixer sittings) runs **first and in parallel** — the review's strongest counter-argument is
+that provenance machinery must not gate the science the two datasets can already pay back; then the
+provenance recommendation of PR #40 (offline); then **B7** — a miniature automated burst campaign
+(`4 / 10 / 18 / 10`, recordings and restoration verified) — before **B8**, the next sparse
+experimental run using it; then the five remaining jobs of the portable nine-job plan
+(`emissions-8/64/128` plus two references), which need a manual emissions change at the instrument.
+The order flips back to provenance-first only if SA1 finds nominally identical common-reference
+records differing in a state-dependent way that the existing manifests and logs cannot trace. Durable
+version, with the guardrails and the per-package verification boundary:
+[`dop3000/handoff-dop3010-acquisition.md`](dop3000/handoff-dop3010-acquisition.md) §Current state.
 
 **The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**
 four counterbalanced pairs, emissions per profile the only hand-changed setting, 8/8 stored with
