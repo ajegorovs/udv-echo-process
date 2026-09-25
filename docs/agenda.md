@@ -310,7 +310,9 @@ provenance recommendation of PR #40 (offline); then **B7** — a miniature autom
 experimental run using it; then the five remaining jobs of the portable nine-job plan
 (`emissions-8/64/128` plus two references), which need a manual emissions change at the instrument.
 The order flips back to provenance-first only if SA1 finds nominally identical common-reference
-records differing in a state-dependent way that the existing manifests and logs cannot trace. Durable
+records differing in a state-dependent way that the existing manifests and logs cannot trace. **In flight** (Draft, reviewed by nobody, offline-verified only): PR #44 implements the
+provenance recommendation of PR #40, and PR #45 carries SA1 — the per-gate statistics, the
+trace-recurrence estimator and the executed notebook preview. Durable
 version, with the guardrails and the per-package verification boundary:
 [`dop3000/handoff-dop3010-acquisition.md`](dop3000/handoff-dop3010-acquisition.md) §Current state.
 
