@@ -39,6 +39,24 @@ the sweep/campaign commands in `src/udv_echo_process/acquire/`, the probes in `t
 and their tooling in `tools/ui/`, and the bring-up for a second machine. `docs/dev-handoff.md` is the
 entry point for a machine that cannot reach the instrument at all.
 
+**A live acceptance pass must land as portable, offline-checkable evidence, or the reviewer cannot
+see it.** Everything in `outputs/live/` is git-ignored and carries absolute machine paths, so a run
+that is described only in a PR body is unreviewable. Commit, beside the recordings: (a) **the actual
+plan and job definitions used**, copied verbatim and free of local paths, so the design re-plans
+offline; (b) a **derived, path-sanitized summary** of the runtime manifests that preserves exactly
+what a reader has to judge — the structured transition objects, the compile identity, each point's
+requested and decoded values — plus the SHA-256 of every recording; and (c) a small **verifier
+script** that re-derives every claim from the committed files with no instrument access. State which
+numbers are recomputable from the repository alone and which are not (the original runtime-file
+hashes, what the dialog stated, unreadable UI fields): a derived summary presented as a raw capture
+is the failure mode, and the two manifest kinds look alike.
+
+**Say what a live pass did not exercise.** A boundary-transition acceptance that changes the value
+at every boundary never exercises the equal-value/no-write path, and a nine-job plan stopped after
+four leaves five jobs unrun — both are real gaps in what the sitting proved. Name them in the
+evidence next to the results; letting "N boundaries passed" stand for the whole state machine is the
+over-claim that later costs a reviewer's trust.
+
 **Where the DOP3010 facts live (frozen 2026-09-18).** The repository holds a small set of
 authoritative documents for this instrument, and this skill **points at them instead of repeating
 them**: architecture, layering and invariants —
