@@ -3,10 +3,12 @@
 **Status: slices B1–B3 are in PR #35; B4 burst-control commissioning passed on
 2026-09-24 (evidence in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/)).
 The manual and the stored files separate word 27's receiver-bandwidth definition from the
-effective Sampling-volume thickness read in the dialog. B5 job-level integration has an
-**offline implementation proposed** on `feat/b5-job-burst-transitions` (the job boundary's
-transition, its manifest evidence and the pass row's copy of it, §B5); its **live end-to-end
-acceptance is still pending**; word-27 promotion is a separate B6 question.** Nothing here re-opens
+effective Sampling-volume thickness read in the dialog. B5 job-level integration is proposed
+on `feat/b5-job-burst-transitions` (the job boundary's transition, its manifest evidence and
+the pass row's copy of it, §B5). **The supervised live burst-boundary pass completed on
+2026-09-25** for four jobs and 12 BDDs ([portable evidence](../../data/burst-commissioning-b5/));
+its equal-burst/no-write case remains offline-only and PR #38 remains Draft pending review.
+Word-27 promotion is a separate B6 question. Nothing here re-opens
 the acquisition architecture: the plan adds one parameter to the acquisition model that the model
 already reads, and every rule it uses is a rule this repository already has.
 
@@ -285,12 +287,18 @@ the manual step disappears without changing the campaign model.
 > does the compile's (it records that *the compile* wrote nothing, not that the application is
 > untouched).
 >
-> **Limits.** Offline only: this is the driver's transaction wired to the job boundary, not a live
-> run — B5's own end-to-end acceptance (`--next` across the sparse pass's burst pair) remains
-> pending, and the B4 stop rule still binds. `campaign --run --no-snapshot` is the explicit bypass: it
-> reads nothing and compiles nothing, so it also performs **no transition** — the instrument's burst
-> is not written to match the definition, and the operator sets it by hand. No per-point writer, no
-> sampling-volume write, no word-27-to-mm logic.
+> **Live scope (2026-09-25):** The supervised `run-plan --next` pass covered four burst-boundary
+> jobs (`10 → 4 → 10 → 18 → 10`) and 12 stored BDDs, with verified effective-mm readback,
+> independent compile and stored word-8 agreement. The portable plan, extracted structured
+> transition/compile evidence, hashes and recordings are in
+> [`data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/). The last five
+> jobs of that plan were intentionally not run; they vary emissions/profile and exceed this
+> burst-only acceptance. An equal-burst/no-write job was not exercised live and remains
+> covered by the fake tests only. The B4 stop rule still binds. `campaign --run --no-snapshot`
+> is the explicit bypass: it reads nothing and compiles nothing, so it also performs **no
+> transition** — the instrument's burst is not written to match the definition, and the
+> operator sets it by hand. No per-point writer, no sampling-volume write, no word-27-to-mm
+> logic.
 >
 > **Pending limitation — a verified write in an invocation that never reaches the manifest is not
 > durably captured.** The burst write happens at the boundary (step 4) and the manifest is written
