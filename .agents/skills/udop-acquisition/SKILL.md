@@ -51,6 +51,14 @@ numbers are recomputable from the repository alone and which are not (the origin
 hashes, what the dialog stated, unreadable UI fields): a derived summary presented as a raw capture
 is the failure mode, and the two manifest kinds look alike.
 
+**Tie the verifier to the plan, and do not describe it as re-deriving what it merely asserts.** A
+verifier that only checks recording hashes leaves the summary floating; have it load the committed
+plan and assert the plan fingerprint, the per-job definition fingerprints, and each point's label
+and full requested parameter set against the summary, so BDDs, summary and plan are cryptographically
+linked (prove it by perturbing each link and watching it fail). Then say exactly what it *re-derives*
+versus what it *checks against hard-coded expectations* — a summary is not a raw capture, and a
+reviewer who cannot execute the verifier reads the wording as the claim.
+
 **Say what a live pass did not exercise.** A boundary-transition acceptance that changes the value
 at every boundary never exercises the equal-value/no-write path, and a nine-job plan stopped after
 four leaves five jobs unrun — both are real gaps in what the sitting proved. Name them in the
