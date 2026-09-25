@@ -178,10 +178,11 @@ _OP_PARAM = {
     "tgc_mode": (23, "i"),
     "tgc_start": (24, "i"),
     "tgc_end": (25, "i"),
-    # Word 27 is the sampling-volume *index* (the instrument's own option-list
-    # position), not a length: the index → mm relation depends on the medium and
-    # the burst and was only ever measured at one sound speed, so the reader
-    # publishes the stored index and leaves ``sampling_volume_mm`` unset.
+    # Word 27 is the stored receiver-bandwidth-definition index (the legacy
+    # field name is retained for compatibility). It does not encode the
+    # effective longitudinal thickness displayed in the dialog: burst can
+    # increase that thickness while this bandwidth definition remains fixed.
+    # Publish the stored index and leave ``sampling_volume_mm`` unset.
     "sampling_volume_index": (27, "i"),
     "hardware_delay_ns": (46, "i"),
     "trigger_delay_ms": (47, "i"),

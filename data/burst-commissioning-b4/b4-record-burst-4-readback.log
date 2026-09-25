@@ -1,0 +1,79 @@
+=== 24/09/2026 19:06:50 running -m udv_echo_process.cli acquire burst-length 4 --channel 1 --json (no console: pythonw) ===
+verified burst: 4 (sampling volume '1.776', entry 0 of the dialog's own list)
+{
+  "requested_burst": 4,
+  "state": "verified",
+  "dialog_mode": "manual",
+  "channel": "1",
+  "before_burst": {
+    "text": "10",
+    "items": [
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16",
+      "18",
+      "20",
+      "24",
+      "28",
+      "32"
+    ],
+    "item_index": 4
+  },
+  "before_sampling_volume": {
+    "text": "1.850",
+    "items": [
+      "1.850",
+      "3.700",
+      "1.776",
+      "1.184",
+      "0.888",
+      "0.740",
+      "0.592"
+    ],
+    "item_index": 0
+  },
+  "after_burst": {
+    "text": "4",
+    "items": [
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+      "12",
+      "14",
+      "16",
+      "18",
+      "20",
+      "24",
+      "28",
+      "32"
+    ],
+    "item_index": 1
+  },
+  "after_sampling_volume": {
+    "text": "1.776",
+    "items": [
+      "1.776",
+      "3.700",
+      "1.776",
+      "1.184",
+      "0.888",
+      "0.740",
+      "0.592"
+    ],
+    "item_index": 0
+  },
+  "refusal_overlay": "",
+  "discarded": false,
+  "reason": ""
+}
+note: burst 4 selected in the 'Operating parameters' dialog (entry 1 of ['2', '4', '6', '8', '10', '12', '14', '16', '18', '20', '24', '28', '32'])
+note: burst 4 read back in the open dialog: burst '4', sampling volume '1.776'
+
+=== exit=0 ===

@@ -1,9 +1,12 @@
 # Plan — burst length as a commanded acquisition parameter
 
-**Status: slice 1–3 landed on this branch; slice 4 (live A/B) is the next thing to run, and it
-gates slices 5 and 6.** Nothing here re-opens the acquisition architecture: the plan adds one
-parameter to the acquisition model that the model already reads, and every rule it uses is a rule
-this repository already has.
+**Status: slices B1–B3 are in PR #35; B4 burst-control commissioning passed on
+2026-09-24 (evidence in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/)).
+The manual and the stored files separate word 27's receiver-bandwidth definition from the
+effective Sampling-volume thickness read in the dialog. B5 job-level integration may proceed;
+word-27 promotion is a separate B6 question.** Nothing here re-opens the acquisition
+architecture: the plan adds one parameter to the acquisition model that the model already reads,
+and every rule it uses is a rule this repository already has.
 
 Burst length is the first acquisition parameter this repository **writes through the
 `Operating parameters` dialog** (`Parameters → Operating parameters`, the third popup entry). The
@@ -33,7 +36,7 @@ Compile against the instrument's own state   (already exists: snapshot.py, campa
         ▼
 Record point → stored `.BDD` → point verdict / provenance
         ├── word 8  → burst            (verified already; make it strict — slice 6)
-        └── word 27 → sampling-volume index (promote into the point's evidence — slice 6)
+        └── word 27 → receiver-bandwidth definition/index (separate from effective mm — B6)
 ```
 
 **The principle:**
@@ -67,7 +70,7 @@ Three consequences, and they are the whole reason this is one parameter and not 
 | the dialog can state a value the combo does not offer | `ComboReading`, and the fake's volume tail | §18.10 |
 | writing the dialog's channel combo **replaces** the dialog (`(655, 364) → (713, 364)`, all handles dead) | `ensure_channel` re-opens; the burst transaction re-resolves its bindings if the panel is replaced | §19.4 |
 | the write-order rule: the determining parameter first | `PARAMETER_WRITE_ORDER`, and here burst alone | §19.2 |
-| word 8 = burst, word 27 = the volume **index** | `parameter-sweep-matrix.md` rows 2 and 9 | §16.1, §9 |
+| word 8 = burst, word 27 = receiver-bandwidth definition/index (not effective mm) | `parameter-sweep-matrix.md` rows 2 and 9 | §16.1, §9; manual §10.7 |
 
 ---
 
@@ -169,7 +172,7 @@ applied to `parameters.py`, the suite run, and the file restored):
 | the result carries the row read in the dialog that was written, not the re-opened one | **3 tests fail** (`after_sampling_volume` = `1.825` instead of `3.285`) |
 | the writer selects by counting one step from the value in force instead of by value text | **12 tests fail** |
 
-**B4 — live A/B commissioning** *(next; small)*
+**B4 — live A/B commissioning** *(control/recording pass 2026-09-24; burst-control gate passed)*
 
 ```bash
 # the operating instrument stays the operator's: this driver never presses a modal's right button
@@ -182,11 +185,34 @@ uv run udv-acquire burst-length 10 --channel 1 --json     # the restoration is p
 Accept: each call reports `verified` with the burst the re-opened dialog stated, the volume the
 application left, and its entry projection; the return to burst 10 states the volume the run began
 with. Then one tiny acquisition per burst (`4 / 10 / 18 / 10`, one short reference point each),
-requiring `word 8 == requested burst`, `word 27 == the index the recorded readback implies`, and
-every other fixed setting unchanged.
+requiring `word 8 == requested burst`, a recorded effective Sampling-volume readback,
+and every other decoded fixed setting unchanged. The former proposed criterion
+`word 27 == the index the recorded readback implies` is withdrawn: word 27 defines
+receiver bandwidth, not necessarily the effective thickness displayed in millimetres.
 
-**The stop rule, binding: if the live instrument shows a *second* hidden dependent effect beyond
-the sampling volume, stop at B4 and model that effect before any campaign integration.**
+**Observed 2026-09-24:** all four reopened reads verified (`4 / 10 / 18 / 10`), returned to
+the initial `10 / 1.850 mm`, and four two-second BDDs decoded word 8 as `4 / 10 / 18 / 10`.
+The readback volumes were `1.776 / 1.850 / 3.330 / 1.850 mm`, while word 27 was `1` in all
+four files; every other *decoded* configuration field stayed fixed. The inactive rig produced
+all-zero payloads, which do not bear on stored settings. See the committed recordings, SHA-256
+manifest and paired command logs in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/).
+**B4 verdict — pass for burst control.** Manual §§8.4 and 10.7 describe word 27 as the
+receiver-bandwidth definition and the dialog's millimetres as effective longitudinal thickness;
+when burst length exceeds bandwidth-associated thickness, burst determines the latter. At
+`c = 1480 m/s`, `f = 4 MHz`, `cN/(2f)` gives `0.740 / 1.850 / 3.330 mm` for bursts
+`4 / 10 / 18`. Using the burst-4 observed `1.776 mm` as the bandwidth-associated
+thickness, `max(1.776 mm, cN/(2f))` predicts exactly the four dialog readbacks. This
+supports the two-quantity model, not a calibrated mapping from word 27 to mm. In
+particular, combo slot 0 displays current effective state, not stored word 27. The
+verified transitions, dependent readback, stored word-8 agreement, unchanged other
+*decoded* configuration fields and restoration suffice to start B5. Do not derive
+millimetres from word 27, explicitly write Sampling volume to restore it, or demand a
+word-27-to-effective-mm equality. No further B4 live run is required; B5 still needs
+its own end-to-end live acceptance. See the evidence README for the limits and the
+older measurement that explicit volume writes can move First gate depth.
+
+**The stop rule, binding: if a later live run shows a *second* hidden dependent effect beyond
+the sampling volume, stop the campaign and model that effect before proceeding.**
 
 **B5 — campaign integration (job-level only)** *(after B4)*
 
@@ -200,18 +226,21 @@ the manual step disappears without changing the campaign model.
 
 **B6 — stored-artifact verification** *(after B4 and B5)*
 
-`word 8 == requested burst` becomes strict (largely supported today), and `word 27` is promoted into
-the point's evidence beside the pre-record read-back:
+`word 8 == requested burst` becomes strict (largely supported today). Word 27 is
+preserved as the stored receiver-bandwidth-definition index alongside the *separate*
+pre-record effective Sampling-volume readback:
 
 ```text
 requested:            burst 18
-pre-record verified:  burst 18 · sampling volume 3.285 (dialog's own statement)
-stored:               word 8 = 18 · word 27 = the instrument's volume index
+pre-record verified:  burst 18 · effective Sampling volume 3.330 mm (dialog)
+stored:               word 8 = 18 · word 27 = 1 (bandwidth definition)
 ```
 
-`burst mismatch → the point is invalid`. The volume index is strict **once B4 has confirmed the
-dialog-readback ↔ word-27 relation live**; until then a mismatch is a strong diagnostic, because no
-measured law relates the dialog's millimetre statement to the stored index yet.
+`burst mismatch → the point is invalid`. Word 27 is **not** a strict oracle for
+the displayed effective millimetres: burst length can determine thickness while
+the bandwidth selection stays fixed. B6 may investigate or qualify the stored
+bandwidth index independently; it must not populate `sampling_volume_mm` from
+word 27 or compare a made-up inverse index to the dialog's effective mm.
 
 **B7 — a miniature automated burst campaign** (`4 / 10 / 18 / 10`, all recordings and the
 restoration verified) before **B8 — the next sparse experimental run uses it**.

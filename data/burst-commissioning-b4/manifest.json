@@ -1,0 +1,14 @@
+{
+  "purpose": "B4 live burst transition and stored-word commissioning; inactive rig, all-zero payloads",
+  "date": "2026-09-24",
+  "channel": 1,
+  "starting_dialog": {"burst": "10", "sampling_volume_mm": "1.850"},
+  "rows": [
+    {"file": "b4_burst_4.BDD", "sha256": "11c06813686381d2260bab375965198444241e7ae44d267371c6c79e9388eb81", "bytes": 33457, "requested_burst": 4, "reopened_sampling_volume_mm": "1.776", "op_word_8": 4, "op_word_27": 1, "profiles": 30, "gates": 50, "nonzero_samples": 0},
+    {"file": "b4_burst_10_a.BDD", "sha256": "c525fecb4522a11a6d22219e04d59a0b2e79836654de940054f74cbea7d2bdc6", "bytes": 33388, "requested_burst": 10, "reopened_sampling_volume_mm": "1.850", "op_word_8": 10, "op_word_27": 1, "profiles": 29, "gates": 50, "nonzero_samples": 0},
+    {"file": "b4_burst_18.BDD", "sha256": "1ce07b8090cdca8bae41ec0a555ec5b8537c48d89d3079d264f9aff61ee3648c", "bytes": 33457, "requested_burst": 18, "reopened_sampling_volume_mm": "3.330", "op_word_8": 18, "op_word_27": 1, "profiles": 30, "gates": 50, "nonzero_samples": 0},
+    {"file": "b4_burst_10_b.BDD", "sha256": "c525fecb4522a11a6d22219e04d59a0b2e79836654de940054f74cbea7d2bdc6", "bytes": 33388, "requested_burst": 10, "reopened_sampling_volume_mm": "1.850", "op_word_8": 10, "op_word_27": 1, "profiles": 29, "gates": 50, "nonzero_samples": 0}
+  ],
+  "ending_dialog": {"burst": "10", "sampling_volume_mm": "1.850"},
+  "verdict": "B4 burst control passed: verified reopen and dependent effective-mm readback, word-8 agreement, decoded-setting invariance and restoration; word 27 is a constant stored bandwidth-definition index, not an effective-mm oracle; B5 may proceed, B6 semantics separate"
+}
