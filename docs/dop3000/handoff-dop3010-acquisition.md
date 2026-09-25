@@ -12,9 +12,63 @@ next. Written for a fresh session starting in this repository.
 > a surface below is a measurement made on a date, not the current model of that surface.
 > Nothing in the body changed at the freeze; this header is the only edit.
 
+## Current state and next actions (2026-09-25)
+
+The state a fresh session needs before reading anything below. **§1's checkout, branch and
+test-count facts are from 2026-09-17 and are superseded by this section.**
+
+**Merged.** `master` is `426dd5a` (merge of PR #40), carrying the two slices below. Both were
+reviewed externally and their review dispositions are in the PR bodies.
+
+| slice | merge | what it delivers |
+|---|---|---|
+| **B5** — job-boundary burst transitions | `7209609` (PR #38) | the runner transitions the burst between jobs from the plan, with the ordered `burst_transitions` history, resume at an already-correct burst, and refusals ordered **before** any instrument gesture |
+| **B6** — stored-artifact verification | `33dbb44` (PR #39) | stored **word 8 is an unconditional burst oracle** (a mismatch invalidates the point, whatever `check_covariates` says); stored **word 27** is carried as receiver-bandwidth-definition provenance only — compared with nothing, never written, no millimetre derived |
+| provenance design proposal | `426dd5a` (PR #40) | `failed-invocation-provenance.md`, **no implementation**: what a verified write followed by a refusal loses, the rejected options, and the accepted recommendation |
+
+**Proven, live.** Four job boundaries of the nine-job portable plan ran on 2026-09-25 with no hand
+change: `10 → 4 → 10 → 18 → 10`, effective Sampling volume read back `1.776 / 1.850 / 3.330 /
+1.850 mm`, word 27 constant at `1`, 12 stored BDDs whose word 8 matches each job. Evidence,
+hashes and an instrument-free verifier: [`../../data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/README.md).
+
+**Not claimed.** The equal-burst/no-write path is offline-verified only (review accepted: it
+performs *less* device interaction, not an unknown gesture). Mutation provenance across a refused
+invocation is a real gap and is **not** covered by anything merged. A bandwidth other than `1` has
+never been observed in word 27. No offline test establishes live behaviour.
+
+**Next actions, in order.**
+
+1. **Implement the provenance recommendation** (PR #40's document) — self-contained, needs no
+   instrument: append the verified transition to the job's own log at the boundary under an
+   explicit occurrence identity, fail closed if the append cannot be written, refuse a log carrying
+   an unknown entry type. The document carries the sketch, the record fields and the tests it
+   obliges. Revisit a pipeline-wide journal only when a *second* independently owned instrument
+   mutation enters the automated path.
+2. **Open reviews.** PR **#36** (Draft) — the cross-realization sparse signal-analysis plan — awaits
+   the plan review. PR **#41** (`feat/sparse-sa0-checkpoint`, not a draft, MERGEABLE as of
+   2026-09-25) — the SA0 sparse ingest, its guards, the explorer notebook and the plan edits — was
+   **not merged**: it is substantive (`src/`, `tests/`, `notebooks/`, `AGENTS.md`, a dependency
+   pin) and had no review verdict recorded here. Decide it before building on SA0.
+3. **B7 then B8** (planned in `burst-length-control-plan.md`): miniaturise the burst campaign into a
+   handler the runner can drive, then a one-click instrument-free dry run of it. Both carry a live
+   hazard to re-probe at the instrument; neither exists yet.
+4. **At the instrument** (operator present, interactive session): the **five remaining jobs** of the
+   portable nine-job plan (`emissions-8/64/128` plus the two references — 14 recordings). They
+   request a *manual* emissions change, which is why the 2026-09-25 pass stopped after job 4. Drive
+   job boundaries with `run-plan --next`; never set the burst by hand.
+
+**Working in this repository.** Gates are `uv run --no-sync --extra dev pytest -q` (2632 passed /
+22 skipped on `master` after B6), `uv run --no-sync --extra dev ruff check src tests`, and
+`uv run --no-sync python tools/check_screening_terms.py`. Two traps cost a session real time on
+2026-09-25: a fresh worktree needs `uv sync --extra dev --extra acquire` before the acquisition
+tests can run at all (`ModuleNotFoundError: win32con`), and **copying a `.venv` between worktrees
+leaves an editable install pointing at the other tree** — re-sync after the copy and check with
+`python -c "import udv_echo_process; print(udv_echo_process.__file__)"`.
+
 ## 1. Where the work lives
 
-- `C:\Repos\udv-echo-process`, branch **`feat/dop3010-acquisition`**, pushed to origin;
+- *(Superseded 2026-09-25 — see the section above for the current checkout and `master`.)*
+  `C:\Repos\udv-echo-process`, branch **`feat/dop3010-acquisition`**, pushed to origin;
   `master` untouched at `ef8b0e5`. Working tree clean.
 - Commits, newest first: `1395887` (ClipCursor + real-click entry), `33e1e0c` (geometry
   entry matching), `c9b2e55` (real-hover channel selection), `6659412` (posted held

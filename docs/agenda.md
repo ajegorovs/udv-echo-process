@@ -261,7 +261,7 @@ inactive rig's payloads were all zero; this is control-path evidence, not signal
 analysis. The initial `10 / 1.850 mm` was restored. Raw files, digests, logs,
 interpretation and limits: [`../data/burst-commissioning-b4/`](../data/burst-commissioning-b4/README.md).
 
-**B5 supervised live acceptance passed (2026-09-25); PR #38 leaves Draft.** Four job
+**B5 is merged — live acceptance passed 2026-09-25 (PR #38, merge `7209609`).** Four job
 boundaries of a nine-job `run-plan --next` pass — `burst-4` → `common-reference-1` →
 `burst-18` → `common-reference-2` — transitioned `10 → 4 → 10 → 18 → 10` automatically, with
 the effective Sampling volume read back as `1.776 / 1.850 / 3.330 / 1.850 mm`, word 27 still
@@ -272,16 +272,21 @@ because the unexercised branch performs *less* device interaction, not an unknow
 Portable plan, hashes and an instrument-free verifier:
 [`../data/burst-commissioning-b5/`](../data/burst-commissioning-b5/README.md).
 
-**Open follow-up, not B6: mutation provenance across a failed invocation.** A verified boundary
-write followed by a compile or resume-identity refusal writes no new job manifest, so that
-invocation's write is absent from `burst_transitions`. A general acquisition transaction/audit gap
-rather than a word-8/word-27 question; it stays its own item and is not folded into B6. Statement
-with `file:line` evidence, the design options and the recommended one:
+**Mutation provenance across a refused invocation: design direction accepted, nothing implemented
+(PR #40, merge `426dd5a`).** A verified boundary write followed by a compile or resume-identity
+refusal writes no new job manifest, so that invocation's write is absent from
+`burst_transitions` — a general acquisition transaction/audit gap rather than a word-8/word-27
+question, deliberately not folded into B6. The accepted recommendation is to append the verified
+transition to the **job's own log at the boundary**, under an explicit occurrence identity (never a
+content key: two identical `10 → 18` mutations are two events), with a failed append **aborting the
+invocation before it records**, an unknown log entry type **refusing the log**, and a pipeline-wide
+journal deferred until a *second* independently owned instrument mutation enters the automated
+path. Statement with `file:line` evidence, the rejected options and the trigger to revisit:
 [`dop3000/failed-invocation-provenance.md`](dop3000/failed-invocation-provenance.md).
 
-**B6 stored-artifact verification is proposed on `acquire/b6-stored-burst-verification`
-(PR pending review).** Stored word 8 is compared with the
-requested burst on **every** verification, so a burst mismatch invalidates the point and no
+**B6 is merged (PR #39, merge `33dbb44`).** Stored word 8 becomes an
+**unconditional burst oracle**: when a request declares a burst, word 8 is compared on
+**every** verification call, so a mismatch invalidates the point and no
 caller's covariate switch can skip it — an escape hatch removed rather than strictness newly
 introduced, since at B6's base the runner already verified stored points with
 `check_covariates=True`; stored word 27 is carried as the
@@ -295,6 +300,17 @@ another selection stores (no committed evidence moves the field off `1`), any in
 relation (none reviewed), and a second hidden dependent effect in a live run, which still
 stops the campaign. Authority:
 [`dop3000/burst-length-control-plan.md`](dop3000/burst-length-control-plan.md).
+
+**Next actions on the acquisition track (2026-09-25).** Ordered, with what blocks what; the
+durable version is [`dop3000/handoff-dop3010-acquisition.md`](dop3000/handoff-dop3010-acquisition.md)
+§Current state. (1) Implement the accepted provenance recommendation of PR #40 — self-contained,
+no instrument; the document carries the sketch, the record fields and the tests it obliges.
+(2) **B7** — miniaturise the burst campaign into a handler the runner can drive, then **B8** —
+a one-click instrument-free dry run of it; both are still only planned, and their hazard is
+re-probed in a live run at the instrument. (3) At the instrument: the five remaining jobs of the
+portable nine-job plan (`emissions-8/64/128` and the two references, 14 recordings), which need
+manual emissions changes and so cannot be driven end to end. Bash-and-analysis work on the
+committed corpus needs no instrument.
 
 **The Stage-2 campaign ran on 2026-09-21 and its analysis has landed.**
 four counterbalanced pairs, emissions per profile the only hand-changed setting, 8/8 stored with
