@@ -24,9 +24,19 @@ stride 1024 B, channel 1 at byte offset 548, so word ``i`` of channel ``c`` is a
     13  number of gates
     14  emissions per profile
     19  sound speed in m/s
+    27  receiver-bandwidth-definition index — **provenance only**, never a length
 
-Word 27 is a sampling-volume index (3 at c = 1460 m/s) whose identity is
-unresolved; nothing here reads it.
+Word 27 is the stored **receiver-bandwidth-definition index** (plan §B4/§B6), read
+as :attr:`WordFacts.bandwidth_definition_index` and compared with nothing. It is
+not the dialog's effective Sampling-volume thickness in millimetres: burst length
+can determine that thickness while this index stays fixed (measured — ``1`` at
+burst `4 / 10 / 18` in every B4/B5 recording, with the dialog's effective mm at
+`1.776 / 1.850 / 3.330`), no reviewed index -> mm relation exists, and the
+committed decoder publishes the raw integer on
+``ChannelConfig.sampling_volume_index`` while leaving ``sampling_volume_mm``
+unset. This module therefore carries the word and never derives a length from it,
+never compares it against a request, and does not accept it as a raiseable fact
+(:data:`STRICTABLE_COVARIATES`).
 
 The map was re-checked against the committed recordings on this checkout. The
 rung-0 point ``data/dop3010-velocity/sw100-k1-161738.BDD`` (139,193 B) reads
@@ -43,7 +53,11 @@ therefore read by default; the three a definition asserts about the instrument
 (sound speed, PRF, burst — see :data:`ENFORCED_COVARIATES`) are *enforced* when
 ``check_covariates=True``, and word 14 (emissions per profile, the primary variance
 axis) is compared into :attr:`VerificationResult.advisories` instead, because what
-has disagreed about it so far was the plan, not the file.
+has disagreed about it so far was the plan, not the file. **Word 8 is the exception
+in both directions**: the plan makes it the strict burst oracle (B6), so a burst the
+request declares is compared on *every* call (:data:`ALWAYS_ENFORCED_COVARIATES`),
+and a burst mismatch invalidates the point whatever the caller asked for; word 27 is
+carried as provenance and compared with nothing at all.
 
 Two rules follow from "a bad point must not read as fine":
 
@@ -69,11 +83,13 @@ from udv_echo_process.acquire.config import RUNG_DIVISOR
 
 __all__ = [
     "ADVISORY_COVARIATES",
+    "ALWAYS_ENFORCED_COVARIATES",
     "CHANNEL_1_OFFSET_BYTES",
     "CHANNEL_STRIDE_BYTES",
     "ENFORCED_COVARIATES",
     "STRICTABLE_COVARIATES",
     "WORDS_PER_CHANNEL",
+    "WORD_BANDWIDTH_DEFINITION_INDEX",
     "WORD_BURST_LENGTH",
     "WORD_DEPTH_MM",
     "WORD_EMISSIONS_PER_PROFILE",
@@ -104,6 +120,17 @@ WORD_GATES = 13
 WORD_EMISSIONS_PER_PROFILE = 14
 WORD_SOUND_SPEED_MS = 19
 
+#: Op word 27: the stored **receiver-bandwidth-definition index** (plan §B4/§B6).
+#: Read and carried as provenance (:attr:`WordFacts.bandwidth_definition_index`) and
+#: nothing else: it is not the dialog's effective Sampling-volume thickness in
+#: millimetres, no reviewed index -> mm relation exists, and the committed recordings
+#: prove the index does not move with the burst that *does* move the effective mm
+#: (``1`` in every B4/B5 file at burst `4 / 10 / 18`). It is deliberately absent from
+#: :data:`_WORD_OF`, :data:`ENFORCED_COVARIATES`, :data:`ADVISORY_COVARIATES` and
+#: :data:`STRICTABLE_COVARIATES`: a fact with no request to compare against must never
+#: read as enforced, and a caller naming it in ``strict_covariates`` is refused.
+WORD_BANDWIDTH_DEFINITION_INDEX = 27
+
 #: Field name -> word index, for messages that must name the word they read.
 _WORD_OF = {
     "depth_mm": WORD_DEPTH_MM,
@@ -124,6 +151,16 @@ ENFORCED_COVARIATES = (
     "prf_us",
     "burst_length",
 )
+
+#: The enforced covariates compared on **every** call, whatever the caller's
+#: ``check_covariates`` switch says — always a subset of
+#: :data:`ENFORCED_COVARIATES`. Word 8 is here because the plan makes it the *strict*
+#: burst oracle (plan §B6): a stored burst that disagrees with a burst the request
+#: declares is not a nuisance to record, it means the file is not the point that request
+#: describes, so no caller may be handed an ``ok`` that skips it. The other two enforced
+#: covariates keep the switch, which is what lets a caller verify a *file* against a
+#: request it did not establish on the instrument.
+ALWAYS_ENFORCED_COVARIATES: tuple[str, ...] = ("burst_length",)
 
 #: Read, reported and returned, but **not** enforced by default: word 14
 #: (``emissions_per_profile``). Its value in a definition is not an instrument
@@ -167,6 +204,13 @@ class WordFacts:
     prf_us: int | None = None
     emissions_per_profile: int | None = None
     burst_length: int | None = None
+    #: Word 27, the stored **receiver-bandwidth-definition index** — carried as
+    #: provenance and compared with nothing. There is deliberately no millimetre
+    #: counterpart on this record: the dialog's effective Sampling-volume thickness is
+    #: the application's own statement (``BurstWriteResult.after_sampling_volume``), and
+    #: no reviewed relation turns this integer into a length (plan §B4/§B6). Word 8, not
+    #: this word, is the strict burst oracle.
+    bandwidth_definition_index: int | None = None
 
     def missing_fields(self) -> tuple[str, ...]:
         """Names of the fields this file could not supply (absent or too short)."""
@@ -186,8 +230,11 @@ class VerificationResult:
     ``enforced_covariates`` and ``advisory_covariates`` name the covariate fields this
     call actually **compared**, so a reader of the log can tell "it agreed" from "nobody
     looked" — for both classes. A field the request left unset appears in neither: it was
-    never compared, and listing it would claim a verification that did not happen. When
-    ``check_covariates=False`` both are empty, since nothing was compared.
+    never compared, and listing it would claim a verification that did not happen.
+    ``check_covariates=False`` narrows ``enforced_covariates`` to the facts of
+    :data:`ALWAYS_ENFORCED_COVARIATES` the request declared, because the other enforced
+    covariates are compared only when the switch asks for them; the advisory comparison is
+    made on every call, so ``advisory_covariates`` does not depend on the switch.
 
     ``strict_covariates`` names the fields of :data:`STRICTABLE_COVARIATES` this **caller**
     raised (:func:`verify_stored_point`'s own argument), so a record says whether an advisory
@@ -228,6 +275,10 @@ def read_words(path: Path, channel: int = 1) -> WordFacts:
     word all yield ``None`` for the fields the file could not supply, so the
     caller can tell "word says X" from "there is no word".
 
+    Word 27 comes back as :attr:`WordFacts.bandwidth_definition_index`: the stored
+    receiver-bandwidth-definition index, read as provenance. Nothing compares it,
+    and it has no millimetre counterpart (see the module docstring).
+
     ``channel`` addresses the operation table's own channel slot
     (``548 + (channel - 1) * 1024``), which is what a manual-mode acquisition's
     channel means. It is **not** a universal channel selector: on a multiplexed
@@ -244,6 +295,7 @@ def read_words(path: Path, channel: int = 1) -> WordFacts:
     gates: int | None = None
     emissions: int | None = None
     sound_speed: int | None = None
+    bandwidth_index: int | None = None
     try:
         with Path(path).open("rb") as handle:
             depth = _read_word(handle, WORD_DEPTH_MM, channel)
@@ -253,6 +305,9 @@ def read_words(path: Path, channel: int = 1) -> WordFacts:
             gates = _read_word(handle, WORD_GATES, channel)
             emissions = _read_word(handle, WORD_EMISSIONS_PER_PROFILE, channel)
             sound_speed = _read_word(handle, WORD_SOUND_SPEED_MS, channel)
+            bandwidth_index = _read_word(
+                handle, WORD_BANDWIDTH_DEFINITION_INDEX, channel
+            )
     except (OSError, ValueError):
         pass
 
@@ -269,6 +324,7 @@ def read_words(path: Path, channel: int = 1) -> WordFacts:
         prf_us=prf,
         emissions_per_profile=emissions,
         burst_length=burst,
+        bandwidth_definition_index=bandwidth_index,
     )
 
 
@@ -431,12 +487,24 @@ def verify_stored_point(
     ``depth_tolerance_mm`` (word 2). Every disagreement and every *unverifiable* field
     becomes a string naming the field, the request and the found value.
 
-    With ``check_covariates=True`` the dialog-only words are enforced as well:
-    sound speed (word 19), PRF (word 5, within :data:`PRF_TOLERANCE_US`) and burst
-    length (word 8) — the three a definition asserts about the *instrument*, and the
-    three the six-point live campaign matched exactly (request 212 µs / 1460 m/s / 4
-    against the stored words of every point). They are off by default for this
-    module's own callers, which verify a *file*, not a run.
+    The dialog-only words a definition asserts about the *instrument* are enforced as
+    well: with ``check_covariates=True`` sound speed (word 19) and PRF (word 5, within
+    :data:`PRF_TOLERANCE_US`) join in — the three the six-point live campaign matched
+    exactly (request 212 µs / 1460 m/s / 4 against the stored words of every point). The
+    two are off by default for this module's own callers, which verify a *file*, not a run.
+
+    **Word 8 is the strict burst oracle (plan §B6), and it is enforced on every call.**
+    A request that declares a burst and a stored word 8 that disagrees is a mismatch, so
+    the point is invalid — ``check_covariates`` does not govern word 8
+    (:data:`ALWAYS_ENFORCED_COVARIATES`), because a caller that forgot the switch must not
+    be handed an ``ok`` for a file that is not the point its request describes. A stored
+    file whose word 8 the request cannot be checked against is *unverified* rather than
+    confirmed: a request that declares no burst puts ``burst_length`` in neither
+    ``enforced_covariates`` nor ``advisories``, because nothing was compared. Word 27 is
+    an oracle of **nothing** here: the stored receiver-bandwidth-definition index is
+    carried on :attr:`WordFacts.bandwidth_definition_index` as provenance, never compared
+    with a request and never turned into millimetres
+    (:data:`WORD_BANDWIDTH_DEFINITION_INDEX`).
 
     Emissions per profile (word 14) is read, returned in :class:`WordFacts` and
     compared into :attr:`VerificationResult.advisories` — never into ``ok`` — **unless
@@ -542,25 +610,28 @@ def verify_stored_point(
     )
 
     enforced: list[str] = []
-    if check_covariates:
-        for field in ENFORCED_COVARIATES:
-            requested = _requested(requested_parameters, field)
-            if requested is None:
-                # Nothing was asked, so nothing was compared: the field must not appear
-                # in ``enforced_covariates``, whose whole purpose is to separate "it
-                # agreed" from "nobody looked" (see :class:`VerificationResult`).
-                # Requiring the fixed covariates before an acquisition starts is
-                # campaign-compilation work, not this check's job.
-                continue
-            enforced.append(field)
-            tolerance = PRF_TOLERANCE_US if field == "prf_us" else 0.0
-            _compare_number(
-                mismatches,
-                field=field,
-                requested=requested,
-                found=getattr(facts, field),
-                tolerance=tolerance,
-            )
+    for field in ENFORCED_COVARIATES:
+        if not check_covariates and field not in ALWAYS_ENFORCED_COVARIATES:
+            # The switch governs the covariates whose disagreement can belong to the
+            # *request*; word 8 is not one of them (:data:`ALWAYS_ENFORCED_COVARIATES`).
+            continue
+        requested = _requested(requested_parameters, field)
+        if requested is None:
+            # Nothing was asked, so nothing was compared: the field must not appear
+            # in ``enforced_covariates``, whose whole purpose is to separate "it
+            # agreed" from "nobody looked" (see :class:`VerificationResult`).
+            # Requiring the fixed covariates before an acquisition starts is
+            # campaign-compilation work, not this check's job.
+            continue
+        enforced.append(field)
+        tolerance = PRF_TOLERANCE_US if field == "prf_us" else 0.0
+        _compare_number(
+            mismatches,
+            field=field,
+            requested=requested,
+            found=getattr(facts, field),
+            tolerance=tolerance,
+        )
 
     # Read and reported even when not enforced: a disagreement the request caused is
     # evidence, and it is only visible at all if something writes it down. A field the

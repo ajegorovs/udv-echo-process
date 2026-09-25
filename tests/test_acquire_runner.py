@@ -1822,6 +1822,95 @@ def test_the_committed_point_passes_with_its_emissions_disagreement_recorded(
     assert record.covariates_advisory == ("emissions_per_profile",)
 
 
+# ------------------------------- 10a-bis. the stored burst oracle and word 27
+#
+# The plan's strict-stored-burst rule (B6) against the committed fixture, at the runner's
+# own seam: the file's word 8 and word 27, the point's request, and the verdict — plus the
+# dependent sampling volume the *dialog* states, which is not either of them.
+
+
+def test_the_committed_point_records_its_stored_burst_and_bandwidth_index(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Word 8 and word 27 of the stored file both reach the point's record.
+
+    ``sw100-k1-161738.BDD`` stores burst 4 (word 8, the request's value) and bandwidth
+    definition index 3 (word 27, which nothing compares — and which is a *different* index
+    from the B4/B5 pass's ``1`` at c = 1480 m/s, so it is plainly not a burst-derived
+    number). Neither the point's verdict nor its record turns the index into a length: B6
+    carries it as provenance and the dialog's effective millimetres stay the boundary's
+    statement.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.OK
+    assert record.decoded is not None
+    assert record.decoded.burst_length == BURST_LENGTH
+    assert record.decoded.bandwidth_definition_index == 3
+    assert "burst_length" in record.covariates_enforced
+
+
+def test_a_stored_burst_the_point_did_not_ask_for_invalidates_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A burst mismatch is not a note: the point is INVALID and the record says why.
+
+    The same committed file (word 8 = 4) read against a definition that records at burst 18.
+    Every other word of the file agrees with the request, so word 8 is the whole difference —
+    and the plan's B6 rule is that a stored burst disagreement invalidates the *point*, not
+    that it is carried as an advisory beside a good one.
+    """
+    fixture = committed_point_fixture()
+    if not fixture.is_file():
+        pytest.skip(f"the committed fixture is not in this checkout: {fixture}")
+    pytest.importorskip(
+        "udv_echo_process.io.dop.bdd",
+        reason="the .BDD reader is not importable in this environment",
+    )
+
+    fake, engine, log_path, _ = make_runner(
+        tmp_path, monkeypatch, script_reader=False, script_verifier=False
+    )
+    fake.payload = fixture
+    definition = SweepDefinition(
+        sound_speed_ms=SOUND_SPEED_MS,
+        first_gate_mm=FIRST_GATE_MM,
+        target_depth_mm=TARGET_DEPTH_MM,
+        duration_s=DURATION_S,
+        rungs=(1,),
+        prf_us=PRF_US,
+        emissions_per_profile=EMISSIONS_PER_PROFILE,
+        burst_length=18,
+    )
+
+    outcome = engine.run_point(plan_point(1, definition), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.status is PointStatus.INVALID
+    assert "burst_length: requested 18, found 4 in word 8" in (outcome.reason or "")
+    record = point_records(read_entries(log_path))[0]
+    assert record.status is PointStatus.INVALID
+    assert "burst_length" in record.covariates_enforced
+    assert record.covariate_advisories == (
+        "emissions_per_profile: requested 52, found 150 in word 14",
+    )
+
+
 # ------------------------------- 10b. the channel both reads of a file must name
 #
 # The decode and the verification are two reads of one stored file, and they disagreed

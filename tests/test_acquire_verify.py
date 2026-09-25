@@ -31,10 +31,15 @@ import pytest
 from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.acquire.verify import (
     ADVISORY_COVARIATES,
+    ALWAYS_ENFORCED_COVARIATES,
     CHANNEL_1_OFFSET_BYTES,
     CHANNEL_STRIDE_BYTES,
     ENFORCED_COVARIATES,
+    STRICTABLE_COVARIATES,
+    WORD_BANDWIDTH_DEFINITION_INDEX,
+    WORD_BURST_LENGTH,
     WORD_EMISSIONS_PER_PROFILE,
+    WORD_PRF_US,
     VerificationResult,
     WordFacts,
     read_words,
@@ -299,10 +304,13 @@ def test_emissions_that_disagree_are_an_advisory_not_a_mismatch(tmp_path: Path) 
 
 
 def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
-    """The comparison is made on every call; only the three settled words refuse.
+    """The comparison is made on every call; the switch governs which words may refuse.
 
     The advisory is evidence about the *declaration*, and a caller that never turns
-    enforcement on still has to be able to see it.
+    enforcement on still has to be able to see it. ``enforced_covariates`` names word 8
+    alone here: the strict burst oracle is compared whatever the switch says (plan §B6),
+    while the sound speed and the PRF were compared by nobody — which is exactly the
+    difference a reader of the record needs.
     """
     path = build_bdd(tmp_path / "emissions.BDD", live_words(0, 805, 100))
 
@@ -312,7 +320,7 @@ def test_an_advisory_needs_no_enforcement_switch(tmp_path: Path) -> None:
     )
 
     assert result.ok is True
-    assert result.enforced_covariates == ()
+    assert result.enforced_covariates == ("burst_length",)
     assert result.advisories == (
         "emissions_per_profile: requested 52, found 150 in word 14",
     )
@@ -452,6 +460,184 @@ def test_only_the_covariates_the_request_declares_are_reported_as_compared(
     assert "burst_length" not in result.enforced_covariates
     assert result.advisory_covariates == ("emissions_per_profile",)
     assert len(result.advisories) == 1
+
+
+# --------------------------------------------------------------------------- #
+# B6 — word 8 is the strict burst oracle; word 27 is provenance and nothing else.
+# --------------------------------------------------------------------------- #
+
+
+def test_the_strict_burst_oracle_is_the_word_the_switch_does_not_govern() -> None:
+    """Word 8 is compared on *every* call; the other two enforced words are not.
+
+    The plan makes word 8 the strict burst oracle (§B6): a stored burst that disagrees
+    with a burst the request declares invalidates the point, so that comparison cannot be
+    something a caller leaves switched off. The sound speed and the PRF keep the switch,
+    which is what lets a caller verify a *file* against a request it did not establish on
+    the instrument.
+    """
+    assert ALWAYS_ENFORCED_COVARIATES == ("burst_length",)
+    assert set(ALWAYS_ENFORCED_COVARIATES) <= set(ENFORCED_COVARIATES)
+    assert "burst_length" not in ADVISORY_COVARIATES
+
+
+def test_a_burst_disagreement_refuses_without_the_covariate_switch(
+    tmp_path: Path,
+) -> None:
+    """The point verdict at the module's own defaults: a burst mismatch is not ok.
+
+    The file stores word 8 = 4 and the request declares 18. Nothing else disagrees — the
+    sound speed, the PRF, the gates, the rung and the depth all match — so the burst is the
+    only reason this file is not the point, and a caller that forgot ``check_covariates``
+    must not be handed an ``ok`` that says otherwise.
+    """
+    path = build_bdd(tmp_path / "burst_18.BDD", live_words(0, 805, 100))
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122, burst_length=18),
+    )
+
+    assert result.ok is False
+    assert result.mismatches == ("burst_length: requested 18, found 4 in word 8",)
+    assert result.enforced_covariates == ("burst_length",)
+    assert result.facts.burst_length == BURST_LENGTH  # the word was read, and disagreed
+
+
+def test_the_other_enforced_words_still_need_the_switch(tmp_path: Path) -> None:
+    """A PRF mismatch is read and returned, and refuses only when the caller asks."""
+    words = live_words(0, 805, 100)
+    words[(1, WORD_PRF_US)] = 250
+    path = build_bdd(tmp_path / "prf_250.BDD", words)
+
+    default = verify_stored_point(
+        path, params_for(gates=805, rung=0, resolution_mm=0.122)
+    )
+    assert default.ok is True
+    assert default.facts.prf_us == 250  # read, and returned
+    assert default.enforced_covariates == ("burst_length",)
+
+    enforced = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122),
+        check_covariates=True,
+    )
+    assert enforced.ok is False
+    assert any(message.startswith("prf_us:") for message in enforced.mismatches)
+
+
+def test_an_unverifiable_burst_is_reported_as_uncompared(tmp_path: Path) -> None:
+    """A request that declares no burst leaves word 8 *unverified*, and the record says so.
+
+    The file's burst is still read and returned, but nothing was compared with it, so
+    ``burst_length`` appears in neither compared-field list: an ``ok`` here must not be
+    readable as "the stored burst was confirmed".
+    """
+    words = live_words(0, 805, 100)
+    words[(1, WORD_BURST_LENGTH)] = 18
+    path = build_bdd(tmp_path / "burst_18.BDD", words)
+
+    result = verify_stored_point(
+        path,
+        ParameterSet(
+            sound_speed_ms=SOUND_SPEED_MS,
+            first_gate_mm=FIRST_GATE_MM,
+            resolution_mm=0.122,
+            gates=805,
+            prf_us=PRF_US,
+        ),
+        check_covariates=True,
+    )
+
+    assert result.ok is True
+    assert result.facts.burst_length == 18  # read, and returned
+    assert "burst_length" not in result.enforced_covariates
+    assert "burst_length" not in result.advisory_covariates
+    assert result.advisories == ()
+
+
+def test_word_27_is_read_as_the_stored_bandwidth_definition_index(
+    tmp_path: Path,
+) -> None:
+    """The index is carried as provenance: read, returned, compared with nothing."""
+    words = live_words(0, 805, 100)
+    words[(1, WORD_BANDWIDTH_DEFINITION_INDEX)] = 1
+    path = build_bdd(tmp_path / "index_1.BDD", words)
+
+    result = verify_stored_point(
+        path,
+        params_for(gates=805, rung=0, resolution_mm=0.122),
+        check_covariates=True,
+    )
+
+    assert result.facts.bandwidth_definition_index == 1
+    assert result.ok is True
+    assert result.mismatches == ()
+
+
+def test_the_bandwidth_index_changes_no_verdict(tmp_path: Path) -> None:
+    """Three files that differ only in word 27 verify identically.
+
+    Word 27 is an oracle of nothing (plan §B6): it has no request to compare against, and
+    the verdict, the mismatch list and both compared-field lists are the same whatever the
+    index says.
+    """
+    verdicts = set()
+    for index in (0, 1, 7):
+        words = live_words(0, 805, 100)
+        words[(1, WORD_BANDWIDTH_DEFINITION_INDEX)] = index
+        path = build_bdd(tmp_path / f"index_{index}.BDD", words)
+        result = verify_stored_point(
+            path,
+            params_for(gates=805, rung=0, resolution_mm=0.122),
+            check_covariates=True,
+        )
+        verdicts.add(
+            (
+                result.ok,
+                result.mismatches,
+                result.advisories,
+                result.enforced_covariates,
+                result.advisory_covariates,
+            )
+        )
+
+    assert verdicts == {
+        (True, (), (), ENFORCED_COVARIATES, ADVISORY_COVARIATES),
+    }
+
+
+def test_the_bandwidth_index_is_not_a_raiseable_fact(tmp_path: Path) -> None:
+    """A caller cannot require word 27 to agree — there is nothing it could agree with."""
+    assert "bandwidth_definition_index" not in STRICTABLE_COVARIATES
+    path = build_bdd(tmp_path / "index_1.BDD", live_words(0, 805, 100))
+
+    with pytest.raises(ValueError) as caught:
+        verify_stored_point(
+            path,
+            params_for(gates=805, rung=0, resolution_mm=0.122),
+            strict_covariates=("bandwidth_definition_index",),
+        )
+
+    assert "bandwidth_definition_index" in str(caught.value)
+
+
+def test_no_millimetre_is_derived_from_the_stored_bandwidth_index() -> None:
+    """The word-27 record carries the raw integer and no length at all.
+
+    B6 forbids turning the stored index into an effective thickness: burst length
+    determines the dialog's millimetres while the index stays fixed, and no reviewed
+    index -> mm relation exists. The guard is structural, so a later change cannot start
+    publishing a derived length beside the index without failing here.
+    """
+    fields = set(WordFacts.__dataclass_fields__)
+    assert "bandwidth_definition_index" in fields
+    assert not {name for name in fields if "volume" in name}
+    # The two lengths the *window* already carries, and nothing new beside them.
+    assert {name for name in fields if name.endswith("_mm")} == {
+        "resolution_mm",
+        "depth_mm",
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -797,6 +983,11 @@ def test_real_rung0_point_reads_the_live_words() -> None:
         prf_us=PRF_US,
         emissions_per_profile=EMISSIONS_PER_PROFILE,
         burst_length=BURST_LENGTH,
+        # Word 27 of this file. The committed recordings are the only oracle there is
+        # for it, and this one is a different index from the B4/B5 pass's ``1`` at
+        # c = 1480 m/s — the index follows the receiver-bandwidth selection, not the
+        # burst (plan §B6).
+        bandwidth_definition_index=3,
     )
     assert facts.missing_fields() == ()
 

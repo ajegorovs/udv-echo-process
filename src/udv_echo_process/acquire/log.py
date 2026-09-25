@@ -124,6 +124,15 @@ class DecodedBlock(ValueModel):
     #: PRF is a **period in µs** in this application (docs/07 §4 item 4).
     prf_us: float | None = Field(default=None, gt=0)
     burst_length: int | None = Field(default=None, ge=1)
+    #: Op word 27 — the stored **receiver-bandwidth-definition index**, carried as
+    #: provenance beside the burst the file was recorded at (plan §B6). It is *not* the
+    #: dialog's effective Sampling-volume thickness in millimetres and has no
+    #: millimetre counterpart anywhere in this record: no reviewed relation turns the
+    #: index into a length, and burst length can move that thickness while the index
+    #: stays fixed (``1`` at burst 4/10/18 in every B4/B5 recording). The dialog's own
+    #: effective-mm statement is the job boundary's evidence
+    #: (``actuator.BurstWriteResult.after_sampling_volume``), not this field.
+    bandwidth_definition_index: int | None = Field(default=None, ge=0)
     emissions_per_profile: int | None = Field(default=None, ge=1)
     source_freq_khz: float | None = Field(default=None, gt=0)
     size_bytes: int | None = Field(default=None, ge=0)
