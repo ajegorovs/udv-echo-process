@@ -136,12 +136,12 @@ ingest refuses — a point the table rejected is never measured — and when a j
 carry exactly three anchors on one native grid, an anchor is not the reference window,
 an anchor's decoded condition is not its job's, a scientific row has no anchor pair
 bracketing it, or the anchors' `sweep_id`s differ. The gate then holds only when all
-twelve structural checks pass: five jobs, three anchors each, the reference window,
+fourteen structural checks pass: five jobs, three anchors each, the reference window,
 `B ... E` bracketing, one sweep per job, agreeing grids, one shared supported-gate
 count, drift and spread distinct and recomputable, a complete derived table, complete
 brackets, both residual extremes present where the grid matches and absent where it does
-not, the job-time accounting non-negative, and the primary window and support the WP0
-ones.
+not, the cross-pitch rows carrying no residual, the job-time accounting non-negative, and
+the primary window and support the WP0 ones.
 
 ## What is deliberately not here
 

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from udv_echo_process.analysis import _floor_documents as fdp
 from udv_echo_process.analysis import sparse_decision_synthesis as sds
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -747,13 +748,56 @@ def test_a_slice_that_failed_its_own_gate_is_refused(tmp_path, slice_documents) 
 
 
 def test_slices_that_disagree_about_a_floor_are_refused(
-    tmp_path, slice_documents
+    seeded,
 ) -> None:
-    document = json.loads(json.dumps(slice_documents["WP3"]))
-    document["floors"]["depth_averaged"]["value_mm_s"] = 5.5
-    report = _copy_report(tmp_path, "pitch-burst.json", document)
+    """A floor WP4 recomputed itself still has to agree with the slice that published it.
+
+    Every *tabulated* copy of a floor is now checked against the publishing slice's own table,
+    so a tamper there refuses earlier and by name. What reaches this branch is the one number
+    the register marks as trusted - WP4's own recomputation - which is exactly why the branch
+    stays: the register's trust is not unbounded.
+    """
+    document = _seeded_document("WP4", report=seeded)
+    binding = next(
+        row for row in document["floors"]["bindings"] if row["name"] == "job_anchors_e8"
+    )
+    binding["recomputed_mm_s"] = 5.5
+    _write_document(document, "WP4", report=seeded)
     with pytest.raises(sds.DecisionSynthesisError, match="disagree about a floor"):
-        sds.build_decision_synthesis(report_dir=report, analysis_commit=COMMIT)
+        sds.build_decision_synthesis(report_dir=seeded, analysis_commit=COMMIT)
+
+
+def test_the_published_floor_bindings_are_checked_against_their_source_slice(
+    seeded,
+) -> None:
+    """The *published* copy in the same binding row is checked against WP1's own table."""
+    document = _seeded_document("WP4", report=seeded)
+    binding = next(
+        row for row in document["floors"]["bindings"] if row["name"] == "job_anchors_e8"
+    )
+    binding["published_mm_s"] = 5.5
+    _write_document(document, "WP4", report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="authenticated table"):
+        sds.read_slices(seeded)
+
+
+def test_a_slice_cannot_restate_another_slices_floor(seeded) -> None:
+    """WP3's copy of the depth-averaged floor is checked against WP2's own table."""
+    document = _seeded_document("WP3", report=seeded)
+    floor = document["floors"]["depth_averaged"]
+    floor["value_mm_s"] = _bump(floor["value_mm_s"])
+    _write_document(document, "WP3", report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="the depth-averaged floor"):
+        sds.read_slices(seeded)
+
+
+def test_the_quoted_floor_level_is_the_one_its_row_carries(seeded) -> None:
+    """The scalar floor's level is a column of that floor's own row, so it is checkable too."""
+    document = _seeded_document("stage2", report=seeded)
+    document["screening_floor_level"] = "E64"
+    _write_document(document, "stage2", report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="carries that floor under"):
+        sds.read_slices(seeded)
 
 
 def test_a_refusal_writes_nothing(tmp_path, slice_documents) -> None:
@@ -838,3 +882,248 @@ def test_the_prose_carries_the_answers_the_table_and_the_campaign() -> None:
     assert "No new measurement" in doc
     assert "No broad sweep" in doc
     assert "`replace`" in doc and "`requires diagnostic`" in doc
+
+
+# ── the slices' own tables ─────────────────────────────────────────────
+#
+# WP5 is the chain's terminal product, so it holds for its own six inputs the invariant WP3 and
+# WP4 hold for theirs: a number it quotes is a number the publishing slice's own authenticated
+# table carries. Both directions of the mutation are pinned for every slice - the document
+# edited alone while its digest still covers the untouched table, and the table edited alone
+# while the document still states the number - because either alone would let a synthesised row
+# quote a number no slice's table supports.
+
+STAGE2_DIR = ROOT / "reports" / "stage2-e20-e64"
+
+
+def _bump(value: float) -> float:
+    """One published number, moved by a whole step at the precision the documents publish."""
+    return round(float(value) + 1.0, fdp.PUBLISHED_DECIMALS)
+
+
+def _mutate_wp0(document: dict) -> None:
+    document["points_rows"] = int(document["points_rows"]) + 1
+
+
+def _mutate_wp1(document: dict) -> None:
+    document["jobs"][0]["spread"]["mean"] = _bump(document["jobs"][0]["spread"]["mean"])
+
+
+def _mutate_wp2(document: dict) -> None:
+    floor = document["floor"]["depth_resolved"]
+    floor["value_mm_s"] = _bump(floor["value_mm_s"])
+
+
+def _mutate_wp3(document: dict) -> None:
+    interaction = document["interaction"]
+    interaction["scalar_reduction_mm_s"] = _bump(interaction["scalar_reduction_mm_s"])
+
+
+def _mutate_wp4(document: dict) -> None:
+    row = next(row for row in document["temporal"] if row["label"] == "e8")
+    row["achieved_period_s"] = _bump(row["achieved_period_s"])
+
+
+def _mutate_stage2(document: dict) -> None:
+    document["screening_floor_mm_s"] = _bump(document["screening_floor_mm_s"])
+
+
+#: One decision-relevant number per slice: the document's own copy of it, and the table cell
+#: that has to carry it. Both are mutated alone, in turn.
+MUTATIONS = {
+    "WP0": _mutate_wp0,
+    "WP1": _mutate_wp1,
+    "WP2": _mutate_wp2,
+    "WP3": _mutate_wp3,
+    "WP4": _mutate_wp4,
+    "stage2": _mutate_stage2,
+}
+
+TABLE_CELLS: dict[str, tuple[str, dict[str, str]]] = {
+    "WP0": ("window_s", {}),
+    "WP1": ("value", {"quantity": "anchor_range"}),
+    "WP2": ("max_abs_difference_mm_s", {}),
+    "WP3": ("interaction_mm_s", {}),
+    "WP4": ("achieved_period_s", {}),
+    "stage2": ("value", {"kind": "floor", "value_name": "screening_floor_mm_s"}),
+}
+
+
+@pytest.fixture
+def seeded(tmp_path, monkeypatch) -> Path:
+    """A copy of the committed report, with the campaign slice's own directory copied too.
+
+    ``stage2`` lives outside the pass's report directory, so a mutation test has to route that
+    slice at a copy as well; the other five are read from the copy of the pass's own directory.
+    """
+    import shutil
+
+    report = tmp_path / "report"
+    shutil.copytree(REPORT_DIR, report)
+    campaign = tmp_path / "campaign"
+    shutil.copytree(STAGE2_DIR, campaign)
+    monkeypatch.setattr(
+        sds,
+        "SLICES",
+        tuple(
+            (name, filename, what, campaign.as_posix() if directory else "")
+            for name, filename, what, directory in sds.SLICES
+        ),
+    )
+    return report
+
+
+def _seeded_path(slice_name: str, *, report: Path, table: bool) -> Path:
+    """Where one slice's document - or the table it was reduced to - lives, under the copy."""
+    for name, filename, _, directory in sds.SLICES:
+        if name == slice_name:
+            location = Path(directory) if directory else report
+            return location / (sds.SLICE_TABLES[slice_name][0] if table else filename)
+    raise AssertionError(slice_name)
+
+
+def _seeded_document(slice_name: str, *, report: Path) -> dict:
+    return json.loads(
+        _seeded_path(slice_name, report=report, table=False).read_text("utf-8")
+    )
+
+
+def _write_document(document: dict, slice_name: str, *, report: Path) -> None:
+    _seeded_path(slice_name, report=report, table=False).write_text(
+        json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+
+
+def _edit_table(path: Path, *, column: str, replace: str, **selectors: str) -> None:
+    """Rewrite one published cell, leaving the document that digested the table untouched."""
+    import io
+
+    text = path.read_bytes().replace(b"\x0d\x0a", b"\n").decode("utf-8")
+    edited: list[str] = []
+    for block in (block for block in text.split("\n\n") if block.strip()):
+        rows = list(csv.DictReader(block.splitlines()))
+        fields = list(rows[0].keys()) if rows else []
+        if not rows or column not in fields:
+            edited.append(block)
+            continue
+        buffer = io.StringIO(newline="")
+        writer = csv.DictWriter(
+            buffer, fieldnames=fields, lineterminator="\n", quoting=csv.QUOTE_MINIMAL
+        )
+        writer.writeheader()
+        for row in rows:
+            if all(str(row[field]) == value for field, value in selectors.items()):
+                row[column] = replace
+            writer.writerow(row)
+        edited.append(buffer.getvalue().strip("\n"))
+    path.write_text("\n\n".join(edited) + "\n", encoding="utf-8", newline="")
+
+
+@pytest.mark.parametrize("slice_name", tuple(MUTATIONS))
+def test_a_document_edited_alone_is_refused(seeded, slice_name) -> None:
+    """A number the rows would quote has to be one the slice's own authenticated table carries.
+
+    The mutation keeps ``ok``, every check, the plan fingerprint and a digest that still covers
+    the untouched table, and changes only the number: without the second layer this is exactly
+    the edit that would be screened with.
+    """
+    document = _seeded_document(slice_name, report=seeded)
+    MUTATIONS[slice_name](document)
+    _write_document(document, slice_name, report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="authenticated table"):
+        sds.read_slices(seeded)
+
+
+@pytest.mark.parametrize("slice_name", tuple(TABLE_CELLS))
+def test_a_table_edited_alone_is_refused(seeded, slice_name) -> None:
+    """The table's own bytes are what the document's digest covers, so a moved table refuses."""
+    column, selectors = TABLE_CELLS[slice_name]
+    _edit_table(
+        _seeded_path(slice_name, report=seeded, table=True),
+        column=column,
+        replace="0.001",
+        **selectors,
+    )
+    with pytest.raises(sds.DecisionSynthesisError, match="hashes to"):
+        sds.read_slices(seeded)
+
+
+def test_a_slice_whose_table_is_absent_is_refused(seeded) -> None:
+    _seeded_path("WP3", report=seeded, table=True).unlink()
+    with pytest.raises(sds.DecisionSynthesisError, match="cannot be authenticated"):
+        sds.read_slices(seeded)
+
+
+def test_a_document_that_publishes_no_table_digest_is_refused(seeded) -> None:
+    document = _seeded_document("WP2", report=seeded)
+    document.pop("table_sha256")
+    _write_document(document, "WP2", report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="publishes no table_sha256"):
+        sds.read_slices(seeded)
+
+
+def test_a_slice_with_no_registered_table_is_refused(seeded, monkeypatch) -> None:
+    """A slice admitted without a table is a slice whose numbers cannot be traced at all."""
+    monkeypatch.setattr(
+        sds,
+        "SLICE_TABLES",
+        {name: entry for name, entry in sds.SLICE_TABLES.items() if name != "stage2"},
+    )
+    with pytest.raises(sds.DecisionSynthesisError, match="SLICE_TABLES"):
+        sds.read_slices(seeded)
+
+
+def test_every_slice_registers_the_table_it_publishes() -> None:
+    assert {name for name, _, _, _ in sds.SLICES} == set(sds.SLICE_TABLES)
+    for name, (table, field) in sds.SLICE_TABLES.items():
+        assert table.endswith(".csv") and field.endswith("sha256"), name
+
+
+def test_a_table_checked_out_with_crlf_still_authenticates(seeded) -> None:
+    """``core.autocrlf=true`` materialises CRLF; the digest covers the canonical form."""
+    path = _seeded_path("WP1", report=seeded, table=True)
+    path.write_bytes(path.read_bytes().replace(b"\n", b"\x0d\x0a"))
+    documents, refs = sds.read_slices(seeded)
+    assert len(documents) == 6 and len(refs) == 6
+
+
+def test_the_committed_reports_authenticate_against_their_own_tables() -> None:
+    """Both sittings' published slices: six documents, each one paired with its table."""
+    for report in (REPORT_DIR, ROOT / "reports" / "sparse-mixer-live-2"):
+        documents, refs = sds.read_slices(report)
+        assert len(documents) == 6, report
+        assert [ref.name for ref in refs] == [
+            "WP0",
+            "WP1",
+            "WP2",
+            "WP3",
+            "WP4",
+            "stage2",
+        ], report
+
+
+def test_a_table_missing_a_column_it_reads_is_refused(seeded) -> None:
+    """A pair that authenticates but has no window column is not a pair it can read."""
+    path = _seeded_path("WP0", report=seeded, table=True)
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("window_s", "window"),
+        encoding="utf-8",
+        newline="",
+    )
+    document = _seeded_document("WP0", report=seeded)
+    document["points_sha256"] = fdp.table_digest(path)
+    _write_document(document, "WP0", report=seeded)
+    with pytest.raises(sds.DecisionSynthesisError, match="do not have the shape"):
+        sds.read_slices(seeded)
+
+
+def test_the_trusted_quantities_name_real_slices_and_their_reason() -> None:
+    """The register is the only place a document is read on trust, so it has to be explicit."""
+    slices = {name for name, _, _, _ in sds.SLICES}
+    assert sds.TRUSTED_QUANTITIES
+    for slice_name, quantity, reason in sds.TRUSTED_QUANTITIES:
+        assert slice_name in slices, slice_name
+        assert quantity.strip() and "_" in quantity, quantity
+        assert len(reason) > 60, quantity
+        # the reason says *why* the table cannot carry it, not merely that it does not
+        assert reason.split()[0] in ("the", "its", "a"), quantity

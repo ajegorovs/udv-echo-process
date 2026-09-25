@@ -1,0 +1,241 @@
+"""The second sitting's report: the properties a reader of it has to be able to check.
+
+`reports/sparse-mixer-live-2/` is WP0-WP5 applied to `data/sparse-mixer-live-2/`. These
+tests hold the four things that make the directory evidence rather than a plausible set of
+files: every slice passed its own gate, every document is tied by digest to the table it
+was reduced from, the floors WP3 and WP4 screen with are **this** pass's own published
+numbers, and the whole report regenerates byte for byte at the revision it records.
+
+The third is the one that matters most here: WP3 and WP4 once carried the first sitting's
+measured floors as module constants, which both refused this pass's gate and published the
+other sitting's numbers as this one's screening guards. A test that reads the two documents
+and compares them is what keeps that from coming back silently.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from udv_echo_process.analysis import (
+    _floor_documents as fdp,
+)
+from udv_echo_process.analysis import (
+    sparse_anchor_floor,
+    sparse_decision_synthesis,
+    sparse_emissions_ladder,
+    sparse_inventory,
+    sparse_pitch_burst,
+    sparse_reference_floor,
+)
+
+ROOT = Path(__file__).resolve().parent.parent
+
+REPORT = ROOT / "reports" / "sparse-mixer-live-2"
+FIRST_SITTING = ROOT / "reports" / "sparse-mixer-live-1"
+DATASET_ROOT = Path("data/sparse-mixer-live-2")
+PLAN_PATH = Path("examples/sparse-mixer-live-2/run-plan.json")
+REVISION = "8626de9"
+FINGERPRINT = "f9de5b803921b62e788572ef5209a779d05638f1f7da4933384a743c02b6b7ef"
+PUBLISHED_DECIMALS = 3
+
+#: Every document of the report, with the table its own digest covers.
+SLICE_DOCUMENTS = (
+    (sparse_anchor_floor.DOC_NAME, sparse_anchor_floor.CSV_NAME),
+    (sparse_reference_floor.DOC_NAME, sparse_reference_floor.CSV_NAME),
+    (sparse_pitch_burst.DOC_NAME, sparse_pitch_burst.CSV_NAME),
+    (sparse_emissions_ladder.DOC_NAME, sparse_emissions_ladder.CSV_NAME),
+)
+
+#: The report's prose: written by hand, not by the slices, so not part of the regeneration.
+HAND_WRITTEN = (
+    "README.md",
+    sparse_anchor_floor.MD_NAME,
+    sparse_reference_floor.MD_NAME,
+)
+
+FIGURES = (
+    "anchor-burst-4.png",
+    "anchor-burst-18.png",
+    "anchor-emissions-8.png",
+    "anchor-emissions-64.png",
+    "anchor-emissions-128.png",
+    "reference-floor.png",
+    "pitch-burst.png",
+    "emissions-ladder-stability.png",
+    "emissions-ladder-temporal.png",
+)
+
+
+def document(name: str, *, report: Path = REPORT) -> dict:
+    return json.loads((report / name).read_text(encoding="utf-8"))
+
+
+def digest(path: Path) -> str:
+    """The digest a document records: SHA-256 over the canonical form git stores.
+
+    The generator writes LF and hashes what it wrote, and git stores LF, while a Windows
+    checkout with `core.autocrlf=true` materialises the same file with CRLF in the working
+    tree. Hashing the working-tree bytes therefore passes only in a freshly generated tree
+    and fails after a `git checkout`/`reset`; hashing the canonical form is what the recorded
+    field actually covers (and equals `git show HEAD:<path> | sha256sum`).
+
+    This is the same rule the slices apply to the floors they read, through
+    `analysis._floor_documents.table_digest`: one digest rule in the repository, so the test
+    that holds the report to it and the slices that hold their own inputs to it cannot
+    disagree about what a published digest covers.
+    """
+    return fdp.table_digest(path)
+
+
+def normalized(path: Path) -> bytes:
+    return path.read_bytes().replace(b"\r\n", b"\n")
+
+
+def test_every_slice_holds_its_own_gate() -> None:
+    """All six documents: the pass's own gate, this pass's fingerprint, one revision."""
+    for name in (
+        "qc-summary.json",
+        "anchor-floor.json",
+        "reference-floor.json",
+        "pitch-burst.json",
+        "emissions-ladder.json",
+        "decision-table.json",
+    ):
+        doc = document(name)
+        assert doc["ok"] is True, name
+        assert all(doc["checks"].values()), (
+            name,
+            {k: v for k, v in doc["checks"].items() if not v},
+        )
+        assert doc["plan_fingerprint"] == FINGERPRINT, name
+        assert doc["analysis_commit"] == REVISION, name
+        assert doc["plan"] == "sparse-mixer-live-2", name
+
+
+def test_the_decision_reads_slices_that_all_held_their_own_gates() -> None:
+    """The synthesis refuses a slice that failed; the committed table records it did not."""
+    decision = document("decision-table.json")
+    for key, name, _, directory in sparse_decision_synthesis.SLICES:
+        slice_ = decision["slices"][key]
+        assert slice_["path"] == name, key
+        where = (ROOT / directory / name) if directory else (REPORT / name)
+        assert where.is_file(), key
+        assert slice_["checks_passed"] == slice_["checks_total"], key
+        # the five slices of this report were generated by this report's revision; the
+        # Stage-2 campaign's pairs are an older artefact with a revision of their own
+        assert slice_["recorded_revision"] == (
+            slice_["recorded_revision"] if directory else REVISION
+        ), key
+        assert slice_["recorded_revision"], key
+
+
+def test_every_document_is_tied_by_digest_to_the_table_it_was_reduced_from() -> None:
+    """A document's own digest field against the committed bytes it names."""
+    for doc_name, table_name in SLICE_DOCUMENTS:
+        assert document(doc_name)["table_sha256"] == digest(REPORT / table_name), (
+            doc_name
+        )
+    # WP0 publishes the digest of points.csv rather than of a table of its own
+    assert document("qc-summary.json")["points_sha256"] == digest(
+        REPORT / sparse_inventory.POINTS_NAME
+    )
+    # and the synthesis carries each slice's digest, so the decision names the bytes it read
+    for key, name, _, directory in sparse_decision_synthesis.SLICES:
+        slice_ = document("decision-table.json")["slices"][key]
+        where = (ROOT / directory / name) if directory else (REPORT / name)
+        assert slice_["sha256"] == digest(where), key
+
+
+def test_the_floors_are_this_passes_own_published_numbers() -> None:
+    """The property the first version of these two slices did not have.
+
+    WP3 and WP4 screen against floors another slice measured, so each published floor must
+    equal *this* pass's WP1/WP2 document, and must not be the first sitting's copy.
+    """
+    anchors = document("anchor-floor.json")
+    reference = document("reference-floor.json")
+    mine = {
+        job["job"]: round(job["spread"]["mean"], PUBLISHED_DECIMALS)
+        for job in anchors["jobs"]
+    }
+    resolved = round(
+        reference["floor"]["depth_resolved"]["value_mm_s"], PUBLISHED_DECIMALS
+    )
+    averaged = round(
+        reference["floor"]["depth_averaged"]["value_mm_s"], PUBLISHED_DECIMALS
+    )
+
+    pitch = document("pitch-burst.json")["floors"]
+    assert pitch["anchor_guards"]["value_mm_s"] == {
+        "burst-4": mine["burst-4"],
+        "burst-18": mine["burst-18"],
+    }
+    assert pitch["depth_resolved"]["value_mm_s"] == resolved
+    assert (
+        pitch["depth_resolved"]["depth_mm"]
+        == reference["floor"]["depth_resolved"]["depth_mm"]
+    )
+    assert pitch["depth_averaged"]["value_mm_s"] == averaged
+
+    ladder = document("emissions-ladder.json")["floors"]["bindings"]
+    published = {row["name"]: row["published_mm_s"] for row in ladder}
+    assert set(published.values()) == {
+        resolved,
+        averaged,
+        mine["emissions-8"],
+        mine["emissions-64"],
+        mine["emissions-128"],
+    }
+
+    # and the same fields, on the other sitting's report, are different numbers: this is what
+    # the defect published here instead of the ones above
+    theirs = {
+        round(job["spread"]["mean"], PUBLISHED_DECIMALS)
+        for job in document("anchor-floor.json", report=FIRST_SITTING)["jobs"]
+    }
+    assert not theirs & set(mine.values())
+
+
+def test_the_whole_report_regenerates_byte_for_byte_at_the_recorded_revision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """All six slices, in order into one directory, reproduce the committed set."""
+    monkeypatch.chdir(ROOT)
+    report = tmp_path / "sparse-mixer-live-2"
+    report.mkdir()
+
+    sparse_inventory.write_sparse_ingest(
+        DATASET_ROOT, report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+    sparse_anchor_floor.write_anchor_floor(
+        DATASET_ROOT, report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+    sparse_reference_floor.write_reference_floor(
+        DATASET_ROOT, report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+    sparse_pitch_burst.write_pitch_burst(
+        DATASET_ROOT, report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+    sparse_emissions_ladder.write_emissions_ladder(
+        DATASET_ROOT, report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+    sparse_decision_synthesis.write_decision_synthesis(
+        report, output_dir=report, plan_path=PLAN_PATH, analysis_commit=REVISION
+    )
+
+    compared = 0
+    for committed in sorted(REPORT.rglob("*")):
+        if committed.is_dir() or committed.name in HAND_WRITTEN:
+            continue
+        regenerated = report / committed.relative_to(REPORT)
+        assert regenerated.is_file(), committed.name
+        assert normalized(regenerated) == normalized(committed), committed.name
+        compared += 1
+    # six slices: 12 tables and documents, the decision's three files written from the other
+    # five, and the nine figures
+    assert compared == 21 + 3
+    for figure in FIGURES:
+        assert (report / "figures" / figure).is_file(), figure

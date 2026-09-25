@@ -25,6 +25,32 @@
 > last of them is the Stage-2 recommendation: which axes can be fixed, which interactions
 > matter, which levels are redundant, and whether a denser second acquisition is justified
 > at all — and if it is, exactly which small set of conditions buys the most information.
+>
+> **Amendment — the stack is pass-general, and making it so was a defect fix.** Applying these
+> five slices unchanged to the **second** mixer-enabled realization,
+> [`../../data/sparse-mixer-live-2/`](../../data/sparse-mixer-live-2/README.md), was impossible
+> until two of them were repaired: WP3 and WP4 carried the *first* sitting's measured floors as
+> module constants, so WP3 refused its own gate on the second pass while publishing the first
+> pass's anchor spreads as the second's screening guards, and WP4 screened the second campaign
+> against the first sitting's reference floor. Each now reads the floors from the pass's own WP1
+and WP2 documents beside its own artefacts, refuses by name when such a document is absent,
+> answers another pass's plan fingerprint, or no longer agrees with the table it was reduced
+> from (each slice authenticates both halves of that pair, so an edited document cannot become
+> the screen), and records that identity in its gate. The synthesis that produces the decision
+> table reads those six documents and is now held to the same contract: each is authenticated
+> against the table it was reduced to, every number a row quotes is checked against that table
+> at the published precision, and the few numbers no table carries — WP4's own recomputation of
+> a floor, its planning expectation for a level, the campaign's resolved share, the depth of its
+> worst difference — are named in one register, so what is read on trust is explicit rather than
+> implied. The decision
+> logic, the gate names, the reductions and the tolerances are unchanged, and every *generated*
+> artefact of the first sitting regenerates byte for byte. The only first-sitting file this work
+> edits is a hand-written slice document, where a sentence counted twelve structural checks the
+> table beside it lists fourteen. The second sitting's report is
+> [`../../reports/sparse-mixer-live-2/`](../../reports/sparse-mixer-live-2/README.md); its slice
+> documents and its decision table carry that pass's own numbers, and reading them against the
+> first sitting's is a separate slice. Nothing in the sections below changes — what changes is
+> which pass each reading's numbers belong to.
 
 ## 1. Question this work must answer
 

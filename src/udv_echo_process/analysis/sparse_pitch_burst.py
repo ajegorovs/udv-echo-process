@@ -39,21 +39,26 @@ burst job (``ctrl-begin``/``ctrl-mid``/``ctrl-end``, the 1.85 mm reference windo
 that job's own condition) are **not** factorial cells and never enter ``I(z)``: they
 are reported beside each corner, with their own spread, so a reader sees where a corner
 sits relative to its block's own movement. That spread is the conservative guard this
-slice carries — 9.646 mm/s for ``burst-4`` and 11.980 mm/s for ``burst-18`` (WP1) — so
-a pitch or burst effect smaller than ~10-12 mm/s cannot be separated from the anchors'
-own movement inside those jobs.
+slice carries — each job's own spread, read from the pass's own WP1 document — so a
+pitch or burst effect smaller than the band those two spreads set cannot be separated
+from the anchors' own movement inside those jobs.
 
-**Screening, two endpoints, never mixed.** A depth-resolved magnitude (``|I(z)|`` per
-knot, or any corner contrast's per-knot magnitude) is compared against WP2's
-depth-resolved endpoint, 14.603 mm/s at 21.238 mm; a scalar (depth-averaged) effect is
-compared against WP2's depth-averaged endpoint, 4.235 mm/s. The two are different
-quantities from the same pair of runs and a number measured one way is never screened
-against the other's endpoint.
+**The floors are this pass's own, never another sitting's.** Every floor this slice
+screens against is read from the pass's own WP1 and WP2 documents
+(``anchor-floor.json``, ``reference-floor.json``) in the report directory the run writes
+into: each burst job's own anchor spread, and WP2's depth-resolved and depth-averaged
+endpoints with the depth and the reference pair they were measured at. A document that
+is missing, unreadable, failed its own gate or carries another pass's plan fingerprint
+is refused by name, because a floor measured on one pass is not evidence about another.
+Depth-resolved and depth-averaged are then two different quantities from that pass's own
+pair of runs, and a number measured one way is never screened against the other's
+endpoint.
 
 **What it does not claim.** No causation: every number here is an observed difference
 between recordings, not proof that the pitch or the burst moved anything. No
-significance test and no confidence interval. No claim below ~10-12 mm/s (the anchors'
-own floors). No emissions statement (WP4) and no reference-condition statement (WP2's
+significance test and no confidence interval. No claim below the band the two burst
+jobs' own anchors move in (WP1's own floors, this pass's). No emissions statement (WP4)
+and no reference-condition statement (WP2's
 CR1-CR4 alone). No new acquisition, and no change to the frozen WP0 artefacts, WP1's or
 WP2's: this slice reads the recordings through
 :mod:`udv_echo_process.analysis._sparse_pass`, so it cuts the same 12 s primary window
@@ -80,6 +85,12 @@ from typing import NamedTuple
 import numpy as np
 
 from udv_echo_process.acquire.plan import clamp_resolution
+from udv_echo_process.analysis._floor_documents import (
+    AuthenticatedFloor,
+    FloorDocumentError,
+    read_floor_document,
+    require_agrees,
+)
 from udv_echo_process.analysis._native_grid import nearest_gate_indices
 from udv_echo_process.analysis._sparse_pass import (
     PassDecoding,
@@ -143,22 +154,20 @@ CONTROL_PREFIX = "ctrl-"
 #: and WP2's floor statistic, so the three slices screen like for like.
 STATISTIC = "mean"
 
-#: The floors this slice screens against, each with the endpoint it belongs to. They are
-#: **read from the frozen slices**: WP1's per-job anchor spreads and WP2's two
-#: endpoints. Recomputed from the recordings in the gate below, at their published
-#: precision.
-DEPTH_RESOLVED_FLOOR_MM_S = 14.603
-DEPTH_RESOLVED_FLOOR_DEPTH_MM = 21.238
-DEPTH_RESOLVED_FLOOR_SOURCE = "WP2, the cr3-cr4 pair, per-depth window-mean difference"
-DEPTH_AVERAGED_FLOOR_MM_S = 4.235
-DEPTH_AVERAGED_FLOOR_SOURCE = "WP2's depth-averaged endpoint, the same pair"
-ANCHOR_FLOOR_MM_S: dict[str, float] = {"burst-4": 9.646, "burst-18": 11.980}
-ANCHOR_FLOOR_SOURCE = "WP1, each burst job's own block-local anchor spread"
+#: The floors this slice screens against are **not** declared here: they are read from
+#: the WP1 and WP2 documents this pass's own run wrote beside this slice's artefacts, and
+#: each is kept at :data:`FLOOR_DECIMALS`, the precision those slices publish them at. A
+#: hard-coded floor screens every pass against the sitting it was measured on.
+ANCHOR_FLOOR_DOC_NAME = "anchor-floor.json"
+REFERENCE_FLOOR_DOC_NAME = "reference-floor.json"
+FLOOR_DECIMALS = 3
+#: Half the published step: how far a floor may sit from the document's own number and
+#: still be that number at this slice's precision.
+FLOOR_TOLERANCE_MM_S = 0.5 * 10.0**-FLOOR_DECIMALS
 
-#: The conservative reading the two anchor floors force, in the pass's own units: below
-#: this band an interaction cannot be separated from the anchors' movement inside the
-#: two burst jobs.
-RESOLVABLE_BELOW_MM_S = (9.646, 11.980)
+DEPTH_RESOLVED_FLOOR_SOURCE = "WP2, the {pair} pair, per-depth window-mean difference"
+DEPTH_AVERAGED_FLOOR_SOURCE = "WP2's depth-averaged endpoint, {pair}"
+ANCHOR_FLOOR_SOURCE = "WP1, each burst job's own block-local anchor spread"
 
 CSV_NAME = "pitch-burst.csv"
 DOC_NAME = "pitch-burst.json"
@@ -168,9 +177,12 @@ FIGURE_NAME = "pitch-burst.png"
 FIGURE_DPI = 150
 TOLERANCE = 1e-9
 
-#: What each published quantity means. The document carries them verbatim, so a reader
-#: of the artefacts alone has the definitions beside the numbers.
-DEFINITIONS: dict[str, str] = {
+#: What each published quantity means, for the entries whose words carry no floor. The
+#: document carries them verbatim, so a reader of the artefacts alone has the definitions
+#: beside the numbers. The four floor-bearing entries are rendered per pass by
+#: :func:`definitions`, because a definition that quotes another sitting's floor is worse
+#: than no definition at all.
+_STATIC_DEFINITIONS: dict[str, str] = {
     "corner": (
         "one of the 2x2 design's four records: a pitch crossed with a burst length, "
         "measured inside the burst job that holds it (cc1/cc3 in burst-4, cc2/cc4 in "
@@ -197,11 +209,6 @@ DEFINITIONS: dict[str, str] = {
         "contrast at 2.96 mm minus the burst contrast at 0.617 mm. It is an observed "
         "difference, not proof that either axis moved anything"
     ),
-    "scalar_reduction": (
-        "the unweighted mean of I(z) over the common knots, published with its sign: "
-        "the depth-averaged effect, screened against WP2's depth-averaged endpoint "
-        "(4.235 mm/s) and never against the depth-resolved one"
-    ),
     "corner_contrast": (
         "one simple effect of the 2x2: a pitch contrast (2.96 mm minus 0.617 mm) at one "
         "burst length, or a burst contrast (18 minus 4) at one pitch. Published "
@@ -209,28 +216,66 @@ DEFINITIONS: dict[str, str] = {
         "carry the interaction as I = (burst at 0.617) - (burst at 2.96) = (pitch at "
         "burst 4) - (pitch at burst 18)"
     ),
-    "depth_resolved_floor": (
-        "WP2's between-run endpoint for a per-depth magnitude: 14.603 mm/s at "
-        "21.238 mm, from the cr3-cr4 pair. A depth-resolved magnitude is screened "
-        "against this number"
-    ),
-    "depth_averaged_floor": (
-        "WP2's between-run endpoint for a scalar, depth-averaged effect: 4.235 mm/s "
-        "from the same pair, and the same reduction WP1's anchor spreads use. A scalar "
-        "is screened against this number"
-    ),
-    "anchor_guard": (
-        "each burst job's own block-local anchor spread (WP1): 9.646 mm/s at burst 4 and "
-        "11.980 mm/s at burst 18. The anchors are context - never cells of the 2x2 and "
-        "never an input to I(z) - and their movement inside their own job is what an "
-        "interaction of comparable size cannot be separated from"
-    ),
     "not_a_bound": (
         "every number here is an observed difference between recordings: not a "
         "confidence interval, not a significance test, and neither a proof of an axis "
         "effect nor a statement about drift"
     ),
 }
+
+
+def definitions(model: PitchBurst) -> dict[str, str]:
+    """What each published quantity means, with **this pass's own floors** in the words.
+
+    Two of these entries quote the endpoints and one quotes the two anchor guards, so
+    they are rendered from the model rather than fixed: the document is read for its
+    numbers and this is where a reader learns what they are - a definition left at
+    another pass's floor would describe a number the artefact does not contain.
+    """
+    anchors = model.anchor_floors_mm_s
+    return {
+        **_STATIC_DEFINITIONS,
+        "depth_resolved_floor": (
+            "WP2's between-run endpoint for a per-depth magnitude: "
+            f"{model.depth_resolved_floor_mm_s:.3f} mm/s at "
+            f"{model.depth_resolved_floor_depth_mm:.3f} mm, from "
+            f"{_relative_pair(model.depth_resolved_floor_pair)}. A depth-resolved "
+            "magnitude is screened against this number"
+        ),
+        "depth_averaged_floor": (
+            "WP2's between-run endpoint for a scalar, depth-averaged effect: "
+            f"{model.depth_averaged_floor_mm_s:.3f} mm/s from "
+            f"{_relative_pair(model.depth_averaged_floor_pair, model.depth_resolved_floor_pair)}, "
+            "and the same reduction WP1's anchor spreads use. A scalar is screened "
+            "against this number"
+        ),
+        "scalar_reduction": (
+            "the unweighted mean of I(z) over the common knots, published with its sign: "
+            "the depth-averaged effect, screened against WP2's depth-averaged endpoint "
+            f"({model.depth_averaged_floor_mm_s:.3f} mm/s) and never against the "
+            "depth-resolved one"
+        ),
+        "anchor_guard": (
+            "each burst job's own block-local anchor spread (WP1): "
+            f"{anchors['burst-4']:.3f} mm/s at burst 4 and "
+            f"{anchors['burst-18']:.3f} mm/s at burst 18. The anchors are context - "
+            "never cells of the 2x2 and never an input to I(z) - and their movement "
+            "inside their own job is what an interaction of comparable size cannot be "
+            "separated from"
+        ),
+    }
+
+
+def _pair_phrase(pair: tuple[str, str]) -> str:
+    """A reference pair as the documents name it, e.g. ``cr3-cr4``."""
+    return f"{pair[0]}-{pair[1]}"
+
+
+def _relative_pair(pair: tuple[str, str], other: tuple[str, str] | None = None) -> str:
+    """A reference pair relative to another: ``the same pair`` or ``the cr1-cr2 pair``."""
+    if other is not None and tuple(pair) == tuple(other):
+        return "the same pair"
+    return f"the {_pair_phrase(pair)} pair"
 
 
 class PitchBurstError(SparseIngestError):
@@ -380,8 +425,10 @@ class PitchBurst(ValueModel):
     interaction_max_abs_depth_mm: float
     depth_resolved_floor_mm_s: float
     depth_resolved_floor_depth_mm: float
+    depth_resolved_floor_pair: tuple[str, str]
     depth_resolved_floor_source: str
     depth_averaged_floor_mm_s: float
+    depth_averaged_floor_pair: tuple[str, str]
     depth_averaged_floor_source: str
     anchor_floors_mm_s: dict[str, float]
     anchor_floor_source: str
@@ -401,6 +448,275 @@ class PitchBurst(ValueModel):
             job: count / self.knot_count
             for job, count in self.knots_above_anchor_floor.items()
         }
+
+
+class PassFloors(NamedTuple):
+    """**This pass's own** floors, read from the WP1 and WP2 documents beside it.
+
+    ``anchor_spread_mm_s``, ``depth_resolved_value_mm_s`` and ``depth_averaged_value_mm_s``
+    are the numbers those documents publish; the properties below are the same numbers at
+    :data:`FLOOR_DECIMALS`, the precision this slice publishes them at. Nothing here is
+    declared in this module: a floor that is written down in code screens every pass
+    against the sitting it was measured on.
+    """
+
+    anchor_spread_mm_s: dict[str, float]
+    depth_resolved_value_mm_s: float
+    depth_resolved_depth_mm: float
+    depth_resolved_pair: tuple[str, str]
+    depth_averaged_value_mm_s: float
+    depth_averaged_pair: tuple[str, str]
+
+    @property
+    def anchor_floors_mm_s(self) -> dict[str, float]:
+        """Each burst job's own WP1 spread, at the precision this slice publishes."""
+        return {
+            job: _at_published_precision(value)
+            for job, value in self.anchor_spread_mm_s.items()
+        }
+
+    @property
+    def depth_resolved_floor_mm_s(self) -> float:
+        """WP2's depth-resolved endpoint, at the precision this slice publishes."""
+        return _at_published_precision(self.depth_resolved_value_mm_s)
+
+    @property
+    def depth_averaged_floor_mm_s(self) -> float:
+        """WP2's depth-averaged endpoint, at the precision this slice publishes."""
+        return _at_published_precision(self.depth_averaged_value_mm_s)
+
+
+# ── this pass's own floors ─────────────────────────────────────────────
+
+
+def _at_published_precision(value: float) -> float:
+    """A floor as this slice publishes it: the document's own number, rounded."""
+    return round(float(value), FLOOR_DECIMALS)
+
+
+def _documented(document: dict, path: str, slice_name: str):
+    """A published value by dotted path, refused by name rather than defaulted."""
+    node: object = document
+    for step in path.split("."):
+        if isinstance(node, dict) and step in node:
+            node = node[step]
+        else:
+            raise PitchBurstError(
+                f"{slice_name}: the document publishes no {path!r} - this slice reads "
+                "published floors only and will not substitute a number of its own"
+            )
+    return node
+
+
+def _documented_number(document: dict, path: str, slice_name: str) -> float:
+    """A published number by dotted path, with ``bool`` refused as not a number."""
+    value = _documented(document, path, slice_name)
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise PitchBurstError(
+            f"{slice_name}: {path!r} is {type(value).__name__}, not a number"
+        )
+    return float(value)
+
+
+def _documented_pair(document: dict, path: str, slice_name: str) -> tuple[str, str]:
+    """A published reference pair, refused unless it names two distinct runs."""
+    value = _documented(document, path, slice_name)
+    if (
+        not isinstance(value, list)
+        or len(value) != 2
+        or not all(isinstance(item, str) and item for item in value)
+    ):
+        raise PitchBurstError(
+            f"{slice_name}: {path!r} is not a pair of two reference runs ({value!r})"
+        )
+    first, second = value
+    if first == second:
+        raise PitchBurstError(
+            f"{slice_name}: {path!r} names {first!r} twice - a run is not its own "
+            "reference, and a floor taken against itself is zero by construction"
+        )
+    return (first, second)
+
+
+def _floor_document(
+    report_dir: Path, name: str, slice_name: str, plan_fingerprint: str
+) -> AuthenticatedFloor:
+    """One floor document, refused by name unless it is **this** pass's own and authenticated.
+
+    The checks live in :mod:`udv_echo_process.analysis._floor_documents`, which WP4 reads the
+    same two documents through, so the two readers cannot drift apart: the document exists and
+    is a JSON object, it carries a named gate that passed, it names this pass's plan
+    fingerprint, and its published ``table_sha256`` is the digest of the table beside it.
+
+    What this slice then reads *out of* the document is checked against that same table — the
+    digest ties the document to the table, not the number in the document to the table's
+    number, so a document whose floor was edited would otherwise still verify.
+    """
+    try:
+        return read_floor_document(
+            report_dir, name, slice_name=slice_name, plan_fingerprint=plan_fingerprint
+        )
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _require_agrees(
+    stated: float, tabulated: float, *, where: str, quantity: str
+) -> None:
+    """Refuse unless the document's floor is the number its authenticated table carries."""
+    try:
+        require_agrees(stated, tabulated, where=where, quantity=quantity)
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _tabulated_spread(anchors: AuthenticatedFloor, job: str) -> float:
+    """The spread the authenticated anchor table carries for one job, or a refusal."""
+    try:
+        return anchors.anchor_spread_mm_s(job, statistic=STATISTIC)
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _tabulated_endpoints(reference: AuthenticatedFloor):
+    """Both reference endpoints, as the authenticated reference table carries them."""
+    try:
+        return reference.reference_endpoints()
+    except FloorDocumentError as exc:
+        raise PitchBurstError(str(exc)) from None
+
+
+def _require_same_pair(
+    document: AuthenticatedFloor,
+    path: str,
+    slice_name: str,
+    tabulated: tuple[str, str],
+) -> None:
+    """Refuse unless the pair a document says an endpoint came from is its table's pair."""
+    stated = _documented_pair(document.document, path, slice_name)
+    if stated != tabulated:
+        raise PitchBurstError(
+            f"{slice_name}'s {document.name} publishes {path} as the pair {stated!r}, but "
+            f"the authenticated table carries that endpoint from {tabulated!r}: the endpoint "
+            "and the pair it was reduced from have to be the same measurement"
+        )
+
+
+def load_pass_floors(report_dir: Path, *, plan_fingerprint: str) -> PassFloors:
+    """This pass's own floors, read from the WP1 and WP2 documents beside its artefacts.
+
+    The two documents are the pass's own WP1 anchor spreads and WP2 endpoints, and they
+    are read rather than recomputed because they are other slices' measurements: what
+    this slice can check is that they belong to this pass and reduce like for like.
+
+    Raises:
+        PitchBurstError: for a document that is missing, unreadable, carries no named
+            gate or a failed one, belongs to another pass, publishes no table digest, or
+            does not publish the floor at the path this slice reads.
+    """
+    anchors = _floor_document(
+        report_dir, ANCHOR_FLOOR_DOC_NAME, "WP1", plan_fingerprint
+    )
+    reference = _floor_document(
+        report_dir, REFERENCE_FLOOR_DOC_NAME, "WP2", plan_fingerprint
+    )
+    statistics = _documented(anchors.document, "statistics", "WP1")
+    if not isinstance(statistics, dict) or STATISTIC not in statistics:
+        raise PitchBurstError(
+            f"WP1's {ANCHOR_FLOOR_DOC_NAME} publishes no {STATISTIC!r} statistic: the "
+            "anchor guard has to be the same reduction as this slice's per-gate number"
+        )
+    reference_statistic = _documented(reference.document, "floor.statistic", "WP2")
+    if reference_statistic != STATISTIC:
+        raise PitchBurstError(
+            f"WP2's {REFERENCE_FLOOR_DOC_NAME} reduced its endpoints with "
+            f"{reference_statistic!r}, not {STATISTIC!r}: the two floors have to be the "
+            "same reduction to be comparable, so this slice refuses rather than compare "
+            "different quantities"
+        )
+    jobs = _documented(anchors.document, "jobs", "WP1")
+    if not isinstance(jobs, list):
+        raise PitchBurstError(
+            f"WP1's {ANCHOR_FLOOR_DOC_NAME} publishes no job list: an anchor guard is "
+            "one job's own block-local spread, so it is read per job"
+        )
+    spreads: dict[str, float] = {}
+    for job in JOBS:
+        entries = [
+            entry
+            for entry in jobs
+            if isinstance(entry, dict) and entry.get("job") == job
+        ]
+        if len(entries) != 1:
+            raise PitchBurstError(
+                f"WP1's {ANCHOR_FLOOR_DOC_NAME} publishes {len(entries)} jobs named "
+                f"{job!r}, expected exactly one: the guard is that job's own anchors"
+            )
+        spread = _documented_number(entries[0], "spread.mean", "WP1")
+        if spread <= 0.0:
+            raise PitchBurstError(
+                f"WP1's {ANCHOR_FLOOR_DOC_NAME} gives {job!r} an anchor spread of "
+                f"{spread!r} mm/s: a guard of zero or less is not a guard"
+            )
+        spreads[job] = spread
+        _require_agrees(
+            spread,
+            _tabulated_spread(anchors, job),
+            where=f"WP1's {ANCHOR_FLOOR_DOC_NAME}",
+            quantity=f"{job!r}'s anchor spread",
+        )
+    depth_resolved = _documented_number(
+        reference.document, "floor.depth_resolved.value_mm_s", "WP2"
+    )
+    depth_resolved_depth = _documented_number(
+        reference.document, "floor.depth_resolved.depth_mm", "WP2"
+    )
+    depth_averaged = _documented_number(
+        reference.document, "floor.depth_averaged.value_mm_s", "WP2"
+    )
+    if depth_resolved <= 0.0 or depth_averaged <= 0.0:
+        raise PitchBurstError(
+            f"WP2's {REFERENCE_FLOOR_DOC_NAME} publishes a non-positive endpoint "
+            f"({depth_resolved!r}, {depth_averaged!r} mm/s): an endpoint is the largest "
+            "absolute difference over the pairs it reduced"
+        )
+    endpoints = _tabulated_endpoints(reference)
+    _require_agrees(
+        depth_resolved,
+        endpoints.depth_resolved_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-resolved endpoint",
+    )
+    _require_agrees(
+        depth_resolved_depth,
+        endpoints.depth_resolved_depth_mm,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-resolved endpoint's depth",
+    )
+    _require_agrees(
+        depth_averaged,
+        endpoints.depth_averaged_value_mm_s,
+        where=f"WP2's {REFERENCE_FLOOR_DOC_NAME}",
+        quantity="the depth-averaged endpoint",
+    )
+    _require_same_pair(
+        reference, "floor.depth_resolved.pair", "WP2", endpoints.depth_resolved_pair
+    )
+    _require_same_pair(
+        reference, "floor.depth_averaged.pair", "WP2", endpoints.depth_averaged_pair
+    )
+    return PassFloors(
+        anchor_spread_mm_s=spreads,
+        depth_resolved_value_mm_s=depth_resolved,
+        depth_resolved_depth_mm=depth_resolved_depth,
+        depth_resolved_pair=_documented_pair(
+            reference.document, "floor.depth_resolved.pair", "WP2"
+        ),
+        depth_averaged_value_mm_s=depth_averaged,
+        depth_averaged_pair=_documented_pair(
+            reference.document, "floor.depth_averaged.pair", "WP2"
+        ),
+    )
 
 
 # ── the measurement ────────────────────────────────────────────────────
@@ -742,21 +1058,35 @@ def _contrast(
 
 
 def measure(
-    decoded: PassDecoding, *, analysis_commit: str, plan_path: Path = PLAN_PATH
+    decoded: PassDecoding,
+    *,
+    analysis_commit: str,
+    plan_path: Path = PLAN_PATH,
+    floors_dir: Path = REPORT_DIR,
 ) -> PitchBurst:
     """Measure WP3 on an already-decoded pass, or refuse by name.
 
+    The floors are read from the pass's own WP1 and WP2 documents under ``floors_dir``
+    (the directory this run writes its artefacts into), and the pass's plan fingerprint
+    is what ties them to this pass: a document from another pass refuses by name rather
+    than screening this one.
+
     Raises:
-        PitchBurstError: for anything the frozen WP0 ingest refuses, for a corner that
-            is missing, duplicated or not the plan's condition, for coarse corners whose
-            native grids disagree, for a knot grid that is not the coarse pitch, and for
-            an alignment offset beyond half the coarse pitch.
+        PitchBurstError: for anything the frozen WP0 ingest refuses, for a floor document
+            that is missing, unreadable, failed its own gate or belongs to another pass,
+            for a corner that is missing, duplicated or not the plan's condition, for
+            coarse corners whose native grids disagree, for a knot grid that is not the
+            coarse pitch, and for an alignment offset beyond half the coarse pitch.
     """
     commit = str(analysis_commit).strip()
     if not commit:
         raise PitchBurstError(
             "no generator revision: pass --analysis-commit or run from a checkout"
         )
+    floors = load_pass_floors(floors_dir, plan_fingerprint=decoded.plan_fingerprint)
+    anchor_floors = floors.anchor_floors_mm_s
+    depth_resolved_floor = floors.depth_resolved_floor_mm_s
+    depth_averaged_floor = floors.depth_averaged_floor_mm_s
     points = _corner_points(decoded)
     planned = {label: _plan_point(decoded, job, label) for label, job, _, _ in CORNERS}
     emissions = {
@@ -895,9 +1225,7 @@ def measure(
         burst_at_pitch_296=burst_at_296,
     )
     knots_above_anchor = {
-        job: int(
-            np.count_nonzero(np.abs(interaction) > ANCHOR_FLOOR_MM_S[job] + TOLERANCE)
-        )
+        job: int(np.count_nonzero(np.abs(interaction) > anchor_floors[job] + TOLERANCE))
         for job in JOBS
     }
     checks = _checks(
@@ -913,6 +1241,10 @@ def measure(
         half_pitch=half_pitch,
         interaction=interaction,
         emissions=emissions,
+        floors=floors,
+        anchor_floors=anchor_floors,
+        depth_resolved_floor=depth_resolved_floor,
+        depth_averaged_floor=depth_averaged_floor,
     )
     return PitchBurst(
         dataset_root=decoded.dataset_root.as_posix(),
@@ -945,18 +1277,24 @@ def measure(
         interaction_max_depth_mm=float(knots[extremes["max"]]),
         interaction_max_abs_mm_s=float(abs(values[extremes["abs"]])),
         interaction_max_abs_depth_mm=float(knots[extremes["abs"]]),
-        depth_resolved_floor_mm_s=DEPTH_RESOLVED_FLOOR_MM_S,
-        depth_resolved_floor_depth_mm=DEPTH_RESOLVED_FLOOR_DEPTH_MM,
-        depth_resolved_floor_source=DEPTH_RESOLVED_FLOOR_SOURCE,
-        depth_averaged_floor_mm_s=DEPTH_AVERAGED_FLOOR_MM_S,
-        depth_averaged_floor_source=DEPTH_AVERAGED_FLOOR_SOURCE,
-        anchor_floors_mm_s=dict(ANCHOR_FLOOR_MM_S),
+        depth_resolved_floor_mm_s=depth_resolved_floor,
+        depth_resolved_floor_depth_mm=_at_published_precision(
+            floors.depth_resolved_depth_mm
+        ),
+        depth_resolved_floor_pair=floors.depth_resolved_pair,
+        depth_resolved_floor_source=DEPTH_RESOLVED_FLOOR_SOURCE.format(
+            pair=_pair_phrase(floors.depth_resolved_pair)
+        ),
+        depth_averaged_floor_mm_s=depth_averaged_floor,
+        depth_averaged_floor_pair=floors.depth_averaged_pair,
+        depth_averaged_floor_source=DEPTH_AVERAGED_FLOOR_SOURCE.format(
+            pair=_relative_pair(floors.depth_averaged_pair, floors.depth_resolved_pair)
+        ),
+        anchor_floors_mm_s=dict(anchor_floors),
         anchor_floor_source=ANCHOR_FLOOR_SOURCE,
         knots_above_anchor_floor=knots_above_anchor,
         knots_above_depth_resolved_floor=int(
-            np.count_nonzero(
-                np.abs(interaction) > DEPTH_RESOLVED_FLOOR_MM_S + TOLERANCE
-            )
+            np.count_nonzero(np.abs(interaction) > depth_resolved_floor + TOLERANCE)
         ),
         checks=checks,
     )
@@ -966,13 +1304,18 @@ def build_pitch_burst(
     dataset_root: Path = DATASET_ROOT,
     *,
     plan_path: Path = PLAN_PATH,
+    report_dir: Path = REPORT_DIR,
     analysis_commit: str | None = None,
 ) -> PitchBurst:
     """The pitch x burst interaction of the committed pass, or a refusal by name.
 
+    The pass's own floors are read from ``report_dir`` - the directory the run writes its
+    artefacts into, which is where WP1's and WP2's documents for this pass live.
+
     Raises:
-        PitchBurstError: for anything the frozen WP0 ingest refuses, and for every
-            structural condition :func:`measure` refuses.
+        PitchBurstError: for anything the frozen WP0 ingest refuses, for any floor
+            document :func:`load_pass_floors` refuses, and for every structural condition
+            :func:`measure` refuses.
     """
     decoded = decode_pass(dataset_root, plan_path=plan_path)
     commit = analysis_commit if analysis_commit is not None else current_revision()
@@ -980,7 +1323,12 @@ def build_pitch_burst(
         raise PitchBurstError(
             "no generator revision: pass --analysis-commit or run from a checkout"
         )
-    return measure(decoded, analysis_commit=str(commit), plan_path=Path(plan_path))
+    return measure(
+        decoded,
+        analysis_commit=str(commit),
+        plan_path=Path(plan_path),
+        floors_dir=Path(report_dir),
+    )
 
 
 def _checks(
@@ -997,8 +1345,17 @@ def _checks(
     half_pitch: float,
     interaction: np.ndarray,
     emissions: set[int],
+    floors: PassFloors,
+    anchor_floors: dict[str, float],
+    depth_resolved_floor: float,
+    depth_averaged_floor: float,
 ) -> dict[str, bool]:
-    """The WP3 gate: the structural facts that must hold before an interaction is published."""
+    """The WP3 gate: the structural facts that must hold before an interaction is published.
+
+    The floors this gate compares against are the ones the pass's own WP1 and WP2
+    documents published, passed in as numbers: nothing here is compared with a constant
+    that stands in for another sitting's measurement.
+    """
     interaction_labels = set(CORNER_LABELS)
     per_knot = np.array([row.interaction_mm_s for row in rows], dtype=float)
     from_rows = np.array(
@@ -1108,18 +1465,36 @@ def _checks(
         and all(context.anchor_floor_mm_s > 0.0 for context in contexts.values()),
         "anchor_floors_reproduce_wp1": all(
             math.isclose(
-                round(context.anchor_floor_mm_s, 3),
-                ANCHOR_FLOOR_MM_S[context.job],
+                round(context.anchor_floor_mm_s, FLOOR_DECIMALS),
+                anchor_floors[context.job],
                 rel_tol=0.0,
                 abs_tol=1e-12,
             )
             for context in contexts.values()
         ),
-        "the_two_screening_endpoints_are_kept_apart": math.isclose(
-            DEPTH_RESOLVED_FLOOR_MM_S, 14.603, rel_tol=0.0, abs_tol=1e-12
+        # The two endpoints again, three ways, now that they are this pass's own: the
+        # number the artefact publishes is the document's number at this slice's
+        # precision, the two endpoints are different quantities and stay apart, and the
+        # depth the depth-resolved endpoint was measured at is a depth this pass covered
+        # - the last clause is the only one with a second, independent source, because
+        # the support comes from the decoded recordings and not from the document.
+        "the_two_screening_endpoints_are_kept_apart": depth_resolved_floor
+        > depth_averaged_floor
+        and math.isclose(
+            depth_resolved_floor,
+            floors.depth_resolved_value_mm_s,
+            rel_tol=0.0,
+            abs_tol=FLOOR_TOLERANCE_MM_S,
         )
-        and math.isclose(DEPTH_AVERAGED_FLOOR_MM_S, 4.235, rel_tol=0.0, abs_tol=1e-12)
-        and DEPTH_RESOLVED_FLOOR_MM_S > DEPTH_AVERAGED_FLOOR_MM_S,
+        and math.isclose(
+            depth_averaged_floor,
+            floors.depth_averaged_value_mm_s,
+            rel_tol=0.0,
+            abs_tol=FLOOR_TOLERANCE_MM_S,
+        )
+        and decoded.support_mm[0]
+        <= floors.depth_resolved_depth_mm
+        <= decoded.support_mm[1],
         "window_and_support_are_the_wp0_ones": math.isclose(
             decoded.window_s, DESIGNED_WINDOW_S, rel_tol=0.0, abs_tol=1e-12
         )
@@ -1211,6 +1586,7 @@ def _result_document(number: float, description: str) -> dict[str, object]:
 
 def def_document(model: PitchBurst) -> dict[str, object]:
     """The WP3 document: the corners, the alignment, the interaction, the floors, the gate."""
+    rendered = definitions(model)
     return {
         "dataset_root": model.dataset_root,
         "plan": model.plan,
@@ -1336,8 +1712,8 @@ def def_document(model: PitchBurst) -> dict[str, object]:
             for context in model.jobs
         ],
         "interaction": {
-            "definition": DEFINITIONS["interaction"],
-            "reduction": DEFINITIONS["scalar_reduction"],
+            "definition": rendered["interaction"],
+            "reduction": rendered["scalar_reduction"],
             "scalar_reduction_mm_s": model.interaction_reduction_mm_s,
             "per_knot": [
                 {
@@ -1411,7 +1787,7 @@ def def_document(model: PitchBurst) -> dict[str, object]:
             ),
         },
         "conservative_reading": {
-            "resolvable_below_mm_s": list(RESOLVABLE_BELOW_MM_S),
+            "resolvable_below_mm_s": sorted(model.anchor_floors_mm_s.values()),
             "knot_count": model.knot_count,
             "knots_above_anchor_floor": dict(model.knots_above_anchor_floor),
             "knots_above_anchor_floor_share": dict(model.anchor_floor_shares),
@@ -1422,15 +1798,15 @@ def def_document(model: PitchBurst) -> dict[str, object]:
                 model.knots_above_depth_resolved_floor / model.knot_count
             ),
             "statement": (
-                "a pitch or burst effect smaller than ~10-12 mm/s is not resolvable in "
-                "this pass: both burst jobs' own block-local anchors move by that much "
-                "inside their own job, so an interaction of that size or smaller cannot "
-                "be separated from the anchors' movement. The magnitudes below are "
-                "screening outcomes against those floors and against WP2's endpoints - "
-                "neither outcome proves an axis effect"
+                f"a pitch or burst effect smaller than {_band(model)} is not resolvable "
+                "in this pass: both burst jobs' own block-local anchors move by that "
+                "much inside their own job, so an interaction of that size or smaller "
+                "cannot be separated from the anchors' movement. The magnitudes below "
+                "are screening outcomes against those floors and against WP2's "
+                "endpoints - neither outcome proves an axis effect"
             ),
         },
-        "definitions": dict(DEFINITIONS),
+        "definitions": rendered,
         "columns": dict(CSV_COLUMN_DEFINITIONS),
         "checks": dict(sorted(model.checks.items())),
         "ok": model.ok,
@@ -1442,6 +1818,17 @@ def _percent(count: int, total: int) -> str:
     return f"{100.0 * count / total:.1f} %" if total else "n/a"
 
 
+def _band(model: PitchBurst) -> str:
+    """The band the two anchor guards set, as the prose states it: ``~10-12 mm/s``.
+
+    Read from the pass's own floors rather than written down: the conservative reading
+    is "below these guards", and the guards are this pass's WP1 numbers.
+    """
+    guards = sorted(model.anchor_floors_mm_s.values())
+    low, high = round(guards[0]), round(guards[-1])
+    return f"~{low:.0f} mm/s" if low == high else f"~{low:.0f}-{high:.0f} mm/s"
+
+
 def markdown_text(model: PitchBurst) -> str:
     """Render ``pitch-burst.md``: the reading of this run's numbers (LF, trailing newline).
 
@@ -1449,6 +1836,12 @@ def markdown_text(model: PitchBurst) -> str:
     numbers rather than a hand copy of them.
     """
     by_label = {corner.label: corner for corner in model.corners}
+    magnitude = abs(model.interaction_reduction_mm_s)
+    # The two screening outcomes this pass actually found, each measured against this
+    # pass's own floor: the prose states them rather than asserting them.
+    above_the_endpoint = magnitude > model.depth_averaged_floor_mm_s
+    inside_the_guards = magnitude < min(model.anchor_floors_mm_s.values())
+    band = _band(model)
     lines: list[str] = []
     add = lines.append
     add("# WP3 — the pitch × burst interaction")
@@ -1489,7 +1882,7 @@ def markdown_text(model: PitchBurst) -> str:
     add(
         "**What it does not claim.** No causation: every number is an observed "
         "difference between recordings. No significance test, no confidence interval, "
-        "no statement below the anchors' own ~10-12 mm/s. No emissions statement (WP4), "
+        f"no statement below the anchors' own {band}. No emissions statement (WP4), "
         "no reference-condition statement (that is CR1-CR4's, WP2), and no new "
         "acquisition."
     )
@@ -1683,7 +2076,8 @@ def markdown_text(model: PitchBurst) -> str:
     add(
         "The two WP2 endpoints are different quantities measured from the same pair of "
         "reference runs, and this slice never mixes them: a per-knot magnitude is "
-        "screened against 14.603 mm/s, a scalar against 4.235 mm/s."
+        f"screened against {model.depth_resolved_floor_mm_s:.3f} mm/s, a scalar against "
+        f"{model.depth_averaged_floor_mm_s:.3f} mm/s."
     )
     add("")
     add("## The conservative reading")
@@ -1692,19 +2086,27 @@ def markdown_text(model: PitchBurst) -> str:
         f"Both burst jobs' own anchors move by **{model.anchor_floors_mm_s['burst-4']:.3f} "
         f"mm/s** (`burst-4`) and **{model.anchor_floors_mm_s['burst-18']:.3f} mm/s** "
         f"(`burst-18`) inside their own job. A pitch or burst effect smaller than "
-        "~10-12 mm/s is therefore **not resolvable in this pass**: it cannot be "
+        f"{band} is therefore **not resolvable in this pass**: it cannot be "
         "separated from the anchors' own movement in those jobs."
     )
     add("")
     add(
         f"- The scalar reduction of `I(z)` is "
         f"**{model.interaction_reduction_mm_s:+.3f} mm/s** (magnitude "
-        f"{abs(model.interaction_reduction_mm_s):.3f} mm/s). The endpoint a scalar is "
+        f"{magnitude:.3f} mm/s). The endpoint a scalar is "
         f"compared with is the **depth-averaged** one, and against it this interaction "
-        f"**exceeds** WP2's between-run floor of "
-        f"{model.depth_averaged_floor_mm_s:.3f} mm/s, by a factor of "
-        f"{abs(model.interaction_reduction_mm_s) / model.depth_averaged_floor_mm_s:.2f}. "
-        "The depth-resolved endpoint is not the right comparator for a scalar and is not "
+        + (
+            f"**exceeds** WP2's between-run floor of "
+            f"{model.depth_averaged_floor_mm_s:.3f} mm/s, by a factor of "
+            f"{magnitude / model.depth_averaged_floor_mm_s:.2f}. "
+            if above_the_endpoint
+            else f"**does not exceed** WP2's between-run floor of "
+            f"{model.depth_averaged_floor_mm_s:.3f} mm/s: its magnitude is "
+            f"{magnitude / model.depth_averaged_floor_mm_s:.2f} of this pass's own "
+            "between-run endpoint, so the scalar is not resolved against the "
+            "campaign's own reference variation. "
+        )
+        + "The depth-resolved endpoint is not the right comparator for a scalar and is not "
         "used here."
     )
     add(
@@ -1715,6 +2117,14 @@ def markdown_text(model: PitchBurst) -> str:
         "resolved: it is larger than the campaign's own between-run reference variation "
         "and smaller than the movement of the anchors inside the very jobs it was "
         "measured from."
+        if inside_the_guards
+        else f"- Its magnitude of {magnitude:.3f} mm/s sits **above** the guard the "
+        f"`burst-4` job's own anchors set "
+        f"({model.anchor_floors_mm_s['burst-4']:.3f} mm/s) and the `burst-18` job's "
+        f"({model.anchor_floors_mm_s['burst-18']:.3f} mm/s), so the conservative "
+        "within-job criterion does not hold for this pass: the depth-averaged "
+        "interaction is not separated from the movement of the anchors inside the "
+        "jobs it was measured from."
     )
     add(
         f"- Depth-resolved, `|I(z)|` is a screening outcome above the `burst-4` guard at "
@@ -1736,9 +2146,21 @@ def markdown_text(model: PitchBurst) -> str:
         "near and mid field, where its local magnitudes reach "
         f"{model.interaction_max_abs_mm_s:.3f} mm/s at "
         f"{model.interaction_max_abs_depth_mm:.3f} mm and change sign around the middle "
-        "of the profile, while its depth-averaged value exceeds the campaign's own "
-        "between-run reference floor and still sits inside the anchors' own movement. "
-        "Both statements are observations. Neither proves that the pitch, the "
+        "of the profile, while its depth-averaged value "
+        + (
+            "exceeds the campaign's own between-run reference floor and still sits "
+            "inside the anchors' own movement. "
+            if above_the_endpoint and inside_the_guards
+            else "does not exceed the campaign's own between-run reference floor "
+            f"({magnitude:.3f} mm/s against this pass's own {model.depth_averaged_floor_mm_s:.3f} mm/s endpoint) "
+            + (
+                "and still sits inside the band the two jobs' own anchors move in. "
+                if inside_the_guards
+                else "and sits inside the movement of the anchors' own jobs only for the "
+                "job whose guard it passes. "
+            )
+        )
+        + "Both statements are observations. Neither proves that the pitch, the "
         "burst or their combination caused anything — the two jobs differ in condition "
         "*and* in their own drift, and this pass has one realization per corner."
     )
@@ -1794,7 +2216,7 @@ def markdown_text(model: PitchBurst) -> str:
         "a corner sits in."
     )
     add(
-        "- **No claim below ~10-12 mm/s.** The two burst jobs' own anchor floors are "
+        f"- **No claim below {band}.** The two burst jobs' own anchor floors are "
         f"{model.anchor_floors_mm_s['burst-4']:.3f} and "
         f"{model.anchor_floors_mm_s['burst-18']:.3f} mm/s, so a pitch or burst effect of "
         "that size or smaller cannot be separated from the anchors' movement inside the "
@@ -1920,13 +2342,20 @@ def render_figure(model: PitchBurst, path: Path) -> Path:
         f"resampling; the largest offset used is {model.max_abs_offset_mm:.6f} mm, and "
         f"an offset above half the coarse pitch ({model.half_coarse_pitch_mm:.4f} mm) "
         "is refused by name with nothing written. Conservative reading: a pitch or burst "
-        "effect smaller than ~10-12 mm/s is not resolvable in this pass — |I(z)| is a "
+        f"effect smaller than {_band(model)} is not resolvable in this pass — |I(z)| is a "
         f"screening outcome above the burst-4 guard ({model.anchor_floors_mm_s['burst-4']:.3f}) "
         f"at {model.knots_above_anchor_floor['burst-4']}/{model.knot_count} knots and "
         f"above the burst-18 guard ({model.anchor_floors_mm_s['burst-18']:.3f}) at "
         f"{model.knots_above_anchor_floor['burst-18']}/{model.knot_count}, while the "
-        f"depth-averaged reduction {model.interaction_reduction_mm_s:+.3f} mm/s stays "
-        "inside that band. Primary window "
+        + (
+            f"depth-averaged reduction {model.interaction_reduction_mm_s:+.3f} mm/s "
+            "stays inside that band. "
+            if abs(model.interaction_reduction_mm_s)
+            < min(model.anchor_floors_mm_s.values())
+            else f"depth-averaged reduction {model.interaction_reduction_mm_s:+.3f} mm/s "
+            "does not stay inside that band. "
+        )
+        + "Primary window "
         f"{model.window_s:g} s ({model.window_revolutions} revolutions), common support "
         f"{model.support_min_mm:.3f}-{model.support_max_mm:.3f} mm, statistic "
         f"'{model.statistic}'. Observed differences only: no confidence interval, no "
@@ -1980,7 +2409,10 @@ def write_pitch_burst(
     identical bytes. Nothing is written when the build refuses.
     """
     model = build_pitch_burst(
-        dataset_root, plan_path=plan_path, analysis_commit=analysis_commit
+        dataset_root,
+        plan_path=plan_path,
+        report_dir=Path(report_dir),
+        analysis_commit=analysis_commit,
     )
     directory = Path(report_dir)
     directory.mkdir(parents=True, exist_ok=True)
@@ -2037,7 +2469,8 @@ def pitch_burst_main(argv: list[str] | None = None) -> int:
         default=REPORT_DIR.as_posix(),
         help=(
             "directory to write pitch-burst.csv, pitch-burst.json, pitch-burst.md and "
-            "figures/ into"
+            "figures/ into, and the one this pass's own anchor-floor.json and "
+            "reference-floor.json are read from"
         ),
     )
     parser.add_argument(
