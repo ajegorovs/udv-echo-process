@@ -169,6 +169,15 @@ PLANNER_PERIOD_LAW = "T_tran + T_prf x (16 + N_PRF) (acquire/plan.py::profile_pe
 #: the check's job is to catch a log rewritten to the achieved period, which both forms
 #: sit far from. Naming a pass here is a tightening for that pass, never a gate on
 #: whether an older pass may be analysed at all.
+#:
+#: This table is transitional, and the two tiers it creates are not equally strong
+#: evidence. A named pass states "this exact planning form produced the recorded target";
+#: an unnamed pass states only "the recorded target is consistent with one of the two
+#: forms this repository has ever used", which is **weaker provenance validation** and must
+#: not be read as the stronger claim. The durable fix is for an acquisition to record its
+#: planning model in its own provenance — a semantic version such as
+#: ``timing_model: profile_period_v2`` — so that analysis asks the pass which law generated
+#: ``target_s`` instead of an analysis-side table remembering acquisition history.
 PERIOD_LAW_BY_PASS: dict[str, str] = {
     PLAN_NAME: RETIRED_PERIOD_LAW,
     "sparse-mixer-live-2": PLANNER_PERIOD_LAW,
@@ -1377,6 +1386,50 @@ def qc_document(ingest: SparseIngest) -> dict[str, object]:
     }
 
 
+def identify_pass(
+    dataset_root: Path = DATASET_ROOT,
+    *,
+    plan_path: Path = PLAN_PATH,
+    plan_name: str | None = None,
+) -> tuple[run_plan.PlannedRun, dict[str, object], str]:
+    """The plan, the pass record and the resolved pass name — or a refusal naming what disagrees.
+
+    A pass's identity is three agreements, and they are established here **once**: the plan
+    file names the pass being asked for, the pass record is for that plan, and the record
+    answers the plan's own fingerprint. The ingest that writes the frozen artefact table and
+    the live loader a notebook decodes through are both consumers of this function, so the
+    two paths cannot drift into accepting different passes — which is what they did while
+    each carried its own copy of the checks, the loader holding only the per-point ones.
+
+    Returns:
+        The planned run, the pass's own record, and the resolved pass name: ``plan_name``,
+        or the plan's own name when ``None`` was passed.
+
+    Raises:
+        SparseIngestError: naming the disagreement, before any recording is read.
+    """
+    plan = run_plan.plan_run_file(Path(plan_path))
+    name = plan.plan if plan_name is None else plan_name
+    if plan.plan != name:
+        raise SparseIngestError(
+            f"the plan at {plan_path} is {plan.plan!r}, this pass is {name!r}"
+        )
+    run = read_run_record(dataset_root, plan_name=name)
+    if str(run.get("plan") or "") != plan.plan:
+        raise SparseIngestError(
+            f"the pass record is for plan {run.get('plan')!r}, the plan file is "
+            f"{plan.plan!r}"
+        )
+    if str(run.get("plan_fingerprint") or "") != plan.plan_fingerprint:
+        raise SparseIngestError(
+            f"the pass record answers plan fingerprint "
+            f"{str(run.get('plan_fingerprint'))[:12]}..., the plan hashes to "
+            f"{plan.plan_fingerprint[:12]}...: the record and the plan must be the "
+            "same design"
+        )
+    return plan, run, name
+
+
 def build_sparse_ingest(
     dataset_root: Path = DATASET_ROOT,
     *,
@@ -1403,25 +1456,7 @@ def build_sparse_ingest(
             setting, or a log whose planning target has been rewritten.
     """
     root = Path(dataset_root)
-    plan = run_plan.plan_run_file(Path(plan_path))
-    name = plan.plan if plan_name is None else plan_name
-    if plan.plan != name:
-        raise SparseIngestError(
-            f"the plan at {plan_path} is {plan.plan!r}, this ingest describes {name!r}"
-        )
-    run = read_run_record(root, plan_name=name)
-    if str(run.get("plan") or "") != plan.plan:
-        raise SparseIngestError(
-            f"the pass record is for plan {run.get('plan')!r}, the plan file is "
-            f"{plan.plan!r}"
-        )
-    if str(run.get("plan_fingerprint") or "") != plan.plan_fingerprint:
-        raise SparseIngestError(
-            f"the pass record answers plan fingerprint "
-            f"{str(run.get('plan_fingerprint'))[:12]}..., the plan hashes to "
-            f"{plan.plan_fingerprint[:12]}...: the record and the plan must be the "
-            "same design"
-        )
+    plan, run, name = identify_pass(root, plan_path=plan_path, plan_name=plan_name)
     records = read_job_records(root, plan, run)
     bindings = bind_recordings(root, records)
 

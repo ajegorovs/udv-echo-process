@@ -46,9 +46,10 @@ def intro(mo):
 
     **Units and views.** Velocity is the instrument's own signed axial component in
     `mm/s`; depth is the instrument's **native gate coordinate** in `mm`. Every view
-    is labelled either the *primary* designed 12 s window (100 nominal 500-RPM
-    revolutions — the pass's fixed comparison interval) or the *exploratory* full
-    stored record, which retains the acquisition's own stopping overshoot.
+    is labelled either the *primary* designed 12 s window — the pass's fixed comparison
+    interval, a **nominal-duration equivalence** (the 100 revolutions the design asked
+    for, at the 500 RPM the design assumes and the recording does not establish) — or the
+    *exploratory* full stored record, which retains the acquisition's own stopping overshoot.
 
     **What this checkpoint is not.** It measures no scientific effect. There is no
     gate trace, no depth profile, no autocorrelation, no spectrum, no spatial
@@ -155,7 +156,8 @@ def pass_status(PASSES, dataset_picker, decoding, decoding_error, mo):
             f"plan `{decoding.plan.plan}` "
             f"sha256:{decoding.plan_fingerprint[:12]}…\n"
             f"- primary window: **{decoding.window_s:g} s** "
-            f"({decoding.window_revolutions} nominal 500-RPM revolutions), the pass's "
+            f"(a nominal-duration equivalence: {decoding.window_revolutions} revolutions "
+            "at the nominal 500 RPM, not a measured speed), the pass's "
             "designed exposure\n"
             f"- common physical support: **{_lo:.3f}–{_hi:.3f} mm** "
             f"(native gate grids, no interpolation)\n"
@@ -315,7 +317,7 @@ def point_metadata(decoding, mo, np, point):
             f"- **signal QC of the full record**: finite {_finite}/{_values.size} · "
             f"exact zeros {_zeros} ({_zeros / _values.size:.4f})",
             f"- **shared pass views**: primary window {decoding.window_s:g} s "
-            f"({decoding.window_revolutions} nominal 500-RPM revolutions) · common "
+            f"({decoding.window_revolutions} revolutions at the nominal 500 RPM) · common "
             f"support {_lo:.3f}–{_hi:.3f} mm · this record retains the designed window: "
             f"**{_covers}** (its own stamps, not the log's target)",
             f"- **provenance**: sha256:{point.source_sha256} · "
