@@ -55,6 +55,9 @@ from udv_echo_process.analysis.sparse_inventory import (
     decode_point,
     read_job_records,
     read_run_record,
+    require_declared_settings,
+    require_reader_agrees_with_the_log,
+    require_retired_target,
 )
 
 #: The pass's five scientific jobs and the four reference jobs, as the plan names
@@ -147,6 +150,9 @@ def decode_pass(
                 f"{binding.relative_path}: the frozen ingest reports a decode failure "
                 f"({result}); this slice measures only points the table accepted"
             )
+        require_reader_agrees_with_the_log(result)
+        require_declared_settings(result)
+        require_retired_target(result, plan_name=plan_name)
         points.append(result)
 
     # The binding walk returns the recordings in discovery order; the pass's own order
