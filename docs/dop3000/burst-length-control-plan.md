@@ -3,10 +3,12 @@
 **Status: slices B1–B3 are in PR #35; B4 burst-control commissioning passed on
 2026-09-24 (evidence in [`data/burst-commissioning-b4/`](../../data/burst-commissioning-b4/)).
 The manual and the stored files separate word 27's receiver-bandwidth definition from the
-effective Sampling-volume thickness read in the dialog. B5 job-level integration may proceed;
-word-27 promotion is a separate B6 question.** Nothing here re-opens the acquisition
-architecture: the plan adds one parameter to the acquisition model that the model already reads,
-and every rule it uses is a rule this repository already has.
+effective Sampling-volume thickness read in the dialog. B5 job-level integration has an
+**offline implementation proposed** on `feat/b5-job-burst-transitions` (the job boundary's
+transition, its manifest evidence and the pass row's copy of it, §B5); its **live end-to-end
+acceptance is still pending**; word-27 promotion is a separate B6 question.** Nothing here re-opens
+the acquisition architecture: the plan adds one parameter to the acquisition model that the model
+already reads, and every rule it uses is a rule this repository already has.
 
 Burst length is the first acquisition parameter this repository **writes through the
 `Operating parameters` dialog** (`Parameters → Operating parameters`, the third popup entry). The
@@ -223,6 +225,50 @@ runner perform the verified transition when the next job's burst differs from th
 one, and keeps the existing compilation check as an independent second opinion:
 `write → verify → compile → record`. Job-level only: the sparse design groups burst conditions, so
 the manual step disappears without changing the campaign model.
+
+> **Correction, and the landed slice.** That refusal is real but **narrower than it reads**: it sits
+> in the *run-level* pass's own structure check (`PlannedRun._check_run_level_pass`,
+> `docs/dop3000/stage2-run-plan.md`'s design), which fixes burst and PRF at the reference condition
+> because a run-level pair varies **emissions only**. A *scientific* job is unrestricted in burst —
+> the sparse pass's `burst-4` / `burst-18` pair is exactly that — so the "manual step" B5 removes is
+> the operator's, not a refusal the plan would have made. The two facts the plan cites are the
+> compile's: `campaign._effective_parameters` carries `definition.burst_length` into every point's
+> request, and the compile reconciles that against the reading.
+>
+> **Implemented at the job boundary in the proposed branch
+> `feat/b5-job-burst-transitions`:** `campaign.run_campaign` **reads** the dialog after
+> `ensure_channel`, takes the instrument reading and makes the **pure** refusals on it (the mode rung,
+> and — for a resume — the previous manifest's definition fingerprint *before* the first gesture),
+> and only then performs the one **write**. When the instrument's stated burst differs from the
+> definition's it calls `actuator.write_dialog_burst_length(requested, routed_channel=routed)`.
+> Nothing but `VERIFIED` is accepted, and the evidence must also name the channel this run routed and
+> state the burst the pre-write dialog stated; the re-opened dialog must state the request **and** a
+> readable dependent sampling-volume statement; anything else raises `CampaignError` before the
+> compile and therefore before any recording. The dialog and the instrument reading are re-taken after
+> a transition, so the compile reconciles the state the write established (its own second opinion,
+> unchanged). A verified transition is persisted on `JobManifest.burst_transition` as the driver's
+> own `BurstWriteResult`, and copied onto the pass's `RunJobRecord.burst_transition` (with a
+> sentence in its `note`) so a pass reconstructed offline is not silent about it; a job that spent no
+> write carries `None` on both. The sweep port gained `write_dialog_burst_length` **additively** (the
+> primitive `Actuator` is untouched, and `tests/test_acquire_runner.py` pins the two sets apart).
+> Covered by `tests/test_acquire_campaign_burst.py` (equal / refusal / mismatch / unreadable-volume /
+> evidence-consistency / safety-ordering / persistence / resume / `no_snapshot`), headless against the
+> runner's fake.
+>
+> **The mutation-ordering rule.** No instrument mutation precedes a **pure** refusal: the mode rung
+> and the resume definition-fingerprint check read only the reading, the definition and the previous
+> manifest, and are made before the boundary writes anything. The resume's *identity* comparison needs
+> the compile, which needs the post-write state, so it can only follow the write — its refusal says
+> so ("no point of this job was run and nothing was stored", not that the run did nothing), and so
+> does the compile's (it records that *the compile* wrote nothing, not that the application is
+> untouched).
+>
+> **Limits.** Offline only: this is the driver's transaction wired to the job boundary, not a live
+> run — B5's own end-to-end acceptance (`--next` across the sparse pass's burst pair) remains
+> pending, and the B4 stop rule still binds. `campaign --run --no-snapshot` is the explicit bypass: it
+> reads nothing and compiles nothing, so it also performs **no transition** — the instrument's burst
+> is not written to match the definition, and the operator sets it by hand. No per-point writer, no
+> sampling-volume write, no word-27-to-mm logic.
 
 **B6 — stored-artifact verification** *(after B4 and B5)*
 

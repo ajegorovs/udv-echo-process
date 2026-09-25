@@ -35,6 +35,11 @@ from pathlib import Path
 import pytest
 
 from udv_echo_process.acquire import campaign, run_plan
+from udv_echo_process.acquire.actuator import (
+    BurstState,
+    BurstWriteResult,
+    ComboReading,
+)
 from udv_echo_process.acquire.campaign import JobManifest, ManifestPoint
 from udv_echo_process.acquire.log import PointStatus
 from udv_echo_process.cli import acquire_main
@@ -983,6 +988,36 @@ def test_a_job_whose_outcome_is_partial_is_recorded_as_such() -> None:
     assert run_plan.next_job(run, manifest).job == "burst-4"
 
 
+def test_a_jobs_burst_transition_is_reported_on_the_passs_own_row() -> None:
+    """A row of the pass's record is read offline, so it may not be silent about a burst write.
+
+    The pass's record exists so a reader can place a job without the instrument. A job whose boundary
+    transitioned the burst carries the driver's own evidence on its manifest; the pass's row has to
+    say so too, or reconstructing the pass offline would lose which job moved the dialog.
+    """
+    run = committed_run()
+    manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
+    job = run.jobs[0]
+    transition = BurstWriteResult(
+        requested_burst=18,
+        state=BurstState.VERIFIED,
+        channel="1",
+        before_burst=ComboReading(text="4"),
+        after_burst=ComboReading(text="18"),
+        after_sampling_volume=ComboReading(text="1.460"),
+    )
+    job_manifest = job_manifest_for(run, job).model_copy(
+        update={"burst_transition": transition}
+    )
+
+    manifest = run_plan.record_job(manifest, run, job, job_manifest)
+
+    record = manifest.jobs[0]
+    assert record.burst_transition is not None
+    assert record.burst_transition.verified_burst == 18
+    assert record.note is not None and "burst" in record.note, record.note
+
+
 def test_a_job_with_no_ok_point_is_failed() -> None:
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
@@ -1082,14 +1117,29 @@ def test_the_sheet_says_which_run_wide_fact_refuses_and_which_only_advises() -> 
     (a definition's value for it used to be derived) that does not hold for a pass that *moves* it
     between jobs on purpose. This pass therefore raises it, and both halves are named: the compile
     refuses before the first recording, and the stored file's own word has to agree too.
+
+    ``burst_length`` is the exception, and the sheet has to say *that* instead: since B5 the run
+    writes it through the ``Operating parameters`` dialog at the job boundary, so it is neither a
+    setting the operator prepares by hand nor a fact a disagreement merely refuses
+    (``docs/dop3000/burst-length-control-plan.md`` §B5).
     """
     run = committed_run()
     assert run.strict_facts == ("emissions_per_profile",)
     sheet = run_plan.operator_setup_sheet(run)
     assert (
-        "burst_length: read from the Operating parameters dialog; a disagreement refuses"
-        in sheet
+        "burst_length: read from the Operating parameters dialog; the run transitions it at the "
+        "job boundary when the job's burst differs" in sheet
     )
+    # The transition is not the whole check: the compile still refuses on a disagreement it finds
+    # against the state the write established, and the sheet has to say so (plan §B5 — the compile
+    # is the transition's second opinion).
+    assert (
+        "and the compile that follows refuses on any disagreement it finds" in sheet
+    )
+    assert (
+        "burst_length: read from the Operating parameters dialog; a disagreement refuses"
+        not in sheet
+    ), "the sheet still says a burst disagreement refuses: B5 writes the burst instead"
     assert (
         "prf_us: read from the measurement screen's parameter column; a disagreement refuses"
         in sheet
