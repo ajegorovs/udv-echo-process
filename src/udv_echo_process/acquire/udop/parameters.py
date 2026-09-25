@@ -36,8 +36,14 @@ from collections.abc import Callable, Mapping, Sequence
 from udv_echo_process.acquire.actuator import (
     DIALOG_FIELD_ORDER,
     PRESS_HOLD_MS,
+    BurstState,
+    BurstWriteResult,
+    ComboReading,
     DialogControl,
+    DialogField,
+    OverlayKind,
     ParamRole,
+    dialog_row,
 )
 from udv_echo_process.acquire.config import (
     MAX_CHANNEL,
@@ -50,9 +56,11 @@ from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.udop.recording import _POLL_S, dialog_up_clause
 from udv_echo_process.acquire.ui.dialog import (
     _is_dialog_panel,
+    channel_mismatch,
     dialog_channel_text,
     dialog_refusal,
     dialog_value_fields,
+    field_at,
     text_at,
 )
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
@@ -102,6 +110,16 @@ _ENTRY_DIALOG_TIMEOUT_S = 8.0
 #: already there when the write's own settle (``_COMBO_SETTLE_S``) is over, so this is a
 #: ceiling, not a wait.
 _DIALOG_REPLACE_S = 2.0
+
+#: How long the application is given to **restate** the burst row — and the row it derives from
+#: it — after a selection has been sent, before the write is declared not to have taken. A
+#: selection is applied to the panel that is already up (nothing is rebuilt, unlike a channel
+#: write), so the reference read the batch's rows immediately after its own selection
+#: (``recon/41_burst_sampling_volume.py``) and a value that has not appeared within a couple of
+#: polls is a refusal rather than a slow application. It is a **ceiling, not a wait**: the loop
+#: returns the moment the row states the request. It lives here, with the loop that reads it, so a
+#: live session can lengthen it by patching this module.
+_BURST_SETTLE_S = 2.0
 
 #: How long the popup, the dialog and a selection read-back are given, and the cadence
 #: they are polled at — the reference recipe's own numbers (``while time.time() - t0 < 8:
@@ -620,6 +638,457 @@ class ParametersSurface:
             # is *up* — re-resolved — and that reports a dialog it could not take down instead of
             # returning as if the screen were clear.
             self._close_any_dialog()
+
+    def write_dialog_burst_length(
+        self, requested: int, *, routed_channel: int | None
+    ) -> BurstWriteResult:
+        """Make the application record at burst ``requested``, and prove it did — or say why not.
+
+        The burst length is the one acquisition parameter this driver writes **through the
+        ``Operating parameters`` dialog** that the application also *derives another parameter
+        from*: selecting a burst makes the application re-select the ``Sampling volume``
+        (``docs/dop3000/udop-automation.md`` §3), and the value it picks is part of the state it
+        accepted. So this is a transaction rather than a field write, and every step of it is a
+        rule this repository already paid for:
+
+        1. **Preconditions before anything is pressed.** The routing step is the caller's
+           (``ensure_channel``) and its answer is handed over as ``routed_channel`` — a fact that
+           rests on another step's verification, which is why it is a **required** argument and
+           may be ``None`` only when the caller states that nothing routed it. A dialog that
+           states another channel is refused through the same rule the reading uses
+           (:func:`…ui.dialog.channel_mismatch`), before any message is sent. The screen itself is
+           the *dialog opener*'s own precondition: :meth:`_open_parameters_dialog` refuses an open
+           menu popup, refuses a dialog that is already up, requires the application to be
+           foreground (this application ignores a hover otherwise) and refuses when the press
+           switched the assisted mode on — and a channel whose panel is the **assisted** one never
+           reaches this method at all, because the dialog it opens does not hold the channel combo
+           this driver identifies ``Operating parameters`` by. Nothing here re-implements any of
+           those;
+        2. **The dialog has to be the measured table.** The table must have filled, its shape must
+           be :data:`…actuator.DIALOG_COLUMN_ROWS` and every anchor must read what the measurement
+           screen reads (:func:`…ui.dialog.dialog_refusal`). The rows are bound by **position**, so
+           this is what makes the position evidence rather than habit — a re-laid-out dialog would
+           otherwise hand this write a plausible wrong control;
+        3. **Read before writing.** Both rows are read: the burst row (through the *choice* it
+           offers — the ``TSp_Edit`` beside it states a different physical quantity) and the row
+           the application derives from it. The entries are enumerated and the request is matched
+           by **value text** (:meth:`…actuator.ComboReading.entry_of`), never by counting steps: a
+           measured combo stepped *past* a value (one step up from ``4`` landed on ``6``), and a
+           request the row does not offer is refused **before** anything is sent;
+        4. **Write, then wait for the application to recompute.** ``CB_SETCURSEL`` plus the
+           ``CBN_SELCHANGE`` notification is the whole write (no Enter — a combo commits on the
+           notification, §2). A modal raised instead of the selection being applied — the manual's
+           own *"the burst length should be reduced"* rejection is raised exactly here — is
+           answered by the rule every overlay in this application gets (a warning's left button)
+           and turns the transaction into a refusal, never into a retry;
+        5. **Accept, re-open, read both rows again.** A dialog just written paints what preceded
+           the change (ledger B16) and ``Cancel`` discards, so the read-back that counts is taken
+           on a **re-opened** dialog — the same three-rung rule the channel write follows. And it
+           is read through the **same gate the dialog the write used passed**: the table filled,
+           its shape is the measured one and every anchor reads what the screen reads
+           (:func:`…ui.dialog.dialog_refusal`), the channel it states is the ``routed_channel``
+           (:func:`…ui.dialog.channel_mismatch`), its mode is the panel's own statement
+           (:func:`…ui.layout.panel_mode`), and **both** rows are readable — all *before* any row
+           is read by position, because these rows are addressed by position and a re-opened table
+           of another shape, of another channel or of another mode would hand this read-back a
+           plausible wrong row. A re-opened dialog that states another burst, another channel or
+           a table this driver does not read raises, exactly as "the application did not keep the
+           measurement channel" raises.
+
+        **What it never does.** It never writes the sampling volume, and it never puts a previous
+        sampling volume *back*: the application's post-burst choice is evidence of the state it
+        accepted (:class:`~udv_echo_process.acquire.actuator.BurstWriteResult`). It never presses
+        a dialog open with ``WM_CLOSE``, never walks to a lower menu entry, and never guesses an
+        overlay it has no answer for. And it writes **only** the burst row: no other field of this
+        dialog is written, which is what keeps a bounded feature from becoming a generic editable
+        form (``docs/dop3000/burst-length-control-plan.md`` §Scope boundaries).
+
+        **What it returns.** A :class:`BurstWriteResult` carrying the request, both rows on both
+        sides of the write, the mode the panel was built for, the rejected overlay when one was
+        raised, and the state. A transition that reaches ``Accept`` and does not verify **raises**
+        (:class:`AcquisitionError`) — the caller must not proceed on a point whose instrument
+        state is unknown — while a transition that was refused *before* the accept carries
+        :attr:`BurstState.UNCHANGED` or :attr:`BurstState.UNVERIFIED` with the reason, so a run
+        record can say which of the two happened without a traceback.
+
+        ``requested`` is the burst length in cycles; it is not clipped, rounded or snapped here —
+        the row's own entry list is the authority on what the instrument accepts, and a request it
+        does not offer is refused by name.
+        """
+        if requested < 1:
+            raise AcquisitionError(
+                f"a burst length of {requested} is not a request this driver can make: the field "
+                "counts emission cycles, and every value measured on this instrument is 1 or more"
+            )
+        panel = self._open_parameters_dialog()
+        try:
+            fields = self._poll_dialog_fields(panel)
+            channel = self._dialog_channel_text(self._descendants_of(panel["hwnd"]), fields)
+            refusal = self._dialog_refusal(fields, channel)
+            if refusal:
+                return self._burst_refusal(requested, refusal, channel=channel)
+            # Only the *stated channel* is compared: the dialog's own fields are not part of that
+            # comparison, and handing them over would invite a caller to read something else out of
+            # a refusal rule that is about one fact.
+            mismatch = channel_mismatch(routed_channel, DialogParameters(channel=channel))
+            if mismatch:
+                return self._burst_refusal(requested, mismatch, channel=channel)
+            mode = panel_mode(panel, self._children_of(panel["hwnd"], self._resolve()))
+            column, row = dialog_row(DialogField.BURST_LENGTH)
+            burst_field = field_at(fields, column, row)
+            if burst_field is None or burst_field["cls"] != "TComboBox":
+                return self._burst_refusal(
+                    requested,
+                    f"the table holds no burst row that offers a choice at column {column}, "
+                    f"row {row}: it holds {None if burst_field is None else burst_field['cls']!r} "
+                    "there, and this driver writes a burst by selecting an entry of the row's own "
+                    "list — it does not type into a combo's inner edit, and it does not write a "
+                    "parameter through a control it cannot read back",
+                    channel=channel,
+                    dialog_mode=mode,
+                )
+            volume_column, volume_row = dialog_row(DialogField.SAMPLING_VOLUME)
+            dependent_field = field_at(fields, volume_column, volume_row)
+            before_burst = self._row_reading(burst_field)
+            before_volume = (
+                None if dependent_field is None else self._row_reading(dependent_field)
+            )
+            index = before_burst.entry_of(str(requested))
+            if index is None:
+                return self._burst_refusal(
+                    requested,
+                    f"the burst row does not offer {requested}: it states "
+                    f"{before_burst.text!r} and lists {list(before_burst.items)}. A burst is "
+                    "selected by matching the requested value in the row's own entry list, and a "
+                    "value the list does not state is one this driver refuses rather than "
+                    "approximating — the nearest entry would write a configuration nobody asked "
+                    "for while every check that compares the field against the request passed",
+                    channel=channel,
+                    dialog_mode=mode,
+                    before_burst=before_burst,
+                    before_sampling_volume=before_volume,
+                )
+
+            # ---------------------------------------------------------------- the write
+            parent = self._resolve()["parent_of"].get(int(burst_field["hwnd"]))
+            self._combo_select(int(burst_field["hwnd"]), index, 0 if parent is None else parent)
+            self._note(
+                f"burst {requested} selected in the {PARAMETERS_ENTRY!r} dialog (entry {index} "
+                f"of {list(before_burst.items)})"
+            )
+
+            # **The dialog can be replaced under a write** — measured on a channel write, and this
+            # is the same class of change: the panel the handles were taken from is gone and every
+            # handle on it is dead, so the read-back below would time out against a window that no
+            # longer exists and report "the write did not take" about a dialog nobody is looking
+            # at. Re-resolved here, with the replacement named, exactly as the channel write does.
+            replacement = self._poll_dialog(_DIALOG_REPLACE_S)
+            if replacement is not None and replacement["hwnd"] != panel["hwnd"]:
+                self._note(
+                    "the application replaced its parameters dialog after the burst write: "
+                    f"{panel['rect'][:2]} -> {replacement['rect'][:2]} — every handle taken "
+                    "before the write is dead, so the read-back continues on the new panel"
+                )
+                panel = replacement
+                fields = self._poll_dialog_fields(panel)
+                burst_field = field_at(fields, *dialog_row(DialogField.BURST_LENGTH))
+                dependent_field = field_at(fields, *dialog_row(DialogField.SAMPLING_VOLUME))
+                if burst_field is None:
+                    return self._burst_refusal(
+                        requested,
+                        "the parameters dialog that replaced the one this write used holds no "
+                        "burst row at the position this driver binds it to, so the selection "
+                        "could not be read back: the application's state after the write is not "
+                        "established by this call",
+                        state=BurstState.UNVERIFIED,
+                        channel=channel,
+                        dialog_mode=mode,
+                        before_burst=before_burst,
+                        before_sampling_volume=before_volume,
+                    )
+
+            deadline = time.monotonic() + _BURST_SETTLE_S
+            answered: OverlayKind | None = None
+            while True:
+                after_burst = self._row_reading(burst_field)
+                after_volume = (
+                    None if dependent_field is None else self._row_reading(dependent_field)
+                )
+                if after_burst.text.strip() == str(requested):
+                    break
+                if answered is None:
+                    answered = self._answer_burst_rejection()
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(_POLL_S)
+            if answered is not None:
+                return self._burst_refusal(
+                    requested,
+                    f"the application raised a {answered.value!r} overlay while burst "
+                    f"{requested} was being selected instead of applying it (the manual's own "
+                    "rejection for a burst too long for the sampling volume is raised exactly "
+                    "here, at the volume the burst now implies). The overlay's own caption is "
+                    "paint and is not in the control tree, so it is named by kind and not quoted; "
+                    "a warning is answered with its left button, the rule every overlay in this "
+                    "application gets, and any other surface is named and left alone",
+                    state=BurstState.UNVERIFIED,
+                    channel=channel,
+                    dialog_mode=mode,
+                    before_burst=before_burst,
+                    before_sampling_volume=before_volume,
+                    after_burst=after_burst,
+                    after_sampling_volume=after_volume,
+                    refusal_overlay=answered.value,
+                )
+            if after_burst.text.strip() != str(requested):
+                return self._burst_refusal(
+                    requested,
+                    f"the burst row did not restate the selection within {_BURST_SETTLE_S:g} s: "
+                    f"burst {requested} was selected (entry {index} of "
+                    f"{list(before_burst.items)}) and the row still states {after_burst.text!r}. "
+                    "A combo write can silently not apply — the control changes what it paints "
+                    "and the application keeps its own value — so this is a refusal and not a "
+                    "retry: the dialog is closed with its left (Cancel) end and the instrument's "
+                    "state is not established by this call",
+                    state=BurstState.UNVERIFIED,
+                    channel=channel,
+                    dialog_mode=mode,
+                    before_burst=before_burst,
+                    before_sampling_volume=before_volume,
+                    after_burst=after_burst,
+                    after_sampling_volume=after_volume,
+                )
+            self._note(
+                f"burst {requested} read back in the open dialog: burst "
+                f"{after_burst.text!r}, sampling volume "
+                f"{None if after_volume is None else after_volume.text!r}"
+            )
+            kids = self._children_of(panel["hwnd"], self._resolve())
+            self._dialog_button(panel, kids, DialogControl.CONFIRM)  # accept the dialog
+        except BaseException:
+            # Re-resolved, not the handle held: this application replaces its parameters dialog,
+            # and a close on a dead handle presses nothing and leaves the *fresh* modal on the
+            # operator's screen, where Escape closes nothing and the cursor is confined to it.
+            self._close_any_dialog()
+            raise
+
+        # --------------------------------------------- what the application *kept*, re-opened
+        try:
+            confirmed = self._open_parameters_dialog()
+        except AcquisitionError as exc:
+            raise AcquisitionError(
+                f"burst {requested} was selected in the {PARAMETERS_ENTRY!r} dialog and the "
+                f"dialog was accepted, but the dialog could not be re-opened to read what the "
+                f"application kept: {exc} — the instrument's state after this transition is "
+                "unverified, and a point recorded on it would pin a burst nobody has read back"
+            ) from exc
+        try:
+            kept_fields = self._poll_dialog_fields(confirmed)
+            kept_channel = self._dialog_channel_text(
+                self._descendants_of(confirmed["hwnd"]), kept_fields
+            )
+            # **The re-opened dialog is put through the same gate the dialog the write used
+            # passed.** These rows are addressed by *position*, so a table of another shape — or a
+            # dialog showing another channel's parameters — would hand this read-back a plausible
+            # wrong row and the transaction would report a burst nobody read on a table nothing
+            # verified. Nothing here is read by position until the table has been shown to be the
+            # one these bindings were measured against (:func:`…ui.dialog.dialog_refusal`).
+            kept_refusal = self._dialog_refusal(kept_fields, kept_channel)
+            if kept_refusal:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but the re-opened dialog was refused: "
+                    f"{kept_refusal} — the instrument's state is unverified"
+                )
+            # The channel the re-opened dialog states has to be the one the caller routed: the
+            # routing step proved the channel *before* the dialog was written, and a re-open that
+            # shows another one means the burst this call just committed belongs to a channel this
+            # run is not recording (ledger B17, the wrong-channel trap).
+            kept_mismatch = channel_mismatch(
+                routed_channel, DialogParameters(channel=kept_channel)
+            )
+            if kept_mismatch:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but {kept_mismatch} — "
+                    "the instrument's state is unverified"
+                )
+            # The panel and its mode are established **before** any row is read by position: the
+            # mode is the application's own structural statement of which panel this is, and it is
+            # read the way the write's own panel was read, so the two are never compared through
+            # different rules.
+            kept_mode = panel_mode(
+                confirmed, self._children_of(confirmed["hwnd"], self._resolve())
+            )
+            if kept_mode != mode:
+                raise AcquisitionError(
+                    f"burst {requested} was accepted, but the re-opened dialog mode changed "
+                    f"from {mode!r} to {kept_mode!r} — the instrument's state is unverified"
+                )
+            kept_burst = self._row_reading_or_none(kept_fields, DialogField.BURST_LENGTH)
+            kept_volume = self._row_reading_or_none(kept_fields, DialogField.SAMPLING_VOLUME)
+        finally:
+            self._close_any_dialog()
+        accepted = (
+            f"burst {requested} was selected in the {PARAMETERS_ENTRY!r} dialog and the "
+            "dialog was accepted, but"
+        )
+        unverified = (
+            "the instrument's state after this transition is unverified, and a point recorded "
+            "on it would pin a burst nobody has read back"
+        )
+        unreadable: list[str] = []
+        if kept_burst is None:
+            unreadable.append(
+                f"the burst row (column {column}, row {row}) is not in the table"
+            )
+        if kept_volume is None:
+            unreadable.append(
+                "the sampling volume row (column "
+                f"{volume_column}, row {volume_row}) is not in the table"
+            )
+        elif not kept_volume.text.strip():
+            unreadable.append(
+                "the sampling volume row (column "
+                f"{volume_column}, row {volume_row}) states nothing"
+            )
+        if unreadable:
+            raise AcquisitionError(
+                f"{accepted} {' and '.join(unreadable)} — the positions this driver binds those "
+                "rows to — so what the application kept is not established and nothing in a table "
+                f"of another shape is read: {unverified}"
+            )
+        stated = kept_burst.text.strip()
+        if stated != str(requested):
+            raise AcquisitionError(
+                f"the application did not keep burst {requested}: it was selected in the "
+                f"{PARAMETERS_ENTRY!r} dialog (entry {index} of {list(before_burst.items)}) and "
+                f"the dialog was accepted, but a re-opened dialog states {stated!r} — a stored "
+                "point would pin a burst the instrument is not recording at"
+            )
+        return BurstWriteResult(
+            requested_burst=requested,
+            state=BurstState.VERIFIED,
+            dialog_mode=kept_mode,
+            channel=kept_channel,
+            before_burst=before_burst,
+            before_sampling_volume=before_volume,
+            after_burst=kept_burst,
+            after_sampling_volume=kept_volume,
+        )
+
+    def _row_reading(self, field: Mapping) -> ComboReading:
+        """What one row of the open dialog states, and the entries it is offering.
+
+        A row that offers a choice is read **through the choice** — its own text, its entry list
+        and (as a hint, never as the read-back) the control's belief about its selection. A row
+        that offers none is read as its own text, with no entries and no index: an ``TSp_Edit``
+        holds no list, and inventing one would make the two shapes read alike.
+
+        Which control a row's value *is* stays ``ui/dialog.py``'s rule
+        (:func:`…ui.dialog.dialog_value_fields`, where the ``TSp_Edit`` beside a combo is never a
+        fallback for it); this adds only the two reads a write needs and a reading does not — the
+        entries, and the control's own idea of what it has selected.
+        """
+        hwnd = int(field["hwnd"])
+        if field["cls"] != "TComboBox":
+            return ComboReading(text=self._get_text(hwnd))
+        index = self._combo_index(hwnd)
+        return ComboReading(
+            text=self._get_text(hwnd),
+            items=self._combo_items(hwnd),
+            item_index=None if index < 0 else index,
+        )
+
+    def _row_reading_or_none(
+        self, fields: Sequence[Mapping], which: DialogField
+    ) -> ComboReading | None:
+        """The reading of the row ``which`` is bound to, or ``None`` when the table holds none.
+
+        ``None`` is a *statement* about the table and not a missing value: the rows are bound by
+        position, so a re-opened table that holds nothing where the binding points is a table this
+        driver may not read that field from — and a caller that treated it as an empty field would
+        report a burst of ``""`` as "the application kept something".
+        """
+        field = field_at(fields, *dialog_row(which))
+        return None if field is None else self._row_reading(field)
+
+    def _answer_burst_rejection(self) -> OverlayKind | None:
+        """Answer an overlay raised *instead of* a selection being applied, when it is one of ours.
+
+        A burst selection is applied to the dialog that is already up, so a modal that appears at
+        that moment is the application refusing the combination rather than a step of the write —
+        the manual's own rejection (*"the burst length should be reduced"*, raised when the volume
+        the burst now implies is not admissible) is the measured member of that class
+        (``docs/dop3000/udop-automation.md`` §3).
+
+        Two rules, and the order matters. A :attr:`OverlayKind.WARNING` is **answered with its
+        left button** — :meth:`…udop.recording.RecordingSurface.answer_overlay`, the same rule
+        every warning in this application gets, which is what keeps the modal from wedging the
+        application mid-run. Anything else this classifier reads is **named and left alone**: this
+        driver never guesses a surface it has no answer for, and a store dialog raised here would
+        mean the screen is not the one this transaction assumes. Returns the kind that was up, or
+        ``None`` when nothing was.
+        """
+        kind = self._peek_overlay()
+        if kind is None:
+            return None
+        if kind is OverlayKind.WARNING:
+            self.answer_overlay()
+            self._note(
+                "a warning was raised instead of the burst selection being applied; its left "
+                "button was pressed (this driver quotes no caption: these panels are caption-less)"
+            )
+        else:
+            self._note(
+                f"a {kind.value!r} panel is up while the burst write is in flight: it is not a "
+                "surface this driver owns an answer for, so it is named and left alone — read the "
+                "screen before retrying"
+            )
+        return kind
+
+    def _burst_refusal(
+        self,
+        requested: int,
+        reason: str,
+        *,
+        state: BurstState = BurstState.UNCHANGED,
+        channel: str = "",
+        dialog_mode: str = "",
+        before_burst: ComboReading | None = None,
+        before_sampling_volume: ComboReading | None = None,
+        after_burst: ComboReading | None = None,
+        after_sampling_volume: ComboReading | None = None,
+        refusal_overlay: str = "",
+    ) -> BurstWriteResult:
+        """Take the dialog down *without* its ``Accept``, and carry the refusal as the result.
+
+        The close comes first, and it is the same path a failure takes —
+        :meth:`_close_any_dialog`, which re-resolves whatever dialog is up and presses its left
+        (Cancel) end. That is not housekeeping: an open dialog confines the operator's cursor to
+        its own rectangle and **Escape closes nothing** in this application, so a refusing
+        transition must never be the thing that leaves a modal on somebody's screen. ``Cancel``
+        also *discards*, which is the only "put it back" this driver has — and the reason every
+        refusal is a state the caller can read rather than a partly-applied write.
+
+        ``discarded`` is then read **off the screen**, never off the press: ``_close_any_dialog``
+        notes a band it could not resolve instead of raising, so a dialog that survived both
+        attempts would otherwise be reported as a write that was taken back. A refusal with
+        ``discarded=False`` is the one case where this call establishes nothing about the
+        instrument — and it says so, with the surviving panel's own rect, in the note.
+        """
+        self._close_any_dialog()
+        return BurstWriteResult(
+            requested_burst=requested,
+            state=state,
+            dialog_mode=dialog_mode,
+            channel=channel,
+            before_burst=before_burst,
+            before_sampling_volume=before_sampling_volume,
+            after_burst=after_burst,
+            after_sampling_volume=after_sampling_volume,
+            refusal_overlay=refusal_overlay,
+            discarded=not self._dialog_panels(),
+            reason=reason,
+        )
 
     def _poll_dialog_fields(self, panel: dict) -> list[dict[str, object]]:
         """The dialog's value table, re-read until it states something or the wait runs out.

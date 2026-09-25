@@ -1346,6 +1346,14 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_parser.add_argument("number", type=int)
 
+    burst_parser = subcommands.add_parser(
+        "burst-length",
+        help="make the application record at a burst length, and verify it from its dialog",
+    )
+    burst_parser.add_argument("value", type=int, help="the burst length in cycles")
+    channel_argument(burst_parser)
+    burst_parser.add_argument("--json", action="store_true")
+
     preflight_parser = subcommands.add_parser(
         "preflight", help="one whole cycle with nothing stored"
     )
@@ -1536,6 +1544,25 @@ def acquire_main(argv: list[str] | None = None) -> None:
             verified, fingerprint = live.select_channel(args.number, notes)
             print(f"verified channel: {verified}")
             _acquire_report(fingerprint, as_json)
+        elif args.command == "burst-length":
+            result = live.set_burst_length(args.value, args.channel, notes)
+            if result.verified:
+                print(
+                    f"verified burst: {result.verified_burst} "
+                    f"(sampling volume {result.verified_sampling_volume!r}, entry "
+                    f"{result.verified_sampling_volume_entry} of the dialog's own list)"
+                )
+            else:
+                # A refusal *before* the accept is a result and not an exception (the driver's own
+                # rule), so this path prints the state and the driver's words and exits 1 — never a
+                # traceback, and never a second attempt: an instrument whose state this call could
+                # not establish is one the operator has to look at.
+                print(
+                    f"refused ({result.state.value}): {result.reason}",
+                    file=sys.stderr,
+                )
+                code = 1
+            _acquire_report(result, as_json)
         elif args.command == "preflight":
             expected = None if args.store_dir is None else Path(args.store_dir)
             report = live.preflight(

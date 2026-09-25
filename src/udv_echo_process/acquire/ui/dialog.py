@@ -69,6 +69,7 @@ __all__ = [
     "dialog_only_reason",
     "dialog_refusal",
     "dialog_value_fields",
+    "field_at",
     "text_at",
 ]
 
@@ -240,6 +241,26 @@ def text_at(
         if int(field["column"]) == column and int(field["row"]) == row:
             return read_text(int(field["hwnd"]))
     return ""
+
+
+def field_at(fields: Sequence[Mapping], column: int, row: int) -> Mapping | None:
+    """The field the table holds at ``(column, row)``, or ``None`` when it holds none there.
+
+    The lookup a **write** needs, and separate from :func:`text_at` on purpose: the read half
+    answers a value (the empty string when the position states nothing), while a write needs the
+    control itself — a row that offers a choice is selected through its own entry list, and a
+    caller holding only the text could not select anything. Keeping the two apart also keeps the
+    write path from reading a value it is about to replace.
+
+    ``None`` is a refusal, never an empty field: the fields are bound by position, so "this table
+    holds nothing at the position this driver bound the field to" is the statement that the table
+    is not the one those bindings were measured against — and a caller that fell back to the
+    nearest field would write a parameter nobody asked for.
+    """
+    for field in fields:
+        if int(field["column"]) == column and int(field["row"]) == row:
+            return field
+    return None
 
 
 def dialog_channel_text(

@@ -89,14 +89,14 @@ reads (when energy is sufficient). **Window**: geometry of *what* you compare.
 | # | Parameter | Stored as | What it physically changes | Class | Verdict |
 |---|-----------|-----------|----------------------------|-------|---------|
 | 1 | **US emitting frequency** `f_e` | word 0 (kHz); 0.45–10.5 MHz w/ option, else fixed 0.5/1/2/4/8/10 | λ (⇒ sample-volume length, C8 width), attenuation α(f), backscatter, `V_max` ∝ 1/`f_e` (C2, C7); sets the reach×speed product (C3) | Axis | **SWEEP** |
-| 2 | **Burst length** (emitted cycles) | word 8 *(measured)*; 2–32 step 2/4 w/ Extended resolution, else fixed 4. Dialog-only write (no sidebar field), and changing it auto-selects the sampling volume | Pulse duration τ: depth resolution `c·τ/2`, spectral width ∝ 1/τ, pulse energy, near-probe ringing/dead zone | Axis | **SWEEP — paired with 9** |
+| 2 | **Burst length** (emitted cycles) | word 8 *(measured)*; the dialog's own list is `2…20` step 2 then `24, 28, 32` *(measured)*. Dialog-only write (no sidebar field); a burst change does **not** re-select the sampling volume — it re-derives the volume's floor, `floor(N) = 1000·c·N/(2·f_e)`, and the value in force is `max(remembered, floor)` *(measured, §18.10)*. **AUTOMATED** (write + read-back; §3.1) | Pulse duration τ: depth resolution `c·τ/2`, spectral width ∝ 1/τ, pulse energy, near-probe ringing/dead zone | Axis | **SWEEP — paired with 9** |
 | 3 | **Emitting power** | word 7; 3 levels (≈0.5 / 5 / 35 W) | Transmitted energy ⇒ backscattered amplitude, ringing, cavitation risk, saturation | Conditioning (also scales echo data) | **SWEEP once, then freeze** |
 | 4 | **TGC / amplification** | words 23–25; −40…+40 dB, 256 levels / 80 dB, uniform·slope·custom·auto *(measured: word 42 = 40 is plausibly the `Tgc [dB]` value — the same ambiguity as word 18)* | Receive gain vs depth, compensating `2αz`; too high ⇒ A/D saturation ⇒ wrong values | Conditioning, depth-shaped (C9) | **SWEEP once per window, then freeze** |
 | 5 | **PRF** (period) | word 5 (µs); 64–100 000 µs w/ option, else 10 000–64 µs | Unambiguous depth (C1) and velocity (C2); where multiple-echo artifacts land; profile timing (C5) | Axis | **SWEEP** |
 | 6 | **First-gate depth** | word 9, a gate *index* → mm via C4 *(measured: it moves with `First gate depth`; 31 at first gate 2 mm)*; ≥ end of burst, ≳3 mm | Near end of the window; exclusion of dead zone / ringing / wall echo | Window | **FIX** (co-set with 7, 8) |
 | 7 | **Number of gates** | word 13; 4–1000 (4–100 without option) | Far end of the window; profile size, transfer time and jitter, memory | Window | **FIX** (sweep only as a data-rate axis) |
 | 8 | **Resolution** (gate pitch) | word 10, `(n+1)·0.166 µs`; 0.166–20 µs w/ option, else coarse/fine per `f_e` *(measured: word 10 is the 0-based rung index, rung length = C11)* | How finely the window is sampled; overlap when pitch < thickness (C6) | Window + spatial sampling | **FIX** (bridge to 2/9) |
-| 9 | **Sampling volume** (longitudinal thickness) | word 27, an **index** into the bandwidth list (6 bandwidths, 50–300 kHz) *(measured: index 3 = 0.900 mm at `c` = 1500; the allowed set is physics-driven, so read the combo and never hard-code a mm value)* | Acoustic averaging length — the *real* depth resolution; sets overlap/gap regime with 8 (C6) | Axis | **SWEEP — paired with 2** |
+| 9 | **Sampling volume** (longitudinal thickness) | word 27, an **index** into the bandwidth list (6 bandwidths, 50–300 kHz) *(measured: index 3 = 0.900 mm at `c` = 1500; the allowed set is physics-driven, so read the combo and never hard-code a mm value)*. **Derived, never written**: its floor is the burst's own length and the value in force is `max(remembered, floor)` *(measured, §18.10)* | Acoustic averaging length — the *real* depth resolution; sets overlap/gap regime with 8 (C6) | Axis | **SWEEP — paired with 2** |
 | 10 | **Emissions per profile** `N_PRF` | word 14; 512–8 (DOP3010) | Number of emissions averaged per velocity estimate: variance ∝ 1/√N, temporal averaging window | Axis | **SWEEP** |
 | 11 | **Doppler angle** θ | word 20 (deg) | Pure scale `v_real = v_us/cos θ` (C7); also feeds flow-rate conversion | Scale | **FIX — never sweep** |
 | 12 | **Sensitivity** | word 18 *(measured, but soft: it moved together with TGC in the fixture diff, so one recording that changes only sensitivity is still owed)*; 5 levels (> −100 dBm) | Detection threshold on Doppler energy: below it the value is **replaced by zero** | Validity gate | **SWEEP once (diagnostic), then freeze** |
@@ -116,6 +116,23 @@ Two manual inconsistencies to settle **on the instrument**, not from the text:
 §8.4 gives the sampling-volume lengths as ≈0.64–3.19 mm in water, while the
 §21/§22 specification tables list 3.9 / 2.9 / 1.3 / 1.1 / 0.8 / 0.7 mm at
 c = 1500 m/s. Word 27's "Bandwidth definition" is the knob either way.
+
+### 3.1 Automatic-control status
+
+What a run can set today, per row of Table 1. "Sidebar" parameters live in the
+fast-access parameter column and are written point by point; the dialog-only ones
+are stated by `Parameters → Operating parameters` and read once per campaign.
+
+| row | parameter | written automatically? | read back? |
+|---|---|---|---|
+| 1, 5, 6, 7, 8, 10, 11, 12 | frequency, PRF, gates, resolution, emissions, … | **yes** — sidebar writers | yes, from the column and the snapshot |
+| **2** | **burst length** | **yes — a verified transaction** (`write_dialog_burst_length`, `uv run udv-acquire burst-length <N>`), job-level campaign integration still owed | yes: both rows before and after, from a **re-opened** dialog |
+| 9 | sampling volume | **no, by design** — derived from row 2 (`max(remembered, floor)`) and only ever read | yes, beside row 2 (`word 27` is the stored oracle) |
+| 3, 4 | emitting power, TGC | no — swept by hand, and power raises a TGC-mode modal (§18.4) | read |
+
+Row 2's status and the slices that remain (live A/B commissioning, job-level
+transitions, `word 8`/`word 27` verification) are
+[`burst-length-control-plan.md`](burst-length-control-plan.md).
 
 ---
 

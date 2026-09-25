@@ -175,15 +175,17 @@ pieces' method sets are **disjoint**, so the base order changes no resolution, a
 reaches its collaborators through `self` — which is what keeps a subclass that overrides a private
 (`tests/test_acquire_driver.py`'s `FakeDriver`) overriding exactly the method it always did, and
 what keeps the class's method set a superset of the flat class's — `bfbbb10`'s own 96 names plus the
-one documented addition, `_has_slider` included (see below; the earlier text here claimed 96 names
-intact, which read as "the surface is frozen" and was wrong twice over).
+documented additions, `_has_slider` and the burst transaction's five included (see below; the
+earlier text here claimed 96 names intact, which read as "the surface is frozen" and was wrong
+twice over).
 `tests/test_acquire_udop.py` pins the composition (the MRO, the disjointness, every method's
 `__module__`), the published surface, the package's import hygiene over the ASTs — and the pin an
 independent review of this branch found missing: **`bfbbb10`'s 96-name class surface, recorded as a
 name list and compared against the class's own names**, so a method that leaves the class fails there
-by name instead of vanishing inside a list nobody compares against. Sizes at this tip:
-`parameters.py` 1,072 lines, `recording.py` 443, `store.py` 237, `driver.py` 1,783, `session.py` 41,
-`__init__.py` 38.
+by name instead of vanishing inside a list nobody compares against. Sizes at this tip, re-measured
+(the burst transaction added 509 lines to `parameters.py` and 45 to `driver.py`; the other two
+figures were already stale when this paragraph was last touched): `parameters.py` 1,581 lines,
+`recording.py` 564, `store.py` 237, `driver.py` 1,828, `session.py` 41, `__init__.py` 38.
 
 Rules the target layout pins:
 
@@ -238,11 +240,16 @@ Rules the target layout pins:
   `ui/strip.has_slider` rather than byte-identically, and `_screen_anchor_text`
   (`udop/parameters.py`) is **new on the class**, split out of `_dialog_refusal` when that rule moved
   to `ui/dialog.py`. "0 removed, 0 added, 0 changed" was therefore true of neither side at this
-  tip; what is true, and what `tests/test_acquire_udop.py` now records and asserts, is the half that
-  matters — **no flat method name was lost** — with the class's own name set at **97**, `bfbbb10`'s
-  96 plus the one named addition.
+  this tip; what is true, and what `tests/test_acquire_udop.py` now records and asserts, is the half that
+  matters — **no flat method name was lost** — with the class's own name set at **102**, `bfbbb10`'s
+  96 plus six named additions: `_screen_anchor_text`, and the five the burst transition added
+  (`write_dialog_burst_length`, `_row_reading`, `_row_reading_or_none`, `_answer_burst_rejection`,
+  `_burst_refusal` — `docs/dop3000/burst-length-control-plan.md` §4.1).
   The module namespace is where the earlier text was wrong twice, and it is corrected here.
-  `len([n for n in vars(driver) if not n.startswith("__")])` is **173** at this tip — the figure the
+  `len([n for n in vars(driver) if not n.startswith("__")])` is **185** at this tip (re-measured; the
+  six names the burst contract re-exports through `driver` — `DIALOG_DEPENDENT_FIELDS`,
+  `BurstState`, `BurstWriteResult`, `ComboReading`, `dialog_row`, `field_at` — account for six of the
+  difference) — the figure the
   earlier text quoted as *Patch 3's tip* count, which is to say the sentence compared the facade's own
   namespace against itself. Measured from the other side, against the freeze commit: `bfbbb10`'s flat
   module declared **145** top-level bindings (definitions, classes, assignments and imports, read from
