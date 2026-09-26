@@ -75,6 +75,11 @@ from udv_echo_process.analysis._native_grid import (
     window,
 )
 from udv_echo_process.analysis.reference_repeat import gate_metrics
+from udv_echo_process.analysis.sparse_passes import (
+    PLANNER_PERIOD_LAW,
+    RETIRED_PERIOD_LAW,
+    period_law_by_pass,
+)
 from udv_echo_process.analysis.sweep_inventory import format_cell
 from udv_echo_process.io import load
 from udv_echo_process.models.base import ValueModel
@@ -152,14 +157,11 @@ GRID_RTOL = 1e-6
 #: provenance rather than a measurement: ``emissions x PRF + 1 ms`` is the form the
 #: planner used while the first pass ran (it dropped the manual's 16-emission term), so
 #: that pass's log ``timing.target_s`` reproduces *this* law and not the achieved period.
-RETIRED_PERIOD_LAW = "emissions_per_profile x prf_us + 1 ms"
+#: Both planning-law strings, and the table below, are the committed-pass catalog's
+#: (:mod:`udv_echo_process.analysis.sparse_passes`) and are imported from it: the catalog
+#: is their single source, and this module's refusals name the same strings that classify
+#: a pass there.
 RETIRED_PERIOD_TRANSFER_S = 1e-3
-
-#: The planner's *corrected* law, ``acquire/plan.py::profile_period_s`` — the manual's
-#: ``T_tran + T_prf x (16 + N_PRF)``. The second pass's logs record this form, so
-#: :func:`require_retired_target` accepts it too: both are planning expectations for a
-#: point's own decoded emissions and PRF, and neither is the achieved period.
-PLANNER_PERIOD_LAW = "T_tran + T_prf x (16 + N_PRF) (acquire/plan.py::profile_period_s)"
 
 #: The planning law each pass's own logs record, by pass name. A pass named here is
 #: screened against *that* form only, so a log rewritten to the other sitting's law —
@@ -178,10 +180,13 @@ PLANNER_PERIOD_LAW = "T_tran + T_prf x (16 + N_PRF) (acquire/plan.py::profile_pe
 #: planning model in its own provenance — a semantic version such as
 #: ``timing_model: profile_period_v2`` — so that analysis asks the pass which law generated
 #: ``target_s`` instead of an analysis-side table remembering acquisition history.
-PERIOD_LAW_BY_PASS: dict[str, str] = {
-    PLAN_NAME: RETIRED_PERIOD_LAW,
-    "sparse-mixer-live-2": PLANNER_PERIOD_LAW,
-}
+#:
+#: The table is **derived** — :func:`sparse_passes.period_law_by_pass` reads it off the
+#: committed-pass catalog, which is its single source: a pass is classified by naming its
+#: law on its own ref, a pass the catalog does not classify carries no entry here and keeps
+#: the both-forms screening described above, and the values this table has always mapped are
+#: unchanged.
+PERIOD_LAW_BY_PASS: dict[str, str] = period_law_by_pass()
 
 #: The signal-content floor a live pass must clear: a recording of this pass that is
 #: mostly zero would be the first pass's payload, not a usable measurement. It is a
