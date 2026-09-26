@@ -228,24 +228,61 @@ manifest:  parameter_mutations: tuple[ParameterMutation, ...]   # ordered; legac
 12. **mutation-proof**: deliberately break the order (and separately the no-write rule and the append) and show
     exactly the new tests fail — the same evidence shape B5 and B6 carry.
 
-**Live commissioning — deliberately one small sitting, not a science campaign.** A purpose-built four-job
-run-plan at otherwise fixed settings (the pass's own frame: 4 MHz, Doppler angle `0`, velocity scale `1`, TGC
-uniform ≈20 dB, emitting power medium, sensitivity medium, skipped profiles `0`, sound speed and first gate held):
+**Live commissioning — one small sitting, not a science campaign.** The sequence is fixed at four jobs: the
+same one the offline rehearsal ran (`examples/emissions-control-rehearsal-sim-1/`, whose plan carries the
+*simulation* frame). The sitting's plan is those four jobs with the instrument's own frame **read from the
+instrument and declared** — never the instrument persuaded to match a plan.
 
-| job | transition expected | what it proves |
+| job | requested | what it proves |
 |---|---|---|
-| `emissions-20` | instrument's own value → `20`, one verified event | the write, the read-back, the record |
-| `emissions-64` | `20 → 64` | a second transition of the same role, distinct occurrence |
-| `emissions-return` | `64 → 20` | the A→B→A shape, and that a return is a new event, not a dedupe |
-| `emissions-equal` | already `20` → **no write, no event**, history retained | the no-write boundary |
+| `e20-a` | `20` | the boundary establishes the run-wide value: the write, the fresh read, the record |
+| `e64-a` | `64` | a verified `20 → 64` forward transition, a distinct occurrence |
+| `e64-b` | `64` | the equal-value boundary: **no write, no event**, history retained |
+| `e20-b` | `20` | a verified `64 → 20` **restoration**, and that a return is a new event, not a dedupe |
 
-Every stored point verified with emissions strict; the evidence committed as a package in the shape of
-`data/burst-commissioning-b5/` (portable plan copy without machine paths, path-sanitized derived summary with
+Everything else is held: 4 MHz, Doppler angle `0`, velocity scale `1`, TGC uniform ≈20 dB, emitting power
+medium, sensitivity medium, skipped profiles `0`, and the burst declared at the instrument's own value so the
+boundary has nothing to transition.
+
+Do not re-order or re-target the jobs so that the starting state looks convenient, and **do not set the
+emissions by hand to manufacture a cleaner history**: what the sitting exists to prove is that the *automated*
+boundary establishes the requested state. If the instrument starts at some other value — it usually will — the
+first job's transition into `20` is legitimate. Record it and label it **initial-state establishment**,
+separated from the three properties the review asks for (the verified `20 → 64`, the `64 → 64` boundary that
+adds nothing, and the verified `64 → 20` restoration). Keep it in the history; never delete or hide it.
+
+Before the first job, each of these holds. They are preconditions, so a failure refuses instead of being
+worked around:
+
+- the device connection is healthy, and any hardware warning (`Loss of USB connection` included) stops the
+  sitting before a single gesture: report it, touch nothing;
+- no overlay or modal is up, and the screen is the mapped measurement layout;
+- the process mode is the manual/instrument one the map was measured against;
+- the application's own **Save dir** (Preferences → Record settings) names an existing output directory — a
+  *different field* from the Store dialog's `Working directory`, and the one a store actually fails on when it
+  is missing;
+- the requested `--store-dir` resolves to an absolute path;
+- there is room for four recordings;
+- channel routing and the frame compile clean (`acquire compile` before the first job: every run-wide fact
+  agreeing, with the emissions raised to a refusal because the job writes it).
+
+Per job the package carries: the requested emissions; the pre-write reading; whether a write was spent; the
+writer layer's read-back; the independent post-write read; the durable mutation id when a transition really
+occurred; the compile result after it; the stored file's word 14; its word 8; word 27 as raw provenance only
+(no physical sampling volume derived from it); and the size/structure guard. Across the sitting it additionally
+shows: the mutation ids distinct and in occurrence order; the `64 → 64` job adding no mutation; both
+transitions verified; a final fresh compile seeing `E20`; no unexpected modal; and every stored word 14 equal
+to the value its job requested.
+
+Every stored point is verified with emissions strict; the evidence is committed as a package in the shape of
+`data/burst-commissioning-b5/` (portable plan copy without machine paths, a path-sanitized derived summary with
 per-file SHA-256 and word 14, and an instrument-free verifier that re-derives the plan's fingerprint, each
 job's definition fingerprint and point list, the emitted event order, and each file's word 14). Stop conditions,
-as for B5: an unverified read-back, an unexpected dialog/modal, or a screen that is not the expected one ⇒ abort,
-leave the application as found, report. Nothing about scientific quality is claimed by this sitting, and the
-emissions *effect* on the signal is not measured here — that is the sparse plan's job.
+as for B5: an unverified read-back, an unexpected dialog/modal, or a screen that is not the expected one ⇒
+abort, leave the application as found, report. **A modal that appears during an emissions write stops the
+sitting and is reported; commissioning teaches the driver no new automatic answer.** Nothing about scientific
+quality is claimed by this sitting, and the emissions *effect* on the signal is not measured here — that is the
+sparse plan's job.
 
 **Do not touch the instrument until items 1–12 and the evidence package exist offline and the requested value,
 read-back, provenance and stored-word oracle are unambiguous.**
@@ -255,7 +292,8 @@ read-back, provenance and stored-word oracle are unambiguous.**
 **Amended by this slice (offline):** `campaign.py`'s shared-fields docstring (`:248–251`), the
 acceptance table and `Acceptance.WARN` (`:764–769`, `:781–783`), `verify.py:165–179` and
 `docs/dop3000/failed-invocation-provenance.md` (§5.2–§5.5, the record as it landed), plus this
-document's §2. **Pending until live commissioning**, because each one is a claim about what the
+document's §2 and §6 (the sitting's jobs, preconditions and evidence fields, restated from the
+review). **Pending until live commissioning**, because each one is a claim about what the
 instrument does rather than about what the code does: the handoff/agenda sentences and
 `burst-length-control-plan.md:301` (the remaining jobs stop being manual *when the sitting shows they
 do*), and `acquisition-campaign-compilation-plan.md:476`/`:431` (D4/W6 — the writing path is now
