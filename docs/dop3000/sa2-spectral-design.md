@@ -375,8 +375,15 @@ differ by more than a rounding: measured on the committed grid sizes, the **peri
 `1.5018` at `N = 826`. That is a 0.73 % difference in a *conversion factor* at the smallest
 committed `N`, which is why the convention must be pinned rather than assumed.
 
-**SA2.2 must therefore state which convention it uses**, and its ENBW test must recompute the
-value from the coefficients it actually applies rather than assert `1.5`.
+**SA2.2 states which convention it uses, and its ENBW test recomputes the value from the
+coefficients it actually applies rather than asserting `1.5`.** SA2.2 pins the **periodic Hann**
+(`w[n] = 0.5 - 0.5 cos(2 pi n / N)`, the endpoint not repeated), which is the spectral-estimation
+convention and the one the SA2.1 calibration harness already assumed, so the calibration oracle and
+the estimator are tapers of the same shape. It is stated in the result itself
+(`taper_name` / `taper_convention`) and measured there from its own coefficients: `1.5` exactly at
+every committed `N` (138, 144, 246, 259, 536, 561, 790, 826), against `1.5 · N / (N - 1)` for the
+symmetric convention. Both halves are asserted in `tests/test_sparse_periodogram.py`, so the choice
+cannot be inferred later from this document alone.
 
 It is **not** an extra factor to multiply into the normalization above. That expression is already
 energy-normalized by `sum_n w[n]^2`, so applying an ENBW correction on top of it would double-count
@@ -571,8 +578,18 @@ architecture has a slot for one.
   measure a reference spectral calculation to quantify distortion at all. It lives in the test-only
   harness, is never imported by `src/`, and SA2.2 remains the PR that implements the reviewed public
   estimator contract.
-- **SA2.2 — validated periodogram/PSD backend.** `WindowView → selected gate → spectral estimate`
-  with §I's choices. Synthetic tests first, then committed-data smoke tests.
+- **SA2.2 — validated periodogram/PSD backend. LANDED.** `WindowView → selected gate →
+  characterize → admit → spectral estimate`, delivered as `analysis.sparse_periodogram`
+  (`SpectralEstimate`, `periodogram_of_view`, `SpectralVerdict`, `periodic_hann`,
+  `taper_enbw_bins`). The periodic Hann is pinned above, the grid is SA2.1's own
+  `one_sided_frequency_grid`, the density is `|sum_n w x exp(-2j pi f_k t_n)|^2 / (fs_eff sum w^2)`
+  with DC never doubled and the top bin halved for even `N` only, and a refused axis returns a
+  refusal carrying its admission rather than a density. Variance is asserted where it exists - the
+  fold identity is exact on an exactly uniform axis and is *carried* as `energy_identity_error`
+  where the stamps are irregular (worst 2.9e-4 over a full committed sitting's views) instead of
+  being claimed exact - and the estimator is checked against the SA2.1 calibration harness's own
+  transform as an independent oracle, which it agrees with to 1e-9 on exact uniform axes. The
+  estimator stays an `src/` module: no notebook, no peak interpretation, no Welch, no resampling.
 - **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
   summary, a PSD plot, target-support rows and refusal wording. No calculations in cells.
 - **SA2.4 — committed-data spectral characterization.** Low-frequency structure, support near
