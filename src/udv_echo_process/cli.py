@@ -1090,11 +1090,27 @@ def _run_plan_check(run: run_plan.PlannedRun, as_json: bool) -> int:
                 f"{point.parameters.resolution_text} mm x {point.parameters.gates} gates  "
                 f"({point.profiles} profiles){note}"
             )
-    print(
-        "the jobs run in this order; each one's run-wide emissions are set by hand before it, and "
-        "its burst is transitioned by the run itself at the job boundary (udv-acquire run-plan "
-        "--plan ... --sheet)"
-    )
+    written = [job.job for job in run.jobs if job.writes_emissions_per_profile]
+    if written and len(written) == len(run.jobs):
+        print(
+            "the jobs run in this order; every job writes its own run-wide emissions at the job "
+            "boundary (a disagreement refuses, and a value the instrument already states spends no "
+            "write), and its burst is transitioned by the run itself when the job's differs "
+            "(udv-acquire run-plan --plan ... --sheet)"
+        )
+    elif written:
+        print(
+            "the jobs run in this order; the ones marked 'the run writes' set their own run-wide "
+            "emissions at the job boundary and the rest are set by hand before the job — read the "
+            "per-job line — and each burst is transitioned by the run itself when the job's differs "
+            "(udv-acquire run-plan --plan ... --sheet)"
+        )
+    else:
+        print(
+            "the jobs run in this order; each one's run-wide emissions are set by hand before it, and "
+            "its burst is transitioned by the run itself at the job boundary (udv-acquire run-plan "
+            "--plan ... --sheet)"
+        )
     return 0
 
 

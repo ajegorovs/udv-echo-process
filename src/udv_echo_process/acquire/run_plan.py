@@ -679,6 +679,13 @@ class PlannedJob(ValueModel):
     #: even if the plan's job list is later reordered.
     pair: str | None = None
     role: PairRole | None = None
+    #: Whether the job's definition **requests** the emissions per profile — i.e. whether the
+    #: boundary writes it (``CampaignDefinition.write_emissions_per_profile``). Copied from the
+    #: loaded definition while planning, so it is a **record of what the file said** and never a
+    #: second declaration: the pass's operator sheet can then say who sets the value (the run or the
+    #: operator) without loading the file again, and the sheet cannot describe a boundary that does
+    #: something else.
+    writes_emissions_per_profile: bool = False
 
     @property
     def recordings(self) -> int:
@@ -1161,6 +1168,7 @@ def plan_run(plan: RunPlan, *, directory: Path | str) -> PlannedRun:
                 points=points,
                 pair=entry.pair,
                 role=entry.role,
+                writes_emissions_per_profile=definition.write_emissions_per_profile,
             )
         )
 
@@ -1962,7 +1970,7 @@ def job_requirements(run: PlannedRun, job: PlannedJob) -> tuple[str, ...]:
     for fact in ("burst_length", "emissions_per_profile", "prf_us"):
         lines.append(
             f"                {fact}: "
-            f"{_readability(fact, strict=fact in run.strict_facts)}"
+            f"{_readability(fact, strict=fact in run.strict_facts, written=job.writes_emissions_per_profile and fact == 'emissions_per_profile')}"
         )
     if before or after:
         lines.append(
@@ -1979,8 +1987,14 @@ def job_requirements(run: PlannedRun, job: PlannedJob) -> tuple[str, ...]:
         )
         lines.append(
             f"pair       : {job.pair}, "
-            f"{job.role.value if job.role else 'unstated'} of 2 — set emissions_per_profile "
-            f"{job.condition.emissions_per_profile} for this job"
+            f"{job.role.value if job.role else 'unstated'} of 2 — "
+            + (
+                "the run writes emissions_per_profile "
+                f"{job.condition.emissions_per_profile} at the job boundary (a disagreement "
+                "refuses, and a value the instrument already states spends no write)"
+                if job.writes_emissions_per_profile
+                else f"set emissions_per_profile {job.condition.emissions_per_profile} for this job"
+            )
             + (
                 ""
                 if partner is None
@@ -2101,7 +2115,7 @@ def operator_setup_sheet(run: PlannedRun) -> str:
     return "\n".join(lines)
 
 
-def _readability(fact: str, *, strict: bool = False) -> str:
+def _readability(fact: str, *, strict: bool = False, written: bool = False) -> str:
     """What the compile does with one run-wide fact — read or not, refused or advised.
 
     Read from the two tables that decide it rather than restated: the facts a reader reaches are
@@ -2116,15 +2130,18 @@ def _readability(fact: str, *, strict: bool = False) -> str:
     sentence says both halves. A sheet that read an advisory fact as one the run will stop for, or a
     raised fact as one it will merely note, would be wrong in the direction that costs a job.
 
-    ``burst_length`` is the one **written** fact and gets its own sentence: since B5 the run
-    transitions it through the ``Operating parameters`` dialog at the job boundary
-    (``campaign._transit_burst_length``), so a sheet that still told the operator to prepare it by
-    hand — or that read a disagreement as a refusal — would be describing a run this repository no
-    longer performs. The transition is *not* the whole check: the compile still reconciles the
-    definition against the state the write established, and the sentence names both halves. The
-    raise, where a pass declares one, is unchanged: it lands on the stored file's own word. The
-    surface lookup sits *after* the reader check, so a fact no reader reaches is described as one no
-    reader reaches whatever its name.
+    ``burst_length`` and ``emissions_per_profile`` are the **written** facts and get their own
+    sentence when the job writes them: since B5 the run transitions the burst through the
+    ``Operating parameters`` dialog at the job boundary (``campaign._transit_burst_length``), and
+    since the emissions slice it writes the emissions per profile through the measurement screen's
+    column when the definition requests it (``campaign._transit_emissions_per_profile``), so a sheet
+    that still told the operator to set either by hand — or that read a disagreement as a refusal
+    the operator could fix — would be describing a run this repository no longer performs. The
+    transition is *not* the whole check: the compile still reconciles the definition against the
+    state the write established, and the sentence names both halves. The raise, where a pass
+    declares one, is unchanged: it lands on the stored file's own word. The surface lookup sits
+    *after* the reader check, so a fact no reader reaches is described as one no reader reaches
+    whatever its name.
     """
     if fact not in SUPPORTED_READ_FACTS:
         return (
@@ -2147,6 +2164,20 @@ def _readability(fact: str, *, strict: bool = False) -> str:
             )
         return written
     surface = _FACT_SURFACE.get(fact, "the measurement screen")
+    if written:
+        return (
+            f"read from {surface}; the run **writes it at the job boundary** when the instrument "
+            "states something else — written, then read back by a read of the boundary's own, and "
+            "a write whose read does not state the request refuses before the first recording (a "
+            "value the instrument already states spends no write and appends no event); the "
+            "compile then reconciles what the boundary established"
+            + (
+                ", and this pass raises it to a refusal: the stored file's own word has to "
+                "agree as well"
+                if strict
+                else ""
+            )
+        )
     acceptance = COVARIATE_ACCEPTANCE[fact].value
     if strict:
         return (
