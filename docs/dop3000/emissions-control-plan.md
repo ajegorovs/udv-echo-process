@@ -1,10 +1,13 @@
 # Emissions/profile as the next automated control — design review
 
-> **Status: proposal only. Nothing here is implemented, and no instrument has been touched.** This is the
-> pre-implementation review requested before any code: the exact current path, the proposed transaction and its
-> ordering, the stored-artifact oracle, the resume/provenance model, the answer to the provenance question
-> (§5), the minimum offline tests and live commissioning, and the documents that will need amending.
-> Written against `master` `14bcc1b`.
+> **Status: the design is accepted and implemented offline; the instrument has not been touched.**
+> The four commits below land it in the order the review asked for, so each concern can be read on its
+> own: the durable mutation generalized (`refactor(acquire): record a role-tagged parameter mutation`),
+> the acceptance contract (`feat(acquire): refuse an emissions disagreement for a job that writes the
+> value`), the writer (`feat(acquire): write the emissions per profile through the parameter column`),
+> and the boundary integration (this commit). Live commissioning (§6) is the next step and needs the
+> instrument; §7's register says which documents this slice amended and which stay pending until then.
+> The review's four fixed decisions are §10's answers. Written against `master` `14bcc1b`.
 
 ## 0. Why this knob, and the governance test it has to pass
 
@@ -82,11 +85,20 @@ after any of them.
 ### Ordering relative to burst — explicit data, not code order
 
 ```python
-BOUNDARY_WRITE_ORDER: tuple[ParamRole, ...] = (
-    ParamRole.EMISSIONS_PER_PROFILE,   # column, no dependent row
-    ParamRole.BURST_LENGTH,            # dialog, re-selects the dependent sampling volume
+#: As landed in ``acquire/actuator.py``.
+BOUNDARY_WRITE_ORDER: tuple[str, ...] = (
+    "emissions_per_profile",   # column, no dependent row
+    "burst_length",            # dialog, re-selects the dependent sampling volume
 )
 ```
+
+**Correction found while implementing the sketch above** (it was written as ``tuple[ParamRole, ...]``):
+``burst_length`` is not a ``ParamRole`` at all — it is a *dialog field*, so that first draft could not
+have held the second entry. The entries are names from the instrument **fact vocabulary**
+(``snapshot.FIXED_FACT_FIELDS``), which is what a mutation record is tagged with and what the compile
+reconciles: the tuple is therefore ``tuple[str, ...]``, and the pin is asserted in
+``tests/test_acquire_campaign_boundary.py`` (including that it is *not* alphabetical, so a refactor that
+sorts it fails there).
 
 Four reasons, in order of weight:
 
@@ -239,6 +251,15 @@ emissions *effect* on the signal is not measured here — that is the sparse pla
 read-back, provenance and stored-word oracle are unambiguous.**
 
 ## 7. Documents and code comments that will need amending
+
+**Amended by this slice (offline):** `campaign.py`'s shared-fields docstring (`:248–251`), the
+acceptance table and `Acceptance.WARN` (`:764–769`, `:781–783`), `verify.py:165–179` and
+`docs/dop3000/failed-invocation-provenance.md` (§5.2–§5.5, the record as it landed), plus this
+document's §2. **Pending until live commissioning**, because each one is a claim about what the
+instrument does rather than about what the code does: the handoff/agenda sentences and
+`burst-length-control-plan.md:301` (the remaining jobs stop being manual *when the sitting shows they
+do*), and `acquisition-campaign-compilation-plan.md:476`/`:431` (D4/W6 — the writing path is now
+distinguishable, and the read-only path keeps both).
 
 | where | what it says today | why it changes |
 |---|---|---|

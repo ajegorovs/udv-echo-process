@@ -23,6 +23,7 @@ cite where.
 from __future__ import annotations
 
 from udv_echo_process.acquire.actuator import (
+    BOUNDARY_WRITE_ORDER,
     DIALOG_ANCHORS,
     DIALOG_COLUMN_ROWS,
     DIALOG_DEPENDENT_FIELDS,
@@ -122,6 +123,7 @@ from udv_echo_process.acquire.snapshot import (
 )
 
 __all__ = [
+    "BOUNDARY_WRITE_ORDER",
     "CHANNEL_ENV_VAR",
     "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",

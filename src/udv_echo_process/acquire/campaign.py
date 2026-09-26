@@ -74,6 +74,7 @@ from uuid import uuid4
 from pydantic import Field, ValidationError, field_validator, model_validator
 
 from udv_echo_process.acquire.actuator import (
+    BOUNDARY_WRITE_ORDER,
     BurstState,
     BurstWriteResult,
     ChannelMode,
@@ -1922,8 +1923,7 @@ def run_campaign(
     # Steps 3-5: route, read, refuse (pure), transition (the one write), compile — all of it before
     # the runner exists, so nothing can be stored for a job that cannot be compiled.
     compiled: ExecutableCampaign | None = None
-    transition: BurstWriteResult | None = None
-    mutation: SweepParameterMutation | None = None
+    spent_mutations: tuple[SweepParameterMutation, ...] = ()
     if no_snapshot:
         # Nothing is read and nothing is compiled, by definition of the flag — and therefore no
         # burst is transitioned either: the boundary cannot know what to write without the reading
@@ -1931,9 +1931,9 @@ def run_campaign(
         # identity around — and the manifest states that no reading backs them.
         if notes is not None:
             notes.append(
-                "no-snapshot: no instrument reading was taken and nothing was compiled; no burst "
-                "was transitioned either, and the manifest is marked declared-only, so no point of "
-                "this run rests on evidence"
+                "no-snapshot: no instrument reading was taken and nothing was compiled; no "
+                "boundary parameter was transitioned either, and the manifest is marked "
+                "declared-only, so no point of this run rests on evidence"
             )
     else:
         # (2b) the routing step. Its own return is the *evidence* the compile needs: the
@@ -1952,32 +1952,68 @@ def run_campaign(
         # (plan §24.4, §24.5 D3/D5). It is *pure*: it presses nothing, so it must precede the
         # boundary's write.
         refuse_process_mode(snapshot, expected_mode)
-        # (4) the job boundary's burst transition (§B5) — the one **write** in this block, reached
-        # only after every refusal that needs no write. The burst is the one dialog-only parameter
-        # this run writes and it is a property of the *job*, so the boundary is where it is
-        # established; its own preconditions are checked against the channel the routing step
-        # established. A transition that does not verify raises, so it costs no recording.
-        transition = _transit_burst_length(
-            actuator, definition, routed=routed, dialog=dialog, notes=notes
-        )
-        if transition is not None:
-            # (4a) the durable record of the write, **before anything that can still refuse**
-            # (§O4/§5.1): the compile below and the resume-identity comparison at step 6 both sit
-            # after the write and before the manifest, so both used to lose the record of a
-            # mutation that really happened. It fails closed: an append that cannot be written
-            # aborts this invocation here rather than recording points under a provenance contract
-            # that was not met.
-            mutation = _append_parameter_mutation(
-                log,
-                definition=definition,
-                routed=routed,
-                parameter="burst_length",
-                evidence=transition,
-                occurred_at=_local_now(now),
+        # (4) the job boundary's parameter transitions (§B5, plan §2, §3) — the **writes** in this
+        # block, reached only after every refusal that needs no write, and performed in the pinned
+        # order :data:`actuator.BOUNDARY_WRITE_ORDER` rather than in the order this code happens to
+        # test them. Both parameters are properties of the *job*, so the boundary is where they are
+        # established: the emissions per profile on the **parameter column**, the burst length in its
+        # dialog. Each one's own preconditions are checked against the channel the routing step
+        # established, and each one's own verification decides it — a transition that does not verify
+        # raises, so it costs no recording.
+        #
+        # The order is data, and it is not the code's order: the *column* write goes first because
+        # ``DIALOG_ANCHORS`` makes the dialog transaction re-verify column ↔ dialog agreement (a
+        # dialog left stale by a column write is caught by the write that follows it, not by the
+        # compile), and because the write whose verification is strongest belongs last. Emissions has
+        # no dependent row either, so a failure in it is attributable to that one axis: the live
+        # commissioning isolates it exactly there (plan §2, §9.2).
+        spent: list[SweepParameterMutation] = []
+        for parameter in BOUNDARY_WRITE_ORDER:
+            if parameter == "emissions_per_profile":
+                column_evidence = _transit_emissions_per_profile(
+                    actuator, definition, reading=snapshot, routed=routed, notes=notes
+                )
+                if column_evidence is None:
+                    continue
+                evidence: BurstWriteResult | ColumnWriteResult = column_evidence
+            elif parameter == "burst_length":
+                burst_evidence = _transit_burst_length(
+                    actuator, definition, routed=routed, dialog=dialog, notes=notes
+                )
+                if burst_evidence is None:
+                    continue
+                evidence = burst_evidence
+            else:  # pragma: no cover - the pin is a closed set, and an unknown name is illegal
+                raise CampaignError(
+                    f"the boundary write order names {parameter!r}, which is neither of the "
+                    "parameters a job's boundary establishes; the pin is a closed set and a name "
+                    "outside it is a programming error, not a job's request"
+                )
+            # (4a) the durable record of the write, **immediately after it** and **before anything
+            # that can still refuse** (§O4/§5.1): the next parameter's transition, the compile below
+            # and the resume-identity comparison at step 6 all sit after this write and before the
+            # manifest, so each of them used to lose the record of a mutation that really happened.
+            # One append per transition, in the pinned order — so a transition that verifies and is
+            # followed by one that refuses leaves **exactly** the events of the transitions that
+            # verified, and nothing that was not established. It fails closed: an append that cannot
+            # be written aborts this invocation here rather than recording points under a provenance
+            # contract that was not met.
+            spent.append(
+                _append_parameter_mutation(
+                    log,
+                    definition=definition,
+                    routed=routed,
+                    parameter=parameter,
+                    evidence=evidence,
+                    occurred_at=_local_now(now),
+                )
             )
-            # The dialog was written and accepted: these reads are the state the write established,
-            # and they are what the compile is reconciled against below.
+            # The write changed what the instrument states, so the reads the compile below is
+            # reconciled against are taken again here — after *this* write and before the next
+            # parameter's, which is what makes the next one's "before" the state this one left.
             dialog = actuator.read_dialog_parameters()
+        spent_mutations = tuple(spent)
+        if spent_mutations:
             snapshot = actuator.instrument_snapshot(
                 routed_channel=routed,
                 dialog_parameters=dialog,
@@ -2022,11 +2058,9 @@ def run_campaign(
     # — a resume that spends no write (the instrument already at every value the job commands, or a
     # ``no_snapshot`` bypass that transitions nothing) still carries every earlier transition
     # unchanged.
-    mutations: tuple[SweepParameterMutation, ...] = (
-        (*carried_mutations, mutation) if mutation is not None else carried_mutations
-    )
-    added = [entry.parameter for entry in mutations[len(carried_mutations) :]]
-    if notes is not None and (carried_mutations or mutation is not None):
+    mutations: tuple[SweepParameterMutation, ...] = (*carried_mutations, *spent_mutations)
+    added = [entry.parameter for entry in spent_mutations]
+    if notes is not None and (carried_mutations or spent_mutations):
         notes.append(
             f"boundary history: this job's record carries {len(mutations)} transition(s); "
             f"{len(from_manifest)} carried from the previous manifest and {recovered_count} "

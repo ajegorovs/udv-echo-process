@@ -49,6 +49,7 @@ from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "BOUNDARY_WRITE_ORDER",
     "DIALOG_ANCHORS",
     "DIALOG_COLUMN_ROWS",
     "DIALOG_DEPENDENT_FIELDS",
@@ -132,6 +133,24 @@ class ParamRole(str, Enum):
     EMISSIONS_PER_PROFILE = "emissions_per_profile"
     DOPPLER_ANGLE = "doppler_angle_deg"
 
+
+#: The order the **job boundary** performs its parameter transitions in, when a job commands more
+#: than one — explicit data, never the order the code happens to test them in.
+#:
+#: The entries are names from the instrument fact vocabulary (``snapshot.FIXED_FACT_FIELDS``),
+#: because that is what a mutation record is tagged with and what the compile reconciles: the
+#: parameter column's ``emissions_per_profile`` and the dialog's ``burst_length``. This is **not**
+#: :data:`PARAMETER_WRITE_ORDER`, which is the order a *point* writes its two column fields in — a
+#: point writes the resolution and the gate count and nothing else.
+#:
+#: The column write is first, for two reasons that are both about what can be attributed later:
+#: :data:`DIALOG_ANCHORS` makes a dialog transaction re-verify column ↔ dialog *agreement*, so a
+#: dialog left stale by a column write is caught by the write that follows it rather than by the
+#: compile; and the last write should be the one whose verification is strongest — the burst has a
+#: dependent row (its sampling volume) and its own refusal overlay to answer for, while the emissions
+#: per profile has no dependent row at all, so a failure in it is attributable to that one axis
+#: alone. It is tested as a sequence in ``tests/test_acquire_campaign_burst.py``.
+BOUNDARY_WRITE_ORDER: tuple[str, ...] = ("emissions_per_profile", "burst_length")
 
 #: The parameter column's value fields in their fixed **top-to-bottom** order;
 #: that order is the identity of a field (docs/16 §12, ``recon/udop_roles.py``).
