@@ -42,8 +42,29 @@ from udv_echo_process.analysis.reference_repeat import METRICS as FROZEN_METRICS
 from udv_echo_process.analysis.reference_repeat import gate_metrics
 
 ROOT = Path(__file__).resolve().parent.parent
+LIVE1_ROOT = ROOT / "data" / "sparse-mixer-live-1"
+LIVE1_PLAN = ROOT / "examples" / "sparse-mixer-live-1" / "run-plan.json"
 LIVE2_ROOT = ROOT / "data" / "sparse-mixer-live-2"
 LIVE2_PLAN = ROOT / "examples" / "sparse-mixer-live-2" / "run-plan.json"
+
+#: The measured native-slab-minus-equal-weight difference on the **first** recording of each
+#: committed sitting, on the primary view's ``mean`` profile, in mm/s. These are measurements
+#: of the committed data rather than tolerances, and pinning them is the point: an assertion
+#: that the two weightings merely differ stays green through any change to the cell
+#: construction, the clipping or the end-gate rule - including a wrong one.
+MEASURED_NATIVE_SLAB_SAMPLE = {
+    "live-1": (29.666122230020683, 30.04489911799579),
+    "live-2": (21.334474964136614, 21.587931855713702),
+}
+
+#: The band that difference covered over **every** recording of each sitting (measured on all
+#: 52 committed recordings, one-signed positive throughout). The first-recording value must sit
+#: inside its own sitting's band, so the pin cannot drift out of the measured population
+#: without the band test failing too.
+MEASURED_NATIVE_SLAB_BAND_MM_S = {
+    "live-1": (0.115, 0.628),
+    "live-2": (0.063, 0.452),
+}
 
 #: The designed exposure of both mixer-enabled passes: the primary comparison
 #: window is this, cut by each recording's own stored stamps.
@@ -74,35 +95,51 @@ def live2():
     return decode_pass(LIVE2_ROOT, plan_path=LIVE2_PLAN)
 
 
+@pytest.fixture(scope="module")
+def live1():
+    """The committed live-1 pass, decoded once through the committed reader path."""
+    return decode_pass(LIVE1_ROOT, plan_path=LIVE1_PLAN)
+
+
 def _synthetic_view(
     values: np.ndarray,
     *,
     depths_mm: np.ndarray | None = None,
+    native_depths_mm: np.ndarray | None = None,
     dt_s: float = 0.02,
     view: str = sgs.VIEW_PRIMARY,
     support_mm: tuple[float, float] | None = None,
     time_bounds_s: tuple[float, float] | None = None,
     depth_bounds_mm: tuple[float, float] | None = None,
 ) -> sgs.WindowView:
-    """One synthetic :class:`~sparse_gate_stats.WindowView`, built directly.
+    """One synthetic :class:`~_sparse_view.WindowView`, built directly.
 
     The synthetic views are the degenerate and controlled cases the plan names:
     a constant trace, a single profile, a single gate, an intermittent trace and
-    a known-period trace. The native grid is uniform, as every committed
-    recording's is, and the support defaults to the whole grid.
+    a known-period trace. The synthetic recording is the array handed in, whose
+    native grid is ``native_depths_mm`` - the grid ``native_gates`` and the
+    native depth extent describe - while ``depths_mm`` is what this *selection*
+    holds. ``native_depths_mm`` defaults to the view's own columns, and a
+    one-column selection hands in the multi-gate grid it was cut from, because a
+    view selects from the native grid and never enlarges it. The support
+    defaults to the whole native grid, as the pass's declared support is.
     """
     array = np.asarray(values, dtype=float)
     if array.ndim == 1:
         array = array[:, None]
-    gates = array.shape[1]
     depths = (
-        np.arange(gates, dtype=float) * 1.85 + 10.0
+        np.arange(array.shape[1], dtype=float) * 1.85 + 10.0
         if depths_mm is None
         else np.asarray(depths_mm, dtype=float)
     )
+    native = (
+        depths
+        if native_depths_mm is None
+        else np.asarray(native_depths_mm, dtype=float)
+    )
     time_s = np.arange(array.shape[0], dtype=float) * dt_s
     support = (
-        (float(depths[0]), float(depths[-1])) if support_mm is None else support_mm
+        (float(native[0]), float(native[-1])) if support_mm is None else support_mm
     )
     start = float(time_s[0]) if time_s.size else 0.0
     stop = float(time_s[-1]) if time_s.size else 0.0
@@ -118,12 +155,14 @@ def _synthetic_view(
         time_s=time_s,
         depths_mm=depths,
         support_mask=in_support(depths, support),
+        native_gates=int(native.size),
+        native_depth_extent_mm=(float(native[0]), float(native[-1])),
+        pass_support_mm=support,
         start_index=0,
         stop_index=array.shape[0],
         window_start_s=start,
         window_end_s=stop,
         window_s=stop - start,
-        support_mm=support,
         time_bounds_s=time_bounds_s,
         depth_bounds_mm=depth_bounds_mm,
     )
@@ -196,7 +235,13 @@ def test_a_single_profile_view_is_the_same_degenerate_case() -> None:
 
 def test_a_single_gate_view_carries_one_column_and_reduces_to_its_value() -> None:
     column = np.array([[1.0], [2.0], [4.0]])
-    view = _synthetic_view(column)
+    # one gate *selected from* a three-gate recording: the native grid the view was cut
+    # from is not the selection, which is what native_gates and the extent describe
+    view = _synthetic_view(
+        column,
+        depths_mm=np.array([11.85]),
+        native_depths_mm=np.array([10.0, 11.85, 13.7]),
+    )
     result = sgs.gate_statistics(view)
     assert result.statistics.shape == (len(sgs.GATE_STATISTICS), 1)
     assert result.depths_mm.shape == (1,)
@@ -207,7 +252,7 @@ def test_a_single_gate_view_carries_one_column_and_reduces_to_its_value() -> Non
         result.of("mean"),
         result.depths_mm,
         statistic="mean",
-        support_mm=result.provenance.support_mm,
+        support_mm=result.provenance.pass_support_mm,
     )
     assert equal.value == pytest.approx(7.0 / 3.0)
     assert slab.value == pytest.approx(7.0 / 3.0)
@@ -357,7 +402,7 @@ def test_depth_reductions_declare_their_weights() -> None:
     assert flat.value == pytest.approx(2.5)
     assert ramp.value == pytest.approx(10.0 / 6.0)
     assert (equal.gates, slab.gates) == (4, 4)
-    assert equal.depth_support_mm == pytest.approx((10.0, 15.55))
+    assert equal.gate_extent_mm == pytest.approx((10.0, 15.55))
 
 
 def test_the_native_slab_weighting_differs_where_the_support_is_not_at_the_gates() -> None:
@@ -378,10 +423,16 @@ def test_the_native_slab_weighting_differs_where_the_support_is_not_at_the_gates
     assert slab.weights[0] < 0.25
     assert slab.weights[3] < 0.25
     assert sum(slab.weights) == pytest.approx(1.0, rel=1e-12)
-    assert sgs.native_slab_weights(np.array([10.0, 12.0])) == pytest.approx([0.5, 0.5])
-    assert sgs.native_slab_weights(np.array([10.0])) == pytest.approx([1.0])
+    # the support is required now, and the gates' own full slabs are what a uniform
+    # grid's unclipped cells read as: equal shares either way
+    assert sgs.native_slab_weights(
+        np.array([10.0, 12.0]), support_mm=(9.0, 13.0)
+    ) == pytest.approx([0.5, 0.5])
+    assert sgs.native_slab_weights(
+        np.array([10.0]), support_mm=(9.0, 11.0)
+    ) == pytest.approx([1.0])
     with pytest.raises(sgs.SparseGateStatsError, match="increase strictly"):
-        sgs.native_slab_weights(np.array([10.0, 10.0]))
+        sgs.native_slab_weights(np.array([10.0, 10.0]), support_mm=(9.0, 11.0))
     with pytest.raises(sgs.SparseGateStatsError, match="no depth inside the support"):
         sgs.native_slab_weights(np.array([10.0, 12.0]), support_mm=(20.0, 30.0))
 
@@ -393,7 +444,9 @@ def test_reductions_refuse_an_undefined_statistic_by_name() -> None:
         sgs.reduce_equal_weight(values, statistic="skewness", depths_mm=depths)
     assert "gate 1" in str(refusal.value)
     with pytest.raises(sgs.SparseGateStatsError, match="excess_kurtosis"):
-        sgs.reduce_native_slab(values, depths, statistic="excess_kurtosis")
+        sgs.reduce_native_slab(
+            values, depths, statistic="excess_kurtosis", support_mm=(10.0, 13.7)
+        )
     with pytest.raises(sgs.SparseGateStatsError, match="not finite"):
         sgs.reduce_equal_weight(
             np.array([1.0, np.nan, np.nan, 4.0]),
@@ -419,11 +472,12 @@ def test_the_result_carries_its_names_units_and_masked_rows() -> None:
     assert result.depths_mm == pytest.approx(view.depths_mm)
     assert result.provenance.profiles == 20
     assert result.provenance.view == sgs.VIEW_PRIMARY
-    assert result.provenance.method == sgs.METHOD
-    assert result.provenance.percentile_method == "linear"
-    assert result.provenance.std_ddof == 0
-    assert result.provenance.mad_scale == sgs.MAD_SCALE
-    assert result.provenance.constant_trace_rule == sgs.CONSTANT_TRACE_RULE
+    # the estimator conventions travel on the result, the data's provenance on the view
+    assert result.method == sgs.METHOD
+    assert result.percentile_method == "linear"
+    assert result.std_ddof == 0
+    assert result.mad_scale == sgs.MAD_SCALE
+    assert result.constant_trace_rule == sgs.CONSTANT_TRACE_RULE
     assert result.unmeasured() == {}
     with pytest.raises(sgs.SparseGateStatsError, match="unknown gate statistic"):
         result.of("variance_of_nothing")
@@ -456,7 +510,7 @@ def test_the_primary_view_is_labelled_and_never_the_retained_surplus(live2) -> N
     assert view.window_s < float(point.time_s[-1] - point.time_s[0])
     assert view.start_index == 0
     assert view.stop_index == view.values.shape[0]
-    assert view.support_mm == live2.support_mm
+    assert view.pass_support_mm == live2.support_mm
     assert view.depths_mm.size == point.depths.size
     assert view.values.shape[1] == point.values.shape[1]
 
@@ -495,21 +549,21 @@ def test_the_exploration_view_records_its_bounds_and_refuses_the_unstored(live2)
     assert view.depths_mm.size < point.depths.size
     assert np.all(view.support_mask)
     # an exploratory selection must never widen the record it was taken from
-    with pytest.raises(sgs.SparseGateStatsError, match="stored"):
+    with pytest.raises(sgs.SparseViewError, match="stored"):
         sgs.exploration_view(
             point,
             time_bounds_s=(0.0, 99.0),
             depth_bounds_mm=(20.0, 40.0),
             support_mm=live2.support_mm,
         )
-    with pytest.raises(sgs.SparseGateStatsError, match="no native gate"):
+    with pytest.raises(sgs.SparseViewError, match="no native gate"):
         sgs.exploration_view(
             point,
             time_bounds_s=(1.0, 3.0),
             depth_bounds_mm=(99.0, 100.5),
             support_mm=live2.support_mm,
         )
-    with pytest.raises(sgs.SparseGateStatsError, match="finite and increasing"):
+    with pytest.raises(sgs.SparseViewError, match="finite and increasing"):
         sgs.exploration_view(
             point,
             time_bounds_s=(3.0, 1.0),
@@ -559,10 +613,10 @@ def test_committed_statistics_agree_with_the_reused_gate_metrics(live2) -> None:
     assert provenance.native_gates == point.depths.size
     assert provenance.supported_gates == int(mask.sum())
     supported = np.asarray(point.depths)[mask]
-    assert provenance.depth_support_mm == pytest.approx(
+    assert provenance.participating_depth_extent_mm == pytest.approx(
         (float(supported.min()), float(supported.max()))
     )
-    assert provenance.support_mm == live2.support_mm
+    assert provenance.pass_support_mm == live2.support_mm
     assert provenance.job == point.binding.job.job
     assert provenance.point_label == point.binding.point.label
     assert provenance.window_start_s == 0.0
@@ -594,6 +648,64 @@ def test_the_two_weightings_differ_on_the_committed_support(live2) -> None:
     assert slab.value != pytest.approx(equal.value, rel=1e-6)
     assert equal.units == slab.units == "mm/s"
     assert equal.weighting != slab.weighting
+
+
+@pytest.mark.parametrize("sitting", ["live-1", "live-2"])
+def test_the_native_slab_difference_is_pinned_to_its_measured_magnitude(
+    sitting: str, request: pytest.FixtureRequest
+) -> None:
+    """The difference between the two weightings has a measured *size*, and the size is the test.
+
+    ``slab != equal`` is satisfied by any change to the cell construction, the clipping or the
+    end-gate rule, including a wrong one, so it pins nothing. The two numbers below are the
+    measured values on the first recording of each committed sitting, and the band is what the
+    difference covered across all 52 committed recordings. The reduction is the equal-weight
+    mean plus the clipped end cells' share, so it must exceed the equal mean by a few tenths of
+    a mm/s on this support - never by a different order, never in the other direction, and never
+    by zero, which is what an absent support would silently give (a uniform grid's full-pitch
+    cells are all equal, so a native-slab call that defaulted to no support would report the
+    equal-weight number under the slab rule's name).
+    """
+    decoding = request.getfixturevalue(sitting.replace("-", ""))
+    point = decoding.points[0]
+    view = sgs.primary_view(point, window_s=decoding.window_s, support_mm=decoding.support_mm)
+    statistics = sgs.gate_statistics(view)
+    mean = statistics.of("mean")
+    equal = sgs.reduce_equal_weight(mean, statistic="mean", depths_mm=statistics.depths_mm)
+    slab = sgs.reduce_native_slab(
+        mean,
+        statistics.depths_mm,
+        statistic="mean",
+        support_mm=decoding.support_mm,
+    )
+    difference = slab.value - equal.value
+    expected_equal, expected_slab = MEASURED_NATIVE_SLAB_SAMPLE[sitting]
+    low, high = MEASURED_NATIVE_SLAB_BAND_MM_S[sitting]
+
+    assert equal.value == pytest.approx(expected_equal, rel=1e-12)
+    assert slab.value == pytest.approx(expected_slab, rel=1e-12)
+    assert difference == pytest.approx(expected_slab - expected_equal, rel=1e-9)
+    # one-signed and inside the measured band for its own sitting
+    assert difference > 0.0
+    assert low <= difference <= high
+    # the difference is the two clipped end cells: half an interior gate's share each
+    assert slab.weights[0] == pytest.approx(slab.weights[1] / 2.0, rel=1e-9)
+    assert slab.weights[-1] == pytest.approx(slab.weights[-2] / 2.0, rel=1e-9)
+    # the difference is exactly the reweighting of the two end cells: every interior gate
+    # carries the same share under both rules, so this identity pins the whole construction
+    reweighting = float(
+        np.sum(
+            (np.asarray(slab.weights, dtype=float) - np.asarray(equal.weights, dtype=float))
+            * np.asarray(mean, dtype=float)
+        )
+    )
+    assert difference == pytest.approx(reweighting, rel=1e-9)
+    assert not np.allclose(slab.weights, equal.weights)
+    # the two extents are reported as two fields, and the equal weighting reports no clipping
+    # interval at all rather than echoing the one it never used
+    assert slab.gate_extent_mm == pytest.approx(equal.gate_extent_mm)
+    assert slab.slab_support_mm == pytest.approx(decoding.support_mm)
+    assert equal.slab_support_mm is None
 
 
 def test_the_unweighted_reduction_is_the_pass_modules_own_number(live2) -> None:

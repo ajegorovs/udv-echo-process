@@ -37,6 +37,7 @@ from typing import NamedTuple
 import numpy as np
 
 from udv_echo_process.analysis._native_grid import (
+    TOLERANCE_S,
     common_support,
     in_support,
     window,
@@ -57,6 +58,7 @@ from udv_echo_process.analysis.sparse_inventory import (
     require_reader_agrees_with_the_log,
     require_retired_target,
 )
+from udv_echo_process.models.base import ValueModel
 
 #: The pass's five scientific jobs and the four reference jobs, as the plan names
 #: them. ``KIND_SCIENTIFIC`` is the kind of a job whose rows are a new condition.
@@ -243,3 +245,103 @@ def supported_mean_of(
             f"({total!r}); a NaN point must not enter a floor"
         )
     return total / values.size
+
+
+class PointQc(ValueModel):
+    """One decoded recording's own QC cells, measured from its stored stamps.
+
+    These are the numbers the frozen WP0 row builder formats into the table's shape,
+    retention and whole-record columns, returned here as *numbers* so a display reads them
+    rather than recomputing them. The reason this accessor exists: there is one definition
+    of "median Δt" or "exactly zero" in this repository, and a notebook that re-derived them
+    inline could disagree with the frozen table rendered beside it while both looked
+    plausible. The numbers describe the **record**, so neither the designed window nor the
+    common support enters - a comparison cut out of the record is a view's business, not the
+    record's own summary.
+    """
+
+    relative_path: str
+    point_label: str
+    job: str
+    acquisition_order: int
+    quantity: str
+    unit: str
+    profiles: int
+    gates: int
+    first_gate_mm: float
+    last_gate_mm: float
+    span_s: float
+    median_interval_s: float
+    achieved_interval_s: float
+    monotone: bool
+    finite_samples: int
+    total_samples: int
+    finite_fraction: float
+    exact_zeros: int
+    zero_fraction: float
+
+
+def point_qc(point: DecodedPoint) -> PointQc:
+    """One recording's shape, timing and whole-record signal counters.
+
+    Args:
+        point: a point bound by
+            :func:`~udv_echo_process.analysis.sparse_inventory.bind_recordings` and decoded
+            by :func:`~udv_echo_process.analysis.sparse_inventory.decode_point`.
+
+    Returns:
+        :class:`PointQc`, every field read off the record's own timestamps and values.
+
+    Raises:
+        SparseIngestError: for a record storing no profile at all, which has no span, no
+            interval and nothing to summarize.
+    """
+    values = np.asarray(point.values, dtype=float)
+    time_s = np.asarray(point.time_s, dtype=float)
+    depths = np.asarray(point.depths, dtype=float)
+    if time_s.size == 0 or values.size == 0:
+        raise SparseIngestError(
+            f"{point.relative_path}: the record stores no profile, so it has no span, no "
+            "interval and nothing to summarize"
+        )
+    intervals = np.diff(time_s)
+    span = float(time_s[-1] - time_s[0])
+    total = int(values.size)
+    finite = int(np.count_nonzero(np.isfinite(values)))
+    zeros = int(np.count_nonzero(values == 0.0))
+    return PointQc(
+        relative_path=str(point.relative_path),
+        point_label=str(point.binding.point.label),
+        job=str(point.binding.job.job),
+        acquisition_order=int(point.binding.order),
+        quantity=str(point.quantity),
+        unit=str(point.unit),
+        profiles=int(values.shape[0]),
+        gates=int(values.shape[1]),
+        first_gate_mm=float(depths[0]),
+        last_gate_mm=float(depths[-1]),
+        span_s=span,
+        median_interval_s=float(np.median(intervals)) if intervals.size else 0.0,
+        achieved_interval_s=(span / (time_s.size - 1) if time_s.size > 1 else 0.0),
+        monotone=bool(intervals.size and np.all(intervals > 0.0)),
+        finite_samples=finite,
+        total_samples=total,
+        finite_fraction=finite / total,
+        exact_zeros=zeros,
+        zero_fraction=zeros / total,
+    )
+
+
+def retains_designed_window(point: DecodedPoint, *, window_s: float) -> bool:
+    """Whether a record's *own* stored stamps cover the designed window at all.
+
+    A retention check, not a cut: it answers whether the point may enter a primary
+    comparison at this window width, which is the same question
+    :func:`~udv_echo_process.analysis._sparse_view.primary_view` refuses on. Both read the
+    record's stamps rather than any log's target, and both compare with the reader's
+    timestamp tolerance.
+    """
+    time_s = np.asarray(point.time_s, dtype=float)
+    if time_s.size == 0:
+        return False
+    return bool(float(time_s[-1] - time_s[0]) + TOLERANCE_S >= window_s)

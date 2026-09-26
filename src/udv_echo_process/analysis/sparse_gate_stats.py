@@ -12,12 +12,15 @@ What this module is:
   computed per gate for a ``(profiles, gates)`` window, in ``mm/s`` except the
   three shape/quality ones;
 - :class:`~udv_echo_process.models.base.ArrayModel` results with provenance: the
-  source identity, the *view* the numbers came from, the time and depth support
-  they were computed on, and the method settings;
-- three labelled views — :data:`VIEW_PRIMARY` (the pass's designed leading window
-  cut by the recording's own stored stamps), :data:`VIEW_FULL_RECORD` (every
-  stored profile) and :data:`VIEW_EXPLORATION` (explicitly selected bounds, which
-  must never silently replace the primary comparison);
+  source identity, the *view* the numbers came from, the three depth extents they
+  were computed on, and this module's own estimator settings;
+- the three labelled views themselves live in
+  :mod:`udv_echo_process.analysis._sparse_view`, which owns the one vocabulary
+  (:class:`~udv_echo_process.analysis._sparse_view.SparseView`), the one cutting
+  path (:class:`~udv_echo_process.analysis._sparse_view.WindowView`) and the one
+  provenance every sparse slice shares. This module re-exports them rather than
+  restating them, so a view is spelled and cut the same way here, in the
+  recurrence slice and in the notebook;
 - depth reductions whose weights are declared (:data:`WEIGHTING_EQUAL`,
   :data:`WEIGHTING_NATIVE_SLAB`), so a scalar summary is an argument with stated
   weights rather than an unlabelled average.
@@ -55,21 +58,71 @@ import math
 import numpy as np
 from pydantic import model_validator
 
-from udv_echo_process.analysis._native_grid import TOLERANCE_S, in_support
-from udv_echo_process.analysis._sparse_pass import DecodedPoint, primary_window
+from udv_echo_process.analysis._sparse_view import (
+    VIEW_LABELS,
+    VIEW_RULES,
+    SparseView,
+    SparseViewError,
+    ViewProvenance,
+    WindowView,
+    exploration_view,
+    full_record_view,
+    primary_view,
+    view_provenance,
+)
 from udv_echo_process.analysis.reference_repeat import METRICS as FROZEN_METRICS
 from udv_echo_process.analysis.reference_repeat import gate_metrics
 from udv_echo_process.models.base import ArrayModel, ValueModel, array_field
 
+__all__ = [
+    "CONSTANT_TRACE_RULE",
+    "EXCESS_KURTOSIS_CONVENTION",
+    "EXTENDED_STATISTICS",
+    "GATE_STATISTICS",
+    "MAD_SCALE",
+    "MAD_SCALING",
+    "METHOD",
+    "REUSED_STATISTICS",
+    "STATISTIC_UNITS",
+    "VIEW_EXPLORATION",
+    "VIEW_FULL_RECORD",
+    "VIEW_LABELS",
+    "VIEW_PRIMARY",
+    "VIEW_RULES",
+    "WEIGHTING_EQUAL",
+    "WEIGHTING_EQUAL_RULE",
+    "WEIGHTING_NATIVE_SLAB",
+    "WEIGHTING_NATIVE_SLAB_RULE",
+    "DepthReduction",
+    "GateStatistics",
+    "SparseGateStatsError",
+    "SparseView",
+    "SparseViewError",
+    "ViewProvenance",
+    "WindowView",
+    "exploration_view",
+    "extended_gate_metrics",
+    "full_record_view",
+    "gate_statistics",
+    "native_slab_weights",
+    "primary_view",
+    "reduce_equal_weight",
+    "reduce_native_slab",
+    "statistic_units",
+    "view_provenance",
+]
 
-class SparseGateStatsError(ValueError):
+
+class SparseGateStatsError(SparseViewError):
     """A per-gate statistic or a depth reduction cannot be computed as asked.
 
     Raised for an input that is not a ``(profiles, gates)`` window, a window with
     no profile or a gate with no sample, a non-finite sample, an undefined
-    statistic entering a reduction, a reduction whose values and depths disagree,
-    or an exploration bound outside the record it is taken from. The caller may
-    catch this as the module's refusal and as a ``ValueError``.
+    statistic entering a reduction, or a reduction whose values and depths
+    disagree. A view that cannot be selected at all is refused by
+    :class:`~udv_echo_process.analysis._sparse_view.SparseViewError`, of which this
+    is a subclass, so a caller may catch either the statistics refusal or the whole
+    sparse-view refusal - and both are a ``ValueError``.
     """
 
 
@@ -99,11 +152,29 @@ GATE_STATISTICS: tuple[str, ...] = REUSED_STATISTICS + EXTENDED_STATISTICS
 #: The normal-consistency scale :attr:`GateStatistics`'s ``mad_scaled`` row uses.
 MAD_SCALE: float = 1.4826
 
+#: The delta degrees of freedom every moment here is computed with: population moments, so a
+#: single-profile view has a defined (zero) spread rather than an undefined one.
+STD_DDOF = 0
+
 MAD_SCALING = (
     "median absolute deviation of the gate's own trace about its own median, scaled by 1.4826 "
     "(the normal-consistency factor: on a normal sample the scaled value estimates the standard "
     "deviation). The unscaled statistic is mad_scaled / 1.4826."
 )
+
+#: The interpolation :func:`numpy.percentile` is *called with*, and the method every result
+#: records. It is passed explicitly rather than left to numpy's default, so the recorded
+#: convention and the executed one cannot drift apart when a numpy release changes a default.
+PERCENTILE_METHOD = "linear"
+
+#: How far the extended percentiles may differ from the frozen pair they claim to extend.
+#: ``np.median``'s midpoint rule and ``np.percentile``'s linear interpolation are different
+#: operations, so ``q50`` and the frozen ``median`` agree to floating point rather than
+#: bit-exactly (one ULP on the committed data); ``q75 - q25`` and the frozen ``iqr`` do agree
+#: bit-exactly there, but that is a measured property of these routines and not a guarantee
+#: of them. Both are therefore checked against a relative tolerance, and a divergence past it
+#: is refused as a contradiction inside one result rather than published as two rows.
+PERCENTILE_AGREEMENT_TOL = 1e-9
 
 EXCESS_KURTOSIS_CONVENTION = (
     "excess kurtosis: mean((x - mean)^4) / variance^2 - 3 on population (biased) moments, so a "
@@ -129,29 +200,16 @@ METHOD = (
     "correlated samples, not independent replicates."
 )
 
-#: The three views the plan distinguishes. The label is part of every result, so a
-#: reader can never mistake an exploratory selection for the primary comparison.
-VIEW_PRIMARY = "primary-comparison"
-VIEW_FULL_RECORD = "full-record"
-VIEW_EXPLORATION = "exploration"
-VIEW_LABELS: tuple[str, ...] = (VIEW_PRIMARY, VIEW_FULL_RECORD, VIEW_EXPLORATION)
-
-VIEW_RULES: dict[str, str] = {
-    VIEW_PRIMARY: (
-        "the pass's designed leading window, cut by the recording's own stored timestamps: the "
-        "primary-comparison view. It is never widened to the instrument's retained extra fraction "
-        "of a second, and an exploratory selection never replaces it."
-    ),
-    VIEW_FULL_RECORD: (
-        "every stored profile of the recording, for stationarity, ACF and spectral diagnostics: "
-        "the full-record view, labelled separately from the primary comparison because its "
-        "duration varies between recordings."
-    ),
-    VIEW_EXPLORATION: (
-        "explicitly selected time and depth bounds: the exploration view. It is a labelled "
-        "exploratory selection and must never silently replace the primary-comparison view."
-    ),
-}
+#: The one view vocabulary, aliased from :mod:`.._sparse_view` so a call site can
+#: spell a view without importing the view module directly. These are *aliases of
+#: the single canonical enum members* - not a second vocabulary - and they are the
+#: hyphenated labels every result carries, so a view reads the same in a statistics
+#: result, a recurrence result and a notebook. :data:`VIEW_LABELS` and
+#: :data:`VIEW_RULES` are imported from the same module and are the vocabulary's own
+#: membership rule and rule text.
+VIEW_PRIMARY = SparseView.PRIMARY
+VIEW_FULL_RECORD = SparseView.FULL_RECORD
+VIEW_EXPLORATION = SparseView.EXPLORATION
 
 #: The weighting labels the depth reductions declare. Both state their rule; neither
 #: hides a weighting behind an unlabelled average.
@@ -221,8 +279,14 @@ def extended_gate_metrics(values: np.ndarray) -> dict[str, np.ndarray]:
       scaled by :data:`MAD_SCALE` (1.4826) for normal consistency;
     - ``min`` / ``max`` — the extreme samples;
     - ``q05`` … ``q95`` — percentiles with ``numpy.percentile``'s linear
-      interpolation, the same convention the frozen ``iqr`` uses, so ``q50`` is
-      the frozen ``median`` and ``q75 - q25`` is the frozen ``iqr``;
+      interpolation. The interpolation is passed explicitly as
+      :data:`PERCENTILE_METHOD`, the convention the frozen ``iqr`` uses, so ``q50``
+      and the frozen ``median`` are the same quantity and ``q75 - q25`` and the
+      frozen ``iqr`` are the same quantity - but they are not bit-identical
+      *operations* (``np.median`` uses a midpoint rule where ``np.percentile``
+      interpolates), so :func:`gate_statistics` checks the agreement at
+      :data:`PERCENTILE_AGREEMENT_TOL` rather than asserting an identity the
+      routines do not guarantee;
     - ``skewness`` — population third standardized moment
       ``mean((x - mean)^3) / std^3``;
     - ``excess_kurtosis`` — see :data:`EXCESS_KURTOSIS_CONVENTION`.
@@ -262,7 +326,7 @@ def extended_gate_metrics(values: np.ndarray) -> dict[str, np.ndarray]:
     scale = np.sqrt(variance)
     median = np.median(array, axis=0)
     q05, q25, q50, q75, q95 = np.percentile(
-        array, [5.0, 25.0, 50.0, 75.0, 95.0], axis=0
+        array, [5.0, 25.0, 50.0, 75.0, 95.0], axis=0, method=PERCENTILE_METHOD
     )
     # A gate with no variance has no shape: NaN, deliberately, and the constant
     # test is exact because a constant trace is exactly constant.
@@ -287,149 +351,6 @@ def extended_gate_metrics(values: np.ndarray) -> dict[str, np.ndarray]:
     }
 
 
-class WindowView(ArrayModel):
-    """One recording as one *view*: its samples, their native coordinates and its support mask.
-
-    ``values`` is ``(profiles, gates)`` in ``mm/s``; ``time_s`` are the view's own
-    stored timestamps in seconds, ``depths_mm`` the native gate depths in mm - the
-    instrument's own coordinate, never relabelled or converted; ``support_mask``
-    marks the gates inside the pass's common physical support. ``start_index`` and
-    ``stop_index`` are the view's positions in the recording's stored profile
-    axis, so the cut is auditable. ``declared_window_s`` records the interval that
-    was *asked for* when it differs from the span the stored stamps achieve.
-    """
-
-    view: str
-    view_rule: str
-    relative_path: str
-    source_sha256: str
-    job: str
-    point_label: str
-    order: int
-    values: array_field(np.float64, rank=2)
-    time_s: array_field(np.float64, rank=1)
-    depths_mm: array_field(np.float64, rank=1)
-    support_mask: array_field(np.bool_, rank=1)
-    start_index: int
-    stop_index: int
-    window_start_s: float
-    window_end_s: float
-    window_s: float
-    support_mm: tuple[float, float]
-    declared_window_s: float | None = None
-    time_bounds_s: tuple[float, float] | None = None
-    depth_bounds_mm: tuple[float, float] | None = None
-
-    @model_validator(mode="after")
-    def _check_the_view_is_one_contiguous_supported_block(self) -> WindowView:
-        if self.view not in VIEW_LABELS:
-            raise ValueError(
-                f"a view label is one of {list(VIEW_LABELS)}, got {self.view!r}"
-            )
-        if self.values.shape != (self.time_s.size, self.depths_mm.size):
-            raise ValueError(
-                f"the view's values {self.values.shape} must hold one sample per profile "
-                f"and gate ({self.time_s.size}, {self.depths_mm.size})"
-            )
-        if self.values.shape[0] < 1 or self.values.shape[1] < 1:
-            raise ValueError("a view holds at least one profile and one gate")
-        if self.support_mask.shape != self.depths_mm.shape:
-            raise ValueError(
-                f"the support mask {self.support_mask.shape} must have one entry per native "
-                f"gate {self.depths_mm.shape}"
-            )
-        if not np.any(self.support_mask):
-            raise ValueError(
-                "no native gate of this view lies inside the common support "
-                f"[{self.support_mm[0]:g}, {self.support_mm[1]:g}] mm, so it cannot enter a "
-                "depth-resolved comparison"
-            )
-        if self.stop_index - self.start_index != self.values.shape[0] or self.start_index < 0:
-            raise ValueError(
-                f"a view is one contiguous run of stored profiles: [{self.start_index}, "
-                f"{self.stop_index}) does not hold {self.values.shape[0]} profile(s)"
-            )
-        steps = np.diff(self.time_s)
-        if self.time_s.size > 1 and not np.all(steps >= 0.0):
-            raise ValueError("the view's stored timestamps must not decrease")
-        if self.depths_mm.size > 1 and not np.all(np.diff(self.depths_mm) > 0.0):
-            raise ValueError(
-                "the view's native gate depths must increase strictly; the instrument's native "
-                "coordinate is preserved, never relabelled or resorted"
-            )
-        if not math.isclose(
-            self.window_start_s, float(self.time_s[0]), abs_tol=TOLERANCE_S
-        ) or not math.isclose(
-            self.window_end_s, float(self.time_s[-1]), abs_tol=TOLERANCE_S
-        ):
-            raise ValueError(
-                "the window's start/end must be the view's own first and last stored timestamp"
-            )
-        if not math.isclose(
-            self.window_s,
-            self.window_end_s - self.window_start_s,
-            abs_tol=TOLERANCE_S,
-        ):
-            raise ValueError(
-                "the window's duration must be the span of the stamps it was cut on, so a "
-                "declared interval cannot be reported as achieved"
-            )
-        return self
-
-
-class ViewProvenance(ValueModel):
-    """What a result was computed from, and with which settings.
-
-    Source identity (``relative_path``, ``source_sha256``, ``job``,
-    ``point_label``, ``order``), the view and its rule, the time and depth support
-    the numbers were computed on, and the estimator settings - so a result can be
-    audited without the notebook that displayed it.
-    """
-
-    view: str
-    view_rule: str
-    relative_path: str
-    source_sha256: str
-    job: str
-    point_label: str
-    order: int
-    start_index: int
-    stop_index: int
-    profiles: int
-    native_gates: int
-    supported_gates: int
-    window_start_s: float
-    window_end_s: float
-    window_s: float
-    support_mm: tuple[float, float]
-    depth_support_mm: tuple[float, float]
-    declared_window_s: float | None = None
-    time_bounds_s: tuple[float, float] | None = None
-    depth_bounds_mm: tuple[float, float] | None = None
-    method: str
-    percentile_method: str
-    std_ddof: int
-    mad_scale: float
-    mad_scaling: str
-    excess_kurtosis_convention: str
-    constant_trace_rule: str
-
-    @model_validator(mode="after")
-    def _check_the_support_is_measured_not_claimed(self) -> ViewProvenance:
-        if self.supported_gates < 1 or self.supported_gates > self.native_gates:
-            raise ValueError(
-                f"{self.supported_gates} supported gate(s) out of {self.native_gates} is not a "
-                "support this result could have been computed on"
-            )
-        if self.profiles < 1 or self.stop_index - self.start_index != self.profiles:
-            raise ValueError("the provenance's profile count must be the view's own")
-        if self.depth_support_mm[0] >= self.depth_support_mm[1] and self.supported_gates > 1:
-            raise ValueError(
-                "the supported depth range must be increasing when more than one gate is supported"
-            )
-        return self
-
-
 class GateStatistics(ArrayModel):
     """Every per-gate statistic of one :class:`WindowView`.
 
@@ -437,7 +358,17 @@ class GateStatistics(ArrayModel):
     :data:`GATE_STATISTICS`, in that order, one column per *supported* gate, in the
     recording's native depth order - so the profiles are kept, per gate, and no
     reduction has happened yet. ``units`` is aligned with ``statistic_names``, and
-    ``support_mask`` is the full-length native mask the columns were selected by.
+    ``support_mask`` is the *view's own* mask over the columns the view holds, which is
+    what selected ``depths_mm`` here - not a mask over the recording's native grid, so
+    its length is this view's column count.
+
+    The estimator conventions this result was computed under travel on the result
+    (:data:`METHOD`, :data:`PERCENTILE_METHOD`, :data:`MAD_SCALE`,
+    :data:`EXCESS_KURTOSIS_CONVENTION`, :data:`CONSTANT_TRACE_RULE`), because they
+    describe *how* the numbers were made, which is a property of this module's estimator
+    rather than of the data. The native grid's own dimension is in ``provenance``:
+    ``provenance.native_gates`` is the recording's gate count, never this result's
+    column count.
     """
 
     statistic_names: tuple[str, ...]
@@ -446,6 +377,13 @@ class GateStatistics(ArrayModel):
     depths_mm: array_field(np.float64, rank=1)
     support_mask: array_field(np.bool_, rank=1)
     provenance: ViewProvenance
+    method: str
+    percentile_method: str
+    std_ddof: int
+    mad_scale: float
+    mad_scaling: str
+    excess_kurtosis_convention: str
+    constant_trace_rule: str
 
     @model_validator(mode="after")
     def _check_every_row_is_one_named_supported_statistic(self) -> GateStatistics:
@@ -498,6 +436,17 @@ class DepthReduction(ValueModel):
     weighting this is and why. The per-gate values are *not* consumed by this
     result: it is one scalar beside the profile it came from, never a replacement
     for it.
+
+    Two different extents are kept apart here, because SA1 had three fields whose names
+    all said support and whose meanings did not agree:
+
+    - ``gate_extent_mm`` - the extent of the gates this reduction actually *reduced*,
+      i.e. the participating gates of the profile handed in. It is a property of the
+      input, and it is the same for both weightings;
+    - ``slab_support_mm`` - the support interval the native-slab cells were clipped to,
+      which is what the weights were constructed from. It is ``None`` exactly for equal
+      weighting, which clips nothing: a reduction reports no clipping interval rather
+      than echoing one it never used.
     """
 
     statistic: str
@@ -508,7 +457,8 @@ class DepthReduction(ValueModel):
     gates: int
     weights: tuple[float, ...]
     weight_sum: float
-    depth_support_mm: tuple[float, float]
+    gate_extent_mm: tuple[float, float]
+    slab_support_mm: tuple[float, float] | None = None
 
     @model_validator(mode="after")
     def _check_the_weights_are_declared_positive_and_normalized(self) -> DepthReduction:
@@ -530,244 +480,73 @@ class DepthReduction(ValueModel):
                 f"a depth reduction of {self.statistic!r} must be finite, got {self.value!r}; "
                 "an undefined statistic is refused, never reduced into a scalar"
             )
+        if (self.slab_support_mm is not None) != (
+            self.weighting == WEIGHTING_NATIVE_SLAB
+        ):
+            raise ValueError(
+                "a clipping support is reported exactly by the native-slab weighting, which is "
+                f"the only one that clips: got {self.slab_support_mm!r} with "
+                f"{self.weighting!r}"
+            )
         return self
 
 
-def _identity_cells(point: DecodedPoint) -> dict[str, object]:
-    """The source-identity cells every view of one recording repeats.
-    """
-    return {
-        "relative_path": str(point.relative_path),
-        "source_sha256": str(point.source_sha256),
-        "job": str(point.binding.job.job),
-        "point_label": str(point.binding.point.label),
-        "order": int(point.binding.order),
-    }
+def require_depth_support(support_mm: tuple[float, float]) -> tuple[float, float]:
+    """One required depth-support interval, refused unless finite and increasing.
 
-
-def _window_view(
-    point: DecodedPoint,
-    *,
-    view: str,
-    values: np.ndarray,
-    time_s: np.ndarray,
-    depths: np.ndarray,
-    start_index: int,
-    stop_index: int,
-    support_mm: tuple[float, float],
-    declared_window_s: float | None = None,
-    time_bounds_s: tuple[float, float] | None = None,
-    depth_bounds_mm: tuple[float, float] | None = None,
-) -> WindowView:
-    """Assemble one labelled view, with the support mask the pass's shared view gives it.
-    """
-    stamps = np.asarray(time_s, dtype=float)
-    grid = np.asarray(depths, dtype=float)
-    return WindowView(
-        view=view,
-        view_rule=VIEW_RULES[view],
-        **_identity_cells(point),
-        values=np.asarray(values, dtype=float),
-        time_s=stamps,
-        depths_mm=grid,
-        support_mask=in_support(grid, support_mm),
-        start_index=int(start_index),
-        stop_index=int(stop_index),
-        window_start_s=float(stamps[0]),
-        window_end_s=float(stamps[-1]),
-        window_s=float(stamps[-1] - stamps[0]),
-        support_mm=(float(support_mm[0]), float(support_mm[1])),
-        declared_window_s=declared_window_s,
-        time_bounds_s=time_bounds_s,
-        depth_bounds_mm=depth_bounds_mm,
-    )
-
-
-def primary_view(
-    point: DecodedPoint, *, window_s: float, support_mm: tuple[float, float]
-) -> WindowView:
-    """One recording's primary-comparison view: the leading ``window_s``, cut by its own stamps.
-
-    The cut is the pass's shared view (``_sparse_pass.primary_window``), so a
-    notebook and a floor compute over the same interval: the designed exposure,
-    never the instrument's retained surplus - which is why ``declared_window_s``
-    (the interval asked for) and ``window_s`` (the span the stamps achieve) are
-    both recorded and the view's end can only fall at or below the declared one.
+    Native-slab weighting is *defined* by the interval its cells are clipped to: with no
+    interval and a uniform grid, full-pitch cells give every gate an equal share, so the
+    reduced number would be the equal-weight one while declaring the slab rule. The
+    support is therefore a required argument, and a degenerate interval (one point, or a
+    reversed pair) is not a support.
 
     Raises:
-        SparseGateStatsError: for a window that is not finite and positive, or a
-            recording whose stamps cover no profile of the designed interval.
+        SparseGateStatsError: for an interval that is not finite and increasing.
     """
-    if not math.isfinite(window_s) or window_s <= 0.0:
-        raise SparseGateStatsError(
-            f"a primary window must be finite and positive, got {window_s!r}"
-        )
-    block = primary_window(point, window_s)
-    profiles = int(block.shape[0])
-    if profiles < 1:
-        raise SparseGateStatsError(
-            f"{point.relative_path}: no stored profile falls inside the designed "
-            f"{window_s:g} s primary window; this recording cannot enter the primary comparison"
-        )
-    stamps = np.asarray(point.time_s, dtype=float)[:profiles]
-    return _window_view(
-        point,
-        view=VIEW_PRIMARY,
-        values=block,
-        time_s=stamps,
-        depths=np.asarray(point.depths, dtype=float),
-        start_index=0,
-        stop_index=profiles,
-        support_mm=support_mm,
-        declared_window_s=float(window_s),
-    )
-
-
-def full_record_view(
-    point: DecodedPoint, *, support_mm: tuple[float, float]
-) -> WindowView:
-    """One recording's full-record view: every stored profile, labelled separately.
-
-    The primary comparison is not replaced by this view: the plan reserves it for
-    ACF, spectra and stationarity diagnostics, where the duration may vary between
-    recordings and is therefore its own label rather than a shared interval.
-    """
-    values = np.asarray(point.values, dtype=float)
-    stamps = np.asarray(point.time_s, dtype=float)
-    return _window_view(
-        point,
-        view=VIEW_FULL_RECORD,
-        values=values,
-        time_s=stamps,
-        depths=np.asarray(point.depths, dtype=float),
-        start_index=0,
-        stop_index=int(values.shape[0]),
-        support_mm=support_mm,
-    )
-
-
-def exploration_view(
-    point: DecodedPoint,
-    *,
-    time_bounds_s: tuple[float, float],
-    depth_bounds_mm: tuple[float, float],
-    support_mm: tuple[float, float],
-) -> WindowView:
-    """One recording's exploration view: explicitly selected time and depth bounds.
-
-    The selection is by index on the recording's own monotone stamps and increasing
-    native gate grid, so the view stays one contiguous supported block and the
-    native depth coordinate is preserved. Bounds must lie inside the stored record
-    and select at least one supported gate: an exploratory selection may not widen
-    the record it came from, and this view is labelled so it can never be mistaken
-    for the primary comparison.
-
-    Raises:
-        SparseGateStatsError: for bounds that are not finite and increasing, that
-            reach outside the stored record, or that select no supported gate.
-    """
-    stamps = np.asarray(point.time_s, dtype=float)
-    grid = np.asarray(point.depths, dtype=float)
-    values = np.asarray(point.values, dtype=float)
-    low_s, high_s = _require_bounds(time_bounds_s, what="time")
-    low_mm, high_mm = _require_bounds(depth_bounds_mm, what="depth")
-    if low_s < float(stamps[0]) - TOLERANCE_S or high_s > float(stamps[-1]) + TOLERANCE_S:
-        raise SparseGateStatsError(
-            f"{point.relative_path}: the exploratory time bounds [{low_s:g}, {high_s:g}] s "
-            f"reach outside the stored record [{float(stamps[0]):g}, "
-            f"{float(stamps[-1]):g}] s; a selection is taken from the record, never widened"
-        )
-    if low_mm < float(grid[0]) - TOLERANCE_S or high_mm > float(grid[-1]) + TOLERANCE_S:
-        raise SparseGateStatsError(
-            f"{point.relative_path}: the exploratory depth bounds [{low_mm:g}, {high_mm:g}] mm "
-            f"reach outside the stored native grid [{float(grid[0]):g}, {float(grid[-1]):g}] mm"
-        )
-    inside_time = np.flatnonzero(
-        (stamps >= low_s - TOLERANCE_S) & (stamps <= high_s + TOLERANCE_S)
-    )
-    if inside_time.size == 0:
-        raise SparseGateStatsError(
-            f"{point.relative_path}: no stored profile falls inside [{low_s:g}, {high_s:g}] s"
-        )
-    inside_depth = np.flatnonzero(
-        (grid >= low_mm - TOLERANCE_S) & (grid <= high_mm + TOLERANCE_S)
-    )
-    mask = (
-        in_support(grid[inside_depth], support_mm)
-        if inside_depth.size
-        else np.zeros(0, bool)
-    )
-    if not np.any(mask):
-        raise SparseGateStatsError(
-            f"{point.relative_path}: no native gate inside [{low_mm:g}, {high_mm:g}] mm lies "
-            f"inside the common support [{support_mm[0]:g}, {support_mm[1]:g}] mm; this "
-            "selection cannot enter a depth-resolved comparison"
-        )
-    gates = inside_depth[mask]
-    start_index, stop_index = int(inside_time[0]), int(inside_time[-1]) + 1
-    return _window_view(
-        point,
-        view=VIEW_EXPLORATION,
-        values=values[start_index:stop_index][:, gates],
-        time_s=stamps[start_index:stop_index],
-        depths=grid[gates],
-        start_index=start_index,
-        stop_index=stop_index,
-        support_mm=support_mm,
-        time_bounds_s=(low_s, high_s),
-        depth_bounds_mm=(low_mm, high_mm),
-    )
-
-
-def _require_bounds(bounds: tuple[float, float], *, what: str) -> tuple[float, float]:
-    """One pair of explicit bounds, refused unless finite and increasing.
-    """
-    low, high = float(bounds[0]), float(bounds[1])
+    low, high = float(support_mm[0]), float(support_mm[1])
     if not (math.isfinite(low) and math.isfinite(high) and low < high):
         raise SparseGateStatsError(
-            f"the {what} bounds must be finite and increasing, got ({low!r}, {high!r})"
+            "native-slab weighting needs a finite, increasing support interval to clip its "
+            f"cells to, got ({low!r}, {high!r})"
         )
     return low, high
 
 
-def view_provenance(view: WindowView) -> ViewProvenance:
-    """The provenance record of one view: its identity, support and method settings.
+def _require_the_extended_percentiles_agree_with_the_frozen_pair(
+    rows: dict[str, np.ndarray],
+) -> None:
+    """Refuse a result whose extended percentiles contradict the frozen pair they extend.
 
-    The depth support is *measured* from the view's own supported native gates, not
-    copied from the pass's declared range, so a reader can see which depths the
-    numbers actually cover.
+    The frozen five come from :func:`gate_metrics` (``median`` uses ``np.median``) and the
+    extended eleven from :func:`extended_gate_metrics` (``q25``/``q50``/``q75`` use
+    ``np.percentile``), so ``q50``/``median`` and ``q75 - q25``/``iqr`` are the same two
+    quantities computed by different routines. They agree to floating point; a divergence
+    past :data:`PERCENTILE_AGREEMENT_TOL` would mean one result publishes two contradicting
+    rows for one quantity, which is refused here rather than left for a reader to notice.
+
+    Raises:
+        SparseGateStatsError: for a pair that disagrees past the tolerance.
     """
-    supported = np.flatnonzero(view.support_mask)
-    depths = np.asarray(view.depths_mm, dtype=float)[supported]
-    return ViewProvenance(
-        view=view.view,
-        view_rule=view.view_rule,
-        relative_path=view.relative_path,
-        source_sha256=view.source_sha256,
-        job=view.job,
-        point_label=view.point_label,
-        order=view.order,
-        start_index=view.start_index,
-        stop_index=view.stop_index,
-        profiles=int(view.values.shape[0]),
-        native_gates=int(view.depths_mm.size),
-        supported_gates=int(supported.size),
-        window_start_s=view.window_start_s,
-        window_end_s=view.window_end_s,
-        window_s=view.window_s,
-        support_mm=view.support_mm,
-        depth_support_mm=(float(depths.min()), float(depths.max())),
-        declared_window_s=view.declared_window_s,
-        time_bounds_s=view.time_bounds_s,
-        depth_bounds_mm=view.depth_bounds_mm,
-        method=METHOD,
-        percentile_method="linear",
-        std_ddof=0,
-        mad_scale=MAD_SCALE,
-        mad_scaling=MAD_SCALING,
-        excess_kurtosis_convention=EXCESS_KURTOSIS_CONVENTION,
-        constant_trace_rule=CONSTANT_TRACE_RULE,
-    )
+    scale = np.maximum(np.abs(rows["median"]), np.abs(rows["q50"]))
+    scale = np.where(scale > 0.0, scale, 1.0)
+    gaps = {
+        "q50 against the frozen median": float(
+            np.max(np.abs(rows["q50"] - rows["median"]) / scale)
+        ),
+        "q75 - q25 against the frozen iqr": float(
+            np.max(np.abs((rows["q75"] - rows["q25"]) - rows["iqr"]) / scale)
+        ),
+    }
+    offending = {
+        what: gap for what, gap in gaps.items() if not gap <= PERCENTILE_AGREEMENT_TOL
+    }
+    if offending:
+        named = "; ".join(f"{what} differs by {gap!r}" for what, gap in offending.items())
+        raise SparseGateStatsError(
+            "the extended percentiles contradict the frozen statistics they extend "
+            f"({named}, tolerance {PERCENTILE_AGREEMENT_TOL!r}): one result may not publish "
+            "two rows for one quantity"
+        )
 
 
 def gate_statistics(view: WindowView) -> GateStatistics:
@@ -793,6 +572,7 @@ def gate_statistics(view: WindowView) -> GateStatistics:
     supported = np.asarray(view.values, dtype=float)[:, mask]
     rows: dict[str, np.ndarray] = dict(gate_metrics(supported))
     rows.update(extended_gate_metrics(supported))
+    _require_the_extended_percentiles_agree_with_the_frozen_pair(rows)
     names = GATE_STATISTICS
     return GateStatistics(
         statistic_names=names,
@@ -801,29 +581,38 @@ def gate_statistics(view: WindowView) -> GateStatistics:
         depths_mm=np.asarray(view.depths_mm, dtype=float)[mask],
         support_mask=mask,
         provenance=view_provenance(view),
+        method=METHOD,
+        percentile_method=PERCENTILE_METHOD,
+        std_ddof=STD_DDOF,
+        mad_scale=MAD_SCALE,
+        mad_scaling=MAD_SCALING,
+        excess_kurtosis_convention=EXCESS_KURTOSIS_CONVENTION,
+        constant_trace_rule=CONSTANT_TRACE_RULE,
     )
 
 
 def native_slab_weights(
-    depths_mm: np.ndarray, *, support_mm: tuple[float, float] | None = None
+    depths_mm: np.ndarray, *, support_mm: tuple[float, float]
 ) -> np.ndarray:
-    """The share of the depth support each participating gate speaks for.
+    """The share of the covered depth each participating gate speaks for.
 
     Cells are the intervals between neighbouring gate midpoints, the two end gates
-    extending half a gap beyond themselves, and every cell is clipped to
-    ``support_mm`` when one is given - so a gate the support only partly covers
-    carries only the covered share. The weights are read from the gates that are
-    actually present, which is what makes the reduction gate-count-aware. On the
-    uniform native grids this reader enforces with a support that lands on gate
-    positions, each end cell is clipped to half a pitch while every interior cell
-    keeps a whole one: the two ends carry half of an interior gate's weight. A
-    single gate speaks for the whole of whatever support it covers.
+    extending half a gap beyond themselves, and every cell is clipped to the required
+    ``support_mm`` - so a gate the support only partly covers carries only the covered
+    share, and a gate it does not reach at all is refused rather than handed a zero
+    weight. The weights are read from the gates that are actually present, which is
+    what makes the reduction gate-count-aware. On the uniform native grids this reader
+    enforces with a support that lands on gate positions, each end cell is clipped to
+    half a pitch while every interior cell keeps a whole one: the two ends carry half
+    of an interior gate's weight. A single gate speaks for the whole of the support it
+    covers, and for nothing when it lies outside it.
 
     Raises:
-        SparseGateStatsError: for an empty or non-increasing native grid, bounds
-            that are not finite and increasing, or gates covering no depth inside
-            the support.
+        SparseGateStatsError: for an empty or non-increasing native grid, a support
+            that is not finite and increasing, or any gate covering no depth inside
+            the support (a zero slab weight is not a weight).
     """
+    low, high = require_depth_support(support_mm)
     depths = np.asarray(depths_mm, dtype=float).reshape(-1)
     if depths.size == 0:
         raise SparseGateStatsError("native-slab weights need at least one gate")
@@ -833,18 +622,29 @@ def native_slab_weights(
             "instrument's native coordinate is never resorted"
         )
     if depths.size == 1:
+        # One gate cannot take a pitch from its own grid: it speaks for the whole of the
+        # support it sits in, which normalizes to 1, and for nothing at all otherwise.
+        if not (low <= float(depths[0]) <= high):
+            raise SparseGateStatsError(
+                f"the single gate at {float(depths[0])!r} mm lies outside the support "
+                f"[{low:g}, {high:g}] mm, so it covers no depth and carries no slab weight"
+            )
         return np.ones(1)
     edges = np.empty(depths.size + 1)
     edges[1:-1] = 0.5 * (depths[:-1] + depths[1:])
     edges[0] = depths[0] - 0.5 * (depths[1] - depths[0])
     edges[-1] = depths[-1] + 0.5 * (depths[-1] - depths[-2])
-    widths = np.diff(edges)
-    if support_mm is not None:
-        low, high = _require_bounds(
-            (float(support_mm[0]), float(support_mm[1])), what="depth"
-        )
-        widths = np.clip(
-            np.minimum(edges[1:], high) - np.maximum(edges[:-1], low), 0.0, None
+    widths = np.clip(
+        np.minimum(edges[1:], high) - np.maximum(edges[:-1], low), 0.0, None
+    )
+    uncovered = np.flatnonzero(widths <= 0.0)
+    if uncovered.size:
+        named = ", ".join(str(int(index)) for index in uncovered[:8])
+        raise SparseGateStatsError(
+            f"{uncovered.size} of {depths.size} gate(s) cover no depth inside the support "
+            f"[{low:g}, {high:g}] mm (gate {named}); a slab weight is the share of the depth a "
+            "gate speaks for, so a gate outside the support has no share and no weight - "
+            "reduce over the supported gates, not the whole native grid"
         )
     total = float(widths.sum())
     if not math.isfinite(total) or total <= 0.0:
@@ -862,6 +662,7 @@ def _reduce(
     depths_mm: np.ndarray,
     weighting: str,
     weighting_rule: str,
+    slab_support_mm: tuple[float, float] | None = None,
 ) -> DepthReduction:
     """One declared weighted mean of a per-gate statistic, refusing undefined input.
     """
@@ -896,7 +697,8 @@ def _reduce(
         gates=int(array.size),
         weights=tuple(float(weight) for weight in weights),
         weight_sum=float(weights.sum()),
-        depth_support_mm=(float(depths.min()), float(depths.max())),
+        gate_extent_mm=(float(depths.min()), float(depths.max())),
+        slab_support_mm=slab_support_mm,
     )
 
 
@@ -940,22 +742,27 @@ def reduce_native_slab(
     depths_mm: np.ndarray,
     *,
     statistic: str,
-    support_mm: tuple[float, float] | None = None,
+    support_mm: tuple[float, float],
 ) -> DepthReduction:
     """One per-gate statistic reduced across depth, weighted by the gates' own slab widths.
 
     The weighting is :data:`WEIGHTING_NATIVE_SLAB`'s
-    (:data:`WEIGHTING_NATIVE_SLAB_RULE`): the share of the analysed support each
-    participating gate covers, read from its own coordinates by
-    :func:`native_slab_weights`. With a support that lands on gate positions the
-    two end gates are clipped to half a cell each, so this reduction reproduces
+    (:data:`WEIGHTING_NATIVE_SLAB_RULE`): the share of the covered depth each
+    participating gate speaks for, read from its own coordinates by
+    :func:`native_slab_weights`. With a support that lands on gate positions the two
+    end gates are clipped to half a cell each, so this reduction reproduces
     :func:`reduce_equal_weight` on a profile symmetric about the support centre and
     differs elsewhere by the end gates' share - a measured property, not an
     assumption, and the reason both weightings are offered with their weights.
 
+    ``support_mm`` is required, and it is not a convenience: the clipping interval *is*
+    the definition of this weighting. Without one, a uniform grid gives every gate an
+    equal share, so the scalar would be the equal-weight number while the result
+    declared the slab rule - a number labelled with a rule that did not apply.
+
     Raises:
         SparseGateStatsError: as :func:`reduce_equal_weight`, plus a support that
-            is not finite and increasing or covers none of the given gates.
+            is not finite and increasing, or any gate covering no depth inside it.
     """
     array = np.asarray(values, dtype=float).reshape(-1)
     depths = np.asarray(depths_mm, dtype=float).reshape(-1)
@@ -974,4 +781,5 @@ def reduce_native_slab(
         depths_mm=depths,
         weighting=WEIGHTING_NATIVE_SLAB,
         weighting_rule=WEIGHTING_NATIVE_SLAB_RULE,
+        slab_support_mm=require_depth_support(support_mm),
     )

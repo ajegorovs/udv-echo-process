@@ -7,12 +7,18 @@ select inputs and display those results; they do not implement estimators").
 What is measured
 ----------------
 One gate's trace is a velocity-versus-time series (one signed line-of-sight
-component at one native gate depth). :func:`trace_recurrence` subtracts the
+component at one native gate depth). :func:`recurrence_of_view` subtracts the
 trace mean **by default** and returns the normalized autocorrelation of the
 remainder — the *biased*, divide-by-N autocovariance scaled so ``acf[0] == 1``,
 the same estimator name the sibling temporal work uses. Additional detrending is
 optional (:class:`Detrending`), is named in the result, and always arrives with
 both the analysed and the **raw** trace, so a reader can see what was removed.
+
+The trace is not handed in beside a separately-named view: the one entry point
+takes a :class:`~udv_echo_process.analysis._sparse_view.WindowView` and correlates
+its own column, so the cut that selects the samples and the cut that labels them
+are the same cut, and the result carries that view's own provenance rather than a
+parallel description of it.
 
 What is refused
 ---------------
@@ -49,13 +55,20 @@ Not here (deliberately)
 - **No pseudoreplicate uncertainty.** Profiles and gates are correlated samples,
   not independent realizations, so no confidence interval, standard error or
   p-value is computed and none is a field of any result.
-- **No sampling-support guard.** Declaring a jitter or gap threshold and
-  refusing or documenting resampling before evenly sampled spectral methods is
-  SA2's slice. This module *reports* the jitter it saw
-  (``max_relative_interval_deviation``) and uses the full-span effective
-  interval with the same reasoning the echo-RPM step documents (a quantized DOP
-  timebase makes the median interval the dominant timestamp quantum rather than
-  the period); it does not silently re-grid a structurally sampled axis.
+- **A timebase verdict, not an unqualified lag axis.** The lag grid is the
+  *full-span effective* interval of the stored stamps, with the same reasoning the
+  echo-RPM step documents (a quantized DOP timebase makes the median interval the
+  dominant timestamp quantum rather than the period), so ``lag k`` is ``k *
+  ((t[-1] - t[0]) / (N - 1))`` and is the elapsed time of lag ``k`` only when the
+  stamps are themselves near-uniform. Every result therefore carries the timebase it
+  saw - :class:`TimebaseVerdict`, the maximum relative deviation from the median
+  interval, and :data:`LAG_GRID_RULE` - and a timebase outside the regular band makes
+  every *lag-based* claim unsupported with that verdict as its reason, while the curve
+  itself stays descriptive. This replaces the old diagnostic, which returned ``0.0``
+  when the median interval was not positive and so scored the most degenerate axis
+  possible as perfectly regular. Declaring a jitter or gap threshold for *spectral*
+  methods, and documenting or refusing resampling before them, is SA2's slice: this
+  module never silently re-grids a structurally sampled axis.
 - **No frequency-domain estimate.** The ACF is a time-domain curve; spectra,
   bandpower and Nyquist support are SA2.
 - **No cross-gate or cross-recording reduction.** One gate, one recording, one
@@ -71,12 +84,12 @@ from enum import Enum
 import numpy as np
 from pydantic import model_validator
 
-from udv_echo_process.analysis._native_grid import (
-    TOLERANCE_S,
-    in_support,
-    window,
+from udv_echo_process.analysis._sparse_view import (
+    SparseView,
+    ViewProvenance,
+    WindowView,
+    view_provenance,
 )
-from udv_echo_process.analysis.sparse_inventory import DecodedPoint
 from udv_echo_process.models.base import ArrayModel, ValueModel, array_field
 
 # ── named method settings ─────────────────────────────────────────────
@@ -105,6 +118,25 @@ MIN_PEAK_LAG_STEPS = 2
 #: Fewest samples a normalized autocorrelation is defined on.
 MIN_SAMPLES_FOR_ACF = 4
 
+#: The largest relative deviation of an interval from the median interval that still counts as
+#: a regular axis, i.e. the widest a lag in seconds may be trusted. Measured basis: all 52
+#: committed sparse recordings sit in 1.1e-3 .. 6.6e-3 (the stamps are quantized, not
+#: jittered), so this is three times the worst committed recording and roughly twenty times
+#: below a structurally jittered axis. The band is chosen to separate those two, not to make
+#: the committed data pass.
+TIMEBASE_REGULARITY_TOL = 2e-2
+
+#: The uniform-grid assumption behind every lag this module reports, stated once so a consumer
+#: - SA2 in particular - inherits it consciously rather than by default.
+LAG_GRID_RULE = (
+    "Integer lag indices on one effective interval: lag k is k * ((t[-1] - t[0]) / (N - 1)), "
+    "the full-span effective interval of the stored stamps, as the echo-RPM step documents (a "
+    "quantized DOP timebase makes the median interval the dominant timestamp quantum rather "
+    "than the period). The autocorrelation is uniformly sampled by construction, so its lag "
+    "axis is elapsed time only where the timebase verdict is regular; elsewhere the curve "
+    "stays descriptive and no lag in seconds is claimed from it."
+)
+
 #: A trace is *effectively* constant when the standard deviation of the analysed
 #: (detrended) trace is at or below
 #: ``max(CONSTANT_TRACE_ABSOLUTE_TOL, CONSTANT_TRACE_RELATIVE_TOL * max|trace|)``.
@@ -128,17 +160,30 @@ class RecurrenceError(ValueError):
     """
 
 
-class RecurrenceView(str, Enum):
-    """Which of the plan's shared views a trace came from.
+class TimebaseVerdict(str, Enum):
+    """Whether the stored timestamps support a lag axis in seconds, and if not, why.
 
-    The plan requires the label to be visible in the result, so it is a required
-    argument of every entry point and a field of every result. The exploration
-    label can therefore never silently replace the primary comparison.
+    The autocorrelation marches integer lag indices on one effective interval, so reading
+    its lag axis in seconds is an *assumption about the stamps*. This verdict is that
+    assumption's explicit answer: ``REGULAR`` when the stamps are strictly increasing and
+    near-uniform within :data:`TIMEBASE_REGULARITY_TOL`, and otherwise the named way they
+    are not. Every non-regular verdict makes each lag-based claim (first zero crossing,
+    1/e decay lag, integral time, period) unsupported with this verdict as its reason,
+    while the curve itself stays descriptive.
+
+    The regression this vocabulary exists to prevent: the deviation diagnostic returned
+    ``0.0`` when the median interval was not positive, so the most degenerate axis
+    possible scored as *perfectly regular*.
     """
 
-    PRIMARY = "primary comparison"
-    FULL_RECORD = "full record"
-    EXPLORATION = "exploration"
+    #: Strictly increasing and near-uniform: a lag in seconds is claimed.
+    REGULAR = "regular"
+    #: Strictly increasing, but the intervals deviate past the regular band.
+    IRREGULAR = "irregular"
+    #: An interval is zero - two profiles share a stamp, so no elapsed time separates them.
+    DUPLICATE_STAMPS = "duplicate-stamps"
+    #: Not enough samples for an interval, or no positive interval at all.
+    UNDEFINED_TIMEBASE = "undefined-timebase"
 
 
 class Detrending(str, Enum):
@@ -280,35 +325,36 @@ class PeriodClaim(ValueModel):
 class TraceRecurrence(ArrayModel):
     """One gate's normalized autocorrelation, with its provenance and its refusals.
 
-    Every field is either measured or a named method setting; nothing is a
-    default that the caller did not state. The view, the window's own
-    timestamps, the detrending and the thresholds travel with the curve, so a
-    later reader (or reviewer) can reproduce the estimate from the result alone.
-    No field is an uncertainty estimated over profiles or gates: they are
-    correlated samples, so a pseudoreplicate interval does not exist here.
+    Every field is either measured or a named method setting; nothing is a default that the
+    caller did not state. The provenance is the *view's own*
+    (:class:`~udv_echo_process.analysis._sparse_view.ViewProvenance`, the same one the
+    per-gate statistics carry), so this result cannot describe a trace it did not take: the
+    source digest, the job, the point, the order, the view, the view rule, the window and the
+    three depth extents all come from the one cut, and the reading shortcuts a reader expects
+    (:attr:`view`, :attr:`relative_path`, :attr:`label`, :attr:`window_duration_s`,
+    :attr:`profile_count`) are properties of it rather than a second copy that can drift. The
+    detrending and the thresholds travel with the curve too, so a later reader can reproduce
+    the estimate from the result alone. No field is an uncertainty estimated over profiles or
+    gates: they are correlated samples, so a pseudoreplicate interval does not exist here.
     """
 
-    # who and where this trace is
-    view: RecurrenceView
-    label: str
-    relative_path: str
+    # where this trace is: the view it was cut from, and which gate of that view
+    provenance: ViewProvenance
     gate_index: int
     depth_mm: float
     quantity: str
     unit: str
 
-    # the window the trace was cut to, in the recording's own stamps
-    window_start_s: float
-    window_end_s: float
-    window_duration_s: float
-    profile_count: int
-
-    # what the stored timestamps resolve
+    # what the stored timestamps resolve, and what they were declared to be
     sample_interval_s: float
     lag_resolution_s: float
     frequency_resolution_hz: float
     max_lag_s: float
-    max_relative_interval_deviation: float
+    requested_max_lag_s: float | None
+    max_relative_interval_deviation: float | None
+    timebase: TimebaseVerdict
+    timebase_reason: str
+    lag_grid_rule: str
 
     # what was done to the trace, and with which thresholds
     detrending: Detrending
@@ -326,9 +372,14 @@ class TraceRecurrence(ArrayModel):
     raw_trace: array_field(np.float64, rank=1)
     detrended_trace: array_field(np.float64, rank=1)
 
-    # descriptive trace statistics of the analysed series
-    trace_mean_mm_s: float
-    trace_std_mm_s: float
+    # Descriptive trace statistics. Two different series, deliberately: ``trace_mean_mm_s``
+    # summarizes the trace *as stored*, so a reader can see the offset a mean removal took
+    # out, while ``trace_std_mm_s`` summarizes the *analysed* series, which is the spread the
+    # normalized autocorrelation is actually built on. Both are ``None`` when no finite
+    # sample was there to summarize them - 0.0 would be read as a measured zero, and a
+    # substituted value is exactly what a refusal must not publish.
+    trace_mean_mm_s: float | None
+    trace_std_mm_s: float | None
     trace_zero_fraction: float
     linear_trend_mm_s_per_s: float | None
 
@@ -340,15 +391,64 @@ class TraceRecurrence(ArrayModel):
     peaks_reason: str
     period_claim: PeriodClaim
 
+    @property
+    def view(self) -> SparseView:
+        """The view label this trace was cut from, from its one provenance."""
+        return self.provenance.view
+
+    @property
+    def relative_path(self) -> str:
+        """The source recording, from its one provenance."""
+        return self.provenance.relative_path
+
+    @property
+    def label(self) -> str:
+        """The recording's identity string, from its one provenance."""
+        return self.provenance.point_label
+
+    @property
+    def window_start_s(self) -> float:
+        """The first stored stamp of the cut, from its one provenance."""
+        return self.provenance.window_start_s
+
+    @property
+    def window_end_s(self) -> float:
+        """The last stored stamp of the cut, from its one provenance."""
+        return self.provenance.window_end_s
+
+    @property
+    def window_duration_s(self) -> float:
+        """The span of the cut, from its one provenance."""
+        return self.provenance.window_s
+
+    @property
+    def profile_count(self) -> int:
+        """How many stored profiles the cut holds, from its one provenance."""
+        return self.provenance.profiles
+
+    @property
+    def lag_claims_supported(self) -> bool:
+        """Whether a lag in seconds may be claimed at all from this run's timebase."""
+        return self.timebase is TimebaseVerdict.REGULAR
+
     @model_validator(mode="after")
     def _curve_matches_the_verdict(self) -> TraceRecurrence:
+        """Hold the success invariants of a curve and the refusal invariants of a refusal.
+
+        A refusal is a legitimate result, so an invariant that only has meaning once a curve
+        exists must not be asserted of one. That was this model's defect: the equivalence "a
+        linear trend is reported exactly when linear detrending ran" was checked against every
+        verdict, so every refusal under :data:`Detrending.MEAN_AND_LINEAR` raised a
+        ``ValidationError`` instead of returning the documented verdict - the refusal path
+        unreachable for that detrending, and the error not even this module's own type.
+        """
         if self.verdict is RecurrenceVerdict.DEFINED:
             if self.acf.size != self.lag_s.size or self.acf.size < 2:
                 raise ValueError(
                     "a defined autocorrelation carries one value per lag, "
                     f"got {self.acf.size} and {self.lag_s.size}"
                 )
-            if abs(float(self.acf[0]) - 1.0) > 1e-9:
+            if not math.isfinite(float(self.acf[0])) or abs(float(self.acf[0]) - 1.0) > 1e-9:
                 raise ValueError(
                     "a defined normalized autocorrelation starts at 1, got "
                     f"{float(self.acf[0])!r}"
@@ -358,17 +458,26 @@ class TraceRecurrence(ArrayModel):
                     "the analysed and the raw trace are the same series, "
                     f"got {self.detrended_trace.size} and {self.raw_trace.size}"
                 )
-        elif self.acf.size or self.lag_s.size or self.detrended_trace.size:
-            raise ValueError(
-                f"the {self.verdict.value!r} verdict carries no correlation curve"
-            )
-        if (self.linear_trend_mm_s_per_s is not None) != (
-            self.detrending is Detrending.MEAN_AND_LINEAR
-        ):
-            raise ValueError(
-                "a linear trend is reported exactly when linear detrending ran, "
-                f"got {self.linear_trend_mm_s_per_s!r} with {self.detrending.value!r}"
-            )
+            if (self.linear_trend_mm_s_per_s is not None) != (
+                self.detrending is Detrending.MEAN_AND_LINEAR
+            ):
+                raise ValueError(
+                    "a defined correlation under linear detrending reports the slope it "
+                    f"removed, got {self.linear_trend_mm_s_per_s!r} with "
+                    f"{self.detrending.value!r}"
+                )
+        else:
+            if self.acf.size or self.lag_s.size or self.detrended_trace.size:
+                raise ValueError(
+                    f"the {self.verdict.value!r} verdict carries no correlation curve"
+                )
+            if self.linear_trend_mm_s_per_s is not None and (
+                self.detrending is not Detrending.MEAN_AND_LINEAR
+            ):
+                raise ValueError(
+                    "a slope belongs to a trace that linear detrending actually ran on, got "
+                    f"{self.linear_trend_mm_s_per_s!r} with {self.detrending.value!r}"
+                )
         if self.period_claim.peak_lag_s is not None and (
             self.period_claim.period_resolution_s != self.lag_resolution_s
         ):
@@ -393,17 +502,78 @@ def _as_enum(kind: type, value: object, name: str) -> object:
         ) from exc
 
 
-def _max_relative_interval_deviation(time_s: np.ndarray) -> float:
-    """Largest relative deviation of a stored interval from the median interval.
+def classify_timebase(time_s: np.ndarray) -> tuple[TimebaseVerdict, str, float | None]:
+    """Whether a stored time axis supports a lag in seconds, why not, and how far from uniform.
 
-    Reported, not guarded: refusing or resampling a structurally sampled axis is
-    SA2's slice, and this step never re-grids the stamps.
+    The returned deviation is the largest relative deviation of a stored interval from the
+    *median* interval, or ``None`` when the axis offers no positive interval to be regular
+    about. It is deliberately never ``0.0`` for a degenerate axis: a non-positive median used
+    to score the worst possible timebase as perfectly regular, which is the one answer a
+    regularity diagnostic must never give, and a substituted zero would read as a measurement.
+
+    The policy, one case per :class:`TimebaseVerdict` member:
+
+    - no positive interval at all, or fewer than two stamps: ``UNDEFINED_TIMEBASE``;
+    - any *zero* interval, i.e. two profiles sharing one stamp: ``DUPLICATE_STAMPS``;
+    - intervals deviating from their median by more than :data:`TIMEBASE_REGULARITY_TOL`:
+      ``IRREGULAR``;
+    - otherwise ``REGULAR``.
+
+    A *negative* interval is an axis running backwards, which the view refuses before any
+    estimator sees it, so it has no case of its own here: if one arrives it is reported as
+    ``UNDEFINED_TIMEBASE``. There is no verdict that says "ideal" of a broken axis.
     """
-    intervals = np.diff(time_s)
+    stamps = np.asarray(time_s, dtype=float).reshape(-1)
+    if stamps.size < 2:
+        return (
+            TimebaseVerdict.UNDEFINED_TIMEBASE,
+            f"{stamps.size} stored stamp(s) define no interval to be regular about",
+            None,
+        )
+    intervals = np.diff(stamps)
+    if bool(np.any(intervals < 0.0)):
+        return (
+            TimebaseVerdict.UNDEFINED_TIMEBASE,
+            "the stored stamps decrease somewhere, so no lag axis in seconds exists",
+            None,
+        )
     median = float(np.median(intervals))
     if median <= 0.0:
-        return 0.0
-    return float(np.max(np.abs(intervals - median)) / median)
+        return (
+            TimebaseVerdict.UNDEFINED_TIMEBASE,
+            "no stored interval is positive, so the axis holds no elapsed time to lag on",
+            None,
+        )
+    deviation = float(np.max(np.abs(intervals - median)) / median)
+    duplicate = int(np.count_nonzero(intervals == 0.0))
+    if duplicate:
+        return (
+            TimebaseVerdict.DUPLICATE_STAMPS,
+            (
+                f"{duplicate} of {intervals.size} stored interval(s) are zero: two profiles "
+                "sharing one stamp have no elapsed time between them, so a lag in seconds is "
+                "not defined on this axis"
+            ),
+            deviation,
+        )
+    if not deviation <= TIMEBASE_REGULARITY_TOL:
+        return (
+            TimebaseVerdict.IRREGULAR,
+            (
+                f"the stored intervals deviate from their median by up to {deviation:.3e} "
+                f"relative, past the {TIMEBASE_REGULARITY_TOL:.3e} regular band, so this "
+                "autocorrelation's integer lag grid is not a uniform time axis"
+            ),
+            deviation,
+        )
+    return (
+        TimebaseVerdict.REGULAR,
+        (
+            f"the stored intervals deviate from their median by no more than {deviation:.3e} "
+            f"relative, inside the {TIMEBASE_REGULARITY_TOL:.3e} regular band"
+        ),
+        deviation,
+    )
 
 
 def _detrended(
@@ -711,15 +881,10 @@ def _period_claim(
     )
 
 
-def trace_recurrence(
-    trace: np.ndarray | Sequence[float],
+def recurrence_of_view(
+    view: WindowView,
     *,
-    time_s: np.ndarray | Sequence[float],
-    view: RecurrenceView | str,
-    label: str,
-    relative_path: str = "",
-    gate_index: int = 0,
-    depth_mm: float = 0.0,
+    depth_mm: float,
     quantity: str = "axial_velocity",
     unit: str = "mm/s",
     detrending: Detrending | str = Detrending.MEAN,
@@ -727,45 +892,93 @@ def trace_recurrence(
     weak_peak_correlation: float = WEAK_PEAK_CORRELATION,
     min_candidate_cycles: float = MIN_CANDIDATE_CYCLES,
 ) -> TraceRecurrence:
-    """The normalized autocorrelation of one gate's velocity-versus-time trace.
+    """The normalized autocorrelation of one gate's trace, cut from one shared view.
 
-    The trace mean is removed by default before normalizing; ``detrending`` names
-    any further method and both traces travel in the result. The lag grid is the
-    full-span effective interval ``(t[-1] - t[0]) / (N - 1)`` of the *stored*
-    timestamps, and the default lag range is the first half of the window: a lag
-    beyond half the trace has fewer than half the products behind it.
+    This is the module's single entry point, and there is deliberately no other. A trace and
+    its time axis are never handed in beside a separately-named view, so the cut that selects
+    the samples and the cut that labels them cannot disagree - the defect this replaced was an
+    entry point that took ``(trace, time_s, view, label, ...)`` and could be called with
+    arrays from one window and a label from another, or with no identity at all. The trace is
+    now the view's own column at ``depth_mm``, over the view's own stored stamps, and the
+    result carries the view's own provenance, so a recurrence result cannot be anonymous about
+    where it came from.
+
+    Selecting and cutting the samples is the view's job, not this function's:
+    :mod:`udv_echo_process.analysis._sparse_view` owns ``primary_view``,
+    ``full_record_view`` and ``exploration_view``, and each labels its own cut with its own
+    rule.
 
     Args:
-        trace: the ``(profiles,)`` trace of one gate, in the caller's unit.
-        time_s: the same length's stored timestamps, non-decreasing.
-        view: which shared view the trace was cut to (:class:`RecurrenceView`).
-        label: the recording's identity, so a result is never anonymous.
-        relative_path: the source file, for provenance.
-        gate_index: the gate's index on the recording's native grid.
-        depth_mm: the gate's native depth, preserved as the instrument reports it.
-        quantity: the measured quantity, ``axial_velocity`` by default.
-        unit: the velocity unit, ``mm/s`` by default.
+        view: the view to cut the trace out of.
+        depth_mm: the native gate depth to analyse, inside the view's common support.
+        quantity: the measured quantity; ``axial_velocity`` for this sparse pass.
+        unit: the velocity unit; ``mm/s`` for this sparse pass.
         detrending: ``mean`` (default), ``mean+linear`` or ``none``.
         max_lag_s: the lag range to report; defaults to half the window's span.
         weak_peak_correlation: the threshold a peak must clear to support a claim.
         min_candidate_cycles: whole candidate cycles of a lag a claim needs.
 
     Returns:
-        :class:`TraceRecurrence` — the curve and its provenance when the trace
-        has variance, or an explicit :class:`RecurrenceVerdict` when it does not.
+        :class:`TraceRecurrence` - the curve and its provenance when the trace has variance,
+        or an explicit :class:`RecurrenceVerdict` when it does not. Either way the timebase
+        verdict says whether any lag in seconds was claimed from it.
 
     Raises:
-        RecurrenceError: for a mismatched pair, a time axis that is not
-            non-decreasing, an unknown view or detrending, an unnamed source, a
-            threshold outside its range, or a lag range longer than the window.
+        SparseViewError: for a depth that is not one of the view's native gates.
+        RecurrenceError: for a depth outside the view's common support, an unknown detrending,
+            a threshold outside its range, or a lag range that is not a finite positive
+            duration.
     """
-    chosen_view = _as_enum(RecurrenceView, view, "view")
-    chosen_detrending = _as_enum(Detrending, detrending, "detrending")
-    if not label.strip():
+    column = view.column_of_depth(depth_mm)
+    depths = np.asarray(view.depths_mm, dtype=float)
+    if not bool(np.asarray(view.support_mask)[column]):
         raise RecurrenceError(
-            "every result must name its source: pass a non-empty label (the plan "
-            "requires the recording and view labels to be visible)"
+            f"the gate at {depths[column]!r} mm is one of this view's native gates but lies "
+            "outside the pass's common physical support, so its trace is not one that a "
+            "depth-resolved recurrence may be read from"
         )
+    return _recurrence_of_trace(
+        np.asarray(view.values, dtype=float)[:, column],
+        time_s=np.asarray(view.time_s, dtype=float),
+        provenance=view_provenance(view),
+        gate_index=column,
+        depth_mm=float(depths[column]),
+        quantity=quantity,
+        unit=unit,
+        detrending=_as_enum(Detrending, detrending, "detrending"),
+        max_lag_s=max_lag_s,
+        weak_peak_correlation=weak_peak_correlation,
+        min_candidate_cycles=min_candidate_cycles,
+    )
+
+
+def _recurrence_of_trace(
+    trace: np.ndarray | Sequence[float],
+    *,
+    time_s: np.ndarray | Sequence[float],
+    provenance: ViewProvenance,
+    gate_index: int,
+    depth_mm: float,
+    quantity: str,
+    unit: str,
+    detrending: Detrending,
+    max_lag_s: float | None,
+    weak_peak_correlation: float,
+    min_candidate_cycles: float,
+) -> TraceRecurrence:
+    """The estimator behind :func:`recurrence_of_view`: one trace, one named provenance.
+
+    Private because an anonymous call is what the public entry point exists to make
+    impossible: this body will build a result for any two arrays of one length, and only
+    :func:`recurrence_of_view` can supply the provenance that keeps that honest.
+    """
+    if not provenance.point_label.strip() or not provenance.source_sha256.strip():
+        raise RecurrenceError(
+            "a recurrence result must name its source: the view provenance carries no point "
+            "label or no source digest"
+        )
+    if not quantity.strip() or not unit.strip():
+        raise RecurrenceError("every result must name the quantity and unit it measured")
     if not 0.0 < weak_peak_correlation < 1.0:
         raise RecurrenceError(
             "weak_peak_correlation must lie strictly inside (0, 1), got "
@@ -774,6 +987,12 @@ def trace_recurrence(
     if min_candidate_cycles < 1.0:
         raise RecurrenceError(
             f"min_candidate_cycles must be at least 1, got {min_candidate_cycles!r}"
+        )
+    if max_lag_s is not None and not (math.isfinite(max_lag_s) and max_lag_s > 0.0):
+        raise RecurrenceError(
+            f"max_lag_s must be a finite positive number of seconds, got {max_lag_s!r}: a lag "
+            "range is a duration on the stored stamps, and neither NaN nor an infinity is "
+            "shorter or longer than the window - it is not a duration at all"
         )
 
     raw = np.asarray(trace, dtype=np.float64)
@@ -807,31 +1026,29 @@ def trace_recurrence(
     scale = float(np.max(np.abs(raw))) if count else 0.0
     threshold = max(CONSTANT_TRACE_ABSOLUTE_TOL, CONSTANT_TRACE_RELATIVE_TOL * scale)
 
+    timebase, timebase_reason, deviation = classify_timebase(times)
+
     shared: dict[str, object] = {
-        "view": chosen_view,
-        "label": label,
-        "relative_path": relative_path,
+        "provenance": provenance,
         "gate_index": gate_index,
         "depth_mm": depth_mm,
         "quantity": quantity,
         "unit": unit,
-        "window_start_s": start_s,
-        "window_end_s": end_s,
-        "window_duration_s": duration_s,
-        "profile_count": count,
         "sample_interval_s": dt_s,
         "lag_resolution_s": dt_s,
-        "max_relative_interval_deviation": (
-            _max_relative_interval_deviation(times) if count >= 2 else 0.0
-        ),
-        "detrending": chosen_detrending,
+        "requested_max_lag_s": max_lag_s,
+        "max_relative_interval_deviation": deviation,
+        "timebase": timebase,
+        "timebase_reason": timebase_reason,
+        "lag_grid_rule": LAG_GRID_RULE,
+        "detrending": detrending,
         "acf_estimator": ACF_ESTIMATOR,
         "weak_peak_correlation": weak_peak_correlation,
         "min_candidate_cycles": min_candidate_cycles,
         "min_peak_lag_steps": MIN_PEAK_LAG_STEPS,
         "constant_trace_threshold_mm_s": threshold,
         "raw_trace": raw,
-        "trace_mean_mm_s": float(np.mean(finite_raw)) if finite_raw.size else 0.0,
+        "trace_mean_mm_s": float(np.mean(finite_raw)) if finite_raw.size else None,
         "trace_zero_fraction": (
             float(np.count_nonzero(raw == 0.0)) / count if count else 0.0
         ),
@@ -861,13 +1078,13 @@ def trace_recurrence(
     analysed: np.ndarray | None = None
     trend: float | None = None
     if verdict is None:
-        analysed, trend = _detrended(raw, times, chosen_detrending)
+        analysed, trend = _detrended(raw, times, detrending)
         spread = float(np.std(analysed))
         if spread <= threshold:
             verdict = RecurrenceVerdict.UNDEFINED_CONSTANT_TRACE
             message = (
                 f"the trace is constant to within its own scale: the standard "
-                f"deviation of the {chosen_detrending.value!r}-detrended trace is "
+                f"deviation of the {detrending.value!r}-detrended trace is "
                 f"{spread!r}, at or below the threshold "
                 f"{threshold!r} = max({CONSTANT_TRACE_ABSOLUTE_TOL!r}, "
                 f"{CONSTANT_TRACE_RELATIVE_TOL!r} x max|trace| {scale!r}); a "
@@ -879,13 +1096,22 @@ def trace_recurrence(
         refused = SupportedQuantity(
             value=None, unit="s", supported=False, reason=message
         )
+        # What a refusal can still summarize honestly for the spread. With an analysed series
+        # it is that series' spread - a constant trace's zero spread *is* the reason it was
+        # refused, so 0.0 there is measured rather than substituted. Otherwise it is the
+        # finite samples of the raw trace - a non-finite trace's spread over the samples that
+        # do exist - and ``None`` where there was nothing finite to summarize at all.
+        if analysed is not None:
+            summarized_std: float | None = float(np.std(analysed))
+        else:
+            summarized_std = float(np.std(finite_raw)) if finite_raw.size >= 2 else None
         return TraceRecurrence(
             **shared,
             verdict=verdict,
             message=message,
             frequency_resolution_hz=(1.0 / duration_s if duration_s > 0.0 else 0.0),
-            trace_std_mm_s=0.0,
-            linear_trend_mm_s_per_s=None,
+            trace_std_mm_s=summarized_std,
+            linear_trend_mm_s_per_s=trend,
             max_lag_s=0.0,
             lag_s=np.empty(0, dtype=np.float64),
             acf=np.empty(0, dtype=np.float64),
@@ -910,7 +1136,10 @@ def trace_recurrence(
         )
 
     assert analysed is not None  # the verdict above is the only way past this point
-    lag_profiles = count // 2 if max_lag_s is None else round(max_lag_s / dt_s)
+    # A lag range is a whole number of lag steps. The index is floored rather than rounded:
+    # rounding to nearest could report a lag *beyond* the range the caller asked for, and the
+    # achieved range is recorded beside the requested one so the two cannot be confused.
+    lag_profiles = count // 2 if max_lag_s is None else math.floor(max_lag_s / dt_s)
     if lag_profiles < 1:
         raise RecurrenceError(
             f"max_lag_s {max_lag_s!r} is shorter than one lag step {dt_s!r}"
@@ -924,15 +1153,61 @@ def trace_recurrence(
     lags = np.arange(lag_profiles + 1) * dt_s
     crossing_index = _first_crossing_index(acf)
     peaks, peaks_reason = _recurrence_peaks(acf, lags, weak_peak_correlation)
+
+    # Every quantity below is a lag *in seconds*, and a lag in seconds only means seconds
+    # where this run's timebase verdict says the stamps support one. On any other verdict the
+    # curve is still descriptive, but each of these is refused with the timebase as its
+    # reason rather than being reported in seconds off an axis that does not measure them.
+    if timebase is TimebaseVerdict.REGULAR:
+        first_zero_crossing = _zero_crossing_quantity(acf, dt_s, crossing_index)
+        decay_1e_lag = _decay_quantity(acf, dt_s)
+        integral_time = _integral_time_quantity(
+            acf, dt_s, crossing_index, peaks, weak_peak_correlation
+        )
+        period_claim = _period_claim(
+            peaks,
+            peaks_reason,
+            window_duration_s=duration_s,
+            dt_s=dt_s,
+            weak_peak_correlation=weak_peak_correlation,
+            min_candidate_cycles=min_candidate_cycles,
+        )
+    else:
+        unsupported = (
+            f"this run's timebase is {timebase.value!r} ({timebase_reason}), so a lag in "
+            "seconds is not defined on it: the integer lag grid of this autocorrelation is "
+            "not a uniform time axis"
+        )
+        refused_lag = SupportedQuantity(
+            value=None, unit="s", supported=False, reason=unsupported
+        )
+        first_zero_crossing = refused_lag
+        decay_1e_lag = refused_lag
+        integral_time = refused_lag
+        peaks = ()
+        peaks_reason = unsupported
+        period_claim = PeriodClaim(
+            supported=False,
+            reason=unsupported,
+            peak_lag_s=None,
+            peak_correlation=None,
+            period_s=None,
+            period_resolution_s=dt_s,
+            candidate_cycles_in_window=None,
+            weak_peak_correlation=weak_peak_correlation,
+            min_candidate_cycles=min_candidate_cycles,
+            min_peak_lag_steps=MIN_PEAK_LAG_STEPS,
+        )
+
     return TraceRecurrence(
         **shared,
         verdict=RecurrenceVerdict.DEFINED,
         message=(
             f"normalized autocorrelation of {count} profiles over {duration_s!r} s, "
-            f"detrending {chosen_detrending.value!r}, lag resolution {dt_s!r} s "
-            f"(frequency resolution {1.0 / duration_s!r} Hz); a period is claimed "
-            "only from a peak above the weak-peak threshold with enough whole "
-            "candidate cycles, see period_claim"
+            f"detrending {detrending.value!r}, lag resolution {dt_s!r} s "
+            f"(frequency resolution {1.0 / duration_s!r} Hz), timebase {timebase.value!r}; "
+            "a period is claimed only from a peak above the weak-peak threshold with enough "
+            "whole candidate cycles, see period_claim"
         ),
         lag_s=lags,
         acf=acf,
@@ -941,150 +1216,12 @@ def trace_recurrence(
         linear_trend_mm_s_per_s=trend,
         max_lag_s=float(lags[-1]),
         frequency_resolution_hz=1.0 / duration_s,
-        first_zero_crossing=_zero_crossing_quantity(acf, dt_s, crossing_index),
-        decay_1e_lag=_decay_quantity(acf, dt_s),
-        integral_time=_integral_time_quantity(
-            acf, dt_s, crossing_index, peaks, weak_peak_correlation
-        ),
+        first_zero_crossing=first_zero_crossing,
+        decay_1e_lag=decay_1e_lag,
+        integral_time=integral_time,
         recurrence_peaks=peaks,
         peaks_reason=peaks_reason,
-        period_claim=_period_claim(
-            peaks,
-            peaks_reason,
-            window_duration_s=duration_s,
-            dt_s=dt_s,
-            weak_peak_correlation=weak_peak_correlation,
-            min_candidate_cycles=min_candidate_cycles,
-        ),
-    )
-
-
-def gate_recurrence(
-    point: DecodedPoint,
-    *,
-    gate_index: int,
-    view: RecurrenceView | str,
-    window_s: float | None = None,
-    support_mm: tuple[float, float] | None = None,
-    detrending: Detrending | str = Detrending.MEAN,
-    max_lag_s: float | None = None,
-    weak_peak_correlation: float = WEAK_PEAK_CORRELATION,
-    min_candidate_cycles: float = MIN_CANDIDATE_CYCLES,
-) -> TraceRecurrence:
-    """One gate of a decoded recording, through the pass's own windows.
-
-    ``point`` is a decoded view — anything carrying ``values`` ``(profiles,
-    gates)``, ``time_s``, ``depths``, ``relative_path`` and
-    ``binding.point.label``, as :func:`decode_pass` returns them.
-
-    The window is the caller's, never inferred and never widened:
-
-    - :data:`RecurrenceView.PRIMARY` requires ``window_s`` — the pass's designed
-      0-12 s exposure — cut from the recording's own stored timestamps by the
-      shared ``window`` helper. A recording whose stamps cover less is
-      **refused**, not narrowed.
-    - :data:`RecurrenceView.FULL_RECORD` takes every valid stored profile and
-      refuses a ``window_s``: it is labelled separately from the primary view.
-    - :data:`RecurrenceView.EXPLORATION` takes the caller's explicit leading
-      window and keeps its own label, so it cannot silently replace the primary
-      comparison.
-
-    Args:
-        point: the decoded view to read.
-        gate_index: the gate's index on the recording's native grid.
-        view: which shared view is being asked for.
-        window_s: the window in seconds; required except for the full record.
-        support_mm: optional ``(min_mm, max_mm)`` common physical support, which
-            the gate must lie inside.
-        detrending: passed through to :func:`trace_recurrence`.
-        max_lag_s: passed through to :func:`trace_recurrence`.
-        weak_peak_correlation: passed through to :func:`trace_recurrence`.
-        min_candidate_cycles: passed through to :func:`trace_recurrence`.
-
-    Returns:
-        The gate's :class:`TraceRecurrence`, with the native depth preserved.
-
-    Raises:
-        RecurrenceError: for a gate outside the native grid or the support, a
-            view asked for without its window (or with one it does not take), or
-            a window the recording's stamps do not cover.
-    """
-    chosen_view = _as_enum(RecurrenceView, view, "view")
-    values = np.asarray(point.values, dtype=np.float64)
-    times = np.asarray(point.time_s, dtype=np.float64)
-    depths = np.asarray(point.depths, dtype=np.float64)
-    if values.ndim != 2:
-        raise RecurrenceError(
-            f"{point.relative_path}: expected a (profiles, gates) view, got shape "
-            f"{values.shape}"
-        )
-    profile_count, gate_count = values.shape
-    if depths.size != gate_count:
-        raise RecurrenceError(
-            f"{point.relative_path}: {depths.size} gate depths describe {gate_count} "
-            "columns of the view; the native grid cannot be preserved"
-        )
-    if times.size != profile_count:
-        raise RecurrenceError(
-            f"{point.relative_path}: {times.size} timestamps describe {profile_count} "
-            "profiles"
-        )
-    if not 0 <= gate_index < gate_count:
-        raise RecurrenceError(
-            f"{point.relative_path}: gate {gate_index} is outside the recording's "
-            f"native gates 0 … {gate_count - 1}"
-        )
-    if support_mm is not None and not bool(in_support(depths, support_mm)[gate_index]):
-        raise RecurrenceError(
-            f"{point.relative_path}: gate {gate_index} at {float(depths[gate_index])!r} "
-            f"mm lies outside the common physical support {support_mm!r} mm; a "
-            "depth-resolved comparison may not use it"
-        )
-
-    if chosen_view is RecurrenceView.FULL_RECORD:
-        if window_s is not None:
-            raise RecurrenceError(
-                "the full record view is not a window: pass window_s=None so the "
-                "two views stay distinguishable"
-            )
-        cut = times
-    else:
-        if window_s is None:
-            raise RecurrenceError(
-                f"the {chosen_view.value!r} view needs its own window_s: the window "
-                "is the caller's decision, never inferred"
-            )
-        span_s = float(times[-1] - times[0]) if times.size else 0.0
-        if span_s < float(window_s) - TOLERANCE_S:
-            raise RecurrenceError(
-                f"{point.relative_path}: the stored timestamps span {span_s!r} s of "
-                f"the {float(window_s)!r} s {chosen_view.value!r} window; "
-                "insufficient coverage is refused, never widened to the retained "
-                "surplus"
-            )
-        # The coverage test is the recording's own span, not the cut's: the shared
-        # cut keeps only the stamps at or before the window's end, so its own last
-        # stamp sits legitimately just short of the boundary.
-        cut = window(times, times, float(window_s))
-        if cut.size < 2:
-            raise RecurrenceError(
-                f"{point.relative_path}: only {cut.size} profile(s) fall inside the "
-                f"{float(window_s)!r} s {chosen_view.value!r} window; a "
-                "correlation needs at least two"
-            )
-    count = int(cut.size)
-    return trace_recurrence(
-        values[:count, gate_index],
-        time_s=cut,
-        view=chosen_view,
-        label=str(point.binding.point.label),
-        relative_path=str(point.relative_path),
-        gate_index=int(gate_index),
-        depth_mm=float(depths[gate_index]),
-        detrending=detrending,
-        max_lag_s=max_lag_s,
-        weak_peak_correlation=weak_peak_correlation,
-        min_candidate_cycles=min_candidate_cycles,
+        period_claim=period_claim,
     )
 
 
@@ -1092,18 +1229,19 @@ __all__ = [
     "ACF_ESTIMATOR",
     "CONSTANT_TRACE_ABSOLUTE_TOL",
     "CONSTANT_TRACE_RELATIVE_TOL",
+    "LAG_GRID_RULE",
     "MIN_CANDIDATE_CYCLES",
     "MIN_PEAK_LAG_STEPS",
     "MIN_SAMPLES_FOR_ACF",
+    "TIMEBASE_REGULARITY_TOL",
     "WEAK_PEAK_CORRELATION",
     "Detrending",
     "PeriodClaim",
     "RecurrenceError",
     "RecurrencePeak",
     "RecurrenceVerdict",
-    "RecurrenceView",
     "SupportedQuantity",
+    "TimebaseVerdict",
     "TraceRecurrence",
-    "gate_recurrence",
-    "trace_recurrence",
+    "recurrence_of_view",
 ]
