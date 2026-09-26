@@ -1341,6 +1341,12 @@ def recurrence_readout(mo, recurrence, recurrence_error):
                 )
             return f"- **{name}**: **not reported** — {quantity.reason}"
 
+        def _measured(
+            value, unit="", prefix="", none_text="**not defined by this window**"
+        ):
+            """A timing quantity for display: `None` reads as undefined, never as a zero."""
+            return none_text if value is None else f"{prefix}{value!r}{unit}"
+
         _lines = [
             f"**Recurrence — gate depth {recurrence.depth_mm:.3f} mm, view "
             f"`{recurrence.view.value}`** · `{recurrence.relative_path}` (gate column "
@@ -1357,14 +1363,16 @@ def recurrence_readout(mo, recurrence, recurrence_error):
             f"particular trace resolves: **{recurrence.lag_claims_supported}**",
             f"- **verdict `{recurrence.verdict.value}`**: {recurrence.message}",
             "",
-            f"- **resolution**: sample interval {recurrence.sample_interval_s!r} s · "
-            f"lag resolution {recurrence.lag_resolution_s!r} s (one stored profile "
+            f"- **resolution**: sample interval "
+            f"{_measured(recurrence.sample_interval_s, ' s')} · lag resolution "
+            f"{_measured(recurrence.lag_resolution_s, ' s')} (one stored profile "
             "period — the only lag step the timestamps define) · frequency resolution "
-            f"1/window = {recurrence.frequency_resolution_hz!r} Hz · lag grid: "
+            f"1/window = {_measured(recurrence.frequency_resolution_hz, ' Hz')} · lag grid: "
             f"{recurrence.lag_grid_rule}",
-            f"- reported lag range 0 … {recurrence.max_lag_s!r} s (requested "
-            f"{recurrence.requested_max_lag_s!r} s) · largest relative interval "
-            f"deviation {recurrence.max_relative_interval_deviation!r}",
+            f"- reported lag range {_measured(recurrence.max_lag_s, ' s', '0 … ')} "
+            f"(requested {_measured(recurrence.requested_max_lag_s, ' s', none_text='**not requested**')}) "
+            f"· largest relative interval deviation "
+            f"{_measured(recurrence.max_relative_interval_deviation)}",
             f"- trace summaries: mean of the trace as stored "
             f"{recurrence.trace_mean_mm_s!r} mm/s · std of the analysed series "
             f"{recurrence.trace_std_mm_s!r} mm/s · stored exact zeros "

@@ -460,6 +460,53 @@ def test_a_refusal_reports_the_spread_it_could_measure_not_a_substituted_zero() 
     assert result.trace_mean_mm_s == pytest.approx(float(np.mean(finite)))
 
 
+def test_the_smallest_reachable_view_refuses_without_inventing_timing_metadata() -> None:
+    """One stored profile is the smallest view the public surface can be handed.
+
+    It establishes no sample interval at all, so every timing quantity the window does not
+    define must be ``None``. The refusal used to substitute 0.0 for all of them, and a
+    zero-valued interval or resolution is indistinguishable from a *measured* zero: a
+    zero-length sample interval, a zero-Hz frequency resolution, an autocorrelation that
+    reached lag zero. That is the same substitution this module already refuses for the
+    spread, so the timing metadata obeys the same rule.
+    """
+    view = _window(np.array([3.0]), np.array([0.0]), gates=1)
+    result = recurrence_of_view(view, depth_mm=float(view.depths_mm[0]))
+
+    assert result.verdict is RecurrenceVerdict.UNDEFINED_TOO_FEW_SAMPLES
+    # The invented zeros: no interval, no lag resolution, no achieved lag range, and no
+    # period resolution behind the period refusal.
+    assert result.sample_interval_s is None
+    assert result.lag_resolution_s is None
+    assert result.max_lag_s is None
+    assert result.period_claim.period_resolution_s is None
+    # One stamp spans no duration, so 1/T is not defined either.
+    assert result.frequency_resolution_hz is None
+    # It is still a typed verdict carrying its own reason and an empty curve, not an
+    # exception and not a zero-valued curve.
+    assert result.message
+    assert result.acf.size == 0 and result.lag_s.size == 0
+    assert result.period_claim.period_s is None
+
+
+def test_a_two_stamp_window_carries_its_measured_interval_and_not_a_zero() -> None:
+    """A positive span defines the interval even when there are too few samples for a curve.
+
+    The boundary is two stamps: one gap is a real measurement of the spacing between them,
+    so it is published rather than withheld. What the axis cannot yet support is a
+    *regularity* verdict, and that is ``classify_timebase``'s own statement - a separate
+    question from whether the interval exists.
+    """
+    result = _recurrence(np.array([3.0, 4.0]), np.array([0.0, DT_S]))
+
+    assert result.verdict is RecurrenceVerdict.UNDEFINED_TOO_FEW_SAMPLES
+    assert result.sample_interval_s == pytest.approx(DT_S)
+    assert result.lag_resolution_s == pytest.approx(DT_S)
+    assert result.frequency_resolution_hz == pytest.approx(1.0 / DT_S)
+    # No curve was computed, so the achieved lag range is undefined, not zero.
+    assert result.max_lag_s is None
+
+
 # ── the synthetic families the plan names ─────────────────────────────
 
 

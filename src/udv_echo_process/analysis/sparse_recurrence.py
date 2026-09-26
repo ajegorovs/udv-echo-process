@@ -292,7 +292,7 @@ class PeriodClaim(ValueModel):
     peak_lag_s: float | None
     peak_correlation: float | None
     period_s: float | None
-    period_resolution_s: float
+    period_resolution_s: float | None
     candidate_cycles_in_window: float | None
     weak_peak_correlation: float
     min_candidate_cycles: float
@@ -345,11 +345,14 @@ class TraceRecurrence(ArrayModel):
     quantity: str
     unit: str
 
-    # what the stored timestamps resolve, and what they were declared to be
-    sample_interval_s: float
-    lag_resolution_s: float
-    frequency_resolution_hz: float
-    max_lag_s: float
+    # what the stored timestamps resolve, and what they were declared to be. Each of the
+    # four is ``None`` where the window does not define it, and never 0.0 as a stand-in: a
+    # zero-valued interval or resolution reads as a *measured* zero, which is the same
+    # substitution this module already refuses for the spread of a refusal.
+    sample_interval_s: float | None
+    lag_resolution_s: float | None
+    frequency_resolution_hz: float | None
+    max_lag_s: float | None
     requested_max_lag_s: float | None
     max_relative_interval_deviation: float | None
     timebase: TimebaseVerdict
@@ -793,7 +796,7 @@ def _period_claim(
     peaks_reason: str,
     *,
     window_duration_s: float,
-    dt_s: float,
+    dt_s: float | None,
     weak_peak_correlation: float,
     min_candidate_cycles: float,
 ) -> PeriodClaim:
@@ -1017,6 +1020,13 @@ def _recurrence_of_trace(
     end_s = float(times[-1]) if count else 0.0
     duration_s = end_s - start_s
     dt_s = duration_s / (count - 1) if count >= 2 else 0.0
+    # The interval the axis *establishes*, as opposed to the one the arithmetic above needs.
+    # It exists as soon as two stamps give a positive span; below that the window defines no
+    # interval at all and the honest value is ``None``, never 0.0 - a zero-length sample
+    # interval reads as a *measured* zero, the same substitution refused for a refusal's
+    # spread below. Whether the axis is *regular* enough to interpret lags is a separate
+    # question, and ``classify_timebase`` answers it with its own verdict and reason.
+    published_interval_s: float | None = dt_s if count >= 2 else None
     if count >= 2 and dt_s <= 0.0:
         raise RecurrenceError(
             "the stored timestamps give no positive sample interval: the lag grid "
@@ -1034,8 +1044,8 @@ def _recurrence_of_trace(
         "depth_mm": depth_mm,
         "quantity": quantity,
         "unit": unit,
-        "sample_interval_s": dt_s,
-        "lag_resolution_s": dt_s,
+        "sample_interval_s": published_interval_s,
+        "lag_resolution_s": published_interval_s,
         "requested_max_lag_s": max_lag_s,
         "max_relative_interval_deviation": deviation,
         "timebase": timebase,
@@ -1109,10 +1119,13 @@ def _recurrence_of_trace(
             **shared,
             verdict=verdict,
             message=message,
-            frequency_resolution_hz=(1.0 / duration_s if duration_s > 0.0 else 0.0),
+            frequency_resolution_hz=(1.0 / duration_s if duration_s > 0.0 else None),
             trace_std_mm_s=summarized_std,
             linear_trend_mm_s_per_s=trend,
-            max_lag_s=0.0,
+            # No curve was computed, so there is no achieved lag range to report. 0.0 would
+            # read as "the autocorrelation reached lag zero", which is a different statement
+            # from "no autocorrelation exists".
+            max_lag_s=None,
             lag_s=np.empty(0, dtype=np.float64),
             acf=np.empty(0, dtype=np.float64),
             detrended_trace=np.empty(0, dtype=np.float64),
@@ -1127,7 +1140,7 @@ def _recurrence_of_trace(
                 peak_lag_s=None,
                 peak_correlation=None,
                 period_s=None,
-                period_resolution_s=dt_s,
+                period_resolution_s=published_interval_s,
                 candidate_cycles_in_window=None,
                 weak_peak_correlation=weak_peak_correlation,
                 min_candidate_cycles=min_candidate_cycles,
@@ -1168,7 +1181,7 @@ def _recurrence_of_trace(
             peaks,
             peaks_reason,
             window_duration_s=duration_s,
-            dt_s=dt_s,
+            dt_s=published_interval_s,
             weak_peak_correlation=weak_peak_correlation,
             min_candidate_cycles=min_candidate_cycles,
         )
@@ -1192,7 +1205,7 @@ def _recurrence_of_trace(
             peak_lag_s=None,
             peak_correlation=None,
             period_s=None,
-            period_resolution_s=dt_s,
+            period_resolution_s=published_interval_s,
             candidate_cycles_in_window=None,
             weak_peak_correlation=weak_peak_correlation,
             min_candidate_cycles=min_candidate_cycles,
