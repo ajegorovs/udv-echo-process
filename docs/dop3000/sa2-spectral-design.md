@@ -24,7 +24,21 @@ assuming the view passes the eventual SA2 spectral-uniformity admission:
 
 That first verdict is **conditional at the design stage**: `SPECTRAL_UNIFORMITY_TOL` does not exist
 yet (§A, §J), so nothing in this document claims a measured admission verdict for any committed
-recording.
+recording. SA2.1 supplies it and publishes the verdicts — see §J *SA2.1 outcome* at the end.
+
+### Corrections carried by SA2.1 (three, none of them cosmetic)
+
+1. **`Δf ≠ 1 / span`.** Under the adopted `fs_eff = (N - 1) / span` the bin spacing is
+   `Δf = fs_eff / N = (N - 1) / (N · span)`, smaller than `1 / span` by exactly `(N - 1) / N`. The
+   duration scale is reported separately as `duration_resolution_scale_hz = 1 / span`. §F, §G, §I.
+2. **Hann's ENBW is derived from the taper's coefficients, not hard-coded as 1.5 bins**, and the
+   periodic/symmetric conventions differ by `N / (N - 1)`. §I.
+3. **The uniformity rule's operand is the timing error, not the interval deviation.** `§A`'s
+   `max_relative_interval_deviation` does not order the distortion — measured, in the same regime
+   at the same target, an axis with interval deviation 0.182 breaks the declared bound while an
+   axis with 0.222 stays inside it — so the calibrated threshold is on
+   `max_relative_timing_error`, the quantity that bounds a uniform DFT's phase error. The interval
+   deviation is still reported, with its non-operand role stated. §B, §J.
 
 ## What this slice inherits from SA1 (do not re-cut)
 
@@ -80,17 +94,18 @@ one: the adopted definition is the full-span one because it is the one with a st
 | sample count | `N >= MIN_SPECTRAL_SAMPLES` for the chosen transform |
 | monotonicity | strictly increasing; a repeated stamp is not a sample |
 | duplicates / gaps | counted and reported; duplicates refuse |
-| uniformity | `max relative deviation <= SPECTRAL_UNIFORMITY_TOL` (chosen per §J) |
+| uniformity | `max_relative_timing_error <= SPECTRAL_UNIFORMITY_TOL` (calibrated per §J) |
 | estimator specifics | any further requirement the chosen estimator states |
 
 Outcomes: `admitted`, or a **typed refusal naming the failed condition and its threshold**. The
 only alternative to refusal is an *explicitly named* irregular-sampling estimator with its own
 admission policy — and per §C that estimator is **not implemented in SA2 v1**.
 
-**No admission verdict is published for any committed recording in this design.** The uniformity
-rule's threshold is selected by §J's calibration, so until that exists the committed data's
-spectral admission status is *pending calibration*. This document reports their SA1 regularity and
-their measured irregularity, and nothing more.
+**No admission verdict was published for any committed recording in this design.** The uniformity
+rule's threshold is selected by §J's calibration, and in SA2.0 that did not exist. SA2.1 has since
+carried it out; the outcome — the calibrated tolerance, the committed verdicts and the operand
+correction it forced — is recorded in §J *SA2.1 outcome*. The fragments below that said
+"pending calibration" are kept as the record of what SA2.0 could and could not assert.
 
 ## C. No resampling — strengthened for v1
 
@@ -134,8 +149,10 @@ resolution; enough cycles if the interpretation requires them; and any explicit 
 — of which there is currently none by design (§F).
 
 **Resolution and cycles are separate checks and must not duplicate one another.** A 12 s window
-gives ~0.0833 Hz nominal resolution, so both targets sit many resolution bins above DC — which
-says nothing whatsoever about Nyquist support. The separate fields keep that visible.
+gives ~0.0833 Hz of resolution in the sense of `1 / span`, and ~0.0833 Hz again as an actual
+bin spacing `Δf = fs_eff / N` — which are *not the same number* under the adopted rate (they
+differ by the factor `(N - 1) / N`; see §F), so both targets sit many resolution bins above DC.
+That says nothing whatsoever about Nyquist support. The separate fields keep that visible.
 
 **Wording is part of the contract.** `unsupported at 8.333 Hz` must never be readable as
 `no 8.333-Hz component exists`. The first describes the instrument and the window; the second is a
@@ -157,18 +174,44 @@ f_target < nyquist_hz
 ```
 
 plus the **spectral-cell condition**, defined concretely so that "cell" is not left informal. For a
-one-sided spectrum of `N` samples with bin spacing `Δf = fs_eff / N` (= 1 / span), bin `k` has
-centre `f_k = k · Δf`; its cell is the interval between the midpoints to its neighbours, clipped to
-the physical support `[0, f_N]`:
+one-sided spectrum of `N` samples with bin spacing
+
+```
+Δf = fs_eff / N = (N - 1) / (N · span)
+```
+
+bin `k` has centre `f_k = k · Δf`; its cell is the interval between the midpoints to its
+neighbours, clipped to the physical support `[0, f_N]`:
 
 ```
 cell(k) = [ max(0, (f_{k-1} + f_k) / 2) ,  min(f_N, (f_k + f_{k+1}) / 2) ]
 ```
 
-The **evaluated cell** is the cell of the nearest bin centre to the target. The condition is: the
-target lies inside that cell (`|bin_offset_hz| <= Δf / 2`) **and** that cell lies inside
+**`Δf` is not `1 / span`, and the two must not be equated** (corrected in SA2.1). They differ by
+exactly `(N - 1) / N`, which is 0.999 for `emissions-8` and 0.993 for `emissions-128` — small, but
+this stage is definition-sensitive and the two answer different questions. `Δf` is the spacing of
+the grid a DFT of this axis actually produces; `1 / span` is the usual observation-duration
+resolution *scale*. Where the duration matters it is reported under its own name,
+`duration_resolution_scale_hz = 1 / span`, and stated to be an approximate scale rather than the
+bin spacing. On the committed data the two are e.g. 0.083314 vs 0.083470 Hz on an
+`emissions-8` primary view.
+
+**The endpoint bins have explicit rules, because `f_{k+1}` does not exist at the top of the
+grid.** The DC cell's lower edge is exactly `0`; the highest represented bin's upper edge is
+exactly `f_N` (`min` clips `(f_k + f_{k+1}) / 2` there for either parity). The two parities are
+not the same shape: for even `N` the last bin *is* `f_N` (bin `k = N/2`), while for odd `N` the
+last represented bin is `floor(N/2) · Δf`, which lies `Δf/2` **below** mathematical Nyquist — its
+cell reaches `f_N` while no bin sits there. No cell edge is therefore ever read from a bin that
+does not exist, and `N = 138` and `N = 145` are both pinned by tests.
+
+The **evaluated cell** is the cell of the nearest bin centre to the target, with a stated
+half-up tie rule (a target exactly halfway between two bins goes to the upper one). The condition
+is: the target lies inside that cell (`|bin_offset_hz| <= Δf / 2`) **and** that cell lies inside
 `[0, f_N]`. A target is therefore reported with its nearest bin centre, its cell edges, its offset
-in Hz and in bins, and whether the evaluated cell lies inside the physical spectral support.
+in Hz and in bins, and whether the evaluated cell lies inside the physical spectral support. For a
+target at or above Nyquist the nearest *existing* bin is the top one and the reported offset is its
+distance above it — greater than half a bin, which is the arithmetic statement that the grid has
+no cell for that target; the cell test is not consulted for such a target at all.
 
 This matters precisely at `emissions-64`, where the target sits closest to the upper edge.
 
@@ -202,30 +245,35 @@ raising `emissions_per_profile` lowers the sample rate.
 
 **All 52 recordings are `SA1-regular`** — worst measured relative interval deviation 6.58e-03
 against SA1's `TIMEBASE_REGULARITY_TOL = 2e-2`, with no duplicate or decreasing timestamps. That is
-a statement about **SA1's ACF-lag criterion** and it is *not* a spectral admission verdict:
-**spectral admission is pending `SPECTRAL_UNIFORMITY_TOL` calibration** (§J), which this design
-cannot supply. The table above therefore reports measured irregularity, and no row in this document
-asserts an admission verdict for a committed recording.
+a statement about **SA1's ACF-lag criterion**, and SA1's tolerance is *not* the spectral one. SA2.1
+has since calibrated the spectral rule and published the verdicts: the table above reports measured
+irregularity and band support, and §J *SA2.1 outcome* reports the spectral admission counts.
 
 ### Target support is a property of `target × WindowView`
 
 Not of `target × recording`. Cycle counts differ between the views, so both are stated:
 
-| configuration | view | resolution Hz | cycles @1 Hz | cycles @8.333 Hz | band @1 Hz | band @8.333 Hz | `nyquist_ratio` @8.333 |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| `emissions-8` | `primary-comparison` (12 s) | 0.0833 | 12.0 | 100.0 | yes | **yes** | **3.95** |
-| `emissions-8` | `full-record` (~12.5 s) | ~0.0798 | ~12.5 | ~104.5 | yes | **yes** | **3.95** |
-| `emissions-20` | `primary-comparison` (12 s) | 0.0833 | 12.0 | 100.0 | yes | **yes** | **2.68** |
-| `emissions-20` | `full-record` | ~0.0797 | ~12.5 | ~104.4 | yes | **yes** | **2.68** |
-| `emissions-64` | `primary-comparison` (12 s) | 0.0833 | 12.0 | 100.0 | yes | **yes** (close) | **1.23** |
-| `emissions-64` | `full-record` | ~0.0797 | ~12.5 | ~104.5 | yes | **yes** (close) | **1.23** |
-| `emissions-128` | `primary-comparison` (12 s) | 0.0833 | 12.0 | 100.0 | yes | **NO** | **0.69** |
-| `emissions-128` | `full-record` | ~0.0799 | ~12.5 | ~104.5 | yes | **NO** | **0.69** |
+| configuration | view | `Δf` Hz (measured) | `1/span` Hz | cycles @1 Hz | cycles @8.333 Hz | band @1 Hz | band @8.333 Hz | `nyquist_ratio` @8.333 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `emissions-8` | `primary-comparison` | 0.083315 | 0.083420 | 11.99 | 99.90 | yes | **yes** | **3.95** |
+| `emissions-8` | `full-record` | 0.079683 | 0.079780 | 12.53 | 104.45 | yes | **yes** | **3.95** |
+| `emissions-20` | `primary-comparison` | 0.083314 | 0.083470 | 11.98 | 99.84 | yes | **yes** | **2.68** |
+| `emissions-20` | `full-record` | 0.079459–0.079601 | 0.079601–0.079744 | 12.54–12.56 | 104.50–104.69 | yes | **yes** | **2.68** |
+| `emissions-64` | `primary-comparison` | 0.083311 | 0.083651 | 11.95 | 99.62 | yes | **yes** (close) | **1.23** |
+| `emissions-64` | `full-record` | 0.079129 | 0.079436 | 12.59 | 104.91 | yes | **yes** (close) | **1.23** |
+| `emissions-128` | `primary-comparison` | 0.083107 | 0.083714 | 11.95 | 99.55 | yes | **NO** | **0.69** |
+| `emissions-128` | `full-record` | 0.079645 | 0.080201 | 12.47 | 103.91 | yes | **NO** | **0.69** |
+
+The `Δf` and `1/span` columns are here side by side on purpose: they are *different numbers* and
+differ by the `(N - 1) / N` factor (0.999 for `emissions-8`, 0.993 for `emissions-128`). `Δf` is
+what the grid does; `1/span` is the duration scale. Values measured in SA2.1 from the committed
+stamps; the `emissions-20` full-record rows vary slightly because their spans do.
 
 Refusal counts under the hard band condition: **1 Hz — zero band refusals** across all 52
-recordings in either view. **8.333 Hz — 8 recordings refused** (every `emissions-128` recording,
-four per sitting), `nyquist_hz = 5.734`. These band verdicts are independent of the pending
-uniformity tolerance: they follow from `f_target < f_N` on the measured stamps.
+recordings in either view. **8.333 Hz — 16 of the 104 recording × view cases refused**, being the
+eight `emissions-128` recordings (four per sitting, each in both views), `nyquist_hz = 5.734`.
+These band verdicts are independent of the uniformity tolerance: they follow from
+`f_target < f_N` on the measured stamps.
 
 **The trap this table exists to catch**, and the reason the two checks are separate: every
 `emissions-128` recording holds ~104 cycles of the 8.333-Hz target in its full-record window and
@@ -308,8 +356,27 @@ arbitrary deterministic trace.
 
 ### Where Hann's ENBW enters — and where it does not
 
-Hann's equivalent noise bandwidth is `ENBW = 1.5` bins. It belongs to **interpretation and
-conversion**: reading a noise floor, or converting between a bin power and a spectral density.
+Hann's equivalent noise bandwidth belongs to **interpretation and conversion**: reading a noise
+floor, or converting between a bin power and a spectral density.
+
+**It is derived from the taper actually used, never hard-coded as `1.5` bins** (corrected in
+SA2.1). For the exact coefficients `w[n]` of the chosen window,
+
+```
+ENBW_bins = N · sum_n w[n]**2 / (sum_n w[n])**2
+ENBW_hz   = ENBW_bins · Δf
+```
+
+and `1.5` is a *result* of one convention, not a constant of the method. The two conventions
+differ by more than a rounding: measured on the committed grid sizes, the **periodic** Hann
+`w[n] = 0.5 - 0.5·cos(2πn/N)` gives exactly `1.5` bins at every `N`, while the **symmetric** Hann
+`w[n] = 0.5 - 0.5·cos(2πn/(N-1))`, which has a different `Σw` and `Σw²`, gives
+`1.5 · N / (N - 1)` exactly — `1.5109` at `N = 138` (the `emissions-128` primary view) and
+`1.5018` at `N = 826`. That is a 0.73 % difference in a *conversion factor* at the smallest
+committed `N`, which is why the convention must be pinned rather than assumed.
+
+**SA2.2 must therefore state which convention it uses**, and its ENBW test must recompute the
+value from the coefficients it actually applies rather than assert `1.5`.
 
 It is **not** an extra factor to multiply into the normalization above. That expression is already
 energy-normalized by `sum_n w[n]^2`, so applying an ENBW correction on top of it would double-count
@@ -353,6 +420,79 @@ The tolerance is then **selected at a declared maximum distortion** — the larg
 distortion stays inside a stated bound — so the number carries a scientific meaning ("irregularity
 beyond which a peak moves more than X bins, or a band's power changes more than Y%") rather than a
 cautious-looking decimal.
+
+### SA2.1 outcome — the calibration, carried out
+
+**The tolerance, and what it rests on.** The four distortion bounds were declared *before* any
+measurement was read off: peak-frequency error `<= 0.05` bins; integrated band-power error
+`<= 1 %`; total (windowed) power error `<= 1 %`; target-cell response error `<= 5 %`. The
+calibration then sweeps five perturbation constructions — a quantized clock, independent jitter, a
+reversing per-interval error, one interval error early and the opposite late, and a single
+isolated gap — over the four committed rate regimes, two probe regions (~1 Hz, ~8.333 Hz), bin-
+centred and off-bin tones, and 12 deviation levels: **770 cases**, of which 742 are axes the other
+admission conditions do not already refuse.
+
+```
+measured clean boundary                  0.09918      <- largest clean measurement
+first measured violation                 0.09923      <- 1 % bound first broken
+operational admission tolerance          0.09         <- the measured clean boundary quantized
+                                                        downward by UNIFORMITY_TOL_QUANTUM = 0.01,
+                                                        i.e. the largest value that is both a
+                                                        whole hundredth and strictly inside the
+                                                        clean region. Never rounded up.
+violations at or below the tolerance     0
+```
+
+The three numbers are distinct and none stands for another: the shipped constant is deliberately
+*inside* the measured clean region, not equal to its edge. A test reproduces the quantization from
+the matrix (`floor(boundary / 0.01) * 0.01`), pins the two measured values, and refuses a shipped
+tolerance that is the boundary itself.
+
+**Three results of the calibration are worth more than the number.**
+
+*The operand had to change* (correction 3 above). Mapping distortion against the design's
+`max_relative_interval_deviation` **does not order it**: on `emissions-8` at the 8.333-Hz target,
+an alternating axis with interval deviation 0.1818 breaks the 1 % windowed-power bound at 2.46 %,
+while a ramp axis with a *larger* interval deviation of 0.2222 — and a timing error of 41
+intervals — stays at 0.964 %. Worse, on a two-level axis the *median* reference makes the same
+statistic swing 22 % (0.1818 vs 0.2222) on nothing but the parity of the sample count. The
+operand is therefore `max_relative_timing_error`, which does bound the distortion the estimator
+actually suffers: a timing error `T` places every sample within `T · dt_eff` of the assumed grid,
+so the phase error at any frequency up to Nyquist is at most `π · T`. The interval deviation stays
+on the record, and its non-operand role is a named string on every verdict.
+
+*The gap needs no separate guard, and that is now proved rather than asserted.* For an isolated
+gap of ratio `g` the interval errors sum to a step, so
+`max_relative_timing_error >= (g - 1) · (N - 1) / (N - 2 + g)`: a gap cannot slip under a
+timing-error threshold unnoticed. A test checks that inequality across gap ratios and positions,
+and the calibration's matrix contains no gap case that breaks a bound while its timing error is
+inside the tolerance. The gap ratio is therefore diagnostic — reported, and named in the refusal
+when it is the pathology — not a second threshold on the same axis.
+
+*The committed data's irregularity is a bounded clock quantum, not an accumulating warp.* Every
+committed stamp is an exact multiple of `1e-4 s`, and the largest deviation of any stamp from its
+own view's adopted uniform grid is `1.8e-4 s` (worst relative value `8.3e-3`). The interval
+deviation of `6.58e-3` is that same quantum expressed per interval; on a *shorter* interval it
+grows without the axis being any worse, which is a third reason it is not the operand.
+
+**Committed verdicts (104 `recording × view` records, both sittings, both views).**
+
+| quantity | value |
+| --- | --- |
+| records | 104 (52 recordings × `primary-comparison` + `full-record`) |
+| **spectrally admitted** | **104 / 104** (worst timing error `8.3e-3`, 10.8× inside the tolerance) |
+| 1-Hz band-supported | 104 / 104 |
+| 1-Hz overall supported | 104 / 104 |
+| 8.333-Hz band-supported | 88 / 104 |
+| 8.333-Hz overall supported | 88 / 104 |
+| 8.333-Hz refusals | 16 — every `emissions-128` view, reason *above Nyquist* |
+| primary vs full-record | no view changes any admission verdict; refusal counts are view-independent |
+
+The estimator is admitted for `emissions-128` while the 8.333-Hz target is refused on the same
+axis: the two verdicts are independent by construction, which is what §B's headline example asks
+for. No PSD or periodogram is computed by any of this — the calibrated number comes from a
+test-only reference calculation, and the production surface stops at characterization, admission
+and target support.
 
 ## K. Committed-data characterization — the first result
 
@@ -408,20 +548,29 @@ architecture has a slot for one.
 ## Implementation sequence after this design
 
 - **SA2.0 — design finalization.** This PR only. No code before it passes.
-- **SA2.1 — admission calibration + capability backend.** In this order, inside one PR:
-  (1) implement `TimebaseCharacterization`; (2) implement the synthetic jitter/pathology harness;
-  (3) **determine and record `SPECTRAL_UNIFORMITY_TOL`** from the declared distortion limits;
-  (4) implement `SpectralAdmission`; (5) run admission across all 52 committed recordings; (6) only
-  then implement and run `TargetFrequencySupport`; (7) publish the exact committed-data
-  support/refusal counts and reasons. **No PSD in SA2.1.**
+- **SA2.1 — admission calibration + capability backend. LANDED.** Delivered as, in this order:
+  `analysis.sparse_spectral_support` (`TimebaseCharacterization`, `characterize_timebase`, the
+  frequency grid and the cell rules); the synthetic calibration harness
+  (`tests/_spectral_calibration.py`, test-only); the recorded `SPECTRAL_UNIFORMITY_TOL`;
+  `analysis.sparse_spectral_admission` (`SpectralAdmission`, per-condition verdicts);
+  `analysis.sparse_target_support` (`TargetFrequencySupport`, `band_supported` /
+  `analysis_supported`); and `analysis.sparse_spectral_capability`
+  (`committed_spectral_capability`, one record per `recording × view`). **No PSD, no periodogram,
+  no Welch, no resampling, no Lomb–Scargle, and no notebook change.** The §J *SA2.1 outcome*
+  subsection above carries the calibrated tolerance, the declared bounds it came from, the worst
+  measurements either side of it, and the committed support/refusal counts.
 
-  The tolerance is calibrated **before** any committed-data admission verdict is published; SA1's
-  `2e-2` band is never substituted as a temporary stand-in. (Chosen over the `SA2.1a`/`SA2.1b`
-  split: the calibration is small enough to live at the head of the same PR.)
+  The tolerance was calibrated **before** any committed-data admission verdict was published;
+  SA1's `2e-2` band was never substituted as a temporary stand-in. (Chosen over the
+  `SA2.1a`/`SA2.1b` split: the calibration is small enough to live at the head of the same PR.)
 
-  Expected table, per `recording × view`: `N`; span; `dt_eff`; `fs_eff`; Nyquist; timestamp
-  irregularity metrics; **spectral admission + reason**; **1-Hz support + reason**; **8.333-Hz
-  support + reason**.
+  Delivered table, per `recording × view`: `N`; span; `dt_eff`; `fs_eff`; Nyquist; `Δf`;
+  timestamp irregularity (timing error and interval deviation) and the gap ratio;
+  **spectral admission + reason**; **1-Hz band/overall support + reason**; **8.333-Hz band/overall
+  support + reason**. One correction to the original plan for this bullet: the calibration had to
+  measure a reference spectral calculation to quantify distortion at all. It lives in the test-only
+  harness, is never imported by `src/`, and SA2.2 remains the PR that implements the reviewed public
+  estimator contract.
 - **SA2.2 — validated periodogram/PSD backend.** `WindowView → selected gate → spectral estimate`
   with §I's choices. Synthetic tests first, then committed-data smoke tests.
 - **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
