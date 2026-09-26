@@ -375,8 +375,15 @@ differ by more than a rounding: measured on the committed grid sizes, the **peri
 `1.5018` at `N = 826`. That is a 0.73 % difference in a *conversion factor* at the smallest
 committed `N`, which is why the convention must be pinned rather than assumed.
 
-**SA2.2 must therefore state which convention it uses**, and its ENBW test must recompute the
-value from the coefficients it actually applies rather than assert `1.5`.
+**SA2.2 states which convention it uses, and its ENBW test recomputes the value from the
+coefficients it actually applies rather than asserting `1.5`.** SA2.2 pins the **periodic Hann**
+(`w[n] = 0.5 - 0.5 cos(2 pi n / N)`, the endpoint not repeated), which is the spectral-estimation
+convention and the one the SA2.1 calibration harness already assumed, so the calibration oracle and
+the estimator are tapers of the same shape. It is stated in the result itself
+(`taper_name` / `taper_convention`) and measured there from its own coefficients: `1.5` exactly at
+every committed `N` (138, 144, 246, 259, 536, 561, 790, 826), against `1.5 · N / (N - 1)` for the
+symmetric convention. Both halves are asserted in `tests/test_sparse_periodogram.py`, so the choice
+cannot be inferred later from this document alone.
 
 It is **not** an extra factor to multiply into the normalization above. That expression is already
 energy-normalized by `sum_n w[n]^2`, so applying an ENBW correction on top of it would double-count
@@ -571,8 +578,27 @@ architecture has a slot for one.
   measure a reference spectral calculation to quantify distortion at all. It lives in the test-only
   harness, is never imported by `src/`, and SA2.2 remains the PR that implements the reviewed public
   estimator contract.
-- **SA2.2 — validated periodogram/PSD backend.** `WindowView → selected gate → spectral estimate`
-  with §I's choices. Synthetic tests first, then committed-data smoke tests.
+- **SA2.2 — validated periodogram/PSD backend. LANDED.** `WindowView → selected gate →
+  characterize → admit → spectral estimate`, delivered as `analysis.sparse_periodogram`
+  (`SpectralEstimate`, `periodogram_of_view`, `SpectralVerdict`, `periodic_hann`,
+  `taper_enbw_bins`). **The estimator makes the approximation the admission granted:** the
+  transform is the ordinary one-sided `rfft` of the tapered, detrended trace, over the adopted
+  uniform grid (`dt_eff = span/(N-1)`), as `|rfft(w * x)[k]|^2 / (fs_eff * sum w^2)` at SA2.1's own
+  `one_sided_frequency_grid` - the stored stamps supply `dt_eff`/`fs_eff`/`delta_f`, are what the
+  admission tested, and are what the optional linear detrending is fitted against, but they are not
+  the Fourier sampling coordinates. DC is never doubled, the interior bins are doubled, the top bin
+  is halved for even `N` only. The nonuniform evaluation at the stored times is kept **as the
+  test-only oracle** (`tests._spectral_calibration.reference_spectrum`), and one committed-data
+  diagnostic records what taking the approximation costs against it: over 18 committed views
+  (9 jobs × 2 views, one sitting) the integrated difference is 1.8e-5 … 2.9e-4 and the normalized
+  L2 difference 1.8e-4 … 6.7e-4, ordered by the axis's own timing error (9.1e-4 … 5.8e-3, all far
+  inside the 0.09 tolerance). Those are recorded diagnostics, **not** new admission thresholds. A
+  refused axis returns a refusal carrying its admission rather than a density; the fold's
+  `sum_k Pxx[k] * delta_f == sum_n (w x)^2 / sum_n w^2` is now a pure implementation invariant and
+  holds to floating-point accuracy for every defined spectrum (worst 8.6e-16 over the committed
+  views), which is why `parseval_relative_error` is not a measure of timestamp irregularity -
+  `admission.characterization.max_relative_timing_error` is that. The estimator stays an `src/`
+  module: no notebook, no peak interpretation, no Welch, no resampling.
 - **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
   summary, a PSD plot, target-support rows and refusal wording. No calculations in cells.
 - **SA2.4 — committed-data spectral characterization.** Low-frequency structure, support near
