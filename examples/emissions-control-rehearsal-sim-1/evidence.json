@@ -1,0 +1,335 @@
+{
+  "pass": "emissions-control-rehearsal-sim-1",
+  "process_mode": "simulation",
+  "what_this_is": "A simulation-mode rehearsal of the four-job emissions sequence, run on the application alone with no instrument attached. It exercises the code path end to end \u2014 boundary write, transaction, durable mutation, compile acceptance, stored word \u2014 and it is NOT rig acceptance: no ultrasound was emitted and no hardware state was moved (docs/dop3000/emissions-control-plan.md \u00a76).",
+  "frame": {
+    "sound_speed_ms": 1460.0,
+    "first_gate_mm": 2.0,
+    "prf_us": 212.0,
+    "burst_length": 4,
+    "resolution_mm": 0.122,
+    "gates": 797,
+    "store_dir": "outputs/live/store"
+  },
+  "sequence": [
+    "e20-a",
+    "e64-a",
+    "e64-b",
+    "e20-b"
+  ],
+  "jobs": [
+    {
+      "job": "e20-a",
+      "requested_emissions_per_profile": 20,
+      "boundary_wrote": true,
+      "points": [
+        {
+          "name": "emctl-sim1-e20-a-ref-20260926T200510",
+          "status": "failed",
+          "requested": {
+            "sound_speed_ms": 1460.0,
+            "first_gate_mm": 2.0,
+            "resolution_mm": 0.122,
+            "gates": 797,
+            "prf_us": 212.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "file": null,
+          "file_size_bytes": null,
+          "expected_size_bytes": 789313,
+          "sha256": null,
+          "words": {
+            "channel": null,
+            "sound_speed_ms": null,
+            "prf_us": null,
+            "burst_length": null,
+            "emissions_per_profile": null,
+            "n_gates": null,
+            "resolution_mm": null,
+            "span_s": null,
+            "achieved_period_s": null
+          },
+          "sampling_volume_index": null,
+          "covariates_enforced": [],
+          "covariates_advisory": [],
+          "n_profiles": null,
+          "failure": "the record/store cycle failed: emctl-sim1-e20-a-ref-20260926T200510: no file appeared in outputs\\live\\store within 60 s of Do store; the run stops here: the application's state is not verified, so the remaining points are not attempted"
+        },
+        {
+          "name": "emctl-sim1-e20-a-ref-20260926T201754",
+          "status": "ok",
+          "requested": {
+            "sound_speed_ms": 1460.0,
+            "first_gate_mm": 2.0,
+            "resolution_mm": 0.122,
+            "gates": 797,
+            "prf_us": 212.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "file": "outputs\\live\\store\\emctl-sim1-e20-a-ref-20260926T201754.BDD",
+          "file_size_bytes": 764833,
+          "expected_size_bytes": 789313,
+          "sha256": "426868d2e361cfd01a34d8ea2972f5676be68c57571a6f7d92b48e427640bd76",
+          "words": {
+            "channel": 1,
+            "sound_speed_ms": 1460.0,
+            "prf_us": 212.0,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "n_gates": 797,
+            "resolution_mm": 0.12166666666666667,
+            "span_s": 8.5335,
+            "achieved_period_s": 0.009523995535714286
+          },
+          "sampling_volume_index": 3,
+          "covariates_enforced": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "covariates_advisory": [],
+          "n_profiles": 897,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "job": "e64-a",
+      "requested_emissions_per_profile": 64,
+      "boundary_wrote": true,
+      "points": [
+        {
+          "name": "emctl-sim1-e64-a-ref-20260926T201852",
+          "status": "ok",
+          "requested": {
+            "sound_speed_ms": 1460.0,
+            "first_gate_mm": 2.0,
+            "resolution_mm": 0.122,
+            "gates": 797,
+            "prf_us": 212.0,
+            "emissions_per_profile": 64,
+            "burst_length": 4
+          },
+          "file": "outputs\\live\\store\\emctl-sim1-e64-a-ref-20260926T201852.BDD",
+          "file_size_bytes": 403345,
+          "expected_size_bytes": 396817,
+          "sha256": "a37929a8c807ab5068cf4406089d1b31a7b85581aec64c855fe6c567c699d231",
+          "words": {
+            "channel": 1,
+            "sound_speed_ms": 1460.0,
+            "prf_us": 212.0,
+            "burst_length": 4,
+            "emissions_per_profile": 64,
+            "n_gates": 797,
+            "resolution_mm": 0.12166666666666667,
+            "span_s": 8.5082,
+            "achieved_period_s": 0.01878189845474614
+          },
+          "sampling_volume_index": 3,
+          "covariates_enforced": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "covariates_advisory": [],
+          "n_profiles": 454,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "job": "e64-b",
+      "requested_emissions_per_profile": 64,
+      "boundary_wrote": false,
+      "points": [
+        {
+          "name": "emctl-sim1-e64-b-ref-20260926T201926",
+          "status": "ok",
+          "requested": {
+            "sound_speed_ms": 1460.0,
+            "first_gate_mm": 2.0,
+            "resolution_mm": 0.122,
+            "gates": 797,
+            "prf_us": 212.0,
+            "emissions_per_profile": 64,
+            "burst_length": 4
+          },
+          "file": "outputs\\live\\store\\emctl-sim1-e64-b-ref-20260926T201926.BDD",
+          "file_size_bytes": 403345,
+          "expected_size_bytes": 396817,
+          "sha256": "9957b87d7df6f725e6118eb2559f2a179682a5d2f27b34b39e9d52bc63af1b2b",
+          "words": {
+            "channel": 1,
+            "sound_speed_ms": 1460.0,
+            "prf_us": 212.0,
+            "burst_length": 4,
+            "emissions_per_profile": 64,
+            "n_gates": 797,
+            "resolution_mm": 0.12166666666666667,
+            "span_s": 8.509500000000001,
+            "achieved_period_s": 0.018784768211920534
+          },
+          "sampling_volume_index": 3,
+          "covariates_enforced": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "covariates_advisory": [],
+          "n_profiles": 454,
+          "failure": null
+        }
+      ]
+    },
+    {
+      "job": "e20-b",
+      "requested_emissions_per_profile": 20,
+      "boundary_wrote": true,
+      "points": [
+        {
+          "name": "emctl-sim1-e20-b-ref-20260926T202041",
+          "status": "ok",
+          "requested": {
+            "sound_speed_ms": 1460.0,
+            "first_gate_mm": 2.0,
+            "resolution_mm": 0.122,
+            "gates": 797,
+            "prf_us": 212.0,
+            "emissions_per_profile": 20,
+            "burst_length": 4
+          },
+          "file": "outputs\\live\\store\\emctl-sim1-e20-b-ref-20260926T202041.BDD",
+          "file_size_bytes": 769729,
+          "expected_size_bytes": 789313,
+          "sha256": "589e69e843292f6e8107414c7492fe5cf924854046864ab1cfd00805f8d0182c",
+          "words": {
+            "channel": 1,
+            "sound_speed_ms": 1460.0,
+            "prf_us": 212.0,
+            "burst_length": 4,
+            "emissions_per_profile": 20,
+            "n_gates": 797,
+            "resolution_mm": 0.12166666666666667,
+            "span_s": 8.5101,
+            "achieved_period_s": 0.00943470066518847
+          },
+          "sampling_volume_index": 3,
+          "covariates_enforced": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "covariates_advisory": [],
+          "n_profiles": 903,
+          "failure": null
+        }
+      ]
+    }
+  ],
+  "mutations": [
+    {
+      "occurred_at": "2026-09-26T20:05:08.338497+03:00",
+      "mutation_id": "b2f17f34b81e4360b158388cb78efbce",
+      "job": "e20-a",
+      "routed_channel": 1,
+      "parameter": "emissions_per_profile",
+      "definition_fingerprint": "6f8e4aaf711e841d75f653fa0f524bec1785745af33e311cb7324bbaff2e2c05",
+      "requested": "20",
+      "before": "150",
+      "write_readback": "20",
+      "after": "20",
+      "state": "verified"
+    },
+    {
+      "occurred_at": "2026-09-26T20:18:49.419302+03:00",
+      "mutation_id": "b0a039dac0bc45f29e2f4f511d539ebb",
+      "job": "e64-a",
+      "routed_channel": 1,
+      "parameter": "emissions_per_profile",
+      "definition_fingerprint": "77752a37e9e58411961bba69474e48d19380eb858f1caf6cad8f839d822c3d41",
+      "requested": "64",
+      "before": "20",
+      "write_readback": "64",
+      "after": "64",
+      "state": "verified"
+    },
+    {
+      "occurred_at": "2026-09-26T20:20:38.672750+03:00",
+      "mutation_id": "71688b33335a4902988e5938b7c2f73e",
+      "job": "e20-b",
+      "routed_channel": 1,
+      "parameter": "emissions_per_profile",
+      "definition_fingerprint": "a730ff99806b5dd45c88d8c2f0f8f9a14e17e95276e9480a99651e30c3526cea",
+      "requested": "20",
+      "before": "64",
+      "write_readback": "20",
+      "after": "20",
+      "state": "verified"
+    }
+  ],
+  "checks": {
+    "1_forward_transition_one_mutation": [
+      "b0a039dac0bc45f29e2f4f511d539ebb"
+    ],
+    "2_equal_value_no_write": [
+      "e64-b"
+    ],
+    "3_restoration_one_mutation": [
+      "71688b33335a4902988e5938b7c2f73e"
+    ],
+    "4_word14_equals_requested": {
+      "emctl-sim1-e20-a-ref-20260926T201754": true,
+      "emctl-sim1-e64-a-ref-20260926T201852": true,
+      "emctl-sim1-e64-b-ref-20260926T201926": true,
+      "emctl-sim1-e20-b-ref-20260926T202041": true
+    },
+    "5_mutation_ids_distinct": true,
+    "5_occurrence_order_preserved": true,
+    "6_writer_readback_and_fresh_read_kept": true,
+    "7_word8_burst_unchanged": {
+      "emctl-sim1-e20-a-ref-20260926T201754": 4,
+      "emctl-sim1-e64-a-ref-20260926T201852": 4,
+      "emctl-sim1-e64-b-ref-20260926T201926": 4,
+      "emctl-sim1-e20-b-ref-20260926T202041": 4
+    },
+    "8_word27_recorded_not_derived": {
+      "emctl-sim1-e20-a-ref-20260926T201754": 3,
+      "emctl-sim1-e64-a-ref-20260926T201852": 3,
+      "emctl-sim1-e64-b-ref-20260926T201926": 3,
+      "emctl-sim1-e20-b-ref-20260926T202041": 3
+    },
+    "9_final_state_restored": "the compile against the live screen reconciles with emissions_per_profile 20 (the last job's requested value), all facts agreeing",
+    "10_size_and_structural_guards": {
+      "emctl-sim1-e20-a-ref-20260926T201754": {
+        "status": "ok",
+        "file_size_bytes": 764833,
+        "expected_size_bytes": 789313,
+        "profiles": 897
+      },
+      "emctl-sim1-e64-a-ref-20260926T201852": {
+        "status": "ok",
+        "file_size_bytes": 403345,
+        "expected_size_bytes": 396817,
+        "profiles": 454
+      },
+      "emctl-sim1-e64-b-ref-20260926T201926": {
+        "status": "ok",
+        "file_size_bytes": 403345,
+        "expected_size_bytes": 396817,
+        "profiles": 454
+      },
+      "emctl-sim1-e20-b-ref-20260926T202041": {
+        "status": "ok",
+        "file_size_bytes": 769729,
+        "expected_size_bytes": 789313,
+        "profiles": 903
+      }
+    }
+  }
+}
