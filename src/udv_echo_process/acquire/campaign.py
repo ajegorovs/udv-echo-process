@@ -79,7 +79,9 @@ from udv_echo_process.acquire.actuator import (
     ChannelMode,
     ColumnWriteResult,
     DialogField,
+    ParamRole,
     ProcessMode,
+    WriteState,
 )
 from udv_echo_process.acquire.config import (
     DEFAULT_CHANNEL,
@@ -1525,6 +1527,93 @@ def _transit_burst_length(
             f"burst transition (this invocation's write): {stated.strip()} → {requested}, "
             f"verified on a re-opened dialog; "
             f"the application states sampling volume {result.verified_sampling_volume}"
+        )
+    return result
+
+
+def _transit_emissions_per_profile(
+    actuator: SweepActuator,
+    definition: CampaignDefinition,
+    *,
+    reading: InstrumentSnapshot,
+    routed: int | None,
+    notes: list[str] | None,
+) -> ColumnWriteResult | None:
+    """Bring the instrument to the **job's** emissions per profile, or refuse (plan §2, §3).
+
+    The second boundary parameter, and the first one written through the **parameter column**
+    rather than a dialog: ``read → write → fresh read → classify``
+    (``docs/dop3000/emissions-control-plan.md`` §2). It is a transition of the *job*, like the
+    burst, because ``actuator.DIALOG_ONLY_PARAMETERS`` excludes it from a point's write — a point
+    writes the resolution and the gate count and nothing else.
+
+    Four answers, and each says something different:
+
+    - the job does **not** request it (:attr:`CampaignDefinition.write_emissions_per_profile`) —
+      the value is inherited from the channel and there is nothing to establish. The compile still
+      reconciles it, and for such a job as an advisory;
+    - the reading states no value this run can compare — nothing is attempted here. A transition
+      aimed at a state nothing stated would be a write spent on a guess, and the compile refuses
+      the job by name: ``emissions_per_profile`` *has* a reader (the column), and a fact that has
+      one and produced no value is not agreed by default;
+    - the reading **already states the request** — *no write is spent and no mutation is
+      appended*. There is no event to record: nothing moved. This is the boundary the live
+      commissioning exercises on purpose (``emissions-64 → emissions-64``);
+    - otherwise the column write runs and **the boundary's own fresh read is what decides**
+      (review decision 4). :meth:`Actuator.write_parameter` returns the application's own
+      read-back, which is carried verbatim as evidence — and it establishes nothing on its own,
+      because what it reports is what the *write layer* produced. The state of the instrument is
+      what a separate read taken afterwards states, and only two outcomes are possible here:
+      ``VERIFIED`` when that read states the requested value, and a **refusal** — not a weaker
+      record — when it states anything else or cannot be read at all. An instrument state nobody
+      established must not become a record, so there is no ``UNVERIFIED`` result to append: an
+      equal value never reaches the write (that is the no-write answer), and a disagreement is the
+      refusal this function raises.
+
+    A refusal raises :class:`CampaignError` and names both sides — the row it read, the request and
+    what came back — so a job whose value cannot be established costs no recording. The driver's own
+    refusals (``AcquisitionError``: an absent row, a failed commit) propagate untouched, exactly as
+    they do for the burst: they already name what stopped the job, and re-wrapping one cause in two
+    diagnoses is the mistake this layer's refusal order exists to avoid.
+    """
+    requested = definition.emissions_per_profile
+    if not definition.write_emissions_per_profile:
+        return None
+    before = reading.fact("emissions_per_profile")
+    if before.source is not FactSource.READ or before.value is None:
+        return None
+    if before.value.strip() == str(requested):
+        if notes is not None:
+            notes.append(
+                f"emissions per profile: the instrument already states {requested}, so no write "
+                "was spent and no transition was recorded (an equal value is not a transition)"
+            )
+        return None
+
+    written = actuator.write_parameter(ParamRole.EMISSIONS_PER_PROFILE, str(requested))
+    # The independent reread. Everything else about this transaction is evidence *about* the
+    # write; this is the only statement about what the application kept.
+    after = actuator.read_parameter(ParamRole.EMISSIONS_PER_PROFILE)
+    kept = "" if after is None else str(after).strip()
+    if kept != str(requested):
+        raise CampaignError(
+            f"the emissions per profile was written as {requested} (the write layer read back "
+            f"{written!r}), but the row states {kept or 'nothing'} when this run reads it again: a "
+            "requested value is not a value the instrument is recording at, so no point of this "
+            "job was recorded and the application is left at whatever that read describes"
+        )
+    result = ColumnWriteResult(
+        role=ParamRole.EMISSIONS_PER_PROFILE,
+        requested=str(requested),
+        state=WriteState.VERIFIED,
+        before=before.value.strip(),
+        write_readback=written,
+        after=kept,
+    )
+    if notes is not None:
+        notes.append(
+            f"emissions per profile (this invocation's write): {result.before} → {kept}, "
+            "verified on a fresh read of the parameter column"
         )
     return result
 
