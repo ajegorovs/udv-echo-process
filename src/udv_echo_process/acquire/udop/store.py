@@ -89,13 +89,24 @@ class StoreSurface:
                 f"cannot be asserted against '{directory}' (the dialog's edits are {edits})"
             )
         shown = self._get_text(path_edit["hwnd"])
-        if same_directory(shown, directory):
+        # The field is consumed by **another process**, which resolves a relative path against
+        # *its own* working directory: the caller's ``outputs/live/store`` and the application's
+        # are two different folders. A relative write is worse than useless here, because it
+        # *verifies* — ``same_directory`` resolves both sides against this process — while the
+        # application stores nowhere and raises its own non-existent-directory warning, which the
+        # run then reports as "no file appeared ... within 60 s of Do store" (measured
+        # 2026-09-26, simulation mode: a relative path, the warning left up, no file anywhere on
+        # the drive). Absolute, always.
+        target = Path(directory).expanduser()
+        if not target.is_absolute():
+            target = (Path.cwd() / target).resolve()
+        if same_directory(shown, target):
             return shown
-        self._set_text_commit(path_edit["hwnd"], str(directory), panel["hwnd"])
+        self._set_text_commit(path_edit["hwnd"], str(target), panel["hwnd"])
         readback = self._get_text(path_edit["hwnd"])
-        if not same_directory(readback, directory):
+        if not same_directory(readback, target):
             raise AcquisitionError(
-                f"the Store dialog's Working directory is '{readback}' where '{directory}' "
+                f"the Store dialog's Working directory is '{readback}' where '{target}' "
                 f"is expected (it showed '{shown}' before the write): the point would land "
                 "outside the directory the caller watches, so it is refused rather than "
                 "stored and waited for in the wrong folder"
