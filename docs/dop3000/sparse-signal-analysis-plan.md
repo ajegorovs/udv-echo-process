@@ -70,13 +70,25 @@ method settings). Notebooks select inputs and display those results; they do
 not implement estimators. Exports must be deterministic and reviewer-readable
 without a live notebook.
 
-* **Primary comparison:** each recording's stored timestamps over the designed
-  leading 0–12 s. Refuse insufficient coverage; never widen it to the
-  instrument's extra retained fraction of a second.
-* **Full record:** all valid stored profiles for ACF, spectra and stationarity
-  diagnostics; label it separately from the primary view. Duration varies.
-* **Exploration:** explicitly selected time/depth bounds in the notebook. These
-  must never silently replace the primary comparison.
+* **Primary comparison** (`primary-comparison`): each recording's stored
+  timestamps over the designed leading 0–12 s. Refuse insufficient coverage;
+  never widen it to the instrument's extra retained fraction of a second.
+* **Full record** (`full-record`): all valid stored profiles for ACF, spectra
+  and stationarity diagnostics; label it separately from the primary view.
+  Duration varies.
+* **Exploration** (`exploration`): explicitly selected time/depth bounds in
+  the notebook. They must never silently replace the primary comparison.
+
+The three labels above are **canonical strings**, not descriptions of a label: one
+module owns them (`analysis._sparse_view.SparseView`), every sparse slice imports
+them, and each label carries the rule that fixes its meaning, so a view cannot be
+cut one way in one slice and another way in the next. A slice that needs a different
+cut adds a labelled view rather than reinterpreting an existing label. That module
+also owns the provenance every slice carries (source identity, native grid, declared
+support, the three depth extents, time window, view rule), and
+`analysis.sparse_recurrence` reports the timebase it saw — `TimebaseVerdict`, the
+maximum relative interval deviation, and `LAG_GRID_RULE` — so SA2 inherits the
+uniform-grid assumption consciously rather than by default.
 * **Depth:** gate-local metrics on native positions; between-grid effects on
   common physical support and knots no finer than the coarsest participating
   pitch. Compute spatial derivatives/correlation lengths on native grids before
@@ -128,6 +140,16 @@ and avoid a precise period claim from a weak peak. Test on constant,
 intermittent, correlated and known-period synthetic traces and on the
 committed reader path. No pseudoreplicate confidence intervals. Each accepted
 backend increment extends the executed notebook preview in the same PR.
+
+**Pass roles are design families, not replicate counts (the SA1 catalog decision).** The
+catalog's `PassRole` names the *shape* of a dataset: `SITTING` is a realization of the
+nine-job sparse design, `CAMPAIGN` the paired Stage-2 design. It is deliberately not a
+literal laboratory sitting, because the first sparse pass realizes the nine-job design while
+being paused after its trial jobs and resumed the next morning — and its recordings are
+zero-signal acquisition evidence rather than a third mixer-enabled replicate. The replicate
+question therefore has its own stated field, `PassRef.is_reproducibility_sitting`, true for
+exactly `live-1` and `live-2`. No consumer may infer a third scientific replicate from a
+role, and the first pass's own note says so where a reader actually sees it.
 
 ### SA2 — spectral and sampling support
 

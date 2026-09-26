@@ -117,6 +117,13 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   read-only copy taken by the shared `array_field`/`owned_array` helper. Do not
   add a mutable model base and do not hand-roll array ownership.
   `model_copy(update=...)` is never used to build transformed scientific data.
+  **A `(str, Enum)` member does not format as its value.** On the pinned 3.14,
+  `f"{SparseView.PRIMARY}"` is `'SparseView.PRIMARY'`, not `'primary-comparison'`
+  — and `str()`/`%s` behave the same, while `json.dumps` and Pydantic use the
+  value. So a member reaching a caption, a title or a message through an f-string
+  prints the qualified name; always interpolate `.value`. This is the one way the
+  serialized-label vocabulary can silently mislead while every test still passes,
+  since nothing compares the rendered string.
 - **Pipeline & module structure**: the ground-up modular rebuild described by
   [`docs/signal-model-rework-plan.md`](docs/signal-model-rework-plan.md) has
   **landed** (9 phases, one commit each). The working rules are: transforms are
