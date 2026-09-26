@@ -86,10 +86,19 @@ PLANNER_PERIOD_LAW = "T_tran + T_prf x (16 + N_PRF) (acquire/plan.py::profile_pe
 
 
 class PassRole(str, Enum):
-    """What kind of committed dataset a pass is — the label a selection control shows."""
+    """Which design family a committed pass realizes — the label a selection control shows.
+
+    A role describes the *shape* of a dataset, not a literal laboratory session, and the two
+    are not always the same thing: the first sparse pass is one nine-job realization that was
+    paused after its trial jobs and resumed the next morning, so it is a ``SITTING`` in the
+    design sense while not being one uninterrupted session at the instrument. Whether a pass
+    is one of the reproducibility sittings the analysis compares is a separate question,
+    answered by :attr:`PassRef.is_reproducibility_sitting` rather than inferred from here.
+    """
 
     SITTING = "sitting"
-    """One live sitting at the instrument: the nine-job design, run as one pass."""
+    """A realization of the nine-job sparse design — not necessarily one uninterrupted
+    laboratory session, and never by itself a claim to be an experimental replicate."""
 
     CAMPAIGN = "campaign"
     """A campaign of its own: run-level jobs in counterbalanced pairs, not one sitting."""
@@ -122,10 +131,22 @@ class PassRef(ValueModel):
     in_frozen_design: bool
     #: Where this pass's frozen report artefacts live, or ``None`` when it has none.
     report_dir: Path | None = None
+    #: Whether this pass is one of the mixer-enabled *reproducibility* sittings the analysis
+    #: compares (``live-1`` and ``live-2``). Stated per pass rather than derived from
+    #: :attr:`role`, because a nine-job design realization can be acquisition provenance
+    #: instead of a replicate — the first sparse pass is exactly that — and it must never be
+    #: counted, compared or presented as a third scientific replicate. ``False`` by default,
+    #: so a new ref has to say so deliberately.
+    is_reproducibility_sitting: bool = False
 
     @property
-    def presentable_as_sitting(self) -> bool:
-        """True only for a sitting: a campaign may never carry a sitting's label."""
+    def presentable_as_sparse_realization(self) -> bool:
+        """True only for a nine-job design realization: a campaign never carries its label.
+
+        This answers the *design family* question the selection controls show. It says nothing
+        about whether the pass is an experimental replicate; ask
+        :attr:`is_reproducibility_sitting` for that.
+        """
         return self.role is PassRole.SITTING
 
     def identify(self) -> str:
@@ -183,6 +204,7 @@ COMMITTED_PASSES: tuple[PassRef, ...] = (
         ),
         period_law=RETIRED_PERIOD_LAW,
         in_frozen_design=True,
+        is_reproducibility_sitting=True,
         report_dir=Path("reports/sparse-mixer-live-1"),
     ),
     PassRef(
@@ -193,6 +215,7 @@ COMMITTED_PASSES: tuple[PassRef, ...] = (
         note="second mixer-enabled sitting — SA0 default",
         period_law=PLANNER_PERIOD_LAW,
         in_frozen_design=True,
+        is_reproducibility_sitting=True,
         report_dir=Path("reports/sparse-mixer-live-2"),
     ),
     PassRef(

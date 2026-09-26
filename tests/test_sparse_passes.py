@@ -169,18 +169,42 @@ def test_each_pass_carries_the_role_its_own_plan_and_record_state(
         assert all(job.get("pair") is None for job in recorded)
 
 
-def test_a_campaign_is_never_presentable_as_a_sitting() -> None:
-    """The one role that may be mislabelled is pinned: the campaign, and only it."""
+def test_a_campaign_is_never_presentable_as_a_sparse_realization() -> None:
+    """The design family a role names is pinned: the campaign, and only it, is excluded."""
     campaigns = [ref for ref in COMMITTED_PASSES if ref.role is PassRole.CAMPAIGN]
     assert [ref.name for ref in campaigns] == ["stage2-e20-e64"]
-    assert all(not ref.presentable_as_sitting for ref in campaigns)
+    assert all(not ref.presentable_as_sparse_realization for ref in campaigns)
     sittings = [ref for ref in COMMITTED_PASSES if ref.role is PassRole.SITTING]
     assert [ref.name for ref in sittings] == [
         "sparse-mixer-first-pass",
         "sparse-mixer-live-1",
         "sparse-mixer-live-2",
     ]
-    assert all(ref.presentable_as_sitting for ref in sittings)
+    assert all(ref.presentable_as_sparse_realization for ref in sittings)
+
+
+def test_only_the_two_mixer_enabled_sittings_are_reproducibility_sittings() -> None:
+    """The design role must never be read as a replicate count.
+
+    ``SITTING`` names the nine-job design family, and the first pass realizes that design to
+    acquire provenance: it is zero-signal acquisition evidence, not a third live replicate.
+    The replicate question is therefore its own stated field, and this is the invariant the
+    analysis rests on — exactly ``live-1`` and ``live-2`` are the two mixer-enabled
+    sittings, whatever a future pass's role happens to say.
+    """
+    replicates = [ref for ref in COMMITTED_PASSES if ref.is_reproducibility_sitting]
+    assert [ref.name for ref in replicates] == [
+        "sparse-mixer-live-1",
+        "sparse-mixer-live-2",
+    ]
+
+    first_pass = pass_by_name("sparse-mixer-first-pass")
+    # A realization of the design, so the design-family question answers yes ...
+    assert first_pass.presentable_as_sparse_realization
+    # ... while the replicate question answers no, and the role does not get to decide it.
+    assert not first_pass.is_reproducibility_sitting
+    # Its own note says the same, so a reader who only ever sees the banner is not misled.
+    assert "not a third live replicate" in first_pass.note
 
 
 # ── the catalog's own surface ──────────────────────────────────────────

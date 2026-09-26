@@ -141,6 +141,16 @@ intermittent, correlated and known-period synthetic traces and on the
 committed reader path. No pseudoreplicate confidence intervals. Each accepted
 backend increment extends the executed notebook preview in the same PR.
 
+**Pass roles are design families, not replicate counts (the SA1 catalog decision).** The
+catalog's `PassRole` names the *shape* of a dataset: `SITTING` is a realization of the
+nine-job sparse design, `CAMPAIGN` the paired Stage-2 design. It is deliberately not a
+literal laboratory sitting, because the first sparse pass realizes the nine-job design while
+being paused after its trial jobs and resumed the next morning — and its recordings are
+zero-signal acquisition evidence rather than a third mixer-enabled replicate. The replicate
+question therefore has its own stated field, `PassRef.is_reproducibility_sitting`, true for
+exactly `live-1` and `live-2`. No consumer may infer a third scientific replicate from a
+role, and the first pass's own note says so where a reader actually sees it.
+
 ### SA2 — spectral and sampling support
 
 Estimate effective sample rate from actual timestamps; declare a jitter/gap
