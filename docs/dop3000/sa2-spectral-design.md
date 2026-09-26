@@ -17,9 +17,14 @@ requested target* lies above Nyquist. The two answers must be able to differ, an
 show it:
 
 ```
-E128 spectrum   = ADMITTED
-8.333-Hz target = UNSUPPORTED     (both true at once)
+assuming the view passes the eventual SA2 spectral-uniformity admission:
+    E128 periodogram   = ADMITTED
+    8.333-Hz target    = UNSUPPORTED     (both can be true at once)
 ```
+
+That first verdict is **conditional at the design stage**: `SPECTRAL_UNIFORMITY_TOL` does not exist
+yet (§A, §J), so nothing in this document claims a measured admission verdict for any committed
+recording.
 
 ## What this slice inherits from SA1 (do not re-cut)
 
@@ -35,7 +40,7 @@ E128 spectrum   = ADMITTED
 **SA1's `TIMEBASE_REGULARITY_TOL = 2e-2` is explicitly *not* inherited as a spectral
 threshold.** SA1 uses it to decide whether an ACF lag axis may be read in seconds; what
 irregularity a *spectral* estimator tolerates is a different question. SA2's own tolerance is
-chosen by the procedure in §I.
+chosen by the procedure in §J.
 
 ## A. `TimebaseCharacterization` — typed result for one `WindowView`
 
@@ -75,12 +80,17 @@ one: the adopted definition is the full-span one because it is the one with a st
 | sample count | `N >= MIN_SPECTRAL_SAMPLES` for the chosen transform |
 | monotonicity | strictly increasing; a repeated stamp is not a sample |
 | duplicates / gaps | counted and reported; duplicates refuse |
-| uniformity | `max relative deviation <= SPECTRAL_UNIFORMITY_TOL` (chosen per §I) |
+| uniformity | `max relative deviation <= SPECTRAL_UNIFORMITY_TOL` (chosen per §J) |
 | estimator specifics | any further requirement the chosen estimator states |
 
 Outcomes: `admitted`, or a **typed refusal naming the failed condition and its threshold**. The
 only alternative to refusal is an *explicitly named* irregular-sampling estimator with its own
 admission policy — and per §C that estimator is **not implemented in SA2 v1**.
+
+**No admission verdict is published for any committed recording in this design.** The uniformity
+rule's threshold is selected by §J's calibration, so until that exists the committed data's
+spectral admission status is *pending calibration*. This document reports their SA1 regularity and
+their measured irregularity, and nothing more.
 
 ## C. No resampling — strengthened for v1
 
@@ -119,9 +129,9 @@ Asked only of an already-admitted spectrum. Fields:
 supported**.
 
 Dependencies: target > 0; target inside the estimator's supported band (§F policy); the target's
-evaluated/bin cell remaining inside the band; observation duration / resolution; enough cycles if
-the interpretation requires them; and any explicit target-margin rule — of which there is
-currently none by design (§F).
+evaluated cell — defined concretely in §F — remaining inside the band; observation duration /
+resolution; enough cycles if the interpretation requires them; and any explicit target-margin rule
+— of which there is currently none by design (§F).
 
 **Resolution and cycles are separate checks and must not duplicate one another.** A 12 s window
 gives ~0.0833 Hz nominal resolution, so both targets sit many resolution bins above DC — which
@@ -146,8 +156,21 @@ Two different things, kept apart:
 f_target < nyquist_hz
 ```
 
-plus the resolution-cell condition: the target's evaluated/bin cell must lie inside the supported
-band.
+plus the **spectral-cell condition**, defined concretely so that "cell" is not left informal. For a
+one-sided spectrum of `N` samples with bin spacing `Δf = fs_eff / N` (= 1 / span), bin `k` has
+centre `f_k = k · Δf`; its cell is the interval between the midpoints to its neighbours, clipped to
+the physical support `[0, f_N]`:
+
+```
+cell(k) = [ max(0, (f_{k-1} + f_k) / 2) ,  min(f_N, (f_k + f_{k+1}) / 2) ]
+```
+
+The **evaluated cell** is the cell of the nearest bin centre to the target. The condition is: the
+target lies inside that cell (`|bin_offset_hz| <= Δf / 2`) **and** that cell lies inside
+`[0, f_N]`. A target is therefore reported with its nearest bin centre, its cell edges, its offset
+in Hz and in bins, and whether the evaluated cell lies inside the physical spectral support.
+
+This matters precisely at `emissions-64`, where the target sits closest to the upper edge.
 
 **Reported proximity** (never an admission criterion):
 
@@ -175,8 +198,14 @@ rate and Nyquist use the **adopted** definition `(t[-1] - t[0]) / (N - 1)`.
 
 Effective rate spans **11.469–65.819 Hz**, Nyquist **5.734–32.909 Hz**. The spread is a property
 of the acquisition, not the analysis: the profile period follows `emissions × PRF + 10.369 ms`, so
-raising `emissions_per_profile` lowers the sample rate. Every recording is `regular` (worst
-6.58e-03 against SA1's 2e-2 band), so **all 52 are admissible** to a uniform-grid estimator.
+raising `emissions_per_profile` lowers the sample rate.
+
+**All 52 recordings are `SA1-regular`** — worst measured relative interval deviation 6.58e-03
+against SA1's `TIMEBASE_REGULARITY_TOL = 2e-2`, with no duplicate or decreasing timestamps. That is
+a statement about **SA1's ACF-lag criterion** and it is *not* a spectral admission verdict:
+**spectral admission is pending `SPECTRAL_UNIFORMITY_TOL` calibration** (§J), which this design
+cannot supply. The table above therefore reports measured irregularity, and no row in this document
+asserts an admission verdict for a committed recording.
 
 ### Target support is a property of `target × WindowView`
 
@@ -193,9 +222,10 @@ Not of `target × recording`. Cycle counts differ between the views, so both are
 | `emissions-128` | `primary-comparison` (12 s) | 0.0833 | 12.0 | 100.0 | yes | **NO** | **0.69** |
 | `emissions-128` | `full-record` | ~0.0799 | ~12.5 | ~104.5 | yes | **NO** | **0.69** |
 
-Refusal counts under the hard band condition: **1 Hz — zero refusals** across all 52 recordings in
-either view. **8.333 Hz — 8 recordings refused** (every `emissions-128` recording, four per
-sitting), `nyquist_hz = 5.734`.
+Refusal counts under the hard band condition: **1 Hz — zero band refusals** across all 52
+recordings in either view. **8.333 Hz — 8 recordings refused** (every `emissions-128` recording,
+four per sitting), `nyquist_hz = 5.734`. These band verdicts are independent of the pending
+uniformity tolerance: they follow from `f_target < f_N` on the measured stamps.
 
 **The trap this table exists to catch**, and the reason the two checks are separate: every
 `emissions-128` recording holds ~104 cycles of the 8.333-Hz target in its full-record window and
@@ -205,16 +235,18 @@ test is the one that refuses here.
 
 ### What each configuration can answer
 
-- **8.333-Hz rotor reference:** `emissions-8` (ratio 3.95) and `emissions-20` (2.68) comfortably;
-  `emissions-64` (1.23) **on its own stated proximity**, which is reported rather than smoothed
-  over. `emissions-128` is refused.
-- **~1 Hz recurrence scale:** supported in **every** configuration and **both** views.
-  `emissions-128` still comfortably supports it — 12.0 cycles in the primary view, ratio 5.73 —
-  even though it cannot support 8.333 Hz. It is **not** the *best* configuration for 1 Hz: by
-  Nyquist margin it has the **smallest** ratio of the four (5.73 against `emissions-8`'s 32.9), and
-  the fewest samples per cycle. Its fundamental frequency resolution is not better either — the
-  span is the same, so 1/T is the same. **`emissions-128` is the slowest sampler that still clears
-  1 Hz, not the one that resolves it best.**
+- **8.333-Hz rotor reference:** band-supported in `emissions-8` (ratio 3.95) and `emissions-20`
+  (2.68); band-supported in `emissions-64` (1.23) **on its own stated proximity**, reported rather
+  than smoothed over. `emissions-128` is **refused by the band condition** — and that refusal is a
+  hard Nyquist fact which does **not** depend on the pending uniformity tolerance.
+- **~1 Hz recurrence scale:** inside the measurable band of **every** configuration and **both**
+  views, with 12.0 cycles in the primary view. Like every target verdict here it is conditional on
+  the view passing the eventual spectral admission. `emissions-128`'s band still clears 1 Hz
+  (ratio 5.73) even though it cannot support 8.333 Hz. It is **not** the *best* configuration for
+  1 Hz: by Nyquist margin it has the **smallest** ratio of the four (5.73 against `emissions-8`'s
+  32.9), and the fewest samples per cycle. Its fundamental frequency resolution is not better
+  either — the span is the same, so 1/T is the same. **`emissions-128` is the slowest sampler that
+  still clears 1 Hz, not the one that resolves it best.**
 
 ## H. Primary vs full-record spectra
 
@@ -235,22 +267,71 @@ per view. Every spectral result carries the view label *and* rule inherited from
 | --- | --- |
 | mean removal | **on**, matching SA1's ACF default |
 | linear detrending | optional, named, SA1's `Detrending` vocabulary |
-| taper | **Hann** |
+| taper | **Hann**, `w[n]` |
 | spectrum | **one-sided** (real-valued traces) |
-| units | **(mm/s)² / Hz** |
 | DC | retained and reported explicitly, with its own DC bin identified |
-| normalization | **validated**: integrating the PSD must reproduce the variance of the appropriately detrended signal within numerical tolerance |
-| noise-power bandwidth | corrected **whenever PSD units are claimed** |
 
-The normalization validation is a test, not a claim: it is §J's Parseval/variance check.
+### The exact normalization
+
+```
+Pxx(f_k) = |FFT(w * x)[k]|^2 / ( fs_eff * sum_n w[n]^2 )
+```
+
+with the conventional **one-sided doubling of every bin except DC and Nyquist** (only where those
+bins exist for the given `N`). Bin spacing `Δf = fs_eff / N`. The units are **(mm/s)²/Hz**, which is
+what makes the result a density rather than a "spectrum" (§D).
+
+### What the PSD integral actually reproduces
+
+The one-sided integral reproduces one specific time-domain quantity **exactly**, for any trace:
+
+```
+sum_k Pxx(f_k) * Δf  =  sum_n (w[n] * x[n])^2 / sum_n w[n]^2
+```
+
+That quantity is the **window-normalized mean-square power**. It is named here, with its formula,
+precisely so that no claim is made about the raw variance of the detrended trace: Parseval is an
+identity between the PSD and *that* definition, and it holds whether or not the signal is
+bin-centred.
+
+**The integral does *not*, in general, equal `var(detrended_trace)`** on a tapered finite record.
+An off-bin sinusoid is the standard counter-example — windowing spreads its energy across
+neighbouring bins, so the tapered mean-square power differs from the untapered variance even though
+the PSD carries correct density units. **No compensating scalar will be introduced to force those
+two numbers to agree**: such a scalar would distort the estimator's actual statistical meaning in
+exchange for a cosmetic identity.
+
+They do agree where the statistics say they should. For a white-noise input of variance `σ²`,
+`E[sum_n (w[n]x[n])^2 / sum_n w[n]^2] = σ²`, so a white-noise test recovers `σ²` **statistically and
+tolerantly** under this normalization (§J level 1) — without any identity being asserted for an
+arbitrary deterministic trace.
+
+### Where Hann's ENBW enters — and where it does not
+
+Hann's equivalent noise bandwidth is `ENBW = 1.5` bins. It belongs to **interpretation and
+conversion**: reading a noise floor, or converting between a bin power and a spectral density.
+
+It is **not** an extra factor to multiply into the normalization above. That expression is already
+energy-normalized by `sum_n w[n]^2`, so applying an ENBW correction on top of it would double-count
+the window. The formula is pinned first; ENBW appears only where a conversion genuinely needs it,
+and its role is stated at each such use.
+
+### Required tests (§J level 1)
+
+Parseval consistency **against the same tapered and normalized signal definition the estimator
+uses** — the window-normalized mean-square power above, never the raw trace variance; correct
+`(mm/s)²/Hz` units; correct one-sided folding; correct frequency grid; white-noise power recovering
+`σ²` statistically; bin-centred and off-bin sinusoid behaviour under Hann including leakage; and no
+claim anywhere that a raw PSD peak height is a sinusoid amplitude (§D).
 
 ## J. Synthetic validation — two levels, and where the tolerance comes from
 
 ### Level 1 — mathematical estimator tests (exact uniform grids)
 
 Bin-centered sinusoid; off-bin sinusoid; two sinusoids; DC; linear trend; constant; white noise.
-Validate: the frequency grid; one-sided scaling; PSD units; **Parseval/variance consistency**;
-taper correction; peak location; leakage behaviour.
+Validate: the frequency grid; one-sided scaling; PSD units; **Parseval consistency against the
+window-normalized mean-square power (§I)**, never the raw trace variance; taper correction; peak
+location; leakage behaviour.
 
 ### Level 2 — admission/refusal tests (timestamp pathology)
 
@@ -318,18 +399,29 @@ count, and why that resolution is acceptable for the ~1 Hz and 8.333-Hz question
 ## Irregular-sampling estimator: deferred
 
 Lomb–Scargle and friends are **not** committed to SA2 v1. All 52 committed recordings are regular
-by the SA1 diagnostic and admissible to the uniform-grid estimator, so the first implementation is
-legitimately: uniform estimator when admitted, typed refusal otherwise. An irregular estimator
+by the SA1 ACF-lag diagnostic — and whether they satisfy the *spectral* admission rule is exactly
+what the SA2.1 calibration determines. The v1 shape is therefore: uniform estimator when admitted
+under the calibrated tolerance, typed refusal otherwise. An irregular estimator
 becomes justified when committed data actually fails the admission policy — not because the
 architecture has a slot for one.
 
 ## Implementation sequence after this design
 
 - **SA2.0 — design finalization.** This PR only. No code before it passes.
-- **SA2.1 — timebase + target-support backend.** `TimebaseCharacterization`, `SpectralAdmission`,
-  `TargetFrequencySupport`. **No PSD yet.** Run over all 52 committed live recordings and
-  commit/test the capability characterization — sample rates, per-view Nyquist, resolution, 1-Hz
-  and 8.333-Hz support, exact refusal counts and reasons.
+- **SA2.1 — admission calibration + capability backend.** In this order, inside one PR:
+  (1) implement `TimebaseCharacterization`; (2) implement the synthetic jitter/pathology harness;
+  (3) **determine and record `SPECTRAL_UNIFORMITY_TOL`** from the declared distortion limits;
+  (4) implement `SpectralAdmission`; (5) run admission across all 52 committed recordings; (6) only
+  then implement and run `TargetFrequencySupport`; (7) publish the exact committed-data
+  support/refusal counts and reasons. **No PSD in SA2.1.**
+
+  The tolerance is calibrated **before** any committed-data admission verdict is published; SA1's
+  `2e-2` band is never substituted as a temporary stand-in. (Chosen over the `SA2.1a`/`SA2.1b`
+  split: the calibration is small enough to live at the head of the same PR.)
+
+  Expected table, per `recording × view`: `N`; span; `dt_eff`; `fs_eff`; Nyquist; timestamp
+  irregularity metrics; **spectral admission + reason**; **1-Hz support + reason**; **8.333-Hz
+  support + reason**.
 - **SA2.2 — validated periodogram/PSD backend.** `WindowView → selected gate → spectral estimate`
   with §I's choices. Synthetic tests first, then committed-data smoke tests.
 - **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
