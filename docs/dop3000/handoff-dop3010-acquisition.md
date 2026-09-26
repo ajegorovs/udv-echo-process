@@ -84,17 +84,24 @@ the two items above:
   that the job's log is now read for history on **every** invocation, not only under `resume`.
 - **PR #45** (`feat/analysis-sa1-backend`) — SA1: per-gate statistics with declared depth reductions,
   the trace-recurrence estimator with explicit unsupported-claim verdicts, and the executed notebook
-  preview. Gates: **2715 passed / 22 skipped**, `marimo check notebooks` exit 0, and an executed
-  807,089-byte HTML export (every cell ran). **Not** verified: any live notebook session (selection
-  read-back), and the export exercises only the default selection, so the undefined/unsupported
-  rendering branches are unexercised.
+  preview. Rebased onto the #46 merge, then carried through a coherent-interface pass — one shared
+  view vocabulary, one data cut, consolidated provenance, a refusal contract that returns typed
+  verdicts instead of raising, and a typed committed-pass catalog. Gates: **2804 passed / 5 failed /
+  22 skipped**, `marimo check notebooks` exit 0, and an executed 840,573-byte HTML export (every cell
+  ran). The five failures are environment-bound and identical on pristine `origin/master`: each needs
+  a live UDOP window (`no visible TMain_Scr window`, `acquire/win32/tree.py:162`). **Not** verified:
+  live *selection* read-back of the widgets — the crafted selections were exercised by executing a
+  scratch copy, not by driving the UI (marimo 0.24 renders its controls in a shadow DOM) — and the
+  shipped recording carries no constant trace, so that refusal branch is reached only by crafted
+  input.
 
 **What those slices surfaced, for whoever reviews them** (each is a follow-up with a trigger, not a
-defect): the two SA1 modules spell the same view differently (`primary-comparison` vs
-`primary comparison`), so the notebook carries a label map; their exploration semantics differ (a
-time+depth block against a leading window); two provenance containers exist where one would do; and
-`_sparse_pass.supported_mean_of` cannot carry the extended statistics, which is why SA1 ships its own
-reductions.
+defect): three of the four were resolved by #45's coherent-interface pass — one shared view vocabulary
+(`analysis._sparse_view.SparseView`, each label carrying the rule that fixes its meaning), one data
+cut (`WindowView`, which the recurrence now consumes rather than reinterpreting), and one provenance
+container (`ViewProvenance`, which `TraceRecurrence` depends on instead of carrying a parallel
+description). The fourth stands and is deliberate: `_sparse_pass.supported_mean_of` cannot carry the
+extended statistics, which is why SA1 ships its own reductions.
 
 **Direction review (2026-09-25).** An external review judged this direction **sound** and reordered
 the work, which the list above now reflects. Its strongest counter-argument: the project risks
