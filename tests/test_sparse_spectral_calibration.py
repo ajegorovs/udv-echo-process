@@ -8,8 +8,10 @@ What is asserted here is not "0.09 is a good number". It is the four things that
 - the harness's spectral calculation **reduces to the pinned periodogram definition** on an
   exact uniform grid, so what it measures distortion *of* is the estimator the plan defines;
 - the distortion **does not fall as the operand grows**, in the region the threshold lives in;
-- the shipped tolerance is the measured clean region's edge **rounded down**, inside the
-  declared bounds, and the run that produced it cannot see a committed recording.
+- the three numbers the threshold is made of are **distinct and in order**: the measured clean
+  boundary, the first measured violation, and the operational tolerance the shipped constant
+  holds, which is the boundary **quantized downward** rather than equal to its edge;
+- the run that produced them cannot see a committed recording.
 
 The last point is tested by running the calibration from a directory that holds no dataset:
 if any part of it reached for committed data, that run would fail rather than silently agree.
@@ -18,6 +20,7 @@ if any part of it reached for committed data, that run would fail rather than si
 from __future__ import annotations
 
 import itertools
+import math
 import pathlib
 
 import _spectral_calibration as calibration
@@ -27,6 +30,7 @@ import pytest
 from udv_echo_process.analysis.sparse_spectral_admission import (
     DECLARED_DISTORTION_BOUNDS,
     SPECTRAL_UNIFORMITY_TOL,
+    UNIFORMITY_TOL_QUANTUM,
     spectral_admission,
 )
 from udv_echo_process.analysis.sparse_spectral_support import characterize_stamps
@@ -176,18 +180,61 @@ def test_the_distortion_does_not_fall_as_the_operand_grows_about_the_threshold(
 def test_the_selected_tolerance_is_inside_the_measured_region_and_zero_violations_remain(
     matrix: tuple[calibration.CalibrationCase, ...],
 ) -> None:
+    """The three numbers, in order: clean boundary, first violation, operational tolerance.
+
+    The shipped constant is not asserted to *be* the boundary. It is asserted to be the boundary
+    quantized downward by :data:`UNIFORMITY_TOL_QUANTUM`, which is a different claim: it fixes the
+    rule that produced the number, not just the number.
+    """
     bounds = calibration.declared_bounds()
     selected = calibration.select_tolerance(matrix, operand=OPERAND, bounds=bounds)
-    measured = float(selected["tolerance"])
+    boundary = float(selected["tolerance"])
     first_breaking = float(selected["first_breaking"])
-    assert selected["violations"] == (), "nothing at or below the selection may break a bound"
-    assert measured < first_breaking
-    assert measured > 0.0
-    # The shipped constant is the measurement rounded down to a whole hundredth of an interval.
-    assert SPECTRAL_UNIFORMITY_TOL <= measured
-    assert SPECTRAL_UNIFORMITY_TOL >= 0.9 * measured
+
+    # 1. the measurement itself: a clean region with a violation just above it, and nothing below.
+    assert selected["violations"] == (), "nothing at or below the boundary may break a bound"
+    assert 0.0 < boundary < first_breaking
+
+    # 2. the quantization rule, reproduced rather than restated. ``+ 1e-9`` guards the case where
+    #    the boundary is a whole multiple of the quantum and float division lands just under it.
+    steps = math.floor(boundary / UNIFORMITY_TOL_QUANTUM + 1e-9)
+    assert SPECTRAL_UNIFORMITY_TOL == pytest.approx(steps * UNIFORMITY_TOL_QUANTUM, abs=1e-12), (
+        "the shipped tolerance is not the measured clean boundary quantized downward by "
+        f"UNIFORMITY_TOL_QUANTUM: {SPECTRAL_UNIFORMITY_TOL} against {boundary}"
+    )
+
+    # 3. therefore strictly inside the clean region, and the largest such value: one quantum up
+    #    would cross the boundary. This is what "conservative" has to mean to be checkable.
+    assert SPECTRAL_UNIFORMITY_TOL < boundary, "the tolerance must not claim the boundary itself"
+    assert SPECTRAL_UNIFORMITY_TOL + UNIFORMITY_TOL_QUANTUM > boundary, (
+        "the tolerance is not the largest downward-quantized value below the boundary"
+    )
     assert SPECTRAL_UNIFORMITY_TOL < first_breaking
     assert 0.09 < 1.2 * SPECTRAL_UNIFORMITY_TOL, "the shipped value is not far below the break"
+
+
+def test_the_measured_boundary_and_break_are_the_pair_the_prose_quotes(
+    matrix: tuple[calibration.CalibrationCase, ...],
+) -> None:
+    """The two measured numbers, pinned: prose that quotes them cannot drift from the matrix.
+
+    ``0.09918`` (measured clean boundary) and ``0.09923`` (first measured violation) appear in the
+    constant's comment, in :data:`SPECTRAL_UNIFORMITY_TOL_DERIVATION`, in the PR body and in the
+    design doc. They are separate concepts from the third number, the operational tolerance, and
+    they are checked here as the measurement they are.
+    """
+    selected = calibration.select_tolerance(
+        matrix, operand=OPERAND, bounds=calibration.declared_bounds()
+    )
+    assert float(selected["tolerance"]) == pytest.approx(0.09918, abs=5e-6), (
+        "the measured clean boundary moved; every place that quotes 0.09918 is now wrong"
+    )
+    assert float(selected["first_breaking"]) == pytest.approx(0.09923, abs=5e-6), (
+        "the first measured violation moved; every place that quotes 0.09923 is now wrong"
+    )
+    assert SPECTRAL_UNIFORMITY_TOL != pytest.approx(float(selected["tolerance"]), abs=5e-6), (
+        "the operational tolerance must not be reported as the measured clean boundary itself"
+    )
 
 
 def test_the_threshold_would_have_caught_the_axes_it_was_measured_against(

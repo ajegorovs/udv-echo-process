@@ -36,11 +36,20 @@ admitted, and a ramp axis with the same interval deviation is refused.
 **The tolerance is evidence, not a cautious-looking decimal.** :data:`DECLARED_DISTORTION_BOUNDS`
 states, before any measurement, how much distortion the axis may contribute; the jitter
 calibration in ``tests/_spectral_calibration.py`` measures the four distortions against the
-same signal on an exact uniform grid; the tolerance is the largest timing error whose worst
-measured distortion over the whole synthetic matrix stays inside those bounds. The bounds were
+same signal on an exact uniform grid; and the calibration then fixes
+
+- the **measured clean boundary** - the largest timing error at which *every* measured axis at or
+  below it stays inside those bounds (``0.09918``);
+- the **first measured violation**, just above it (``0.09923``);
+- the **operational admission tolerance** shipped as :data:`SPECTRAL_UNIFORMITY_TOL`, which is the
+  measured clean boundary **quantized downward** by :data:`UNIFORMITY_TOL_QUANTUM` (``0.09``).
+
+The three are separate numbers and are not interchangeable: the shipped value is deliberately
+*inside* the measured clean region rather than equal to its edge. Quantization is downward only -
+rounding up would cross the measured break and admit axes outside the bounds. The bounds were
 declared first and were not revised to change the answer, and the calibration never reads a
 committed recording, so no committed-data verdict can have influenced the threshold. A test
-re-derives the tolerance from the matrix and refuses a threshold that has drifted from it.
+re-derives all three from the matrix, so a threshold that drifts from the measurement fails.
 
 **Refusal is a result.** The only alternative to admission is an *explicitly named*
 irregular-sampling estimator with its own admission policy, and SA2 v1 does not implement one
@@ -160,13 +169,19 @@ ESTIMATOR_UNIFORM_PERIODOGRAM = (
 #: samples any of them holds is 138.
 MIN_SPECTRAL_SAMPLES = 16
 
-#: The calibrated uniformity tolerance, on the **timing error** operand: how far, in effective
+#: The operational admission tolerance, on the **timing error** operand: how far, in effective
 #: intervals, any stored profile stamp may sit from the uniform grid the estimator assumes. The
 #: comparison is inclusive (:data:`TIMING_ERROR_ADMISSION`): an axis at exactly the tolerance is
-#: admitted. The largest value the calibration actually measured clean is 0.09918 and the smallest
-#: measured violation 0.09923, so the shipped threshold is the whole hundredth of an interval at or
-#: below that measurement - nine hundredths, carrying a 9.3% margin under the first break.
+#: admitted. This is *not* the measured clean boundary (0.09918) and not the first measured
+#: violation (0.09923): it is that boundary quantized **downward** by
+#: :data:`UNIFORMITY_TOL_QUANTUM`, so it sits nine hundredths of an interval below the break with a
+#: 9.3% margin. Never rounded up - rounding up would cross the break.
 SPECTRAL_UNIFORMITY_TOL = 0.09
+
+#: The quantization the operational tolerance is derived by, named so the rule is executable rather
+#: than described: ``SPECTRAL_UNIFORMITY_TOL == floor(measured clean boundary / this) * this``. A
+#: whole hundredth of an interval is a reporting granularity, not a measurement one.
+UNIFORMITY_TOL_QUANTUM = 0.01
 
 #: How the tolerance above was obtained, in the form a reader can reproduce.
 SPECTRAL_UNIFORMITY_TOL_DERIVATION = (
@@ -180,13 +195,14 @@ SPECTRAL_UNIFORMITY_TOL_DERIVATION = (
     "grid, and the target-bin response error. 770 axes are constructed; 742 of them reach the "
     "uniformity condition (the rest are refused by the duplicate or monotonicity condition first, "
     "and their spectra are degenerate quadratic forms rather than distortions of an irregular "
-    "axis). The selected tolerance is the largest measured max_relative_timing_error at which "
-    "*every* axis at or below it stays inside DECLARED_DISTORTION_BOUNDS - 0.09918, with the first "
-    "violation at 0.09923 and zero violations in the end. The shipped 0.09 is that measurement "
-    "rounded down to a whole hundredth of an interval; it is never rounded up, because rounding up "
-    "would cross the measured break. The matrix contains no committed recording, and no committed "
-    "quantity appears anywhere in it: the threshold cannot have been selected from the data it "
-    "will be applied to."
+    "axis). The measured clean boundary is the largest measured max_relative_timing_error at which "
+    "*every* axis at or below it stays inside DECLARED_DISTORTION_BOUNDS - 0.09918 - with the first "
+    "measured violation at 0.09923 and zero violations in the end. The operational tolerance 0.09 is "
+    "that boundary quantized downward by UNIFORMITY_TOL_QUANTUM (a whole hundredth of an interval), "
+    "so it is strictly inside the measured clean region rather than equal to its edge; it is never "
+    "rounded up, because rounding up would cross the measured break. The matrix contains no "
+    "committed recording, and no committed quantity appears anywhere in it: the threshold cannot "
+    "have been selected from the data it will be applied to."
 )
 
 #: The uniformity comparison, stated as the arithmetic it is, with its boundary semantics.

@@ -236,14 +236,25 @@ def test_the_declared_bounds_are_positive_and_the_tolerance_is_inside_them() -> 
     assert DECLARED_DISTORTION_BOUNDS.target_response_error_percent > 0.0
     assert 0.0 < SPECTRAL_UNIFORMITY_TOL < 0.2
     assert SPECTRAL_UNIFORMITY_TOL in (0.01, 0.02, 0.03, 0.04, 0.05, 0.06, 0.07, 0.08, 0.09), (
-        "the shipped tolerance is a whole hundredth of an interval, rounded down from a "
-        "measurement rather than chosen"
+        "the operational tolerance is a whole UNIFORMITY_TOL_QUANTUM of an interval, quantized "
+        "downward from a measurement rather than chosen"
     )
 
 
 def test_the_tolerance_is_selected_from_the_declared_bounds_and_never_from_a_recording() -> None:
-    """The policy numbers are module constants: no committed quantity can have chosen them."""
+    """The policy numbers are module constants: no committed quantity can have chosen them.
+
+    The derivation must carry all three distinct numbers and the rule between them, because the
+    failure mode this guards is exactly the conflation of the measured boundary with the shipped
+    operational tolerance.
+    """
     assert "0.09918" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
+    assert "measured clean boundary" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
     assert "0.09923" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
+    assert "first measured violation" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
+    assert "quantized downward" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
+    assert "UNIFORMITY_TOL_QUANTUM" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
+    assert "strictly inside" in SPECTRAL_UNIFORMITY_TOL_DERIVATION, (
+        "the derivation must say the tolerance sits inside the clean region, not at its edge"
+    )
     assert "no committed recording" in SPECTRAL_UNIFORMITY_TOL_DERIVATION
-    assert SPECTRAL_UNIFORMITY_TOL_DERIVATION.count("rounded down") == 1

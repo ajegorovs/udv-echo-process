@@ -433,11 +433,20 @@ centred and off-bin tones, and 12 deviation levels: **770 cases**, of which 742 
 admission conditions do not already refuse.
 
 ```
-largest clean max_relative_timing_error  0.09918      <- largest clean measurement
-first breaking measurement               0.09923      <- 1 % bound first broken
-shipped SPECTRAL_UNIFORMITY_TOL          0.09         <- whole hundredth at or below the above
+measured clean boundary                  0.09918      <- largest clean measurement
+first measured violation                 0.09923      <- 1 % bound first broken
+operational admission tolerance          0.09         <- the measured clean boundary quantized
+                                                        downward by UNIFORMITY_TOL_QUANTUM = 0.01,
+                                                        i.e. the largest value that is both a
+                                                        whole hundredth and strictly inside the
+                                                        clean region. Never rounded up.
 violations at or below the tolerance     0
 ```
+
+The three numbers are distinct and none stands for another: the shipped constant is deliberately
+*inside* the measured clean region, not equal to its edge. A test reproduces the quantization from
+the matrix (`floor(boundary / 0.01) * 0.01`), pins the two measured values, and refuses a shipped
+tolerance that is the boundary itself.
 
 **Three results of the calibration are worth more than the number.**
 
