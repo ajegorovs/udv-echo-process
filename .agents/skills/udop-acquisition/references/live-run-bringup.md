@@ -30,7 +30,16 @@ Rules that make the set portable:
 directory. No clone path, machine name or user appears anywhere. The interpreter is the
 project's own venv when it exists, falling back to the running one.
 - **The scheduled task is created once per machine** and is the only machine-specific value
-(an absolute interpreter path). Document the creation command next to the dispatcher.
+  (an absolute interpreter path). Document the creation command next to the dispatcher.
+- **The task names one *tree*, so a second checkout must not dispatch through it.** The registered
+  command runs `<tree>\tools\live\task_run.py`, which reads its target and its arguments from *its own*
+  tree's `outputs/live/` and writes its log there: from a linked worktree, `dispatch.sh` silently runs
+  the **primary** checkout's code and leaves the worktree's `outputs/live/` empty — so a probe appears
+  to have produced no log at all (the dispatcher's own "no log at `<worktree>/outputs/live/task-…`"
+  message is what that looks like). Either register a second task for the second tree and select it with
+  `LIVE_TASK_NAME` (the README's bring-up command), or run the package's console commands **directly**
+  from the tree under test: reads, the compile, the whole record/store cycle and the point writes all
+  work in-session, and only pixel work genuinely needs the scheduled route.
 - **Arguments travel in files, never in the trigger command line** — quoting through the
 scheduler's own `/tr` is where that always breaks. Validate the argument file before
 dispatching: a probe handed its own script name as its first argument read it as a duration,
