@@ -415,6 +415,22 @@ Binding rules that outlive that work:
 - Rotating-machinery analysis: unwrapped velocity, per-gate Doppler power, and
   blade-pass harmonics.
 
+### Provenance and artifact identity
+
+- **The artifact and operation ids embed a `git rev-parse` taken from the
+  process's current working directory.** `provenance/models.py::current_revision`
+  runs `git rev-parse --short HEAD` without `cwd=` and `implementation_ref` feeds
+  the result into `operation_id_for`, so the same data processed from two trees,
+  or across a commit, yields different ids — which is deliberate for the
+  *implementation* half of the identity, but it makes
+  `tests/test_artifact_resample.py::TestBundleContract::test_ids_are_deterministic_across_two_processes`
+  environment-sensitive: it compares an in-process id against a subprocess run
+  with `cwd=REPO` and pins neither side, so a `chdir` left elsewhere or a
+  concurrent commit flips it. Measured: the same interpreter returns this tree's
+  short SHA, another checkout's, or `None`, purely by directory. Observed once in
+  a full-suite run and green on re-run. The fix belongs in the test (pin the
+  revision or the working directory on both halves), not in the id equation.
+
 ### Visualization and acquisition support
 
 - Velocity-field/time-depth contour visualizations beyond the current heatmap.
