@@ -581,15 +581,24 @@ architecture has a slot for one.
 - **SA2.2 — validated periodogram/PSD backend. LANDED.** `WindowView → selected gate →
   characterize → admit → spectral estimate`, delivered as `analysis.sparse_periodogram`
   (`SpectralEstimate`, `periodogram_of_view`, `SpectralVerdict`, `periodic_hann`,
-  `taper_enbw_bins`). The periodic Hann is pinned above, the grid is SA2.1's own
-  `one_sided_frequency_grid`, the density is `|sum_n w x exp(-2j pi f_k t_n)|^2 / (fs_eff sum w^2)`
-  with DC never doubled and the top bin halved for even `N` only, and a refused axis returns a
-  refusal carrying its admission rather than a density. Variance is asserted where it exists - the
-  fold identity is exact on an exactly uniform axis and is *carried* as `energy_identity_error`
-  where the stamps are irregular (worst 2.9e-4 over a full committed sitting's views) instead of
-  being claimed exact - and the estimator is checked against the SA2.1 calibration harness's own
-  transform as an independent oracle, which it agrees with to 1e-9 on exact uniform axes. The
-  estimator stays an `src/` module: no notebook, no peak interpretation, no Welch, no resampling.
+  `taper_enbw_bins`). **The estimator makes the approximation the admission granted:** the
+  transform is the ordinary one-sided `rfft` of the tapered, detrended trace, over the adopted
+  uniform grid (`dt_eff = span/(N-1)`), as `|rfft(w * x)[k]|^2 / (fs_eff * sum w^2)` at SA2.1's own
+  `one_sided_frequency_grid` - the stored stamps supply `dt_eff`/`fs_eff`/`delta_f`, are what the
+  admission tested, and are what the optional linear detrending is fitted against, but they are not
+  the Fourier sampling coordinates. DC is never doubled, the interior bins are doubled, the top bin
+  is halved for even `N` only. The nonuniform evaluation at the stored times is kept **as the
+  test-only oracle** (`tests._spectral_calibration.reference_spectrum`), and one committed-data
+  diagnostic records what taking the approximation costs against it: over 18 committed views
+  (9 jobs × 2 views, one sitting) the integrated difference is 1.8e-5 … 2.9e-4 and the normalized
+  L2 difference 1.8e-4 … 6.7e-4, ordered by the axis's own timing error (9.1e-4 … 5.8e-3, all far
+  inside the 0.09 tolerance). Those are recorded diagnostics, **not** new admission thresholds. A
+  refused axis returns a refusal carrying its admission rather than a density; the fold's
+  `sum_k Pxx[k] * delta_f == sum_n (w x)^2 / sum_n w^2` is now a pure implementation invariant and
+  holds to floating-point accuracy for every defined spectrum (worst 8.6e-16 over the committed
+  views), which is why `parseval_relative_error` is not a measure of timestamp irregularity -
+  `admission.characterization.max_relative_timing_error` is that. The estimator stays an `src/`
+  module: no notebook, no peak interpretation, no Welch, no resampling.
 - **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
   summary, a PSD plot, target-support rows and refusal wording. No calculations in cells.
 - **SA2.4 — committed-data spectral characterization.** Low-frequency structure, support near

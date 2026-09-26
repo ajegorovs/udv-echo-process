@@ -1,11 +1,22 @@
 """SA2.2 - one view's periodogram, on the adopted uniform grid, with its admission on it.
 
-The estimator is the *assumed-uniform-grid* periodogram: the samples are taken at their stored
-stamps, but the transform assumes they sit on the uniform grid SA2.1 characterizes (``fs_eff =
-(N - 1) / span``, bin spacing ``delta_f = fs_eff / N``). That assumption is not free, so this
-module computes nothing until :class:`~udv_echo_process.analysis.sparse_spectral_admission
-.SpectralAdmission` has admitted the axis, and the admission travels *inside* the result: a
-spectrum cannot exist here without the evidence that one was allowed.
+The estimator is the *admitted uniform-grid* periodogram. The axis arrives with stored timestamps
+that are only approximately uniform, so the pipeline characterizes them (``fs_eff = (N - 1) /
+span``, bin spacing ``delta_f = fs_eff / N``), asks
+:class:`~udv_echo_process.analysis.sparse_spectral_admission.SpectralAdmission` whether that
+approximation may be made, and - only if it may - **makes it**: the transform is the ordinary
+one-sided ``rfft`` of the tapered, detrended trace, whose sampling coordinates are the adopted
+uniform grid. The stored stamps are not the Fourier sampling coordinates: they supplied ``dt_eff``,
+``fs_eff`` and ``delta_f``, they are what the admission tested, and they are what the optional
+linear detrending is fitted against. Evaluating the transform at the stored times instead would be
+a nonuniform Fourier evaluation, which is a different estimator with a different admission
+question - that evaluation exists in this repository only as the test-only oracle
+(:func:`tests._spectral_calibration.reference_spectrum`), and it is what the SA2.1 calibration
+measured distortion against.
+
+The admission travels *inside* the result: a spectrum cannot exist here without the evidence that
+one was allowed, and the result carries the approximation's own measure of itself -
+``admission.characterization.max_relative_timing_error``.
 
 **A refused axis is a result, not an exception.** An irregular axis returns a
 :class:`SpectralEstimate` whose verdict is :data:`SpectralVerdict.REFUSED_AXIS`, whose arrays are
@@ -19,16 +30,18 @@ remembered "1.5 bins" - the symmetric convention gives ``1.5 * N / (N - 1)`` ins
 apart at the smallest committed sample count.
 
 **The density normalization is the reviewed one** (:data:`NORMALIZATION_RULE`): ``Pxx[k] =
-|sum_n w[n] x[n] exp(-2j pi f_k t_n)|^2 / (fs_eff * sum_n w[n]^2)``, in ``(unit)^2 / Hz``, with the
-one-sided folding of :data:`ONE_SIDED_RULE`. The folding is checked by an identity the result
-validates on construction: ``sum_k Pxx[k] * delta_f`` equals ``sum_n (w[n] x[n])^2 / sum_n w[n]^2``
-exactly, for both parities - which is why DC is never doubled and why the top bin is doubled for
-odd ``N`` and not for even ``N``.
+|rfft(w * x)[k]|^2 / (fs_eff * sum_n w[n]^2)``, in ``(unit)^2 / Hz``, with the one-sided folding of
+:data:`ONE_SIDED_RULE`. Because that transform is the orthogonal DFT of the assumed uniform
+sequence, the result can validate :data:`PARSEVAL_RULE` on construction to floating-point accuracy
+for **every** defined spectrum - an implementation invariant of the folding, not a measure of how
+irregular the stamps were. Which is why DC is never doubled, why the top bin is doubled for odd
+``N`` and halved for even ``N``, and why a folding error is caught rather than published.
 
 **The frequency grid is not re-derived here.** It comes from
 :func:`~udv_echo_process.analysis.sparse_spectral_support.one_sided_frequency_grid`, the single
 definition of bin positions in this repository, so the estimator cannot land on a grid the
-target-support question was not asked of.
+target-support question was not asked of. The transform's own bin count is checked against that
+grid's, so the two cannot silently diverge.
 
 Narrow by intent: no Welch averaging, no resampling, no irregular-sampling estimator, no peak
 search or condition comparison, no notebook figure, and no serialization.
@@ -97,17 +110,17 @@ TAPER_CONVENTION = (
 
 #: What the estimate is, for a reader who has only the result.
 ESTIMATOR_NAME = (
-    "single-view periodogram on the adopted uniform grid: real one-sided transform of the "
-    "tapered, detrended trace, evaluated at the SA2.1 grid's own bin frequencies t_k = k * "
-    "fs_eff / N"
+    "admitted uniform-grid periodogram: the real one-sided rFFT of the tapered, detrended trace, "
+    "whose sampling coordinates are the adopted uniform grid (dt_eff = span / (N - 1)) that the "
+    "admission admitted the stored stamps under, evaluated at the SA2.1 grid's own bin "
+    "frequencies f_k = k * fs_eff / N"
 )
 
 #: The density normalization, as arithmetic rather than as a name.
 NORMALIZATION_RULE = (
-    "Pxx[k] = |sum_n w[n] * x[n] * exp(-2j * pi * f_k * t_n)|^2 / (fs_eff * sum_n w[n]^2) with "
-    "f_k = k * fs_eff / N: a power spectral *density* in (unit)^2 / Hz, so a bin's power is "
-    "Pxx[k] * delta_f and the integral over the one-sided grid is the window-normalized mean "
-    "square of the analysed trace"
+    "Pxx[k] = |rfft(w * x)[k]|^2 / (fs_eff * sum_n w[n]^2) with f_k = k * fs_eff / N: a power "
+    "spectral *density* in (unit)^2 / Hz, so a bin's power is Pxx[k] * delta_f and the integral "
+    "over the one-sided grid is the window-normalized mean square of the analysed trace"
 )
 
 #: The one-sided folding, including both endpoint rules and both parities.
@@ -118,28 +131,27 @@ ONE_SIDED_RULE = (
     "doubled, because the one-sided grid of an odd-length transform folds the upper half onto it"
 )
 
-#: The identity the result checks on construction, stated where a reader will see it - with the
-#: scope it actually has. ``sum_k Pxx[k] * delta_f`` equals the window-normalized mean square of
-#: the analysed trace **exactly when the transform's frequencies are an orthogonal set for the
-#: stored stamps**, which is the case on an exactly uniform axis: the one-sided fold (DC once, the
-#: interior bins twice, the top bin halved for even ``N``) then reproduces the full spectrum's
-#: power. On an irregular axis the transform is not orthogonal - that is precisely the assumption
-#: the admission tests - so the two powers differ, by a residual this result **carries** rather
-#: than hides. Measured: below 1e-14 on an exact uniform axis, and up to 2.9e-4 across the
-#: committed views (usually ~1e-4), against a folding error which is off by order 1.
-ENERGY_IDENTITY_RULE = (
-    "sum_k Pxx[k] * delta_f == sum_n (w[n] * x[n])^2 / sum_n w[n]^2, exact under the folding of "
-    "ONE_SIDED_RULE when the grid's frequencies are orthogonal for the stored stamps (an exactly "
-    "uniform axis); on an irregular axis the two differ by the grid assumption itself, and the "
-    "relative difference is reported as energy_identity_error. It is not the raw variance of the "
-    "trace, because the taper's own weighting is part of what the density describes"
+#: The identity the result checks on construction. It is an **implementation invariant**, not a
+#: scientific allowance: the transform is the ordinary one-sided rFFT of the tapered, detrended
+#: trace, so ``sum_k Pxx[k] * delta_f`` equals the window-normalized mean square of that trace to
+#: floating-point accuracy for every defined spectrum. It is deliberately *not* a measure of how
+#: irregular the stamps are - that quantity is the admission's own
+#: ``characterization.max_relative_timing_error``, which is what quantified the approximation the
+#: uniform grid makes. This field only says the fold and the normalization are wired together
+#: correctly.
+PARSEVAL_RULE = (
+    "sum_k Pxx[k] * delta_f == sum_n (w[n] * x[n])^2 / sum_n w[n]^2 to floating-point accuracy, "
+    "under the folding of ONE_SIDED_RULE, because the transform is the orthogonal DFT of the "
+    "assumed uniform sequence; it is not the raw variance of the trace, since the taper's own "
+    "weighting is part of what the density describes, and it is not a measure of timestamp "
+    "irregularity - admission.characterization.max_relative_timing_error is that"
 )
 
-#: The bound the identity is checked to. It is deliberately *not* a machine-epsilon bound: a
-#: folding rule that is wrong by one endpoint bin is off by order 1, while the adopted grid's own
-#: residual on irregular stamps is ~1e-5, so a bound here separates the defect from the
-#: assumption. The measured error is carried on every result, so nothing is hidden behind it.
-ENERGY_IDENTITY_TOL = 1e-3
+#: The bound the identity is checked to. A tolerance rather than an equality because the sum of
+#: ``N/2 + 1`` squares accumulates rounding, and the two sides are computed by different paths
+#: (an FFT and a dot product). A folding rule that is wrong by one endpoint bin is off by order 1,
+#: which is what this is for.
+PARSEVAL_REL_TOL = 1e-10
 
 
 def periodic_hann(count: int) -> np.ndarray:
@@ -251,17 +263,18 @@ class SpectralEstimate(ArrayModel):
     estimator_name: str
     normalization_rule: str
     one_sided_rule: str
-    energy_identity_rule: str
+    parseval_rule: str
 
     # the spectrum itself, and the two powers the identity relates
     frequency_hz: array_field(np.float64, rank=1)
     psd: array_field(np.float64, rank=1)
     window_normalized_mean_square_power: float | None
     integrated_psd_power: float | None
-    #: The relative difference between the two powers above. Exactness is a property of an
-    #: orthogonal grid and this estimator's grid is the *assumed* one, so on an irregular axis the
-    #: difference is a measurement of the assumption rather than an error to hide.
-    energy_identity_error: float | None
+    #: The relative difference between the two powers above: an implementation invariant of the
+    #: fold and the normalization, at floating-point accuracy. It is **not** the timestamp
+    #: irregularity - that is `admission.characterization.max_relative_timing_error`, the quantity
+    #: that bounded the uniform-grid approximation this estimator makes.
+    parseval_relative_error: float | None
 
     @property
     def view(self) -> str:
@@ -356,19 +369,19 @@ class SpectralEstimate(ArrayModel):
                 raise ValueError(
                     "a defined spectrum carries both powers the energy identity relates"
                 )
-            error = self.energy_identity_error
+            error = self.parseval_relative_error
             if error is None or not math.isfinite(error):
                 raise ValueError(
                     "a defined spectrum reports the relative difference between its integrated "
-                    "density and its window-normalized power, exact or not"
+                    "density and its window-normalized power: the identity is an implementation "
+                    "invariant of the fold, so it is always available"
                 )
-            if abs(error) > ENERGY_IDENTITY_TOL:
+            if abs(error) > PARSEVAL_REL_TOL:
                 raise ValueError(
-                    "the one-sided folding does not close the energy identity: "
+                    "the one-sided folding does not close the Parseval identity: "
                     f"sum(Pxx) * delta_f = {integrated!r} against the window-normalized power "
-                    f"{windowed!r} (relative difference {error!r}, bound "
-                    f"{ENERGY_IDENTITY_TOL!r}); a folding rule that is wrong by one endpoint bin "
-                    "still looks like a spectrum"
+                    f"{windowed!r} (relative difference {error!r}, bound {PARSEVAL_REL_TOL!r}); "
+                    "a folding rule that is wrong by one endpoint bin still looks like a spectrum"
                 )
             return self
 
@@ -387,7 +400,7 @@ class SpectralEstimate(ArrayModel):
                 "enbw_hz",
                 "window_normalized_mean_square_power",
                 "integrated_psd_power",
-                "energy_identity_error",
+                "parseval_relative_error",
                 "linear_trend_per_s",
                 "trace_mean_mm_s",
             ):
@@ -526,8 +539,11 @@ def _periodogram_of_trace(
             admission=admission,
         )
 
-    # 3. only now compute. The characterization that admitted the axis is the one used, so the
-    #    grid cannot come from a different reading of the same stamps than the verdict did.
+    # 3. only now compute, and compute the estimator the admission granted. The transform is the
+    #    ordinary one-sided rFFT of the tapered, detrended trace: the stored stamps are *not* the
+    #    Fourier sampling coordinates. They gave this axis its dt_eff, fs_eff and delta_f, and they
+    #    are what the admission tested; the approximation that axis was admitted under is the one
+    #    taken here, not bypassed by evaluating a nonuniform transform at the stored times.
     count = int(characterization.profiles)
     rate = float(characterization.effective_sample_rate_hz)  # type: ignore[arg-type]
     delta_f = float(characterization.frequency_resolution_hz)  # type: ignore[arg-type]
@@ -538,11 +554,13 @@ def _periodogram_of_trace(
     analysed, slope = _detrended(raw, stamps, detrending)
     tapered = weights * analysed
 
-    # The density of the reviewed normalization, at the grid's own frequencies. The transform is
-    # a real one-sided DFT: a matrix-vector product on the grid, which is the rFFT's definition
-    # for uniform stamps and the assumed-grid transform for stamps that merely approximate them.
-    transform = np.exp(-2j * np.pi * np.outer(frequencies, stamps))
-    spectrum = transform @ tapered
+    spectrum = np.fft.rfft(tapered)
+    if spectrum.size != frequencies.size:
+        raise SpectralPeriodogramError(
+            f"the transform produced {spectrum.size} one-sided bins against the grid's "
+            f"{frequencies.size}: the estimator's transform and SA2.1's grid have diverged, and "
+            "neither is usable while they disagree"
+        )
     density = np.abs(spectrum) ** 2 / (rate * float(np.sum(weights**2)))
     density[1:] *= 2.0
     if count % 2 == 0:
@@ -581,12 +599,12 @@ def _periodogram_of_trace(
         estimator_name=ESTIMATOR_NAME,
         normalization_rule=NORMALIZATION_RULE,
         one_sided_rule=ONE_SIDED_RULE,
-        energy_identity_rule=ENERGY_IDENTITY_RULE,
+        parseval_rule=PARSEVAL_RULE,
         frequency_hz=frequencies,
         psd=density,
         window_normalized_mean_square_power=windowed_power,
         integrated_psd_power=integrated,
-        energy_identity_error=error,
+        parseval_relative_error=error,
     )
 
 
@@ -628,10 +646,10 @@ def _refusal(
         estimator_name=ESTIMATOR_NAME,
         normalization_rule=NORMALIZATION_RULE,
         one_sided_rule=ONE_SIDED_RULE,
-        energy_identity_rule=ENERGY_IDENTITY_RULE,
+        parseval_rule=PARSEVAL_RULE,
         frequency_hz=np.empty(0, dtype=np.float64),
         psd=np.empty(0, dtype=np.float64),
         window_normalized_mean_square_power=None,
         integrated_psd_power=None,
-        energy_identity_error=None,
+        parseval_relative_error=None,
     )

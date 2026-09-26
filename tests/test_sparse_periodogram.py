@@ -34,7 +34,7 @@ from udv_echo_process.analysis._sparse_view import (
 )
 from udv_echo_process.analysis.sparse_passes import COMMITTED_PASSES
 from udv_echo_process.analysis.sparse_periodogram import (
-    ENERGY_IDENTITY_TOL,
+    PARSEVAL_REL_TOL,
     TAPER_NAME,
     SpectralEstimate,
     SpectralPeriodogramError,
@@ -202,7 +202,13 @@ def test_the_estimator_lands_on_the_sa21_grid_and_not_on_one_over_span() -> None
 
 
 def test_a_bin_centred_tone_lands_in_its_own_bin_and_its_lobe_holds_the_power() -> None:
-    """The Hann distribution, measured: a quarter, a half, a quarter."""
+    """The Hann distribution, measured: a quarter, a half, a quarter.
+
+    A property of *this* taper at *this* bin alignment, not a universal spectral fact: a tone
+    exactly on a bin, through the periodic Hann, puts its three-bin lobe at 1/4, 1/2, 1/4 of its
+    peak with no leakage elsewhere - a different taper or a tone off the bin gives other numbers,
+    which the tests below measure separately.
+    """
     stamps, _rate, delta = _uniform(N_EVEN)
     estimate = _periodogram(_tone(stamps, K_FIRST * delta), stamps)
 
@@ -268,7 +274,7 @@ def test_an_off_bin_tone_conserves_power_and_leaks_into_its_neighbours() -> None
     assert half.integrated_psd_power == pytest.approx(
         half.window_normalized_mean_square_power, rel=1e-12
     ), "power is conserved whatever the tone's offset from the grid"
-    assert abs(half.energy_identity_error) < 1e-12, (
+    assert abs(half.parseval_relative_error) < 1e-12, (
         "on an exactly uniform axis the fold is orthogonal, so the identity is exact"
     )
     assert share(K_FIRST) == pytest.approx(share(K_FIRST + 1), rel=1e-4), (
@@ -373,7 +379,13 @@ def test_a_constant_trace_is_a_zero_density_and_is_never_normalized_to_itself() 
 
     A constant that is *not* removed is a pure DC line, and the taper's own three-bin kernel is
     visible on it: two thirds at DC and one third in the first bin (the negative-frequency image
-    folds onto it), nothing beyond. That is the taper, not a signal.
+    folds onto it), nothing beyond. That is the taper, not a signal - again a property of this
+    taper and this bin alignment, not a universal spectral fact.
+
+    The contrast with SA1's normalized ACF is deliberate and worth stating: there the
+    normalization divides by the signal's energy, so a constant after centring is *undefined* and
+    the recurrence path refuses it. Here the density is absolute, so the zero signal has a
+    perfectly well-defined zero density and it is returned as one.
     """
     stamps, _rate, delta = _uniform(N_EVEN)
     offset = 4.0
@@ -470,7 +482,7 @@ def test_odd_n_does_not_represent_nyquist_and_doubles_its_top_bin() -> None:
     assert estimate.nyquist_is_represented is False
     assert estimate.frequency_hz[-1] == pytest.approx(rate / 2.0 - delta / 2.0, rel=1e-12)
     assert estimate.frequency_hz[-1] < rate / 2.0
-    assert abs(estimate.energy_identity_error) < 1e-12, (
+    assert abs(estimate.parseval_relative_error) < 1e-12, (
         "the odd-N folding closes exactly on a uniform axis without a Nyquist bin to halve"
     )
     # and the parity claim itself: the same tone's share of the top bin differs between parities
@@ -480,31 +492,158 @@ def test_odd_n_does_not_represent_nyquist_and_doubles_its_top_bin() -> None:
     assert int(np.argmax(even.psd)) == K_FIRST
 
 
-def test_the_energy_identity_is_checked_on_construction_not_merely_reported() -> None:
-    """A wrong folding rule still looks like a spectrum, so the model refuses one.
+def test_the_parseval_identity_holds_at_floating_point_accuracy() -> None:
+    """The identity as the implementation invariant it now is, not as a scientific allowance.
 
-    The bound is order 1e-3 against a folding defect's order 1, and the measured residual is
-    carried on every result - so the check catches the defect without pretending the assumed grid
-    is orthogonal on stamps that are not.
+    The transform is the orthogonal DFT of the assumed uniform sequence, so the folded density
+    integrates to the window-normalized mean square for **every** defined spectrum - on this
+    synthetic axis and, the committed smoke below asserts, on real irregular stamps too. It is
+    therefore checked at floating-point accuracy, and it is *not* a measure of how irregular the
+    stamps were: that is the admission's ``max_relative_timing_error``.
     """
+    for count in (N_EVEN, N_ODD):
+        stamps, _rate, delta = _uniform(count)
+        estimate = _periodogram(_tone(stamps, K_FIRST * delta), stamps)
+        error = estimate.parseval_relative_error
+        assert error is not None
+        assert abs(error) <= PARSEVAL_REL_TOL, (count, error)
+        assert abs(error) < 1e-14, (
+            "the fold is orthogonal arithmetic on a signal whose taper is known exactly, so the "
+            f"identity must close far inside the bound: got {error}"
+        )
+
+
+def test_the_parseval_identity_is_checked_on_construction_not_merely_reported() -> None:
+    """A wrong folding rule still looks like a spectrum, so the model refuses one."""
     stamps, _rate, delta = _uniform(N_EVEN)
     estimate = _periodogram(_tone(stamps, K_FIRST * delta), stamps)
-    assert abs(estimate.energy_identity_error) < ENERGY_IDENTITY_TOL
-
     payload = estimate.model_dump()
-    payload["energy_identity_error"] = 0.5  # a folding error would be this large
-    with pytest.raises(ValidationError, match="folding"):
+    payload["parseval_relative_error"] = 0.5  # a folding error would be this large
+    with pytest.raises(ValidationError, match="Parseval"):
         SpectralEstimate(**payload)
 
     payload = estimate.model_dump()
-    payload["energy_identity_error"] = None
-    with pytest.raises(ValidationError, match="reports the relative difference"):
+    payload["parseval_relative_error"] = None
+    with pytest.raises(ValidationError, match="always available"):
         SpectralEstimate(**payload)
 
     payload = estimate.model_dump()
     payload["psd"] = np.asarray(estimate.psd)[:-1]
     with pytest.raises(ValidationError, match="one density per grid frequency"):
         SpectralEstimate(**payload)
+
+
+def _spectral_difference(
+    production: np.ndarray, reference: np.ndarray, *, delta_f: float
+) -> dict[str, float]:
+    """Three scalars comparing a production density with a nonuniform reference density.
+
+    ``integrated`` is the relative difference of the integrated power, ``worst_bin`` the largest
+    single-bin difference relative to the reference's peak, and ``l1``/``l2`` the normalized
+    one- and two-norm spectral differences. They are diagnostics: nothing downstream is gated on
+    them, and they are not admission thresholds.
+    """
+    left = np.asarray(production, dtype=float)
+    right = np.asarray(reference, dtype=float)
+    assert left.size == right.size
+    peak = float(np.max(right))
+    return {
+        "integrated": abs(float(np.sum(left) * delta_f) - float(np.sum(right) * delta_f))
+        / max(float(np.sum(right) * delta_f), 1e-300),
+        "worst_bin": float(np.max(np.abs(left - right))) / max(peak, 1e-300),
+        "l1": float(np.sum(np.abs(left - right))) / max(float(np.sum(right)), 1e-300),
+        "l2": float(np.sqrt(np.sum((left - right) ** 2)))
+        / max(float(np.sqrt(np.sum(right**2))), 1e-300),
+    }
+
+
+def test_the_production_transform_makes_the_admitted_approximation() -> None:
+    """The estimator uses the adopted grid, not the stored times - shown by an invariance.
+
+    Two axes with the same endpoints and the same sample count differ only *inside*: one exactly
+    uniform, one jittered far inside the admitted timing error. The production spectra are
+    therefore **bit-identical** under ``Detrending.NONE``, because the Fourier basis is the
+    adopted uniform grid and the endpoints and ``N`` are all it depends on. The nonuniform
+    reference, which evaluates at the stored times, disagrees with *itself* on those two axes -
+    which is exactly why it is the oracle and not the estimator.
+    """
+    stamps, _rate, delta = _uniform(N_EVEN)
+    rng = np.random.default_rng(20260926)
+    jittered = stamps + rng.normal(scale=1e-3 * DT_S, size=N_EVEN)
+    jittered[0], jittered[-1] = stamps[0], stamps[-1]
+    trace = _tone(stamps, K_FIRST * delta) + 0.2 * _tone(stamps, K_SECOND * delta)
+
+    plain = _periodogram(trace, stamps, detrending=Detrending.NONE)
+    moved = _periodogram(trace, jittered, detrending=Detrending.NONE)
+
+    assert plain.verdict is SpectralVerdict.DEFINED
+    assert moved.verdict is SpectralVerdict.DEFINED
+    timing = moved.admission.characterization.max_relative_timing_error
+    assert timing is not None and timing > 0.0, (
+        "the second axis really did move off the uniform grid, so the invariance below is not "
+        "vacuous"
+    )
+    assert np.array_equal(plain.psd, moved.psd), (
+        "the production transform must not depend on the stored stamps inside the window: its "
+        "Fourier coordinates are the admitted uniform grid"
+    )
+    assert np.array_equal(plain.frequency_hz, moved.frequency_hz)
+
+    taper = calibration.hann(N_EVEN)
+    uniform_reference = np.asarray(
+        calibration.reference_spectrum(stamps, trace, taper=taper)["density"], dtype=float
+    )
+    moved_reference = np.asarray(
+        calibration.reference_spectrum(jittered, trace, taper=taper)["density"], dtype=float
+    )
+    assert not np.allclose(uniform_reference, moved_reference, rtol=1e-9, atol=1e-12), (
+        "the stored-timestamp reference must move with the stamps, or it is not that reference"
+    )
+
+
+def test_an_admitted_but_irregular_axis_is_the_uniform_estimate_by_a_bounded_amount() -> None:
+    """The approximation the admission granted, quantified where it is made.
+
+    On a jittered axis that is admitted, the production spectrum is the *uniform-grid* estimate of
+    the trace - it agrees with the reference evaluated on the exact uniform axis - while it differs
+    from the reference evaluated at the stored times. That difference is the cost of the
+    approximation, it is measurable, it is bounded here as a recorded diagnostic (never as an
+    admission threshold), and the admission carries the timing error that justified it.
+    """
+    stamps, _rate, delta = _uniform(N_EVEN)
+    rng = np.random.default_rng(7)
+    jittered = stamps + rng.normal(scale=2e-2 * DT_S, size=N_EVEN)
+    jittered[0], jittered[-1] = stamps[0], stamps[-1]
+    trace = _tone(stamps, K_FIRST * delta) + 0.2 * _tone(stamps, K_SECOND * delta)
+    analysed = trace - float(np.mean(trace))
+
+    production = _periodogram(trace, jittered)
+    assert production.verdict is SpectralVerdict.DEFINED
+    timing = production.admission.characterization.max_relative_timing_error
+    assert timing is not None and 0.0 < timing <= production.admission.spectral_uniformity_tol, (
+        "the axis is admitted and irregular: the timing error that admitted it travels on the "
+        f"result, got {timing}"
+    )
+
+    taper = calibration.hann(N_EVEN)
+    as_uniform = np.asarray(
+        calibration.reference_spectrum(stamps, analysed, taper=taper)["density"], dtype=float
+    )
+    as_stored = np.asarray(
+        calibration.reference_spectrum(jittered, analysed, taper=taper)["density"], dtype=float
+    )
+    assert np.allclose(production.psd, as_uniform, rtol=1e-9, atol=1e-12), (
+        "the production estimator must be the uniform-grid estimate, not the stored-times one"
+    )
+    difference = _spectral_difference(
+        production.psd, as_stored, delta_f=float(production.delta_f_hz)
+    )
+    assert difference["integrated"] > 0.0, (
+        "on an irregular axis the two estimators are not the same estimator, and the difference "
+        "must be visible"
+    )
+    for name, value in difference.items():
+        assert value < 0.05, (name, value, "recorded order, not a threshold")
 
 
 # --------------------------------------------------------------------------------------
@@ -548,14 +687,15 @@ def test_the_estimator_agrees_with_the_sa21_reference_on_exact_uniform_axes() ->
 
 
 def test_on_an_exact_uniform_axis_the_transform_is_the_one_sided_rfft() -> None:
-    """The reviewed transform, verified directly rather than described.
+    """The production transform, reproduced independently from ``np.fft.rfft``.
 
-    The estimator evaluates the grid's own transform as a matrix product, because the stamps it is
-    handed are only *assumed* to be uniform - that assumption is precisely what the admission
-    tests, and a real one-sided rFFT would silently impose it instead of measuring it. Where the
-    assumption holds exactly, the two must be the same transform, and the folding must be the one
-    a real one-sided rFFT needs: DC once, interior bins twice, and for even ``N`` a Nyquist bin that
-    is already the endpoint of the transform and so is not doubled.
+    The estimator is the admitted uniform-grid periodogram, so on an axis where the adopted grid is
+    the actual one its density is exactly what a hand-written one-sided `rfft` of the tapered trace
+    produces under the reviewed normalization. This test rebuilds that density from `np.fft.rfft`
+    and `np.fft.rfftfreq` without touching the module's own helpers, so the transform, the bin
+    positions and the folding (DC once, interior bins twice, and for even ``N`` a Nyquist bin that
+    is the transform's own endpoint and so is not doubled) are each checked against arithmetic
+    written here.
     """
     for count in (N_EVEN, N_ODD):
         stamps, rate, delta = _uniform(count)
@@ -693,20 +833,76 @@ def test_every_committed_view_this_stage_admits_produces_a_finite_density(
             assert estimate.psd.size == estimate.profiles // 2 + 1
             assert estimate.integrated_psd_power >= 0.0
             assert estimate.relative_path and estimate.provenance.source_sha256
-            # The grid assumption's own cost, measured rather than assumed: on these axes the
-            # stored stamps are not an orthogonal set for the adopted frequencies, so the fold
-            # identity is approximate, and the result says by how much.
-            error = estimate.energy_identity_error
+            # The Parseval identity is an implementation invariant now, and the committed axes are
+            # irregular: the fold still closes at floating-point accuracy, because the transform is
+            # the orthogonal DFT of the admitted uniform sequence and not an evaluation at the
+            # stored times.
+            error = estimate.parseval_relative_error
             assert error is not None and math.isfinite(error)
-            assert abs(error) <= ENERGY_IDENTITY_TOL, (job, view.view, error)
+            assert abs(error) <= PARSEVAL_REL_TOL, (job, view.view, error)
             worst = max(worst, abs(error))
-    # The measured order of the assumption's own cost, pinned so a change in it is noticed: the
-    # worst over one full sitting's views is 2.9e-4 (emissions-8, primary comparison) and the
-    # typical value is ~1e-4.
-    assert worst < 1e-3, (
-        f"the largest grid-assumption residual over these committed views is {worst}, above the "
-        "order this stage measured"
+    assert worst < 1e-12, (
+        f"the worst Parseval residual over these committed views is {worst}: the identity is an "
+        "invariant of the fold, and it must hold on real irregular stamps too"
     )
+
+
+def test_the_uniform_grid_approximation_on_committed_views_is_visible_and_small(
+    committed: dict[str, tuple[WindowView, WindowView]],
+) -> None:
+    """The uniform-grid estimate against the stored-timestamp evaluation, on committed axes.
+
+    Production (the admitted uniform-grid rFFT) against the stored-timestamp nonuniform
+    evaluation, on the same trace over the same axis: how much does taking the approximation
+    actually cost? It is *recorded* here and reported in the PR; it is deliberately not an
+    admission threshold, because the approximation's admission question was settled in SA2.1 by
+    ``max_relative_timing_error <= SPECTRAL_UNIFORMITY_TOL`` and is not re-litigated here.
+    """
+    seen: dict[str, dict[str, float]] = {}
+    for job, views in sorted(committed.items()):
+        for view in views:
+            depth = _supported_depth(view)
+            estimate = periodogram_of_view(view, depth_mm=depth)
+            assert estimate.verdict is SpectralVerdict.DEFINED, (job, view.view)
+            assert estimate.taper_name == TAPER_NAME, (
+                "the reference below must use the same taper, or the comparison is between two "
+                "differences at once"
+            )
+            column = view.column_of_depth(depth)
+            stamps = np.asarray(view.time_s, dtype=float)
+            trace = np.asarray(view.values, dtype=float)[:, column]
+            # the reference takes the analysed series, which for the default detrending is the
+            # mean-removed trace: the detrending is deliberately fitted against the stored stamps
+            analysed = trace - float(np.mean(trace))
+            reference = calibration.reference_spectrum(
+                stamps, analysed, taper=calibration.hann(estimate.profiles)
+            )
+            difference = _spectral_difference(
+                estimate.psd,
+                np.asarray(reference["density"], dtype=float),
+                delta_f=float(estimate.delta_f_hz),
+            )
+            timing = estimate.admission.characterization.max_relative_timing_error
+            assert timing is not None
+            key = f"{job}/{view.view.value}"
+            seen[key] = {**difference, "timing": abs(timing), "profiles": float(estimate.profiles)}
+            # A residual that is exactly zero everywhere would mean the two estimators had been
+            # conflated; a large one would mean the approximation is not the small perturbation
+            # SA2.1 calibrated for. The bound is an order, recorded rather than tuned.
+            assert difference["integrated"] <= 5e-3, (key, difference)
+            assert difference["l2"] <= 0.5, (key, difference)
+    assert len(seen) >= 4, f"expected at least one view per job, got {sorted(seen)}"
+    assert max(item["integrated"] for item in seen.values()) > 0.0, (
+        "the committed stamps are irregular, so the two estimators cannot coincide exactly"
+    )
+    # the diagnostics travel with the test run for the report
+    for key in sorted(seen):
+        item = seen[key]
+        print(
+            f"{key:42s} N={item['profiles']:5.0f} timing={item['timing']:.3e} "
+            f"integrated={item['integrated']:.3e} worst_bin={item['worst_bin']:.3e} "
+            f"l1={item['l1']:.3e} l2={item['l2']:.3e}"
+        )
 
 
 def test_an_emissions_128_view_produces_a_spectrum_and_still_cannot_carry_rotor_rate(
