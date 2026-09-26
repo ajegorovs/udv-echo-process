@@ -255,7 +255,11 @@ class CampaignDefinition(ValueModel):
     The shared fields are the ones a *point cannot write* (``actuator``'s
     :data:`~udv_echo_process.acquire.actuator.DIALOG_ONLY_PARAMETERS`): the PRF period,
     the emissions per profile and the burst length are read once from the application for
-    the channel, and every point of the run records with them.
+    the channel, and every point of the run records with them — with one exception, and it is
+    stated rather than implied: a job whose :attr:`write_emissions_per_profile` is ``True``
+    **establishes** the emissions per profile at its own boundary (the column write,
+    ``docs/dop3000/emissions-control-plan.md`` §2), so for that job the value is a request the
+    instrument is moved to, not a setting it is read from.
 
     ``prf_us`` and ``emissions_per_profile`` are required, not optional like their
     counterparts on :class:`~udv_echo_process.acquire.config.SweepDefinition`, and the
@@ -279,7 +283,19 @@ class CampaignDefinition(ValueModel):
     #: ``P_max = c × T_prf / 2`` and the profile period both need it (docs/08 §3).
     prf_us: float = Field(gt=0)
     #: Emissions per profile, word 14 — the transfer term of the period law exists for it.
+    #: **Two different things wear this name** and the number alone cannot say which: a value
+    #: *derived* from the period law to reproduce a stored profile count (``52`` in
+    #: `test_acquire_runner.py` is exactly that derivation, and the committed point it describes
+    #: stores ``150``), or a value the job **requests** the instrument to hold. ``False`` means the
+    #: job inherits it and a disagreement stays an advisory; ``True`` means the declaration is the
+    #: request (see :attr:`requested_facts`), which is the only reading under which an automated
+    #: write of it is honest — the boundary moves the instrument *to this number*, so the number
+    #: has to be one the job means (``docs/dop3000/emissions-control-plan.md`` §3).
     emissions_per_profile: int = Field(ge=1)
+    #: Whether :attr:`emissions_per_profile` is a **request** rather than a derivation. Optional on
+    #: purpose: every definition written before this field exists inherits, which is the behaviour
+    #: the committed campaigns were recorded under.
+    write_emissions_per_profile: bool = False
     burst_length: int | None = Field(default=None, ge=1)
     #: Where the points land. Optional here so a caller can keep it out of the file (the
     #: live commands take it from ``--store-dir`` or ``UDV_STORE_DIR``); never guessed,
@@ -321,6 +337,29 @@ class CampaignDefinition(ValueModel):
                 "points must not be empty: a campaign is at least one parameter permutation"
             )
         return value
+
+    @property
+    def requested_facts(self) -> tuple[str, ...]:
+        """The fixed facts this job's **own declaration requests** — the ones it does not inherit.
+
+        The whole consequence of :attr:`write_emissions_per_profile`, and deliberately a *property of
+        the job* rather than a caller's flag: the number alone cannot say whether
+        ``emissions_per_profile`` is a derivation or a request
+        (``docs/dop3000/emissions-control-plan.md`` §3), so the definition states it, the fingerprint
+        covers it, and the manifest it produces is attributable to the answer.
+
+        A requested fact joins the **raised** set (``compile_campaign``, ``run_campaign``): the
+        compile refuses a definition/instrument disagreement on it instead of recording a warning,
+        and the runner holds the stored file's own word to the same requirement, so the fact is
+        enforced before *and* after the recording. That is the same raise path a pass supplies
+        (:attr:`~udv_echo_process.acquire.run_plan.RunPlan.strict_facts`) — there is no second
+        policy table, and nothing here can *lower* the table's own acceptance.
+
+        A job that only inherits the value returns ``()`` and keeps today's behaviour: a compile-side
+        advisory and no strict covariate in the verifier, so a low-level caller can still verify
+        window geometry against a file without asserting an emissions request.
+        """
+        return ("emissions_per_profile",) if self.write_emissions_per_profile else ()
 
 
 class PlannedPoint(ValueModel):
@@ -624,9 +663,19 @@ def campaign_fingerprint(definition: CampaignDefinition) -> str:
     definition hashes the same on every host and every load, and any change to a point, a
     duration, a shared value or the naming prefix changes it. The manifest carries it, so
     a log and the definition it answered cannot drift apart unnoticed.
+
+    One field is **omitted while it is ``False``**: :attr:`CampaignDefinition.write_emissions_per_profile`
+    was added after several campaigns had already been recorded, and a definition that does not
+    request emissions is the same job it was before the field existed. Hashing the default in would
+    strand every committed manifest's resume on a change that alters nothing — which is why the field
+    is optional in the first place. A definition that **does** request them hashes with it, so a plan
+    that changes that answer still fails the resume-identity comparison.
     """
+    payload = definition.model_dump(mode="json")
+    if payload.get("write_emissions_per_profile") is False:
+        payload.pop("write_emissions_per_profile", None)
     canonical = json.dumps(
-        definition.model_dump(mode="json"),
+        payload,
         sort_keys=True,
         separators=(",", ":"),
         ensure_ascii=True,
@@ -800,10 +849,15 @@ class Acceptance(str, Enum):
         would be stored under parameters its own file does not carry.
     ``WARN``
         The disagreement is carried onto the compiled plan and the run proceeds. Exactly one fact
-        is here today — the emissions per profile, whose value *in a definition* is derived rather
-        than read (:data:`~udv_echo_process.acquire.verify.ADVISORY_COVARIATES`), so a
-        disagreement is as likely to be the declaration's fault as the instrument's, and W6 is
-        where that ends.
+        is here today — the emissions per profile, whose value *in a definition* may be a derivation
+        rather than a reading (:data:`~udv_echo_process.acquire.verify.ADVISORY_COVARIATES`), so a
+        disagreement is as likely to be the declaration's fault as the instrument's. **It is the
+        default for a job that inherits the value, not a fact's permanent standing**: a job whose
+        definition *requests* it raises it to :attr:`REFUSE`
+        (:attr:`CampaignDefinition.requested_facts`, the same raise path a pass supplies), because
+        then the declaration is the request and the boundary establishes it on the instrument. W6's
+        rationale — feed the period law the instrument's own value without erasing the declaration —
+        survives for the read-only path, which is every job that does not write it.
     ``ACCEPT``
         Nothing was compared against this fact, so there is nothing for it to stop: the
         definition declares no value for it, or the instrument could not state one. The
@@ -818,6 +872,11 @@ class Acceptance(str, Enum):
 #: The acceptance each fixed fact gets, **derived from the stored-file verifier's own table**
 #: rather than restated: the covariates that verifier enforces refuse here too, and the one it only
 #: advises on warns. Two tables of "which of these matters" would drift apart; one cannot.
+#:
+#: This is the acceptance for a job that **inherits** a fact's value. A job whose definition
+#: *requests* one (:attr:`CampaignDefinition.requested_facts`) raises it through the same path a pass
+#: does — :func:`compile_campaign` merges the two — so the table stays the default rather than
+#: growing a per-job column, and a raise can still only ever refuse.
 #:
 #: The two facts the verifier checks by *another* law are refused for reasons of their own, and the
 #: reasons are the part a reader acts on:
@@ -1003,12 +1062,19 @@ def compile_campaign(
     table already refuses is unchanged, and there is no argument that lowers one, because that would
     be a caller asking to be believed over the record.
 
+    **The job's own declaration raises facts too** — a fact a job *requests* is not a nuisance either
+    (:attr:`CampaignDefinition.requested_facts`) — and the two sources are merged here rather than
+    left to the caller, so a definition that states "the emissions per profile is a request" cannot be
+    compiled as if it were a derivation. The merged set is what the compiled record keeps.
+
     What it deliberately does **not** own: the strip's view. Starting a point cycle from a
     recording view is a precondition the runner refuses with its own message before anything is
     stored (``runner``'s "a running recording keeps its data"), and a second refusal here would
     give one cause two diagnoses.
     """
-    strict_facts = _check_strict_facts(strict_facts, where=f"{definition.job!r}")
+    strict_facts = _check_strict_facts(
+        (*strict_facts, *definition.requested_facts), where=f"{definition.job!r}"
+    )
     points = plan_campaign(definition)
     _refuse_unusable_screen(snapshot)
     channel = _routed_channel(definition, snapshot)
@@ -1715,7 +1781,9 @@ def run_campaign(
     instead of being logged with a note. One argument, both halves, because a fact a run depends on
     must not be enforced on one side of the recording and merely recorded on the other.
     """
-    strict_facts = _check_strict_facts(strict_facts, where=f"{definition.job!r}")
+    strict_facts = _check_strict_facts(
+        (*strict_facts, *definition.requested_facts), where=f"{definition.job!r}"
+    )
     directory = _store_directory(definition, store_dir)
     log = Path(log_path) if log_path is not None else directory / DEFAULT_LOG_NAME
     effective_channel = definition.channel if channel is None else int(channel)
