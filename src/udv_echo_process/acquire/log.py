@@ -24,8 +24,8 @@ What the record must carry, and why:
 
 Records are stored as JSONL so a run can append as it goes and a crash leaves
 every completed point behind. A ``record_type`` literal discriminates the header
-from the point records — and, since the job boundary's one instrument write
-needed a durable record of its own, from a **verified burst mutation** too
+from the point records — and, since the job boundary's instrument writes needed a
+durable record of their own, from a **verified parameter mutation** too
 (``docs/dop3000/failed-invocation-provenance.md`` §O4). An entry type this build
 does not know refuses the whole log rather than being read past: the log is the
 record of a job, and a reader that skipped an entry it could not understand
@@ -41,10 +41,14 @@ from enum import Enum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import Field, TypeAdapter, ValidationError
+from pydantic import Field, TypeAdapter, ValidationError, model_validator
 
 from udv_echo_process.acquire import plan
-from udv_echo_process.acquire.actuator import BurstWriteResult
+from udv_echo_process.acquire.actuator import (
+    BurstWriteResult,
+    ColumnWriteResult,
+    WriteState,
+)
 from udv_echo_process.acquire.config import (
     ParameterSet,
     ProfileTiming,
@@ -55,15 +59,18 @@ from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "KNOWN_RECORD_TYPES",
+    "LEGACY_BURST_HISTORY_KEY",
     "DecodedBlock",
+    "MutationDependent",
     "PointStatus",
     "SizeSignature",
-    "SweepBurstMutation",
     "SweepLogEntry",
     "SweepLogHeader",
+    "SweepParameterMutation",
     "SweepPointRecord",
     "append_entry",
-    "burst_mutations",
+    "migrate_legacy_burst_history",
+    "parameter_mutations",
     "point_names",
     "point_records",
     "read_entries",
@@ -427,75 +434,257 @@ class SweepPointRecord(ValueModel):
         return 1.0 / sig.factor <= ratio <= sig.factor
 
 
-class SweepBurstMutation(ValueModel):
-    """The job boundary's **verified burst transition**, appended where it happened.
+class MutationDependent(ValueModel):
+    """The row a transition moved **beside** the one it was asked for, read on both sides.
 
-    The boundary's write (:func:`~udv_echo_process.acquire.campaign._transit_burst_length`) is real
-    the moment the application accepts it, while the job manifest — until this record existed, its
-    only durable record — is written at the *end* of the invocation. Anything that refuses in
-    between (the post-write compile, the resume-identity comparison; the boundary's own
-    ``write -> verify -> compile -> record`` order) therefore left a real mutation in no artifact
-    at all: no manifest was rewritten, the log held no entry for it, and the next invocation seeds
-    its history from the *previous* manifest. The log is append-only and already per-job, so the
-    verified transition is appended there instead, immediately after the write and before anything
-    that can still refuse (``docs/dop3000/failed-invocation-provenance.md`` §O4, §5.1, §5.2).
+    The generic half of "dependent evidence" (plan §4, §5): the burst length is the one parameter
+    this repository writes whose value the application *derives another parameter from*, and the
+    row it re-selects is evidence that the write was applied rather than merely accepted. A
+    parameter with no dependent row carries ``None`` rather than an empty structure — an empty
+    statement and no statement are different readings.
 
-    Three fields are decisions rather than descriptions:
+    ``name`` is the dependent's own name in the dialog's vocabulary (``sampling_volume``), never a
+    word index: the stored word 27 is the instrument's option-list index and no reviewed law turns
+    it into this millimetre value (``actuator.DIALOG_DEPENDENT_FIELDS``).
+    """
 
+    name: str = Field(min_length=1)
+    before: str = ""
+    after: str = ""
+
+
+class SweepParameterMutation(ValueModel):
+    """One **verified parameter transition** the job boundary spent, appended where it happened.
+
+    The boundary's instrument writes are real the moment the application accepts them, while the
+    job manifest — until this record existed, their only durable record — is written at the *end*
+    of the invocation. Anything that refuses in between (the post-write compile, the
+    resume-identity comparison; the boundary's own ``write -> verify -> compile -> record`` order)
+    therefore left a real mutation in no artifact at all: no manifest was rewritten, the log held
+    no entry for it, and the next invocation seeded its history from the *previous* manifest. The
+    log is append-only and already per-job, so each verified transition is appended there instead,
+    immediately after its own write and before anything that can still refuse
+    (``docs/dop3000/failed-invocation-provenance.md`` §O4, §5.1, §5.2).
+
+    **One record type, role-tagged — not one per parameter.** The mechanism is parameter-agnostic
+    by construction: the entry is appended where the write verified, it fails closed, its identity
+    is *minted* rather than derived, and a job's history is an occurrence-ordered list of these.
+    Only the payload is the parameter's own, and it is carried **verbatim** in :attr:`evidence` —
+    the burst dialog's :class:`~udv_echo_process.acquire.actuator.BurstWriteResult` (the request,
+    the state, both rows on both sides of the write and the dependent sampling-volume statement)
+    or the column's :class:`~udv_echo_process.acquire.actuator.ColumnWriteResult` (the read before,
+    the request, the writer's own read-back and the boundary's independent post-write read). A
+    per-parameter record type would have made the reader, the fold and the manifest accessor three
+    times over, and every new parameter would have had to be taught to all three.
+
+    Four fields are decisions rather than descriptions:
+
+    - ``parameter`` is the **fact vocabulary**'s own name for what moved — the same string
+      ``snapshot.FIXED_FACT_FIELDS`` and the verifier's covariate tables use — so a reader that
+      knows which fact moved knows which word of the stored file to check it against. It is
+      validated against the evidence's own parameter, which is what keeps the tag from drifting;
     - ``mutation_id`` is the **occurrence identity**, a fresh uuid4 hex minted at the append. Two
       genuinely distinct mutations can be semantically identical — ``10 -> 18``, the instrument
-      later returned to ``10``, ``10 -> 18`` again — and the job's ``burst_transitions`` is an
-      *ordered history of occurrences*, not a set of distinct state changes. An identity derived
-      from the transition's content (request plus the before/after rows plus the state) would
-      silently collapse the second write into the first (§5.3);
+      later returned to ``10``, ``10 -> 18`` again — and a job's history is an *ordered history of
+      occurrences*, not a set of distinct state changes. An identity derived from the transition's
+      content (request plus the before/after values plus the state) would silently collapse the
+      second write into the first (§5.3). ``None`` only for an entry **migrated** from a manifest
+      written before this record existed, where no identity was ever minted;
     - ``occurred_at`` is when the instrument was moved, not when the invocation ended. It is what
       orders repeated identical transitions, and it is a local-time moment like a sweep id and a
-      manifest's own stamps;
-    - ``transition`` is the driver's own
-      :class:`~udv_echo_process.acquire.actuator.BurstWriteResult` **verbatim**: the evidence, not
-      a boolean — the request, the state, the dialog's own channel and mode, both rows on both
-      sides of the write, the dependent sampling-volume statement, the refusal overlay and the
-      reason.
+      manifest's own stamps. ``None`` on a migrated entry, for the same reason as ``mutation_id``;
+    - :attr:`evidence` is the parameter-specific half, typed and verbatim: the request, the state
+      and everything the transition read. A mutation this build appends always carries it, and a
+      reader gets the generic answer (``before`` / ``requested`` / ``verified`` / ``dependent``)
+      from it through the properties below, so there is exactly one copy of every value.
 
-    Only a ``VERIFIED`` transition is ever written here, because only a ``VERIFIED`` transition
-    moved anything: ``UNCHANGED`` and ``UNVERIFIED`` kept nothing
-    (:class:`~udv_echo_process.acquire.actuator.BurstState`), so neither is a mutation that needs a
+    Only a **verified** transition is ever written here, because only a verified transition moved
+    anything: the other outcomes kept nothing
+    (:class:`~udv_echo_process.acquire.actuator.WriteState`), so neither is a mutation that needs a
     record and neither must ever be read as one.
     """
 
-    record_type: Literal["burst_mutation"] = "burst_mutation"
+    record_type: Literal["parameter_mutation"] = "parameter_mutation"
+    #: Which parameter moved, in the fixed-fact vocabulary (see the class docstring).
+    parameter: str = Field(min_length=1)
     #: The **occurrence** identity — see the class docstring. Unique per mutation by construction,
-    #: and never a function of what the mutation says.
-    mutation_id: str = Field(min_length=1)
+    #: never a function of what the mutation says, and ``None`` only for a migrated entry.
+    mutation_id: str | None = Field(default=None, min_length=1)
     #: When the instrument was moved (local time, the caller's ``local now``).
-    occurred_at: datetime
+    occurred_at: datetime | None = None
     #: The job whose boundary spent the write (``CampaignDefinition.job``).
     job: str = Field(min_length=1)
     #: The definition's fingerprint (``campaign.campaign_fingerprint``): attribution without the
     #: manifest, which a refused invocation never writes.
     fingerprint: str = Field(min_length=1)
-    #: The channel the run **routed** and the write was verified against. The transition carries the
-    #: dialog's own channel field; this is the routing answer it was compared with, which is what
-    #: makes the record tell the two apart. ``None`` only for a caller that routed nothing.
+    #: The channel the run **routed** and the write was verified against. The burst transition
+    #: carries the dialog's own channel field; this is the routing answer it was compared with,
+    #: which is what makes the record tell the two apart. ``None`` only for a caller that routed
+    #: nothing.
     routed_channel: int | None = None
-    #: The driver's evidence, verbatim — the durable half of the mutation.
-    transition: BurstWriteResult
+    #: The driver's own evidence, verbatim — the durable half of the mutation.
+    evidence: BurstWriteResult | ColumnWriteResult
+
+    @model_validator(mode="after")
+    def _check_parameter(self) -> SweepParameterMutation:
+        """``parameter`` must be the parameter its own evidence is evidence *of*.
+
+        A tag that could disagree with the payload is a second answer to "what moved", and the
+        two would part company the first time either was edited. The burst evidence names no
+        parameter of its own (the dialog row is the burst row by binding), so it is paired here;
+        the column evidence names its role, and a column role's value **is** its fact name
+        (``ParamRole.EMISSIONS_PER_PROFILE`` -> ``emissions_per_profile``).
+        """
+        expected = (
+            "burst_length"
+            if isinstance(self.evidence, BurstWriteResult)
+            else self.evidence.role.value
+        )
+        if self.parameter != expected:
+            raise ValueError(
+                f"parameter {self.parameter!r} does not match this mutation's own evidence, "
+                f"which is evidence of {expected!r}: the tag and the payload must not be able to "
+                "disagree, or a reader that indexed the record by its tag would look for the "
+                "wrong word of the stored file"
+            )
+        return self
+
+    @property
+    def state(self) -> WriteState:
+        """What the transition established, read from the evidence.
+
+        Only :attr:`WriteState.VERIFIED` ever reaches this record (see above), and it is read from
+        the evidence rather than assumed: a record written by anything else cannot then read as a
+        verified write.
+        """
+        return self.evidence.state
+
+    @property
+    def before(self) -> str:
+        """The value the write started from, as the transition read it (``""`` when unreadable)."""
+        if isinstance(self.evidence, BurstWriteResult):
+            row = self.evidence.before_burst
+            return "" if row is None else row.text.strip()
+        return self.evidence.before.strip()
+
+    @property
+    def requested(self) -> str:
+        """What the boundary asked for."""
+        if isinstance(self.evidence, BurstWriteResult):
+            return str(self.evidence.requested_burst)
+        return self.evidence.requested.strip()
+
+    @property
+    def verified(self) -> str:
+        """What the **independent** post-write read stated (``""`` when it stated nothing).
+
+        For the burst that is the re-opened dialog's own row, for the column the boundary's fresh
+        read of the field — never the value the writer's own return carried, which is evidence of
+        what the write layer produced and not of what the application kept.
+        """
+        if isinstance(self.evidence, BurstWriteResult):
+            row = self.evidence.after_burst
+            return "" if row is None else row.text.strip()
+        return self.evidence.after.strip()
+
+    @property
+    def dependent(self) -> MutationDependent | None:
+        """The row the transition moved beside the one it was asked for, or ``None``.
+
+        ``None`` is a statement: this parameter has no dependent row (the column's emissions per
+        profile does not move anything else), so no reading was taken and none may be read as
+        empty.
+        """
+        if not isinstance(self.evidence, BurstWriteResult):
+            return None
+        before = self.evidence.before_sampling_volume
+        after = self.evidence.after_sampling_volume
+        if before is None and after is None:
+            return None
+        return MutationDependent(
+            name="sampling_volume",
+            before="" if before is None else before.text.strip(),
+            after="" if after is None else after.text.strip(),
+        )
 
 
 #: Every ``record_type`` this build's :data:`SweepLogEntry` union can read. A log line whose type is
 #: not one of these **refuses the log** (:func:`read_entries`) instead of being skipped: an
 #: acquisition log is forward-schema, and an older checkout that read past an entry it could not
 #: understand would resume — and report — on a history it had silently shortened (§O4).
-KNOWN_RECORD_TYPES: tuple[str, ...] = ("sweep", "point", "burst_mutation")
+KNOWN_RECORD_TYPES: tuple[str, ...] = ("sweep", "point", "parameter_mutation")
 
 
 #: One log line: a discriminated union on ``record_type``.
 SweepLogEntry = Annotated[
-    SweepLogHeader | SweepPointRecord | SweepBurstMutation,
+    SweepLogHeader | SweepPointRecord | SweepParameterMutation,
     Field(discriminator="record_type"),
 ]
 
 _ENTRY_ADAPTER: TypeAdapter[SweepLogEntry] = TypeAdapter(SweepLogEntry)
+
+
+#: The manifest key a job's burst history was written under **before** this record generalized to a
+#: parameter mutation (``campaign.JobManifest.burst_transitions``, ``run_plan.RunJobRecord``'s).
+#: Read through :func:`migrate_legacy_burst_history`; this build never writes it.
+LEGACY_BURST_HISTORY_KEY = "burst_transitions"
+
+
+def migrate_legacy_burst_history(payload: object) -> object:
+    """A manifest payload whose burst history predates this record, read as parameter mutations.
+
+    A manifest written by the burst slice carries its verified transitions under
+    :data:`LEGACY_BURST_HISTORY_KEY` as the driver's own results. That is the same fact this record
+    states, one generation older — and a reader that refused it would turn a *readable* pass record
+    into an unreadable one, which is the failure mode every defaulted field on these models exists
+    to avoid (a manifest a reader refuses is a job whose log can no longer be read at all). So the
+    legacy key is read here, each entry becoming a mutation whose :attr:`~SweepParameterMutation.evidence`
+    is that result, and the key itself is dropped from the payload it returns: the models forbid
+    unknown fields, and a record carrying both keys would be answering "which bursts?" twice.
+
+    Two things a migrated entry knowingly does **not** have, and neither is invented:
+    ``mutation_id`` and ``occurred_at`` were never recorded, so both stay ``None``. A
+    content-derived identity is exactly what §5.3 forbids (two identical transitions would then
+    collapse into one), and a moment taken from a neighbouring stamp would order the history by
+    something nobody measured — the list's own order is the order, and it is what the fold
+    consumes. The job and the fingerprint come from the enclosing record, which *is* the job the
+    entries belong to.
+
+    A payload that is not a mapping (a model instance handed back to pydantic), or one that carries
+    no legacy key, is returned unchanged. A modern payload wins over a legacy one if a record were
+    ever to carry both: the new field is the authority, and the legacy key is dropped.
+    """
+    if not isinstance(payload, Mapping) or LEGACY_BURST_HISTORY_KEY not in payload:
+        return payload
+    migrated = {
+        key: value for key, value in payload.items() if key != LEGACY_BURST_HISTORY_KEY
+    }
+    if "parameter_mutations" in payload:
+        return migrated
+    legacy = payload[LEGACY_BURST_HISTORY_KEY] or ()
+    if not isinstance(legacy, (list, tuple)):
+        return migrated
+    job = str(payload.get("job", ""))
+    fingerprint = str(
+        payload.get("fingerprint") or payload.get("definition_fingerprint") or ""
+    )
+    mutated: list[object] = []
+    for entry in legacy:
+        if isinstance(entry, SweepParameterMutation):
+            mutated.append(entry)
+            continue
+        if not isinstance(entry, Mapping):
+            return migrated
+        mutated.append(
+            {
+                "parameter": "burst_length",
+                "job": job,
+                "fingerprint": fingerprint,
+                "evidence": dict(entry),
+            }
+        )
+    migrated["parameter_mutations"] = mutated
+    return migrated
 
 
 def sweep_id_for(moment: datetime) -> str:
@@ -576,14 +765,16 @@ def _entry_from_line(line: str, *, path: Path, number: int) -> SweepLogEntry:
         ) from exc
 
 
-def burst_mutations(entries: Iterable[SweepLogEntry]) -> tuple[SweepBurstMutation, ...]:
-    """Only the burst-mutation records, in the order they were appended.
+def parameter_mutations(
+    entries: Iterable[SweepLogEntry],
+) -> tuple[SweepParameterMutation, ...]:
+    """Only the parameter-mutation records, in the order they were appended.
 
     The ordered history the boundary spent, read back: each entry is one *occurrence* (its own
     ``mutation_id``), so a caller that folds these into a job's history must consume one entry per
     transition in sequence and never key on the transition's content (§5.3).
     """
-    return tuple(e for e in entries if isinstance(e, SweepBurstMutation))
+    return tuple(e for e in entries if isinstance(e, SweepParameterMutation))
 
 
 def point_records(entries: Iterable[SweepLogEntry]) -> tuple[SweepPointRecord, ...]:

@@ -74,10 +74,15 @@ from udv_echo_process.acquire.campaign import (
     load_campaign,
     manifest_path_for,
     plan_campaign,
-    reconciled_burst_history,
+    reconciled_parameter_mutations,
 )
 from udv_echo_process.acquire.config import MAX_CHANNEL, MIN_CHANNEL
-from udv_echo_process.acquire.log import burst_mutations, read_entries
+from udv_echo_process.acquire.log import (
+    SweepParameterMutation,
+    migrate_legacy_burst_history,
+    parameter_mutations,
+    read_entries,
+)
 from udv_echo_process.acquire.snapshot import SUPPORTED_READ_FACTS
 from udv_echo_process.models.base import ValueModel
 
@@ -867,19 +872,44 @@ class RunJobRecord(ValueModel):
     #: row, so a later reader reconstructs pair membership and orientation from the run record
     #: rather than from file names or from the order the jobs happen to be listed in.
     orientation: str | None = None
-    #: The burst transitions this job's boundary has performed, copied from the job's own manifest —
-    #: the driver's :class:`~udv_echo_process.acquire.actuator.BurstWriteResult` (the request, the
-    #: state, both dialog rows on both sides of the write and the dependent sampling-volume
-    #: statement), not a boolean, and an **ordered history** (oldest first) rather than one write.
-    #: An empty tuple means the job has spent no write at all (the instrument stated the job's burst
-    #: on every invocation, the definition declared no burst, or the run took no reading and
-    #: transitioned nothing).
+    #: The instrument-parameter transitions this job's boundary has performed, copied from the job's
+    #: own manifest — each entry naming the parameter it moved, the value it started from, the
+    #: request, what the transition's independent read stated afterwards, and that parameter's own
+    #: evidence verbatim (the burst's :class:`~udv_echo_process.acquire.actuator.BurstWriteResult`,
+    #: the column's :class:`~udv_echo_process.acquire.actuator.ColumnWriteResult`). An **ordered
+    #: history** (oldest first) rather than one write, and one list rather than one per parameter
+    #: (review decision 2), so a pass row cannot end up carrying which bursts a job wrote while
+    #: quietly dropping which emissions levels it moved through — the second of those would be the
+    #: record of the pass's own axis. An empty tuple means the job has spent no boundary write at all
+    #: (the instrument stated every value the job commands on every invocation, the definition
+    #: commands none of them, or the run took no reading and transitioned nothing).
     #:
     #: Copied rather than re-derived, and merged with whatever this row already carried, so a row
     #: rewritten by a resumed job keeps the earlier recording's transitions instead of reporting only
     #: the latest write. Defaulted, like every field a manifest written before a slice added: a row a
-    #: reader refuses is a pass whose record can no longer be read.
-    burst_transitions: tuple[BurstWriteResult, ...] = ()
+    #: reader refuses is a pass whose record can no longer be read. A row written before this field
+    #: existed carries the burst-shaped key instead and is **migrated on read**
+    #: (``log.migrate_legacy_burst_history``).
+    parameter_mutations: tuple[SweepParameterMutation, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_legacy_burst_history(cls, payload: object) -> object:
+        """Read a row written before the parameter-mutation record as one (:mod:`…log`)."""
+        return migrate_legacy_burst_history(payload)
+
+    @property
+    def burst_transitions(self) -> tuple[BurstWriteResult, ...]:
+        """The burst-shaped **view** of :attr:`parameter_mutations` — the driver's own results.
+
+        Derived, so the row has one source of truth for the job's history; kept because the burst
+        documents and the B5 evidence package read this name.
+        """
+        return tuple(
+            mutation.evidence
+            for mutation in self.parameter_mutations
+            if isinstance(mutation.evidence, BurstWriteResult)
+        )
 
 
 class RunManifest(ValueModel):
@@ -1694,18 +1724,18 @@ def record_job(
         note=_job_note(
             job_manifest,
             status,
-            carried_transitions=record.burst_transitions,
+            carried_mutations=record.parameter_mutations,
             recovered_from_log=_recovered_from_log(
-                job_manifest, record.burst_transitions, log_path=record.log
+                job_manifest, record.parameter_mutations, log_path=record.log
             ),
         ),
         # The boundary's own evidence, carried onto the pass's row so reconstructing the pass
-        # offline says which job moved the dialog — and what the application answered. The job
+        # offline says which job moved which parameter — and what the application answered. The job
         # manifest's history is authoritative, and whatever this row already carried is merged in
         # rather than dropped: a row rewritten by a resumed job keeps the earlier recording's
         # transitions, oldest first, instead of reporting only the latest write.
-        burst_transitions=_accumulated_transitions(
-            record.burst_transitions, job_manifest.burst_transitions
+        parameter_mutations=_accumulated_mutations(
+            record.parameter_mutations, job_manifest.parameter_mutations
         ),
     )
     return manifest.model_copy(
@@ -1731,10 +1761,11 @@ def _status_of(job_manifest: JobManifest) -> RunJobStatus:
     return RunJobStatus.FAILED
 
 
-def _accumulated_transitions(
-    carried: tuple[BurstWriteResult, ...], recorded: tuple[BurstWriteResult, ...]
-) -> tuple[BurstWriteResult, ...]:
-    """A row's burst history: what it already carried, then what the job's own manifest records.
+def _accumulated_mutations(
+    carried: tuple[SweepParameterMutation, ...],
+    recorded: tuple[SweepParameterMutation, ...],
+) -> tuple[SweepParameterMutation, ...]:
+    """A row's boundary history: what it already carried, then what the job's own manifest records.
 
     The two are normally the same list with the newer recording's entries appended, and then the
     manifest's own (the authority) is the answer. They can also arrive as *disjoint* lists — a row
@@ -1746,10 +1777,10 @@ def _accumulated_transitions(
     **The manifest's list may now hold entries recovered from the job's own log.** A job manifest is
     written at the end of an invocation, so one refused after its verified write records the
     transition only in the log; the next invocation folds it in
-    (``campaign.reconciled_burst_history``, ``docs/dop3000/failed-invocation-provenance.md`` §5.3),
-    and the manifest this row is built from then carries an occurrence no invocation that wrote
-    *this* row performed. Nothing here has to change for that: the prefix test compares full
-    results **in sequence**, one occurrence per entry, so a recovered entry is kept as its own
+    (``campaign.reconciled_parameter_mutations``, ``docs/dop3000/failed-invocation-provenance.md``
+    §5.3), and the manifest this row is built from then carries an occurrence no invocation that
+    wrote *this* row performed. Nothing here has to change for that: the prefix test compares full
+    entries **in sequence**, one occurrence per position, so a recovered entry is kept as its own
     entry and never collapsed into an identical one — which is the property that matters, because
     two identical ``10 -> 18`` transitions are two events.
     """
@@ -1758,14 +1789,15 @@ def _accumulated_transitions(
     return (*carried, *recorded)
 
 
-def _precedes(moment: datetime, other: datetime | None) -> bool:
+def _precedes(moment: datetime | None, other: datetime | None) -> bool:
     """True only when ``moment`` is *known* to precede ``other``.
 
-    A moment the manifest does not carry, or a pair that cannot be compared at all (a naive
-    timestamp beside an aware one — a manifest written by something other than this module), answers
-    ``False``: the caller's sentence then keeps its narrower claim instead of a guess.
+    A moment the record does not carry — ``None``, as a mutation migrated from a manifest written
+    before the record existed — or a pair that cannot be compared at all (a naive timestamp beside
+    an aware one, a manifest written by something other than this module) answers ``False``: the
+    caller's sentence then keeps its narrower claim instead of a guess.
     """
-    if other is None:
+    if moment is None or other is None:
         return False
     try:
         return moment < other
@@ -1775,7 +1807,7 @@ def _precedes(moment: datetime, other: datetime | None) -> bool:
 
 def _recovered_from_log(
     job_manifest: JobManifest,
-    carried: tuple[BurstWriteResult, ...],
+    carried: tuple[SweepParameterMutation, ...],
     *,
     log_path: str | None,
 ) -> int:
@@ -1784,12 +1816,12 @@ def _recovered_from_log(
     Almost every entry the manifest carries beyond what this row already carried was this
     recording's own verified write — but not all of them. An entry the job's boundary appended to
     the log in an *earlier* invocation that was then refused wrote no manifest of its own, so it
-    reaches this manifest only through the log (``campaign.reconciled_burst_history``), and the
+    reaches this manifest only through the log (``campaign.reconciled_parameter_mutations``), and the
     sentence in :func:`_job_note` must not call it "added by this recording".
 
     The count is by **occurrence**, using the same rule the accumulation uses: the row's own history
     is consumed against the log first, then the entries beyond it, one log entry per manifest entry,
-    in sequence, by full result equality — never by a key derived from a transition's content, so a
+    in sequence, by full equality — never by a key derived from a transition's content, so a
     repeated identical transition is not collapsed. An occurrence counts only when the log records
     it as having happened **before this invocation** (``occurred_at`` earlier than the manifest's own
     ``started_at``): an entry the log holds with a later stamp is this recording's own write, and the
@@ -1797,7 +1829,7 @@ def _recovered_from_log(
     log — a missing one, or a manifest that predates the log — so the older, narrower sentence is
     kept rather than a claim nothing supports.
     """
-    history = job_manifest.burst_transitions
+    history = job_manifest.parameter_mutations
     if history[: len(carried)] != carried:
         return 0
     beyond = history[len(carried) :]
@@ -1808,18 +1840,18 @@ def _recovered_from_log(
     if not path.is_file():
         return 0
     earlier = [
-        mutation.transition
-        for mutation in burst_mutations(read_entries(path))
+        mutation
+        for mutation in parameter_mutations(read_entries(path))
         if _precedes(mutation.occurred_at, job_manifest.started_at)
     ]
     # What the row's own history does not account for, in the log's order — the same leftovers the
     # accumulation keeps, so the two agree on which occurrences are still unclaimed.
-    leftover = reconciled_burst_history(carried, tuple(earlier))[len(carried) :]
+    leftover = reconciled_parameter_mutations(carried, tuple(earlier))[len(carried) :]
     recovered = 0
     position = 0
-    for transition in beyond:
+    for mutation in beyond:
         scan = position
-        while scan < len(leftover) and leftover[scan] != transition:
+        while scan < len(leftover) and leftover[scan] != mutation:
             scan += 1
         if scan < len(leftover):
             position = scan + 1
@@ -1827,22 +1859,24 @@ def _recovered_from_log(
     return recovered
 
 
-def _transition_text(transition: BurstWriteResult) -> str:
-    """One transition as ``before -> requested (state)``, ``?`` for an unread starting row.
+def _mutation_text(mutation: SweepParameterMutation) -> str:
+    """One transition as ``parameter before -> requested (state)``, ``?`` for an unread starting row.
 
     The state travels with the entry for the same reason it does on the job manifest: a reader must
     see that the write was a *verified* one (only verified transitions reach a manifest) rather than
     take the note's word for it.
     """
-    before = "?" if transition.before_burst is None else transition.before_burst.text
-    return f"{before} → {transition.requested_burst} ({transition.state.value})"
+    return (
+        f"{mutation.parameter} {mutation.before or '?'} → {mutation.requested} "
+        f"({mutation.state.value})"
+    )
 
 
 def _job_note(
     job_manifest: JobManifest,
     status: RunJobStatus,
     *,
-    carried_transitions: tuple[BurstWriteResult, ...] = (),
+    carried_mutations: tuple[SweepParameterMutation, ...] = (),
     recovered_from_log: int = 0,
 ) -> str | None:
     """The job's own summary on the pass's row, plus what a reader must not have to derive."""
@@ -1851,28 +1885,27 @@ def _job_note(
         parts.append(
             "declared only: no instrument reading was taken and nothing was compiled for this job"
         )
-    transitions = job_manifest.burst_transitions
-    if transitions:
+    mutations = job_manifest.parameter_mutations
+    if mutations:
         # The phrase matters: the row carries a **history** the job has accumulated across its
         # invocations, not a report of the one that wrote this row. The entries this recording added
         # are named separately, so a resume that inherited the earlier transitions and wrote nothing
         # new cannot read as if it had transitioned anything.
-        added = max(len(transitions) - len(carried_transitions), 0)
+        added = max(len(mutations) - len(carried_mutations), 0)
+        listed = ", ".join(_mutation_text(mutation) for mutation in mutations)
         if added and recovered_from_log:
             # The third case (§5.3): a transition an *earlier* invocation appended to the job's log
             # and was then refused on reaches this manifest through the log alone, so "added by this
             # recording" would be false for it. The sentence names the source instead of the writer.
             parts.append(
-                f"burst transitions (accumulated history, oldest first): "
-                f"{', '.join(_transition_text(transition) for transition in transitions)}"
+                f"parameter transitions (accumulated history, oldest first): {listed}"
                 f"; {added} beyond this row's own history, of which {recovered_from_log} recorded "
                 "by the job's log alone (an invocation refused after its verified write records "
                 "the transition there, and no manifest of its own)"
             )
         else:
             parts.append(
-                f"burst transitions (accumulated history, oldest first): "
-                f"{', '.join(_transition_text(transition) for transition in transitions)}"
+                f"parameter transitions (accumulated history, oldest first): {listed}"
                 + (
                     f"; {added} added by this recording"
                     if added

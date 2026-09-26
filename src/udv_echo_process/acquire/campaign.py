@@ -71,12 +71,13 @@ from enum import Enum
 from pathlib import Path
 from uuid import uuid4
 
-from pydantic import Field, ValidationError, field_validator
+from pydantic import Field, ValidationError, field_validator, model_validator
 
 from udv_echo_process.acquire.actuator import (
     BurstState,
     BurstWriteResult,
     ChannelMode,
+    ColumnWriteResult,
     DialogField,
     ProcessMode,
 )
@@ -91,10 +92,11 @@ from udv_echo_process.acquire.config import (
 )
 from udv_echo_process.acquire.log import (
     PointStatus,
-    SweepBurstMutation,
+    SweepParameterMutation,
     SweepPointRecord,
     append_entry,
-    burst_mutations,
+    migrate_legacy_burst_history,
+    parameter_mutations,
     point_records,
     read_entries,
 )
@@ -159,7 +161,7 @@ __all__ = [
     "point_identity",
     "read_manifest",
     "read_manifest_if_present",
-    "reconciled_burst_history",
+    "reconciled_parameter_mutations",
     "record_identity",
     "recorded_points",
     "refuse_process_mode",
@@ -467,9 +469,10 @@ class JobManifest(ValueModel):
     #: ``expected_process_mode`` means the manifest predates this field.
     expected_process_mode: ProcessMode | None = None
     observed_process_mode: ProcessMode | None = None
-    #: Every burst transition this **job's** boundary has performed, in the order it performed them
-    #: — the evidence, not a boolean: for each, the request, the state, both dialog rows on both
-    #: sides of the write and the dependent sampling-volume statement the application answered with.
+    #: Every instrument-parameter transition this **job's** boundary has performed, in the order it
+    #: performed them — the evidence, not a boolean. Each entry names the parameter it moved (in the
+    #: fixed-fact vocabulary), the value it started from, the request, what the transition's own
+    #: **independent** read stated afterwards, and the parameter's own evidence verbatim.
     #:
     #: **A history, and deliberately not a scalar.** A resumed run rewrites this manifest, so a single
     #: field would report only the resume's own write (usually none) and *lose* the transition the
@@ -479,18 +482,47 @@ class JobManifest(ValueModel):
     #: that writes again appends to it. The run's own ``notes`` state which entries this invocation
     #: contributed, so the history is never mistaken for a report of the current run.
     #:
-    #: ``()`` means **this job has spent no burst write at all**, and it covers two different
-    #: situations a later reader has to be able to tell apart from the log's own facts rather than
-    #: from this field: the instrument already stated the job's burst on every invocation (nothing to
-    #: do, ever), or the definition declares no burst at all (nothing to aim at). A job that *did*
-    #: transition always carries the evidence, so a run record says which bursts it wrote, in which
-    #: order, and what the application kept — and a job whose transition could not be verified never
-    #: reaches a manifest.
+    #: **One history, not one per parameter** (plan §5, review decision 2). A second field beside a
+    #: burst-specific one would have made every reader — the accumulation, the resume's fold, the
+    #: pass row's note — three times over, and the second parameter would have been the moment the
+    #: two copies started to differ. :attr:`burst_transitions` is the burst-shaped **view** of this
+    #: field for the callers that only ever had a burst to read.
+    #:
+    #: ``()`` means **this job has spent no boundary write at all**, and it covers situations a later
+    #: reader has to be able to tell apart from the log's own facts rather than from this field: the
+    #: instrument already stated every value the job asks for on every invocation (nothing to do,
+    #: ever), or the definition commands none of them (nothing to aim at). A job that *did*
+    #: transition always carries the evidence, so a run record says which parameters it wrote, in
+    #: which order, and what the application kept — and a job whose transition could not be verified
+    #: never reaches a manifest.
     #:
     #: Defaulted deliberately, like every field below ``log_errors``: a manifest written before this
-    #: slice carries no field at all and reads as the empty history, because a manifest a reader
-    #: refuses is a job whose log can no longer be read at all.
-    burst_transitions: tuple[BurstWriteResult, ...] = ()
+    #: slice carries no field at all and reads as the empty history, and one carrying the
+    #: pre-generalisation ``burst_transitions`` key is **migrated on read**
+    #: (``log.migrate_legacy_burst_history``) rather than refused — a manifest a reader refuses is a
+    #: job whose log can no longer be read at all.
+    parameter_mutations: tuple[SweepParameterMutation, ...] = ()
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_legacy_burst_history(cls, payload: object) -> object:
+        """Read a manifest written before the parameter-mutation record as one (:mod:`…log`)."""
+        return migrate_legacy_burst_history(payload)
+
+    @property
+    def burst_transitions(self) -> tuple[BurstWriteResult, ...]:
+        """The burst-shaped **view** of :attr:`parameter_mutations` — the driver's own results.
+
+        Derived rather than stored, so there is one source of truth for the job's history: the
+        accumulation, the transition text and the pass row all read the same list, and a mutation
+        that is *not* a burst is simply not in this view. Kept because the burst documents, the B5
+        evidence package and the resume's own comparisons were written against it.
+        """
+        return tuple(
+            mutation.evidence
+            for mutation in self.parameter_mutations
+            if isinstance(mutation.evidence, BurstWriteResult)
+        )
 
     @property
     def points_skipped(self) -> int:
@@ -1297,7 +1329,7 @@ def _refuse_disagreements(checks: tuple[FactCheck, ...]) -> None:
         raise CampaignError(
             "the instrument disagrees with the campaign before the first recording, so nothing "
             "was stored and no point was recorded (the compile writes nothing to the instrument; "
-            "a burst transition at the job boundary, if the job needed one, is the only write "
+            "a parameter transition at the job boundary, if the job needed one, is the only write "
             "this refusal can follow): " + "; ".join(refused)
         )
 
@@ -1431,93 +1463,101 @@ def _transit_burst_length(
     return result
 
 
-def _append_burst_mutation(
+def _append_parameter_mutation(
     log: Path,
     *,
     definition: CampaignDefinition,
     routed: int | None,
-    transition: BurstWriteResult,
+    parameter: str,
+    evidence: BurstWriteResult | ColumnWriteResult,
     occurred_at: datetime,
-) -> SweepBurstMutation:
-    """Write the verified transition to the job's own log — at the boundary, before any refusal.
+) -> SweepParameterMutation:
+    """Write one verified transition to the job's own log — at the boundary, before any refusal.
 
-    This is where the mutation becomes durable (``docs/dop3000/failed-invocation-provenance.md``
+    This is where a mutation becomes durable (``docs/dop3000/failed-invocation-provenance.md``
     §O4/§5.1). The manifest is written at the *end* of an invocation, so the write's only other
     record is lost by anything that refuses in between — the post-write compile (:func:`compile_campaign`)
     and the resume-identity comparison (:func:`_validate_resume`) both sit after the write and
     before the manifest, and both refuse the job without writing one. The log is append-only and
-    already per-job, so the verified transition is appended there instead, immediately after the
-    write: one entry type on an existing file, no new artifact and no new path.
+    already per-job, so each verified transition is appended there instead, immediately after its
+    own write: one entry type on an existing file, no new artifact and no new path.
 
-    **The append fails closed.** Once ``write_dialog_burst_length`` has returned ``VERIFIED`` the
-    instrument has moved, and this entry is the only durable record of it — so an append that
-    cannot be written **aborts the invocation here**, naming the failure, rather than continuing
-    to the compile and to the recording of points under a provenance contract that was not met.
-    Nothing can make the already-performed mutation durable at that point; the requirement is that
-    the gap is not compounded. It is deliberately *not* folded into the runner's ``log_errors``
-    list (``acquire/runner.py``), which only reaches a reader through a manifest — and a refused
+    **Parameter-agnostic by construction.** The caller names which parameter moved and hands over
+    that parameter's own evidence verbatim (``evidence``); nothing here knows how to perform a
+    write, which surface it used or what its dependent row is. That is what lets a second,
+    independently owned instrument mutation use this same entry, fold and accessor rather than a
+    second field of its own (review decisions 1 and 2).
+
+    **The append fails closed.** Once the write has returned verified the instrument has moved, and
+    this entry is the only durable record of it — so an append that cannot be written **aborts the
+    invocation here**, naming the failure, rather than continuing to the compile and to the
+    recording of points under a provenance contract that was not met. Nothing can make the
+    already-performed mutation durable at that point; the requirement is that the gap is not
+    compounded. It is deliberately *not* folded into the runner's ``log_errors`` list
+    (``acquire/runner.py``), which only reaches a reader through a manifest — and a refused
     invocation writes none, which is the whole problem.
 
     The occurrence identity is minted here (a fresh ``uuid4`` hex per append), never derived from
     the transition: two identical ``10 -> 18`` transitions are two events (§5.3).
     """
-    entry = SweepBurstMutation(
+    entry = SweepParameterMutation(
+        parameter=parameter,
         mutation_id=uuid4().hex,
         occurred_at=occurred_at,
         job=definition.job,
         fingerprint=campaign_fingerprint(definition),
         routed_channel=routed,
-        transition=transition,
+        evidence=evidence,
     )
     try:
         append_entry(log, entry)
     except OSError as exc:
         raise CampaignError(
-            f"burst {transition.requested_burst} was written to the dialog and verified, but its "
-            f"record could not be appended to {log}: {exc}. The instrument has moved and this "
-            "append is the only durable record of the move, so the invocation is aborted here: "
-            "nothing is compiled and no point is recorded, rather than recording points under a "
-            "provenance contract that was not met. Fix what stopped the write to the log (the "
-            "path, its directory, its permissions, the free space) before running this job again — "
-            "the transition itself is not re-established by this refusal"
+            f"the {parameter} was written to the instrument and verified "
+            f"({entry.before or '?'} → {entry.requested}, read back as "
+            f"{entry.verified or 'nothing'}), but its record could not be appended to {log}: {exc}. "
+            "The instrument has moved and this append is the only durable record of the move, so "
+            "the invocation is aborted here: nothing is compiled and no point is recorded, rather "
+            "than recording points under a provenance contract that was not met. Fix what stopped "
+            "the write to the log (the path, its directory, its permissions, the free space) "
+            "before running this job again — the transition itself is not re-established by this "
+            "refusal"
         ) from exc
     return entry
 
 
-def _log_mutation_transitions(log: Path) -> tuple[BurstWriteResult, ...]:
+def _log_parameter_mutations(log: Path) -> tuple[SweepParameterMutation, ...]:
     """Every verified transition the job's log records, in the order it was appended.
 
-    The log is the **second source** of a job's burst history: an invocation that was refused
-    after its write appended its transition here and wrote no manifest, so this is the only
-    artifact that carries it. ``()`` when the log does not exist yet — a job's first invocation
-    has nothing to recover.
+    The log is the **second source** of a job's history: an invocation that was refused after its
+    write appended its transition here and wrote no manifest, so this is the only artifact that
+    carries it. ``()`` when the log does not exist yet — a job's first invocation has nothing to
+    recover.
     """
     if not Path(log).is_file():
         return ()
-    return tuple(
-        mutation.transition for mutation in burst_mutations(read_entries(log))
-    )
+    return parameter_mutations(read_entries(log))
 
 
-def reconciled_burst_history(
-    manifest_history: tuple[BurstWriteResult, ...],
-    recorded: tuple[BurstWriteResult, ...],
-) -> tuple[BurstWriteResult, ...]:
-    """The job's whole burst history so far: the manifest's, plus what only the log carries (§5.3).
+def reconciled_parameter_mutations(
+    manifest_history: tuple[SweepParameterMutation, ...],
+    recorded: tuple[SweepParameterMutation, ...],
+) -> tuple[SweepParameterMutation, ...]:
+    """The job's whole history so far: the manifest's, plus what only the log carries (§5.3).
 
     Three sources feed one history, oldest first: the previous manifest's list (the authority for
     a history it already carries), the job log's mutation entries (the authority for what no
-    manifest ever carried — a refused invocation's transition), and this invocation's own write,
+    manifest ever carried — a refused invocation's transition), and this invocation's own writes,
     which the caller appends after this. This function reconciles the first two.
 
-    **In sequence, one matching occurrence consumed per entry, by full result equality** — and
+    **In sequence, one matching occurrence consumed per entry, by full equality** — and
     deliberately *not* by any key derived from the transition's content. Two genuinely distinct
     mutations can be semantically identical (``10 -> 18``, the instrument later returned to ``10``,
-    ``10 -> 18`` again) and ``burst_transitions`` is an ordered history of occurrences, not a set
-    of distinct state changes: a content key would silently collapse the second write into the
-    first. Each manifest entry consumes at most one log occurrence, taking the earliest one after
-    the previously consumed position, so repeated identical transitions survive as the two events
-    they were, and a manifest entry the log does not hold (written before this record existed)
+    ``10 -> 18`` again) and a job's history is an ordered history of occurrences, not a set of
+    distinct state changes: a content key would silently collapse the second write into the first.
+    Each manifest entry consumes at most one log occurrence, taking the earliest one after the
+    previously consumed position, so repeated identical transitions survive as the two events they
+    were, and a manifest entry the log does not hold (written before this record existed)
     consumes nothing.
 
     What the manifest does not account for is kept after it, never dropped. In the sequence this
@@ -1528,17 +1568,15 @@ def reconciled_burst_history(
     """
     consumed: set[int] = set()
     position = 0
-    for transition in manifest_history:
+    for mutation in manifest_history:
         scan = position
-        while scan < len(recorded) and recorded[scan] != transition:
+        while scan < len(recorded) and recorded[scan] != mutation:
             scan += 1
         if scan < len(recorded):
             consumed.add(scan)
             position = scan + 1
     recovered = [
-        transition
-        for index, transition in enumerate(recorded)
-        if index not in consumed
+        mutation for index, mutation in enumerate(recorded) if index not in consumed
     ]
     return (*manifest_history, *recovered)
 
@@ -1703,30 +1741,32 @@ def run_campaign(
     # boundary's burst write on itself. The identity half of the resume needs the compile and is
     # validated at step 6.
     previous = _previous_manifest_for(definition, log) if resume else None
-    # The burst history this job's record already carries: every verified transition its **earlier
-    # invocations** spent, oldest first. Two sources, read here, before any gesture, because both
-    # are pure: the manifest beside the log (the authority for a history it already carries) and
-    # the job's **own log** (the authority for what no manifest ever carried — an invocation that
-    # was refused after its write appended the transition there and wrote no manifest at all,
-    # §O4). A resume that spends no write (the instrument is already at the job's burst, or
-    # ``no_snapshot`` transitions nothing) must carry all of it onto the record it rewrites: the
-    # write belongs to the *job*, not to the invocation that happened to make it, so the field
-    # below is an accumulation and never a report of this run alone. The two lists are reconciled
-    # **in sequence, one occurrence per entry, by full result equality** — never by a key derived
-    # from the transition's content — so an occurrence the manifest already carries is not folded
-    # in twice and two identical ``10 -> 18`` transitions stay two events (§5.3).
-    from_manifest: tuple[BurstWriteResult, ...] = (
-        () if previous is None else previous.burst_transitions
+    # The boundary history this job's record already carries: every verified transition its
+    # **earlier invocations** spent, oldest first, whatever parameter each one moved. Two sources,
+    # read here, before any gesture, because both are pure: the manifest beside the log (the
+    # authority for a history it already carries) and the job's **own log** (the authority for what
+    # no manifest ever carried — an invocation that was refused after its write appended the
+    # transition there and wrote no manifest at all, §O4). A resume that spends no write (the
+    # instrument is already at every value the job commands, or ``no_snapshot`` transitions nothing)
+    # must carry all of it onto the record it rewrites: the write belongs to the *job*, not to the
+    # invocation that happened to make it, so the field below is an accumulation and never a report
+    # of this run alone. The two lists are reconciled **in sequence, one occurrence per entry, by
+    # full equality** — never by a key derived from the transition's content — so an occurrence the
+    # manifest already carries is not folded in twice and two identical ``10 -> 18`` transitions
+    # stay two events (§5.3).
+    from_manifest: tuple[SweepParameterMutation, ...] = (
+        () if previous is None else previous.parameter_mutations
     )
-    carried_transitions = reconciled_burst_history(
-        from_manifest, _log_mutation_transitions(log)
+    carried_mutations = reconciled_parameter_mutations(
+        from_manifest, _log_parameter_mutations(log)
     )
-    recovered_count = len(carried_transitions) - len(from_manifest)
+    recovered_count = len(carried_mutations) - len(from_manifest)
 
     # Steps 3-5: route, read, refuse (pure), transition (the one write), compile — all of it before
     # the runner exists, so nothing can be stored for a job that cannot be compiled.
     compiled: ExecutableCampaign | None = None
     transition: BurstWriteResult | None = None
+    mutation: SweepParameterMutation | None = None
     if no_snapshot:
         # Nothing is read and nothing is compiled, by definition of the flag — and therefore no
         # burst is transitioned either: the boundary cannot know what to write without the reading
@@ -1770,11 +1810,12 @@ def run_campaign(
             # mutation that really happened. It fails closed: an append that cannot be written
             # aborts this invocation here rather than recording points under a provenance contract
             # that was not met.
-            _append_burst_mutation(
+            mutation = _append_parameter_mutation(
                 log,
                 definition=definition,
                 routed=routed,
-                transition=transition,
+                parameter="burst_length",
+                evidence=transition,
                 occurred_at=_local_now(now),
             )
             # The dialog was written and accepted: these reads are the state the write established,
@@ -1818,25 +1859,28 @@ def run_campaign(
             f"{log.name}; {len(todo)} to run"
         )
 
-    # The job's burst history, **accumulated rather than replaced**: what the earlier invocations
-    # recorded, plus this invocation's own write when it spent one. The note states the two halves
+    # The job's boundary history, **accumulated rather than replaced**: what the earlier invocations
+    # recorded, plus this invocation's own writes when it spent any. The note states the two halves
     # separately, because a reader of the run's notes must not read the whole history as this run's
-    # — a resume that spends no write (the instrument already at the job's burst, or a ``no_snapshot``
-    # bypass that transitions nothing) still carries every earlier transition unchanged.
-    burst_transitions: tuple[BurstWriteResult, ...] = (
-        (*carried_transitions, transition) if transition is not None else carried_transitions
+    # — a resume that spends no write (the instrument already at every value the job commands, or a
+    # ``no_snapshot`` bypass that transitions nothing) still carries every earlier transition
+    # unchanged.
+    mutations: tuple[SweepParameterMutation, ...] = (
+        (*carried_mutations, mutation) if mutation is not None else carried_mutations
     )
-    if notes is not None and (carried_transitions or transition is not None):
+    added = [entry.parameter for entry in mutations[len(carried_mutations) :]]
+    if notes is not None and (carried_mutations or mutation is not None):
         notes.append(
-            f"burst history: this job's record carries {len(burst_transitions)} transition(s); "
+            f"boundary history: this job's record carries {len(mutations)} transition(s); "
             f"{len(from_manifest)} carried from the previous manifest and {recovered_count} "
             f"recovered from {log.name} (an invocation refused after its verified write records "
-            f"the transition there, and no manifest of its own), "
-            f"{len(burst_transitions) - len(carried_transitions)} performed by this invocation — "
+            "the transition there, and no manifest of its own), "
+            f"{len(added)} performed by this invocation — "
             + (
-                "this invocation performed a verified write, appended to the history"
-                if transition is not None
-                else "this invocation performed no burst write, so the history is carried unchanged"
+                f"this invocation wrote {', '.join(added)}, verified and appended to the history"
+                if added
+                else "this invocation performed no boundary write, so the history is carried "
+                "unchanged"
             )
         )
 
@@ -1890,12 +1934,12 @@ def run_campaign(
         observed_process_mode=(
             None if compiled is None else _stated_process_mode(compiled.identity.process_mode)
         ),
-        # The boundary's own evidence, as a job-level **history**: which bursts this job's boundary
-        # has written across its invocations, and what the application answered. The earlier
+        # The boundary's own evidence, as a job-level **history**: which parameters this job's
+        # boundary has written across its invocations, and what the application answered. The earlier
         # invocations' transitions are carried first and this invocation's appended last; the empty
-        # tuple means the job has spent no write at all (the instrument stated the job's burst every
-        # time, or the definition declares none).
-        burst_transitions=burst_transitions,
+        # tuple means the job has spent no write at all (the instrument stated every value the job
+        # commands on every invocation, or the definition commands none of them).
+        parameter_mutations=mutations,
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest

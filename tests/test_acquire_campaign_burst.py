@@ -17,9 +17,10 @@ Three things are under test and nothing else:
   statement stops the job before anything is stored. The instrument's state is then unknown, and
   a recording taken on it would pin a burst nobody read back;
 * **the evidence is on the record** — a verified transition is persisted on the job manifest as
-  the ordered history ``JobManifest.burst_transitions`` (oldest first, accumulated across every
-  invocation of the job), so a pass reconstructed offline says which bursts the run wrote, in
-  which order, and what the application answered;
+  the ordered history ``JobManifest.parameter_mutations`` (oldest first, accumulated across every
+  invocation of the job), so a pass reconstructed offline says which parameters the run wrote, in
+  which order, and what the application answered. ``JobManifest.burst_transitions`` is the
+  burst-shaped **view** of that history — derived, not stored a second time;
 * **and the transition survives an invocation that refused after it** — the write is real the
   moment the application accepts it, while the manifest is written only at the end of an
   invocation, so a compile refusal or a resume-identity refusal used to lose the record of a
@@ -68,9 +69,9 @@ from udv_echo_process.acquire.actuator import (
     ProcessMode,
 )
 from udv_echo_process.acquire.log import (
-    SweepBurstMutation,
+    SweepParameterMutation,
     append_entry,
-    burst_mutations,
+    parameter_mutations,
     point_names,
     read_entries,
 )
@@ -662,7 +663,7 @@ def test_a_manifest_without_the_history_field_reads_as_an_empty_history(
     assert before_texts(first) == ["10"]
 
     payload = first.model_dump(mode="json")
-    payload.pop("burst_transitions")
+    payload.pop("parameter_mutations")
     legacy = campaign.JobManifest.model_validate(payload)
     assert legacy.burst_transitions == ()
 
@@ -713,7 +714,7 @@ def test_a_resume_that_wrote_nothing_says_so_and_still_carries_the_history(
     resumed = run_job(job, resume=True, notes=notes)
 
     text = " ".join(notes)
-    assert "no burst write" in text, notes
+    assert "no boundary write" in text, notes
     assert before_texts(resumed) == ["10"]
 
 
@@ -749,7 +750,7 @@ def test_a_no_snapshot_resume_retains_the_history_and_records_no_new_write(
         "the history the earlier invocation wrote is retained, not dropped by the bypass"
     )
     text = " ".join(notes)
-    assert "no burst write" in text, notes
+    assert "no boundary write" in text, notes
 
 
 # -------- 9. a refusal after a verified write keeps the record of it in the job's own log
@@ -775,11 +776,11 @@ def refuse_the_compile(job: Job) -> None:
     )
 
 
-def mutation_records(job: Job) -> tuple[SweepBurstMutation, ...]:
-    """Every burst-mutation record the job's log holds, in order; none when there is no log."""
+def mutation_records(job: Job) -> tuple[SweepParameterMutation, ...]:
+    """Every parameter-mutation record the job's log holds, in order; none when there is no log."""
     if not job.log_path.is_file():
         return ()
-    return burst_mutations(read_entries(job.log_path))
+    return parameter_mutations(read_entries(job.log_path))
 
 
 def test_a_compile_refusal_after_a_verified_transition_keeps_the_mutation_in_the_log(
@@ -811,11 +812,11 @@ def test_a_compile_refusal_after_a_verified_transition_keeps_the_mutation_in_the
     assert record.job == job.definition.job
     assert record.fingerprint == campaign.campaign_fingerprint(job.definition)
     assert record.routed_channel == 1
-    assert record.transition.state is BurstState.VERIFIED
-    assert record.transition.verified_burst == BURST_REQUESTED
-    assert record.transition.before_burst is not None
-    assert record.transition.before_burst.text == "10"
-    assert record.transition.verified_sampling_volume is not None
+    assert isinstance(record.evidence, BurstWriteResult), "the payload stays typed, not text"
+    assert record.state is BurstState.VERIFIED
+    assert record.verified == str(BURST_REQUESTED)
+    assert record.before == "10"
+    assert record.evidence.verified_sampling_volume is not None
     # Nothing was stored, no point was recorded, and no manifest pretends the job ran: the log
     # entry is the whole durable record of this invocation.
     assert job.fake.stored == []
@@ -848,9 +849,10 @@ def test_a_resume_identity_refusal_after_a_verified_transition_keeps_the_mutatio
     assert job.fake.burst_writes == [(BURST_LENGTH, 1)]
     records = mutation_records(job)
     assert len(records) == 1, records
-    assert records[0].transition.requested_burst == BURST_LENGTH
-    assert records[0].transition.before_burst is not None
-    assert records[0].transition.before_burst.text == str(BURST_REQUESTED)
+    assert isinstance(records[0].evidence, BurstWriteResult)
+    assert records[0].evidence.requested_burst == BURST_LENGTH
+    assert records[0].before == str(BURST_REQUESTED)
+    assert records[0].verified == str(BURST_LENGTH)
     # The manifest beside the log is still the one the first run wrote, and the refusal recorded
     # no point of its own.
     kept = campaign.read_manifest(campaign.manifest_path_for(job.log_path))
@@ -949,7 +951,7 @@ def test_the_next_invocation_folds_the_logs_record_into_the_history(
         "the instrument is at the job's burst, so the resumed invocation spends no write of its"
         " own — the history it carries is recovered, not spent again"
     )
-    assert resumed.burst_transitions == (refused[0].transition,), (
+    assert resumed.burst_transitions == (refused[0].evidence,), (
         "the recovered transition is the occurrence the log holds, by full result equality"
     )
     assert before_texts(resumed) == ["10"]
@@ -1086,21 +1088,22 @@ def test_a_pass_row_names_the_job_log_for_a_recovered_transition(tmp_path: Path)
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, 12, tzinfo=UTC))
     recovered = burst_transition_result(10)
     log_path = tmp_path / "job.jsonl"
-    append_entry(
-        log_path,
-        SweepBurstMutation(
-            mutation_id="b" * 32,
-            # Before the invocation whose manifest is folded below: the transition was recorded by
-            # an earlier one, which is what makes it *recovered* rather than this recording's own.
-            occurred_at=datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
-            job=job.job,
-            fingerprint=job.definition_fingerprint,
-            routed_channel=run.channel,
-            transition=recovered,
-        ),
+    # One occurrence, written to the log by an earlier invocation and reaching this manifest only
+    # through it: the same mutation object is what both carry, which is how the fold recognises it.
+    mutation = SweepParameterMutation(
+        parameter="burst_length",
+        mutation_id="b" * 32,
+        # Before the invocation whose manifest is folded below: the transition was recorded by
+        # an earlier one, which is what makes it *recovered* rather than this recording's own.
+        occurred_at=datetime(2026, 9, 20, 11, 30, tzinfo=UTC),
+        job=job.job,
+        fingerprint=job.definition_fingerprint,
+        routed_channel=run.channel,
+        evidence=recovered,
     )
+    append_entry(log_path, mutation)
     job_manifest = job_manifest_for(run, job).model_copy(
-        update={"burst_transitions": (recovered,), "log_path": str(log_path)}
+        update={"parameter_mutations": (mutation,), "log_path": str(log_path)}
     )
 
     recorded = run_plan.record_job(manifest, run, job, job_manifest)

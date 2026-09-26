@@ -26,7 +26,10 @@ import pytest
 from udv_echo_process.acquire.actuator import (
     BurstState,
     BurstWriteResult,
+    ColumnWriteResult,
     ComboReading,
+    ParamRole,
+    WriteState,
 )
 from udv_echo_process.acquire.config import (
     ParameterSet,
@@ -35,14 +38,16 @@ from udv_echo_process.acquire.config import (
 )
 from udv_echo_process.acquire.log import (
     KNOWN_RECORD_TYPES,
+    LEGACY_BURST_HISTORY_KEY,
     DecodedBlock,
     PointStatus,
     SizeSignature,
-    SweepBurstMutation,
     SweepLogHeader,
+    SweepParameterMutation,
     SweepPointRecord,
     append_entry,
-    burst_mutations,
+    migrate_legacy_burst_history,
+    parameter_mutations,
     point_names,
     point_records,
     read_entries,
@@ -535,21 +540,51 @@ def _transition(*, before: str = "10", requested: int = 18) -> BurstWriteResult:
     )
 
 
-def _mutation(**overrides: object) -> SweepBurstMutation:
-    """One burst-mutation record, written the way the job boundary appends it."""
+def _column_result(**overrides: object) -> ColumnWriteResult:
+    """One column transition's evidence: read 20, asked for 64, read back 64."""
     fields: dict[str, object] = {
+        "role": ParamRole.EMISSIONS_PER_PROFILE,
+        "requested": "64",
+        "state": WriteState.VERIFIED,
+        "before": "20",
+        "write_readback": "64",
+        "after": "64",
+    }
+    fields.update(overrides)
+    return ColumnWriteResult(**fields)  # type: ignore[arg-type]
+
+
+def _mutation(**overrides: object) -> SweepParameterMutation:
+    """One burst-backed parameter mutation, written the way the job boundary appends it."""
+    fields: dict[str, object] = {
+        "parameter": "burst_length",
         "mutation_id": "9f2c1a4e5b6d708192a3b4c5d6e7f809",
         "occurred_at": datetime(2026, 9, 25, 11, 59, 30, tzinfo=UTC),
         "job": "test-single-channel",
         "fingerprint": "a" * 64,
         "routed_channel": 1,
-        "transition": _transition(),
+        "evidence": _transition(),
     }
     fields.update(overrides)
-    return SweepBurstMutation(**fields)  # type: ignore[arg-type]
+    return SweepParameterMutation(**fields)  # type: ignore[arg-type]
 
 
-def test_a_burst_mutation_round_trips_through_the_log(tmp_path: Path) -> None:
+def _column_mutation(**overrides: object) -> SweepParameterMutation:
+    """The same record for the **column** surface: a second parameter, one entry type."""
+    fields: dict[str, object] = {
+        "parameter": ParamRole.EMISSIONS_PER_PROFILE.value,
+        "mutation_id": "2b3c4d5e6f708192a3b4c5d6e7f80910",
+        "occurred_at": datetime(2026, 9, 25, 12, 1, tzinfo=UTC),
+        "job": "test-single-channel",
+        "fingerprint": "a" * 64,
+        "routed_channel": 1,
+        "evidence": _column_result(),
+    }
+    fields.update(overrides)
+    return SweepParameterMutation(**fields)  # type: ignore[arg-type]
+
+
+def test_a_parameter_mutation_round_trips_through_the_log(tmp_path: Path) -> None:
     """The write's evidence survives the file — request, state and both rows on both sides.
 
     The record is the durable half of the mutation, so it carries the driver's own
@@ -563,21 +598,65 @@ def test_a_burst_mutation_round_trips_through_the_log(tmp_path: Path) -> None:
 
     entries = read_entries(path)
     assert len(entries) == 2
-    assert isinstance(entries[1], SweepBurstMutation)
+    assert isinstance(entries[1], SweepParameterMutation)
     read_back = entries[1]
     assert read_back == entry
+    assert read_back.parameter == "burst_length"
     assert read_back.mutation_id == "9f2c1a4e5b6d708192a3b4c5d6e7f809"
     assert read_back.occurred_at == datetime(2026, 9, 25, 11, 59, 30, tzinfo=UTC)
     assert read_back.job == "test-single-channel"
     assert read_back.fingerprint == "a" * 64
     assert read_back.routed_channel == 1
-    assert read_back.transition == entry.transition
-    assert read_back.transition.verified_burst == 18
-    assert read_back.transition.state is BurstState.VERIFIED
-    assert read_back.transition.before_burst is not None
-    assert read_back.transition.before_burst.text == "10"
+    assert read_back.evidence == entry.evidence
+    assert read_back.state is WriteState.VERIFIED
+    # The generic answer is derived from the evidence, so the record stores one copy of each value
+    # and a reader that does not know what a burst is can still ask what moved.
+    assert read_back.before == "10"
+    assert read_back.requested == "18"
+    assert read_back.verified == "18"
+    assert read_back.dependent is not None
+    assert read_back.dependent.name == "sampling_volume"
+    assert read_back.dependent.after == "1.460"
     lines = path.read_text(encoding="utf-8").splitlines()
-    assert json.loads(lines[1])["record_type"] == "burst_mutation"
+    assert json.loads(lines[1])["record_type"] == "parameter_mutation"
+
+
+def test_a_column_mutation_is_the_same_record_with_its_own_evidence(tmp_path: Path) -> None:
+    """The second surface uses the same entry, tag and accessor — only the payload differs.
+
+    This is the generalisation the record exists for (review decisions 1 and 2): a reader that
+    knows how to fold a burst mutation folds an emissions one without learning anything new, and
+    the parameter-specific half stays typed rather than becoming text.
+    """
+    path = tmp_path / "job.jsonl"
+    entry = _column_mutation()
+    append_entry(path, _header())
+    append_entry(path, entry)
+
+    read_back = parameter_mutations(read_entries(path))[0]
+    assert read_back.parameter == "emissions_per_profile"
+    assert read_back.evidence == _column_result()
+    assert read_back.before == "20"
+    assert read_back.requested == "64"
+    assert read_back.verified == "64"
+    assert read_back.state is WriteState.VERIFIED
+    # No dependent row moved, and ``None`` says exactly that rather than "read as empty".
+    assert read_back.dependent is None
+
+
+def test_the_parameter_tag_cannot_disagree_with_the_evidence() -> None:
+    """The tag and the payload are one answer to "what moved", so a mismatch is refused.
+
+    The check is against each evidence's own parameter: a column role's value *is* its fact name,
+    and the burst evidence names no parameter of its own (its row is the burst row by binding).
+    """
+    with pytest.raises(ValueError) as excinfo:
+        _mutation(parameter="emissions_per_profile")
+    assert "burst_length" in str(excinfo.value), excinfo.value
+
+    with pytest.raises(ValueError) as excinfo:
+        _column_mutation(parameter="burst_length")
+    assert "emissions_per_profile" in str(excinfo.value), excinfo.value
 
 
 def test_two_identical_mutations_are_two_records_and_are_not_collapsed() -> None:
@@ -592,19 +671,24 @@ def test_two_identical_mutations_are_two_records_and_are_not_collapsed() -> None
         mutation_id="1" * 32, occurred_at=datetime(2026, 9, 25, 12, 5, tzinfo=UTC)
     )
 
-    assert first.transition == second.transition, "the premise: the two writes are identical"
+    assert first.evidence == second.evidence, "the premise: the two writes are identical"
     assert first.mutation_id != second.mutation_id
+    assert first.occurred_at is not None and second.occurred_at is not None
     assert first.occurred_at < second.occurred_at, "elapsed time is what orders them"
     assert first != second
 
 
-def test_a_burst_mutation_needs_an_occurrence_identity() -> None:
-    """``mutation_id`` is the identity, so an empty one is not a record of an event."""
+def test_a_parameter_mutation_needs_an_occurrence_identity() -> None:
+    """``mutation_id`` is the identity, so an empty one is not a record of an event.
+
+    ``None`` is the one other accepted value, and it means something specific: an entry migrated
+    from a manifest written before this record existed, where no identity was ever minted.
+    """
     with pytest.raises(ValueError):
         _mutation(mutation_id="")
 
 
-def test_point_records_and_names_ignore_a_burst_mutation(tmp_path: Path) -> None:
+def test_point_records_and_names_ignore_a_parameter_mutation(tmp_path: Path) -> None:
     """Every existing reader of the union has to ignore the new member, untouched.
 
     ``point_records`` and ``point_names`` are the resume's own inputs
@@ -621,8 +705,8 @@ def test_point_records_and_names_ignore_a_burst_mutation(tmp_path: Path) -> None
     assert len(entries) == 3
     assert point_records(entries) == (record,)
     assert point_names(entries) == frozenset({"sw100-k1-161738"})
-    assert burst_mutations(entries) == (_mutation(),)
-    assert point_records(burst_mutations(entries)) == ()
+    assert parameter_mutations(entries) == (_mutation(),)
+    assert point_records(parameter_mutations(entries)) == ()
 
 
 def test_a_record_type_the_build_does_not_know_refuses_the_log(tmp_path: Path) -> None:
@@ -632,6 +716,11 @@ def test_a_record_type_the_build_does_not_know_refuses_the_log(tmp_path: Path) -
     understand, and an older checkout that *skipped* it while resuming would answer questions
     about a history it had silently shortened (a mutation above all). So the whole log is
     refused, and the refusal names the file, the line and the type it declared.
+
+    The burst slice's own tag is one of the types this build no longer knows: the record
+    generalised **before** that branch merged, so no released build ever wrote one and there is
+    no migration to write for it — while a log line whose meaning this build cannot state is
+    exactly what must not be read past.
     """
     path = tmp_path / "job.jsonl"
     append_entry(path, _header())
@@ -655,13 +744,15 @@ def test_a_record_type_the_build_does_not_know_refuses_the_log(tmp_path: Path) -
 def test_a_damaged_record_of_a_known_type_refuses_the_log_too(tmp_path: Path) -> None:
     """A known type is not read *partially* either: a body that cannot be parsed refuses the log."""
     path = tmp_path / "job.jsonl"
-    path.write_text('{"record_type": "burst_mutation", "mutation_id": "x"}\n', encoding="utf-8")
+    path.write_text(
+        '{"record_type": "parameter_mutation", "mutation_id": "x"}\n', encoding="utf-8"
+    )
 
     with pytest.raises(ValueError) as excinfo:
         read_entries(path)
 
     message = str(excinfo.value)
-    assert "burst_mutation" in message, message
+    assert "parameter_mutation" in message, message
     assert "line 1" in message, message
 
 
@@ -684,6 +775,65 @@ def test_the_known_types_are_the_ones_the_models_declare() -> None:
     declared = {
         SweepLogHeader.model_fields["record_type"].default,
         SweepPointRecord.model_fields["record_type"].default,
-        SweepBurstMutation.model_fields["record_type"].default,
+        SweepParameterMutation.model_fields["record_type"].default,
     }
     assert declared == set(KNOWN_RECORD_TYPES)
+
+
+def test_a_manifest_written_before_the_record_existed_migrates(tmp_path: Path) -> None:
+    """An older manifest's ``burst_transitions`` reads as what it always was: parameter mutations.
+
+    The record generalized before the burst branch merged, so the *log* has no legacy shape to
+    read. A job manifest does: ``burst_transitions`` shipped in the B5 slice and is what a resume
+    of an already-run job on this machine will find. Reading forwards costs these few lines once,
+    and refusing it would strand every pass recorded before the rename.
+    """
+    legacy_manifest = {
+        "job": "burst-20",
+        "fingerprint": "b" * 64,
+        "burst_transitions": [
+            _transition().model_dump(mode="json"),
+            _transition(requested=20, before="18").model_dump(mode="json"),
+        ],
+        "planned": {"points": 1},
+    }
+
+    migrated = migrate_legacy_burst_history(legacy_manifest)
+
+    assert isinstance(migrated, dict)
+    assert LEGACY_BURST_HISTORY_KEY not in migrated, "the key is read, never carried forwards"
+    assert migrated["planned"] == {"points": 1}, "everything else rides through untouched"
+    history = migrated["parameter_mutations"]
+    assert [entry["parameter"] for entry in history] == ["burst_length", "burst_length"]
+    assert history[0]["job"] == "burst-20", "the job and fingerprint come from the record itself"
+    assert history[0]["fingerprint"] == "b" * 64
+    assert history[0]["evidence"] == _transition().model_dump(mode="json")
+    # Nothing that was never recorded is invented for these entries: no identity, no timestamp, no
+    # routing answer — the reader's own defaults are the whole statement about them.
+    read_entries_back = [
+        SweepParameterMutation.model_validate(entry) for entry in history
+    ]
+    assert [entry.mutation_id for entry in read_entries_back] == [None, None]
+    assert [entry.occurred_at for entry in read_entries_back] == [None, None]
+    assert [entry.routed_channel for entry in read_entries_back] == [None, None]
+    # The payload stays typed, so the sampling-volume evidence survives the migration.
+    first = read_entries_back[0]
+    assert first.requested == "18"
+    assert first.verified == "18"
+    assert first.state is WriteState.VERIFIED
+    assert first.dependent is not None and first.dependent.after == "1.460"
+    assert read_entries_back[1].before == "18", "the second entry's own sides survive too"
+
+
+def test_migration_leaves_everything_it_does_not_own_alone() -> None:
+    """A payload with no legacy key — and one that is not a payload at all — is returned as given."""
+    payload = {"job": "burst-20", "parameter_mutations": [{"parameter": "burst_length"}]}
+    assert migrate_legacy_burst_history(payload) is payload
+
+    modern = {"job": "burst-20", "burst_transitions": [], "parameter_mutations": []}
+    migrated = migrate_legacy_burst_history(modern)
+    assert isinstance(migrated, dict)
+    assert "burst_transitions" not in migrated, "the legacy key is dropped either way"
+    assert migrated["parameter_mutations"] == [], "and the new field is the authority"
+
+    assert migrate_legacy_burst_history("not a payload") == "not a payload"
