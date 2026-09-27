@@ -20,10 +20,12 @@ evaluates them, and only them, for **one sitting at a time**:
   E20 side at a knot (with the offending member and its own reason) whenever any of
   ``cr1..cr4`` is undefined there;
 - it publishes, per contrast and metric/view, the per-depth effect profile first, then a
-  depth summary that states its physical weighting rule, the RMS magnitude, the sign
-  fractions over defined nonzero knots and the largest absolute effect with its depth — the
-  signed depth average is never the only summary, because a spatially changing effect can
-  cancel under averaging;
+  depth summary whose signed average and RMS are trapezoidal integrals over only the
+  *adjacent* knot pairs whose both endpoints define the effect — an undefined knot is never
+  bridged or counted as a zero, and the covered depth and its fraction of the profile are
+  stated — beside the physical weighting rule, the sign fractions over defined nonzero knots
+  and the largest absolute effect with its depth; the signed depth average is never the only
+  summary, because a spatially changing effect can cancel under averaging;
 - it reports profile-shape correlation only where both compared profiles are nonconstant
   and sufficiently supported, and an explicit ``undefined`` with the reason otherwise;
 - it describes same-whole-condition repeats (the four common-reference jobs, and each job's
@@ -137,19 +139,28 @@ PROFILE_FIRST_RULE = (
     "publish E(z) first, with its valid common knots and units, then reduce it: the signed "
     "depth average, the RMS effect magnitude, the sign fractions over defined nonzero knots "
     "and the depth and signed value of the largest absolute effect (ties resolved by the "
-    "shallower depth). The depth average is physically weighted by each knot's trapezoidal "
-    "extent; even spacing gives half-weight to the two endpoints, so the equal-knot average "
-    "is kept beside it. A signed average can cancel a spatially changing effect, so it is "
-    "never the sole magnitude summary."
+    "shallower depth). The depth average and the RMS are trapezoidal integrals over the "
+    "adjacent knot pairs whose *both* endpoints define the effect, so an undefined knot is "
+    "never bridged and never counted as a zero; the covered depth and its fraction of the "
+    "profile state how much of the profile the integral actually spans. On even spacing the "
+    "two end knots carry half weight, so the equal-knot average is kept beside it. A signed "
+    "average can cancel a spatially changing effect, so it is never the sole magnitude "
+    "summary."
 )
 
 #: What the depth summary's weighting means.
 WEIGHTING_RULE = (
-    "trapezoidal physical weighting over the valid common knots: interior knots carry half "
-    "the sum of their two neighbour gaps, the two end knots half their single gap, and every "
-    "weighted quantity is the normalized ratio sum(w*v)/sum(w). On a uniform grid "
-    "the endpoints have half the interior weight; the separately reported equal-knot "
-    "mean is not this integral. The weights describe physical depth, not gate count."
+    "trapezoidal physical weighting over the *adjacent pairs of valid common knots whose "
+    "both endpoints define the effect*: each such interval contributes its own depth gap and "
+    "no interval is bridged across an undefined knot. With L the summed width of those valid "
+    "intervals (the covered depth), the signed depth average is "
+    "sum((E_i + E_i+1)/2 * gap)/L and the RMS magnitude is "
+    "sqrt(sum((E_i^2 + E_i+1^2)/2 * gap)/L). On a uniform, fully defined grid this is the "
+    "ordinary trapezoid rule with half-weight end knots, and the separately reported "
+    "equal-knot mean is not this integral. When no adjacent pair is valid L is zero, so the "
+    "signed average and the RMS are not reported while the equal-knot average and the "
+    "knot-wise sign fractions and extrema stay descriptive. The weights describe physical "
+    "depth, not gate count."
 )
 
 METHOD = (
@@ -369,10 +380,13 @@ class KnotEffect(ValueModel):
 class DepthSummary(ValueModel):
     """The reduction of one effect profile, with its weighting rule and valid count.
 
-    The signed depth average is physically weighted (:data:`WEIGHTING_RULE`) and the
-    equal-knot average is kept beside it; the RMS magnitude is the root of the weighted mean
-    square, a magnitude that cannot cancel. The sign fragments are over *defined nonzero*
-    knots, and every extreme carries the depth it was reached at.
+    The signed depth average and the RMS magnitude are trapezoidal integrals over the
+    *adjacent pairs of valid knots whose both endpoints define the effect*
+    (:data:`WEIGHTING_RULE`); ``covered_depth_mm`` is their summed width and
+    ``coverage_fraction`` its fraction of the profile's own span, so an undefined knot is
+    never bridged and a hole is visible as a shorter integral. The equal-knot average is kept
+    beside them, and the sign fragments over *defined nonzero* knots and every extreme (with
+    the depth it was reached at) stay descriptive even where no interval carries a term.
     """
 
     metric: MetricName
@@ -382,6 +396,8 @@ class DepthSummary(ValueModel):
     defined_count: int
     undefined_count: int
     weighting_rule: str
+    covered_depth_mm: float
+    coverage_fraction: float | None
     signed_depth_average: float | None
     equal_knot_average: float | None
     rms_magnitude: float | None
@@ -395,6 +411,88 @@ class DepthSummary(ValueModel):
     max_abs_value: float | None
     max_abs_depth_mm: float | None
     statement: str
+
+    @model_validator(mode="after")
+    def _check_the_reduction_matches_its_valid_intervals(self) -> DepthSummary:
+        """A refusal, a non-finite number or a zero-width integral cannot masquerade."""
+        if self.knot_count < 1:
+            raise ValueError("a depth summary describes at least one knot")
+        if not 0 <= self.defined_count <= self.knot_count:
+            raise ValueError(
+                f"the summary's {self.defined_count} defined knot(s) do not fit its "
+                f"{self.knot_count}"
+            )
+        if self.undefined_count != self.knot_count - self.defined_count:
+            raise ValueError(
+                f"the undefined count {self.undefined_count} is not {self.knot_count} less "
+                f"the {self.defined_count} defined"
+            )
+        if not math.isfinite(self.covered_depth_mm) or self.covered_depth_mm < 0.0:
+            raise ValueError(
+                "the covered width is a finite, nonnegative depth, got "
+                f"{self.covered_depth_mm!r}"
+            )
+        if self.coverage_fraction is not None and not (
+            0.0 <= self.coverage_fraction <= 1.0
+        ):
+            raise ValueError(
+                f"the coverage fraction lies in [0, 1], got {self.coverage_fraction!r}"
+            )
+        described = (
+            "signed_depth_average",
+            "equal_knot_average",
+            "rms_magnitude",
+            "positive_fraction",
+            "negative_fraction",
+            "zero_fraction",
+            "min_value",
+            "min_depth_mm",
+            "max_value",
+            "max_depth_mm",
+            "max_abs_value",
+            "max_abs_depth_mm",
+        )
+        for name in described:
+            value = getattr(self, name)
+            if value is not None and not math.isfinite(value):
+                raise ValueError(
+                    f"{name} is a finite number or None, got {value!r}: a non-finite "
+                    "number would stand in for a measurement never taken"
+                )
+        integrated = self.covered_depth_mm > 0.0
+        if integrated != (self.signed_depth_average is not None):
+            raise ValueError(
+                "the signed depth average is reported exactly when the valid adjacent "
+                "intervals cover a positive depth; a zero-width profile carries no integral, "
+                "and a zero here would read as a measured average"
+            )
+        if integrated != (self.rms_magnitude is not None):
+            raise ValueError(
+                "the RMS magnitude is reported exactly when the valid adjacent intervals "
+                "cover a positive depth"
+            )
+        if integrated and self.coverage_fraction is None:
+            raise ValueError(
+                "a positively covered profile states its coverage fraction"
+            )
+        if self.defined_count == 0:
+            if any(getattr(self, name) is not None for name in described):
+                raise ValueError(
+                    "a profile with no defined knot has no reduction: every description is "
+                    "None, never a substituted zero"
+                )
+        else:
+            if self.equal_knot_average is None:
+                raise ValueError(
+                    "a profile with a defined knot states its equal-knot average"
+                )
+            if self.min_value is None or self.max_value is None:
+                raise ValueError("a profile with a defined knot states its extrema")
+            if self.min_value > self.max_value:
+                raise ValueError(
+                    f"the minimum {self.min_value!r} exceeds the maximum {self.max_value!r}"
+                )
+        return self
 
 
 class ProfileShape(ValueModel):
@@ -466,6 +564,21 @@ class DepthEffects(ValueModel):
         if self.summary.defined_count != sum(1 for row in self.effects if row.defined):
             raise ValueError(
                 f"{self.name}: the summary's defined count is not the profile's"
+            )
+        if self.summary.knot_count != len(self.effects):
+            raise ValueError(
+                f"{self.name}: the summary describes {self.summary.knot_count} knot(s), the "
+                f"profile publishes {len(self.effects)}"
+            )
+        span = (
+            float(self.knots_mm[-1] - self.knots_mm[0])
+            if len(self.knots_mm) >= 2
+            else 0.0
+        )
+        if self.summary.covered_depth_mm > span + GATE_TOLERANCE_MM:
+            raise ValueError(
+                f"{self.name}: the covered depth {self.summary.covered_depth_mm!r} mm "
+                f"exceeds the profile's own {span!r} mm span"
             )
         return self
 
@@ -742,18 +855,22 @@ def _knot_grid(
     )
 
 
-def _trapezoid_weights(knots: Sequence[float]) -> np.ndarray:
-    """Trapezoidal physical weights (uniform-grid endpoints carry half-weight)."""
-    values = np.asarray(knots, dtype=float)
-    if values.size == 1:
-        return np.ones(1)
-    gaps = np.diff(values)
-    weights = np.empty(values.size)
-    weights[0] = 0.5 * gaps[0]
-    weights[-1] = 0.5 * gaps[-1]
-    if values.size > 2:
-        weights[1:-1] = 0.5 * (gaps[:-1] + gaps[1:])
-    return weights
+def _valid_intervals(
+    knots: Sequence[float], effects: Sequence[KnotEffect]
+) -> list[tuple[float, int, int]]:
+    """The ``(width, left, right)`` of every adjacent pair that both endpoints define.
+
+    Only a pair of *consecutive* knots whose effect is defined at both ends is an interval
+    of the integral. An undefined knot is never bridged: the intervals on either side of it
+    stay separate, so the summed width is exactly the depth the effect was measured over.
+    """
+    intervals: list[tuple[float, int, int]] = []
+    for left in range(len(effects) - 1):
+        if effects[left].defined and effects[left + 1].defined:
+            intervals.append(
+                (float(knots[left + 1]) - float(knots[left]), left, left + 1)
+            )
+    return intervals
 
 
 def _align(
@@ -881,11 +998,21 @@ def _summarise(
     knots: Sequence[float],
     effects: Sequence[KnotEffect],
 ) -> DepthSummary:
-    """One effect profile's reduction, with its weighting rule and valid count."""
+    """One effect profile's reduction, with its weighting rule and valid count.
+
+    The signed average and the RMS are trapezoidal integrals over the *adjacent* knot pairs
+    whose both endpoints define the effect (:data:`WEIGHTING_RULE`); an undefined knot is
+    never bridged, so the covered depth may be shorter than the profile and no gap is
+    counted as a zero. The equal-knot average stays beside them and the knot-wise sign
+    fractions and extrema stay descriptive even where the integral has no width.
+    """
     knot_array = np.asarray(knots, dtype=float)
-    weights = _trapezoid_weights(knot_array)
-    defined = [(index, row) for index, row in enumerate(effects) if row.defined]
     total = len(effects)
+    span = float(knot_array[-1] - knot_array[0]) if knot_array.size >= 2 else 0.0
+    defined = [(index, row) for index, row in enumerate(effects) if row.defined]
+    intervals = _valid_intervals(knot_array, effects)
+    covered = float(sum(width for width, _, _ in intervals))
+    coverage = covered / span if span > 0.0 else None
     if not defined:
         return DepthSummary(
             metric=metric,
@@ -895,6 +1022,8 @@ def _summarise(
             defined_count=0,
             undefined_count=total,
             weighting_rule=WEIGHTING_RULE,
+            covered_depth_mm=covered,
+            coverage_fraction=coverage,
             signed_depth_average=None,
             equal_knot_average=None,
             rms_magnitude=None,
@@ -910,16 +1039,26 @@ def _summarise(
             statement=(
                 f"no knot of this {metric.value}/{view.value} profile defines an effect, so "
                 "there is nothing to summarise: an undefined effect is never averaged as a "
-                "zero"
+                "zero, and no interval carries a trapezoid term"
             ),
         )
     indices = np.asarray([index for index, _ in defined], dtype=int)
     values = np.asarray([row.value for _, row in defined], dtype=float)
-    weights_here = weights[indices]
-    weight_sum = float(weights_here.sum())
-    signed = float(np.sum(weights_here * values) / weight_sum)
+    value_at = {int(index): float(row.value) for index, row in defined}
+    signed: float | None = None
+    rms: float | None = None
+    if covered > 0.0:
+        first_moment = sum(
+            (value_at[left] + value_at[right]) / 2.0 * width
+            for width, left, right in intervals
+        )
+        second_moment = sum(
+            (value_at[left] ** 2 + value_at[right] ** 2) / 2.0 * width
+            for width, left, right in intervals
+        )
+        signed = float(first_moment / covered)
+        rms = float(math.sqrt(second_moment / covered))
     equal = float(np.mean(values))
-    rms = float(math.sqrt(np.sum(weights_here * values**2) / weight_sum))
     nonzero = values[values != 0.0]
     positive = (
         float(np.count_nonzero(nonzero > 0.0) / nonzero.size) if nonzero.size else None
@@ -937,6 +1076,16 @@ def _summarise(
         if abs(values[position]) > abs(values[worst]):
             worst = position
     depths = knot_array[indices]
+    if covered > 0.0:
+        coverage_text = (
+            f"the valid adjacent intervals cover {covered:g} mm of the profile's "
+            f"{span:g} mm ({coverage:.3f} of it)"
+        )
+    else:
+        coverage_text = (
+            "no adjacent pair of defined knots exists, so the integral has no width and "
+            "the signed average and the RMS are not reported"
+        )
     return DepthSummary(
         metric=metric,
         view=view,
@@ -945,6 +1094,8 @@ def _summarise(
         defined_count=len(defined),
         undefined_count=total - len(defined),
         weighting_rule=WEIGHTING_RULE,
+        covered_depth_mm=covered,
+        coverage_fraction=coverage,
         signed_depth_average=signed,
         equal_knot_average=equal,
         rms_magnitude=rms,
@@ -959,11 +1110,13 @@ def _summarise(
         max_abs_depth_mm=float(depths[worst]),
         statement=(
             f"{len(defined)} of {total} knots define this {units} effect. Physical "
-            "weighting: the signed depth average is sum(w*E)/sum(w) with each knot's "
-            "trapezoidal extent; the equal-knot average is beside it. The RMS magnitude "
-            "cannot cancel a sign-changing effect; the sign fractions are over defined "
-            "nonzero knots. Neither a maximum nor a peak position is a robust effect when "
-            "the profile is flat or lightly supported."
+            "weighting: only adjacent knot pairs whose both endpoints define the effect "
+            "contribute, and the signed depth average and the RMS are trapezoidal integrals "
+            "over their summed width, so an undefined knot is never bridged or counted as a "
+            f"zero; {coverage_text}. The equal-knot average is beside them. The RMS "
+            "magnitude cannot cancel a sign-changing effect; the sign fractions are over "
+            "defined nonzero knots. Neither a maximum nor a peak position is a robust "
+            "effect when the profile is flat or lightly supported."
         ),
     )
 

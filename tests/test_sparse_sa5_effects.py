@@ -37,6 +37,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 from udv_echo_process.acquire.plan import clamp_resolution
 from udv_echo_process.analysis import sparse_sa5_effects as fx
@@ -579,20 +580,20 @@ def test_the_depth_summary_is_physically_weighted_and_reports_its_signs(
     knots = np.asarray(effect.knots_mm, dtype=float)
     values = np.asarray([row.value for row in effect.effects], dtype=float)
     gaps = np.diff(knots)
-    weights = np.empty(knots.size)
-    weights[0] = gaps[0] / 2
-    weights[-1] = gaps[-1] / 2
-    weights[1:-1] = (gaps[:-1] + gaps[1:]) / 2
+    left, right = values[:-1], values[1:]
     summary = effect.summary
     assert summary.defined_count == knots.size
+    # Every knot is defined here, so the valid intervals are the whole profile.
+    assert summary.covered_depth_mm == pytest.approx(float(gaps.sum()), abs=1e-9)
+    assert summary.coverage_fraction == pytest.approx(1.0, abs=1e-12)
     assert summary.signed_depth_average == pytest.approx(
-        float(np.sum(weights * values) / weights.sum()), abs=1e-12
+        float(np.sum((left + right) / 2 * gaps) / gaps.sum()), abs=1e-12
     )
     assert summary.equal_knot_average == pytest.approx(
         float(np.mean(values)), abs=1e-12
     )
     assert summary.rms_magnitude == pytest.approx(
-        float(np.sqrt(np.sum(weights * values**2) / weights.sum())), abs=1e-9
+        float(np.sqrt(np.sum((left**2 + right**2) / 2 * gaps) / gaps.sum())), abs=1e-9
     )
     # The burst contrast at the coarse pitch changes sign over depth.
     assert 0.0 < summary.positive_fraction < 1.0
@@ -648,6 +649,224 @@ def test_the_largest_absolute_effect_resolves_a_tie_to_the_shallower_depth() -> 
     assert summary.min_value == pytest.approx(-5.0)
     assert summary.positive_fraction == pytest.approx(2 / 3)
     assert summary.negative_fraction == pytest.approx(1 / 3)
+
+
+# ── the depth integral integrates only adjacent valid intervals ────────
+
+
+def _defined_read(value: float) -> fx.ReadAligned:
+    return fx.ReadAligned(
+        label="x",
+        gate_index=0,
+        depth_mm=10.0,
+        offset_mm=0.0,
+        value=value,
+        state=MetricState.DEFINED,
+        reason="r",
+    )
+
+
+def _refused_read() -> fx.ReadAligned:
+    return fx.ReadAligned(
+        label="x",
+        gate_index=None,
+        depth_mm=None,
+        offset_mm=None,
+        value=None,
+        state=None,
+        reason="no native gate lies near this knot",
+    )
+
+
+def _knot_row(index: int, depth: float, value: float | None) -> fx.KnotEffect:
+    """One hand-made effect row: a defined value, or a typed undefined row."""
+    if value is None:
+        return fx.KnotEffect(
+            knot_index=index,
+            depth_mm=depth,
+            operands=(
+                fx.OperandRead(
+                    name="x",
+                    kind="recording",
+                    members=(_refused_read(),),
+                    value=None,
+                    state=fx.EffectState.UNDEFINED_OPERAND,
+                    reason="no read here",
+                ),
+            ),
+            state=fx.EffectState.UNDEFINED_OPERAND,
+            value=None,
+            reason="no read here",
+        )
+    return fx.KnotEffect(
+        knot_index=index,
+        depth_mm=depth,
+        operands=(
+            fx.OperandRead(
+                name="x",
+                kind="recording",
+                members=(_defined_read(value),),
+                value=value,
+                state=fx.EffectState.DEFINED,
+                reason="r",
+            ),
+        ),
+        state=fx.EffectState.DEFINED,
+        value=value,
+        reason="r",
+    )
+
+
+def _summarise(knots, values) -> fx.DepthSummary:
+    """Reduce a hand-made profile straight through the engine's own summariser."""
+    rows = tuple(
+        _knot_row(index, float(depth), value)
+        for index, (depth, value) in enumerate(zip(knots, values))
+    )
+    return fx._summarise(
+        metric=MetricName.MEAN,
+        view=SparseView.PRIMARY,
+        units="mm/s",
+        knots=tuple(float(knot) for knot in knots),
+        effects=rows,
+    )
+
+
+def test_an_interior_hole_splits_the_integral_and_is_never_bridged() -> None:
+    """The undefined middle knot breaks the profile: no trapezoid spans its gap."""
+    knots = (0.0, 1.0, 2.0, 5.0, 8.0)
+    values = (0.0, 4.0, None, 2.0, 10.0)
+    summary = _summarise(knots, values)
+    # Valid adjacent intervals: (0,1) over 1 mm and (3,4) over 3 mm; the pair (1,3) is not
+    # adjacent, so nothing bridges the hole.
+    assert summary.defined_count == 4
+    assert summary.undefined_count == 1
+    assert summary.covered_depth_mm == pytest.approx(4.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(0.5, abs=0.0)
+    assert summary.signed_depth_average == pytest.approx(5.0, abs=1e-12)
+    assert summary.rms_magnitude == pytest.approx(np.sqrt(41.0), abs=1e-12)
+    assert summary.equal_knot_average == pytest.approx(4.0, abs=0.0)
+    # The bridged integral the hole must *not* be reduced to (with the gap read as 4 mm):
+    bridged = (
+        (0.0 + 4.0) / 2 * 1.0 + (4.0 + 2.0) / 2 * 4.0 + (2.0 + 10.0) / 2 * 3.0
+    ) / 8.0
+    assert summary.signed_depth_average != pytest.approx(bridged, abs=1e-6)
+
+
+def test_an_edge_hole_keeps_only_the_defined_intervals_and_reports_coverage() -> None:
+    """Undefined end knots clip the integral and shrink the covered depth."""
+    knots = (0.0, 1.0, 2.0, 4.0, 7.0)
+    values = (None, 2.0, 4.0, 6.0, None)
+    summary = _summarise(knots, values)
+    # Valid adjacent intervals: (1,2) over 1 mm and (2,3) over 2 mm; total 3 mm of 7 mm.
+    assert summary.covered_depth_mm == pytest.approx(3.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(3.0 / 7.0, abs=0.0)
+    assert summary.signed_depth_average == pytest.approx(13.0 / 3.0, abs=1e-12)
+    assert summary.rms_magnitude == pytest.approx(np.sqrt(62.0 / 3.0), abs=1e-12)
+    assert summary.equal_knot_average == pytest.approx(4.0, abs=0.0)
+
+
+def test_disjoint_valid_spans_integrate_separately_and_never_bridge_the_gap() -> None:
+    """Two clusters of defined knots are integrated as two intervals, not one span."""
+    knots = (0.0, 2.0, 3.0, 10.0, 11.0, 20.0)
+    values = (1.0, 3.0, None, 7.0, 9.0, None)
+    summary = _summarise(knots, values)
+    # Earliest cluster: (0,1) over 2 mm; later cluster: (3,4) over 1 mm.
+    assert summary.covered_depth_mm == pytest.approx(3.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(0.15, abs=1e-15)
+    assert summary.signed_depth_average == pytest.approx(4.0, abs=1e-12)
+    assert summary.rms_magnitude == pytest.approx(5.0, abs=1e-12)
+    assert summary.equal_knot_average == pytest.approx(5.0, abs=0.0)
+    assert summary.max_abs_value == pytest.approx(9.0, abs=0.0)
+    assert summary.max_abs_depth_mm == pytest.approx(11.0, abs=0.0)
+
+
+def test_an_isolated_valid_knot_has_no_integral_but_stays_descriptive() -> None:
+    """One defined knot is no interval: the signed average and RMS are refused, the rest stands."""
+    summary = _summarise((0.0, 1.0, 2.0, 3.0), (None, None, 7.0, None))
+    assert summary.defined_count == 1
+    assert summary.covered_depth_mm == pytest.approx(0.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(0.0, abs=0.0)
+    assert summary.signed_depth_average is None
+    assert summary.rms_magnitude is None
+    # Descriptive quantities are unaffected by the absent integral.
+    assert summary.equal_knot_average == pytest.approx(7.0, abs=0.0)
+    assert summary.min_value == pytest.approx(7.0, abs=0.0)
+    assert summary.max_value == pytest.approx(7.0, abs=0.0)
+    assert summary.max_abs_depth_mm == pytest.approx(2.0, abs=0.0)
+    assert "no adjacent pair" in summary.statement
+
+
+def test_a_single_defined_knot_has_no_span_and_no_coverage_fraction() -> None:
+    """A one-knot profile has zero span: coverage is not a ratio of nothing."""
+    summary = _summarise((5.0,), (3.0,))
+    assert summary.knot_count == 1
+    assert summary.covered_depth_mm == pytest.approx(0.0, abs=0.0)
+    assert summary.coverage_fraction is None
+    assert summary.signed_depth_average is None
+    assert summary.rms_magnitude is None
+    assert summary.equal_knot_average == pytest.approx(3.0, abs=0.0)
+    # The refusal variant of the same degenerate span is pinned the same way.
+    refused = _summarise((5.0,), (None,))
+    assert refused.knot_count == 1
+    assert refused.covered_depth_mm == pytest.approx(0.0, abs=0.0)
+    assert refused.coverage_fraction is None
+    assert refused.signed_depth_average is None
+    assert refused.rms_magnitude is None
+    assert refused.equal_knot_average is None
+
+
+def test_a_fully_refused_profile_reports_nothing() -> None:
+    summary = _summarise((0.0, 1.0, 2.0), (None, None, None))
+    assert summary.defined_count == 0
+    assert summary.covered_depth_mm == pytest.approx(0.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(0.0, abs=0.0)
+    for name in (
+        "signed_depth_average",
+        "equal_knot_average",
+        "rms_magnitude",
+        "min_value",
+        "max_value",
+        "max_abs_value",
+    ):
+        assert getattr(summary, name) is None
+
+
+def test_a_fully_defined_unequal_grid_is_the_exact_trapezoid_and_is_covered() -> None:
+    """On unequal spacing the trapezoid over all intervals is exact and coverage is one."""
+    knots = (0.0, 1.0, 3.0, 6.0, 10.0)
+    values = (2.0, 4.0, 6.0, 8.0, 10.0)
+    summary = _summarise(knots, values)
+    assert summary.covered_depth_mm == pytest.approx(10.0, abs=0.0)
+    assert summary.coverage_fraction == pytest.approx(1.0, abs=0.0)
+    # sum((E_i+E_i+1)/2 * gap) = 3 + 10 + 21 + 36 = 70 over L = 10.
+    assert summary.signed_depth_average == pytest.approx(7.0, abs=1e-12)
+    # sum((E_i^2 + E_i+1^2)/2 * gap) = 10 + 52 + 150 + 328 = 540 over L = 10.
+    assert summary.rms_magnitude == pytest.approx(np.sqrt(54.0), abs=1e-12)
+    assert summary.equal_knot_average == pytest.approx(6.0, abs=0.0)
+    assert summary.zero_fraction == pytest.approx(0.0, abs=0.0)
+
+
+def test_the_summary_model_refuses_a_nonfinite_or_incoherent_reduction() -> None:
+    """The typed model pins the refusal, the non-finite value and the zero-width integral."""
+    summary = _summarise((0.0, 1.0, 3.0), (2.0, 4.0, 6.0))
+    base = summary.model_dump()
+    with pytest.raises(ValidationError, match="finite"):
+        fx.DepthSummary(**{**base, "equal_knot_average": float("inf")})
+    with pytest.raises(ValidationError, match="finite"):
+        fx.DepthSummary(**{**base, "rms_magnitude": float("nan")})
+    with pytest.raises(ValidationError, match="positive depth"):
+        fx.DepthSummary(**{**base, "signed_depth_average": None})
+    with pytest.raises(ValidationError, match="positive depth"):
+        fx.DepthSummary(**{**base, "rms_magnitude": None})
+    with pytest.raises(ValidationError, match="covered width"):
+        fx.DepthSummary(**{**base, "covered_depth_mm": -1.0})
+    with pytest.raises(ValidationError, match="coverage fraction"):
+        fx.DepthSummary(**{**base, "coverage_fraction": 1.5})
+    # A zero-width profile may not carry an integral either.
+    isolated = _summarise((0.0, 1.0), (None, 7.0)).model_dump()
+    with pytest.raises(ValidationError, match="positive depth"):
+        fx.DepthSummary(**{**isolated, "signed_depth_average": 7.0})
 
 
 # ── descriptive repeats ────────────────────────────────────────────────
@@ -849,3 +1068,43 @@ def test_real_effects_recompute_from_their_published_operands(real_result) -> No
             assert row.value == pytest.approx(
                 (cc4.value - cc2.value) - (cc3.value - cc1.value), abs=1e-12
             )
+
+
+def test_real_summaries_integrate_only_the_adjacent_valid_intervals(
+    real_result,
+) -> None:
+    """Every published reduction is the trapezoid over adjacent pairs that both define it.
+
+    Recomputed independently from the engine's own published profile: only adjacent knot
+    pairs whose both endpoints define the effect contribute, the covered depth is their
+    summed width, and an undefined knot is never bridged or counted as a zero.
+    """
+    for endpoint in real_result.endpoints:
+        for effect in (*endpoint.contrasts, endpoint.interaction):
+            knots = np.asarray(effect.knots_mm, dtype=float)
+            defined = np.asarray([row.defined for row in effect.effects], dtype=bool)
+            values = np.asarray(
+                [row.value if row.defined else np.nan for row in effect.effects],
+                dtype=float,
+            )
+            valid = defined[:-1] & defined[1:]
+            gaps = np.diff(knots)[valid]
+            covered = float(gaps.sum())
+            summary = effect.summary
+            assert summary.defined_count == int(defined.sum())
+            assert summary.covered_depth_mm == pytest.approx(covered, abs=1e-9)
+            span = float(knots[-1] - knots[0])
+            assert summary.coverage_fraction == pytest.approx(covered / span, abs=1e-12)
+            if covered > 0.0:
+                left = values[:-1][valid]
+                right = values[1:][valid]
+                assert summary.signed_depth_average == pytest.approx(
+                    float(np.sum((left + right) / 2 * gaps) / covered), abs=1e-12
+                )
+                assert summary.rms_magnitude == pytest.approx(
+                    float(np.sqrt(np.sum((left**2 + right**2) / 2 * gaps) / covered)),
+                    abs=1e-12,
+                )
+            else:
+                assert summary.signed_depth_average is None
+                assert summary.rms_magnitude is None
