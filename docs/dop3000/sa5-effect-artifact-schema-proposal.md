@@ -1,9 +1,9 @@
-# SA5 within-sitting effect artifacts — v1 schema review candidate
+# SA5 within-sitting effect artifacts — accepted v1 schema
 
-> **Status: architecture approved; exact v1 field and byte contract pending review.**
-> The NPZ + JSON + scalar CSV split was approved at review of PR #60 (`6a0d94b`, branch
-> `feat/analysis-sa5-within-sitting`). This document freezes the proposed concrete
-> contract for that PR's follow-up review, before any artifact is generated. The typed backend
+> **Status: accepted v1 artifact contract; no effect artifacts published in PR #60.**
+> The NPZ + JSON + scalar CSV split was approved at review of PR #60 (`97c2aae`, branch
+> `feat/analysis-sa5-within-sitting`), subject to the two documentation corrections
+> recorded in that review and applied in this contract. The typed backend
 > (`analysis/sparse_sa5_effects.py`, `analysis/sparse_sa5_bindings.py`,
 > `analysis/sparse_sa5_metrics.py`) is unchanged by this document; this document fixes the
 > **committed artifact boundary** it publishes into, so a generator can be written against a
