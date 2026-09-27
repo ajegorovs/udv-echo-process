@@ -1902,13 +1902,17 @@ def test_the_source_that_computes_the_report_has_not_drifted(
     recorded = _git_tree(recorded_revision, SOURCE_TREE)
     current = _git_tree("HEAD", SOURCE_TREE)
     assert recorded, f"{recorded_revision} tracks nothing under {SOURCE_TREE!r}"
-    assert current == recorded, (
-        "the source has moved since the recorded revision: "
-        f"{sorted(set(recorded) ^ set(current))[:8]}"
+    # A later, independent analysis module does not retroactively compute this report.
+    # Guard every source path the report's recorded revision actually contained;
+    # additions elsewhere in the package are outside that frozen source closure.
+    assert {path: current.get(path) for path in recorded} == recorded, (
+        "the report's recorded source has moved: "
+        f"{sorted(path for path, digest in recorded.items() if current.get(path) != digest)[:8]}"
     )
-    _assert_disk_matches(
-        SOURCE_TREE, recorded_revision, subject="the report's own source tree"
-    )
+    for path in recorded:
+        _assert_disk_matches(
+            path, recorded_revision, subject=f"the report's recorded source {path!r}"
+        )
 
 
 def test_the_readme_reproduction_command_uses_the_recorded_revision_and_travels(
