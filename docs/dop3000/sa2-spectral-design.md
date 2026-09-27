@@ -1,9 +1,20 @@
 # SA2 — spectral and sampling support: design and backend contract
 
-> **Status:** design for review, revised after the first review round. This slice is
-> **documentation only** — it contains no FFT, periodogram, Welch, PSD or resampling code. It
-> fixes the contract SA2 must satisfy before any estimator exists, so the estimator is chosen to
-> fit the axis rather than the axis bent to fit the estimator.
+> **Status:** the contract is settled and its first two stages have **landed**.
+>
+> | stage | what it delivered | where |
+> | --- | --- | --- |
+> | SA2.0 | the contract below | this document |
+> | SA2.1 | timebase characterization, the calibrated spectral-uniformity admission (`max_relative_timing_error`, operational tolerance `0.09`), target-frequency support, the committed capability matrix | merged `0f4eb46` |
+> | SA2.2 | the admitted uniform-grid periodogram/PSD backend and the stored-timestamp oracle | merged `9ba46c4` |
+> | SA2.3 | the notebook spectral preview — **planned, not started** | [`sa2-3-notebook-preview-plan.md`](sa2-3-notebook-preview-plan.md) |
+> | SA2.4 | committed-data spectral characterization | see §Sequence below |
+>
+> What remains here is the *contract*: this document still contains no FFT, periodogram, Welch, PSD
+> or resampling code — the estimators live in `analysis.sparse_spectral_*`,
+> `analysis.sparse_periodogram` and `analysis.sparse_target_support`, and they are authoritative
+> where they and this document ever disagree. It fixes what SA2 must satisfy, so the estimator is
+> chosen to fit the axis rather than the axis bent to fit the estimator.
 
 ## The governing rule
 
@@ -599,8 +610,11 @@ architecture has a slot for one.
   views), which is why `parseval_relative_error` is not a measure of timestamp irregularity -
   `admission.characterization.max_relative_timing_error` is that. The estimator stays an `src/`
   module: no notebook, no peak interpretation, no Welch, no resampling.
-- **SA2.3 — notebook spectral preview.** Extend `signal_explorer.py` with the timebase/admission
-  summary, a PSD plot, target-support rows and refusal wording. No calculations in cells.
+- **SA2.3 — notebook spectral preview. PLANNED.** Extend `signal_explorer.py` with the
+  timebase/admission summary, a PSD plot, target-support rows and refusal wording. No calculations
+  in cells, no new estimator, no scientific interpretation: the notebook is
+  `selection → backend call → display`, reusing SA1's one `WindowView` and its gate/detrending
+  selection. The contract is [`sa2-3-notebook-preview-plan.md`](sa2-3-notebook-preview-plan.md).
 - **SA2.4 — committed-data spectral characterization.** Low-frequency structure, support near
   ~1 Hz, the supported 8.333-Hz configurations, depth dependence. Descriptive and per sitting — no
   cross-sitting statistical inference.

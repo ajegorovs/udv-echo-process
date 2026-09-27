@@ -21,6 +21,9 @@ transcript.
   [`agenda-history.md`](agenda-history.md)
 - The sparse pass's analysis work plan (WP0–WP5):
   [`dop3000/sparse-pass-analysis-plan.md`](dop3000/sparse-pass-analysis-plan.md)
+- The sparse spectral (SA2) design contract and its stage plans:
+  [`dop3000/sa2-spectral-design.md`](dop3000/sa2-spectral-design.md) /
+  [`dop3000/sa2-3-notebook-preview-plan.md`](dop3000/sa2-3-notebook-preview-plan.md)
 
 ---
 
@@ -45,6 +48,20 @@ row must have a non-duplicate `(round_id, visit_id)` identity, and a stream may
 have only one visit in a matched round. A round groups cross-stream visits;
 `visit_id` records within-round acquisition order. See
 [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §7.4.
+
+---
+
+## Active work — SA2 sparse spectral support
+
+The SA2 contract ([`dop3000/sa2-spectral-design.md`](dop3000/sa2-spectral-design.md)) is settled and
+its first two stages are **merged on master**: SA2.1 — timebase characterization, the
+spectral-uniformity admission calibrated on synthetic jitter (`max_relative_timing_error` as the
+admission operand, operational tolerance `0.09`), target-frequency support and the committed
+capability matrix (`0f4eb46`); SA2.2 — the admitted uniform-grid periodogram/PSD backend, with the
+stored-timestamp nonuniform evaluation kept as a test-only oracle (`9ba46c4`). **SA2.3**, the
+notebook spectral preview, is planned and not started; its contract is
+[`dop3000/sa2-3-notebook-preview-plan.md`](dop3000/sa2-3-notebook-preview-plan.md). SA2.3 adds no
+new spectral estimator and no scientific interpretation.
 
 ---
 
