@@ -246,13 +246,16 @@ covered depth is zero are instead determined by the CSV's coverage fields (§6),
 fabricated per-knot refusal. For a profile-level `shape` position, `knot_index` and
 `depth_mm` are null.
 `kind` is one of `effect-knot`, `operand-knot`, `read`, `shape`; `side` and `member` are null
-where the position is the effect's own; `state` for a per-knot entry names its
+where the position is the effect's own; a `read` row names its owning operand in `side`
+and its recording label in `member`. `nonvalue_counts` is a nested
+`{state: {kind: count}}` object; the counts sum to the number of `nonvalue_rows`.
+`state` for a per-knot entry names its
 backend effect or metric state (§8), e.g. `undefined-alignment`,
 `undefined-operand`, `undefined-constant-trace`, `undefined-not-supported`,
 `refused-axis`, `defined-zero-power`. A `shape` row alone uses the JSON-only
 `undefined-shape` label for `ProfileShape.correlation is None`; it has no NPZ
 state code. `reason` is the engine's own reason text, copied,
-never rewritten. `nonvalue_counts` states the totals by `(state, kind)`.
+never rewritten.
 
 **`defined-zero-power` is a valid admitted `0/0`, not a refusal and not a failed
 acquisition.** The spectral axis was admitted and its total power is exactly zero (a constant

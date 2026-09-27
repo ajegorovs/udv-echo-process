@@ -59,7 +59,7 @@ destination.
 Reader entry point
 ------------------
 The writer is reached from the command line as
-``python -m udv_echo_process.cli sparse-sa5-report --sitting <name> [--report-dir <path>]``
+``python -m udv_echo_process.analysis.sparse_sa5_report --sitting <name> [--report-dir <path>]``
 (:func:`report_main`) — the form :func:`regeneration_command` publishes. The command resolves a
 committed sitting **name** to its :class:`PassRef` and refuses any name that is not one of the
 two reproducibility sittings, so a campaign cannot be named into a report.
@@ -399,12 +399,12 @@ def regeneration_command(sitting: str) -> str:
     """The exact command that reproduces this sitting's artifacts at the recorded revision.
 
     It is the runnable module-invoked form the analysis plan's verification section names
-    (``python -m udv_echo_process.cli sparse-sa5-report --sitting <name>``), **not** an inline
+    (``python -m udv_echo_process.analysis.sparse_sa5_report --sitting <name>``), **not** an inline
     ``python -c``: a sitting is a committed pass selected by name, and the command resolves
     that name to its pass and refuses a name that is not one of the two reproducibility
     sittings — so a campaign such as ``stage2-e20-e64`` cannot be named into a report.
     """
-    return f"python -m udv_echo_process.cli sparse-sa5-report --sitting {sitting}"
+    return f"python -m udv_echo_process.analysis.sparse_sa5_report --sitting {sitting}"
 
 
 def _canonical_digest(data: bytes) -> str:
@@ -2024,7 +2024,7 @@ def report_main(argv: Sequence[str] | None = None) -> None:
     """``sparse-sa5-report`` — write one committed sitting's four SA5 artifacts.
 
     The runnable module-invoked form the plan's verification section names:
-    ``python -m udv_echo_process.cli sparse-sa5-report --sitting <name> [--report-dir <path>]``.
+    ``python -m udv_echo_process.analysis.sparse_sa5_report --sitting <name> [--report-dir <path>]``.
 
     The one required flag is ``--sitting``: a committed pass **name**. It is resolved to its
     :class:`~udv_echo_process.analysis.sparse_passes.PassRef` and every pass that is not one of
@@ -2100,3 +2100,7 @@ def report_main(argv: Sequence[str] | None = None) -> None:
     print(f"csv     : {document['artifacts']['csv']['sha256']}")
     print(f"checks  : {'all pass' if document['ok'] else 'FAILED'}")
     raise SystemExit(0)
+
+
+if __name__ == "__main__":
+    report_main()

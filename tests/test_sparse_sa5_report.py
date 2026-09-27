@@ -1151,7 +1151,8 @@ def test_the_writer_imports_no_verifier() -> None:
 def test_the_regeneration_command_is_the_runnable_cli_form() -> None:
     """The published command is the module-invoked verb, never an inline ``python -c``."""
     assert report.regeneration_command("sparse-mixer-live-1") == (
-        "python -m udv_echo_process.cli sparse-sa5-report --sitting sparse-mixer-live-1"
+        "python -m udv_echo_process.analysis.sparse_sa5_report "
+        "--sitting sparse-mixer-live-1"
     )
     assert report.regeneration_command("sparse-mixer-live-2").endswith(
         "--sitting sparse-mixer-live-2"
