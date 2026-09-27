@@ -93,7 +93,7 @@ construction.
 
 | state | when | carried |
 | --- | --- | --- |
-| `refused-axis` | `estimate.verdict is REFUSED_AXIS` | state + admission reason; `Φ`, `B` are `None`; **no gate row**, no zero synthesized (`sparse_periodogram.py:388-412`) |
+| `refused-axis` | `estimate.verdict is REFUSED_AXIS` | state + admission reason; `Φ`, `B`, `T` are `None`; the supported gate keeps an identity/status row but **no numeric fraction** or zero is synthesized (`sparse_periodogram.py:388-412`) |
 | `defined-zero-power` | `DEFINED` and `T == 0.0` | `Φ is None` (0/0 undefined), `B == 0.0` recorded as a **defined zero** (`sparse_periodogram.py:571-576`) |
 | `defined` | `DEFINED` and `T > 0.0` | `Φ = B / T` |
 
@@ -220,7 +220,8 @@ Backend (`tests/test_sparse_spectral_characterization.py`):
    bin-centred low-frequency tone, `≈ 0` for a high-frequency tone; `Φ` monotone in `f_low`.
 3. A constant trace is `defined-zero-power` with `Φ is None` and `B == 0.0` — **not** a refusal, and
    **not** a zero fraction (`sparse_periodogram.py:388-412` vs `:571-576`).
-4. A duplicate-stamp axis is `refused-axis`: no gate row, `Φ is None`, no zero line.
+4. A duplicate-stamp axis is `refused-axis`: the supported gate retains an identity/status row with
+   `Φ`, `B`, `T` all `None`; no numeric fraction and no zero line are emitted.
 5. Non-positive, non-finite, or above-`f_N` `low_hz` raises the typed error; an unsupported target still
    returns `band_supported=False` rather than raising.
 6. `T` equals `window_normalized_mean_square_power` within the carried `parseval_relative_error`; the
