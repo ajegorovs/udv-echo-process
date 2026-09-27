@@ -634,3 +634,77 @@ outside SA2 implementation. **SA2 v1 does not solve general ndarray JSON seriali
 in-memory result, notebook display, tests. If SA2 ever needs committed machine-readable spectral
 artifacts, #49 is resolved deliberately first — not by assuming `model_dump(mode="json")` is safe
 because spectra happen to contain arrays.
+
+### Narrowing: named scalar reductions and their scalar provenance are permitted, arrays are not
+
+**This clause is narrowed in exactly one place.** A committed machine-readable spectral artifact may
+be published as JSON or CSV without resolving #49 first if, and only if, its entire content is:
+
+1. **named scalar reductions of a spectrum** — a band-power sum and its band edges and bin indices,
+   the band-power fraction, the normalized total power, the window-normalized mean-square power, the
+   Parseval relative error, the admission stamps, a refusal's own reason; and
+2. **the named scalar metadata and provenance needed to define, reproduce and interpret those
+   reductions** — which observation they belong to, which axis and gate they were measured on, under
+   which admission and target, from which estimator, at which revision, and the digests that bind the
+   file to all of it.
+
+The permission attaches to the artifact's *content*, not to the way it was written: such a file is
+built from named scalars and properties, never by serializing an array-bearing model and never by
+wrapping an array in a `tolist()`, base64 or ad-hoc blob.
+
+**The schema is finite and fixed, and it is a closed field set.** A reviewer must be able to read the
+whole schema off the artifact's own definition, and adding a field is a schema change rather than a
+new value. The provenance fields are the ones this document and its siblings already name, not a new
+vocabulary:
+
+`pass` (the committed dataset, stated as the selection it is, **not** a `ViewProvenance` field —
+`sa2-3-notebook-preview-plan.md` §L), `job`, `point` / `order`, `source` (path and `sha256`), `view`
+(with its rule), `gate` and `depth`, `timebase` (the axis characterization: `N`, span, `dt_eff`,
+`fs_eff`, Nyquist, `Δf`, timing error, admission), `admission` (verdict and reason), `target`
+(support rows and their reasons), `estimator` and taper (name, convention, ENBW), and the document
+`digests` (`table_sha256`, the analysis revision, the plan fingerprint).
+
+**What may not follow the data is cardinality — and that, not the field names, is the prohibition.**
+A CSV of scalars and a CSV of the spectrum can carry identical headers and identical units; they are
+told apart by whether the row count is fixed by the acquisition or by the analysis. Every form below
+is an array in serialization's clothing and stays prohibited:
+
+- an **array-equivalent per-bin table** — rows, records or keys that enumerate the frequency axis;
+- **one field per array element** — `p_0 … p_k`, `power_bin_3`, or any field name carrying an element
+  index;
+- **repeated rows or objects** — one record per bin, sample or element instead of one per
+  observation;
+- **flattened vectors** — an array joined into one string (comma, CSV-in-a-cell, pipe), or a
+  run-length / delta / sparse-index encoding of one;
+- **chunks, lists, blobs or base64** — including an array split across several scalar-looking fields
+  to stay under a width limit, and any `tolist()` / `tobytes()` payload.
+
+**The permitted cardinality is the observation unit: one row per `recording × view × supported
+gate`** — equivalently one row per supported gate of one view, or one row per `recording × view`
+cell, with the per-cell target rows stated once rather than repeated per gate. That count follows
+the acquisition — how many recordings, views and gates were stored — and is bounded by the committed
+dataset. A file with `gates` rows, or `recordings × views` rows, or `recordings × views × gates`
+rows is inside this narrowing; a file with `bins` rows, or `bins × gates` rows, or a field per bin,
+is an array publication and is not.
+
+The permission is general to this clause and is not scoped to a stage: it obliges no SA2 stage to
+publish anything and widens no SA2 scope — SA2 remains the characterization, admission and
+target-support contract it is, with #49 outside it.
+
+Everything the clause above forbade still stands, and this narrowing is not evidence about it:
+
+- `model_dump(mode="json")` / `model_dump_json()` on any `ArrayModel` subclass stays unsupported. No
+  serializer is declared on `ArrayModel`, and the round-trip claim at
+  `src/udv_echo_process/models/base.py:5-6` is **not** amended here. That a scalar reduction could be
+  read out of a spectrum says nothing about whether the model it was read from serializes.
+- Committed PSD or spectrum **arrays** stay prohibited in every committed form — JSON, CSV, NPZ,
+  base64 or otherwise: a bin vector, a one-sided density estimate, or a whole `SpectralEstimate`,
+  `WindowView` or other array-bearing result. Publishing one still needs its own reviewed schema and
+  is not authorized by this narrowing.
+- **Issue #49 stays open** and unmitigated. A later resolution of #49 does not widen this narrowing
+  either — it was reviewed for named scalars and their scalar provenance only, and an artifact set
+  that adds arrays reopens the question rather than inheriting this permission.
+
+Machine-readable here means a committed file a program reads (a scalar report, a table, a JSON
+summary). The typed in-memory result, the notebook display and the estimator's own "no
+serialization" scope are unchanged by this narrowing.
