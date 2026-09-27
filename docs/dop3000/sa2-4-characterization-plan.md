@@ -149,6 +149,16 @@ New directory `reports/sparse-signal/` — the plan's designated publish root
   needed" (`:249-253`) is not needed: `Φ`, `B`, `T` and §3's fields are all named scalars — the exact
   content the design's now-narrowed clause permits without resolving #49 (§6). That permission covers
   named scalars only; it never covers a PSD array or a whole estimate.
+- **The per-gate rows are published once, in the CSV, and are not repeated in the document.** The
+  design's narrowing fixes an artifact's cardinality at the observation unit (§6); publishing the
+  same `cell × supported gate` rows in both the table and a JSON `gates` array would be that unit
+  serialized twice rather than a second value, and a reader would have two copies to keep in step.
+  So `cells[*]` in `sa2-4-spectral-characterization.json` carries the cell's metadata, its axis and
+  its two target rows, and the table beside it is the one authoritative per-gate record — a gate's
+  numbers are joined to its cell by the table's own keys (`pass`, `relative_path`, `view`,
+  `gate_index`). The §4 `repeat_spread` row set is unaffected: it is its own prespecified
+  observation set, one row per `(group, view, native gate)`, and it is what keeps the repeat
+  members' fractions at full precision in the document.
 - Provenance is read, not rebuilt: `ViewProvenance` (`_sparse_view.py:305-364`) supplies
   `relative_path`, `source_sha256`, `job`, `point_label`, `order`, view and view rule. The pass is the
   sweep's own `PassRef.name`, stated as the selection, never as a provenance field
@@ -279,7 +289,8 @@ A verifier who did not write the module must be able to falsify it without readi
 - **The published table is the record.** The verifier recomputes the table digest and the regeneration
   diff; a digest matching only a freshly generated tree fails.
 - **Spot cells are named by label, not index**: E128's 8.333-Hz refusal and 1-Hz support are read from
-  the published JSON, and each fraction's *state* is read, not inferred.
+  the published *document*'s per-cell target rows (the only place they are stated), and each
+  fraction's *state* is read from the published *table* — the sole per-gate record — not inferred.
 - **Stop conditions that halt the change rather than being worked around:** (a) any array or
   whole-`SpectralEstimate` artifact demanded → its own reviewed schema, arrays stay outside the
   narrowing (§6); (b) any `Φ` outside

@@ -450,7 +450,12 @@ def test_every_gate_row_is_a_native_supported_column_of_its_decoded_view(
 def test_the_row_count_is_one_per_supported_gate_and_the_document_agrees(
     published_rows, document, sweep
 ) -> None:
-    """The CSV, the document's per-cell gate rows and the decoded counts are one row set."""
+    """The CSV is the sole per-gate record: one row per supported gate, and no JSON copy of it.
+
+    The document's per-cell rows carry the gate *count* (``supported_gates``) but not the gate
+    rows: the 5720 ``cell x supported gate`` rows are serialized once, in the table, so a reader
+    joins a gate's numbers to its cell by the table's own keys.
+    """
     _header, rows = published_rows
     assert len(rows) == EXPECTED_GATE_ROWS == 5720
     pairs = [(_cell_key(row), int(row["gate_index"])) for row in rows]
@@ -461,16 +466,20 @@ def test_the_row_count_is_one_per_supported_gate_and_the_document_agrees(
     assert len(rows) == expected
     js = _json_cells(document)
     assert set(js) == set(sweep)
-    assert sum(len(entry["gates"]) for entry in js.values()) == EXPECTED_GATE_ROWS
     for key, entry in js.items():
         provenance = view_provenance(sweep[key])
         assert entry["supported_gates"] == provenance.supported_gates
-        assert len(entry["gates"]) == entry["supported_gates"]
-        assert [row["gate_index"] for row in entry["gates"]] == [
-            int(column) for column in np.asarray(sweep[key].supported_columns)
-        ]
         assert entry["native_gates"] == provenance.native_gates
         assert entry["profiles"] == provenance.profiles
+        assert "gates" not in entry, (
+            f"{key}: the document duplicates the table's per-gate rows under a 'gates' array"
+        )
+    # and the table's own rows are that view's supported columns, one per gate, in native order.
+    for key, cell_rows in _rows_by_cell(rows).items():
+        assert [int(row["gate_index"]) for row in cell_rows] == [
+            int(column) for column in np.asarray(sweep[key].supported_columns)
+        ], key
+        assert len(cell_rows) == int(view_provenance(sweep[key]).supported_gates), key
 
 
 def test_the_published_provenance_is_the_decoded_recording_s(
@@ -720,13 +729,15 @@ def test_the_published_files_are_the_three_scalar_artefacts(
 
 
 def test_e128_refuses_the_rotor_band_by_label_from_the_decoded_axis(
-    document, recomputed
+    document, published_rows, recomputed
 ) -> None:
     """E128's rotor is refused for the Nyquist reason, read by label and redone from the axis."""
     js = _json_cells(document)
     e128 = {key: entry for key, entry in js.items() if entry["job"] == "emissions-128"}
     assert len(e128) == 16, "eight E128 recordings on two views"
     oracle = recomputed["gates"]
+    _header, table_rows = published_rows
+    by_cell = _rows_by_cell(table_rows)
     for key, entry in e128.items():
         rotor = _target(entry, ROTOR_LABEL)
         assert rotor["target_hz"] == pytest.approx(ROTOR_HZ)
@@ -742,14 +753,16 @@ def test_e128_refuses_the_rotor_band_by_label_from_the_decoded_axis(
         assert recurrence["band_supported"] is True
         assert recurrence["analysis_supported"] is True
         assert recurrence["supported"] is True
-        # and the E128 gate rows are measurements, not refusals
-        for gate in entry["gates"]:
-            assert oracle[(*key, int(gate["gate_index"]))]["state"] == STATE_DEFINED, (
-                key
-            )
-            assert gate["band_state"] == STATE_DEFINED
-            assert gate["verdict"] == SpectralVerdict.DEFINED.value
-            assert 0.0 <= float(gate["band_fraction"]) <= 1.0 + 1e-9
+        # and the E128 gate rows are measurements, not refusals - read from the table, which is
+        # the sole per-gate record (the document no longer carries a 'gates' array)
+        cell_rows = by_cell[key]
+        assert cell_rows, key
+        for row in cell_rows:
+            index = int(row["gate_index"])
+            assert oracle[(*key, index)]["state"] == STATE_DEFINED, key
+            assert row["band_state"] == STATE_DEFINED
+            assert row["verdict"] == SpectralVerdict.DEFINED.value
+            assert 0.0 <= float(row["band_fraction"]) <= 1.0 + 1e-9
 
 
 def test_every_target_row_is_the_direct_axis_answer_by_label(
@@ -1213,7 +1226,9 @@ def test_the_repeat_window_gate_count_is_the_planned_dimension_not_the_supported
     for key in planned_cells:
         entry = js[key]
         assert entry["supported_gates"] == SUPPORTED_GATES_PER_REPEAT_CELL, key
-        assert len(entry["gates"]) == SUPPORTED_GATES_PER_REPEAT_CELL, key
+        # the row count is read from the table - the sole per-gate record; the document's cell
+        # carries the gate count and no per-gate array.
+        assert "gates" not in entry, key
         assert len(grouped[key]) == SUPPORTED_GATES_PER_REPEAT_CELL, key
         assert entry["window_gates"] != entry["supported_gates"], key
 
@@ -1387,7 +1402,6 @@ VERIFIER_CELL_KEYS: frozenset[str] = frozenset(
         "declared_window_s",
         "detrending",
         "estimator_name",
-        "gates",
         "job",
         "kind",
         "low_band_hz",
@@ -1466,22 +1480,6 @@ VERIFIER_TARGET_KEYS: frozenset[str] = frozenset(
     }
 )
 
-VERIFIER_GATE_KEYS: frozenset[str] = frozenset(
-    {
-        "band_fraction",
-        "band_power",
-        "band_reason",
-        "band_state",
-        "depth_mm",
-        "enbw_bins",
-        "enbw_hz",
-        "gate_index",
-        "parseval_relative_error",
-        "total_power",
-        "verdict",
-    }
-)
-
 VERIFIER_SUMMARY_KEYS: frozenset[str] = frozenset(
     {
         "admitted_cells",
@@ -1515,11 +1513,14 @@ def test_the_published_schema_is_closed_and_uniform(published_rows, document) ->
     cells = document["cells"]
     assert len(cells) == EXPECTED_CELLS
     assert {frozenset(cell) for cell in cells} == {VERIFIER_CELL_KEYS}
+    assert all("gates" not in cell for cell in cells), (
+        "the document duplicates the CSV's per-gate rows under a 'gates' array; the per-gate "
+        "rows are the table's alone"
+    )
     for cell in cells:
         assert set(cell["axis"]) == VERIFIER_AXIS_KEYS
         assert [row["target_label"] for row in cell["targets"]], cell["relative_path"]
         assert {frozenset(row) for row in cell["targets"]} == {VERIFIER_TARGET_KEYS}
-        assert {frozenset(row) for row in cell["gates"]} == {VERIFIER_GATE_KEYS}
 
 
 def _document_floats(node) -> list[float]:

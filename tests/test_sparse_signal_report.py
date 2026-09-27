@@ -397,7 +397,12 @@ def test_every_cell_publishes_exactly_its_supported_columns(
 def test_the_published_json_carries_one_entry_per_cell_with_its_targets_once(
     report: Path,
 ) -> None:
-    """§5's split: the gate rows are the CSV's cardinality, targets are stated once per cell."""
+    """§5's split: the gate rows are the CSV's cardinality, targets are stated once per cell.
+
+    The document carries one record per cell with its two probe target rows; it does **not** carry
+    the table's per-gate rows, so the 5720 ``cell x supported gate`` rows are serialized once, in
+    the CSV.
+    """
     document = _document(report)
     header = _header(report)
     columns = {field: _column(header, field) for field in COLUMN_CANDIDATES}
@@ -428,11 +433,12 @@ def test_the_published_json_carries_one_entry_per_cell_with_its_targets_once(
     # the two probe rows are per *cell*, not per gate: one pair each, never 5720 pairs
     for entry in blocks[0]:
         assert len(entry["targets"]) == len(PROBE_TARGETS), entry["view"]
-    # and the document's cell rows are the same count the table publishes: one gate row per
-    # supported gate, so the two artefacts cannot disagree about the row set
-    for entry in blocks[0]:
-        assert len(entry["gates"]) == entry["supported_gates"], entry["relative_path"]
-    assert sum(len(entry["gates"]) for entry in blocks[0]) == EXPECTED_GATE_ROWS
+    # the table is the sole per-gate record: the document does not duplicate its rows under a
+    # ``gates`` array, so the same rows are not serialized twice (plan §6's observation unit).
+    assert all("gates" not in entry for entry in blocks[0]), (
+        "the document duplicates the CSV's per-gate rows under a 'gates' array"
+    )
+    assert len(_csv_rows(report)) == EXPECTED_GATE_ROWS
 
 
 def test_the_document_states_the_prespecified_constants_of_this_table(
@@ -1299,8 +1305,6 @@ def test_the_writer_is_reachable_as_a_cli_subcommand_that_records_the_revision(
 #: Candidate names for the writer's own cell builder - the seam where one S1 cell becomes one
 #: report cell whose gate rows are the rows the CSV publishes. The first that exists is used.
 CELL_BUILDER_NAMES = ("cell_document", "_cell_document")
-#: Candidate names for the writer's per-gate JSON renderer, the row a reader of the document sees.
-GATE_RENDERER_NAMES = ("gate_document", "_gate_document", "gate_rows", "gate_row")
 
 
 def _callable_named(names: tuple[str, ...], what: str):
@@ -1316,12 +1320,15 @@ def _callable_named(names: tuple[str, ...], what: str):
 
 
 def _rendered_rows(cell) -> list[dict]:
-    """One S1 cell's gate rows as the writer publishes them, through the writer's own builder.
+    """One S1 cell's gate rows as the writer publishes them: the CSV's own per-gate rows.
 
     Building the cell document is itself part of the assertion: the writer's ``CellDocument``
     validator refuses a refusal rendered with a number, a zero rendered as a fraction or a
     refusal rendered as a defined zero - so a builder that could render these states wrongly
-    would not return at all. The rows are then read as the document prints them.
+    would not return at all. The rows are the writer's own ``GateRow`` values, the objects its
+    table's per-gate columns are rendered from, read here through their scalar JSON form. The
+    document no longer carries a per-gate array, so the table is the one place a reader meets
+    these rows.
 
     The cell builder also takes the §4 grouping metadata (the acquisition condition, its kind and
     the planned window pair); a synthetic S1 cell owns no acquisition condition, so one is
@@ -1329,9 +1336,6 @@ def _rendered_rows(cell) -> list[dict]:
     actually declares are passed, so the seam stays usable if the signature narrows.
     """
     build = _callable_named(CELL_BUILDER_NAMES, "one S1 cell becomes one report cell")
-    render = _callable_named(
-        GATE_RENDERER_NAMES, "one report gate row becomes one document row"
-    )
     supplied: dict[str, object] = {
         "pass_name": "synthetic",
         "plan_fingerprint": "sha256:" + "0" * 64,
@@ -1348,7 +1352,7 @@ def _rendered_rows(cell) -> list[dict]:
     document = build(
         cell, **{name: value for name, value in supplied.items() if name in accepted}
     )
-    return [render(row) for row in document.gates]
+    return [row.model_dump(mode="json") for row in document.gates]
 
 
 def _rendered_field(row: dict, *candidates: str):
@@ -1674,7 +1678,6 @@ EXPLICIT_CELL_KEYS: frozenset[str] = frozenset(
         "declared_window_s",
         "detrending",
         "estimator_name",
-        "gates",
         "job",
         "kind",
         "low_band_hz",
@@ -1755,12 +1758,13 @@ EXPLICIT_TARGET_KEYS: frozenset[str] = frozenset(
     }
 )
 
-#: One gate row's field set (F8).
-EXPLICIT_GATE_KEYS: frozenset[str] = frozenset(
+#: One gate row's field set (F8) - the CSV's own per-gate columns, the sole per-gate record.
+#: The document does not carry a per-gate array, so this set is asserted against the table's
+#: columns rather than against a ``cells[*].gates[*]`` shape.
+EXPLICIT_GATE_COLUMNS: frozenset[str] = frozenset(
     {
         "band_fraction",
         "band_power",
-        "band_reason",
         "band_state",
         "depth_mm",
         "enbw_bins",
@@ -2332,9 +2336,9 @@ def test_the_repeat_window_gate_count_is_the_planned_dimension_not_the_supported
         assert cell["supported_gates"] == SUPPORTED_GATES_PER_REPEAT_CELL, cell[
             "relative_path"
         ]
-        assert len(cell["gates"]) == SUPPORTED_GATES_PER_REPEAT_CELL, cell[
-            "relative_path"
-        ]
+        assert "gates" not in cell, (
+            "the document carries a per-gate array; the table is the sole per-gate record"
+        )
         assert cell["window_gates"] != cell["supported_gates"], (
             "the planned window count and the supported row count must never be conflated"
         )
@@ -2444,20 +2448,6 @@ def test_re_writing_the_reports_own_files_is_idempotent(tmp_path: Path) -> None:
     assert first.table_sha256 == second.table_sha256
 
 
-def _json_gate_index(document: dict) -> dict[tuple[str, str, str, int], dict]:
-    """Every published gate row, keyed by its cell identity and gate index."""
-    return {
-        (
-            cell["pass"],
-            cell["relative_path"],
-            cell["view"],
-            int(gate["gate_index"]),
-        ): gate
-        for cell in _json_cells(document)
-        for gate in cell["gates"]
-    }
-
-
 def _row_index(report_dir: Path) -> dict[tuple[str, str, str, int], dict]:
     """Every published CSV row, keyed the same way."""
     header = _header(report_dir)
@@ -2489,25 +2479,43 @@ def test_the_precision_rule_is_honest_and_a_tiny_positive_fraction_is_refused(
     assert document["constants"]["number_significant_digits"] == 12
     header = _header(report)
     fraction_column = _column(header, "fraction")
+    band_column = _column(header, "band_power")
+    total_column = _column(header, "total_power")
     rows = _row_index(report)
-    gates = _json_gate_index(document)
-    assert set(rows) == set(gates)
-    for key, gate in gates.items():
-        text = rows[key][fraction_column]
-        value = gate["band_fraction"]
-        if value is None:
-            assert text == "", key
+    assert rows
+    for key, row in rows.items():
+        text = row[fraction_column]
+        band = None if row[band_column] == "" else float(row[band_column])
+        total = None if row[total_column] == "" else float(row[total_column])
+        if text == "":
+            # an undefined fraction is blank, never a printed zero: either a refusal (no powers
+            # at all) or a measured zero total (two exact zeros and a 0/0 ratio)
+            assert (band is None and total is None) or (band == 0.0 and total == 0.0), (
+                key,
+                band,
+                total,
+            )
             continue
         assert re.fullmatch(rf"-?\d+\.\d{{{PUBLISHED_DECIMALS}}}", text), (key, text)
+        # the printed fraction is the ratio of the two printed powers, at the declared precision
+        assert band is not None and total is not None and total > 0.0, key
         assert float(text) == pytest.approx(
-            round(value, PUBLISHED_DECIMALS), abs=10**-PUBLISHED_DECIMALS
+            round(band / total, PUBLISHED_DECIMALS), abs=10**-PUBLISHED_DECIMALS
         ), key
-        if value > 0.0:
+        if band > 0.0:
             assert float(text) > 0.0, (
                 f"{key}: a positive fraction was published as the zero {text!r}"
             )
+    # the JSON no longer duplicates the table's per-gate numbers; its own rule still states the
+    # precision of the numbers it *does* carry (the §4 repeat members' fractions, lossless).
     assert isinstance(document["json_precision_rule"], str)
     assert document["json_precision_rule"].strip()
+    spread = document[REPEAT_SPREAD_KEY]
+    assert spread, "the document publishes no §4 repeat-spread row"
+    for row in spread:
+        for member in row["members"]:
+            value = member["band_fraction"]
+            assert value is None or isinstance(value, float), (row["pass"], value)
 
     gate = next(
         row
@@ -2852,8 +2860,14 @@ def test_the_published_schema_is_closed_and_explicit(report: Path) -> None:
         ]
         for row in cell["targets"]:
             assert set(row) == EXPLICIT_TARGET_KEYS, cell["relative_path"]
-        for row in cell["gates"]:
-            assert set(row) == EXPLICIT_GATE_KEYS, cell["relative_path"]
+    # the per-gate rows are the table's alone (the observation unit published once): the document
+    # carries no 'gates' array, and the table's columns are the closed gate schema.
+    assert all("gates" not in cell for cell in cells), (
+        "the document duplicates the CSV's per-gate rows under a 'gates' array"
+    )
+    assert EXPLICIT_GATE_COLUMNS <= set(header), sorted(
+        EXPLICIT_GATE_COLUMNS - set(header)
+    )
 
 
 def _checks_builder():

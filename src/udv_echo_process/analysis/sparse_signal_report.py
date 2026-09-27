@@ -32,8 +32,17 @@ module therefore publishes:
 
 * one CSV row per ``cell x supported gate`` - the identity, the axis scalars, the band-fraction
   scalars and the QA field; and
-* one JSON cell per ``recording x view``, with its two target rows stated **once**, and a summary
-  of counts.
+* one JSON cell per ``recording x view``, with its two target rows stated **once**, the plan §4
+  repeat-spread row set, and a summary of counts.
+
+**The per-gate rows are published once, in the CSV, and are not repeated in the document.** The
+narrowing permits an artifact's content to be the named scalar reductions *at the observation
+unit's cardinality*; it does not ask for the same 5720 gate rows twice in two serializations, and
+a document that carried a ``gates`` array beside the table's own rows would be a second copy of
+the table under a different name. So the table is the one authoritative per-gate record and the
+document's cell records stop at the metadata, the axis and the two target rows - a reader joins a
+fraction to its cell by the table's own keys, and no field of the document scales with the gate
+count.
 
 No PSD array is serialized, no NPZ is shipped, no field follows a bin, sample or element, and
 nothing is written for a whole ``SpectralEstimate``. The document is assembled field by field
@@ -278,15 +287,18 @@ REPEAT_SPREAD_RULE = (
 )
 
 #: The JSON's own precision rule, stated beside the CSV's (plan §5). The two are deliberately
-#: different: the CSV is the fixed-precision table, the JSON is the lossless document, and a
-#: single "floats are written at a stated fixed precision" sentence would be false of one of them.
+#: different: the CSV is the fixed-precision table and the sole per-gate record, while the JSON is
+#: the lossless document for the numbers it does carry. The per-gate band fractions live in the
+#: CSV only - at its declared decimals - so the document is a lossless copy of the §4 repeat
+#: members' fractions (and the target and axis scalars) rather than of the whole table.
 JSON_PRECISION_RULE = (
-    "Two precisions, stated separately. The CSV rounds band_fraction to fraction_decimals "
-    "decimals and every other float to number_significant_digits significant digits, and a "
-    "positive fraction that would round to a published zero is refused. The JSON carries every "
-    "float at its full double-precision value (Python's shortest round-tripping repr), never "
-    "rounded to the CSV's precision, so the document is a lossless copy of the numbers the "
-    "table rounds for display. The JSON is strict: a non-finite value is refused "
+    "Two precisions, stated separately. The CSV is the fixed-precision table and the one "
+    "per-gate record: it rounds band_fraction to fraction_decimals decimals and every other "
+    "float to number_significant_digits significant digits, and a positive fraction that would "
+    "round to a published zero is refused. The JSON does not duplicate the table's per-gate "
+    "numbers; it carries the §4 repeat-spread members' band_fraction and every other float it "
+    "publishes at their full double-precision value (Python's shortest round-tripping repr), "
+    "never rounded to the CSV's precision. The JSON is strict: a non-finite value is refused "
     "(allow_nan=False) and fails the run before any file is written, never serialized as NaN or "
     "Infinity."
 )
@@ -1216,30 +1228,16 @@ def _target_document(row: TargetRow) -> dict[str, object]:
     }
 
 
-def _gate_document(row: GateRow) -> dict[str, object]:
-    """One gate row as named scalars."""
-    return {
-        "gate_index": int(row.gate_index),
-        "depth_mm": row.depth_mm,
-        "verdict": SpectralVerdict(row.verdict).value,
-        "band_state": BandFractionState(row.band_state).value,
-        "band_fraction": row.band_fraction,
-        "band_power": row.band_power,
-        "total_power": row.total_power,
-        "band_reason": row.band_reason,
-        "parseval_relative_error": row.parseval_relative_error,
-        "enbw_bins": row.enbw_bins,
-        "enbw_hz": row.enbw_hz,
-    }
-
-
 def document(model: SparseSignalReport) -> dict[str, object]:
     """The JSON document: the gate, the digests, the constants, the cells and the summary.
 
     Assembled field by field from named scalars. The per-cell probe target rows are stated **once
-    here** and are deliberately not repeated on the CSV's per-gate rows (plan §5). ``repeat_spread``
-    is the plan §4 row set: its rule, its key, the groups it was taken over and a row per group,
-    view and native gate (see :data:`REPEAT_SPREAD_RULE`).
+    here** and are deliberately not repeated on the CSV's per-gate rows (plan §5). The per-gate
+    band-fraction rows are published **once, in the CSV** - the cell records below carry no
+    ``gates`` array, so the document never holds a second copy of the table's 5720 rows and the
+    table stays the one authoritative per-gate record. ``repeat_spread`` is the plan §4 row set:
+    its rule, its key, the groups it was taken over and a row per group, view and native gate (see
+    :data:`REPEAT_SPREAD_RULE`).
     """
     return {
         "artefact": ARTEFACT_ID,
@@ -1308,7 +1306,6 @@ def document(model: SparseSignalReport) -> dict[str, object]:
                 "one_sided_rule": cell.one_sided_rule,
                 "axis": _axis_document(cell.axis),
                 "targets": [_target_document(row) for row in cell.targets],
-                "gates": [_gate_document(row) for row in cell.gates],
             }
             for cell in model.cells
         ],
@@ -2472,14 +2469,16 @@ def readme_text(model: SparseSignalReport) -> str:
     lines.append("")
     lines.append(
         f"- `{CSV_NAME}` - one row per `cell x supported gate` (plan §5): identity, the settings, "
-        "the axis numbers, the gate's band-fraction numbers and the QA field."
+        "the axis numbers, the gate's band-fraction numbers and the QA field. This table is the "
+        "**sole per-gate record**; the document beside it does not repeat these rows."
     )
     lines.append(
         f"- `{DOC_NAME}` - the gate (`ok`, `checks`), the plan fingerprints and the analysis "
         "revision, the prespecified constants, one record per cell with its two probe target "
         "rows stated once, the estimator's and taper's definitions, the admission's reason, the "
         "descriptive plan §4 repeat-spread row set (its rule, groups, rows and counts), and a "
-        "summary of counts."
+        "summary of counts. The document carries **no per-gate rows**: those are the table's, "
+        "published once in the CSV, so the same 5720 rows are never serialized twice."
     )
     lines.append(f"- `{README_NAME}` - this file.")
     lines.append("")
@@ -2563,12 +2562,13 @@ def readme_text(model: SparseSignalReport) -> str:
         "so a new field is a schema change rather than a new value (plan §6). Every entry is a "
         "scalar of the observation unit - a column of the table or a named scalar in the "
         "document - and none follows a bin, a sample or an element. In the document `cells[*]` "
-        "is one `recording x view` and `cells[*].gates[*]` one of its supported gates."
+        "is one `recording x view`; its per-gate band-fraction rows are the table's, keyed by "
+        "`pass`/`relative_path`/`view`/`gate_index`, and are **not** duplicated in the document."
     )
     lines.append("")
     lines.append(
-        "- **per gate (one CSV row, and `cells[*].gates[*]`)** - `gate_index`, `depth_mm`, "
-        "`verdict`, `band_state`, `band_fraction`, `band_power`, `total_power`, `band_reason`, "
+        "- **per gate (one CSV row - the sole per-gate record)** - `gate_index`, `depth_mm`, "
+        "`verdict`, `band_state`, `band_fraction`, `band_power`, `total_power`, "
         "`parseval_relative_error`, `enbw_bins`, `enbw_hz`."
     )
     lines.append(
