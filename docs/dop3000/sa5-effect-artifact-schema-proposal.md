@@ -9,7 +9,7 @@
 > **committed artifact boundary** it publishes into, so a generator can be written against a
 > reviewed contract in a separate publication PR without silently changing its format.
 >
-> Scope of this document: the schema, the byte rule, the digest convention, the refusal
+> Scope of this document: the schema, the byte rule, the digest convention, the non-value
 > vocabulary and the verifier design. It commits **no array, no generator and no code**,
 > and it does not publish any effect value. The four decisions in the earlier
 > proposal are resolved in §10. Issue **#49** (generic ndarray JSON serialization) remains open
@@ -25,7 +25,7 @@ Two independent products, **one per sitting**, under the plan's publish root
 | file | content |
 | --- | --- |
 | `sa5-live-1-effects.npz` | the sitting's per-knot effect profiles and per-participant reads (§3, §4) |
-| `sa5-live-1-effects.json` | identity, closed schema, provenance, alignment and operand definitions, refusals, descriptive repeats, digests (§5) |
+| `sa5-live-1-effects.json` | identity, closed schema, provenance, alignment and operand definitions, non-value rows, descriptive repeats, digests (§5) |
 | `sa5-live-1-effects.csv` | the sitting's one per-effect scalar row set: reductions, coverage, correlation (§6) |
 | `sa5-live-1-effects.README.md` | units, definitions, digest binding, regeneration command, no-go list (§7) |
 
@@ -169,14 +169,21 @@ points are exactly what a byte-reproduction test compares; comparing decompresse
 would not catch a compression, timestamp or ordering drift, which is why the rule is stated
 at the byte level.
 
-## 5. JSON — closed fields, provenance, refusals, digest convention
+## 5. JSON — closed fields, provenance, non-value rows, digest convention
 
 `sa5-live-N-effects.json` is **strict JSON**: UTF-8, `ensure_ascii=True`, `sort_keys=True`,
 `separators=(",", ":")` and **`allow_nan=False`** (a non-finite value fails the run before
 any byte is written), LF endings and exactly one trailing newline. Its field set is
 **closed**: a new field is a schema change, not a new value. It carries no ndarray
-(issue #49) and **no per-effect summary number** — those are the CSV's sole copy (§6) — so no
-value is published twice.
+(issue #49) and **no per-effect summary number** — those are the CSV's sole copy (§6).
+Every **scientific reduction and numerical payload has exactly one authoritative home**: the
+NPZ holds the profile arrays, the CSV the per-effect scalar reductions, the JSON the
+identity, provenance, definitions, non-value rows, repeats and digests. Only **structural
+identity, shape and join metadata** (`effect_id`, `view`, `metric`, `contrast`, `grid`,
+`knot_count`, `participant_count`, `npz_members` and the participant order) may mirror
+between the JSON, the NPZ and the CSV, and only where the mirrored values agree **exactly**.
+Mirrored shape counts and support coordinates are structural checks, not a second
+authoritative scientific reduction.
 
 ### 5.1 Identity and gate
 
@@ -209,7 +216,7 @@ carries the block-local anchors as **context only**; no anchor is an operand.
 `contrast` (the name), `expression`, `reduction`, `units`, `grid` (`corner_knots` or
 `emissions_knots`), `knot_count` (`K`), `participant_count` (`P`), `operand_names`,
 `operands` (each `{name, kind, members: [...]}`), `coefficients`, `participants` (§3.1 order,
-each `{label, job, order, kind}`), `support_mm`, `half_pitch_mm`, `max_abs_offset_mm`,
+each `{label, job, order, kind}`), `support_mm`, `half_pitch_mm`,
 `alignment_rule` and `state_meanings` (§8, so a code is never ambiguous). The `grid`,
 `knot_count` and `participant_count` here are the shape contract the NPZ is checked against.
 
@@ -219,17 +226,35 @@ each `{label, job, order, kind}`), `support_mm`, `half_pitch_mm`, `max_abs_offse
 the reader's check on §3: the member set must equal this list exactly (no extra, no missing,
 no duplicate), and every name is `<effect_id>__<suffix>.npy` for a suffix in the closed ten.
 
-### 5.5 Refusals — observed and typed
+### 5.5 Non-value rows — missing effect/operand/read/shape values, with distinct states
 
-`refusals` is the observed refusal row set behind the profiles, one row per refusal, each
-`{effect_id, kind, knot_index, depth_mm, side, member, state, reason}`. For a
-profile-level `shape` refusal, `knot_index` and `depth_mm` are null. `kind` is one of
-`effect-knot`, `operand-knot`, `read`, `shape`; `side` and `member` are null where the refusal
-is the effect's own; `state` is the refusal's **text name** from the backend vocabulary of §8
-(e.g. `undefined-alignment`, `undefined-operand`, `undefined-constant-trace`,
-`undefined-not-supported`, `refused-axis`, `defined-zero-power`, `undefined-shape`); `reason`
-is the engine's own reason text, copied, never rewritten. `refusal_counts` states the totals
-by `(state, kind)`. A refusal is never a `0.0` and a defined zero is never a refusal.
+`nonvalue_rows` records each effect-knot, operand-knot, participant read or
+profile-correlation position **whose scalar value is missing**, one row per such
+position, each `{effect_id, kind, knot_index, depth_mm, side, member, state, reason}`.
+It is the *missing-value* set for those four position types, not the refusal set and not
+the acquisition-failure set: a position appears here because no value is carried, and its
+`state` is the distinct reason the value is missing. Null physical-depth integrals when
+covered depth is zero are instead determined by the CSV's coverage fields (§6), not by a
+fabricated per-knot refusal. For a profile-level `shape` position, `knot_index` and
+`depth_mm` are null.
+`kind` is one of `effect-knot`, `operand-knot`, `read`, `shape`; `side` and `member` are null
+where the position is the effect's own; `state` for a per-knot entry names its
+backend effect or metric state (§8), e.g. `undefined-alignment`,
+`undefined-operand`, `undefined-constant-trace`, `undefined-not-supported`,
+`refused-axis`, `defined-zero-power`. A `shape` row alone uses the JSON-only
+`undefined-shape` label for `ProfileShape.correlation is None`; it has no NPZ
+state code. `reason` is the engine's own reason text, copied,
+never rewritten. `nonvalue_counts` states the totals by `(state, kind)`.
+
+**`defined-zero-power` is a valid admitted `0/0`, not a refusal and not a failed
+acquisition.** The spectral axis was admitted and its total power is exactly zero (a constant
+gate), so the fraction is undefined and *no value is carried*: the measurement was taken and
+the state records that its number does not exist. It appears in `nonvalue_rows` only because
+its scalar is missing; it is never a declined axis and never a failed capture. The states stay
+distinct — `defined-zero-power` (a measurement whose value does not exist) and the
+`refused-axis` / `undefined-*` refusals share this row set only in carrying no scalar. A
+refused or unsupported measurement is never a `0.0`, and a defined measured zero is a value,
+never a non-value row.
 
 ### 5.6 Descriptive repeats — scalars only
 
@@ -256,7 +281,7 @@ One convention, applied identically to every published file:
   own digest.
 - Every digest is lowercase hex with the `sha256:` prefix. A **source** digest is the bare
   64-hex lowercase `source_sha256` of an operand row and is never re-prefixed; a
-  `plan_fingerprint` is likewise bare. `refusal_counts` and the repeat numbers are not
+  `plan_fingerprint` is likewise bare. `nonvalue_counts` and the repeat numbers are not
   digests.
 - Digests are computed from the bytes **this run staged**, at the analysis commit the JSON
   records, never from a tree regenerated beside the destination.
@@ -295,14 +320,17 @@ float is rendered with Python's `format(value, ".17g")` (round-trip decimal for
 binary64), with no display rounding or significant-digit choice left to the
 generator. CSV uses UTF-8, RFC 4180 quoting as needed and `\n` row terminators.
 An empty `correlation` is a typed shape refusal; its exact reason is the JSON's
-`refusals` row with `kind = "shape"` (constant profiles can refuse even with
-`correlation_defined_count >= MIN_SHAPE_KNOTS`, which is `3`).
+`nonvalue_rows` row with `kind = "shape"` (constant profiles can refuse even with
+`correlation_defined_count >= MIN_SHAPE_KNOTS`, which is `3`). `max_abs_offset_mm` is the
+alignment scalar of the engine's `DepthEffects` row (not of `DepthSummary`/`ProfileShape`) and
+is a per-effect number, so it lives **only** here in the CSV and is deliberately absent from
+the JSON's effect record (§5.3).
 
 ## 7. README — definitions and binding
 
 `sa5-live-N-effects.README.md` states the units and definitions of every column and member,
 the physical-depth trapezoidal weighting rule, the acquisitions and anchors in order, the
-separate view rows, the two views' differing duration/resolution/Nyquist, the refusal
+separate view rows, the two views' differing duration/resolution/Nyquist, the non-value row
 examples, the regeneration command, and the no-go list. It binds its own claims to the
 published files by digests — including `artifacts.json.sha256`, the JSON's canonical-LF
 digest, which is the reader's entry point to the chain
@@ -340,7 +368,7 @@ the read-level sentinel):**
 | 6 | `undefined-alignment` | read-level sentinel: no native gate lay within half the knot pitch, so the `ReadAligned` carries no gate index, depth, offset or value (`state = None`) |
 
 Codes `3`–`255` in table A and `7`–`255` in table B are invalid and refused. The NPZ carries codes; the JSON
-`state_meanings` (§5.3) carries the text, so `refusals` can quote a name and the NPZ a code
+`state_meanings` (§5.3) carries the text, so `nonvalue_rows` can quote a name and the NPZ a code
 without either drifting from the backend.
 
 ## 9. Publication and refusal gate
@@ -365,9 +393,14 @@ without either drifting from the backend.
 1. **NPZ is accepted** as the explicit profile-array format, with the deterministic byte rule
    of §4 (ZIP_STORED, sorted members, fixed ZIP epoch, fixed little-endian dtypes,
    `allow_pickle=False`, no extras, actual SHA-256 in the JSON).
-2. **The field set is closed and one value has one home**: NPZ carries arrays, the CSV the
-   sole per-effect scalar reductions, the JSON the identity/provenance/definitions/refusals/
-   repeats/digests. The digest convention is fixed in §5.7.
+2. **The field set is closed, and every scientific reduction and numerical payload has one
+   authoritative home**: the NPZ carries the arrays, the CSV the sole per-effect scalar
+   reductions — including `max_abs_offset_mm`, which is therefore dropped from the JSON's
+   §5.3 effect records — and the JSON the identity, provenance, definitions, non-value rows,
+   repeats and digests. Structural identity, shape and join metadata (`effect_id`, `view`,
+   `metric`, `contrast`, `grid`, `knot_count`, `participant_count`, `npz_members`, the
+   participant order) may be mirrored between the files, but only with exact agreement. The
+   digest convention is fixed in §5.7.
 3. **Per-depth repeat spreads are not published here.** Repeats stay scalar in the JSON
    (§5.6); the member identities, orders and reasons are kept; a per-depth repeat product, if
    ever wanted, is a separately reviewed schema.
@@ -392,10 +425,16 @@ input**. It decodes the committed sources and recomputes, then compares:
    (`read_metric_profile` → `measure_binding`) rather than trusting the NPZ or the CSV, and
    recompute the **E20 equal-weight mean** from the four decoded `cr1..cr4` operands, not
    from the writer's own sum.
-3. **Compare element-wise**: every NPZ array (knots, effect, mask, state and the four
+3. **Compare element-wise**: every NPZ array (knots, effect, mask, state and the six
    `(P,K)` participant arrays) against the recomputed profiles; every CSV scalar against the
-   recomputed `DepthSummary`/`ProfileShape`; the JSON structure, provenance and refusals
-   against the recomputed binding and states.
+   recomputed `DepthSummary`/`ProfileShape`; the JSON structure, provenance and non-value
+   rows against the recomputed binding and states. An `effect-knot` non-value row
+   requires a false effect mask and matching effect state; an `operand-knot` row
+   requires a false effect mask and the recomputed *operand* state (which can differ
+   from the effect state when another operand has an alignment refusal). A `read`
+   row requires a false participant mask and matching participant state. A `shape`
+   row has no NPZ mask: it requires an empty CSV `correlation` and the recomputed
+   shape reason.
 4. **Check the invariants the writer could get wrong silently**: `state[i] != 0` exactly
    where `defined[i] == 0`; every placeholder is finite and every mask is consistent; the
    `-1`/`0.0` sentinel appears exactly at unaligned reads; every participant row order equals
