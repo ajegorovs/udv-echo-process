@@ -36,6 +36,12 @@ reports/stage2-e20-e64/*.csv text eol=lf
 reports/stage2-e20-e64/*.json text eol=lf
 reports/stage2-e20-e64/*.md text eol=lf
 
+# SA2.4's CSV digest and three-file byte regeneration must survive Windows
+# checkouts without translating the published scalar artifacts to CRLF.
+reports/sparse-signal/*.csv text eol=lf
+reports/sparse-signal/*.json text eol=lf
+reports/sparse-signal/*.md text eol=lf
+
 # The pass's own logs are the provenance the ingest re-reads (the retired target each
 # entry records): a translated line still parses, and pinning LF keeps the bytes a
 # reviewer checks identical in every checkout.
