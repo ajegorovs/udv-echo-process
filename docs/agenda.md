@@ -51,17 +51,18 @@ have only one visit in a matched round. A round groups cross-stream visits;
 
 ---
 
-## Active work — SA2 sparse spectral support
+## Active work — SA5 sitting-level effects (design first)
 
-The SA2 contract ([`dop3000/sa2-spectral-design.md`](dop3000/sa2-spectral-design.md)) is settled and
-its first two stages are **merged on master**: SA2.1 — timebase characterization, the
-spectral-uniformity admission calibrated on synthetic jitter (`max_relative_timing_error` as the
-admission operand, operational tolerance `0.09`), target-frequency support and the committed
-capability matrix (`0f4eb46`); SA2.2 — the admitted uniform-grid periodogram/PSD backend, with the
-stored-timestamp nonuniform evaluation kept as a test-only oracle (`9ba46c4`). **SA2.3**, the
-notebook spectral preview, is planned and not started; its contract is
-[`dop3000/sa2-3-notebook-preview-plan.md`](dop3000/sa2-3-notebook-preview-plan.md). SA2.3 adds no
-new spectral estimator and no scientific interpretation.
+SA0/SA1 and SA2.1–SA2.4 are landed; #58 merged as `b55a819`. SA2 now provides
+the sampling-aware spectral backend, single-record preview, fixed 0–1 Hz
+fraction and deterministic scalar report. Its repeat ranges are descriptive,
+not screening floors. The [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
+records the SA4 acceptance audit: the explorer is useful now, but live widget
+read-back is not established by an executed export, and the original Welch
+wording differs from the accepted periodogram. The next scientific slice is a
+[docs-only SA5 prespecification](dop3000/sa5-sitting-effects-prespec.md), followed
+by separate within-sitting effect tables and only then cross-sitting agreement.
+SA3/POD and SA6 UI remain demand-driven; #49 remains open and separate.
 
 ---
 
