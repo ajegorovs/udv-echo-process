@@ -608,6 +608,10 @@ def verify_sa5_artifacts(
     directory = (
         Path(artifact_dir) if artifact_dir is not None else artifact_dir_of(pass_ref)
     )
+    if pass_ref.report_dir is None:
+        raise Sa5VerificationError(
+            f"{pass_ref.name}: the committed per-pass inventory directory is missing"
+        )
     paths = artifact_paths(directory, expected_stem)
     for kind, path in paths.items():
         if not path.is_file():
@@ -623,7 +627,7 @@ def verify_sa5_artifacts(
             pass_ref,
             root=root,
             plan_path=plan,
-            directory=directory,
+            directory=Path(pass_ref.report_dir),
             low_hz=low_hz,
             max_lag_s=max_lag_s,
         )
