@@ -197,6 +197,9 @@ check names with their verdicts — `operands_bound_to_decoded_sources`,
 schema-level names `npz_members_are_the_closed_set`,
 `every_undefined_position_carries_placeholder_mask_and_state`,
 `participant_rows_are_the_declared_order`, `digests_match_the_staged_bytes`.
+`ok` is true exactly when every engine `checks` entry **and** every `artifact_checks`
+entry is true; it does not suppress typed per-knot non-values, which are data rather than
+a failed artifact check.
 
 ### 5.2 Provenance
 
@@ -219,6 +222,11 @@ carries the block-local anchors as **context only**; no anchor is an operand.
 each `{label, job, order, kind}`), `support_mm`, `half_pitch_mm`,
 `alignment_rule` and `state_meanings` (§8, so a code is never ambiguous). The `grid`,
 `knot_count` and `participant_count` here are the shape contract the NPZ is checked against.
+`grid` is `corner_knots` for the four corner contrasts and the derived interaction,
+`emissions_knots` for the three E8/E64/E128 contrasts; the verifier derives this from
+the fixed binding, not from the writer's label. A participant is an actual recording,
+so each `participants[*].kind` is `"recording"` even when four participants together
+form the low `mean-of-four` **operand**. Operand kinds remain on `operands`.
 
 ### 5.4 Member list — the closed key set, published
 
@@ -276,7 +284,9 @@ One convention, applied identically to every published file:
   its canonical LF bytes** (`analysis._floor_documents.table_digest`:
   `read_bytes().replace(b"\r\n", b"\n")`), so a Windows checkout that materialised CRLF
   hashes to the value git stores.
-- Both are recorded in the JSON, each with the sibling `file` name, so the JSON binds both
+- Both are recorded in the JSON as nested `artifacts: {"npz": {"file": ..., "sha256": ...},
+  "csv": {"file": ..., "sha256": ...}}` (not literal dotted top-level keys), each with
+  its sibling file name, so the JSON binds both
   files. The **JSON**'s own digest is recorded in the README (§7); a file never carries its
   own digest.
 - Every digest is lowercase hex with the `sha256:` prefix. A **source** digest is the bare
@@ -378,6 +388,12 @@ without either drifting from the backend.
   digest mismatch is what a reader detects, not a rollback. Refuse to overwrite an existing
   file this writer did not produce, and refuse a stage file or lock an interrupted run left
   behind.
+- An existing SA5 stem is never overwritten to guess ownership: if **all four** files
+  already exist and their bytes match this run's fully staged products, publication is
+  idempotent and does nothing; if any file is missing or differs, refuse without replacing
+  any existing file. This applies equally to an unrelated file bearing an SA5 name and
+  to a mixed set left by an interrupted publication. The sibling SA2.4 files are never
+  candidates for replacement.
 - Generate the two sittings as **two independent invocations**, one `PassRef` each. Refuse a
   second sitting in one invocation and refuse any computation of `E_live2 − E_live1`, a
   recurrence verdict or a cross-sitting summary — that comparison is a separate, later,
