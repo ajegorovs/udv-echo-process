@@ -634,3 +634,31 @@ outside SA2 implementation. **SA2 v1 does not solve general ndarray JSON seriali
 in-memory result, notebook display, tests. If SA2 ever needs committed machine-readable spectral
 artifacts, #49 is resolved deliberately first — not by assuming `model_dump(mode="json")` is safe
 because spectra happen to contain arrays.
+
+### Narrowing: scalar-only named reductions are permitted, arrays are not
+
+**This clause is narrowed in exactly one place.** A committed machine-readable spectral artifact
+**whose entire content is named scalar reductions of a spectrum** — a band-power sum and its band
+edges and bin indices, the band-power fraction, the normalized total power, the admission stamps, a
+refusal's own reason — may be published as JSON or CSV without resolving #49 first. The permission
+attaches to the artifact's *content*, not to the way it was written: such a file is built from named
+scalars and properties, never by serializing an array-bearing model and never by wrapping an array
+in a `tolist()`, base64 or ad-hoc blob.
+
+Everything the clause above forbade still stands, and this narrowing is not evidence about it:
+
+- `model_dump(mode="json")` / `model_dump_json()` on any `ArrayModel` subclass stays unsupported. No
+  serializer is declared on `ArrayModel`, and the round-trip claim at
+  `src/udv_echo_process/models/base.py:5-6` is **not** amended here. That a scalar reduction could be
+  read out of a spectrum says nothing about whether the model it was read from serializes.
+- Committed PSD or spectrum **arrays** stay prohibited in every committed form — JSON, CSV, NPZ,
+  base64 or otherwise: a bin vector, a one-sided density estimate, or a whole `SpectralEstimate`,
+  `WindowView` or other array-bearing result. Publishing one still needs its own reviewed schema and
+  is not authorized by this narrowing.
+- **Issue #49 stays open** and unmitigated. A later resolution of #49 does not widen this narrowing
+  either — it was reviewed for named scalars only, and an artifact set that adds arrays reopens the
+  question rather than inheriting this permission.
+
+Machine-readable here means a committed file a program reads (a scalar report, a table, a JSON
+summary). The typed in-memory result, the notebook display and the estimator's own "no
+serialization" scope are unchanged by this narrowing.
