@@ -66,12 +66,21 @@ the view module refused the selection, every spectral display shows that refusal
 Only the equivalent of:
 
 ```python
-periodogram_of_view(selected_view, depth_mm=selected_depth, detrending=selected_detrending)
+periodogram_of_view(
+    selected_view,
+    depth_mm=selected_depth,
+    quantity=point.quantity,
+    unit=point.unit,
+    detrending=selected_detrending,
+)
 ```
 
 with `selected_depth = float(gate_stats.depths_mm[position])` — the same depth resolution SA1
-already performs — and `selected_detrending = detrending_picker.value`. No spectral arithmetic in
-cells; no re-derived grid, taper, normalization or verdict.
+already performs — and `selected_detrending = detrending_picker.value`. The `quantity` and `unit`
+are passed explicitly, exactly as SA1's recurrence call already passes them
+(`recurrence_of_view(..., quantity=str(point.quantity), unit=str(point.unit), ...)`), so the
+spectrum names its own measured quantity instead of relying on the signature defaults. No spectral
+arithmetic in cells; no re-derived grid, taper, normalization or verdict.
 
 ## C. Detrending control
 
@@ -117,9 +126,13 @@ underlying PSD is never truncated.
 ## F. Target-frequency rows
 
 For at least the **1.0 Hz** recurrence-scale probe and the **25/3 Hz ≈ 8.333 Hz** nominal rotor
-reference, each row shows, from `target_frequency_support(...)`: overall supported/refused, band
-support, analysis/admission support, the target, Nyquist, nearest bin, bin offset, frequency
-resolution, `cycles_in_view` for *this* actual view, and the reason.
+reference, each row is asked of `target_frequency_support(estimate.admission, target_hz, label=...)`
+— the admission carried *inside* the returned `SpectralEstimate`, never a second admission derived
+in the notebook — and shows: overall supported/refused, band support, analysis/admission support,
+the target, Nyquist, nearest bin, bin offset, frequency resolution, `cycles_in_view` for *this*
+actual view, and the reason. These rows accompany a **defined (admitted) spectrum**; a
+`REFUSED_AXIS` estimate carries no PSD and no admission-granted spectrum, so its target rows report
+the estimator refusal instead.
 
 The wording rule is binding:
 
@@ -127,8 +140,14 @@ The wording rule is binding:
 unsupported at 8.333 Hz        ⇏        no 8.333-Hz signal
 ```
 
-For E128 the UI says, in substance, `8.333 Hz: unsupported — target is above this recording's
-Nyquist frequency`, quoting the backend reason rather than paraphrasing it.
+For E128 the UI **quotes the backend reason** rather than paraphrasing it. The backend's
+`TargetFrequencySupport.band_reason` for a target at or above Nyquist is, verbatim,
+`"{target} Hz is at or above this axis's Nyquist frequency {nyquist} Hz: band-supported requires
+strictly below it"`; for E128's 8.333 Hz rotor reference on the primary-comparison view the row
+reads `8.33333 Hz is at or above this axis's Nyquist frequency 5.73438 Hz: band-supported requires
+strictly below it` (the Nyquist value is the view's own, ≈ 5.73 Hz for both views). "At or above" is
+the backend's wording, and "this axis's Nyquist" is the adopted-rate Nyquist the characterization
+published — the UI does not substitute "above" or "this recording's".
 
 ## G. Target markers
 
@@ -136,6 +155,17 @@ A target marker is drawn **only inside the measurable band**. For E8/E20/E64: bo
 8.333 Hz marker. For E128: the 1 Hz marker only — **no 8.333 Hz vertical line inside the PSD axes
 as though it were part of the measured range**. The refusal is surfaced in the target-support
 panel, and the full axis ending below 8.333 Hz reinforces it visually.
+
+**The Nyquist support a marker rests on is binding-caveated** (design
+[anti-alias / transfer-function limitation](sa2-spectral-design.md)). 8.333 Hz below an E8/E20/E64
+axis's Nyquist means only that **the sampled profile sequence can represent that frequency without
+the basic Nyquist impossibility** — it does **not** mean the amplitude is unbiased, that
+higher-frequency content cannot alias into it, or that emissions/profile carries no temporal
+averaging at that frequency. Nyquist support is a sampling-support statement for the stored profile
+sequence, not a calibrated temporal transfer-function correction and not the instrument's
+anti-alias response. This matters most for E64, whose target sits closest to its band edge; no
+transfer function is resolved in SA2, and a marker inside the band must not be worded as a
+measured, calibrated or anti-aliased amplitude.
 
 ## H. Display-only descriptive quantities
 
@@ -159,7 +189,7 @@ estimators of the same trace, and are not numerically fused in this stage.
 
 ## K. Refusal rendering
 
-All four states are exercised:
+These four display states are exercised:
 
 | state | rendering |
 | --- | --- |
@@ -170,11 +200,37 @@ All four states are exercised:
 
 The distinction `defined zero` vs `undefined/refused` is preserved in the UI.
 
+**Pre-estimator unavailable states are rendered too, and they are not estimator verdicts.** Before
+any `SpectralEstimate` can exist the notebook can hold no spectrum at all: no view (`sparse_view`
+is `None` because `SparseViewError` refused the selection — §A), or no resolved gate (`gate_stats`
+is `None`, or `position` is `None`). Each is shown as the module's/notebook's own stated absence,
+with no PSD, no zero line and no fabricated spectrum — the same "no empty or zero plot" rule as a
+refused axis, kept distinct from it so a missing view is never read as a spectral refusal.
+
+**The stale-gate guard is a spectral consumer too.** When a view change leaves the previously
+picked gate outside the new view, the `position_note` fallback resolves the position to the middle
+supported gate *and says so*; the spectrum is computed at that fallback gate and the note is shown
+beside it, rather than silently drawing a spectrum for a different gate than the one named.
+
 ## L. Source / provenance display
 
-Every displayed spectrum makes recoverable: pass, job, point/order, source path and digest, view,
+Every displayed spectrum makes recoverable: job, point/order, source path and digest, view,
 gate/depth, detrending, estimator and taper convention. No notebook-side provenance structure is
-created — it is `SpectralEstimate` plus the shared `ViewProvenance`, displayed.
+created — it is `SpectralEstimate` plus the shared `ViewProvenance`, displayed, and each field is
+read from the object that already owns it:
+
+- `ViewProvenance` (carried on `SpectralEstimate.provenance`) supplies **job** (`job`), **point
+  label and order** (`point_label`, `order`), **source path and digest** (`relative_path`,
+  `source_sha256`) and **view** (`view`, with `view_rule`);
+- `SpectralEstimate` itself supplies **gate/depth** (`gate_index`, `depth_mm`), **quantity/unit**
+  (`quantity`, `unit`), **detrending** (`detrending`), and the **estimator and taper convention**
+  (`estimator_name`, `taper_name`, `taper_convention`).
+
+The **pass is not a `ViewProvenance` field** and must not be presented as one: the pass (the
+committed dataset) is the notebook's own selection from `analysis.sparse_passes`
+(`dataset_picker` → `COMMITTED_PASSES`), a presentation choice the backend records do not carry.
+The spectrum's own recording identity is the `job` / `point_label` / `order` / `source_sha256`
+above; the pass is stated as the notebook's selection beside it, never as a provenance field.
 
 ## M. Primary / full-record honesty
 
@@ -195,7 +251,11 @@ estimator.
 Verification runs `marimo check` and an executed HTML export, requiring zero `marimo-error` and
 zero Traceback, and — where feasible — a scratch/preconfigured execution exercising primary,
 full-record, E128, a changed gate and a changed detrending. Live widget-driving is not claimed if
-the shadow DOM prevents it.
+the shadow DOM prevents it. The executed-notebook evidence must be **reviewable remotely**: the
+executed HTML export (or an equivalent captured execution report) is committed at a reviewable
+path outside the frozen `reports/` tree — the merge gate's "no changes under frozen `reports/`"
+stands, so the evidence is placed where a reviewer without the machine can open it, not left as a
+local-only run.
 
 ## O. Out of scope
 
@@ -205,9 +265,11 @@ comparison, Welch, coherence, modal/SVD analysis, serialization (`#49`). SA2.4 o
 
 ## Interpretation guard (carried from the SA2.2 review)
 
-One committed smoke observation is that **~71.6 % of E128's integrated PSD lies at or below 1 Hz**.
-That stays a descriptive smoke observation and nothing more. SA2.3 may **show** it; SA2.4 may
-**quantify** it; physical interpretation comes later. Wording such as *vortex-dominated*,
+One **descriptive smoke observation** — recorded in the SA2.2 review, not a committed numeric
+artifact (no `reports/` file and no frozen record carries it) — is that **~71.6 % of E128's
+integrated PSD lay at or below 1 Hz**. That stays a descriptive observation and nothing more: the
+number is not a committed artifact, and SA2.3 must not cite it as one. SA2.3 may **show** it; SA2.4
+may **quantify** it; physical interpretation comes later. Wording such as *vortex-dominated*,
 *recurrence-dominated*, *stronger low-frequency physics* or *better measurement configuration*
 must not enter SA2.3 (or be inferred from the number there): a large low-frequency power fraction
 can arise from genuine flow dynamics, slow drift, finite-record structure and the detrending choice
@@ -220,7 +282,7 @@ Before review, report:
 1. merged SA2.2 base;
 2. exact notebook/backend files changed;
 3. static notebook checks;
-4. executed HTML result;
+4. executed HTML result (remotely reviewable, outside frozen `reports/`);
 5. primary/full-record state verified;
 6. gate switching verified;
 7. detrending switching verified;
