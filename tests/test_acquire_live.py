@@ -388,7 +388,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
 
     # WP0, WP1 and WP2 add the read-only analysis verbs beside the four live ones,
     # the sparse pass adds its ingest and its two measurement slices beside them, and the
-    # Stage-2 paired analysis adds its own read-only verb beside those.
+    # Stage-2 paired analysis and SA2.4's scalar report each add one read-only verb.
     assert set(cli._COMMANDS) == {
         "acquire",
         "burst-ladder",
@@ -404,6 +404,7 @@ def test_the_module_dispatcher_names_every_command() -> None:
         "sparse-inventory",
         "sparse-pitch-burst",
         "sparse-reference-floor",
+        "sparse-signal-report",
         "sparse-stage2-pairs",
         "sweep-inventory",
         "viz",

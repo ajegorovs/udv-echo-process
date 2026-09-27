@@ -20,6 +20,7 @@ never a new column of bespoke code.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from typing import NamedTuple
 
 from udv_echo_process.analysis._sparse_pass import decode_pass
 from udv_echo_process.analysis._sparse_view import (
@@ -46,10 +47,13 @@ from udv_echo_process.analysis.sparse_target_support import (
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "CAPABILITY_VIEWS",
     "PROBE_TARGETS",
+    "CommittedView",
     "SpectralCapability",
     "capability_of_view",
     "committed_spectral_capability",
+    "committed_window_views",
 ]
 
 #: The two probe targets of the design, as ``(label, frequency_hz)``. 8.333 Hz is the rotor
@@ -230,6 +234,99 @@ def capability_of_view(
     )
 
 
+class CommittedView(NamedTuple):
+    """One committed ``recording x view``: the view, the pass that owns it, the pass's plan.
+
+    The plan fingerprint is carried beside the view because the default row set spans **two**
+    passes with **two** plans: a single fingerprint cannot stand for both, so the sweep states
+    each pass's own fingerprint rather than picking one and silently dropping the other.
+
+    The four condition fields are **forwarded scalar metadata**, not a second reading of the
+    pass: ``kind`` is the job's kind, ``condition`` the job's run-wide
+    ``(burst_length, emissions_per_profile, prf_us)`` triple, and ``resolution_mm``/``gates``
+    the point's planned window pair. All four are read off the decoded point's own binding -
+    ``job`` and the planned point's ``parameters`` - so a consumer that has to group cells by
+    the condition they were actually acquired under (SA2.4's §4 repeat spread) reads it here,
+    beside the same cell its numbers come from, instead of re-deriving it from the pass's log.
+    ``WindowView`` and ``ViewProvenance`` are deliberately left unchanged: the condition is a
+    property of the *acquisition*, not of the view, and a view that carried it could disagree
+    with the job it was cut from.
+    """
+
+    pass_name: str
+    plan_fingerprint: str
+    view: WindowView
+    #: The job's kind as the pass's own record states it (``scientific``/``common-reference``).
+    kind: str | None = None
+    #: The job's run-wide condition triple: ``(burst_length, emissions_per_profile, prf_us)``.
+    condition: tuple[int, int, float] | None = None
+    #: The point's planned window pitch in mm and native gate count - the design's window pair.
+    resolution_mm: float | None = None
+    gates: int | None = None
+
+
+def committed_window_views(
+    *,
+    passes: Iterable[PassRef] | None = None,
+    window_s: float | None = None,
+) -> tuple[CommittedView, ...]:
+    """Every committed live ``recording x view`` as a view, in the sweep's own order.
+
+    The one place the row set is *built*, so a reader that measures a different quantity over
+    the same cells (SA2.4's characterization report, and any later synthesis over the same
+    observations) sweeps the committed passes exactly as the capability query does instead of
+    re-deriving the scope, the window and the view order beside it. It decodes each pass once
+    and cuts the same two views through the same SA1 constructors, in pass order, then the
+    pass's own acquisition order, then primary comparison before full record.
+
+    Adding a record type here (rather than a second hand-built sweep in a consumer) is what
+    keeps the cell count, the pass labels and the plan fingerprints from drifting apart between
+    the capability table and the report built on it.
+
+    Args:
+        passes: the passes to sweep. ``None`` is the passes the analysis compares - those the
+            catalog marks as reproducibility sittings, campaign excluded - which is the row set
+            the plan states. A campaign is a separate design with its own evidence, so sweeping
+            it is a deliberate act with its own ref, not a default.
+        window_s: the primary window to cut. ``None`` uses each pass's own common window, which
+            is the window the committed analysis uses.
+
+    Returns:
+        ``2 * 52 = 104`` views for the default scope, each with its pass's name and plan
+        fingerprint, in the order described above.
+    """
+    scope = COMMITTED_PASSES if passes is None else tuple(passes)
+    views: list[CommittedView] = []
+    for ref in scope:
+        if passes is None and not ref.is_reproducibility_sitting:
+            continue
+        decoding = decode_pass(ref.root, plan_path=ref.plan_path, plan_name=ref.name)
+        for point in decoding.points:
+            job = point.binding.job
+            parameters = point.binding.point.parameters
+            window = decoding.window_s if window_s is None else float(window_s)
+            for view in (
+                primary_view(point, window_s=window, support_mm=decoding.support_mm),
+                full_record_view(point, support_mm=decoding.support_mm),
+            ):
+                views.append(
+                    CommittedView(
+                        pass_name=ref.name,
+                        plan_fingerprint=str(decoding.plan_fingerprint),
+                        view=view,
+                        kind=str(job.kind),
+                        condition=(
+                            int(job.burst_length),
+                            int(job.emissions_per_profile),
+                            float(job.prf_us),
+                        ),
+                        resolution_mm=float(parameters.resolution_mm),
+                        gates=int(parameters.gates),
+                    )
+                )
+    return tuple(views)
+
+
 def committed_spectral_capability(
     *,
     passes: Iterable[PassRef] | None = None,
@@ -252,19 +349,7 @@ def committed_spectral_capability(
         ``2 * 52 = 104`` records for the default scope, ordered by pass, then the pass's own
         acquisition order, then primary comparison before full record.
     """
-    scope = COMMITTED_PASSES if passes is None else tuple(passes)
-    records: list[SpectralCapability] = []
-    for ref in scope:
-        if passes is None and not ref.is_reproducibility_sitting:
-            continue
-        decoding = decode_pass(ref.root, plan_path=ref.plan_path, plan_name=ref.name)
-        for point in decoding.points:
-            window = decoding.window_s if window_s is None else float(window_s)
-            for view in (
-                primary_view(point, window_s=window, support_mm=decoding.support_mm),
-                full_record_view(point, support_mm=decoding.support_mm),
-            ):
-                records.append(
-                    capability_of_view(view, pass_name=ref.name, targets=targets)
-                )
-    return tuple(records)
+    return tuple(
+        capability_of_view(entry.view, pass_name=entry.pass_name, targets=targets)
+        for entry in committed_window_views(passes=passes, window_s=window_s)
+    )
