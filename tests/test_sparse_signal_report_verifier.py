@@ -1709,15 +1709,25 @@ def _disk_is_blob(path: Path, blob: str) -> bool:
     )
 
 
+def _disk_drift(base: Path, expected: dict[str, str]) -> list[str]:
+    """The ``expected`` paths absent from ``base`` or holding bytes other than their blob.
+
+    The pure disk predicate, split from the git query so it can be exercised on a synthetic tree:
+    only the ``expected`` keys are ever inspected, so a file ``base`` carries and ``expected`` does
+    not is outside the closure and is allowed - the same one-directional rule as the source guard.
+    """
+    return sorted(
+        relative
+        for relative, blob in expected.items()
+        if not (base / relative).is_file() or not _disk_is_blob(base / relative, blob)
+    )
+
+
 def _assert_disk_matches(tree: str, revision: str, *, subject: str) -> None:
     """Every tracked file under ``tree`` at ``revision`` must be on disk with that blob."""
     expected = _git_tree(revision, tree)
     assert expected, f"{revision} tracks nothing under {tree!r}"
-    drifted = sorted(
-        relative
-        for relative, blob in expected.items()
-        if not (ROOT / relative).is_file() or not _disk_is_blob(ROOT / relative, blob)
-    )
+    drifted = _disk_drift(ROOT, expected)
     assert not drifted, (
         f"{subject} has drifted from {revision}: {drifted[:8]} "
         f"({len(drifted)} of {len(expected)} files)"
@@ -1895,6 +1905,19 @@ def test_the_committed_inputs_the_report_decodes_are_frozen() -> None:
         _assert_disk_matches(tree, BASE_REVISION, subject=f"the report input {tree!r}")
 
 
+def _source_drift(recorded: dict[str, str], current: dict[str, str]) -> list[str]:
+    """The recorded source paths ``current`` no longer holds at their recorded blob.
+
+    The pure source-drift predicate, split from the git queries so it can be exercised on
+    synthetic maps. One-directional on purpose: every path the recorded revision contained must be
+    current *at that blob*, while a path ``current`` has and ``recorded`` did not is outside the
+    frozen source closure and is allowed. A modified path and a removed path both surface here -
+    a missing key is ``current.get`` ``None``, which never equals a blob - so one expression states
+    both failures.
+    """
+    return sorted(path for path, blob in recorded.items() if current.get(path) != blob)
+
+
 def test_the_source_that_computes_the_report_has_not_drifted(
     recorded_revision: str,
 ) -> None:
@@ -1905,14 +1928,95 @@ def test_the_source_that_computes_the_report_has_not_drifted(
     # A later, independent analysis module does not retroactively compute this report.
     # Guard every source path the report's recorded revision actually contained;
     # additions elsewhere in the package are outside that frozen source closure.
-    assert {path: current.get(path) for path in recorded} == recorded, (
-        "the report's recorded source has moved: "
-        f"{sorted(path for path, digest in recorded.items() if current.get(path) != digest)[:8]}"
-    )
+    drifted = _source_drift(recorded, current)
+    assert not drifted, f"the report's recorded source has moved: {drifted[:8]}"
     for path in recorded:
         _assert_disk_matches(
             path, recorded_revision, subject=f"the report's recorded source {path!r}"
         )
+
+
+def test_the_source_drift_predicate_pins_old_source_and_lets_new_source_through() -> (
+    None
+):
+    """The exact source-drift predicate, on synthetic maps: old paths pinned, later paths free.
+
+    Adversarial rather than illustrative. A *modification* of a recorded path and a *removal* of
+    one both fail; an *addition* the recorded revision did not contain is allowed; and the guard
+    is not vacuous - a wholly disjoint current map is a full failure, so it cannot pass by the
+    recorded set emptying out. The predicate is called directly, so the production guard and this
+    row cannot disagree about what drift means.
+    """
+    recorded = {
+        "src/udv_echo_process/analysis/a.py": "aaaa",
+        "src/udv_echo_process/analysis/b.py": "bbbb",
+        "src/udv_echo_process/analysis/_old.py": "cccc",
+    }
+    # the recorded revision itself is the identity: no drift
+    assert _source_drift(recorded, dict(recorded)) == []
+    # a later module the recorded revision did not contain is outside the frozen closure
+    added = {**recorded, "src/udv_echo_process/analysis/_later.py": "dddd"}
+    assert _source_drift(recorded, added) == []
+    # modification of an old path fails, and names that path
+    modified = {**recorded, "src/udv_echo_process/analysis/b.py": "BBBB"}
+    assert _source_drift(recorded, modified) == ["src/udv_echo_process/analysis/b.py"]
+    # removal of an old path fails
+    removed = {
+        key: value for key, value in recorded.items() if not key.endswith("_old.py")
+    }
+    assert _source_drift(recorded, removed) == ["src/udv_echo_process/analysis/_old.py"]
+    # add + change + remove at once: only the old paths' fate is reported - the addition is not
+    mixed = {
+        "src/udv_echo_process/analysis/a.py": "aaaa",
+        "src/udv_echo_process/analysis/b.py": "BBBB",
+        "src/udv_echo_process/analysis/_later.py": "dddd",
+    }
+    assert _source_drift(recorded, mixed) == [
+        "src/udv_echo_process/analysis/_old.py",
+        "src/udv_echo_process/analysis/b.py",
+    ]
+    # non-vacuous: an empty current map is a full failure, not a pass
+    assert len(_source_drift(recorded, {})) == len(recorded) == 3
+
+
+def test_the_disk_drift_predicate_pins_expected_bytes_and_ignores_extra_files(
+    tmp_path: Path,
+) -> None:
+    """The exact disk half of the guard, on a synthetic tree: mutated/absent fail, extra free.
+
+    Built on a scratch directory and git's own blob identity, so it tampers with no repository
+    file. A mutated byte, a removed file and a non-canonical rewrite all fail; an added file the
+    expected map does not name is outside the closure and is allowed; and a materialised CRLF copy
+    is the *same* file by the repository's canonical-LF rule, so it passes rather than failing.
+    """
+    base = tmp_path / "tree"
+    (base / "pkg").mkdir(parents=True)
+    kept = base / "pkg" / "kept.py"
+    kept.write_bytes(b"print('kept')\n")
+    expected = {"pkg/kept.py": _git_blob_sha(kept.read_bytes())}
+    assert _disk_drift(base, expected) == []
+
+    # an extra file the recorded tree did not track is outside the closure and allowed
+    (base / "pkg" / "later.py").write_bytes(b"print('later')\n")
+    assert _disk_drift(base, expected) == []
+
+    # a CRLF-materialised copy is the same file by the canonical-LF rule
+    kept.write_bytes(b"print('kept')" + bytes([13, 10]))  # a literal CRLF pair
+    assert _disk_drift(base, expected) == []
+
+    # mutated bytes fail, and name the path ...
+    kept.write_bytes(b"print('drifted')\n")
+    assert _disk_drift(base, expected) == ["pkg/kept.py"]
+
+    # ... and a removed file fails too, on the same expression
+    kept.unlink()
+    assert _disk_drift(base, expected) == ["pkg/kept.py"]
+
+    # non-vacuous: an expected path never present is a failure, not a pass
+    assert _disk_drift(base, {**expected, "pkg/never.py": "deadbeef"}) == [
+        "pkg/kept.py",
+        "pkg/never.py",
+    ]
 
 
 def test_the_readme_reproduction_command_uses_the_recorded_revision_and_travels(
