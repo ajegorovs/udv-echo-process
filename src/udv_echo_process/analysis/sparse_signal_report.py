@@ -50,10 +50,10 @@ design asks for a within-sitting repeat spread over the *repeated recordings of 
 its own row set. The committed sweep does not expose the plan's condition on a cell, but the
 *acquisition* does: every decoded point binds to its job, and that job carries the run-wide
 condition triple ``(burst_length, emissions_per_profile, prf_us)``, its ``kind``, and the point's
-planned window pair ``(resolution_mm, gates)``. Those four scalars are forwarded through
+planned window pair ``(resolution_mm, window_gates)``. Those four scalars are forwarded through
 :class:`~udv_echo_process.analysis.sparse_spectral_capability.CommittedView` - the accessor that
 already owns the row set - so a group is keyed by ``(pass, kind, condition, resolution_mm,
-gates)`` and every member of a group was acquired under one whole condition on one window. That
+window_gates)`` and every member of a group was acquired under one whole condition on one window. That
 is what makes the spread a repeat of one condition rather than an average over several.
 
 The committed set resolves into **6 repeated conditions per sitting, 12 across the two**, holding
@@ -253,7 +253,7 @@ REPEAT_CONDITION_KEY: tuple[str, ...] = (
     "kind",
     "condition",
     "resolution_mm",
-    "gates",
+    "window_gates",
 )
 
 #: The §4 row set's rule, as the definition a reader can reproduce. It states the key, what a
@@ -262,18 +262,19 @@ REPEAT_CONDITION_KEY: tuple[str, ...] = (
 REPEAT_SPREAD_RULE = (
     "plan §4's within-sitting repeat spread, as its own row set. A group is every recording of "
     "one pass acquired under one whole condition, keyed by "
-    "(pass, kind, condition, resolution_mm, gates): the condition is the job's run-wide triple "
-    "(burst_length, emissions_per_profile, prf_us), kind is the job's kind, and "
-    "resolution_mm/gates are the point's planned window pair - all four forwarded, scalar-only, "
-    "through committed_window_views, so a group is one condition on one window and never an "
-    "average over several. A recording whose condition was acquired once has no repeat and is "
-    "excluded (the cc1/cc2/cc3/cc4 contrasts are exactly those singletons). For one group, one "
-    "view and one native gate index the report states every member's own band_fraction at that "
-    "gate (null where the member's axis was refused or its total power is zero - an undefined "
-    "ratio is not a measured zero), the count n of members whose fraction is defined there, and "
-    "the descriptive min, max and range of those n values. It is descriptive only: not a "
-    "screening floor, not a resolvability threshold, no condition or sitting is ranked, and no "
-    "effect is labelled."
+    "(pass, kind, condition, resolution_mm, window_gates): the condition is the job's run-wide "
+    "triple (burst_length, emissions_per_profile, prf_us), kind is the job's kind, and "
+    "resolution_mm/window_gates are the point's planned window pair - all four forwarded, "
+    "scalar-only, through committed_window_views, so a group is one condition on one window and "
+    "never an average over several. window_gates is the planned native gate count of the window "
+    "(the window's own dimension), never the cell's supported-gate row count. A recording whose "
+    "condition was acquired once has no repeat and is excluded (the cc1/cc2/cc3/cc4 contrasts "
+    "are exactly those singletons). For one group, one view and one native gate index the report "
+    "states every member's own band_fraction at that gate (null where the member's axis was "
+    "refused or its total power is zero - an undefined ratio is not a measured zero), the count "
+    "n of members whose fraction is defined there, and the descriptive min, max and range of "
+    "those n values. It is descriptive only: not a screening floor, not a resolvability "
+    "threshold, no condition or sitting is ranked, and no effect is labelled."
 )
 
 #: The JSON's own precision rule, stated beside the CSV's (plan §5). The two are deliberately
@@ -327,9 +328,9 @@ NO_GO_LIST: tuple[str, ...] = (
     (
         "No floor and no effect label from the repeat spread. The §4 within-sitting spread is "
         "descriptive only: it repeats one whole condition (pass, kind, condition, resolution_mm, "
-        "gates), states its members' own fractions with their min, max, range and count, and "
-        "derives no screening floor, no resolvability threshold, no condition or sitting ranking "
-        "and no labelled effect from them."
+        "window_gates), states its members' own fractions with their min, max, range and count, "
+        "and derives no screening floor, no resolvability threshold, no condition or sitting "
+        "ranking and no labelled effect from them."
     ),
     "parseval_relative_error is a QA field, not a scientific observable.",
     "No new estimator, admission rule, threshold or tolerance is introduced by this report.",
@@ -659,15 +660,17 @@ class RepeatGroup(ValueModel):
 
     ``members`` are whole recordings, in acquisition order; ``n_recordings`` counts them and
     ``n_cells`` is that count times the two published views, so a reader sees the cells the spread
-    is over. A group holds at least two recordings: a condition acquired once has no repeat, and a
-    one-member group would present a spread where none was measured.
+    is over. ``window_gates`` is the *planned native gate count of the window* - the window's own
+    dimension - and is deliberately not named ``gates``, which would read as the cell's tuple of
+    supported gate rows. A group holds at least two recordings: a condition acquired once has no
+    repeat, and a one-member group would present a spread where none was measured.
     """
 
     pass_name: str
     kind: str
     condition: RepeatCondition
     resolution_mm: float
-    gates: int
+    window_gates: int
     members: tuple[RepeatMember, ...]
     n_recordings: int
     n_cells: int
@@ -678,34 +681,34 @@ class RepeatGroup(ValueModel):
         if self.n_recordings != len(labels):
             raise SparseSignalReportError(
                 f"repeat group {self.pass_name}/{self.kind}/{self.condition.as_triple}/"
-                f"{self.resolution_mm}/{self.gates}: n_recordings is {self.n_recordings} but it "
-                f"names {len(labels)} member(s)"
+                f"{self.resolution_mm}/{self.window_gates}: n_recordings is {self.n_recordings} "
+                f"but it names {len(labels)} member(s)"
             )
         if self.n_recordings < 2:
             raise SparseSignalReportError(
                 f"repeat group {self.pass_name}/{self.kind}/{self.condition.as_triple}/"
-                f"{self.resolution_mm}/{self.gates} holds {self.n_recordings} recording(s): a "
-                "condition acquired once has no repeat, so it is a singleton and is excluded from "
-                "the §4 row set rather than published as a spread of one"
+                f"{self.resolution_mm}/{self.window_gates} holds {self.n_recordings} "
+                "recording(s): a condition acquired once has no repeat, so it is a singleton and "
+                "is excluded from the §4 row set rather than published as a spread of one"
             )
         if len(set(labels)) != len(labels):
             raise SparseSignalReportError(
                 f"repeat group {self.pass_name}/{self.kind}/{self.condition.as_triple}/"
-                f"{self.resolution_mm}/{self.gates} names a recording twice: {labels}"
+                f"{self.resolution_mm}/{self.window_gates} names a recording twice: {labels}"
             )
         if self.n_cells != self.n_recordings * len(PUBLISHED_VIEWS):
             raise SparseSignalReportError(
                 f"repeat group {self.pass_name}/{self.kind}/{self.condition.as_triple}/"
-                f"{self.resolution_mm}/{self.gates}: {self.n_cells} cell(s) against "
+                f"{self.resolution_mm}/{self.window_gates}: {self.n_cells} cell(s) against "
                 f"{self.n_recordings} recording(s) on {len(PUBLISHED_VIEWS)} view(s)"
             )
-        if self.gates < 1 or not (
+        if self.window_gates < 1 or not (
             math.isfinite(self.resolution_mm) and self.resolution_mm > 0.0
         ):
             raise SparseSignalReportError(
                 f"repeat group {self.pass_name}/{self.kind}/{self.condition.as_triple}: the "
-                f"window pair ({self.resolution_mm!r} mm, {self.gates!r} gates) is not a window "
-                "the design acquired"
+                f"window pair ({self.resolution_mm!r} mm, {self.window_gates!r} gates) is not a "
+                "window the design acquired"
             )
         return self
 
@@ -724,7 +727,7 @@ class RepeatSpreadRow(ValueModel):
     kind: str
     condition: RepeatCondition
     resolution_mm: float
-    gates: int
+    window_gates: int
     view: str
     gate_index: int
     depth_mm: float
@@ -745,7 +748,7 @@ class RepeatSpreadRow(ValueModel):
                 f"a repeat-spread row names view {self.view!r}; the published views are "
                 f"{list(PUBLISHED_VIEWS)}"
             )
-        if self.gates < 1 or not (math.isfinite(self.depth_mm)):
+        if self.window_gates < 1 or not (math.isfinite(self.depth_mm)):
             raise SparseSignalReportError(
                 "a repeat-spread row carries a non-finite depth or a window with no gate"
             )
@@ -862,9 +865,9 @@ class CellDocument(ValueModel):
         """The whole condition this cell was acquired under, as the §4 grouping key.
 
         The key :data:`REPEAT_CONDITION_KEY` names - ``(pass, kind, condition, resolution_mm,
-        gates)`` - is what makes two cells comparable as a *repeat*: every field is an acquisition
-        fact read from the cell's forwarded metadata, so two cells that share the key were
-        acquired under one condition on one window, and two that differ were not.
+        window_gates)`` - is what makes two cells comparable as a *repeat*: every field is an
+        acquisition fact read from the cell's forwarded metadata, so two cells that share the key
+        were acquired under one condition on one window, and two that differ were not.
         """
         return (
             self.pass_name,
@@ -1153,7 +1156,7 @@ def _repeat_group_document(group: RepeatGroup) -> dict[str, object]:
         "kind": group.kind,
         "condition": _condition_document(group.condition),
         "resolution_mm": group.resolution_mm,
-        "gates": int(group.gates),
+        "window_gates": int(group.window_gates),
         "members": [_repeat_member_document(member) for member in group.members],
         "n_recordings": int(group.n_recordings),
         "n_cells": int(group.n_cells),
@@ -1167,7 +1170,7 @@ def _repeat_row_document(row: RepeatSpreadRow) -> dict[str, object]:
         "kind": row.kind,
         "condition": _condition_document(row.condition),
         "resolution_mm": row.resolution_mm,
-        "gates": int(row.gates),
+        "window_gates": int(row.window_gates),
         "view": row.view,
         "gate_index": int(row.gate_index),
         "depth_mm": row.depth_mm,
@@ -1473,10 +1476,10 @@ def _repeat_spread(
     """The §4 row set: the repeated conditions and the spread of ``Phi`` across their cells.
 
     Grouping is by :attr:`CellDocument.repeat_key` - the whole acquisition condition
-    ``(pass, kind, condition, resolution_mm, gates)`` - so every member of a group was acquired
-    under one condition on one window and a group is never an average over several. A key held by
-    a single recording is a **singleton**: its condition was not repeated, so it is excluded from
-    the spread and only counted, never published as a group of one.
+    ``(pass, kind, condition, resolution_mm, window_gates)`` - so every member of a group was
+    acquired under one condition on one window and a group is never an average over several. A key
+    held by a single recording is a **singleton**: its condition was not repeated, so it is
+    excluded from the spread and only counted, never published as a group of one.
 
     For each surviving group the rows state, per view and per native gate index, every member
     cell's own ``band_fraction`` (``None`` where the axis was refused or its total is zero) with
@@ -1525,7 +1528,7 @@ def _repeat_spread(
                 kind=key[1],
                 condition=condition,
                 resolution_mm=float(key[3]),
-                gates=int(key[4]),
+                window_gates=int(key[4]),
                 members=tuple(
                     RepeatMember(job=label[0], point_label=label[1])
                     for label, _ in ordered
@@ -1590,7 +1593,7 @@ def _repeat_spread(
                         kind=key[1],
                         condition=condition,
                         resolution_mm=float(key[3]),
-                        gates=int(key[4]),
+                        window_gates=int(key[4]),
                         view=view,
                         gate_index=int(index),
                         depth_mm=depth,
@@ -1971,7 +1974,7 @@ def _repeat_checks(
             group.kind,
             group.condition.as_triple,
             float(group.resolution_mm),
-            int(group.gates),
+            int(group.window_gates),
         )
 
     recordings_by_key: dict[tuple, set[tuple[str, str, str]]] = {}
@@ -2027,7 +2030,7 @@ def _repeat_checks(
                 row.kind,
                 row.condition.as_triple,
                 float(row.resolution_mm),
-                int(row.gates),
+                int(row.window_gates),
             ),
             row.view,
             int(row.gate_index),
@@ -2044,7 +2047,7 @@ def _repeat_checks(
                     row.kind,
                     row.condition.as_triple,
                     float(row.resolution_mm),
-                    int(row.gates),
+                    int(row.window_gates),
                 )
             ].members
         )
@@ -2489,7 +2492,10 @@ def readme_text(model: SparseSignalReport) -> str:
         "overlap *fraction of the bin's own cell*, on the repository's one one-sided frequency "
         "grid and its one cell rule. `T` is the estimate's own `integrated_psd_power`, which "
         "equals the window-normalized mean-square power: the denominator is **read**, never "
-        "recomputed. `Phi` is dimensionless in `[0, 1]`; a percentage is display only."
+        "recomputed. `Phi` is dimensionless in `[0, 1]`; a percentage is display only. The "
+        "reduction is read on the repository's one **discrete** one-sided grid as this "
+        "cell-overlap weighted sum - a step-function power on the fixed grid - and is **never a "
+        "continuous-band integral** (plan §6)."
     )
     lines.append(
         f"- The band edge `low_band_hz = {model.low_band_hz:g} Hz` is the design's declared "
@@ -2532,7 +2538,8 @@ def readme_text(model: SparseSignalReport) -> str:
     lines.append(
         "- **`repeat_spread`** (JSON only, plan §4) - the within-sitting repeat spread, published "
         "as its own row set. A group is every recording of one pass acquired under one whole "
-        "condition on one window, keyed by `(pass, kind, condition, resolution_mm, gates)` with "
+        "condition on one window, keyed by `(pass, kind, condition, resolution_mm, "
+        "window_gates)` with "
         "the condition the job's run-wide `(burst_length, emissions_per_profile, prf_us)` triple; "
         "the four acquisition fields are forwarded by the capability sweep "
         "(`committed_window_views`), so a group is one condition rather than an average over "
@@ -2547,6 +2554,61 @@ def readme_text(model: SparseSignalReport) -> str:
         f"{model.repeat_spread_summary.singleton_cells} cell(s) excluded. **Descriptive only**: "
         "this is not a screening floor, not a resolvability threshold, no condition or sitting is "
         "ranked, and no effect is labelled."
+    )
+    lines.append("")
+    lines.append("## Field glossary (the closed schema)")
+    lines.append("")
+    lines.append(
+        "Every field the CSV and the JSON publish is named below: the field set is **closed**, "
+        "so a new field is a schema change rather than a new value (plan §6). Every entry is a "
+        "scalar of the observation unit - a column of the table or a named scalar in the "
+        "document - and none follows a bin, a sample or an element. In the document `cells[*]` "
+        "is one `recording x view` and `cells[*].gates[*]` one of its supported gates."
+    )
+    lines.append("")
+    lines.append(
+        "- **per gate (one CSV row, and `cells[*].gates[*]`)** - `gate_index`, `depth_mm`, "
+        "`verdict`, `band_state`, `band_fraction`, `band_power`, `total_power`, `band_reason`, "
+        "`parseval_relative_error`, `enbw_bins`, `enbw_hz`."
+    )
+    lines.append(
+        "- **cell provenance and settings (`cells[*]`)** - `pass`, `plan_fingerprint`, `job`, "
+        "`point_label`, `order`, `relative_path`, `source_sha256`, `view`, `view_rule`, "
+        "`quantity`, `unit`, `psd_unit`, `detrending`, `low_band_hz`, `estimator_name`, "
+        "`taper_name`, `taper_convention`, `normalization_rule`, `one_sided_rule`."
+    )
+    lines.append(
+        "- **cell window extent and acquisition condition (`cells[*]`)** - `profiles`, "
+        "`native_gates`, `supported_gates`, `native_depth_extent_mm`, `pass_support_mm`, "
+        "`participating_depth_extent_mm`, `window_s`, `declared_window_s`, and the condition the "
+        "§4 grouping reads: `kind`, `condition.burst_length`, `condition.emissions_per_profile`, "
+        "`condition.prf_us`, `resolution_mm` and `window_gates`. `window_gates` is the planned "
+        "native gate count of the window - the window's own dimension - and is deliberately not "
+        "the cell's `gates` row count."
+    )
+    lines.append(
+        "- **axis (`cells[*].axis`, JSON only)** - `profiles`, `span_s`, `dt_eff_s`, "
+        "`effective_sample_rate_hz`, `nyquist_hz`, `delta_f_hz`, "
+        "`duration_resolution_scale_hz`, `max_relative_timing_error`, `max_timing_error_s`, "
+        "`max_relative_interval_deviation`, `largest_gap_ratio`, `spectral_uniformity_tol`, "
+        "`min_samples`, `admitted`, `admission_reason`, `estimator`. `min_samples` is the "
+        "admission's own sample floor - the minimum profile count the axis is admitted at - "
+        "quoted as metadata and read, never recomputed."
+    )
+    lines.append(
+        "- **probe target (`cells[*].targets[*]`, JSON only)** - `target_label`, `target_hz`, "
+        "`band_supported`, `analysis_supported`, `supported`, `reason`, `band_reason`, "
+        "`analysis_reason`, `nyquist_hz`, `frequency_resolution_hz`, "
+        "`duration_resolution_scale_hz`, `cycles_in_view`, `nyquist_represented`, "
+        "`prospective_bin`, `prospective_bin_hz`, `bin_offset_hz`, `bin_offset_bins`, "
+        "`cell_low_hz`, `cell_high_hz`, `resolution_bins_to_target`, `actual_span_s`."
+    )
+    lines.append(
+        "- **plan §4 repeat row set (JSON only)** - `repeat_spread_rule`, `repeat_condition_key`, "
+        "`repeat_groups`, `repeat_spread`, `repeat_spread_summary`; each group and row is keyed "
+        "by `(pass, kind, condition, resolution_mm, window_gates)` and its remaining fields are "
+        "the ones named above (`members`, `n_recordings`, `n_cells`; `view`, `gate_index`, "
+        "`depth_mm`, `members`, `n`, `min`, `max`, `range`)."
     )
     lines.append("")
     lines.append("## Settings every number was computed under")

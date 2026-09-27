@@ -1220,6 +1220,38 @@ def test_the_readme_repeats_the_no_go_list_and_quotes_no_exploratory_number(
     ), "the README names the artefacts it indexes"
 
 
+def test_the_readme_glossary_defines_every_axis_field_the_document_publishes(
+    report: Path,
+) -> None:
+    """§5/F8: the README's glossary names the axis scalars, ``min_samples`` among them.
+
+    ``min_samples`` is published in every cell's axis block, so it is part of what a reader must be
+    told to interpret a number; a glossary that names the other axis fields and omits it leaves one
+    published scalar undefined. The population checked is the document's *own* axis block, so the
+    glossary is held to the fields the report really publishes and a new axis scalar cannot slip in
+    undocumented. The admission's reason and the estimator's name are prose definitions rather than
+    axis scalars, so they are carried by the sentences that state them, not by this field list.
+    """
+    document = _document(report)
+    axis_fields: set[str] = set()
+    for cell in _json_cells(document):
+        axis_fields |= set(cell["axis"])
+    assert axis_fields == set(EXPLICIT_AXIS_KEYS), sorted(axis_fields)
+
+    scalar_fields = axis_fields - {"admission_reason", "estimator"}
+    assert "min_samples" in scalar_fields, (
+        "the axis block must publish the admission's minimum sample count"
+    )
+    assert len(scalar_fields) == len(EXPLICIT_AXIS_KEYS) - 2, sorted(scalar_fields)
+
+    readme = (report / file_names()[2]).read_text(encoding="utf-8")
+    missing = sorted(field for field in scalar_fields if field not in readme)
+    assert not missing, (
+        "the README's glossary does not name every axis scalar the document publishes; it omits "
+        f"{missing}"
+    )
+
+
 # --------------------------------------------------------------------------------------
 # §5/§7: the CLI subcommand records the revision
 # --------------------------------------------------------------------------------------
@@ -1504,7 +1536,7 @@ EXPLICIT_REPEAT_CONDITION_KEY: tuple[str, ...] = (
     "kind",
     "condition",
     "resolution_mm",
-    "gates",
+    "window_gates",
 )
 
 #: One repeat condition triple's own field set (F8).
@@ -1516,13 +1548,13 @@ EXPLICIT_REPEAT_TRIPLE_KEYS: frozenset[str] = frozenset(
 EXPLICIT_REPEAT_GROUP_KEYS: frozenset[str] = frozenset(
     {
         "condition",
-        "gates",
         "kind",
         "members",
         "n_cells",
         "n_recordings",
         "pass",
         "resolution_mm",
+        "window_gates",
     }
 )
 
@@ -1536,7 +1568,6 @@ EXPLICIT_REPEAT_ROW_KEYS: frozenset[str] = frozenset(
         "condition",
         "depth_mm",
         "gate_index",
-        "gates",
         "kind",
         "max",
         "members",
@@ -1546,8 +1577,18 @@ EXPLICIT_REPEAT_ROW_KEYS: frozenset[str] = frozenset(
         "range",
         "resolution_mm",
         "view",
+        "window_gates",
     }
 )
+
+#: The planned native gate count of the window the committed repeats were acquired on, and the
+#: supported gate rows a cell of such a group actually publishes. The two are *distinct* on the
+#: committed set - 50 planned, 49 supported - which is why the window's own dimension is published
+#: as ``window_gates``: a field named ``gates`` would invite a reader (and a rename) to carry the
+#: row count under the window's name. The planned count is grounded in the decoded plan below,
+#: never trusted as a constant alone (F1, F8).
+PLANNED_WINDOW_GATES = 50
+SUPPORTED_GATES_PER_REPEAT_CELL = 49
 
 #: One repeat-spread member value's field set (F8).
 EXPLICIT_REPEAT_MEMBER_VALUE_KEYS: frozenset[str] = frozenset(
@@ -1804,7 +1845,7 @@ def test_the_published_repeat_spread_is_grouped_by_condition_not_by_job_or_label
                 group["condition"]["prf_us"],
             ),
             group["resolution_mm"],
-            group["gates"],
+            group["window_gates"],
         )
         for group in groups
     }
@@ -2048,7 +2089,7 @@ def _group_key_from(source: dict) -> tuple:
             float(triple["prf_us"]),
         ),
         float(source["resolution_mm"]),
-        int(source["gates"]),
+        int(source["window_gates"]),
     )
 
 
@@ -2220,6 +2261,110 @@ def test_the_published_repeat_spread_is_true_repeats_of_the_decoded_condition(
     assert summary["singleton_recordings"] == len(singletons) == 8
     assert summary["singleton_cells"] == len(singletons) * 2 == 16
     assert summary["spread_rows"] == len(rows)
+
+
+def test_the_repeat_window_gate_count_is_the_planned_dimension_not_the_supported_rows(
+    report: Path,
+) -> None:
+    """F1/F8: ``window_gates`` is the *planned* window dimension, distinct from the row count.
+
+    Plan §4 keys a group by ``(pass, kind, condition, resolution_mm, window_gates)``: the last
+    scalar is the *planned* native gate count of the window the point requested, forwarded from
+    the capability sweep - not the number of gate rows a cell publishes, which the pass support can
+    reduce. On the committed set every repeat group plans 50 gates on its 1.85 mm window while each
+    of its cells publishes 49 supported gate rows, so the two counts are asserted *distinct* rather
+    than conflated. A rename that carried the row count into the window's field - or that left the
+    ambiguous ``gates`` name in place in either §4 shape - fails here. The planned count is
+    grounded in the decoded plan (``parameters.gates``), never trusted as a constant alone.
+    """
+    document = _document(report)
+    groups = document[REPEAT_GROUPS_KEY]
+    rows = document[REPEAT_SPREAD_KEY]
+    assert groups and rows
+    assert PLANNED_WINDOW_GATES != SUPPORTED_GATES_PER_REPEAT_CELL, (
+        "this row is only non-vacuous because the planned count and the supported row count "
+        "differ on the committed set"
+    )
+
+    # the field is renamed: neither §4 shape publishes the ambiguous name, both publish the window.
+    for source in (*groups, *rows):
+        assert "gates" not in source, (
+            "§4 publishes the window dimension under the ambiguous name 'gates': "
+            + repr(sorted(source))
+        )
+        assert "window_gates" in source, sorted(source)
+
+    # the value is the decoded plan's own planned count, per group key - not a clone of a constant.
+    repeats, _singletons = _true_repeat_groups()
+    planned_by_key = {
+        (
+            pass_name,
+            condition[0],
+            condition[1:4],
+            condition[4],
+            condition[5],
+        ): condition[5]
+        for (pass_name, condition, _depths) in repeats
+    }
+    assert set(planned_by_key.values()) == {PLANNED_WINDOW_GATES}, sorted(
+        planned_by_key.values()
+    )
+    for group in groups:
+        key = _group_key_from(group)
+        assert (
+            int(group["window_gates"]) == planned_by_key[key] == PLANNED_WINDOW_GATES
+        ), key
+    for row in rows:
+        assert int(row["window_gates"]) == planned_by_key[_group_key_from(row)], (
+            _group_key_from(row)
+        )
+
+    # the distinctness, on the documents: 50 planned gates, 49 supported rows per cell of a group.
+    planned_cells = [
+        cell
+        for cell in _json_cells(document)
+        if int(cell["window_gates"]) == PLANNED_WINDOW_GATES
+    ]
+    assert len(planned_cells) == 88, len(
+        planned_cells
+    )  # 44 repeat recordings x 2 views
+    for cell in planned_cells:
+        assert cell["supported_gates"] == SUPPORTED_GATES_PER_REPEAT_CELL, cell[
+            "relative_path"
+        ]
+        assert len(cell["gates"]) == SUPPORTED_GATES_PER_REPEAT_CELL, cell[
+            "relative_path"
+        ]
+        assert cell["window_gates"] != cell["supported_gates"], (
+            "the planned window count and the supported row count must never be conflated"
+        )
+
+    # and the table beside the document agrees: 49 rows per such cell, not 50.
+    table = _published_table_index(report)
+    row_counts: dict[tuple[str, str, str], int] = defaultdict(int)
+    for pass_name, relative_path, view, _gate in table:
+        row_counts[(pass_name, relative_path, view)] += 1
+    for cell in planned_cells:
+        key = (cell["pass"], cell["relative_path"], cell["view"])
+        assert row_counts[key] == SUPPORTED_GATES_PER_REPEAT_CELL, key
+
+    # the §4 rows themselves cover one row per *supported* gate - 49 of them - never the 50 planned.
+    per_group_view: dict[tuple[tuple, str], int] = defaultdict(int)
+    gate_indices: dict[tuple[tuple, str], set[int]] = defaultdict(set)
+    for row in rows:
+        bucket = (_group_key_from(row), row["view"])
+        per_group_view[bucket] += 1
+        gate_indices[bucket].add(int(row["gate_index"]))
+    assert set(per_group_view.values()) == {SUPPORTED_GATES_PER_REPEAT_CELL}
+    for bucket, indices in gate_indices.items():
+        assert indices == set(range(SUPPORTED_GATES_PER_REPEAT_CELL)), bucket
+
+    # and the README beside the numbers spells the window key the same way it is published.
+    readme = (report / file_names()[2]).read_text(encoding="utf-8")
+    assert "window_gates" in readme, (
+        "the README's §4 glossary still spells the window key 'gates', so the published field "
+        "and the prose disagree"
+    )
 
 
 def test_the_writer_refuses_the_repository_root_and_every_frozen_tree() -> None:

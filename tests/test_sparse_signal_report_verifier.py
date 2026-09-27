@@ -45,6 +45,7 @@ import io
 import json
 import math
 import re
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -1117,8 +1118,110 @@ def _verifier_group_key(source: dict) -> tuple:
             float(triple["prf_us"]),
         ),
         float(source["resolution_mm"]),
-        int(source["gates"]),
+        int(source["window_gates"]),
     )
+
+
+#: The planned native gate count of the window the committed repeats were acquired on, and the
+#: supported gate rows a cell of such a group publishes. The two differ on the committed set (50
+#: planned, 49 supported), so ``window_gates`` is the window's own dimension and not a row count
+#: under a new name (F1/F8).
+PLANNED_WINDOW_GATES = 50
+SUPPORTED_GATES_PER_REPEAT_CELL = 49
+
+
+def test_the_repeat_window_gate_count_is_the_planned_dimension_not_the_supported_rows(
+    document, sweep, published_rows
+) -> None:
+    """F1/F8: §4 publishes ``window_gates`` - the plan's own planned count - distinct from the rows.
+
+    Recomputed from the decoded bindings rather than trusted as a constant: every committed repeat
+    plans 50 native gates on its 1.85 mm window while each of its cells publishes 49 supported gate
+    rows, so the window's own dimension (50) and the row count (49) are different numbers. Both §4
+    shapes must carry the renamed field and no ambiguous ``gates``; the planned count is read from
+    the decoded plan's ``parameters.gates``, so the field cannot be a clone of the row count.
+    """
+    conditions = _decoded_conditions()
+    groups = document[VERIFIER_REPEAT_GROUPS_KEY]
+    rows = document[VERIFIER_REPEAT_SPREAD_KEY]
+    assert groups and rows
+    assert PLANNED_WINDOW_GATES != SUPPORTED_GATES_PER_REPEAT_CELL, (
+        "this row is only non-vacuous because the planned count and the supported row count "
+        "differ on the committed set"
+    )
+
+    # the rename: neither §4 shape publishes the ambiguous name, both publish the window dimension.
+    for source in (*groups, *rows):
+        assert "gates" not in source, (
+            "§4 publishes the window dimension under the ambiguous name 'gates': "
+            + repr(sorted(source))
+        )
+        assert "window_gates" in source, sorted(source)
+
+    # the published window count is the decoded plan's own planned gate count, member for member.
+    identity_to_path: dict[tuple[str, str, str], str] = {}
+    for (pass_name, _relative, _label), view in sweep.items():
+        provenance = view_provenance(view)
+        identity_to_path[
+            (pass_name, str(provenance.job), str(provenance.point_label))
+        ] = str(provenance.relative_path)
+    for group in groups:
+        planned = {
+            conditions[
+                (
+                    group["pass"],
+                    identity_to_path[
+                        (group["pass"], str(m["job"]), str(m["point_label"]))
+                    ],
+                )
+            ][5]
+            for m in group["members"]
+        }
+        assert planned == {int(group["window_gates"])} == {PLANNED_WINDOW_GATES}, (
+            group["pass"],
+            planned,
+        )
+    for row in rows:
+        planned = {
+            conditions[
+                (
+                    row["pass"],
+                    identity_to_path[
+                        (row["pass"], str(m["job"]), str(m["point_label"]))
+                    ],
+                )
+            ][5]
+            for m in row["members"]
+        }
+        assert planned == {int(row["window_gates"])} == {PLANNED_WINDOW_GATES}, (
+            row["pass"],
+            row["gate_index"],
+        )
+
+    # the distinctness: 50 planned gates, 49 published rows per cell of a group.
+    _header, published = published_rows
+    grouped = _rows_by_cell(published)
+    js = _json_cells(document)
+    planned_cells = [
+        key
+        for key, entry in js.items()
+        if int(entry["window_gates"]) == PLANNED_WINDOW_GATES
+    ]
+    assert len(planned_cells) == 88, len(
+        planned_cells
+    )  # 44 repeat recordings x 2 views
+    for key in planned_cells:
+        entry = js[key]
+        assert entry["supported_gates"] == SUPPORTED_GATES_PER_REPEAT_CELL, key
+        assert len(entry["gates"]) == SUPPORTED_GATES_PER_REPEAT_CELL, key
+        assert len(grouped[key]) == SUPPORTED_GATES_PER_REPEAT_CELL, key
+        assert entry["window_gates"] != entry["supported_gates"], key
+
+    # and the §4 row set covers one row per *supported* gate - 49 - never the 50 planned.
+    per_group_view: dict[tuple[tuple, str], int] = defaultdict(int)
+    for row in rows:
+        per_group_view[(_verifier_group_key(row), row["view"])] += 1
+    assert set(per_group_view.values()) == {SUPPORTED_GATES_PER_REPEAT_CELL}
 
 
 # --------------------------------------------------------------------------------------
@@ -1486,3 +1589,372 @@ def test_the_summary_partitions_every_published_row_and_the_gate_holds(
         name: held for name, held in checks.items() if not held
     }
     assert document["failed_checks"] == []
+
+
+# --------------------------------------------------------------------------------------
+# 8. S3: the committed artefact, its regeneration and the frozen trees
+# --------------------------------------------------------------------------------------
+#
+# §8.11 asks of the committed bytes two things nothing above can ask of a scratch tree: the
+# report *as committed* must regenerate byte for byte at the revision it records, and every
+# pre-existing file under `reports/` must hash as it did before the report. The first is
+# checked by writing the report a second time - into pytest's own temp tree, outside the
+# repository - at the revision the committed document names, so the comparison is against the
+# committed bytes themselves and not against a tree generated beside them. The second is a
+# git-blob check: the frozen trees' blobs at the frozen base revision must be the blobs on
+# disk and at HEAD now, which is §9's stop condition (f) - a frozen-tree byte change - stated
+# as a test rather than as a promise.
+#
+# Nothing here requires the report to be *git-tracked*: it is read from disk, and the frozen
+# check compares revisions and disk, never `git ls-files` of the report's own paths. A parent
+# commit that stages it changes none of these expectations.
+
+#: The plan's designated publish root (§5), restated here rather than read from the writer.
+COMMITTED_REPORT_DIR = ROOT / "reports" / "sparse-signal"
+
+#: The three artefacts, in publication order.
+COMMITTED_ARTEFACTS: tuple[str, ...] = (CSV_NAME, DOC_NAME, README_NAME)
+
+#: The frozen base the report was built on top of: every pre-existing file under `reports/`
+#: must hash as it did at this revision (§8.11, §9(f)).
+BASE_REVISION = "ca7b043"
+
+#: The plan's own frozen report trees, restated independently of the writer's tuple: one per
+#: committed pass's `report_dir`, plus the tree the plan names as frozen with no pass of its
+#: own. The designated publish root is deliberately *not* one of them.
+FROZEN_REPORT_DIRS: tuple[str, ...] = (
+    "reports/mixer-sensitivity-analysis",
+    "reports/sparse-mixer-live-1",
+    "reports/sparse-mixer-live-2",
+    "reports/stage2-e20-e64",
+)
+
+#: The trees whose bytes the published report is a function of: the source that computes it,
+#: the plan files whose fingerprints it binds, and the two committed sittings it decodes. A
+#: byte change in any of them is the drift the regeneration would silently absorb.
+SOURCE_TREE = "src/udv_echo_process"
+INPUT_TREES: tuple[str, ...] = (
+    "examples/",
+    "data/sparse-mixer-live-1",
+    "data/sparse-mixer-live-2",
+)
+
+#: The `python -m udv_echo_process.cli` subcommand the README's reproduction command names.
+REPORT_SUBCOMMAND = "sparse-signal-report"
+
+
+def _run_git(*arguments: str) -> str:
+    """One git query in this checkout, or a hard failure - never a skip."""
+    try:
+        result = subprocess.run(
+            ("git", "-C", str(ROOT), *arguments),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+    except (
+        OSError
+    ) as error:  # a checkout without git cannot answer a provenance question
+        raise AssertionError(
+            f"git is required for the frozen-tree check and is not runnable: {error}"
+        ) from error
+    assert result.returncode == 0, (
+        f"git {' '.join(arguments)} failed ({result.returncode}): {result.stderr.strip()}"
+    )
+    return result.stdout
+
+
+def _git_holds(*arguments: str) -> bool:
+    """Whether a git query succeeds, for the questions whose honest answer may be no."""
+    result = subprocess.run(
+        ("git", "-C", str(ROOT), *arguments),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    return result.returncode == 0
+
+
+def _git_blob_sha(data: bytes) -> str:
+    """Git's own blob identity of a byte string: ``sha1("blob <n>\\0" + data)``."""
+    return hashlib.sha1(b"blob %d\x00" % len(data) + data).hexdigest()
+
+
+def _git_tree(revision: str, path: str) -> dict[str, str]:
+    """Every tracked blob under ``path`` at ``revision``: repository-relative path -> blob sha."""
+    entries: dict[str, str] = {}
+    for line in _run_git(
+        "ls-tree", "-r", "--full-tree", revision, "--", path
+    ).splitlines():
+        meta, _tab, name = line.partition("\t")
+        entries[name] = meta.split()[2]
+    return entries
+
+
+def _disk_is_blob(path: Path, blob: str) -> bool:
+    """Whether ``path``'s bytes are the blob, raw or in the repository's canonical LF form.
+
+    A blob is stored in canonical LF, and a Windows checkout whose ``core.autocrlf`` is true
+    may have materialised a file with CRLF. That is the same file by the repository's own
+    rule - the rule that makes a materialised CRLF copy hash identically (§3) - so both forms
+    are accepted, and no other difference is.
+    """
+    data = path.read_bytes()
+    return (
+        _git_blob_sha(data) == blob
+        or _git_blob_sha(data.replace(b"\r\n", b"\n")) == blob
+    )
+
+
+def _assert_disk_matches(tree: str, revision: str, *, subject: str) -> None:
+    """Every tracked file under ``tree`` at ``revision`` must be on disk with that blob."""
+    expected = _git_tree(revision, tree)
+    assert expected, f"{revision} tracks nothing under {tree!r}"
+    drifted = sorted(
+        relative
+        for relative, blob in expected.items()
+        if not (ROOT / relative).is_file() or not _disk_is_blob(ROOT / relative, blob)
+    )
+    assert not drifted, (
+        f"{subject} has drifted from {revision}: {drifted[:8]} "
+        f"({len(drifted)} of {len(expected)} files)"
+    )
+
+
+def _committed_document(report: Path) -> dict:
+    """The committed (or freshly written) report's JSON document."""
+    return json.loads((report / DOC_NAME).read_text(encoding="utf-8"))
+
+
+@pytest.fixture(scope="module")
+def committed_report() -> Path:
+    """The committed report directory: absent bytes are a failure here, never a skip."""
+    assert COMMITTED_REPORT_DIR.is_dir(), (
+        f"SA2.4 must commit its three artefacts under {COMMITTED_REPORT_DIR.as_posix()} "
+        "(plan §5); the report directory does not exist"
+    )
+    for name in COMMITTED_ARTEFACTS:
+        path = COMMITTED_REPORT_DIR / name
+        assert path.is_file(), f"SA2.4 must commit {name} ({path.as_posix()})"
+    return COMMITTED_REPORT_DIR
+
+
+@pytest.fixture(scope="module")
+def recorded_revision(committed_report: Path) -> str:
+    """The revision the committed report records - read from the published bytes, not a guess."""
+    recorded = str(_committed_document(committed_report).get("analysis_commit") or "")
+    assert re.fullmatch(r"[0-9a-f]{7,40}", recorded), recorded
+    return recorded
+
+
+@pytest.fixture(scope="module")
+def regeneration(
+    committed_report: Path,
+    recorded_revision: str,
+    tmp_path_factory: pytest.TempPathFactory,
+) -> Path:
+    """The report written a second time, outside the repository, at the recorded revision."""
+    scratch = tmp_path_factory.mktemp("sa2-4-s3-regeneration")
+    _require_writer().write_sparse_signal_report(
+        scratch, analysis_commit=recorded_revision
+    )
+    assert scratch.is_dir()
+    return scratch
+
+
+def test_the_committed_report_is_the_three_artefacts_under_the_designated_root(
+    committed_report: Path,
+) -> None:
+    """§5: the committed directory holds the table, the document and the README - nothing else."""
+    assert (
+        Path(writer.REPORT_DIR).as_posix()
+        == COMMITTED_REPORT_DIR.relative_to(ROOT).as_posix()
+    )
+    produced = sorted(
+        path.relative_to(committed_report).as_posix()
+        for path in committed_report.rglob("*")
+        if path.is_file()
+    )
+    assert produced == sorted(COMMITTED_ARTEFACTS), produced
+
+
+def test_the_committed_report_regenerates_byte_for_byte_at_the_recorded_revision(
+    committed_report: Path, recorded_revision: str, regeneration: Path
+) -> None:
+    """§8.11: the committed bytes are exactly what the writer produces at the revision they name.
+
+    All three artefacts, in the artefact's canonical LF form - the form the digest rule and the
+    README's one-trailing-newline rule fix. A CRLF-materialised checkout is the same bytes by
+    that rule and no other filesystem difference is accepted.
+    """
+    assert recorded_revision == _committed_document(committed_report)["analysis_commit"]
+    for name in COMMITTED_ARTEFACTS:
+        committed_bytes = (committed_report / name).read_bytes()
+        regenerated_bytes = (regeneration / name).read_bytes()
+        assert regenerated_bytes in (
+            committed_bytes,
+            committed_bytes.replace(b"\r\n", b"\n"),
+        ), (
+            f"{name}: the committed bytes are not the bytes the writer produces at "
+            f"{recorded_revision} ({len(committed_bytes)} committed against "
+            f"{len(regenerated_bytes)} regenerated)"
+        )
+
+
+def test_the_regeneration_is_bound_to_the_recorded_revision(
+    committed_report: Path, recorded_revision: str, regeneration: Path
+) -> None:
+    """The second run is the same report, not merely identical files: commit and digest agree."""
+    fresh = _committed_document(regeneration)
+    published = _committed_document(committed_report)
+    assert fresh["analysis_commit"] == published["analysis_commit"] == recorded_revision
+    assert fresh["table_sha256"] == published["table_sha256"]
+    readme = (regeneration / README_NAME).read_text(encoding="utf-8")
+    assert f"- analysis revision: `{recorded_revision}`" in readme
+
+
+def test_the_committed_document_binds_the_committed_table_bytes(
+    committed_report: Path,
+) -> None:
+    """§9: the published digest is the SHA-256 of the committed table's canonical LF bytes."""
+    published = _committed_document(committed_report)
+    digest = (
+        "sha256:"
+        + hashlib.sha256(_canonical_lf(committed_report / CSV_NAME)).hexdigest()
+    )
+    assert published["table"] == CSV_NAME
+    assert published["table_sha256"] == digest, published["table_sha256"]
+    readme = (committed_report / README_NAME).read_text(encoding="utf-8")
+    assert f"`{CSV_NAME}` sha256: `{digest}`" in readme
+
+
+def test_the_frozen_report_directories_are_the_plan_s_and_exclude_the_publish_root() -> (
+    None
+):
+    """§5/§9(f): the frozen set is the committed passes' trees plus the pass-less one."""
+    from udv_echo_process.analysis.sparse_passes import COMMITTED_PASSES
+
+    passes = {
+        Path(ref.report_dir).as_posix()
+        for ref in COMMITTED_PASSES
+        if ref.report_dir is not None
+    }
+    assert set(FROZEN_REPORT_DIRS) == passes | {"reports/mixer-sensitivity-analysis"}, (
+        sorted(passes)
+    )
+    assert COMMITTED_REPORT_DIR.relative_to(ROOT).as_posix() not in FROZEN_REPORT_DIRS
+
+
+def test_the_frozen_base_is_an_ancestor_of_the_recorded_revision(
+    recorded_revision: str,
+) -> None:
+    """The base the frozen bytes are compared against is a real, reachable revision."""
+    assert _git_holds("cat-file", "-e", f"{BASE_REVISION}^{{commit}}"), BASE_REVISION
+    assert _git_holds("cat-file", "-e", f"{recorded_revision}^{{commit}}"), (
+        recorded_revision
+    )
+    assert _git_holds(
+        "merge-base", "--is-ancestor", BASE_REVISION, recorded_revision
+    ), f"{BASE_REVISION} is not an ancestor of {recorded_revision}"
+
+
+def test_every_pre_existing_file_under_reports_hashes_as_before_the_frozen_base() -> (
+    None
+):
+    """§8.11/§9(f): the report commit moved no committed report byte and added none outside it."""
+    frozen = _git_tree(BASE_REVISION, "reports/")
+    current = _git_tree("HEAD", "reports/")
+    assert frozen, f"{BASE_REVISION} tracks nothing under reports/"
+    missing = sorted(set(frozen) - set(current))
+    assert not missing, f"pre-existing files under reports/ are gone: {missing}"
+    changed = sorted(path for path in frozen if current[path] != frozen[path])
+    assert not changed, f"pre-existing files under reports/ changed: {changed}"
+    added = sorted(set(current) - set(frozen))
+    outside = [
+        path
+        for path in added
+        if not path.startswith(COMMITTED_REPORT_DIR.relative_to(ROOT).as_posix() + "/")
+    ]
+    assert not outside, (
+        f"new files appeared outside the designated publish root: {outside}"
+    )
+
+
+def test_the_frozen_report_trees_on_disk_hash_as_before_the_frozen_base() -> None:
+    """The working tree beside the published report holds the frozen bytes, not a regenerated set."""
+    for tree in FROZEN_REPORT_DIRS:
+        _assert_disk_matches(tree, BASE_REVISION, subject=f"the frozen tree {tree!r}")
+
+
+def test_the_committed_inputs_the_report_decodes_are_frozen() -> None:
+    """The plan files whose fingerprints the report binds and the sittings it decodes are frozen."""
+    for tree in INPUT_TREES:
+        _assert_disk_matches(tree, BASE_REVISION, subject=f"the report input {tree!r}")
+
+
+def test_the_source_that_computes_the_report_has_not_drifted(
+    recorded_revision: str,
+) -> None:
+    """Source-drift guard: the package that produces the bytes is the revision's own package."""
+    recorded = _git_tree(recorded_revision, SOURCE_TREE)
+    current = _git_tree("HEAD", SOURCE_TREE)
+    assert recorded, f"{recorded_revision} tracks nothing under {SOURCE_TREE!r}"
+    assert current == recorded, (
+        "the source has moved since the recorded revision: "
+        f"{sorted(set(recorded) ^ set(current))[:8]}"
+    )
+    _assert_disk_matches(
+        SOURCE_TREE, recorded_revision, subject="the report's own source tree"
+    )
+
+
+def test_the_readme_reproduction_command_uses_the_recorded_revision_and_travels(
+    committed_report: Path, recorded_revision: str
+) -> None:
+    """The Reproduce block is the recorded command, and a reader of a clone can run it as written."""
+    readme = (committed_report / README_NAME).read_text(encoding="utf-8")
+    block = re.search(
+        r"^## Reproduce\n\n```bash\n(?P<command>.*?)\n```$",
+        readme,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert block, "the README carries no '## Reproduce' bash block"
+    lines = block.group("command").splitlines()
+    assert len(lines) == 1, lines
+    command = lines[0]
+    assert command == (
+        f"uv run python -m udv_echo_process.cli {REPORT_SUBCOMMAND} "
+        f"--analysis-commit {recorded_revision}"
+    ), command
+    assert f"- analysis revision: `{recorded_revision}`" in readme
+
+    # Remotely usable: `uv run` needs no local environment path, and with no `--report-dir` the
+    # writer anchors the plan's relative root at the repository root, so a fresh clone in any
+    # directory runs the same command and lands its files in the same tree.
+    assert "--report-dir" not in command
+    assert not re.search(r"[A-Za-z]:[\\/]", command), command
+    assert not any(
+        token in command for token in ("\\", "<", ">", "/tmp", "AppData", "Users")
+    )
+    assert not any(
+        token in command.lower() for token in ("scratch", "pytest", "venv", "hermes")
+    ), command
+
+    # The revision names a real commit on this branch, so it travels with the pushed branch
+    # rather than existing only in the checkout that wrote the report.
+    assert _git_holds("cat-file", "-e", f"{recorded_revision}^{{commit}}"), (
+        recorded_revision
+    )
+    assert _git_holds("merge-base", "--is-ancestor", recorded_revision, "HEAD"), (
+        f"{recorded_revision} is not an ancestor of HEAD"
+    )
+
+    # And the subcommand the command names is wired to the writer's own entry point.
+    from udv_echo_process import cli
+
+    commands = getattr(cli, "_COMMANDS", {})
+    assert commands.get(REPORT_SUBCOMMAND) is _require_writer().report_main, sorted(
+        commands
+    )
