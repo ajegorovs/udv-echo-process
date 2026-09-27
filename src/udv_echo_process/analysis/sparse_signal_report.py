@@ -41,8 +41,8 @@ unit's cardinality*; it does not ask for the same 5720 gate rows twice in two se
 a document that carried a ``gates`` array beside the table's own rows would be a second copy of
 the table under a different name. So the table is the one authoritative per-gate record and the
 document's cell records stop at the metadata, the axis and the two target rows - a reader joins a
-fraction to its cell by the table's own keys, and no field of the document scales with the gate
-count.
+fraction to its cell by the table's own keys. The distinct prespecified repeat-spread rows
+remain in the document.
 
 No PSD array is serialized, no NPZ is shipped, no field follows a bin, sample or element, and
 nothing is written for a whole ``SpectralEstimate``. The document is assembled field by field
