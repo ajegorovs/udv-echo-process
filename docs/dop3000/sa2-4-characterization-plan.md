@@ -146,8 +146,9 @@ New directory `reports/sparse-signal/` — the plan's designated publish root
 | `README.md` | definitions, units, digests, view/estimator/detrending settings, reproduction command, §10 no-go list |
 
 - **No PSD array is serialized and SA2.4 ships no NPZ.** The plan's "NPZ for documented arrays as
-  needed" (`:249-253`) is not needed: `Φ`, `B`, `T` and §3's fields are all scalars. This does
-  **not** waive the design's #49 prerequisite for committed machine-readable spectral artifacts (§6).
+  needed" (`:249-253`) is not needed: `Φ`, `B`, `T` and §3's fields are all named scalars — the exact
+  content the design's now-narrowed clause permits without resolving #49 (§6). That permission covers
+  named scalars only; it never covers a PSD array or a whole estimate.
 - Provenance is read, not rebuilt: `ViewProvenance` (`_sparse_view.py:305-364`) supplies
   `relative_path`, `source_sha256`, `job`, `point_label`, `order`, view and view rule. The pass is the
   sweep's own `PassRef.name`, stated as the selection, never as a provenance field
@@ -164,35 +165,60 @@ New directory `reports/sparse-signal/` — the plan's designated publish root
   following the stage-2 writer's `--dataset-root/--plan/--plan-name/--report-dir/--analysis-commit`
   shape (`sparse_stage2_pairs.py:1589-1606`).
 
-## 6. Serialization: the design's clause, read deliberately
+## 6. Serialization: the design's clause, now narrowed in its authority document
 
 The design keeps issue **#49** outside SA2 implementation: SA2 v1 does not solve general ndarray JSON
 serialization, and *"if SA2 ever needs committed machine-readable spectral artifacts, #49 is resolved
 deliberately first — not by assuming `model_dump(mode="json")` is safe because spectra happen to
 contain arrays"* (`sa2-spectral-design.md:630-636`); the estimator says the same
-(`sparse_periodogram.py:46-47`).
+(`sparse_periodogram.py:46-47`). **Issue #49 is still open and unmitigated**:
+`ArrayModel.model_dump(mode="json")` raises for ndarray-bearing models, and this slice does not
+resolve it.
 
-The scalar CSV/JSON in §5 can be generated without serializing an ndarray-bearing model;
-`SpectralEstimate.model_dump(mode="json")` still fails and is never called by this writer. The
-prerequisite below is therefore **policy from the design's broad "machine-readable spectral
-artifacts" clause, not a technical dependency of scalar CSV**. Resolve #49 in a separate reviewed
-PR outside SA2 before publishing these artifacts, or have a reviewer explicitly narrow the design
-clause in its authority document. Do not quietly read the scalar route as an exemption.
+The design's serialization clause has since been **narrowed in its own authority document** by PR
+**#57**, merged at `8b508d2` (`sa2-spectral-design.md:638-710`, "Narrowing: named scalar reductions
+and their scalar provenance are permitted, arrays are not"). That reviewed narrowing — not the quiet
+exemption the earlier draft guarded against — is what permits §5's artifacts: a committed
+machine-readable spectral artifact may be published as JSON or CSV without resolving #49 **if and
+only if** its entire content is (1) named scalar reductions of a spectrum — a band-power sum and its
+band edges and bin indices, the band-power fraction, the normalized total power, the
+window-normalized mean-square power, the Parseval relative error, the admission stamps, a refusal's
+own reason — and (2) the named scalar metadata/provenance needed to define, reproduce and interpret
+them, as a **finite, closed field set** (a new field is a schema change, not a new value).
 
-After that external gate, SA2.4 still exports only named scalar reductions. The writer may call
-`model_dump(mode="json")` on scalar-only `ValueModel`s, and must build every spectrum row from named
-scalars and properties rather than serializing a whole `SpectralEstimate`. No ad-hoc encoder, base64
-or `tolist()` blob in the report writer routes around the reviewed array contract. A later request to
-commit PSD arrays or whole estimates needs its own schema and review; resolving #49 alone does not
-authorize SA2.4 to expand its artifact set.
+What the narrowing keeps is **cardinality, not field names**: the permitted row count is the
+observation unit — one row per `recording × view × supported gate`, or one row per `recording × view`
+cell with its per-cell target rows stated once. Rows, fields or keys whose count follows the spectral
+bins, samples or elements (a per-bin table, one field per element, repeated rows, flattened vectors,
+chunks/lists/blobs/base64) are array publication and stay prohibited. §5's CSV (one row per
+`cell × supported gate`) and its JSON (target rows once per cell) sit inside that cardinality by
+construction.
+
+**The permission is read on the repository's discrete grid, never as a continuous integral.** The
+narrowing's "band-power sum and its band edges and bin indices" is SA2.4's own §2 reduction on the
+one frequency grid and cell rule already fixed there — a discrete, cell-overlap weighted sum that no
+overlap rule makes independent of resolution (§2) — and this clause licenses no continuous-band
+integral and no per-bin density. A different band, grid or field set is a schema change that reopens
+the review, not a new value.
+
+The writer therefore still exports **only named scalar reductions and the scalar metadata/provenance
+needed to define, reproduce and interpret them**. It may call
+`model_dump(mode="json")` on scalar-only `ValueModel`s, and must build every row from named scalars
+and properties rather than serializing a whole `SpectralEstimate`; no ad-hoc encoder, base64 or
+`tolist()` blob routes around the clause. **#49 stays open**, and resolving #49 later does not widen
+this narrowing: committing PSD arrays, a bin vector or a whole estimate still needs its own reviewed
+schema and is not authorized here.
 
 ## 7. Executable stages
 
 Each stage is additive and reviewable; none changes an admission rule, threshold or verdict.
 
-- **External prerequisite before S2 publication — #49 or a reviewed design-clause narrowing.**
-  This is not an SA2 estimator change and not an S-stage: resolve the policy gate in §6 in its own
-  reviewed PR before committing machine-readable spectral outputs. S1 can be developed independently.
+- **External prerequisite before S2 publication — the design-clause narrowing, now merged (§6).**
+  PR **#57** narrowed the design's serialization clause in its own authority document, merged at
+  `8b508d2`, so §5's scalar CSV/JSON no longer wait on a separate #49 resolution; **#49 itself stays
+  open**, arrays stay outside the narrowing, and the merge gate for S2 is the clause's own closed
+  field set and observation-unit cardinality — checked, not assumed. This is not an SA2 estimator
+  change and not an S-stage. S1 can be developed independently.
 - **S1 — scalar characterization backend.** New module
   `analysis/sparse_spectral_characterization.py`: a per-gate sweep calling `periodogram_of_view` for
   every `supported_columns` entry of one `WindowView`, and
@@ -255,7 +281,8 @@ A verifier who did not write the module must be able to falsify it without readi
 - **Spot cells are named by label, not index**: E128's 8.333-Hz refusal and 1-Hz support are read from
   the published JSON, and each fraction's *state* is read, not inferred.
 - **Stop conditions that halt the change rather than being worked around:** (a) any array or
-  whole-`SpectralEstimate` artifact demanded → #49, separate change (§6); (b) any `Φ` outside
+  whole-`SpectralEstimate` artifact demanded → its own reviewed schema, arrays stay outside the
+  narrowing (§6); (b) any `Φ` outside
   `[0, 1]`, or `B > T`; (c) a cell count other than 104, or a gate count disagreeing with
   `supported_gates`; (d) a refusal rendered as a zero, or a zero as a refusal; (e) a fraction needing
   a value the estimate does not define; (f) any frozen-tree byte change; (g) any need for an
