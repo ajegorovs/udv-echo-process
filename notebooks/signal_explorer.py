@@ -23,6 +23,7 @@ def imports():
         VIEW_LABELS,
         VIEW_PRIMARY,
         VIEW_RULES,
+        SparseGateStatsError,
         SparseViewError,
         exploration_view,
         full_record_view,
@@ -40,16 +41,34 @@ def imports():
         RecurrenceVerdict,
         recurrence_of_view,
     )
+    # SA2.3's surface, and only its surface: the SA2.2 estimator (which carries its own
+    # admission), the two probe targets SA2 names once, and the target-support question asked
+    # of that carried admission. No SA2 module exposes a second window selector or an
+    # admission builder, so the notebook cannot assemble its own.
+    from udv_echo_process.analysis.sparse_periodogram import (
+        SpectralPeriodogramError,
+        SpectralVerdict,
+        periodogram_of_view,
+    )
+    from udv_echo_process.analysis.sparse_spectral_capability import PROBE_TARGETS
+    from udv_echo_process.analysis.sparse_target_support import (
+        SpectralSupportError,
+        target_frequency_support,
+    )
 
     return (
         COMMITTED_PASSES,
         Detrending,
+        PROBE_TARGETS,
         RecurrenceError,
         RecurrenceVerdict,
         RunPlanError,
         SparseGateStatsError,
         SparseIngestError,
         SparseViewError,
+        SpectralPeriodogramError,
+        SpectralSupportError,
+        SpectralVerdict,
         VIEW_EXPLORATION,
         VIEW_FULL_RECORD,
         VIEW_LABELS,
@@ -64,6 +83,7 @@ def imports():
         mo,
         np,
         pass_by_name,
+        periodogram_of_view,
         point_qc,
         primary_view,
         recurrence_of_view,
@@ -71,24 +91,27 @@ def imports():
         reduce_native_slab,
         retains_designed_window,
         statistic_units,
+        target_frequency_support,
     )
 
 
 @app.cell(hide_code=True)
 def intro(mo):
     mo.md("""
-    # Sparse signal explorer — SA0 checkpoint + SA1 preview
+    # Sparse signal explorer — SA0 checkpoint + SA1 preview + SA2.3 spectral preview
 
     The **first usable checkpoint** of the sparse signal analysis: dataset → job →
     recording → channel selection over the **committed** sparse passes, the selected
-    recording's provenance/QC, its **native time–depth heatmap**, and below it
+    recording's provenance/QC, its **native time–depth heatmap**, below it
     **SA1's preview** — per-gate mean and variability profiles, representative gate
     traces and time slices, the reported per-gate distributions, and the normalized
-    trace autocorrelation with its raw trace. The default selection is the second
+    trace autocorrelation with its raw trace — and below that **SA2.3's spectral
+    preview**, one gate's periodogram with the timebase/admission it rests on, its
+    target-frequency rows and its provenance. The default selection is the second
     mixer-enabled sitting, `sparse-mixer-live-2`.
 
     This notebook is a **thin wrapper**: every number comes from tested functions in
-    `src/udv_echo_process/`. Four backend modules do the work and the notebook owns
+    `src/udv_echo_process/`. Six backend modules do the work and the notebook owns
     none of it:
 
     - `analysis.sparse_passes` — the **committed-pass catalogue**: each pass's root,
@@ -105,13 +128,24 @@ def intro(mo):
       number and curve: the per-gate statistics with their provenance and estimator
       conventions, the depth reductions with their declared weighting, and the
       normalized autocorrelation with its timebase and unsupported-claim verdicts.
+    - `analysis.sparse_periodogram` — SA2.2's one estimator: `periodogram_of_view`
+      cuts one gate's trace out of the **same** view, characterizes its stamps, asks
+      its own `SpectralAdmission` whether the uniform-grid transform may be applied,
+      and returns a `SpectralEstimate` that carries that admission, its taper and
+      normalization conventions, the density and the view provenance — or an explicit
+      `refused-irregular-axis` verdict with empty arrays.
+    - `analysis.sparse_spectral_capability` and `analysis.sparse_target_support` —
+      the two probe targets SA2 names once (`PROBE_TARGETS`: the ~1 Hz recurrence
+      probe and the 25/3 Hz nominal rotor reference) and the question of whether a
+      target is supported by the axis an admission was issued for. The notebook
+      builds neither a frequency grid nor an admission of its own.
 
     Here the notebook only *selects* (pass, job, recording, channel, view, gate,
     detrending, exploration bounds) and *displays*; it computes no mean, percentile,
-    standard deviation, correlation, reduction or window of its own, and it holds no
-    pass table, no view translation map and no reference row of its own. A view reads
-    the same way in this notebook as inside the two modules that produce the numbers —
-    one label, one rule, no second spelling.
+    standard deviation, correlation, reduction, window, FFT, taper or PSD
+    normalization of its own, and it holds no pass table, no view translation map and
+    no reference row of its own. A view reads the same way in this notebook as inside
+    the modules that produce the numbers — one label, one rule, no second spelling.
 
     **Units and views.** Velocity is the instrument's own signed axial component in
     `mm/s`; depth is the instrument's **native gate coordinate** in `mm`. Every view
@@ -127,9 +161,11 @@ def intro(mo):
 
     **What this checkpoint does not measure.** It measures no scientific effect and
     compares no conditions. The profiles, traces, slices, distributions and
-    autocorrelation below are SA1's views and appear only beside the tested
-    estimators that produce them; spectra and spectrograms (SA2), spatial
-    correlation and POD (SA3) are still absent. These `.BDD` velocity files carry
+    autocorrelation below are SA1's views, and the periodogram at the foot of the
+    notebook is SA2.2's, each appearing only beside the tested estimator that produced
+    it; no spectrogram, no spatial correlation and no POD (SA3) are shown. SA2.3 adds
+    **no new spectral estimator and no scientific interpretation** — it exposes and
+    inspects an already-reviewed backend result. These `.BDD` velocity files carry
     **no tachometer, echo or energy channel**, so measured mixer speed, SNR and
     receiver saturation cannot be read from this notebook at all — that absence is a
     property of the data, not a pending feature.
@@ -479,13 +515,14 @@ def heatmap_notes(mo):
     profile, the acquisition's retained stopping overshoot included; that overshoot is a
     property of the recording's own record, and it belongs to no comparison.
 
-    **Not shown here, on purpose.** Spectra/spectrograms and sampling support (SA2)
-    and spatial correlation/POD (SA3) are absent: each is added only alongside the
-    tested estimator and sampling guard that produce it. Gate traces, per-gate
-    profiles, per-gate distributions and the normalized autocorrelation are now in
-    **SA1's section below**, where the tested estimators that return them are named
-    beside every display. The primary/exploratory label on every view is the same rule
-    the later slices inherit.
+    **Not shown here, on purpose.** Spectrograms, spatial correlation and POD
+    (SA3) are absent: each is added only alongside the tested estimator and sampling
+    guard that produce it. Gate traces, per-gate profiles, per-gate distributions and
+    the normalized autocorrelation are in **SA1's section below**, and one gate's
+    periodogram with its timebase/admission and target-support rows is in **SA2.3's
+    section at the foot of the notebook**, where the tested estimator that returns
+    each of them is named beside every display. The primary/exploratory label on every
+    view is the same rule the later slices inherit.
     """)
     return
 
@@ -1441,12 +1478,572 @@ def sa1_notes(mo):
     **What is deliberately not here.** No confidence interval appears anywhere: the
     profiles and gates of one recording are correlated samples, not independent
     replicates, so `sparse_gate_stats` computes no interval and `sparse_recurrence`
-    computes none either. No spectrum, PSD, spectrogram or sampling-support guard is
-    shown (SA2), and no spatial correlation or POD (SA3). No period is claimed from a
-    weak recurrence peak: the claim above states the threshold that refused it, and
-    if the stored timestamps do not support a lag in seconds at all, the timebase
-    verdict says so. The hypothesized ~1 s vortex timescale is *sought*, never
-    assumed — nothing in this notebook names it.
+    computes none either. No spectrogram or sampling-support guard beyond SA2.3's own
+    periodogram section (SA2), and no spatial correlation or POD (SA3). No period is
+    claimed from a weak recurrence peak: the claim above states the threshold that
+    refused it, and if the stored timestamps do not support a lag in seconds at all,
+    the timebase verdict says so. The hypothesized ~1 s vortex timescale is *sought*,
+    never assumed — nothing in this notebook names it, and SA2.3's spectrum is not
+    offered as proof of it.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def sa2_intro(mo):
+    mo.md("""
+    ## SA2.3 preview — one view's spectrum, its timebase/admission and its target support
+
+    **SA2.3 adds no new spectral estimator and no scientific interpretation.** Everything
+    below *displays* one already-merged backend result:
+    `analysis.sparse_periodogram.periodogram_of_view` (SA2.2), asked of the **same**
+    `WindowView` the heatmap, the gate statistics and the recurrence above were computed
+    from, at the **same** gate the gate picker names and the **same** detrending the picker
+    holds. There is no second time-window selector: the one window decision is
+    `sparse_view`, and the admission the target rows are asked of is the one carried
+    *inside* the returned `SpectralEstimate` — never a second admission derived here.
+
+    The shape stays `selection → backend call → display`. No FFT call, no taper
+    construction, no PSD normalization, no frequency-grid construction and no admission
+    arithmetic live in a cell; every number stated is a field of a backend result
+    (`SpectralEstimate`, its `TimebaseCharacterization`, its `SpectralAdmission`, its
+    `ViewProvenance`, or a `TargetFrequencySupport`).
+
+    **The detrending control is deliberately shared, and that coupling is stated.** SA1's
+    recurrence and this spectrum read the *same* `detrending_picker`; the notebook does not
+    silently re-point SA1's control, and each result names the detrending *it* used beside
+    its own display (`SpectralEstimate.detrending` for the spectrum,
+    `RecurrenceResult.detrending` for the trace above). It is an intentional coupling, not
+    an accident — and because both then analyse the same gate trace, the two displays are
+    comparable without the notebook fusing them. They are **two descriptive estimators of
+    the same trace**, and this notebook never says one "confirms" the other.
+
+    What is deliberately **not** here (SA2.4 / SA3): peak finding, automated frequency
+    bands, low-frequency integrated-power metrics, condition-comparison tables,
+    depth–frequency maps, cross-gate or cross-sitting spectra, Welch, coherence, modal/SVD
+    analysis and serialization. The low-frequency view below is inspection only: no
+    dominant frequency is named, no peak is picked, and no band power is compared.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def sa2_controls(mo):
+    # A DISPLAY-ONLY control. It changes the PSD plot's x-limits and nothing else: the
+    # estimator already ran on the full view inside the backend, and the zoom neither
+    # truncates, resamples nor re-estimates the array it is drawn from. `0` means the full
+    # supported range, which is the default extent the plan asks for.
+    psd_zoom_max_hz = mo.ui.number(
+        value=0.0,
+        start=0.0,
+        stop=1000.0,
+        step=0.1,
+        label=(
+            "PSD display zoom: upper x-limit [Hz] (display only — 0 shows the full "
+            "supported range)"
+        ),
+        full_width=True,
+    )
+    mo.sidebar([mo.md("### SA2.3 spectral preview"), psd_zoom_max_hz])
+    return (psd_zoom_max_hz,)
+
+
+@app.cell(hide_code=True)
+def sa2_spectral_estimate(
+    SpectralPeriodogramError,
+    SparseViewError,
+    detrending_picker,
+    gate_stats,
+    periodogram_of_view,
+    point,
+    position,
+    sparse_view,
+):
+    # SA2.3's **backend call**: one view, one gate depth, one detrending. `periodogram_of_view`
+    # is SA2.2's single entry point and it takes NO arrays — the trace is the selected view's
+    # own column at that depth, over the view's own stored stamps — and the quantity/unit are
+    # passed explicitly exactly as SA1's recurrence call already does, so the spectrum names
+    # its own measured quantity instead of relying on the signature defaults.
+    #
+    # The notebook computes no FFT, builds no taper, derives no frequency grid and applies no
+    # normalization: the spectrum *is* the returned `SpectralEstimate`.
+    #
+    # A **refused axis is not an exception**: the estimator returns a `SpectralEstimate`
+    # whose verdict is `refused-irregular-axis`, whose arrays are empty and whose carried
+    # admission names the failed conditions. The `except` below is only for a request that
+    # cannot produce a result at all — a depth that is not a native gate, a depth outside
+    # the pass's common support, an unknown detrending, stamps a characterization cannot be
+    # built from — never for a scientific refusal.
+    spectral_estimate = None
+    spectral_error = ""
+    if (
+        sparse_view is not None
+        and gate_stats is not None
+        and position is not None
+        and point is not None
+    ):
+        _depth = float(gate_stats.depths_mm[position])
+        try:
+            spectral_estimate = periodogram_of_view(
+                sparse_view,
+                depth_mm=_depth,
+                quantity=str(point.quantity),
+                unit=str(point.unit),
+                detrending=detrending_picker.value,
+            )
+        except (SpectralPeriodogramError, SparseViewError) as exc:
+            spectral_error = f"{type(exc).__name__}: {exc}"
+    return spectral_estimate, spectral_error
+
+
+@app.cell(hide_code=True)
+def sa2_target_support(
+    PROBE_TARGETS,
+    SpectralSupportError,
+    spectral_estimate,
+    target_frequency_support,
+):
+    # The two probe targets SA2 names once (`sparse_spectral_capability.PROBE_TARGETS`): the
+    # ~1 Hz recurrence-scale probe and the 25/3 Hz nominal rotor reference. Each row is asked
+    # of the admission carried INSIDE the returned estimate — never a second admission built
+    # here — so the row and the spectrum cannot disagree about the axis.
+    #
+    # A `REFUSED_AXIS` estimate carries no admission-granted spectrum, so its rows are asked
+    # on the characterized stamps for the *band* question and report the estimator refusal
+    # through `analysis_supported` / `reason`. Keeping `band_supported` and `supported` apart
+    # is what stops a bandwidth refusal being read as an estimator inability, or the reverse.
+    target_support_rows = ()
+    target_support_error = ""
+    if spectral_estimate is not None:
+        try:
+            target_support_rows = tuple(
+                target_frequency_support(
+                    spectral_estimate.admission, frequency_hz, label=label
+                )
+                for label, frequency_hz in PROBE_TARGETS
+            )
+        except SpectralSupportError as exc:
+            target_support_error = f"{type(exc).__name__}: {exc}"
+    return target_support_rows, target_support_error
+
+
+@app.cell(hide_code=True)
+def sa2_spectrum_readout(
+    dataset_picker,
+    gate_stats,
+    mo,
+    position,
+    position_note,
+    sparse_view,
+    sparse_view_error,
+    spectral_estimate,
+    spectral_error,
+):
+    # What this spectrum is, and what allowed it. Every value is read off the returned
+    # `SpectralEstimate` or off the characterization / admission / provenance it carries;
+    # nothing is recomputed and no admission arithmetic is repeated here.
+    #
+    # The unavailable and refused states are kept apart on purpose (plan §K). "No view", "no
+    # resolved gate" and "the request could not produce a result" are **not** spectral
+    # verdicts, and a refused axis is a verdict that carries no density at all. A missing
+    # view is never rendered as a spectral refusal, and a refusal is never rendered as a zero
+    # spectrum — the two are distinguishable because the branch is on the *verdict*, not on
+    # the values.
+
+    def _shown(value, unit="", none_text="undefined"):
+        """A backend field for display: `None` reads as undefined, never as a zero."""
+        return none_text if value is None else f"{value:.6g}{unit}"
+
+    if sparse_view is None:
+        _out = mo.md(
+            "**SA2.3 — no spectrum: the view module refused this selection.** This is not a "
+            "spectral verdict; no estimator ran, so there is no PSD, no zero line and no "
+            "axis to show.\n\n"
+            + (f"`{sparse_view_error}`" if sparse_view_error else "")
+        )
+    elif gate_stats is None or position is None:
+        _out = mo.md(
+            "**SA2.3 — no spectrum: no gate is resolved for this view.** "
+            + (
+                "`gate_statistics` returned nothing"
+                if gate_stats is None
+                else "the per-gate statistics are present"
+            )
+            + " and the picked gate position is "
+            + ("absent" if position is None else "present")
+            + ", so there is no depth to ask `periodogram_of_view` at. This is the "
+            "notebook's own stated absence, deliberately kept distinct from a spectral "
+            "refusal."
+        )
+    elif spectral_estimate is None:
+        _out = mo.md(
+            "**SA2.3 — no spectrum: the request itself could not produce a result.** A "
+            "depth that is not one of this view's native gates, a depth outside the pass's "
+            "common support, an unknown detrending or stamps a characterization cannot be "
+            "built from is a malformed request, not a scientific refusal.\n\n"
+            f"`{spectral_error}`"
+        )
+    else:
+        _est = spectral_estimate
+        _prov = _est.provenance
+        _axis = _est.characterization
+        _adm = _est.admission
+        _conditions = "\n".join(
+            f"  - `{item.condition.value}`: "
+            + ("satisfied" if item.satisfied else "**failed**")
+            + f" — observed {_shown(item.observed)}, threshold {_shown(item.threshold)}"
+            for item in _adm.conditions
+        )
+        _declared = (
+            f"declared {_prov.declared_window_s:g} s"
+            if _prov.declared_window_s is not None
+            else "no declared interval (a bounds-selected or full-record view)"
+        )
+        _trend = (
+            f"{_est.linear_trend_per_s!r} {_est.unit}/s removed by the estimator"
+            if _est.linear_trend_per_s is not None
+            else "no linear trend was removed (the `mean` and `none` detrendings remove none)"
+        )
+        _lines = [
+            f"**SA2.3 spectrum — `{_prov.point_label}` · gate depth {_est.depth_mm:.3f} mm · "
+            f"view `{_prov.view.value}`** · {_prov.view_rule}",
+            "",
+            "**Provenance** — every field read from the object that already owns it:",
+            f"- **pass**: `{dataset_picker.value}` — the notebook's own selection from "
+            "`analysis.sparse_passes`. The pass is **not** a `ViewProvenance` field and is "
+            "not presented as one; the spectrum's own recording identity is the fields "
+            "below.",
+            f"- job `{_prov.job}` · point label `{_prov.point_label}` · order {_prov.order}",
+            f"- source `{_prov.relative_path}` · sha256:{_prov.source_sha256}",
+            f"- view `{_prov.view.value}` · window {_prov.window_start_s:.4f}–"
+            f"{_prov.window_end_s:.4f} s (span {_prov.window_s:.4f} s; {_declared})",
+            f"- gate/depth: view column {_est.gate_index} · depth {_est.depth_mm:.3f} mm "
+            "(the instrument's native gate coordinate)",
+            f"- quantity `{_est.quantity}` [{_est.unit}] · PSD unit `{_est.psd_unit}`",
+            f"- detrending `{_est.detrending.value}` — {_trend}",
+            f"- estimator: {_est.estimator_name}",
+            f"- taper `{_est.taper_name}` — {_est.taper_convention}",
+            f"- normalization: {_est.normalization_rule}",
+            f"- one-sided folding: {_est.one_sided_rule}",
+            "",
+            "**Timebase of this actual view's own stamps** (the axis quantities, read off "
+            "the characterization the result carries):",
+            f"- N **{_est.profiles}** profiles · actual span "
+            f"{_shown(_est.span_s, ' s')} · dt_eff {_shown(_est.dt_eff_s, ' s')} · "
+            f"fs_eff {_shown(_est.effective_sample_rate_hz, ' Hz')}",
+            f"- Nyquist **{_shown(_est.nyquist_hz, ' Hz')}** (a bin sits exactly at Nyquist: "
+            f"{_est.nyquist_is_represented}) · bin spacing delta_f "
+            f"{_shown(_est.delta_f_hz, ' Hz')} = fs_eff / N, which is **not** `1 / span` · "
+            f"1/span duration scale {_shown(_axis.duration_resolution_scale_hz, ' Hz')}",
+            f"- first/last stored stamp: {_shown(_axis.start_s, ' s')} … "
+            f"{_shown(_axis.end_s, ' s')} · median adjacent interval "
+            f"{_shown(_axis.median_interval_s, ' s')} (a timestamp diagnostic — never the "
+            "sample rate)",
+            "",
+            f"**Admission — `{'admitted' if _adm.admitted else 'refused'}`** · "
+            f"verdict `{_est.verdict.value}`",
+            f"- {_adm.reason}",
+            f"- the operand admission rests on: **max relative timing error "
+            f"{_shown(_adm.max_relative_timing_error)} effective interval(s)** "
+            f"({_shown(_adm.max_timing_error_s, ' s')}) against the calibrated tolerance "
+            f"**{_adm.spectral_uniformity_tol:g}** ({_adm.timing_error_admission})",
+            f"- sample floor: {_adm.min_samples} · condition verdicts, in policy order:",
+            _conditions,
+            f"- secondary diagnostics (the design's own, not the threshold): max relative "
+            f"interval deviation {_shown(_adm.max_relative_interval_deviation)} · largest "
+            f"gap ratio {_shown(_adm.largest_gap_ratio)} · {_adm.interval_deviation_role}",
+        ]
+        if _est.psd.size == 0:
+            _lines += [
+                "",
+                "**No density is published for this axis** — a refused axis carries empty "
+                "`frequency_hz` / `psd` arrays, and the fields below are `None` rather than "
+                "`0.0`, so nothing here can be read as a measurement that was not made.",
+            ]
+        else:
+            _lines += [
+                "",
+                "**Descriptive quantities of the defined spectrum** (secondary — available, "
+                "not headline):",
+                f"- integrated PSD power `sum(Pxx) * delta_f` "
+                f"{_shown(_est.integrated_psd_power, ' (' + _est.unit + ')^2')} · "
+                f"window-normalized mean-square power "
+                f"{_shown(_est.window_normalized_mean_square_power, ' (' + _est.unit + ')^2')}",
+                f"- taper ENBW: {_shown(_est.enbw_bins, ' bins')} = "
+                f"{_shown(_est.enbw_hz, ' Hz')}",
+                f"- Parseval residual (relative) {_shown(_est.parseval_relative_error)} — "
+                "this is a **numerical QA field, not a scientific observable**: it checks "
+                "the fold and the normalization against each other, it is not plotted as a "
+                "headline and it is not compared across jobs.",
+                f"- window-normalized power relation: {_est.parseval_rule}",
+            ]
+        _block = mo.md("\n".join(_lines))
+        _out = (
+            mo.vstack([mo.callout(mo.md(position_note), kind="warn"), _block])
+            if position_note
+            else _block
+        )
+    _out
+    return
+
+
+@app.cell(hide_code=True)
+def sa2_spectrum_figure(
+    SpectralVerdict,
+    go,
+    make_subplots,
+    mo,
+    np,
+    position_note,
+    psd_zoom_max_hz,
+    sparse_view,
+    spectral_estimate,
+    target_support_rows,
+):
+    # The stored trace beside the one-sided PSD, drawn straight from the backend's own
+    # arrays. The trace is the view's own stored column the estimator cut its samples from,
+    # drawn raw; the estimator's detrending runs *inside* `periodogram_of_view` and is
+    # reported (and plotted on the SA1 recurrence figure above as the module's own analysed
+    # series) rather than re-applied here, because re-deriving it would be notebook-side
+    # spectral arithmetic.
+    #
+    # A refused axis is rendered as its refusal and **never as an empty or zero plot**: a
+    # zero spectrum is a measurement, and a refused axis was not measured.
+    #
+    # Target markers are drawn **only where the backend says the target is supported** —
+    # i.e. only inside the measurable band — so a target above this axis's Nyquist frequency
+    # is not drawn inside the PSD axes as though it were part of the measured range.
+    _out = mo.md(
+        "**No PSD is drawn.** No view, no resolved gate or no estimator result for this "
+        "selection — the SA2.3 readout above carries the module's own statement."
+    )
+    if spectral_estimate is not None and sparse_view is not None:
+        _est = spectral_estimate
+        if _est.verdict is not SpectralVerdict.DEFINED:
+            _failed = "\n".join(
+                f"  - `{item.condition.value}`: {item.rule}"
+                for item in _est.admission.conditions
+                if not item.satisfied
+            )
+            _out = mo.md(
+                f"**Spectrum refused — verdict `{_est.verdict.value}`.** The estimator "
+                "declined this axis and returned **no density and no frequency axis** (both "
+                "arrays are empty). This is deliberately *not* drawn as a zero or empty "
+                "line: a zero spectrum is a measurement, and this axis was not measured.\n\n"
+                f"- estimator: {_est.estimator_name}\n"
+                f"- why: **{_est.admission.reason}**\n"
+                f"- failed condition(s):\n{_failed}"
+            )
+        else:
+            _time = np.asarray(sparse_view.time_s, dtype=float)
+            _values = np.asarray(sparse_view.values, dtype=float)
+            _fig = make_subplots(
+                rows=2, cols=1, vertical_spacing=0.15,
+                subplot_titles=(
+                    "the stored trace the spectrum was cut from (raw as stored; view column "
+                    f"{_est.gate_index} · depth {_est.depth_mm:.3f} mm)",
+                    f"one-sided PSD [{_est.psd_unit}]",
+                ),
+            )
+            _fig.add_trace(
+                go.Scatter(
+                    x=_time, y=_values[:, _est.gate_index], mode="lines",
+                    name="stored trace (raw, not re-detrended here)",
+                    line=dict(color="#546E7A", width=1.4),
+                ),
+                row=1, col=1,
+            )
+            _fig.add_trace(
+                go.Scatter(
+                    x=_est.frequency_hz, y=_est.psd, mode="lines",
+                    name="PSD (as returned by periodogram_of_view)",
+                    line=dict(color="#1E88E5", width=1.8),
+                ),
+                row=2, col=1,
+            )
+            _marked = []
+            for _target in target_support_rows:
+                if _target.supported:
+                    _fig.add_vline(
+                        x=float(_target.target_hz),
+                        line=dict(color="#43A047", width=1.6, dash="dot"),
+                        row=2, col=1,
+                        annotation_text=f"{_target.target_label} · {_target.target_hz:g} Hz",
+                    )
+                    _marked.append(f"`{_target.target_label}` at {_target.target_hz:g} Hz")
+            _zoom = float(psd_zoom_max_hz.value or 0.0)
+            if _zoom > 0.0:
+                _fig.update_xaxes(range=[0.0, _zoom], row=2, col=1)
+            _fig.update_layout(
+                title=(
+                    f"{_est.provenance.point_label} · view "
+                    f"`{_est.provenance.view.value}` · N {_est.profiles} · span "
+                    f"{_est.span_s:.4f} s · Nyquist {_est.nyquist_hz:.4f} Hz · detrending "
+                    f"`{_est.detrending.value}` · verdict `{_est.verdict.value}`"
+                ),
+                height=720,
+            )
+            _fig.update_xaxes(
+                title_text="time from the record's first stored profile [s]", row=1, col=1
+            )
+            _fig.update_yaxes(title_text=f"velocity [{_est.unit}]", row=1, col=1)
+            _fig.update_xaxes(title_text="frequency [Hz]", row=2, col=1)
+            _fig.update_yaxes(title_text=f"PSD [{_est.psd_unit}]", row=2, col=1)
+            _caption = (
+                "The PSD is drawn directly from the backend's own `frequency_hz` / `psd` "
+                f"arrays over the full supported range 0–{float(_est.frequency_hz[-1]):.4f} Hz. "
+                + (
+                    f"**Zoomed to 0–{_zoom:g} Hz by a display-only control**: the plot limits "
+                    "changed, the estimator input did not, and the underlying density is not "
+                    "truncated or re-estimated. "
+                    if _zoom > 0.0
+                    else ""
+                )
+                + "Target markers added (only where the backend's own "
+                "`TargetFrequencySupport.supported` is true): "
+                + (", ".join(_marked) if _marked else "none")
+                + ". Refused targets are surfaced in the target-support panel below and are "
+                "deliberately **not** drawn inside the axis; the full axis ending below them "
+                "reinforces that. A spectrum whose density were identically zero would still "
+                "be drawn as a measured zero — `defined` and `refused` are distinguished by "
+                "the verdict, never by the values."
+            )
+            _out = mo.vstack(
+                [
+                    mo.callout(mo.md(position_note), kind="warn"),
+                    mo.ui.plotly(_fig),
+                    mo.md(_caption),
+                ]
+                if position_note
+                else [mo.ui.plotly(_fig), mo.md(_caption)]
+            )
+    _out
+    return
+
+
+@app.cell(hide_code=True)
+def sa2_target_readout(mo, spectral_estimate, target_support_rows, target_support_error):
+    # The target-frequency rows. Each row shows overall supported/refused, band support,
+    # analysis (admission) support, the target, the axis Nyquist, the nearest prospective
+    # bin, the bin offset, the frequency resolution, `cycles_in_view` for *this* actual view
+    # and the reason — all of them fields of the `TargetFrequencySupport` the backend
+    # returned, plus the two reasons quoted verbatim rather than paraphrased.
+    def _shown(value, unit=""):
+        """A backend field for display: `None` (no grid to locate the target on) reads
+        as an em dash, never as a zero."""
+        return "—" if value is None else f"{value:.6g}{unit}"
+
+    if spectral_estimate is None:
+        _out = mo.md(
+            "_No target rows: no spectrum was produced for this selection._"
+        )
+    elif target_support_error:
+        _out = mo.md(f"**No target rows:** `{target_support_error}`")
+    else:
+        _rows = []
+        _details = []
+        for _target in target_support_rows:
+            _rows.append(
+                f"| `{_target.target_label}` | {_target.target_hz:g} | "
+                f"**{'supported' if _target.supported else 'unsupported'}** | "
+                f"{_target.band_supported} | {_target.analysis_supported} | "
+                f"{_shown(_target.nyquist_hz, ' Hz')} | "
+                f"{_shown(_target.prospective_bin)} | "
+                f"{_shown(_target.prospective_bin_hz, ' Hz')} | "
+                f"{_shown(_target.bin_offset_hz, ' Hz')} | "
+                f"{_shown(_target.bin_offset_bins, ' bins')} | "
+                f"{_shown(_target.frequency_resolution_hz, ' Hz')} | "
+                f"{_shown(_target.cycles_in_view, ' cycles')} |"
+            )
+            _details.append(
+                f"- **`{_target.target_label}` — {_target.target_hz:g} Hz**: "
+                f"{'supported' if _target.supported else 'unsupported'} on this axis. "
+                f"Reason (the backend's own): {_target.reason}\n"
+                f"  - band support: {_target.band_supported} · analysis (admission) "
+                f"support: {_target.analysis_supported}\n"
+                f"  - band reason, quoted verbatim: \"{_target.band_reason}\"\n"
+                f"  - analysis reason, quoted verbatim: \"{_target.analysis_reason}\""
+            )
+        _detail_lines = "\n\n".join(_details)
+        _table = "\n".join(
+            [
+                "| target | target [Hz] | overall | band-supported | analysis-supported | "
+                "Nyquist [Hz] | nearest bin | bin frequency | bin offset | bin offset "
+                "[bins] | Δf [Hz] | cycles in this view |",
+                "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+            ]
+            + _rows
+        )
+        _refused_note = (
+            ""
+            if any(_t.analysis_supported for _t in target_support_rows)
+            else "\n\nThe estimator **refused this axis**, so its rows report the estimator "
+            "refusal through analysis support and the reason above — while the band "
+            "question is still answered from the characterized stamps, because it needs no "
+            "estimator."
+        )
+        _out = mo.md(
+            f"**Target-frequency rows — asked of the admission carried inside this "
+            f"`SpectralEstimate`** (never a second admission derived in the notebook). Rows "
+            f"are `sparse_spectral_capability.PROBE_TARGETS`, in the order SA2 names them. "
+            f"`cycles_in_view` is `target_hz * span_s` on *this* view's own span — an "
+            f"interpretation-quality diagnostic that refuses nothing.\n\n"
+            f"{_table}\n\n{_detail_lines}{_refused_note}\n\n"
+            "**Wording rule (binding):** `unsupported at 8.333 Hz` ⇏ `no 8.333-Hz signal`. "
+            "The first is a statement about this axis and this window; the second would be a "
+            "claim about the flow, which this stage does not make. Where a target is refused "
+            "for being **at or above this axis's Nyquist frequency**, those are the backend's "
+            "own words (quoted above, not paraphrased), and the Nyquist value quoted is the "
+            "adopted-rate Nyquist this view's own characterization published — never a value "
+            "the notebook derived.\n\n"
+            "**Sampling-support caveat (binding).** A supported verdict is a "
+            "*sampling-support statement for the stored profile sequence*: it means the "
+            "sequence can represent that frequency without the basic Nyquist impossibility. "
+            "It does **not** mean the amplitude is unbiased, that higher-frequency content "
+            "cannot alias into it, or that the emissions/profile sequence carries no "
+            "temporal averaging at that frequency. No temporal transfer function and no "
+            "instrument anti-alias response is resolved anywhere in SA2, so a target inside "
+            "the band is never worded as a measured, calibrated or anti-aliased amplitude. "
+            "This matters most for the fastest-emissions configuration here whose target "
+            "sits closest to its band edge."
+        )
+    _out
+    return
+
+
+@app.cell(hide_code=True)
+def sa2_notes(mo):
+    mo.md("""
+    **Reading SA2.3's preview.** The spectrum belongs to **one** view — the label selected
+    in the sidebar, cut by the view module's own constructors — and the admission summary,
+    the density, the target rows and the provenance all come from that one
+    `SpectralEstimate` and the `ViewProvenance` it carries. Switching the view control
+    visibly updates N, span, `delta_f`, the cycle counts, the PSD and every target-support
+    field; a full-record spectrum is never presented under the primary-comparison label,
+    and the two views' spans here are numerically close, which is exactly why they are
+    labelled rather than assumed. Switching the gate or the detrending re-calls the
+    backend, and the result names the gate depth and the detrending it used.
+
+    **The four display states, kept distinct.** An *admitted* spectrum shows its PSD. A
+    *spectrally refused* axis shows the admission's failed conditions and **no empty or
+    zero plot**. A target *above Nyquist* still shows the PSD where the estimator is
+    admitted, with the target marked unsupported in the panel below and **not** drawn
+    inside the axes. A *constant signal* would be a valid zero spectrum shown as zero, not
+    as a refusal — the branch is on the verdict, never on the values. Before any estimate
+    can exist, a missing view or an unresolved gate is shown as the notebook's own stated
+    absence, with no PSD, no zero line and no fabricated axis.
+
+    **The stale-gate guard reaches this display too.** If a view change leaves the
+    previously picked gate outside the new view, `position_note` resolves the position to
+    the middle supported gate and **says so**; the spectrum is then computed at that
+    fallback gate with the note shown beside it, rather than silently drawing a spectrum
+    for a gate other than the one named.
+
+    **Low-frequency inspection only.** The zoom above exists so a reader can look at the
+    first few Hz. No peak is picked, no "dominant" frequency is named, no band power is
+    integrated or compared, and no recurrence label is inferred from the spectrum. The
+    autocorrelation and the PSD are two descriptive estimators of the same trace and are
+    not numerically fused in this stage.
     """)
     return
 
