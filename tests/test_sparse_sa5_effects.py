@@ -461,7 +461,13 @@ def test_alignment_reads_the_nearest_native_gate_and_publishes_the_offset(
             row.depth_mm
         )  # coarse: offset 0
         assert cc3.members[0].offset_mm == pytest.approx(0.0)
+        assert cc3.members[0].gate_index == int(
+            np.abs(coarse_grid - row.depth_mm).argmin()
+        )
         # The fine corner is read at its own nearest native gate, never interpolated.
+        assert cc1.members[0].gate_index == int(
+            np.abs(fine_grid - row.depth_mm).argmin()
+        )
         assert cc1.members[0].depth_mm == pytest.approx(
             _nearest(fine_grid, row.depth_mm)
         )
@@ -605,6 +611,7 @@ def test_the_largest_absolute_effect_resolves_a_tie_to_the_shallower_depth() -> 
             members=(
                 fx.ReadAligned(
                     label="x",
+                    gate_index=0,
                     depth_mm=10.0,
                     offset_mm=0.0,
                     value=value,

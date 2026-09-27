@@ -232,6 +232,7 @@ class ReadAligned(ValueModel):
     """
 
     label: str
+    gate_index: int | None
     depth_mm: float | None
     offset_mm: float | None
     value: float | None
@@ -242,14 +243,19 @@ class ReadAligned(ValueModel):
     def _check_the_read_is_aligned_or_refused(self) -> ReadAligned:
         if self.depth_mm is None:
             if (
-                self.offset_mm is not None
+                self.gate_index is not None
+                or self.offset_mm is not None
                 or self.value is not None
                 or self.state is not None
             ):
                 raise ValueError(
-                    "an unaligned read carries no gate depth, no offset and no value"
+                    "an unaligned read carries no gate index, depth, offset or value"
                 )
         else:
+            if self.gate_index is None or self.gate_index < 0:
+                raise ValueError(
+                    "an aligned read states its nonnegative native gate index"
+                )
             if self.offset_mm is None:
                 raise ValueError(
                     "an aligned read states the gate's offset from its knot"
@@ -771,6 +777,7 @@ def _align(
             reads.append(
                 ReadAligned(
                     label=str(profile.provenance.point_label),
+                    gate_index=None,
                     depth_mm=None,
                     offset_mm=None,
                     value=None,
@@ -787,6 +794,7 @@ def _align(
         reads.append(
             ReadAligned(
                 label=str(profile.provenance.point_label),
+                gate_index=gate.gate_index,
                 depth_mm=depth,
                 offset_mm=offset,
                 value=gate.value,
