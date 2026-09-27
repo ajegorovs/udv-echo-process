@@ -4,8 +4,8 @@ The scalar characterization of the committed sparse recordings, per `recording x
 
 ## Files
 
-- `sa2-4-spectral-characterization.csv` - one row per `cell x supported gate` (plan §5): identity, the settings, the axis numbers, the gate's band-fraction numbers and the QA field.
-- `sa2-4-spectral-characterization.json` - the gate (`ok`, `checks`), the plan fingerprints and the analysis revision, the prespecified constants, one record per cell with its two probe target rows stated once, the estimator's and taper's definitions, the admission's reason, the descriptive plan §4 repeat-spread row set (its rule, groups, rows and counts), and a summary of counts.
+- `sa2-4-spectral-characterization.csv` - one row per `cell x supported gate` (plan §5): identity, the settings, the axis numbers, the gate's band-fraction numbers and the QA field. This table is the **sole per-gate record**; the document beside it does not repeat these rows.
+- `sa2-4-spectral-characterization.json` - the gate (`ok`, `checks`), the plan fingerprints and the analysis revision, the prespecified constants, one record per cell with its two probe target rows stated once, the estimator's and taper's definitions, the admission's reason, the descriptive plan §4 repeat-spread row set (its rule, groups, rows and counts), and a summary of counts. The document carries **no per-gate rows**: those are the table's, published once in the CSV, so the same 5720 rows are never serialized twice.
 - `README.md` - this file.
 
 ## The published quantity, defined
@@ -21,9 +21,9 @@ The scalar characterization of the committed sparse recordings, per `recording x
 
 ## Field glossary (the closed schema)
 
-Every field the CSV and the JSON publish is named below: the field set is **closed**, so a new field is a schema change rather than a new value (plan §6). Every entry is a scalar of the observation unit - a column of the table or a named scalar in the document - and none follows a bin, a sample or an element. In the document `cells[*]` is one `recording x view` and `cells[*].gates[*]` one of its supported gates.
+Every field the CSV and the JSON publish is named below: the field set is **closed**, so a new field is a schema change rather than a new value (plan §6). Every entry is a scalar of the observation unit - a column of the table or a named scalar in the document - and none follows a bin, a sample or an element. In the document `cells[*]` is one `recording x view`; its per-gate band-fraction rows are the table's, keyed by `pass`/`relative_path`/`view`/`gate_index`, and are **not** duplicated in the document.
 
-- **per gate (one CSV row, and `cells[*].gates[*]`)** - `gate_index`, `depth_mm`, `verdict`, `band_state`, `band_fraction`, `band_power`, `total_power`, `band_reason`, `parseval_relative_error`, `enbw_bins`, `enbw_hz`.
+- **per gate (one CSV row - the sole per-gate record)** - `gate_index`, `depth_mm`, `verdict`, `band_state`, `band_fraction`, `band_power`, `total_power`, `parseval_relative_error`, `enbw_bins`, `enbw_hz`.
 - **cell provenance and settings (`cells[*]`)** - `pass`, `plan_fingerprint`, `job`, `point_label`, `order`, `relative_path`, `source_sha256`, `view`, `view_rule`, `quantity`, `unit`, `psd_unit`, `detrending`, `low_band_hz`, `estimator_name`, `taper_name`, `taper_convention`, `normalization_rule`, `one_sided_rule`.
 - **cell window extent and acquisition condition (`cells[*]`)** - `profiles`, `native_gates`, `supported_gates`, `native_depth_extent_mm`, `pass_support_mm`, `participating_depth_extent_mm`, `window_s`, `declared_window_s`, and the condition the §4 grouping reads: `kind`, `condition.burst_length`, `condition.emissions_per_profile`, `condition.prf_us`, `resolution_mm` and `window_gates`. `window_gates` is the planned native gate count of the window - the window's own dimension - and is deliberately not the cell's `gates` row count.
 - **axis (`cells[*].axis`, JSON only)** - `profiles`, `span_s`, `dt_eff_s`, `effective_sample_rate_hz`, `nyquist_hz`, `delta_f_hz`, `duration_resolution_scale_hz`, `max_relative_timing_error`, `max_timing_error_s`, `max_relative_interval_deviation`, `largest_gap_ratio`, `spectral_uniformity_tol`, `min_samples`, `admitted`, `admission_reason`, `estimator`. `min_samples` is the admission's own sample floor - the minimum profile count the axis is admitted at - quoted as metadata and read, never recomputed.
@@ -42,21 +42,21 @@ Every field the CSV and the JSON publish is named below: the field set is **clos
 
 ## Provenance and digests
 
-- analysis revision: `30f68d8`
+- analysis revision: `f0eb5e4d67903302c55bf54686579e1b5275a415`
 - plan fingerprint (aggregate over the row set): `sha256:2c0cdc9013b41d2bd772cbd49532f14fff85b5ca29a13f98470258d31b952f89`
 - plan fingerprint of `sparse-mixer-live-1`: `655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86`
 - plan fingerprint of `sparse-mixer-live-2`: `f9de5b803921b62e788572ef5209a779d05638f1f7da4933384a743c02b6b7ef`
 - plan fingerprint rule: plan_fingerprints maps each selected pass's own name to that pass's plan fingerprint, as the pass's own plan file hashes (RunPlan.plan_fingerprint). plan_fingerprint is the aggregate binding the whole row set: 'sha256:' + SHA-256 over the canonical JSON (sort_keys=True, separators=(',', ':'), ASCII) of that {pass_name: fingerprint} map, the same canonical-JSON form the repository hashes a run plan with. A single fingerprint cannot stand for two plans, and a bare one would bind the report to one sitting while reading as if it bound both.
 - `sa2-4-spectral-characterization.csv` sha256: `sha256:97edf94a4cd45771a044f646d8700a6f372d9e903d6762bccc1e20151fe4d159`
 - the digest is the SHA-256 of the table's canonical LF bytes, so a Windows checkout with CRLF materialised on disk hashes to the same value git stores. It is populated from the bytes this run staged, not from a tree regenerated beside it.
-- Two precisions, stated separately. The CSV rounds band_fraction to fraction_decimals decimals and every other float to number_significant_digits significant digits, and a positive fraction that would round to a published zero is refused. The JSON carries every float at its full double-precision value (Python's shortest round-tripping repr), never rounded to the CSV's precision, so the document is a lossless copy of the numbers the table rounds for display. The JSON is strict: a non-finite value is refused (allow_nan=False) and fails the run before any file is written, never serialized as NaN or Infinity.
+- Two precisions, stated separately. The CSV is the fixed-precision table and the one per-gate record: it rounds band_fraction to fraction_decimals decimals and every other float to number_significant_digits significant digits, and a positive fraction that would round to a published zero is refused. The JSON does not duplicate the table's per-gate numbers; it carries the §4 repeat-spread members' band_fraction and every other float it publishes at their full double-precision value (Python's shortest round-tripping repr), never rounded to the CSV's precision. The JSON is strict: a non-finite value is refused (allow_nan=False) and fails the run before any file is written, never serialized as NaN or Infinity.
 - every file is UTF-8 with LF endings and exactly one trailing newline; the numbers are formatted by one fixed rule per artefact (above), so a regeneration at this revision can be compared byte for byte - that comparison is the report's own regeneration test, not a claim this file makes about bytes it did not read.
 - publication is staged, and honestly so: the three files are written beside the destination under unique, fsynced temporary names and moved onto their final names one `os.replace` at a time. Each rename is atomic on its own, but the three-file set is **not** a transaction - a failure after some renames have landed can leave a mixed set, and that is left for a reader to detect rather than rolled back. What detects it is this document's `table_sha256`: recompute the `sa2-4-spectral-characterization.csv` digest and compare it with the value above. The ordinary failures (a build, a refusal, a serialization or staging fault) leave the destination as it was. A publication lock beside these files makes two runs into one directory serialize rather than interleave, and an existing file this writer did not produce - or a stage file or lock an interrupted run left behind - is refused rather than overwritten.
 
 ## Reproduce
 
 ```bash
-uv run python -m udv_echo_process.cli sparse-signal-report --analysis-commit 30f68d8
+uv run python -m udv_echo_process.cli sparse-signal-report --analysis-commit f0eb5e4d67903302c55bf54686579e1b5275a415
 ```
 
 ## What this report does not claim
