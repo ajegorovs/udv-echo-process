@@ -1,11 +1,14 @@
 # Sparse UDV signal characterization — proposed work plan
 
-> **Status:** proposal only; no scientific analysis or parameter decision is made by
-> this document. The committed `sparse-mixer-live-2` recordings are available;
-> SA0 is the first implementation gate. The frozen WP0–WP5 results for
-> `sparse-mixer-live-1` remain authoritative and unchanged; do not clone them
-> wholesale for live-2 or silently revise their decision table. Stage-2 E20/E64
-> is a separate, explicitly identified design.
+> **Status (2026-09-27):** SA0/SA1 and SA2.1–SA2.4 have landed; #58 merged as
+> `b55a819`. The sampling-aware periodogram, single-record explorer and fixed
+> 0–1 Hz scalar report are available. SA2.4 publishes descriptive same-condition
+> repeat ranges, not screening floors or setting effects. SA4 is an acceptance
+> audit of the existing explorer, not a new feature stage (see below). SA5 is
+> next: its [docs-only prespecification](sa5-sitting-effects-prespec.md) freezes
+> observables and contrasts before effect computation. #49 remains open; no
+> ndarray JSON-serialization fix is implied by this plan. The frozen WP0–WP5
+> live-1 results remain authoritative; Stage-2 E20/E64 is a separate design.
 
 ## Question and unit of evidence
 
@@ -208,6 +211,18 @@ read their values and outputs back. Export cannot prove widget transitions.
 When the optional inspection provider is available, use its live-state read-back;
 otherwise verify those interactions in a live browser session and state which
 checks were not automated.
+
+**SA4 acceptance audit (2026-09-27).** The explorer already exposes the shared
+record/channel/view/gate path, selected provenance and QC, native heatmap,
+SA1 profiles/traces/distributions/ACF and SA2 periodogram/target-support
+refusals. Its committed-data tests and executed export cover the static path.
+This meets the useful single-record preview checkpoint without another feature
+build. Two literal SA4 acceptance items remain **unverified or changed in scope**:
+SA4 named *Welch* PSD, whereas SA2 accepted an admitted periodogram rather than
+Welch; and an executed export does not prove live widget transitions. Record
+live selection/read-back evidence separately when available, and amend the
+Welch wording to the accepted estimator rather than implementing Welch solely
+for the checkpoint. Do not claim full SA4 live acceptance from static tests.
 
 ### SA5 — sitting-level effects and agreement
 
