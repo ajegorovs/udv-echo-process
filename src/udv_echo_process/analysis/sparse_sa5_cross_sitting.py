@@ -10,12 +10,16 @@ them, and the two orthogonal typed states. Nothing is published, written, pooled
 A side whose digest chain, ``ok`` flag or checks do not hold refuses the run; the orientation
 is fixed as ``live2 - live1``; pairs match on exact equality of ``(view, metric, contrast)``
 *and* of the resolved ``effect_id`` (never parsed); the grid-vs-contrast rule is asserted; and
-the §5 diagnostics are computed on the common-defined knots (``D``, ``D̄``, ``RMS(D)``,
-``A_sign``, the shape correlation, the per-side numerical maxima and the localized-peak
-displacement/coincidence), each defined or explicitly typed-empty. No within-sitting value is
-re-derived: the per-knot profile is read from the digest-bound NPZ and the scalar context from
-the digest-bound CSV. ``comparison_state`` and ``label_state`` stay separate axes;
-``label_state`` is only ever ``deferred-pending-review`` or absent, never a verdict.
+the comparison domain is first narrowed to the native knots **inside the two sides' support
+intersection** (a comparison knot must lie inside both supports, §3), and only then are the §5
+diagnostics computed on the common-defined knots (``D``, ``D̄``, ``RMS(D)``, ``A_sign``, the
+shape correlation, the per-side numerical maxima and the localized-peak
+displacement/coincidence), each defined or explicitly typed-empty. A comparable pair's
+``comparison_reason`` names its established basis (``common-basis-established``), never the
+absent resolvability rule. No within-sitting value is re-derived: the per-knot profile is read
+from the digest-bound NPZ and the scalar context from the digest-bound CSV.
+``comparison_state`` and ``label_state`` stay separate axes; ``label_state`` is only ever
+``deferred-pending-review`` or absent, never a verdict.
 
 Layering
 --------
@@ -88,6 +92,7 @@ from udv_echo_process.analysis.sparse_sa5_cross_input import (
 from udv_echo_process.analysis.sparse_sa5_cross_models import (
     COMPARISON_STATES,
     LABEL_DEFERRED,
+    REASON_COMMON_BASIS,
     REASON_EFFECT_ID,
     REASON_EMPTY_SUPPORT,
     REASON_GRID,
@@ -123,6 +128,7 @@ __all__ = [
     "LIVE1",
     "LIVE2",
     "ORIENTATION",
+    "REASON_COMMON_BASIS",
     "REASON_CONSTANT_PROFILE",
     "REASON_EFFECT_ID",
     "REASON_EMPTY_SUPPORT",
@@ -264,20 +270,30 @@ def _compare_effect(
     left_arrays, right_arrays = left.arrays[key], right.arrays[key]
     if not core.native_knots_match(left_arrays, right_arrays):
         return no(REASON_GRID)
-    knots = np.asarray(right_arrays.knots_mm, dtype=float)
-
-    rows, definition = core.knot_comparison(knots, left_arrays, right_arrays)
     support = (
         max(float(left_record["support_mm"][0]), float(right_record["support_mm"][0])),  # type: ignore[index]
         min(float(left_record["support_mm"][1]), float(right_record["support_mm"][1])),  # type: ignore[index]
     )
     if support[1] <= support[0]:
         return no(REASON_EMPTY_SUPPORT)
+    # A comparison knot must lie inside both sides' supports (§3), so the comparison domain is
+    # the native knots inside the support intersection. The domain is narrowed here, before any
+    # row, mask or diagnostic is built: an excluded endpoint is not a comparison knot and can
+    # influence neither the defined count, L, a signed/RMS reduction, a sign, the correlation,
+    # a numerical maximum nor a localized peak.
+    within = core.within_support(right_arrays.knots_mm, support)
+    if not bool(within.any()):
+        return no(REASON_EMPTY_SUPPORT)
+    left_arrays = core.restrict(left_arrays, within)
+    right_arrays = core.restrict(right_arrays, within)
+    knots = np.asarray(right_arrays.knots_mm, dtype=float)
+
+    rows, definition = core.knot_comparison(knots, left_arrays, right_arrays)
     if not bool(definition.any()):
         return no(REASON_WHOLLY_UNDEFINED)
     return build(
         ComparisonState.COMPARABLE,
-        REASON_NO_RULE,
+        REASON_COMMON_BASIS,
         LABEL_DEFERRED,
         diagnostics=core.comparison_diagnostics(
             rows, definition, left_arrays, right_arrays

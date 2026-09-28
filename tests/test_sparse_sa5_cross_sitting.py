@@ -110,9 +110,16 @@ def test_a_wholly_undefined_metric_is_not_comparable(comparison) -> None:
 def test_real_corner_comparison_matches_the_specification(comparison) -> None:
     record = _corner(comparison)
     assert record.comparison_state is x.ComparisonState.COMPARABLE
-    assert record.comparison_reason == x.REASON_NO_RULE
+    # A comparable pair names its established basis, never the absent resolvability rule: the
+    # missing recurrence rule defers the label, not the comparison.
+    assert record.comparison_reason == x.REASON_COMMON_BASIS
+    assert record.comparison_reason != x.REASON_NO_RULE
+    assert record.label_state == x.LABEL_DEFERRED
     assert record.grid == x.CORNER_GRID and len(record.knots) == record.knot_count
     assert record.support_mm is not None and record.support_mm[1] > record.support_mm[0]
+    # Every published comparison knot lies inside both sides' support intersection (§3).
+    low, high = record.support_mm
+    assert all(low <= knot.depth_mm <= high for knot in record.knots)
     for knot in record.knots:
         if knot.defined:
             assert knot.difference == knot.value2 - knot.value1  # type: ignore[operator]
@@ -446,10 +453,22 @@ def _doctor_effect(quartet, key, *, knots, effect, defined, state):
 
 def _pair(*, knots, effect1, defined1, state1, effect2, defined2, state2):
     base = _synthetic_quartet()
-    left = _doctor_effect(
-        base, CORNER_KEY, knots=knots, effect=effect1, defined=defined1, state=state1
+    # The doctored knots span their own published support, so the §3 support intersection is
+    # the full doctored grid: these cases exercise the §5/knot logic, not support narrowing.
+    support = [float(knots.min()), float(knots.max())]
+    left = _doctor(
+        _doctor_effect(
+            base,
+            CORNER_KEY,
+            knots=knots,
+            effect=effect1,
+            defined=defined1,
+            state=state1,
+        ),
+        CORNER_KEY,
+        support_mm=support,
     )
-    right = dataclasses.replace(
+    right = _doctor(
         _doctor_effect(
             base,
             CORNER_KEY,
@@ -458,10 +477,14 @@ def _pair(*, knots, effect1, defined1, state1, effect2, defined2, state2):
             defined=defined2,
             state=state2,
         ),
+        CORNER_KEY,
+        support_mm=support,
+    )
+    return left, dataclasses.replace(
+        right,
         sitting="live-2",
         pass_name="sparse-mixer-live-2",
     )
-    return left, right
 
 
 def _doctored(**arrays):
@@ -531,6 +554,87 @@ def test_zero_covered_depth_gives_empty_integral() -> None:
     ).diagnostics
     assert diag is not None and diag.defined_count == 2 and diag.covered_depth_mm == 0.0
     assert diag.signed_depth_average is None and diag.rms_difference is None
+
+
+def _supported_pair(*, knots, effect1, effect2, support1, support2):
+    """A synthetic CORNER pair with equal knots but each side's own published support (§3)."""
+    base = _synthetic_quartet()
+    defined, state = _ones(len(knots))
+    left = _doctor(
+        _doctor_effect(
+            base, CORNER_KEY, knots=knots, effect=effect1, defined=defined, state=state
+        ),
+        CORNER_KEY,
+        support_mm=list(support1),
+    )
+    right = _doctor(
+        _doctor_effect(
+            base, CORNER_KEY, knots=knots, effect=effect2, defined=defined, state=state
+        ),
+        CORNER_KEY,
+        support_mm=list(support2),
+    )
+    return left, dataclasses.replace(
+        right, sitting="live-2", pass_name="sparse-mixer-live-2"
+    )
+
+
+def test_a_narrower_published_support_excludes_endpoints_from_every_diagnostic() -> (
+    None
+):
+    # Equal native grids on both sides, but the published support intersection (11, 17) is
+    # narrower than the grid (10..18): the two end knots are not comparison knots. An endpoint
+    # is given a wildly different value in the two runs, so any influence on the defined count,
+    # L, D̄, RMS(D), A_sign, the shape correlation, an extremum or a peak would show up.
+    knots = np.asarray([10.0, 12.0, 14.0, 16.0, 18.0])
+    domain_left = np.asarray([1.0, 2.0, 4.0])
+    domain_right = (
+        2.0 * domain_left + 1.0
+    )  # 3, 5, 9: an exact linear map, Pearson r = 1.
+
+    def run(ends1, ends2):
+        left, right = _supported_pair(
+            knots=knots,
+            effect1=np.concatenate([ends1[:1], domain_left, ends1[1:]]),
+            effect2=np.concatenate([ends2[:1], domain_right, ends2[1:]]),
+            support1=(10.0, 18.0),
+            support2=(11.0, 17.0),
+        )
+        return _corner(x.compare_cross_sitting(left, right))
+
+    first = run((999.0, -999.0), (123.0, 456.0))
+    doctored = run((-1000.0, 1000.0), (0.5, -0.5))
+
+    assert first.comparison_state is x.ComparisonState.COMPARABLE
+    assert first.comparison_reason == x.REASON_COMMON_BASIS
+    assert first.support_mm == (11.0, 17.0)
+    # The comparison knots are exactly the native knots inside the intersection.
+    assert first.knots_mm == (12.0, 14.0, 16.0)
+    assert tuple(knot.depth_mm for knot in first.knots) == (12.0, 14.0, 16.0)
+
+    diag = first.diagnostics
+    assert diag is not None and diag.defined_count == 3
+    assert diag.covered_depth_mm == pytest.approx(
+        4.0
+    )  # L over [12, 16], not the full span
+    assert diag.signed_depth_average == pytest.approx(3.25)  # D = [2, 3, 5]
+    assert diag.rms_difference == pytest.approx((47.0 / 4.0) ** 0.5)
+    assert diag.sign_count == 3 and diag.sign_agreement == pytest.approx(1.0)
+    assert (
+        diag.positive_count == 3 and diag.negative_count == 0 and diag.zero_count == 0
+    )
+    assert diag.zero1_count == 0 and diag.zero2_count == 0
+    assert diag.shape_correlation == pytest.approx(1.0)
+    # The extrema are the domain's, never the excluded endpoints' (999 etc.).
+    assert diag.peak1_value == pytest.approx(4.0) and diag.peak1_depth == 16.0
+    assert diag.peak2_value == pytest.approx(9.0) and diag.peak2_depth == 16.0
+    assert diag.peak_displacement == 0.0 and diag.peaks_coincide is True
+
+    # Changing only the excluded endpoints changes nothing at all.
+    assert (
+        doctored.knots_mm == first.knots_mm and doctored.support_mm == first.support_mm
+    )
+    assert doctored.diagnostics == first.diagnostics
 
 
 def test_a_single_common_knot_still_has_a_maximum_but_no_localized_peak() -> None:

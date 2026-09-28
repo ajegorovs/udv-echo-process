@@ -116,6 +116,11 @@ def _arrays(effect_id, knots, effect, defined, state, participant_count=2):
     )
 
 
+def _ones(n: int):
+    """An all-defined mask and the state codes it implies."""
+    return np.ones(n, dtype=np.uint8), np.zeros(n, dtype=np.uint8)
+
+
 def test_the_section_5_records_come_from_the_two_array_sides_alone() -> None:
     knots = np.asarray([10.0, 12.0, 14.0])
     defined, state = np.ones(3, dtype=np.uint8), np.zeros(3, dtype=np.uint8)
@@ -163,6 +168,58 @@ def test_the_same_arrays_always_give_the_same_section_5_records() -> None:
         *core.knot_comparison(knots, left, right), left, right
     )
     assert first == second
+
+
+def test_within_support_selects_only_the_common_domain_inclusively() -> None:
+    knots = np.asarray([10.0, 12.0, 14.0, 16.0, 18.0])
+    assert core.within_support(knots, (11.0, 17.0)).tolist() == [
+        False,
+        True,
+        True,
+        True,
+        False,
+    ]
+    # A knot exactly at a support bound lies inside it, so the endpoints are inclusive.
+    assert core.within_support(knots, (10.0, 18.0)).tolist() == [True] * 5
+    assert not core.within_support(knots, (11.0, 15.0)).tolist()[-1]
+
+
+def test_restrict_slices_every_array_to_the_common_domain() -> None:
+    knots = np.asarray([10.0, 12.0, 14.0])
+    defined, state = _ones(3)
+    left = _arrays("k", knots, np.asarray([99.0, 1.0, 2.0]), defined, state)
+    restricted = core.restrict(left, core.within_support(knots, (11.0, 13.0)))
+    assert restricted.knot_count == 1 and restricted.knots_mm.tolist() == [12.0]
+    assert restricted.effect.tolist() == [1.0] and restricted.defined.tolist() == [1]
+    assert restricted.participant_gate_index.shape == (2, 1)
+
+
+def test_restrict_refuses_an_empty_domain() -> None:
+    knots = np.asarray([10.0, 12.0, 14.0])
+    left = _arrays("k", knots, np.asarray([1.0, 2.0, 3.0]), *_ones(3))
+    with pytest.raises(ValueError, match="at least one comparison knot"):
+        core.restrict(left, np.zeros(3, dtype=bool))
+
+
+def test_the_section_5_records_ignore_knots_outside_the_common_support() -> None:
+    # Two sides differing only *outside* the restricted domain must give identical records.
+    knots = np.asarray([10.0, 12.0, 14.0, 16.0])
+    defined, state = _ones(4)
+
+    def diag(ends1, ends2):
+        left = _arrays(
+            "k", knots, np.asarray([ends1[0], 1.0, 2.0, ends1[1]]), defined, state
+        )
+        right = _arrays(
+            "k", knots, np.asarray([ends2[0], 3.0, 5.0, ends2[1]]), defined, state
+        )
+        within = core.within_support(knots, (11.0, 15.0))
+        left, right = core.restrict(left, within), core.restrict(right, within)
+        return core.comparison_diagnostics(
+            *core.knot_comparison(knots[within], left, right), left, right
+        )
+
+    assert diag((999.0, -999.0), (1.0, 2.0)) == diag((-5.0, 5.0), (-1.0, -2.0))
 
 
 def test_the_core_records_are_the_ones_the_slice_publishes() -> None:

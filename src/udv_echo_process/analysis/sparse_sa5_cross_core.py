@@ -3,11 +3,14 @@
 This module is the **arithmetic** of the between-sitting comparison and nothing else. A caller
 hands it the two sides' already-decoded, digest-bound effect arrays (:class:`EffectArrays`) and
 the native comparison depths, and receives the typed §5 records: the per-knot difference rows
-with the common-defined mask ``D`` over identical native knots, and then every prespecified
-diagnostic — ``L``/``D̄``/``RMS(D)``, the sign composition and ``A_sign``, the Pearson shape
-correlation, each side's numerical maximum and the localized-peak displacement/coincidence —
-each defined or explicitly typed-empty (``docs/dop3000/sa5-cross-sitting-agreement-prespec.md``
-§§3–5).
+with the common-defined mask ``D`` over the identical native knots **that lie inside both
+sides' support intersection** (:func:`within_support` / :func:`restrict`), and then every
+prespecified diagnostic — ``L``/``D̄``/``RMS(D)``, the sign composition and ``A_sign``, the
+Pearson shape correlation, each side's numerical maximum and the localized-peak
+displacement/coincidence — each defined or explicitly typed-empty
+(``docs/dop3000/sa5-cross-sitting-agreement-prespec.md`` §§3–5). Knots outside the common
+support are not comparison knots and are excluded before any row, mask or diagnostic is built,
+so they cannot influence one.
 
 It is deliberately independent of the rest of the slice. It reads no file, verifies no digest,
 matches no key, knows no sitting, plan, operand or repeat group, and imports neither the
@@ -34,7 +37,11 @@ from udv_echo_process.analysis.sparse_sa5_effects import (
     CONSTANT_TOLERANCE_REL,
     MIN_SHAPE_KNOTS,
 )
-from udv_echo_process.analysis.sparse_sa5_npz import EFFECT_STATE_CODES, EffectArrays
+from udv_echo_process.analysis.sparse_sa5_npz import (
+    EFFECT_STATE_CODES,
+    MEMBER_SUFFIXES,
+    EffectArrays,
+)
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
@@ -48,6 +55,8 @@ __all__ = [
     "knot_comparison",
     "native_knots_match",
     "peak",
+    "restrict",
+    "within_support",
 ]
 
 #: Two comparison knots are the *same* knot iff their depths agree within this (§3).
@@ -81,6 +90,47 @@ def native_knots_match(
     left_knots = np.asarray(left.knots_mm, dtype=float)
     right_knots = np.asarray(right.knots_mm, dtype=float)
     return float(np.abs(left_knots - right_knots).max(initial=0.0)) <= tolerance
+
+
+def within_support(knots: np.ndarray, support: tuple[float, float]) -> np.ndarray:
+    """The comparison knots lying inside both sides' support intersection (§3).
+
+    A comparison knot must lie **inside both sides' supports**, so the support intersection is
+    the comparison's own domain: a native knot outside it is not a comparison knot at all. The
+    endpoints are inclusive — a knot exactly at a support bound lies inside it — and the rule
+    is applied *before* any row, mask or diagnostic is built, so an excluded knot can influence
+    neither the defined count, nor ``L``, nor a signed/RMS reduction, a sign, a correlation, a
+    numerical maximum or a localized peak.
+    """
+    depths = np.asarray(knots, dtype=float)
+    return (depths >= float(support[0])) & (depths <= float(support[1]))
+
+
+def restrict(arrays: EffectArrays, within: np.ndarray) -> EffectArrays:
+    """One side's arrays restricted to the comparison domain (§3).
+
+    Every one of the ten §3 arrays is sliced at the same positions as the knots, so the record
+    is a consistent effect over **exactly** the comparison knots and no resampling, nearest-gate
+    substitution or interpolation is performed. ``within`` must select at least one knot,
+    because a §3 effect carries a positive ``knot_count``; an empty domain is typed by the
+    caller before any array is built.
+    """
+    index = np.flatnonzero(np.asarray(within, dtype=bool))
+    if index.size < 1:
+        raise ValueError(
+            "a restricted effect carries at least one comparison knot: an empty comparison "
+            "domain is typed before any array is built"
+        )
+    sliced: dict[str, object] = {"knot_count": int(index.size)}
+    for suffix in MEMBER_SUFFIXES:
+        array = getattr(arrays, suffix)
+        cut = array[index] if array.ndim == 1 else array[:, index]
+        sliced[suffix] = np.ascontiguousarray(cut, dtype=array.dtype)
+    return EffectArrays(
+        effect_id=arrays.effect_id,
+        participant_count=arrays.participant_count,
+        **sliced,  # type: ignore[arg-type]
+    )
 
 
 def peak(values: np.ndarray, depths: np.ndarray) -> tuple[float, float]:

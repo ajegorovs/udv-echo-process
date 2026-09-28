@@ -44,6 +44,7 @@ from udv_echo_process.models.base import ValueModel
 __all__ = [
     "COMPARISON_STATES",
     "LABEL_DEFERRED",
+    "REASON_COMMON_BASIS",
     "REASON_EFFECT_ID",
     "REASON_EMPTY_SUPPORT",
     "REASON_GRID",
@@ -113,6 +114,9 @@ REASON_UNITS = "units-mismatch"
 REASON_WHOLLY_UNDEFINED = "side-wholly-undefined"
 REASON_EMPTY_SUPPORT = "empty-common-support"
 REASON_MISSING_SIDE = "side-effect-not-published"
+#: The ``comparable`` basis: the pair's structural basis and common defined knots are established,
+#: independent of the deferred recurrence label (§7).
+REASON_COMMON_BASIS = "common-basis-established"
 REASON_NO_RULE = "not-resolvable-unregistered"
 REASON_REPEAT_UNAVAILABLE = (
     "no-published-repeat-group-matches-the-operand-whole-condition"
