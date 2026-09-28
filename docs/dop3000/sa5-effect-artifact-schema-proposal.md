@@ -197,6 +197,9 @@ check names with their verdicts — `operands_bound_to_decoded_sources`,
 schema-level names `npz_members_are_the_closed_set`,
 `every_undefined_position_carries_placeholder_mask_and_state`,
 `participant_rows_are_the_declared_order`, `digests_match_the_staged_bytes`.
+`ok` is true exactly when every engine `checks` entry **and** every `artifact_checks`
+entry is true; it does not suppress typed per-knot non-values, which are data rather than
+a failed artifact check.
 
 ### 5.2 Provenance
 
@@ -219,6 +222,11 @@ carries the block-local anchors as **context only**; no anchor is an operand.
 each `{label, job, order, kind}`), `support_mm`, `half_pitch_mm`,
 `alignment_rule` and `state_meanings` (§8, so a code is never ambiguous). The `grid`,
 `knot_count` and `participant_count` here are the shape contract the NPZ is checked against.
+`grid` is `corner_knots` for the four corner contrasts and the derived interaction,
+`emissions_knots` for the three E8/E64/E128 contrasts; the verifier derives this from
+the fixed binding, not from the writer's label. A participant is an actual recording,
+so each `participants[*].kind` is `"recording"` even when four participants together
+form the low `mean-of-four` **operand**. Operand kinds remain on `operands`.
 
 ### 5.4 Member list — the closed key set, published
 
@@ -238,13 +246,16 @@ covered depth is zero are instead determined by the CSV's coverage fields (§6),
 fabricated per-knot refusal. For a profile-level `shape` position, `knot_index` and
 `depth_mm` are null.
 `kind` is one of `effect-knot`, `operand-knot`, `read`, `shape`; `side` and `member` are null
-where the position is the effect's own; `state` for a per-knot entry names its
+where the position is the effect's own; a `read` row names its owning operand in `side`
+and its recording label in `member`. `nonvalue_counts` is a nested
+`{state: {kind: count}}` object; the counts sum to the number of `nonvalue_rows`.
+`state` for a per-knot entry names its
 backend effect or metric state (§8), e.g. `undefined-alignment`,
 `undefined-operand`, `undefined-constant-trace`, `undefined-not-supported`,
 `refused-axis`, `defined-zero-power`. A `shape` row alone uses the JSON-only
 `undefined-shape` label for `ProfileShape.correlation is None`; it has no NPZ
 state code. `reason` is the engine's own reason text, copied,
-never rewritten. `nonvalue_counts` states the totals by `(state, kind)`.
+never rewritten.
 
 **`defined-zero-power` is a valid admitted `0/0`, not a refusal and not a failed
 acquisition.** The spectral axis was admitted and its total power is exactly zero (a constant
@@ -276,7 +287,9 @@ One convention, applied identically to every published file:
   its canonical LF bytes** (`analysis._floor_documents.table_digest`:
   `read_bytes().replace(b"\r\n", b"\n")`), so a Windows checkout that materialised CRLF
   hashes to the value git stores.
-- Both are recorded in the JSON, each with the sibling `file` name, so the JSON binds both
+- Both are recorded in the JSON as nested `artifacts: {"npz": {"file": ..., "sha256": ...},
+  "csv": {"file": ..., "sha256": ...}}` (not literal dotted top-level keys), each with
+  its sibling file name, so the JSON binds both
   files. The **JSON**'s own digest is recorded in the README (§7); a file never carries its
   own digest.
 - Every digest is lowercase hex with the `sha256:` prefix. A **source** digest is the bare
@@ -308,6 +321,16 @@ profile spans a positive depth; a one-knot profile has an empty fraction, not ze
 An interior undefined knot never bridges the two neighbouring intervals. Where
 `L = 0`, `signed_depth_average` and `rms_magnitude` are empty even if an isolated
 knot is defined; the equal-knot average and extrema remain descriptive. The
+sign fractions `positive_fraction`, `negative_fraction` and `zero_fraction` are
+counted over **different denominators**, and the CSV column name alone does not
+state which. `positive_fraction` and `negative_fraction` are counted over the
+**defined non-zero** knots only: they share one denominator, they sum to `1`
+whenever at least one defined knot is non-zero, and both are the empty field
+where every defined knot is exactly zero. `zero_fraction` is counted over
+**every defined knot** — its denominator is `defined_count` (`analysis.sparse_sa5_effects`
+counts `values == 0.0` over all defined values, while the two others divide by the
+non-zero subset) — so it is never empty on an effect with a defined knot, and a
+measured effect of exactly `0.0` is a value, never a non-value row (§5.5). The
 `support_low_mm` / `support_high_mm` columns name common support, not the
 denominator of the coverage fraction. `undefined_alignment_count` and
 `undefined_operand_count` come from the NPZ `state` codes (§8 table A).
@@ -378,6 +401,12 @@ without either drifting from the backend.
   digest mismatch is what a reader detects, not a rollback. Refuse to overwrite an existing
   file this writer did not produce, and refuse a stage file or lock an interrupted run left
   behind.
+- An existing SA5 stem is never overwritten to guess ownership: if **all four** files
+  already exist and their bytes match this run's fully staged products, publication is
+  idempotent and does nothing; if any file is missing or differs, refuse without replacing
+  any existing file. This applies equally to an unrelated file bearing an SA5 name and
+  to a mixed set left by an interrupted publication. The sibling SA2.4 files are never
+  candidates for replacement.
 - Generate the two sittings as **two independent invocations**, one `PassRef` each. Refuse a
   second sitting in one invocation and refuse any computation of `E_live2 − E_live1`, a
   recurrence verdict or a cross-sitting summary — that comparison is a separate, later,

@@ -1778,7 +1778,7 @@ def regeneration(
 def test_the_committed_report_is_the_three_artefacts_under_the_designated_root(
     committed_report: Path,
 ) -> None:
-    """§5: the committed directory holds the table, the document and the README - nothing else."""
+    """§5: retain exactly SA2.4's three owned files; later SA5 files coexist."""
     assert (
         Path(writer.REPORT_DIR).as_posix()
         == COMMITTED_REPORT_DIR.relative_to(ROOT).as_posix()
@@ -1788,7 +1788,12 @@ def test_the_committed_report_is_the_three_artefacts_under_the_designated_root(
         for path in committed_report.rglob("*")
         if path.is_file()
     )
-    assert produced == sorted(COMMITTED_ARTEFACTS), produced
+    owned = [
+        name
+        for name in produced
+        if name == README_NAME or name.startswith("sa2-4-spectral-characterization.")
+    ]
+    assert owned == sorted(COMMITTED_ARTEFACTS), owned
 
 
 def test_the_committed_report_regenerates_byte_for_byte_at_the_recorded_revision(
