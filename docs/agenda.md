@@ -51,7 +51,7 @@ have only one visit in a matched round. A round groups cross-stream visits;
 
 ---
 
-## Active work — SA5 sitting-level effects (design first)
+## Active work — SA5 cross-sitting agreement
 
 SA0/SA1 and SA2.1–SA2.4 are landed; #58 merged as `b55a819`. SA2 now provides
 the sampling-aware spectral backend, single-record preview, fixed 0–1 Hz
@@ -59,10 +59,13 @@ fraction and deterministic scalar report. Its repeat ranges are descriptive,
 not screening floors. The [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
 records the SA4 acceptance audit: the explorer is useful now, but live widget
 read-back is not established by an executed export, and the original Welch
-wording differs from the accepted periodogram. The next scientific slice is a
-[docs-only SA5 prespecification](dop3000/sa5-sitting-effects-prespec.md), followed
-by separate within-sitting effect tables and only then cross-sitting agreement.
-SA3/POD and SA6 UI remain demand-driven; #49 remains open and separate.
+wording differs from the accepted periodogram. SA5 within-sitting effects for
+both sittings are published and frozen by #61, merged as
+`ea07fda77a5d9bd6899ab427959f0e0054218ae3`. The next scientific slice is
+cross-sitting descriptive agreement over those fixed, oriented effects and
+intersecting physical support; it must not reselect operands or revise the
+within-sitting definitions. SA3/POD and SA6 UI remain demand-driven; #49
+remains open and separate.
 
 ---
 
