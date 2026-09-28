@@ -1,0 +1,608 @@
+{
+  "analysis_orientation": "E64 - E20",
+  "channel": 1,
+  "created_at": "2026-09-28T17:32:52.701878+03:00",
+  "date": "2026-09-28",
+  "initial_state": {
+    "emissions_per_profile": "20",
+    "note": "the instrument already stated 20 when the sitting began, so no initial-state-establishment transition (an X -> 20) occurred; the history opens with e64-a's 20 -> 64",
+    "source": "the boundary's own pre-write read of the parameter column"
+  },
+  "jobs": [
+    {
+      "compilation_identity": {
+        "burst_length": {
+          "source": "read",
+          "value": "10"
+        },
+        "channel": {
+          "source": "routed",
+          "value": "1"
+        },
+        "class_name": "TMain_Scr",
+        "emissions_per_profile": {
+          "source": "read",
+          "value": "20"
+        },
+        "first_gate_mm": {
+          "source": "read",
+          "value": "10"
+        },
+        "max_profiles_per_block": {
+          "source": "unreadable",
+          "value": null
+        },
+        "mode": {
+          "source": "read",
+          "value": "manual"
+        },
+        "panels": 4,
+        "prf_us": {
+          "source": "read",
+          "value": "600"
+        },
+        "process_mode": {
+          "source": "read",
+          "value": "instrument"
+        },
+        "sound_speed_ms": {
+          "source": "read",
+          "value": "1480"
+        },
+        "strip_has_slider": false,
+        "strip_view": "ready"
+      },
+      "definition_fingerprint": "e028c92835bce8cb1248f476ba48e86203dcd13a13208b53b50b4e3c222e9766",
+      "expected_process_mode": "instrument",
+      "finished_at": "2026-09-28T17:33:21.429150+03:00",
+      "job": "e20-a",
+      "job_manifest_sha256_original": "a7bd708890bded5580fe7533792599d5a244d285cb0550360b18d843730e82da",
+      "no_write_note": "the instrument already states 20, so no write was spent and no transition was recorded (an equal value is not a transition)",
+      "observed_process_mode": "instrument",
+      "parameter_mutations": [],
+      "point_log_sha256_original": "78506134cd203c78775d6b312bfb308e7a91b12c9ff2abccbd0c84e1cf5afda3",
+      "points": [
+        {
+          "advisories": [],
+          "bytes": 70096,
+          "decoded_config": {
+            "burst_length": 10,
+            "doppler_angle_deg": 0.0,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "gate1_mm": 10.138,
+            "max_depth_mm": 100.788,
+            "module_scale": 2048,
+            "n_gates": 50,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "sensitivity": "medium",
+            "skipped_profiles": 0,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "tgc_end_db": 40.0,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "trigger_delay_ms": 0.0,
+            "trigger_state": null,
+            "velo_max_ms": 154.13758351092335,
+            "wall_filter": null
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "expected_bytes": 68026,
+          "failure": null,
+          "file": "emctl-live1-e20-a-ref-20260928T173300.BDD",
+          "identity": "emctl-live1-e20-a-ref",
+          "label": "ref",
+          "log_decoded": {
+            "achieved_period_s": 0.02239357142857143,
+            "bandwidth_definition_index": 1,
+            "burst_length": 10,
+            "channel": 1,
+            "depth_mm": 101,
+            "emissions_per_profile": 20,
+            "interval_deviation": 0.004464285714305053,
+            "median_interval_s": 0.022399999999999975,
+            "n_gates": 50,
+            "n_profiles": 561,
+            "prf_us": 600.0,
+            "resolution_index": null,
+            "resolution_mm": 1.85,
+            "size_bytes": 70096,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "span_s": 12.5404
+          },
+          "requested": {
+            "burst_length": 10,
+            "emissions_per_profile": 20,
+            "first_gate_mm": 10.0,
+            "gates": 50,
+            "prf_us": 600.0,
+            "resolution_mm": 1.85,
+            "sound_speed_ms": 1480.0
+          },
+          "sha256": "06711c0e7d369abbe53564b790a6d7a9e9473508a03b6ee1d6130a4e67370f2d",
+          "status": "ok",
+          "word14_emissions_per_profile": 20,
+          "word27_bandwidth_definition_index": 1,
+          "word27_sampling_volume_index": 1,
+          "word27_sampling_volume_mm": null,
+          "word8_burst_length": 10
+        }
+      ],
+      "started_at": "2026-09-28T17:32:52.702730+03:00",
+      "status": "ok",
+      "step": 1,
+      "write_spent": false
+    },
+    {
+      "compilation_identity": {
+        "burst_length": {
+          "source": "read",
+          "value": "10"
+        },
+        "channel": {
+          "source": "routed",
+          "value": "1"
+        },
+        "class_name": "TMain_Scr",
+        "emissions_per_profile": {
+          "source": "read",
+          "value": "64"
+        },
+        "first_gate_mm": {
+          "source": "read",
+          "value": "10"
+        },
+        "max_profiles_per_block": {
+          "source": "unreadable",
+          "value": null
+        },
+        "mode": {
+          "source": "read",
+          "value": "manual"
+        },
+        "panels": 4,
+        "prf_us": {
+          "source": "read",
+          "value": "600"
+        },
+        "process_mode": {
+          "source": "read",
+          "value": "instrument"
+        },
+        "sound_speed_ms": {
+          "source": "read",
+          "value": "1480"
+        },
+        "strip_has_slider": false,
+        "strip_view": "ready"
+      },
+      "definition_fingerprint": "ee5c8c524460c1220c21dc719814f7bd8567541872d112f07756c0e9fdd2d445",
+      "expected_process_mode": "instrument",
+      "finished_at": "2026-09-28T17:36:14.848510+03:00",
+      "job": "e64-a",
+      "job_manifest_sha256_original": "bc194fc55608a0e9bdc62512773e26433b916f236425fb2a2b11b6ec7bf65ed7",
+      "no_write_note": null,
+      "observed_process_mode": "instrument",
+      "parameter_mutations": [
+        {
+          "before": "20",
+          "fresh_read": "64",
+          "job": "e64-a",
+          "mutation_id": "0f84965c8a0b40dab89666e83c3ea70b",
+          "occurred_at": "2026-09-28T17:35:51.162180+03:00",
+          "parameter": "emissions_per_profile",
+          "requested": "64",
+          "state": "verified",
+          "write_readback": "64"
+        }
+      ],
+      "point_log_sha256_original": "0e73e3c2b6866ac7fc0c527c74655da65e5d74a7cf5cdf5ee21c3ede165bdcc8",
+      "points": [
+        {
+          "advisories": [],
+          "bytes": 49120,
+          "decoded_config": {
+            "burst_length": 10,
+            "doppler_angle_deg": 0.0,
+            "emissions_per_profile": 64,
+            "emit_power": "medium",
+            "gate1_mm": 10.138,
+            "max_depth_mm": 100.788,
+            "module_scale": 2048,
+            "n_gates": 50,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "sensitivity": "medium",
+            "skipped_profiles": 0,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "tgc_end_db": 40.0,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "trigger_delay_ms": 0.0,
+            "trigger_state": null,
+            "velo_max_ms": 154.13758351092335,
+            "wall_filter": null
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "expected_bytes": 48292,
+          "failure": null,
+          "file": "emctl-live1-e64-a-ref-20260928T173553.BDD",
+          "identity": "emctl-live1-e64-a-ref",
+          "label": "ref",
+          "log_decoded": {
+            "achieved_period_s": 0.048792968750000006,
+            "bandwidth_definition_index": 1,
+            "burst_length": 10,
+            "channel": 1,
+            "depth_mm": 101,
+            "emissions_per_profile": 64,
+            "interval_deviation": 0.002049180327900479,
+            "median_interval_s": 0.048799999999999955,
+            "n_gates": 50,
+            "n_profiles": 257,
+            "prf_us": 600.0,
+            "resolution_index": null,
+            "resolution_mm": 1.85,
+            "size_bytes": 49120,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "span_s": 12.491000000000001
+          },
+          "requested": {
+            "burst_length": 10,
+            "emissions_per_profile": 64,
+            "first_gate_mm": 10.0,
+            "gates": 50,
+            "prf_us": 600.0,
+            "resolution_mm": 1.85,
+            "sound_speed_ms": 1480.0
+          },
+          "sha256": "6dc69575367b4a82fc0b30f7597163b04e2cdce868b2921969992c4dd584ef24",
+          "status": "ok",
+          "word14_emissions_per_profile": 64,
+          "word27_bandwidth_definition_index": 1,
+          "word27_sampling_volume_index": 1,
+          "word27_sampling_volume_mm": null,
+          "word8_burst_length": 10
+        }
+      ],
+      "started_at": "2026-09-28T17:35:43.039446+03:00",
+      "status": "ok",
+      "step": 2,
+      "write_spent": true
+    },
+    {
+      "compilation_identity": {
+        "burst_length": {
+          "source": "read",
+          "value": "10"
+        },
+        "channel": {
+          "source": "routed",
+          "value": "1"
+        },
+        "class_name": "TMain_Scr",
+        "emissions_per_profile": {
+          "source": "read",
+          "value": "64"
+        },
+        "first_gate_mm": {
+          "source": "read",
+          "value": "10"
+        },
+        "max_profiles_per_block": {
+          "source": "unreadable",
+          "value": null
+        },
+        "mode": {
+          "source": "read",
+          "value": "manual"
+        },
+        "panels": 4,
+        "prf_us": {
+          "source": "read",
+          "value": "600"
+        },
+        "process_mode": {
+          "source": "read",
+          "value": "instrument"
+        },
+        "sound_speed_ms": {
+          "source": "read",
+          "value": "1480"
+        },
+        "strip_has_slider": false,
+        "strip_view": "ready"
+      },
+      "definition_fingerprint": "fcbab87ac460d823be183e46087967911c95e2f5f4988fb85847f4bc1da42288",
+      "expected_process_mode": "instrument",
+      "finished_at": "2026-09-28T17:37:49.091121+03:00",
+      "job": "e64-b",
+      "job_manifest_sha256_original": "4bacde9539d92a08e73f09adf0b6a96641a52419b17d40eae89e64d0a18e2561",
+      "no_write_note": "the instrument already states 64, so no write was spent and no transition was recorded (an equal value is not a transition)",
+      "observed_process_mode": "instrument",
+      "parameter_mutations": [],
+      "point_log_sha256_original": "b299270b00349e91a1f103743a9a4a003b15e3f6ad7c75bca934c5c453951594",
+      "points": [
+        {
+          "advisories": [],
+          "bytes": 49120,
+          "decoded_config": {
+            "burst_length": 10,
+            "doppler_angle_deg": 0.0,
+            "emissions_per_profile": 64,
+            "emit_power": "medium",
+            "gate1_mm": 10.138,
+            "max_depth_mm": 100.788,
+            "module_scale": 2048,
+            "n_gates": 50,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "sensitivity": "medium",
+            "skipped_profiles": 0,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "tgc_end_db": 40.0,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "trigger_delay_ms": 0.0,
+            "trigger_state": null,
+            "velo_max_ms": 154.13758351092335,
+            "wall_filter": null
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "expected_bytes": 48292,
+          "failure": null,
+          "file": "emctl-live1-e64-b-ref-20260928T173728.BDD",
+          "identity": "emctl-live1-e64-b-ref",
+          "label": "ref",
+          "log_decoded": {
+            "achieved_period_s": 0.048793359375000005,
+            "bandwidth_definition_index": 1,
+            "burst_length": 10,
+            "channel": 1,
+            "depth_mm": 101,
+            "emissions_per_profile": 64,
+            "interval_deviation": 0.002049180327900479,
+            "median_interval_s": 0.048799999999999955,
+            "n_gates": 50,
+            "n_profiles": 257,
+            "prf_us": 600.0,
+            "resolution_index": null,
+            "resolution_mm": 1.85,
+            "size_bytes": 49120,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "span_s": 12.491100000000001
+          },
+          "requested": {
+            "burst_length": 10,
+            "emissions_per_profile": 64,
+            "first_gate_mm": 10.0,
+            "gates": 50,
+            "prf_us": 600.0,
+            "resolution_mm": 1.85,
+            "sound_speed_ms": 1480.0
+          },
+          "sha256": "01ecdf369da518b49ca18267d95147a120fb84e40f5e66d22772c538168bb7a4",
+          "status": "ok",
+          "word14_emissions_per_profile": 64,
+          "word27_bandwidth_definition_index": 1,
+          "word27_sampling_volume_index": 1,
+          "word27_sampling_volume_mm": null,
+          "word8_burst_length": 10
+        }
+      ],
+      "started_at": "2026-09-28T17:37:20.472636+03:00",
+      "status": "ok",
+      "step": 3,
+      "write_spent": false
+    },
+    {
+      "compilation_identity": {
+        "burst_length": {
+          "source": "read",
+          "value": "10"
+        },
+        "channel": {
+          "source": "routed",
+          "value": "1"
+        },
+        "class_name": "TMain_Scr",
+        "emissions_per_profile": {
+          "source": "read",
+          "value": "20"
+        },
+        "first_gate_mm": {
+          "source": "read",
+          "value": "10"
+        },
+        "max_profiles_per_block": {
+          "source": "unreadable",
+          "value": null
+        },
+        "mode": {
+          "source": "read",
+          "value": "manual"
+        },
+        "panels": 4,
+        "prf_us": {
+          "source": "read",
+          "value": "600"
+        },
+        "process_mode": {
+          "source": "read",
+          "value": "instrument"
+        },
+        "sound_speed_ms": {
+          "source": "read",
+          "value": "1480"
+        },
+        "strip_has_slider": false,
+        "strip_view": "ready"
+      },
+      "definition_fingerprint": "c9fc5704c32404c6415f5077b88aff79ff4e886865a25b704fa4aee0d01cc56a",
+      "expected_process_mode": "instrument",
+      "finished_at": "2026-09-28T17:38:41.408165+03:00",
+      "job": "e20-b",
+      "job_manifest_sha256_original": "befb952be235724e7f36feb8455022613c975636bed6d92dae8bd727c70fce72",
+      "no_write_note": null,
+      "observed_process_mode": "instrument",
+      "parameter_mutations": [
+        {
+          "before": "64",
+          "fresh_read": "20",
+          "job": "e20-b",
+          "mutation_id": "ea00225994ec479ea18aa78daec606c2",
+          "occurred_at": "2026-09-28T17:38:17.730601+03:00",
+          "parameter": "emissions_per_profile",
+          "requested": "20",
+          "state": "verified",
+          "write_readback": "20"
+        }
+      ],
+      "point_log_sha256_original": "d5326ccf0595ec03f459774ffb374ed3869d406f03c51fdff38a9845305be12c",
+      "points": [
+        {
+          "advisories": [],
+          "bytes": 70027,
+          "decoded_config": {
+            "burst_length": 10,
+            "doppler_angle_deg": 0.0,
+            "emissions_per_profile": 20,
+            "emit_power": "medium",
+            "gate1_mm": 10.138,
+            "max_depth_mm": 100.788,
+            "module_scale": 2048,
+            "n_gates": 50,
+            "pulse_repetition_freq_hz": 1666.6666666666667,
+            "resolution_mm": 1.85,
+            "sampling_volume_index": 1,
+            "sampling_volume_mm": null,
+            "sensitivity": "medium",
+            "skipped_profiles": 0,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "tgc_end_db": 40.0,
+            "tgc_mode": "uniform",
+            "tgc_start_db": 19.92156862745098,
+            "trigger_delay_ms": 0.0,
+            "trigger_state": null,
+            "velo_max_ms": 154.13758351092335,
+            "wall_filter": null
+          },
+          "enforced_covariates": [
+            "sound_speed_ms",
+            "prf_us",
+            "burst_length",
+            "emissions_per_profile"
+          ],
+          "expected_bytes": 68026,
+          "failure": null,
+          "file": "emctl-live1-e20-b-ref-20260928T173820.BDD",
+          "identity": "emctl-live1-e20-b-ref",
+          "label": "ref",
+          "log_decoded": {
+            "achieved_period_s": 0.022393559928443652,
+            "bandwidth_definition_index": 1,
+            "burst_length": 10,
+            "channel": 1,
+            "depth_mm": 101,
+            "emissions_per_profile": 20,
+            "interval_deviation": 0.004464285714305053,
+            "median_interval_s": 0.022399999999999975,
+            "n_gates": 50,
+            "n_profiles": 560,
+            "prf_us": 600.0,
+            "resolution_index": null,
+            "resolution_mm": 1.85,
+            "size_bytes": 70027,
+            "sound_speed_ms": 1480.0,
+            "source_freq_khz": 4000.0,
+            "span_s": 12.518
+          },
+          "requested": {
+            "burst_length": 10,
+            "emissions_per_profile": 20,
+            "first_gate_mm": 10.0,
+            "gates": 50,
+            "prf_us": 600.0,
+            "resolution_mm": 1.85,
+            "sound_speed_ms": 1480.0
+          },
+          "sha256": "d39dafdbd8bc721f315ef671dff4091e2bca92f12613bd2fe677f5a6e0b64a50",
+          "status": "ok",
+          "word14_emissions_per_profile": 20,
+          "word27_bandwidth_definition_index": 1,
+          "word27_sampling_volume_index": 1,
+          "word27_sampling_volume_mm": null,
+          "word8_burst_length": 10
+        }
+      ],
+      "started_at": "2026-09-28T17:38:09.667363+03:00",
+      "status": "ok",
+      "step": 4,
+      "write_spent": true
+    }
+  ],
+  "mutations": [
+    {
+      "before": "20",
+      "definition_fingerprint": "ee5c8c524460c1220c21dc719814f7bd8567541872d112f07756c0e9fdd2d445",
+      "fresh_read": "64",
+      "job": "e64-a",
+      "mutation_id": "0f84965c8a0b40dab89666e83c3ea70b",
+      "occurred_at": "2026-09-28T17:35:51.162180+03:00",
+      "parameter": "emissions_per_profile",
+      "requested": "64",
+      "routed_channel": 1,
+      "state": "verified",
+      "write_readback": "64"
+    },
+    {
+      "before": "64",
+      "definition_fingerprint": "c9fc5704c32404c6415f5077b88aff79ff4e886865a25b704fa4aee0d01cc56a",
+      "fresh_read": "20",
+      "job": "e20-b",
+      "mutation_id": "ea00225994ec479ea18aa78daec606c2",
+      "occurred_at": "2026-09-28T17:38:17.730601+03:00",
+      "parameter": "emissions_per_profile",
+      "requested": "20",
+      "routed_channel": 1,
+      "state": "verified",
+      "write_readback": "20"
+    }
+  ],
+  "plan_fingerprint": "33314c215720bbbb5b34d02ca858f1b9f8198eff62e024905126d2b0a1d13027",
+  "plan_record_sha256_original": "dc7cbd8e65e57a2de492a7df323376c854fabc41044fb2b9f538ba3e4e1a0b09",
+  "purpose": "Emissions-control live commissioning: the four-job E20 -> E64 -> E64 -> E20 parameter-boundary acceptance on the instrument",
+  "strict_facts": [
+    "emissions_per_profile"
+  ],
+  "updated_at": "2026-09-28T17:38:41.409337+03:00"
+}
