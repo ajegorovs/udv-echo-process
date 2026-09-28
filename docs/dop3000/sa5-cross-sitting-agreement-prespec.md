@@ -229,7 +229,7 @@ Two typed-empty context states replace the group selection, each with its own re
   the same four corners. **No contrast-level or synthetic repeat group is ever constructed** from a
   contrast's two sides, and no anchor or reference member is averaged into an operand (within-sitting
   prespec §42).
-- **`repeat-context-identity-unverifiable`** (reason `repeat-group-member-achieved-condition-not-published`):
+- **`repeat-context-identity-unverifiable`** (reason `anchor-members-whole-achieved-condition-is-not-published-in-the-quartet`):
   a block-local anchor group names the same job as the `e8`/`e64`/`e128` operand, but the group carries no
   achieved-condition field and its control members (`ctrl-begin`/`ctrl-mid`/`ctrl-end`) are not published
   in the sitting's `provenance`, so the operand's whole achieved condition cannot be proved to equal

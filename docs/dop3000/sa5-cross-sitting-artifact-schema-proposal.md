@@ -35,7 +35,7 @@ One artifact set of four files under the plan's publish root `reports/sparse-sig
 | `sa5-cross-sitting.npz` | the per-comparison per-knot arrays (§3, §4) |
 | `sa5-cross-sitting.json` | identity, the two source quartets' digests, the typed states and reasons, the frozen per-side context quotations, the non-value rows and the digests (§5) |
 | `sa5-cross-sitting.csv` | the 72-row one-row-per-comparison **scalar set** — the sole home of every comparison reduction (§6) |
-| `sa5-cross-sitting.README.md` | units, definitions, the two orientations' digest chains, the regeneration command and the no-go list (§7) |
+| `sa5-cross-sitting.README.md` | units, definitions, the two source quartets' digest chains, the regeneration command and the no-go list (§7) |
 
 `schema` is the new closed id **`sa5-cross-sitting/v1`** (the source quartet's own id stays
 `sa5-within-sitting-effects/v1`). The artifact is **one comparison**, `live2 − live1`
@@ -430,6 +430,20 @@ depth, defined whenever `|D| ≥ 1`), `peak_localized1`/`peak_localized2` (the l
 booleans), `peak_displacement = z*_2 − z*_1` (positive = deeper in live-2) and `peaks_coincide`
 (both present only when both sides are localized).
 
+**`Diagnostics.shape_defined_count` is not serialized.** The backend carries two defined counts on
+one `Diagnostics` (`sparse_sa5_cross_core`): `defined_count` — the common-defined count `|D|` — and
+`shape_defined_count`, the number of common defined knots the Pearson shape correlation used. In v1
+these are the **same count** on every comparison: the backend constructs the record as
+`defined_count=count` and `shape_defined_count=count` from one and the same `count` (the number of
+positions where the common-defined mask is `1`), and the shape correlation is attempted only over
+those `|D|` knots. The schema therefore gives the second count **no home of its own**: no
+`shape_defined_count` CSV column exists (the 31 columns above are the closed set), no JSON field and
+no NPZ member carries it, and its only value is the **`defined_count` already published at
+`|D|`**. §12's verifier checks the equality explicitly — the recomputed `Diagnostics` must satisfy
+`shape_defined_count == defined_count == |D|` — and refuses the artifact if a run ever emits them
+unequal. Publishing the second count separately, or widening this column set, would be a schema
+change, not a schema-compatible value.
+
 **Formatting, inherited from the v1 contract §6:**
 
 - an undefined scalar is the **empty field**, never `0`;
@@ -566,7 +580,9 @@ The verifier is a separate program that **does not read the writer's staged valu
 4. **Check the invariants the writer could get wrong silently**: `defined[i] == 1` exactly where
    `state1[i] == 0` and `state2[i] == 0`; `difference[i] == 0.0` (placeholder) exactly where
    undefined; strictly increasing knots; `knots_mm` inside `support_mm`; `comparison_knot_count`
-   equals each member's `(Kc,)` shape; the member set equals `npz_members` exactly; a
+   equals each member's `(Kc,)` shape; the recomputed `Diagnostics` satisfies
+   `shape_defined_count == defined_count == |D|` (the second count is not serialized, §6); the
+   member set equals `npz_members` exactly; a
    non-comparable comparison has no member and no nonvalue row; the repeat-context range keys are
    **absent** on every non-selected context; `comparison_state`/`label_state` stay separate and no
    `label_state` but `deferred-pending-review` is written; `repeat_context_identity_fully_established`
@@ -588,8 +604,8 @@ empty is the backend's own definedness rule. It adds no observable and estimates
 ## 14. Review boundaries and deferred choices
 
 The current artifact rules above are closed. The following are either future
-scientific decisions outside this schema, deliberate serialization choices for
-review, or a documentation discrepancy to reconcile before publication:
+scientific decisions outside this schema or deliberate serialization choices for
+review:
 
 1. **The recurrence evidence rule (`label_state`).** No explicit, pre-registered, metric-specific
    evidence rule is registered, so `label_state` is `deferred-pending-review` and no `recurs
@@ -606,13 +622,14 @@ review, or a documentation discrepancy to reconcile before publication:
    it neither blocks publication nor changes `ok`. A future quantitative use of
    anchor variation would need a separately reviewed provenance addendum, not a
    job-name shortcut or a rewrite of the two frozen quartets.
-4. **A documentation discrepancy in the unverifiable reason token.** The prespec §6 names the
-   reason `repeat-group-member-achieved-condition-not-published`; the merged backend
-   (`sparse_sa5_cross_models.REASON_REPEAT_UNVERIFIABLE`) uses
-   `anchor-members-whole-achieved-condition-is-not-published-in-the-quartet`. This contract
-   publishes the **backend's** value (`reason` is copied verbatim, §5.4), so the prespec prose and
-   the code disagree on the token and the two should be reconciled before publication. Naming the
-   token is a documentation fix, not a new rule.
+4. **The unverifiable reason token (reconciled in this PR).** The merged backend
+   (`sparse_sa5_cross_models.REASON_REPEAT_UNVERIFIABLE`) names the reason
+   `anchor-members-whole-achieved-condition-is-not-published-in-the-quartet`. The prespec §6
+   previously wrote the token as `repeat-group-member-achieved-condition-not-published`; that prose
+   token has now been **corrected in the prespec to the backend's canonical value**, so the prespec
+   and the code agree and no discrepancy remains. This contract publishes the **backend's** value
+   (`reason` is copied verbatim, §5.4). The correction is a token-name documentation fix only: it
+   changes **no scientific rule**, no state, no membership and no byte that a reader keys on.
 5. **The grid-mismatch mapping.** If the two knot sets are not equal within `GATE_TOLERANCE_MM`,
    the pair is `not comparable` with reason `grid-mismatch-pending-review`; **no** coarser-lattice
    or nearest-native mapping is applied (prespec §3). Whether such a mapping is admissible, and its
