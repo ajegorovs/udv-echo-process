@@ -10,6 +10,13 @@
 > [`sa5-sitting-effects-prespec.md`](sa5-sitting-effects-prespec.md) (the within-sitting prespec)
 > and [`sa5-effect-artifact-schema-proposal.md`](sa5-effect-artifact-schema-proposal.md) (the
 > accepted v1 artifact contract, cited below as *the v1 contract*).
+>
+> **Amendment A1 — repeat context (§6, §11).** A repeat group attaches to an operand **only when
+> the operand's whole achieved condition is provable from published metadata**; otherwise the
+> context is a typed-empty state and **no numerical range is published**. This narrows the §6
+> repeat-context mapping (the earlier draft attached the `e8`/`e64`/`e128` block-local anchor groups
+> and published their ranges); it changes no comparison quantity and no `comparison_state` /
+> `label_state`. Docs-only; no artifact, schema, generator or value is committed here.
 
 ## 1. Frozen input quartet and digest binding
 
@@ -182,45 +189,76 @@ denominator** (within-sitting prespec §54; an agreement number alone cannot say
 effects are large, both negligible or both unresolved). Per side: **magnitude**
 (`rms_magnitude`, `signed_depth_average`, `equal_knot_average`, `max_abs_value`/`max_abs_depth_mm`);
 **coverage/definedness** (`covered_depth_mm`, `coverage_fraction`, `defined_count`,
-`undefined_alignment_count`, `undefined_operand_count`, `knot_count`); and **repeat context** — selected for each of the contrast's **distinct operands** (never
-for the contrast as a whole) **by exact achieved identity from the published repeat groups**
-(v1 contract §5.6). The sitting's own `repeats` row(s) are selected whose whole achieved condition
-(burst length, emissions per profile, PRF, stored pitch and gates, plus the
-remaining achieved setting fields carried by the frozen condition) **exactly equal
-the operand's whole achieved condition**; recording job/order are retained as
-provenance, **not** used as a substitute for condition identity. The published v1 groups are the **common-reference condition** (`cr1..cr4`) and
-each job's **block-local anchor controls**. The explicit mapping for the seven oriented contrasts
-(published names and operand order as in §2 and the v1 `effects` rows) is:
+`undefined_alignment_count`, `undefined_operand_count`, `knot_count`); and **repeat context** — attached per contrast's **distinct operand** (never to the contrast as a whole),
+**only when the operand's whole achieved condition is provable from published metadata** (amendment A1).
 
-| contrast | distinct operands | repeat group selected by exact achieved identity |
+**What counts as proof.** A `repeats` group (v1 contract §5.6) publishes a prose `condition`, its
+`metric`/`view`, `knot_count`, `defined_members`, `min_value`/`max_value`/`spread` and its `members`
+— each member carrying `label`, `order`, `job`, `value`, `defined_count`, `state`, `reason` — and
+**no achieved-condition field** (no burst length, emissions per profile, PRF, stored pitch or gate
+count). The prose `condition` string is generator-authored text, **not** metadata, and is never
+sufficient on its own. A group therefore attaches to an operand **iff** the operand's whole achieved
+condition — as published in the sitting's `provenance` (v1 contract §5.1) — is matched field-for-field
+through the members: the group's members must resolve to the operand's own `participants` (v1 `effects`
+rows) by the same published `job` identities, each member's whole achieved condition must be present in
+`provenance`, those conditions must agree with one another, and they must equal the operand's. A `job`,
+`label` or `order` **name alone is never a substitute** for condition identity, and no group is ever
+attached on the guess that two same-named jobs share a condition. The published v1 groups are the
+**common-reference condition** (`cr1..cr4`) and each job's **block-local anchor controls**. The explicit
+mapping for the seven oriented contrasts (published names and operand order as in §2 and the v1 `effects`
+rows) is:
+
+| contrast | distinct operands | repeat context (attached only if identity provable) |
 | --- | --- | --- |
-| `pitch_at_burst_4` | `cc1`, `cc3` | `unavailable` for both |
-| `pitch_at_burst_18` | `cc2`, `cc4` | `unavailable` for both |
-| `burst_at_fine_pitch` | `cc1`, `cc2` | `unavailable` for both |
-| `burst_at_coarse_pitch` | `cc3`, `cc4` | `unavailable` for both |
-| `E8_minus_E20` | `e8`, `E20` | `e8` → the `emissions-8` block-local anchor group; `E20` → the common-reference group |
-| `E64_minus_E20` | `e64`, `E20` | `e64` → the `emissions-64` block-local anchor group; `E20` → the common-reference group |
-| `E128_minus_E20` | `e128`, `E20` | `e128` → the `emissions-128` block-local anchor group; `E20` → the common-reference group |
-| `pitch_x_burst_interaction` | `cc1`, `cc2`, `cc3`, `cc4` | `unavailable` for all four |
+| `pitch_at_burst_4` | `cc1`, `cc3` | `repeat-context-unavailable` for both |
+| `pitch_at_burst_18` | `cc2`, `cc4` | `repeat-context-unavailable` for both |
+| `burst_at_fine_pitch` | `cc1`, `cc2` | `repeat-context-unavailable` for both |
+| `burst_at_coarse_pitch` | `cc3`, `cc4` | `repeat-context-unavailable` for both |
+| `E8_minus_E20` | `e8`, `E20` | `e8` → `repeat-context-identity-unverifiable`; `E20` → the common-reference group, iff identity provable |
+| `E64_minus_E20` | `e64`, `E20` | `e64` → `repeat-context-identity-unverifiable`; `E20` → the common-reference group, iff identity provable |
+| `E128_minus_E20` | `e128`, `E20` | `e128` → `repeat-context-identity-unverifiable`; `E20` → the common-reference group, iff identity provable |
+| `pitch_x_burst_interaction` | `cc1`, `cc2`, `cc3`, `cc4` | `repeat-context-unavailable` for all four |
 
-`unavailable` is the typed-empty state **`repeat-context-unavailable`** (reason
-`no-published-repeat-group-matches-the-operand-whole-condition`): the four corner operands carry a
-fine (`0.616666666667` mm / 145 gates) or coarse (`2.96` mm / 31 gates) stored window, while every
-published repeat group records the reference window (`1.85` mm / 50 gates), so no group has a
-corner's exact achieved condition — and the interaction's operands are the same four corners. **No
-contrast-level or synthetic repeat group is ever constructed** from a contrast's two sides, and no
-anchor or reference member is averaged into an operand (within-sitting prespec §42). Each selected
-group's `min`/`max`/`spread` are **descriptive only** (no range is a floor, no member a replicate).
-Comparison `L`, `|D|`, `|S|` and the span are published as
-the comparison's own coverage. For each effect, show both original magnitude
-summaries adjacent to the applicable same-condition repeat members and their
-range/spread, separately for each sitting. The current repeat-member scalar is
-an unweighted mean of one condition's defined knots, **not an effect contrast**;
-its range cannot be used as a like-for-like interval for any effect magnitude,
-including the effect's equal-knot average, profile RMS or absolute maximum.
-Mark numerical overlap `not-like-for-like` and display the context without a
-threshold or universal floor. A future contrast-level variation diagnostic
-requires its own prespecified member pairing and reduction.
+Two typed-empty context states replace the group selection, each with its own reason:
+
+- **`repeat-context-unavailable`** (reason `no-published-repeat-group-matches-the-operand-whole-condition`):
+  the four corner operands carry a fine (`0.616666666667` mm / 145 gates) or coarse (`2.96` mm / 31 gates)
+  stored window, and no published group's whole achieved condition is provably that of a corner — the
+  groups that name the corner jobs (`burst-4`, `burst-18`) are not identity-verifiable (their control
+  members are unpublished, below) and are never attached by name — and the interaction's operands are
+  the same four corners. **No contrast-level or synthetic repeat group is ever constructed** from a
+  contrast's two sides, and no anchor or reference member is averaged into an operand (within-sitting
+  prespec §42).
+- **`repeat-context-identity-unverifiable`** (reason `repeat-group-member-achieved-condition-not-published`):
+  a block-local anchor group names the same job as the `e8`/`e64`/`e128` operand, but the group carries no
+  achieved-condition field and its control members (`ctrl-begin`/`ctrl-mid`/`ctrl-end`) are not published
+  in the sitting's `provenance`, so the operand's whole achieved condition cannot be proved to equal
+  theirs. Because identity is unprovable, **no numerical range is published**: that side's
+  `min`/`max`/`spread` are **omitted** from the cross-sitting context — not shown, not typed null, not
+  bridged, and never resolved by the shared `job` name.
+
+`min`/`max`/`spread` are published **only** for an identity-verified group, and are **descriptive only**
+(no range is a floor, no member a replicate). The only identity-verified group in v1 is the
+common-reference group attached to the `E20` operand: the v1 `E20` operand is published as kind
+`mean-of-four` of members `cr1..cr4`, whose jobs appear in `provenance` with their whole achieved
+condition, and the common-reference group's members are exactly those jobs — so the proof rule above is
+satisfied. Comparison `L`, `|D|`, `|S|` and the span are published as the comparison's own coverage. For
+each effect, show both original per-sitting magnitude summaries (always available from the sitting's own
+frozen context), and — separately for each sitting, and only for an identity-verified group — the
+applicable same-condition repeat members and their range/spread. The current repeat-member scalar is an
+unweighted mean of one condition's defined knots, **not an effect contrast**; its range cannot be used as
+a like-for-like interval for any effect magnitude, including the effect's equal-knot average, profile RMS
+or absolute maximum. Mark numerical overlap `not-like-for-like` and display the context without a
+threshold or universal floor. A future contrast-level variation diagnostic requires its own prespecified
+member pairing and reduction.
+
+**Context only — it never touches the comparison.** A repeat context (a selected group, or either
+typed-empty state) is attached **beside** the frozen per-sitting summaries and is **excluded** from every
+comparison decision: it never enters `comparison_state`, `label_state`, or any §5 core diagnostic (`D̄`,
+`RMS(D)`, `A_sign`, the profile correlation, `M*_s`, `peak_localized_s`, `Δz*`). A pair whose repeat
+context is `repeat-context-unavailable` or `repeat-context-identity-unverifiable` is therefore **still
+`comparable`** whenever §§2–5 make it so, and remains eligible for a future label rule; an unverifiable
+context can never produce `not comparable`, `not resolvable with this design` or a label.
 
 ## 7. Typed noncomparability and nonresolvability
 
@@ -284,7 +322,8 @@ JSON's closed fields including a `comparison_state` vocabulary, a separate `labe
 per-knot `(state2, state1)` pair;
 the CSV's 72-row one-row-per-effect scalar set (`D̄`, `RMS(D)`, `A_sign`, `|S|`, `L`, correlation,
 `Δz*`, the per-side `peak_localized`); the digest convention (v1 contract §5.7); the `D`/`A_sign`
-non-value rows and the §6 `repeat-context-unavailable` rows; and the
+non-value rows and the §6 `repeat-context-unavailable` / `repeat-context-identity-unverifiable`
+rows (the latter carrying no numerical range); and the
 independent verifier (v1 contract §11) recomputing from the two committed quartets rather than
 re-reading a writer's staged values. Until that contract is accepted, **no cross-sitting artifact is
 generated or committed**; the two v1 quartets and every frozen WP/SA2.4 report stay byte-untouched.
@@ -320,13 +359,21 @@ The implementation must test, deterministically and to scratch outputs:
    `insufficient-depth-support` (`|D| < 2`) and with `constant-absolute-effect-profile`, and
    `Δz*`/coincidence typed-empty unless **both** sides are localized, with the shallower-depth tie
    rule and a wholly-undefined side;
-8. the §6 repeat-context mapping by exact achieved identity — a selected group for each of
-   `e8`/`e64`/`e128` (its own job's anchor group) and `E20` (the common-reference group),
-   `repeat-context-unavailable` for the four corner operands and the interaction, and no
-   contrast-level synthetic group constructed;
+8. the §6 repeat-context attachment by **provable** whole achieved identity — `E20` selecting the
+   common-reference group **only** through the published `cr1..cr4` operand provenance (and, when a
+   member's condition or identity is withheld, refusing as `repeat-context-identity-unverifiable`);
+   `repeat-context-identity-unverifiable` for the `e8`/`e64`/`e128` sides with that group's
+   `min`/`max`/`spread` **absent** (no numerical range, no typed null) so an unverifiable range can
+   never be read; `repeat-context-unavailable` for the four corner operands and the interaction; no
+   contrast-level synthetic group, no `job`/`label`/`order` substitution, and no group attached on its
+   prose `condition` string alone;
 9. `comparison_state` / `label_state` typed states kept separate, that no `label_state` but
    `deferred-pending-review` is ever written in v1, and that the v1 quartets and frozen WP/SA2.4
    reports are byte-unchanged after a run.
+10. that a pair whose repeat context is `repeat-context-unavailable` or
+    `repeat-context-identity-unverifiable` stays `comparable` and carries **identical** `comparison_state`,
+    `label_state` and §5 diagnostics (`D̄`, `RMS(D)`, `A_sign`, correlation, `M*_s`, `peak_localized_s`,
+    `Δz*`) to the same pair with a selected context — the repeat context changes nothing but itself.
 
 ## 12. Out of scope
 
