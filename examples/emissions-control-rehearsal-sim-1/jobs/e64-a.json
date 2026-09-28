@@ -1,0 +1,22 @@
+{
+  "job": "e64-a",
+  "channel": 1,
+  "duration_s": 8.0,
+  "name_prefix": "emctl-sim1-e64-a",
+  "prf_us": 212.0,
+  "emissions_per_profile": 64,
+  "burst_length": 4,
+  "write_emissions_per_profile": true,
+  "max_profiles_per_block": 2500,
+  "points": [
+    {
+      "label": "ref",
+      "parameters": {
+        "sound_speed_ms": 1460.0,
+        "first_gate_mm": 2.0,
+        "resolution_mm": 0.122,
+        "gates": 797
+      }
+    }
+  ]
+}

@@ -23,6 +23,7 @@ cite where.
 from __future__ import annotations
 
 from udv_echo_process.acquire.actuator import (
+    BOUNDARY_WRITE_ORDER,
     DIALOG_ANCHORS,
     DIALOG_COLUMN_ROWS,
     DIALOG_DEPENDENT_FIELDS,
@@ -42,6 +43,7 @@ from udv_echo_process.acquire.actuator import (
     BurstState,
     BurstWriteResult,
     ChannelMode,
+    ColumnWriteResult,
     ComboReading,
     DialogControl,
     DialogField,
@@ -51,6 +53,7 @@ from udv_echo_process.acquire.actuator import (
     StripControl,
     StripState,
     StripView,
+    WriteState,
     classify_strip_view,
     dialog_row,
     ordered_writes,
@@ -120,6 +123,7 @@ from udv_echo_process.acquire.snapshot import (
 )
 
 __all__ = [
+    "BOUNDARY_WRITE_ORDER",
     "CHANNEL_ENV_VAR",
     "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",
@@ -130,6 +134,7 @@ __all__ = [
     "DIALOG_ONLY_PARAMETERS",
     "FIXED_FACT_FIELDS",
     "GATE_DRIFT_NOTE",
+    "LEGACY_BURST_HISTORY_KEY",
     "MAX_CHANNEL",
     "MIN_CHANNEL",
     "NUMERIC_WRITE_RECIPE",
@@ -149,6 +154,7 @@ __all__ = [
     "BurstWriteResult",
     "ChannelMode",
     "ChannelSetting",
+    "ColumnWriteResult",
     "ComboReading",
     "CompilationIdentity",
     "DecodedBlock",
@@ -158,6 +164,7 @@ __all__ = [
     "FactSource",
     "InstrumentFact",
     "InstrumentSnapshot",
+    "MutationDependent",
     "OverlayKind",
     "ParamRole",
     "ParameterSet",
@@ -173,8 +180,10 @@ __all__ = [
     "SweepDefinition",
     "SweepLogEntry",
     "SweepLogHeader",
+    "SweepParameterMutation",
     "SweepPoint",
     "SweepPointRecord",
+    "WriteState",
     "append_entry",
     "assert_window_fits",
     "channel_from_environment",
@@ -188,9 +197,11 @@ __all__ = [
     "gates_for_depth",
     "identity_digest",
     "max_usable_depth_mm",
+    "migrate_legacy_burst_history",
     "nearest_rung_index",
     "ordered_writes",
     "overlay_answer",
+    "parameter_mutations",
     "plan_point",
     "plan_sweep",
     "point_names",

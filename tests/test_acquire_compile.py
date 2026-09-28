@@ -320,6 +320,78 @@ def test_a_campaign_that_raises_nothing_keeps_the_tables_own_policy() -> None:
     assert len(compiled.advisories) == 1
 
 
+# ---------------------------------------------- a job that *requests* the advisory fact (W6)
+
+
+def test_a_job_that_requests_emissions_refuses_the_disagreement() -> None:
+    """The acceptance change: for a job that writes it, the value is a request, not a derivation.
+
+    ``ADVISORY_COVARIATES`` keeps the fact advisory **because** a definition's number may be derived
+    from the period law (the committed point stores 150 for a declared 52). A job whose boundary
+    writes the value removes that rationale: the number is what the instrument is moved to, so a
+    disagreement means recording points under an emissions level nobody asked for. No new mechanism
+    is involved — the job's own declaration joins the raised set, and the refusal says which side of
+    the policy it came from.
+    """
+    with pytest.raises(campaign.CampaignError) as caught:
+        campaign.compile_campaign(
+            definition(write_emissions_per_profile=True),
+            reading(emissions_per_profile=read("150")),
+        )
+
+    message = str(caught.value)
+    assert "emissions_per_profile" in message
+    assert "raises the fact to a refusal" in message
+    assert "'warn'" in message, message
+
+
+def test_a_job_that_requests_emissions_carries_its_own_raise() -> None:
+    """The raise is a property of the job, so it lands on the compiled plan and the run."""
+    requested = definition(write_emissions_per_profile=True)
+    compiled = campaign.compile_campaign(
+        requested, reading(emissions_per_profile=read(str(EMISSIONS_PER_PROFILE)))
+    )
+
+    assert requested.requested_facts == ("emissions_per_profile",)
+    assert compiled.strict_facts == ("emissions_per_profile",)
+    assert compiled.fact("emissions_per_profile").acceptance is campaign.Acceptance.REFUSE
+    assert compiled.advisories == ()
+
+
+def test_a_job_that_inherits_the_value_keeps_the_advisory() -> None:
+    """The W6 boundary: only the job that writes the value loses the advisory.
+
+    The flag is present and ``False`` rather than absent, so the case pins the *value* and not the
+    default — the read-only path is every job that never states a request, and its behaviour is
+    unchanged.
+    """
+    compiled = campaign.compile_campaign(
+        definition(write_emissions_per_profile=False),
+        reading(emissions_per_profile=read("150")),
+    )
+
+    assert definition(write_emissions_per_profile=False).requested_facts == ()
+    assert compiled.strict_facts == ()
+    assert compiled.fact("emissions_per_profile").acceptance is campaign.Acceptance.WARN
+    assert len(compiled.advisories) == 1
+
+
+def test_the_request_flag_is_omitted_from_the_fingerprint_until_it_is_set() -> None:
+    """Adding the field must not strand a manifest recorded before it existed.
+
+    A definition that does not request emissions is the same job it was before the field existed —
+    it has to hash the same, or every recorded manifest would fail its resume-identity comparison
+    over a change that alters nothing. A definition that *does* request them hashes differently,
+    which is what keeps the raise inside the resume's reach.
+    """
+    assert campaign.campaign_fingerprint(
+        definition(write_emissions_per_profile=False)
+    ) == campaign.campaign_fingerprint(definition())
+    assert campaign.campaign_fingerprint(
+        definition(write_emissions_per_profile=True)
+    ) != campaign.campaign_fingerprint(definition())
+
+
 def test_raising_a_fact_no_stored_file_carries_is_refused() -> None:
     """A raise is enforced before *and* after the recording, or it is not offered at all."""
     with pytest.raises(campaign.CampaignError) as caught:

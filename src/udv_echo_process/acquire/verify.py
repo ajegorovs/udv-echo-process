@@ -168,9 +168,12 @@ ALWAYS_ENFORCED_COVARIATES: tuple[str, ...] = ("burst_length",)
 #: count (``52`` in ``test_acquire_runner.py`` is exactly that derivation), which is
 #: why the committed point ``sw100-k1-161738.BDD`` stores 150 while the plan said 52.
 #: Enforcing it would therefore refuse a point whose core words are all correct, for
-#: a disagreement the *request* caused. It becomes enforceable when a campaign is
-#: compiled against a live instrument snapshot instead of against a definition (the
-#: review's Phase 6); until then its disagreement is an advisory on the record.
+#: a disagreement the *request* caused — **which is exactly what a job that writes it
+#: wants**: granting the request (``campaign.CampaignDefinition.write_emissions_per_profile``,
+#: the automated emissions writer) removes the derivation rationale, so the raise below is the
+#: right answer for that job and the advisory stays for every job that only inherits the value.
+#: The condition is a property of the job's own definition rather than of the caller's flag, so
+#: the same requirement can be stated before the recording and enforced after it.
 #:
 #: **A caller may raise it** — ``verify_stored_point(strict_covariates=...)`` — and that is the
 #: right answer for a run whose *axis* is this value: a campaign that moves emissions per profile

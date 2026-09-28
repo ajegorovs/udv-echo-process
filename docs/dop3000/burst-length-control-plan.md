@@ -298,10 +298,14 @@ the manual step disappears without changing the campaign model.
 > independent compile and stored word-8 agreement. The portable plan, extracted structured
 > transition/compile evidence, hashes and recordings are in
 > [`data/burst-commissioning-b5/`](../../data/burst-commissioning-b5/). The last five
-> jobs of that plan were intentionally not run; they vary emissions/profile and exceed this
+> jobs of that plan were intentionally not run; they vary emissions/profile — **manual when this was
+> written, automated and live-commissioned on 2026-09-28**
+> ([`data/emissions-control-live-1/`](../../data/emissions-control-live-1/README.md)) — and exceed this
 > burst-only acceptance. An equal-burst/no-write job was not exercised live and remains
 > covered by the fake tests only; the review accepted that boundary, because the untested branch
 > performs no device write and the surrounding read/compile/record path was exercised four times.
+> The *emissions* equal-value boundary has since been exercised live, twice, so that argument is now
+> redundant on the emissions axis and still binds on this one.
 > The B4 stop rule still binds. `campaign --run --no-snapshot`
 > is the explicit bypass: it reads nothing and compiles nothing, so it also performs **no
 > transition** — the instrument's burst is not written to match the definition, and the

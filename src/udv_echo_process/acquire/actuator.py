@@ -30,8 +30,10 @@ not drift from what was verified:
   check (docs/16 §8).
 
 Two of the ported rules are *ordering* rules and live here rather than in the
-values module: the write order (resolution before gates) and the safe overlay
-answer (leftmost button). Both are table lookups, not branches.
+values module: the per-point write order (resolution before gates) and the safe
+overlay answer (leftmost button). Both are table lookups, not branches. (The job
+boundary's order **across** parameters is its own rule, pinned where it is
+tested — as a sequence.)
 """
 
 from __future__ import annotations
@@ -47,6 +49,7 @@ from udv_echo_process.acquire.config import ParameterSet
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "BOUNDARY_WRITE_ORDER",
     "DIALOG_ANCHORS",
     "DIALOG_COLUMN_ROWS",
     "DIALOG_DEPENDENT_FIELDS",
@@ -66,6 +69,7 @@ __all__ = [
     "BurstState",
     "BurstWriteResult",
     "ChannelMode",
+    "ColumnWriteResult",
     "ComboReading",
     "DialogControl",
     "DialogField",
@@ -75,6 +79,7 @@ __all__ = [
     "StripControl",
     "StripState",
     "StripView",
+    "WriteState",
     "classify_strip_view",
     "dialog_row",
     "ordered_writes",
@@ -128,6 +133,24 @@ class ParamRole(str, Enum):
     EMISSIONS_PER_PROFILE = "emissions_per_profile"
     DOPPLER_ANGLE = "doppler_angle_deg"
 
+
+#: The order the **job boundary** performs its parameter transitions in, when a job commands more
+#: than one — explicit data, never the order the code happens to test them in.
+#:
+#: The entries are names from the instrument fact vocabulary (``snapshot.FIXED_FACT_FIELDS``),
+#: because that is what a mutation record is tagged with and what the compile reconciles: the
+#: parameter column's ``emissions_per_profile`` and the dialog's ``burst_length``. This is **not**
+#: :data:`PARAMETER_WRITE_ORDER`, which is the order a *point* writes its two column fields in — a
+#: point writes the resolution and the gate count and nothing else.
+#:
+#: The column write is first, for two reasons that are both about what can be attributed later:
+#: :data:`DIALOG_ANCHORS` makes a dialog transaction re-verify column ↔ dialog *agreement*, so a
+#: dialog left stale by a column write is caught by the write that follows it rather than by the
+#: compile; and the last write should be the one whose verification is strongest — the burst has a
+#: dependent row (its sampling volume) and its own refusal overlay to answer for, while the emissions
+#: per profile has no dependent row at all, so a failure in it is attributable to that one axis
+#: alone. It is tested as a sequence in ``tests/test_acquire_campaign_burst.py``.
+BOUNDARY_WRITE_ORDER: tuple[str, ...] = ("emissions_per_profile", "burst_length")
 
 #: The parameter column's value fields in their fixed **top-to-bottom** order;
 #: that order is the identity of a field (docs/16 §12, ``recon/udop_roles.py``).
@@ -573,30 +596,43 @@ class ComboReading(ValueModel):
         return None
 
 
-class BurstState(str, Enum):
-    """What one burst transition established about the instrument — the three honest outcomes.
+class WriteState(str, Enum):
+    """What one parameter transition established about the instrument — the three honest outcomes.
 
     A transition that cannot be verified is not a failure with a shrug: it is a *classification*
     the caller can act on, and the record of the run has to carry it (plan §2). The three members
     are therefore exhaustive by construction, and each says what is known rather than what was
     attempted:
 
-    - :attr:`VERIFIED` — the request was selected, the dialog was **accepted**, and a re-opened
-      dialog stated the requested burst. Only this member claims the instrument moved.
-    - :attr:`UNCHANGED` — the transition was refused *before any message was sent*: a dialog that
-      is not the table these bindings were measured against, another channel, a burst the row
-      does not offer, a selection that was never applied. The dialog was closed with its left
-      (Cancel) end, which discards a pending write — the only "put it back" this driver has.
+    - :attr:`VERIFIED` — the request was applied and an **independent** read stated it. Only this
+      member claims the instrument moved.
+    - :attr:`UNCHANGED` — nothing moved. The dialog transaction refuses *before any message is
+      sent* (a dialog that is not the table these bindings were measured against, another channel,
+      a burst the row does not offer, a selection that was never applied) and closes the dialog
+      with its left (Cancel) end, which discards a pending write — the only "put it back" this
+      driver has; the column transaction has nothing to refuse before sending, so for it this
+      member is the measurement that the row still states the value it held before the write, i.e.
+      the application did not take the request.
     - :attr:`UNVERIFIED` — something **was** sent and nothing proved what the application kept: a
-      read-back that stated something else, a modal the application raised instead of applying
-      the selection, a re-open that failed. The instrument's state is then not established by
-      this call at all, and the next reading (the compile's own dialog read) is what settles it —
-      never a second guess from this one.
+      read-back that stated something else, a modal the application raised instead of applying the
+      write, a re-open that failed, a row that could not be read back at all. The instrument's
+      state is then not established by this call at all, and the next reading (the compile's own
+      read) is what settles it — never a second guess from this one.
+
+    Named for the **transition** rather than for the burst, because the second independently owned
+    instrument write — the emissions per profile, on the parameter column — classifies its outcome
+    the same three ways, and two vocabularies for one question would drift.
     """
 
     VERIFIED = "verified"
     UNCHANGED = "unchanged"
     UNVERIFIED = "unverified"
+
+
+#: The burst slice's own name for :class:`WriteState` — **the same class**, not a copy: the burst
+#: documents, the driver's contract (``udop/parameters.py``) and the B5 evidence all cite this
+#: name, and a second enum with the same members is exactly the drift this alias avoids.
+BurstState = WriteState
 
 
 class BurstWriteResult(ValueModel):
@@ -693,6 +729,65 @@ class BurstWriteResult(ValueModel):
         if self.after_sampling_volume is None:
             return None
         return self.after_sampling_volume.entry_of(self.after_sampling_volume.text)
+
+
+class ColumnWriteResult(ValueModel):
+    """What one **parameter-column** transition carried back — the evidence, not "a write succeeded".
+
+    The parameter column is the second surface this repository writes through, and the first one
+    whose write is composed by the *calling* layer rather than by the driver: the boundary reads the
+    field, writes it (``Actuator.write_parameter``, the measured ``WM_SETTEXT`` +
+    ``WM_COMMAND(EN_CHANGE)`` + ``VK_RETURN`` recipe this application needs — ``WM_SETTEXT`` alone
+    leaves the display changed and the model untouched, docs/14 §4) and then **reads the field
+    again itself**. That last read is the point of the model: the writer's own return is evidence
+    the *write layer* produced, and only a read the boundary performed can state what the
+    application kept. The value the writer returned is carried beside it
+    (:attr:`write_readback`) as evidence for a refusal, never as the state.
+
+    So the three rows are three different claims, and a reader must be able to tell them apart:
+
+    - :attr:`before` — what this boundary read from the row **before** it wrote;
+    - :attr:`requested` — what it asked for;
+    - :attr:`after` — what the row stated on the **independent** read that followed the write.
+
+    :attr:`state` is the classification of those three (see :class:`WriteState`): ``VERIFIED`` when
+    the fresh read states the request, ``UNCHANGED`` when it still states :attr:`before` (the
+    application took nothing), ``UNVERIFIED`` whenever it states a third value or nothing at all —
+    an application that trims or renumbers a value is a refusal naming both sides, not a success
+    with a note.
+
+    Unlike the burst, this transition has **no dependent row**: nothing in the column is derived
+    from the emissions per profile, so there is nothing to read beside it and
+    ``SweepParameterMutation.dependent`` is ``None`` for it.
+    """
+
+    #: The column role that was written. Its ``value`` **is** the role's name in the fixed-fact
+    #: vocabulary (``ParamRole.EMISSIONS_PER_PROFILE`` -> ``emissions_per_profile``), which is what
+    #: lets a mutation's own tag be checked against this evidence.
+    role: ParamRole
+    #: What the boundary asked the application for, as the text it wrote.
+    requested: str = Field(min_length=1)
+    #: What the transition established (see :class:`WriteState`).
+    state: WriteState
+    #: The boundary's own read of the row before the write.
+    before: str = ""
+    #: What ``write_parameter`` returned — the **write layer's** read-back, carried as evidence of
+    #: what that layer produced. Empty when the implementation returns nothing (the port declares
+    #: the read-back; it is not what this transaction verifies against).
+    write_readback: str = ""
+    #: What the row stated on the boundary's **independent** read after the write. Empty means the
+    #: row could not be read — which is not the same statement as a row stating nothing, and both
+    #: are :attr:`WriteState.UNVERIFIED`.
+    after: str = ""
+    #: Why the state is not :attr:`WriteState.VERIFIED` — written out in full, because it lands in a
+    #: run record read by someone with no instrument in front of them. Empty exactly when the
+    #: transition verified.
+    reason: str = ""
+
+    @property
+    def verified(self) -> bool:
+        """Whether the independent read stated the requested value."""
+        return self.state is WriteState.VERIFIED
 
 
 class ScreenFingerprint(ValueModel):

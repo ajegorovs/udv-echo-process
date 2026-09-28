@@ -2980,6 +2980,49 @@ def test_a_different_working_directory_is_written_and_read_back(tmp_path: Path) 
     assert any("Working directory was" in note for note in actuator.warnings)
 
 
+def test_a_relative_working_directory_is_written_absolute(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A relative ``--store-dir`` reaches the application as an absolute path.
+
+    The field is read by the *application*, whose working directory is not ours. Measured
+    2026-09-26 in simulation mode: a pass handed the dialog its own relative
+    ``outputs/live/store``, the string was written verbatim, ``same_directory`` accepted the
+    read-back (it resolves both sides against this process), and the application — resolving it
+    against its own directory — stored nowhere and raised its own non-existent-directory warning.
+    The run reported only "no file appeared in outputs\\live\\store within 60 s of Do store".
+    """
+    root = tmp_path / "tree"
+    directory = root / "outputs" / "live" / "store"
+    directory.mkdir(parents=True)
+    app = FakeUdopWindow(channel=1, directory=str(tmp_path / "somewhere-else"))
+    app.store_open = True
+    actuator = fake_driver(app)
+    monkeypatch.chdir(root)
+
+    written = actuator.assert_working_directory(Path("outputs/live/store"))
+
+    assert Path(written).is_absolute()
+    assert Path(written) == directory.resolve()
+    assert events_of(app, "text") == [("text", HWND_STORE_DIR, str(directory.resolve()))]
+
+
+def test_a_relative_directory_that_is_already_shown_is_not_rewritten(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The comparison is against the absolute target, so an equal path costs no write."""
+    root = tmp_path / "tree"
+    directory = root / "outputs" / "live" / "store"
+    directory.mkdir(parents=True)
+    app = FakeUdopWindow(channel=1, directory=str(directory))
+    app.store_open = True
+    actuator = fake_driver(app)
+    monkeypatch.chdir(root)
+
+    assert actuator.assert_working_directory(Path("outputs/live/store")) == str(directory)
+    assert events_of(app, "text") == []
+
+
 def test_an_unresolved_working_directory_mismatch_names_both_paths(tmp_path: Path) -> None:
     """A write that does not commit fails the point instead of watching the wrong folder."""
     expected = tmp_path / "capture"

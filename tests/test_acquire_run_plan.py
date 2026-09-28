@@ -41,7 +41,7 @@ from udv_echo_process.acquire.actuator import (
     ComboReading,
 )
 from udv_echo_process.acquire.campaign import JobManifest, ManifestPoint
-from udv_echo_process.acquire.log import PointStatus
+from udv_echo_process.acquire.log import PointStatus, SweepParameterMutation
 from udv_echo_process.cli import acquire_main
 
 #: Repository root, from this file's own location (``tests/`` is one level down).
@@ -1000,6 +1000,26 @@ def burst_transition_result(before: int, requested: int = 18) -> BurstWriteResul
     )
 
 
+def burst_mutation(
+    before: int, requested: int = 18, *, occurrence: str = "e" * 32
+) -> SweepParameterMutation:
+    """The same transition as the **durable record** the manifests carry, role-tagged.
+
+    A job manifest carries parameter mutations, not the driver's raw results (the payload lives
+    inside one), so a test that seeds a manifest seeds this. ``occurrence`` is the record's own
+    identity, distinct per call site: two writes of the same value are two events.
+    """
+    return SweepParameterMutation(
+        parameter="burst_length",
+        mutation_id=occurrence,
+        occurred_at=datetime(2026, 9, 20, 11, tzinfo=UTC),
+        job="burst-4",
+        fingerprint="c" * 64,
+        routed_channel=1,
+        evidence=burst_transition_result(before, requested),
+    )
+
+
 def test_a_jobs_burst_transitions_are_reported_on_the_passs_own_row() -> None:
     """A row of the pass's record is read offline, so it may not be silent about a burst write.
 
@@ -1012,10 +1032,10 @@ def test_a_jobs_burst_transitions_are_reported_on_the_passs_own_row() -> None:
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
     job = run.jobs[0]
-    first = burst_transition_result(10)
-    second = burst_transition_result(4)
+    first = burst_mutation(10, occurrence="1" * 32)
+    second = burst_mutation(4, occurrence="2" * 32)
     job_manifest = job_manifest_for(run, job).model_copy(
-        update={"burst_transitions": (first, second)}
+        update={"parameter_mutations": (first, second)}
     )
 
     manifest = run_plan.record_job(manifest, run, job, job_manifest)
@@ -1023,7 +1043,7 @@ def test_a_jobs_burst_transitions_are_reported_on_the_passs_own_row() -> None:
     record = manifest.jobs[0]
     assert [t.verified_burst for t in record.burst_transitions] == [18, 18]
     assert [t.before_burst.text for t in record.burst_transitions] == ["10", "4"]
-    assert record.note is not None and "burst" in record.note, record.note
+    assert record.note is not None and "burst_length" in record.note, record.note
     assert "accumulated" in record.note, record.note
 
 
@@ -1037,15 +1057,15 @@ def test_a_resumed_jobs_row_keeps_the_transitions_of_the_earlier_recording() -> 
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
     job = run.jobs[0]
-    first = burst_transition_result(10)
-    second = burst_transition_result(4)
+    first = burst_mutation(10, occurrence="1" * 32)
+    second = burst_mutation(4, occurrence="2" * 32)
 
     partial = run_plan.record_job(
         manifest,
         run,
         job,
         job_manifest_for(run, job, ok=1, failed=1).model_copy(
-            update={"burst_transitions": (first,)}
+            update={"parameter_mutations": (first,)}
         ),
     )
     assert [t.before_burst.text for t in partial.jobs[0].burst_transitions] == ["10"]
@@ -1055,7 +1075,7 @@ def test_a_resumed_jobs_row_keeps_the_transitions_of_the_earlier_recording() -> 
         run,
         job,
         job_manifest_for(run, job, ok=2).model_copy(
-            update={"burst_transitions": (first, second)}
+            update={"parameter_mutations": (first, second)}
         ),
     )
 
@@ -1076,15 +1096,15 @@ def test_a_row_keeps_its_own_transitions_when_the_new_manifest_does_not_carry_th
     run = committed_run()
     manifest = run_plan.new_run_manifest(run, now=datetime(2026, 9, 20, tzinfo=UTC))
     job = run.jobs[0]
-    first = burst_transition_result(10)
-    second = burst_transition_result(4)
+    first = burst_mutation(10, occurrence="1" * 32)
+    second = burst_mutation(4, occurrence="2" * 32)
 
     partial = run_plan.record_job(
         manifest,
         run,
         job,
         job_manifest_for(run, job, ok=1, failed=1).model_copy(
-            update={"burst_transitions": (first,)}
+            update={"parameter_mutations": (first,)}
         ),
     )
 
@@ -1094,7 +1114,7 @@ def test_a_row_keeps_its_own_transitions_when_the_new_manifest_does_not_carry_th
         run,
         job,
         job_manifest_for(run, job, ok=2).model_copy(
-            update={"burst_transitions": (second,)}
+            update={"parameter_mutations": (second,)}
         ),
     )
 

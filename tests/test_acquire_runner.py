@@ -258,7 +258,10 @@ FAKE_CAPTION = "UDOP DOP3010.43"
 
 
 def expected_snapshot(
-    routed_channel: int | None = None, *, burst: int = BURST_LENGTH
+    routed_channel: int | None = None,
+    *,
+    burst: int = BURST_LENGTH,
+    emissions: str = str(EMISSIONS_PER_PROFILE),
 ) -> InstrumentSnapshot:
     """The reading a run on a correctly configured instrument gets — the fake's default.
 
@@ -306,9 +309,7 @@ def expected_snapshot(
         mode=InstrumentFact(value=ChannelMode.MANUAL.value, source=FactSource.READ),
         process_mode=InstrumentFact(value=ProcessMode.INSTRUMENT.value, source=FactSource.READ),
         prf_us=InstrumentFact(value=str(PRF_US), source=FactSource.READ),
-        emissions_per_profile=InstrumentFact(
-            value=str(EMISSIONS_PER_PROFILE), source=FactSource.READ
-        ),
+        emissions_per_profile=InstrumentFact(value=emissions, source=FactSource.READ),
         burst_length=InstrumentFact(value=str(burst), source=FactSource.READ),
         sound_speed_ms=InstrumentFact(value=str(int(SOUND_SPEED_MS)), source=FactSource.READ),
         first_gate_mm=InstrumentFact(value=str(int(FIRST_GATE_MM)), source=FactSource.READ),
@@ -370,6 +371,22 @@ class FakeActuator:
         self.burst_length = BURST_LENGTH
         #: The sampling-volume text a re-opened dialog states after a transition.
         self.sampling_volume_text = SAMPLING_VOLUME_TEXT
+        #: The **parameter column's** emissions per profile, as its own text — the second boundary
+        #: parameter, and the one written through the column rather than the dialog. One state, like
+        #: a real column: ``write_parameter`` moves it, ``read_parameter`` states it, and the
+        #: snapshot's own emissions fact is read from it, so a write the application *did not* commit
+        #: is a state this fake can be handed (``emissions_kept``) rather than an impossible one. It
+        #: defaults to this module's measured constant, which is what a job whose definition declares
+        #: it reads back.
+        self.emissions_column = str(EMISSIONS_PER_PROFILE)
+        #: What the column states *after* a write, when the application did not keep the request:
+        #: ``None`` means it kept it (the measured behaviour). This is the state a **fresh** read
+        #: finds, which is exactly what the boundary's transaction is decided by.
+        self.emissions_kept: str | None = None
+        #: What the write *layer* reports as its read-back, when it differs from what was written:
+        #: the driver returns the application's own text, and the transaction carries it as evidence
+        #: without treating it as the instrument's state. ``None`` means the written value.
+        self.emissions_readback: str | None = None
         #: Every ``(requested, routed_channel)`` the job boundary handed the transition, in order.
         self.burst_writes: list[tuple[int, int | None]] = []
         #: A scripted transition result: ``None`` means the measured success — ``VERIFIED`` with the
@@ -440,11 +457,24 @@ class FakeActuator:
 
     def read_parameter(self, role: ParamRole) -> str:
         self.calls.append(("read_parameter", role.value))
+        if role is ParamRole.EMISSIONS_PER_PROFILE:
+            return self.emissions_column
         return self.parameters.get(role.value, "")
 
-    def write_parameter(self, role: ParamRole, value: str) -> None:
+    def write_parameter(self, role: ParamRole, value: str) -> str:
+        """Write one column field, and answer with what the write layer read back.
+
+        The return is the driver's own contract (a superset of the ``Actuator`` Protocol's ``None``),
+        and the boundary's emissions transaction *carries* it as evidence — which is why the fake
+        returns it rather than nothing: a case about "the return value is not the verification" has
+        to be able to hand a read-back over while the column states something else.
+        """
         self.parameters[role.value] = value
         self.calls.append(("write_parameter", role.value, value))
+        if role is ParamRole.EMISSIONS_PER_PROFILE:
+            self.emissions_column = value if self.emissions_kept is None else self.emissions_kept
+            return value if self.emissions_readback is None else self.emissions_readback
+        return value
 
     def ensure_channel(self) -> int:
         """The dialog read. Counted, never appended to ``calls``: it is once per run, and
@@ -543,7 +573,11 @@ class FakeActuator:
         self.calls.append(("instrument_snapshot", routed_channel))
         if self.scripted_snapshot is not None:
             return self.scripted_snapshot
-        return expected_snapshot(routed_channel, burst=self.burst_length)
+        return expected_snapshot(
+            routed_channel,
+            burst=self.burst_length,
+            emissions=self.emissions_column,
+        )
 
     def apply_point(self, parameters: ParameterSet) -> Mapping[ParamRole | str, str]:
         """The point's window, written in the committed order, and its read-back.

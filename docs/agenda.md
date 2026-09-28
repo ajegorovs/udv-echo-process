@@ -287,11 +287,27 @@ boundaries of a nine-job `run-plan --next` pass — `burst-4` → `common-refere
 `burst-18` → `common-reference-2` — transitioned `10 → 4 → 10 → 18 → 10` automatically, with
 the effective Sampling volume read back as `1.776 / 1.850 / 3.330 / 1.850 mm`, word 27 still
 `1`, and 12 stored BDDs whose word 8 matches each job. No burst was set by hand; the other five
-jobs of that plan were deliberately not run (they request a manual emissions change), and the
-equal-burst/no-write path is **offline-verified only** — the review accepted that boundary
-because the unexercised branch performs *less* device interaction, not an unknown gesture.
+jobs of that plan were deliberately not run (at that point they requested a manual emissions change),
+and the equal-burst/no-write path is **offline-verified only** — the review accepted that boundary
+because the unexercised branch performs *less* device interaction, not an unknown gesture. The
+*emissions* boundary has since been commissioned live, **including its equal-value/no-write branch**
+(2026-09-28, below), so only the burst-side equal-value boundary is still offline-only.
 Portable plan, hashes and an instrument-free verifier:
 [`../data/burst-commissioning-b5/`](../data/burst-commissioning-b5/README.md).
+
+**The emissions/profile boundary was commissioned live (2026-09-28, PR #44 Draft).** Four
+`run-plan --next` jobs — `e20-a → e64-a → e64-b → e20-b` — established the run-wide value and
+crossed the boundary automatically, with **no emissions value set by hand** and the burst declared
+at the instrument's own `10` so the boundary had nothing else to transition. Two jobs spent a write
+and two spent none: `e64-a`'s verified `20 → 64` and `e20-b`'s verified `64 → 20` each carry the
+writer layer's read-back *and* the independent fresh read, with distinct occurrence ids
+(`0f84965c…`, `ea002259…`) in order; the equal-value boundaries (`e20-a` already reading 20, `e64-b`
+already 64) spent **no write and appended no event**. The instrument began at E20, so **no
+initial-state-establishment transition arose** and none was manufactured. All four stored BDDs carry
+word 14 equal to their own job's request, word 8 held at `10`, word 27 at `1` with no millimetre
+derivation, and the final fresh compile saw E20 clean. Control-path acceptance only — the emissions
+*effect* on the signal is not measured here. Package:
+[`../data/emissions-control-live-1/`](../data/emissions-control-live-1/README.md).
 
 **Mutation provenance across a refused invocation: design direction accepted, nothing implemented
 (PR #40, merge `426dd5a`).** A verified boundary write followed by a compile or resume-identity
@@ -329,7 +345,9 @@ that provenance machinery must not gate the science the two datasets can already
 provenance recommendation of PR #40 (offline); then **B7** — a miniature automated burst campaign
 (`4 / 10 / 18 / 10`, recordings and restoration verified) — before **B8**, the next sparse
 experimental run using it; then the five remaining jobs of the portable nine-job plan
-(`emissions-8/64/128` plus two references), which need a manual emissions change at the instrument.
+(`emissions-8/64/128` plus two references), which used to need a manual emissions change at the
+instrument — that boundary was removed on 2026-09-28 (live commissioning, PR #44); the `8` and `128`
+values themselves remain unexercised live, the sitting having crossed `20 ↔ 64`.
 The order flips back to provenance-first only if SA1 finds nominally identical common-reference
 records differing in a state-dependent way that the existing manifests and logs cannot trace. **In flight** (Draft, reviewed by nobody, offline-verified only): PR #44 implements the
 provenance recommendation of PR #40, and PR #45 carries SA1 — the per-gate statistics, the
@@ -435,6 +453,22 @@ Binding rules that outlive that work:
 - Velocity RPM / spectral-peak analysis on velocity fixtures.
 - Rotating-machinery analysis: unwrapped velocity, per-gate Doppler power, and
   blade-pass harmonics.
+
+### Provenance and artifact identity
+
+- **The artifact and operation ids embed a `git rev-parse` taken from the
+  process's current working directory.** `provenance/models.py::current_revision`
+  runs `git rev-parse --short HEAD` without `cwd=` and `implementation_ref` feeds
+  the result into `operation_id_for`, so the same data processed from two trees,
+  or across a commit, yields different ids — which is deliberate for the
+  *implementation* half of the identity, but it makes
+  `tests/test_artifact_resample.py::TestBundleContract::test_ids_are_deterministic_across_two_processes`
+  environment-sensitive: it compares an in-process id against a subprocess run
+  with `cwd=REPO` and pins neither side, so a `chdir` left elsewhere or a
+  concurrent commit flips it. Measured: the same interpreter returns this tree's
+  short SHA, another checkout's, or `None`, purely by directory. Observed once in
+  a full-suite run and green on re-run. The fix belongs in the test (pin the
+  revision or the working directory on both halves), not in the id equation.
 
 ### Visualization and acquisition support
 

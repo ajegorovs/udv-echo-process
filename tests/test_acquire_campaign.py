@@ -2039,3 +2039,38 @@ def test_the_runner_still_names_a_sweep_by_its_rungs() -> None:
     assert campaign_settings.max_profiles_per_block == RecordSettings(
         name_prefix="sw100"
     ).max_profiles_per_block
+
+
+def test_a_job_that_requests_emissions_hand_raises_it_to_the_stored_file_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the acceptance change: the stored file's own word 14 is held to it.
+
+    The compile refuses a disagreement *before* the recording; the requirement has to survive
+    *after* it, or a file whose word 14 disagrees would be logged as a point of a run that claims to
+    have written that level. One argument, both halves: ``run_campaign`` merges the job's own
+    request into the same tuple the compile raised and hands it to the runner, so the emissions per
+    profile is enforced on the same terms as the burst's word 8 — while a job that only inherits
+    the value passes no strict covariate at all.
+    """
+    handed: list[tuple[str, ...]] = []
+    real = campaign.SweepRunner
+
+    def spy(*args: object, **kwargs: object) -> object:
+        handed.append(tuple(kwargs.get("strict_covariates", ())))  # type: ignore[arg-type]
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    job = campaign_job(tmp_path, monkeypatch, write_emissions_per_profile=True)
+    monkeypatch.setattr(campaign, "SweepRunner", spy)
+    manifest = run_job(job)
+
+    assert handed == [("emissions_per_profile",)], (
+        "the job's own request reaches the stored-file verifier, not only the compile"
+    )
+    assert manifest.planned == 2, "the run proceeded: the reading agrees with the request"
+
+    # The control: the same job without the request hands the runner nothing to enforce.
+    inherited = campaign_job(tmp_path, monkeypatch, write_emissions_per_profile=False)
+    handed.clear()
+    run_job(inherited)
+    assert handed == [()]

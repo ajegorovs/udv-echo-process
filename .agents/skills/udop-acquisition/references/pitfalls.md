@@ -647,3 +647,21 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   command line and let a plan keep its portable relative default; answer a stray warning with the
   driver's own rule, the *left* button of the dialog's bottom pair (`DialogControl.SAFE`), never a
   guessed handle or a coordinate.
+
+  **A relative path in that field is worse than a wrong one, because it verifies.** `same_directory`
+  resolves both sides against the *caller* (`ui/layout.py`), so a relative target matches its own
+  read-back while the application — resolving it against its own working directory — stores nowhere: the
+  run reports only *"no file appeared … within 60 s of Do store"*, the `…does not exists` warning stands
+  on the screen, and no file appears anywhere on the drive. `assert_working_directory` now resolves the
+  target to an absolute path before it writes, compares or reports it, so the rule stops depending on the
+  caller remembering it.
+
+  A warning that is up during a **commissioning sitting** is a stop-and-report, not something to answer:
+  clearing it belongs to the operator at the machine. Answer one with the driver's own rule only in a
+  routine pass, where the run that tripped it owns the aftermath.
+- **The application's own Save dir must exist before any store, and it is not the dialog's field.**
+  Preferences → Record settings can be left naming a directory that has since been retired — this
+  repository's own store moved when the reconnaissance archive was retired
+  (`docs/dop3000/recon-archive-retirement.md`). The application then warns about the missing directory on
+  *every* store attempt, and even when that settings dialog is closed, while the Store dialog's
+  `Working directory` the driver asserts stays perfectly correct. Read it before a sitting.

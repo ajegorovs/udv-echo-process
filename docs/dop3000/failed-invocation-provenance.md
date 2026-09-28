@@ -1,9 +1,11 @@
 # Design — durable provenance for a mutation in a refused invocation
 
-**Status: proposal only.** No file under `src/`, `tests/` or `acquire/` changes on this branch.
-The gap is stated with `path:line` evidence read from merge commit `7209609`; every option is
-written down with what it buys, what it costs and what it cannot guarantee, and one is
-recommended for review **before** any code is written.
+**Status: the recommended option (O4) is implemented on the
+`acquire/refused-invocation-provenance` branch; this document stays its design record.**
+The gap is stated with `path:line` evidence read from merge commit `7209609`, and those citations
+are left as the measurement they are rather than re-pointed at lines that have since moved; §5.5
+records what landed and how the durable record was generalized **before** that branch merged.
+Nothing below should be read as a proposal for work still to be done.
 
 **Framing, and it decides where this work belongs:** this is an acquisition
 **transaction/audit** question. It is not a `word 8` / `word 27` interpretation question, and it
@@ -376,12 +378,16 @@ One new `SweepLogEntry` member in `acquire/log.py`:
 | the job name | `definition.job` | which job's boundary moved the dialog |
 | the definition fingerprint | `campaign_fingerprint(definition)` | attribution without the manifest |
 | the routed channel | `acquire/campaign.py:1611` | the result carries the dialog's own channel field; the routed channel is what the boundary verified against (`acquire/campaign.py:1377`) |
-| the `BurstWriteResult` verbatim | `acquire/campaign.py:1630` | the **evidence**, not a boolean: request, state, `dialog_mode`, `channel`, both rows on both sides of the write, `refusal_overlay`, `discarded`, `reason` (`acquire/actuator.py:602-657`) |
+| the parameter's own **evidence** verbatim | `acquire/campaign.py:1630` | the **evidence**, not a boolean: request, state, `dialog_mode`, `channel`, both rows on both sides of the write, `refusal_overlay`, `discarded`, `reason` (`acquire/actuator.py:602-657`) |
 
 Only a `VERIFIED` transition is appended. `UNCHANGED` and `UNVERIFIED` kept nothing
 (`acquire/actuator.py:586-594`) and must never be recorded as a mutation.
 
-### 5.3 How it interacts with the accumulated `burst_transitions` history
+As landed, the row is: a `parameter` tag naming which fact moved (validated against its own
+evidence), the four attribution fields, and `evidence` — a discriminated payload that is the
+`BurstWriteResult` for the burst and the column's own result for a parameter-column write (§5.5).
+
+### 5.3 How it interacts with the accumulated parameter-mutation history
 
 Three sources, oldest first, into one list:
 
@@ -397,7 +403,7 @@ Rules the implementer has to state and test:
   ever carried. But the reconciliation **must not** key on the transition's content (request plus
   the before/after row texts plus the state). Two genuinely distinct mutations can be semantically
   identical — `10 → 18` in one invocation, the instrument later returned to `10`, `10 → 18` again in
-  another — and `burst_transitions` is an **ordered history of occurrences**, not a set of distinct
+  another — and the history is an **ordered history of occurrences**, not a set of distinct
   state changes. A content key would silently collapse the second one.
 
   Two acceptable forms, and the first is preferred:
@@ -443,14 +449,50 @@ Rules the implementer has to state and test:
 
 All of them run headless against the fakes; none needs the instrument.
 
+### 5.5 What landed, and the generalization that came before the merge
+
+The record shipped as a **role-tagged parameter mutation**, not a burst-specific one:
+
+| design name (§5.2) | as landed |
+|---|---|
+| `SweepBurstMutation` | `SweepParameterMutation` (`acquire/log.py`), `record_type` `"parameter_mutation"` |
+| `transition: BurstWriteResult` | `parameter: str` **+** `evidence: BurstWriteResult \| ColumnWriteResult` |
+| `burst_mutations(entries)` | `parameter_mutations(entries)` |
+| `JobManifest.burst_transitions` | `JobManifest.parameter_mutations`, with `burst_transitions` a **derived view** |
+| `RunJobRecord.burst_transitions` | `RunJobRecord.parameter_mutations`, same derived view |
+| `BurstState` | `WriteState` (the same three outcomes; the old name remains an alias) |
+
+**Why it generalized before the branch merged.** Automating the emissions per profile
+([`emissions-control-plan.md`](emissions-control-plan.md)) introduces the **second** independently
+owned instrument mutation, which is the trigger the design named for reconsidering a
+burst-specific mechanism while it still had exactly one caller. Everything this document was
+reviewed for is unchanged: appended immediately after a verified write; appended **before** the
+compile and before the resume-identity comparison; fail-closed when the append fails; an
+occurrence identity that is *minted* rather than derived; in-sequence, occurrence-safe
+reconciliation; unknown record types refusing the log (§5.4); and the job's log read on **every**
+invocation, not only `resume=True`. Only the payload and the accessor generalized, and the scope
+did not widen: this is job-owned **scientific parameter mutations** at the boundary, while
+`ensure_channel()` and the standalone verbs stay §6's separately owned writers.
+
+Two consequences are the price of that generalization, and both are deliberate:
+
+- **A manifest written by the burst slice still reads.** `burst_transitions` shipped in B5, so a
+  job manifest on this machine carries its history under that key.
+  `log.migrate_legacy_burst_history` reads it into `parameter_mutations` during validation, leaving
+  `mutation_id` and `occurred_at` **`None`** rather than inventing them — a content-derived identity
+  is exactly what §5.3 forbids, and the list's own order is the order the fold consumes. A payload
+  carrying the modern field as well wins, and the legacy key is dropped either way.
+- **The log has no legacy shape, and gets no migration.** No released build ever wrote a
+  `burst_mutation` line, so there is no line to read forward — and a log line whose meaning this
+  build cannot state is refused like any other unknown type (§5.4). The record generalized while
+  it had one caller and one unreleased writer, which is the whole reason it was done first.
+
 ---
 
 ## 6. Out of scope, and what this document does not claim
 
-- **Nothing is implemented here.** No change to `src/`, `tests/` or the `acquire` package is part of
-  this branch, and none should be read into it.
-- **No claim of a complete audit trail** until a mechanism lands. O4 closes the gap for the
-  job-level burst transition. It does **not** close it for:
+- **The mechanism covers the job-level parameter mutation and nothing else.** §5.5 records what
+  landed. O4 closes the gap for the job-boundary write. It does **not** close it for:
   - the **channel routing write** — `acquire/campaign.py:1611` → `acquire/udop/parameters.py:467`,
     which writes only when the requested channel differs from the instrument's; a refusal after it
     (the mode rung at `:1624`, or the compile) leaves the channel moved and unrecorded, and the
