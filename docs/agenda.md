@@ -57,9 +57,14 @@ SA0/SA1 and SA2.1–SA2.4 are landed; #58 merged as `b55a819`. SA2 now provides
 the sampling-aware spectral backend, single-record preview, fixed 0–1 Hz
 fraction and deterministic scalar report. Its repeat ranges are descriptive,
 not screening floors. The [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
-records the SA4 acceptance audit: the explorer is useful now, but live widget
-read-back is not established by an executed export, and the original Welch
-wording differs from the accepted periodogram. SA5 within-sitting effects for
+records the SA4 acceptance audit: the explorer is useful now, its live widget
+read-back is established — eleven control transitions driven in one running
+session and read back both ways, with the one live-only defect they exposed (the
+gate control silently reverting to the middle gate on every view change, leaving
+its stale-gate guard unreachable) found and fixed
+([`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md)
+§2) — while the original Welch
+wording still differs from the accepted periodogram. SA5 within-sitting effects for
 both sittings are published and frozen by #61, merged as
 `ea07fda77a5d9bd6899ab427959f0e0054218ae3`. The next scientific slice is
 cross-sitting descriptive agreement over those fixed, oriented effects and
@@ -511,6 +516,30 @@ Binding rules that outlive that work:
   (T16) no longer reproduces** — `get_cell_outputs` returned the composed sidebar
   cell's whole block — so it is marked revised upstream and is no longer a
   blocker for verifying the sidebar here.
+
+- **The configured MCP entry for this checkout cannot start (found 2026-09-28,
+  open).** Hermes' `mcp_servers.marimo-inspect.command` points at
+  `.worktrees/hermes-8bc00b93/.venv/Scripts/marimo-inspect.exe`, a worktree
+  virtualenv whose site-packages has no `annotated_types`, so the server dies on
+  import: `hermes mcp test marimo-inspect` reports *Connection failed (Connection
+  closed)* while `hermes mcp list` still shows the entry *✓ enabled* — the list
+  reports configuration, not connectivity. Re-point the command at this
+  repository's own venv (`.venv/Scripts/marimo-inspect.exe`): that install
+  starts, declares `logging`/`prompts`/`resources`/`tools`, answers
+  `resources/list` with three packaged markdown documents
+  (`workflow://marimo-inspect/co-work-loop`,
+  `workflow://marimo-inspect/live-safety`,
+  `reference://marimo-inspect/fallbacks-and-limits`) plus *0* resource templates,
+  and lists its 14 tools. Nothing here needs a provider change — only the
+  command path. Consequence while it is broken: **no MCP tool is registered in
+  this checkout at all**, so live-notebook work is driven through the marimo
+  server's own UI/HTTP surface (recorded in
+  [`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md)
+  §2). Note also that a server's MCP *resources* are reachable from the agent
+  only through the generated per-server utility tools
+  (`mcp_<server>_list_resources` / `mcp_<server>_read_resource`), which are
+  registered only when the server advertises the capability;
+  `resources/list_changed` is ignored.
 
 ---
 
