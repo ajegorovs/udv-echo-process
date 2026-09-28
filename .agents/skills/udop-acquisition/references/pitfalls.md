@@ -665,3 +665,11 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   (`docs/dop3000/recon-archive-retirement.md`). The application then warns about the missing directory on
   *every* store attempt, and even when that settings dialog is closed, while the Store dialog's
   `Working directory` the driver asserts stays perfectly correct. Read it before a sitting.
+
+  **A correct `Working directory` does not rescue it** — they are different fields on different surfaces,
+  so each is verified where it lives. The cycle **asserts** the dialog's field and writes it when it
+  differs, and `preflight` **compares** it, reporting `store_working_directory` and
+  `working_directory_matches` without changing anything: read that before a storing cycle, and pass the
+  path it reports rather than assuming a plan's portable relative default. The **Save dir** has no
+  command — it is read at the machine, in Preferences → Record settings, and it must name a directory
+  that exists. Both are preconditions of a sitting, and a pass on one says nothing about the other.

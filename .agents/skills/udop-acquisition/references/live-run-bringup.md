@@ -114,7 +114,7 @@ stage passed.
 | 0b. the application surface is there | with the application **open**, the modules that need a real window: `pytest -q tests/test_acquire_live.py tests/test_acquire_dialog.py` | green. These fail — identically, and not as a regression — whenever the application is closed or the session has no interactive window station, so run them as the **first preflight at each sitting**: green means the integration layer still recognises this build, and any failure that is not an understood live-state prerequisite stops the sitting **before a recording is spent** |
 | 1. inventory | `acquire status` | the window is found by **class**, the strip reports a view, and the layout note is **clean**. Any other note names the problem (a dialog left open, an item in a mode that removes a panel, a different build's layout) |
 | 2. selector read | `acquire channel <n>` | the selector verifies, the panel counts are reported, the run's notes name the mode it found, and the cursor is where it started |
-| 3. the cycle, storing nothing | `acquire preflight` | open the store dialog, read its fields, cancel it, end on a clean view. Nothing written |
+| 3. the cycle, storing nothing | `acquire preflight` | open the store dialog, read its fields, cancel it, end on a clean view. Nothing written. Read `store_working_directory` out of the report: **preflight compares that field, while a storing cycle writes it**, so this is where you learn — without spending a slot — which absolute directory the application will actually store into. Pass exactly that as `--store-dir`, or repoint it deliberately; and answer the *other* directory (Save dir, below) at its own surface |
 | 4. one item | `acquire point <name> --seconds <n>` | the artefact appears in the directory the application is configured to write, and reading it back yields the application's own values, which should agree with its display |
 | 5. a multi-item run | `acquire sweep --seconds <n> --rungs <k,k>` | every item `ok`, and the log carrying one record per item — request, read-back, artefact, decoded values, failure field |
 | 5b. the pre-run check | `acquire compile --definition <file>` | exit 0 with the reading's facts agreeing with the declaration and the facts no surface states marked `unreadable` rather than silently declared, and **nothing written**; then prove the refusal in both directions — a definition with one changed fact exits 2 naming it against the instrument's own value, and a fact changed *in the application* makes the unmodified definition refuse. Restore it and the same check is accepted |
@@ -126,6 +126,14 @@ reason per item. Stage 5b is the gate the writing stages sit behind: it costs no
 no stored file, and it is where a wrong declaration is caught before a recording is spent.
 Stated once more in the shorter form it takes where nothing gates the writing stages:
 reason per item.
+
+**Two directories, two surfaces, and only one of them is the dialog's field.** The Store dialog's
+`Working directory` is what the cycle asserts — and writes when it differs — while `preflight` reports it
+without changing it, so stage 3 is also the cheapest way to learn the absolute path a later stage will
+use. The application's **Save dir** (`Preferences → Record settings`) is a *different* field on a
+*different* surface, and a correct `Working directory` does not rescue it: a retired Save dir warns on
+every store attempt while the asserted field stays right. Check both before stage 4 — the first from
+`preflight`'s report, the second at the machine (`references/pitfalls.md`).
 
 **Stage 0b was added after a sitting whose only suite failures were these two modules** — five
 tests dying on `no visible TMain_Scr window` with the application closed, identical with that
@@ -149,7 +157,8 @@ run was not designed for is worse than a refusal.
 | the clean layout's control and panel counts | the driver's constants | read the counts off stage 1 and set them, or bring the item's mode/state to match — a mode that removes a panel changes the count by design |
 | the main window's **class name** | the driver's `MAIN_CLASS` | if a new build renames it, nothing resolves: set it for that install |
 | a dialog's geometry and its button band | driver predicates | dialogs are found structurally, so a changed dialog refuses loudly instead of pressing the wrong thing — verify, do not widen blindly |
-| the application's **own working directory** | asserted before every commit | set it in the application, or pass the same path; a mismatch must refuse the item, not scatter files |
+| the application's **own working directory** | asserted before every commit; reported read-only by `preflight` | set it in the application, or pass the same path; a mismatch must refuse the item, not scatter files. The path to pass is the one the report's `store_working_directory` names — the cycle writes that field, so a guessed path points the instrument's output where nobody asked |
+| the application's **Save dir** (`Preferences → Record settings`) | read at the machine, before a storing stage | not the dialog's field, and **not** covered by a correct one: it must name a directory that exists, or the application warns on every store attempt while the asserted `Working directory` stays right |
 | first-run configuration values (sound speed, depths, rates) | the sweep definition | these are *that* instrument's settings, not the library's: read them off the application or the first stored artefact and use those |
 | an absolute screen coordinate inside a predicate | the overlay finder | expect the fallback path (appearance diff) to carry it — see the proxy test below |
 
