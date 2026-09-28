@@ -187,6 +187,29 @@ def test_repeat_context_mapping_is_real_and_honest(comparison) -> None:
     assert comparison.limitations and any("e8" in lim for lim in comparison.limitations)
 
 
+def test_repeat_context_limitation_does_not_reassert_the_obsolete_gate(
+    comparison,
+) -> None:
+    """The §6 identity gap is accepted ancillary context, never a §11.8 blocker (amended gate).
+
+    Regression: the pre-amendment wording falsely gated the run — claiming §11.8 *cannot pass*
+    until the anchor members' achieved conditions are published or the selection is pinned to
+    job identity. The amended §11.8 accepts the identity-unverifiable entry with its numerical
+    range omitted, so that claim must be gone while the operand set the verifier keys on stays.
+    """
+    text = " ".join(comparison.limitations)
+    assert "cannot pass" not in text
+    assert "until the anchor members' achieved conditions are published" not in text
+    assert "pins the selection to job identity" not in text
+    # The amended gate is satisfied by the typed entry with no numerical repeat range.
+    assert "§11.8" in text and "satisfies the gate" in text
+    assert "accepted ancillary context" in text
+    assert "no numerical repeat range is reported" in text
+    # The independent verifier's exact operand set is still named in the limitation.
+    for operand in ("e8", "e64", "e128"):
+        assert re.search(rf"\b{operand}\b", text)
+
+
 def test_no_agreement_value_is_rendered_into_any_reason(comparison) -> None:
     for record in comparison.records:
         texts = [record.comparison_reason]
