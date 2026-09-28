@@ -142,16 +142,37 @@ to `A_sign` — it describes two realizations.
 else `undefined` with the failing reason. Correlation of `D` against depth is a **different**
 endpoint and is not used here.
 
-**Peak displacement and ties.** Find each side's largest-absolute-effect depth `z*_s`
-**on the common-defined comparison knots `D`**, using the frozen effect arrays and the
-within-sitting shallower-depth tie rule (within-sitting prespec §50). Retain each
-side's published `max_abs_depth_mm` separately as its original full-support context.
-Peak displacement `Δz* = z*_2 − z*_1` (**positive = deeper in live-2**) is reported
-with the two common-domain depths, **undefined** when `D` is empty, plus a boolean
-"peaks coincide on the comparison grid" (equal within `GATE_TOLERANCE_MM`). A
-constant-magnitude profile has no localized peak: retain its numerical extremum
-but leave localization/recurrence interpretation undefined. A maximum is never
-called a robust effect (within-sitting prespec §50).
+**Per-side numerical maximum, then peak localization — two separate things.** For each side
+`s ∈ {1, 2}`, on the common-defined comparison knots `D` and using the frozen effect arrays and the
+within-sitting shallower-depth tie rule (within-sitting prespec §50):
+
+```
+M*_s = max_{k ∈ D} |E_s(z_k)|          z*_s = the shallower depth attaining it
+```
+
+The **numerical maximum** (`M*_s`, `z*_s`) is **always defined whenever `|D| ≥ 1`** — a single
+common-defined knot still yields a numerical extremum; it is typed-empty with reason
+**`insufficient-depth-support`** only when `D` is empty. Retain each side's published
+`max_abs_value`/`max_abs_depth_mm` separately as its original full-support context (never recomputed
+on `D`).
+
+A numerical extremum is a **localized peak** only when the profile actually varies. Define the
+per-side boolean **`peak_localized_s`** as **true iff both** (a) the side has **≥ 2 distinct
+common-defined depths** (`|D| ≥ 2`) **and** (b) its absolute effect profile over `D` is
+**nonconstant** under the existing `CONSTANT_TOLERANCE_REL = 1e-12`
+(`analysis.sparse_sa5_effects.CONSTANT_TOLERANCE_REL`, the same rule the `MIN_SHAPE_KNOTS`/`ProfileShape`
+correlation uses). Otherwise `peak_localized_s` is **false**, with reason
+**`insufficient-depth-support`** when `|D| < 2` (or `D` empty) and
+**`constant-absolute-effect-profile`** when the absolute profile is constant to within tolerance. A
+constant-absolute-effect profile keeps its numerical maximum but has **no** localized peak.
+
+**Peak displacement and coincidence — only when both sides are localized.** The displacement
+`Δz* = z*_2 − z*_1` (**positive = deeper in live-2**, reported with the two common-domain depths) and
+the boolean "peaks coincide on the comparison grid" (the two `z*_s` equal within `GATE_TOLERANCE_MM`)
+are published **only when `peak_localized_1` and `peak_localized_2` are both true**; otherwise both
+are typed-empty with the failing side's reason (`constant-absolute-effect-profile` or
+`insufficient-depth-support`). Neither is ever read off a non-localized side's numerical extremum. A
+maximum is never called a robust effect (within-sitting prespec §50).
 
 ## 6. Per-sitting context, magnitude, coverage, repeats
 
@@ -161,10 +182,36 @@ denominator** (within-sitting prespec §54; an agreement number alone cannot say
 effects are large, both negligible or both unresolved). Per side: **magnitude**
 (`rms_magnitude`, `signed_depth_average`, `equal_knot_average`, `max_abs_value`/`max_abs_depth_mm`);
 **coverage/definedness** (`covered_depth_mm`, `coverage_fraction`, `defined_count`,
-`undefined_alignment_count`, `undefined_operand_count`, `knot_count`); and **repeat context** — the
-sitting's own `repeats` rows (v1 contract §5.6) for the matching
-`(sitting × observable × view × condition)`, whose `min`/`max`/`spread` are **descriptive only** (no
-range is a floor, no member a replicate). Comparison `L`, `|D|`, `|S|` and the span are published as
+`undefined_alignment_count`, `undefined_operand_count`, `knot_count`); and **repeat context** — selected for each of the contrast's **distinct operands** (never
+for the contrast as a whole) **by exact achieved identity from the published repeat groups**
+(v1 contract §5.6). The sitting's own `repeats` row(s) are selected whose whole achieved condition
+(burst length, emissions per profile, PRF, stored pitch and gates, plus the
+remaining achieved setting fields carried by the frozen condition) **exactly equal
+the operand's whole achieved condition**; recording job/order are retained as
+provenance, **not** used as a substitute for condition identity. The published v1 groups are the **common-reference condition** (`cr1..cr4`) and
+each job's **block-local anchor controls**. The explicit mapping for the seven oriented contrasts
+(published names and operand order as in §2 and the v1 `effects` rows) is:
+
+| contrast | distinct operands | repeat group selected by exact achieved identity |
+| --- | --- | --- |
+| `pitch_at_burst_4` | `cc1`, `cc3` | `unavailable` for both |
+| `pitch_at_burst_18` | `cc2`, `cc4` | `unavailable` for both |
+| `burst_at_fine_pitch` | `cc1`, `cc2` | `unavailable` for both |
+| `burst_at_coarse_pitch` | `cc3`, `cc4` | `unavailable` for both |
+| `E8_minus_E20` | `e8`, `E20` | `e8` → the `emissions-8` block-local anchor group; `E20` → the common-reference group |
+| `E64_minus_E20` | `e64`, `E20` | `e64` → the `emissions-64` block-local anchor group; `E20` → the common-reference group |
+| `E128_minus_E20` | `e128`, `E20` | `e128` → the `emissions-128` block-local anchor group; `E20` → the common-reference group |
+| `pitch_x_burst_interaction` | `cc1`, `cc2`, `cc3`, `cc4` | `unavailable` for all four |
+
+`unavailable` is the typed-empty state **`repeat-context-unavailable`** (reason
+`no-published-repeat-group-matches-the-operand-whole-condition`): the four corner operands carry a
+fine (`0.616666666667` mm / 145 gates) or coarse (`2.96` mm / 31 gates) stored window, while every
+published repeat group records the reference window (`1.85` mm / 50 gates), so no group has a
+corner's exact achieved condition — and the interaction's operands are the same four corners. **No
+contrast-level or synthetic repeat group is ever constructed** from a contrast's two sides, and no
+anchor or reference member is averaged into an operand (within-sitting prespec §42). Each selected
+group's `min`/`max`/`spread` are **descriptive only** (no range is a floor, no member a replicate).
+Comparison `L`, `|D|`, `|S|` and the span are published as
 the comparison's own coverage. For each effect, show both original magnitude
 summaries adjacent to the applicable same-condition repeat members and their
 range/spread, separately for each sitting. The current repeat-member scalar is
@@ -177,18 +224,28 @@ requires its own prespecified member pairing and reduction.
 
 ## 7. Typed noncomparability and nonresolvability
 
-Three **typed**, mutually exclusive outcomes replace any vague score, each with its explicit reason:
+Every matched pair carries **two orthogonal, separately named states** — never one blended score, and
+never labelled with the other's vocabulary:
 
-| typed outcome | meaning | example reasons |
+**`comparison_state`** — whether the pair has a common comparison basis (this section). It is one
+of three **typed**, mutually exclusive outcomes, each with its explicit reason:
+
+| typed `comparison_state` | meaning | example reasons |
 | --- | --- | --- |
-| `comparable` | the pair has a common comparison basis; each §5 diagnostic is either defined or explicitly typed-empty | `label-deferred-pending-review` when no recurrence rule is registered |
+| `comparable` | the pair has a common comparison basis; each §5 diagnostic is either defined or explicitly typed-empty | a §5 diagnostic typed-empty, e.g. `insufficient-depth-support` or `constant-absolute-effect-profile` |
 | `not comparable` | the pair has no shared structural basis or no common defined knot | `effect-id-mismatch`, `triple-mismatch`, `grid-mismatch-pending-review`, `side-wholly-undefined`, `units-mismatch` |
 | `not resolvable with this design` | a future pre-registered, endpoint-specific rule establishes that this design cannot resolve the comparison against its own like-for-like variation | no such rule is registered here; do not emit this outcome merely because a rule is absent |
 
+**`label_state`** — the recurrence verdict (§8), a *different* axis: it is
+**`deferred-pending-review`** in v1 for a `comparable` pair, and it is what a registered
+metric-specific evidence rule would eventually set. A missing classification rule defers the
+`label_state`; it never becomes a `comparison_state`, and no `comparison_state` is ever written
+into the label field.
+
 A broken digest chain or failed input gate **refuses the whole run**, not merely a
 row; a defined pair with an empty sign/correlation/integral remains comparable
-with a typed-empty diagnostic. Missing classification rules defer labels, not
-comparability. These are **states of the comparison, not values**: **absence of a
+with a typed-empty diagnostic. A missing classification rule defers the
+`label_state`, not the `comparison_state`. `comparison_state` and `label_state` are **states, not values**: **absence of a
 resolved difference is never equivalence**, and gates/profiles are never independent replicates
 (within-sitting prespec §52). A within-sitting refusal on one side (a non-value `0.0`, a constant
 trace, a declined axis, a `defined-zero-power` `0/0`) propagates to a comparison non-value at that
@@ -196,13 +253,16 @@ knot — it is not resolved by the other side's value.
 
 ## 8. Labels — explicit evidence rules only, or deferred
 
-The only permitted label vocabulary is the within-sitting prespec's (§54): **`recurs
-descriptively`**, **`does not recur descriptively`**, **`not comparable / not resolvable`**. A label
-may be emitted **only** under an explicit, pre-registered, metric-specific evidence rule that names
-the endpoint (which of `D̄`, `RMS(D)`, `A_sign`, correlation, `Δz*`), the like-for-like reduction it
-reads, and the threshold — none of which is invented from observed values here.
+The only permitted `label_state` vocabulary is the within-sitting prespec's (§54): **`recurs
+descriptively`** and **`does not recur descriptively`**. The within-sitting prespec writes this set as
+`recurs descriptively / does not recur descriptively / not comparable / not resolvable`; the latter
+two terms belong to §7 **`comparison_state`** (the pair carries no recurrence label at all), **not** a
+`label_state` value — the two axes stay separate. A label (a `label_state`) may be emitted **only**
+under an explicit, pre-registered, metric-specific evidence rule that names the endpoint (which of
+`D̄`, `RMS(D)`, `A_sign`, correlation, `Δz*`), the like-for-like reduction it reads, and the threshold
+— none of which is invented from observed values here.
 
-**No such rule is registered in this prespec.** In v1 the recurrence-label field is
+**No such rule is registered in this prespec.** In v1 the `label_state` field is
 **`deferred-pending-review`** for structurally comparable rows; `not comparable`
 is still emitted where §§2–4 force it. `not resolvable with this design` requires
 a separately reviewed endpoint-specific rule and is not emitted by this version.
@@ -220,9 +280,11 @@ cross-sitting artifact contract before committing any generated evidence. A
 possible name is `sa5-cross-sitting.{npz,json,csv,README.md}` under
 `reports/sparse-signal/`; its exact closed schema remains to be reviewed. It must
 specify, at minimum: the NPZ member set and byte rule (v1 contract §4); the
-JSON's closed fields including a `comparison` vocabulary and a per-knot `(state2, state1)` pair;
+JSON's closed fields including a `comparison_state` vocabulary, a separate `label_state` field and a
+per-knot `(state2, state1)` pair;
 the CSV's 72-row one-row-per-effect scalar set (`D̄`, `RMS(D)`, `A_sign`, `|S|`, `L`, correlation,
-`Δz*`); the digest convention (v1 contract §5.7); the `D`/`A_sign` non-value rows; and the
+`Δz*`, the per-side `peak_localized`); the digest convention (v1 contract §5.7); the `D`/`A_sign`
+non-value rows and the §6 `repeat-context-unavailable` rows; and the
 independent verifier (v1 contract §11) recomputing from the two committed quartets rather than
 re-reading a writer's staged values. Until that contract is accepted, **no cross-sitting artifact is
 generated or committed**; the two v1 quartets and every frozen WP/SA2.4 report stay byte-untouched.
@@ -253,11 +315,18 @@ The implementation must test, deterministically and to scratch outputs:
 5. `L = 0` giving empty `D̄`/`RMS`, and a one-knot-common case;
 6. `A_sign` with zero-effect knots excluded from numerator **and** denominator, and `|S| = 0`
    giving an empty (not `0`) agreement;
-7. constant-profile / `MIN_SHAPE_KNOTS` correlation refusal, and peak-displacement tie resolution
-   (shallower depth) with a wholly-undefined side;
-8. `not comparable` / `not resolvable` typed states, that no label but `deferred-pending-review`
-   is ever written in v1, and that the v1 quartets and frozen WP/SA2.4 reports are byte-unchanged
-   after a run.
+7. `MIN_SHAPE_KNOTS` / `CONSTANT_TOLERANCE_REL` correlation refusal; the §5 split — a numerical
+   maximum defined at exactly one common-defined knot (`|D| = 1`), `peak_localized_s` false with
+   `insufficient-depth-support` (`|D| < 2`) and with `constant-absolute-effect-profile`, and
+   `Δz*`/coincidence typed-empty unless **both** sides are localized, with the shallower-depth tie
+   rule and a wholly-undefined side;
+8. the §6 repeat-context mapping by exact achieved identity — a selected group for each of
+   `e8`/`e64`/`e128` (its own job's anchor group) and `E20` (the common-reference group),
+   `repeat-context-unavailable` for the four corner operands and the interaction, and no
+   contrast-level synthetic group constructed;
+9. `comparison_state` / `label_state` typed states kept separate, that no `label_state` but
+   `deferred-pending-review` is ever written in v1, and that the v1 quartets and frozen WP/SA2.4
+   reports are byte-unchanged after a run.
 
 ## 12. Out of scope
 
