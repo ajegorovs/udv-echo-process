@@ -513,7 +513,11 @@ given that the comparison of record is done in post-processing (`§26.11`).
 - **No new acquisition architecture.** §9.1 binds; re-opening needs evidence from a real run.
 - **No writers before the matrix names the axes.** The five unturned knobs stay candidates, not a work list
   (`§11.1` item 5). The four-button role map is the one mapping exception, because a strip press is what a
-  batch of points needs and the ambiguity is already refusing.
+  batch of points needs and the ambiguity is already refusing. **Dated finding (2026-09-28): the emissions
+  axis is named and has been swept live** — the automated `20 → 64 → 64 → 20` boundary was commissioned on
+  the instrument, with the stored word 14 strictly enforced
+  ([`data/emissions-control-live-1/`](../../data/emissions-control-live-1/README.md)) — so emissions/profile
+  is no longer among the unturned knobs; the others still are.
 - **No assisted mode, ever, as a test case** — it is a refusal case (the procedure's own precondition).
 - **Nothing presses that changes state** outside the four sittings above, and no modal is left open while a
   probe runs.

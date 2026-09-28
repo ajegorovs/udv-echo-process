@@ -466,6 +466,13 @@ while the record still shows the declaration as 52 and the disagreement as a dis
 **one test asserts all three together**, so no later change can collapse them back into a
 single number. This is also what makes Phase 7's certificate possible.
 
+**Still for the read-only path (2026-09-28).** A job that **writes** word 14 never reaches this
+declaration-versus-read disagreement: it compiles word 14 strictly against the request and refuses a
+mismatch (D4), and the live commissioning showed the stored word agreeing with the request in all four
+files ([`data/emissions-control-live-1/`](../../data/emissions-control-live-1/README.md)). The three
+projections above therefore stay for the read-only path, where the declaration is still known wrong —
+W6's point is to keep the two paths distinguishable, not to feed the law one number.
+
 ## 5. Decisions to make before coding
 
 | # | Decision | Options | Recommendation |
@@ -473,7 +480,7 @@ single number. This is also what makes Phase 7's certificate possible.
 | D1 | How the snapshot reaches the caller | add `instrument_snapshot()` to `SweepActuator`; or introduce the review's separate `InstrumentSession` port now | **Add the method.** Additive, precedented by `try_record_and_store`, and it keeps the fakes single-protocol. A separate port is the review's Phase 5, and belongs with the `driver.py` extraction, not before it. |
 | D2 | Snapshot cadence | once per run; or per point | **Once per run**, beside the existing once-per-run channel check. Per point costs modal dialogs an operator watches open and close, for facts that do not change within a run. |
 | D3 | No snapshot available | refuse the run; or `--no-snapshot` with the records marked `declared only` | **Both**: refuse by default, allow the explicit flag. Silence is the only unacceptable option (criterion 4). |
-| D4 | Mismatch policy | refuse before the first recording; or record and continue | **Refuse for the settled facts and the channel mode**; record-and-continue only for word 14, whose declaration is known wrong until W6. |
+| D4 | Mismatch policy | refuse before the first recording; or record and continue | **Refuse for the settled facts and the channel mode, and now for word 14 on a *writing* job** (live-commissioned 2026-09-28: the stored word 14 is strictly enforced against the request); record-and-continue stays for the **read-only** path, whose declaration is known wrong until W6. |
 | D5 | Where the compiled plan lives | a frozen model in `campaign.py` with its own fingerprint; or new fields on the JSON definition | **A separate model.** The definition expresses experimental intent and is authored by a human; the compiled plan is instrument-specific and machine-generated. Merging them would put the instrument into the campaign file. |
 | D6 | Where the read path for a newly discovered fact lives | extend `ParamRole`; a second role model for the dialog surface; snapshot-local readers | **Decide after W1's reconnaissance, not before.** `ParamRole` is the measurement screen's column and a dialog fact must not be forced into it. Default to a snapshot-local reader until a second fact needs the same surface. |
 

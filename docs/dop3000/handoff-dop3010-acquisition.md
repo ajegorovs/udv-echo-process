@@ -68,8 +68,13 @@ never been observed in word 27. No offline test establishes live behaviour.
    reintroduce that reading.
 4. **At the instrument** (operator present, interactive session): the **five remaining jobs** of the
    portable nine-job plan (`emissions-8/64/128` plus the two references — 14 recordings). They
-   request a *manual* emissions change, which is why the 2026-09-25 pass stopped after job 4. Drive
-   job boundaries with `run-plan --next`; never set the burst by hand.
+   requested a *manual* emissions change, which is why the 2026-09-25 pass stopped after job 4; that
+   boundary was removed on **2026-09-28**, when the emissions/profile boundary was commissioned live
+   (`e20-a → e64-a → e64-b → e20-b`, PR #44,
+   [`../../data/emissions-control-live-1/`](../../data/emissions-control-live-1/README.md)), so these
+   jobs now drive like any other — with the caveat that the sitting exercised the `20 ↔ 64` boundary,
+   not the `8` and `128` values these jobs request. Drive job boundaries with `run-plan --next`;
+   never set the burst by hand.
 
 **In flight (2026-09-25, reviewed by nobody yet, offline-verified only).** Two Draft PRs implement
 the two items above:

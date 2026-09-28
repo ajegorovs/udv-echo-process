@@ -73,7 +73,9 @@ directly (word 14 per job against *each job's own request*, the held fields iden
 carrying no event, the two ids distinct and ordered). It **cannot** re-derive the durable mutation
 objects or the compilation identities: their inputs are the runtime manifests and logs, which stay local
 because they carry absolute machine paths. For those it checks the derived summary against the
-expectations written into `verify.py` itself.
+expectations written into `verify.py` itself. The tie is load-bearing — perturbing a definition
+fingerprint, a recording byte, the summary's word 14, the mutation order, or a no-write boundary's
+`write_spent` each makes it fail (verified by mutation on scratch copies).
 
 **Stop point:** the pass is **complete — 4/4 jobs and 4 recordings**, the plan's whole point list. The
 application was left on its ready measurement screen at emissions 20, burst 10, channel 1. Two of the
