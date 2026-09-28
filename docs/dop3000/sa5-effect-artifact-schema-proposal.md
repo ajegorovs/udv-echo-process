@@ -321,6 +321,16 @@ profile spans a positive depth; a one-knot profile has an empty fraction, not ze
 An interior undefined knot never bridges the two neighbouring intervals. Where
 `L = 0`, `signed_depth_average` and `rms_magnitude` are empty even if an isolated
 knot is defined; the equal-knot average and extrema remain descriptive. The
+sign fractions `positive_fraction`, `negative_fraction` and `zero_fraction` are
+counted over **different denominators**, and the CSV column name alone does not
+state which. `positive_fraction` and `negative_fraction` are counted over the
+**defined non-zero** knots only: they share one denominator, they sum to `1`
+whenever at least one defined knot is non-zero, and both are the empty field
+where every defined knot is exactly zero. `zero_fraction` is counted over
+**every defined knot** — its denominator is `defined_count` (`analysis.sparse_sa5_effects`
+counts `values == 0.0` over all defined values, while the two others divide by the
+non-zero subset) — so it is never empty on an effect with a defined knot, and a
+measured effect of exactly `0.0` is a value, never a non-value row (§5.5). The
 `support_low_mm` / `support_high_mm` columns name common support, not the
 denominator of the coverage fraction. `undefined_alignment_count` and
 `undefined_operand_count` come from the NPZ `state` codes (§8 table A).

@@ -1678,7 +1678,8 @@ _COLUMN_MEANING: Mapping[str, str] = {
     "rms_magnitude": "the trapezoidal RMS magnitude over the valid intervals; empty where `L = 0`",
     "positive_fraction": "the fraction of defined non-zero knots with a positive effect",
     "negative_fraction": "the fraction of defined non-zero knots with a negative effect",
-    "zero_fraction": "the fraction of defined non-zero knots with a zero effect",
+    "zero_fraction": "the fraction of defined knots with an exactly zero effect (the "
+    "denominator is `defined_count`, unlike the two non-zero-knot fractions above)",
     "min_value": "the smallest defined effect",
     "min_depth_mm": "the depth the minimum was reached at",
     "max_value": "the largest defined effect",
