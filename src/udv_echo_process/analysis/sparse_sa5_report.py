@@ -1594,8 +1594,19 @@ def _readme_text(
     lines.append("")
     lines.append("## Reproduce")
     lines.append("")
+    lines.append(
+        f"Run from a checkout of the recorded generator revision `{generator_revision}`. "
+        "Set `SA5_SCRATCH` to an absolute directory **outside the checkout**; do not "
+        "regenerate into this committed report root. A later checkout has a different "
+        "default revision and must not overwrite an existing artifact set."
+    )
+    lines.append("")
     lines.append("```bash")
-    lines.append(regeneration_command(sitting))
+    lines.append(
+        f'{regeneration_command(sitting)} --report-dir "$SA5_SCRATCH" '
+        f"--analysis-commit {analysis_commit} "
+        f"--generator-revision {generator_revision}"
+    )
     lines.append("```")
     lines.append("")
     lines.append("## What this artifact does not claim")

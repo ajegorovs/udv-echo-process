@@ -1308,6 +1308,22 @@ def test_the_document_publishes_the_runnable_generator_command(
     assert document["generator_command"] == report.regeneration_command(PLAN_NAME)
 
 
+def test_the_readme_reproduces_into_scratch_at_the_recorded_revision(
+    synthetic_artifacts,
+) -> None:
+    """The human command cannot rewrite the committed root or change its revision."""
+    artifacts = synthetic_artifacts[0]
+    document = artifacts.document()
+    readme = artifacts.readme.decode("utf-8")
+    command = (
+        f'{document["generator_command"]} --report-dir "$SA5_SCRATCH" '
+        f"--analysis-commit {document['analysis_commit']} "
+        f"--generator-revision {document['generator_revision']}"
+    )
+    assert "absolute directory **outside the checkout**" in readme
+    assert f"```bash\n{command}\n```" in readme
+
+
 def test_report_main_refuses_a_campaign_and_an_unknown_sitting(
     tmp_path, capsys
 ) -> None:
