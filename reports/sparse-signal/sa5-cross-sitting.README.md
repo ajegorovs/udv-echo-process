@@ -13,7 +13,7 @@ The chain is one-way: this README binds the document, the document binds the con
 
 - `sa5-cross-sitting.npz` sha256: `sha256:75eb2d147b939d36f9f70275571c2245baaaa94fd3e1901a50da8f0eb37da99d` (over its exact file bytes).
 - `sa5-cross-sitting.csv` sha256: `sha256:256a63706970c3bbe76435cee6ca0dae68c1085f4a7ff8728e9f67356e9c2cd1` (over its canonical LF bytes, so a Windows checkout with CRLF materialised on disk hashes to the value git stores).
-- `sa5-cross-sitting.json` sha256: `sha256:f74d5d645c6f1880bbd6f403fafb83fa828f1bf553b91a85e50b4991eb847f01` (canonical LF bytes; this is the reader's entry point to the chain).
+- `sa5-cross-sitting.json` sha256: `sha256:0512a234d396631f1b6d15577b6412f7b129a4e2f9cb2b054584e68e780ff8b5` (canonical LF bytes; this is the reader's entry point to the chain).
 - every digest is lowercase hex with the `sha256:` prefix, computed from the bytes this run staged, at the analysis revision below — never from a tree regenerated beside the destination.
 
 ## The two source quartets and their digest chains
@@ -144,8 +144,8 @@ Each side's frozen magnitude/coverage context is quoted from its own CSV row and
 ## Provenance and digests
 
 - comparison: `live2 - live1`.
-- analysis revision: `c29d74d`.
-- generator revision: `c29d74d`.
+- analysis revision: `85e1546`.
+- generator revision: `85e1546`.
 Publication is staged: every file is written beside its destination under a unique, fsynced temporary name and moved onto its final name with one `os.replace` at a time. The four-file set is **not** a transaction, so a failure after some renames can leave a mixed set — one a reader detects by recomputing the digests above. An existing file is never overwritten to guess ownership: a full byte-identical set is left untouched, and any missing or differing file makes the run refuse rather than replace a file it did not produce.
 
 ## Reproduce
@@ -153,7 +153,7 @@ Publication is staged: every file is written beside its destination under a uniq
 Run from a checkout of the recorded generator revision. Set `SA5_SCRATCH` to an absolute directory **outside the checkout**; do not regenerate into this committed report root. `--report-dir` redirects the **outputs** only: the two sides are always read from the committed source quartets, so a scratch directory never redirects the reads. A later checkout has a different default revision and must not overwrite an existing artifact set.
 
 ```bash
-python -m udv_echo_process.analysis.sparse_sa5_cross_report --report-dir reports/sparse-signal --report-dir "$SA5_SCRATCH" --analysis-commit c29d74d --generator-revision c29d74d
+python -m udv_echo_process.analysis.sparse_sa5_cross_report --report-dir reports/sparse-signal --report-dir "$SA5_SCRATCH" --analysis-commit 85e1546 --generator-revision 85e1546
 ```
 
 ## What this artifact does not claim
