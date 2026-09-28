@@ -273,7 +273,11 @@ def _synthetic_sources(*, constant_in_time: bool = True) -> verify.Sa5Sources:
             points.append(_anchor_point(job, index + 1, label))
     binding = bind_sitting(rows, plan_name=PLAN_NAME)
     effects = measure_binding(binding, points, pass_name=PLAN_NAME)
-    decoding = SimpleNamespace(points=tuple(points), support_mm=binding.support_mm)
+    decoding = SimpleNamespace(
+        points=tuple(points),
+        support_mm=binding.support_mm,
+        plan_fingerprint=PLAN_FINGERPRINT,
+    )
     return verify.Sa5Sources(decoding=decoding, binding=binding, effects=effects)
 
 
@@ -512,6 +516,21 @@ def _state_meanings() -> dict[str, dict[str, str]]:
     }
 
 
+def _as_writer_state_meanings(
+    meanings: dict[str, dict[str, str]],
+) -> dict[str, list[dict[str, int | str]]]:
+    """The same two spaces in the writer's own rendering: a list of ``{code, text}`` rows.
+
+    The committed artifact renders ``state_meanings`` as lists (``sparse_sa5_report`` builds
+    them from ``sorted(...)``), so the schema's list form is what a real artifact carries and
+    the adversarial cases are built from it.
+    """
+    return {
+        space: [{"code": int(code), "text": text} for code, text in codes.items()]
+        for space, codes in meanings.items()
+    }
+
+
 def _effect_records(sources) -> list[dict[str, object]]:
     binding = sources.binding
     records: list[dict[str, object]] = []
@@ -686,7 +705,9 @@ def _document(
         "artifact_checks": {name: True for name in verify.ARTIFACT_CHECKS},
         "analysis_commit": "0" * 40,
         "generator_revision": "synthetic-fixture",
-        "generator_command": "pytest tests/test_sparse_sa5_verify.py",
+        "generator_command": (
+            f"python -m udv_echo_process.analysis.sa5_synthetic --sitting {PLAN_NAME}"
+        ),
         "sitting": binding.plan,
         "plan": binding.plan,
         "plan_fingerprint": binding.plan_fingerprint,
@@ -726,6 +747,26 @@ def _dump(document: object) -> str:
     )
 
 
+def _readme_text(paths: dict[str, Path]) -> str:
+    """The fixture's own README: it names the three bound files and states each digest (§7).
+
+    §7 binds the README's claims to every published file by digest — the JSON's, the NPZ's and
+    the CSV's — so the fixture emits all three, as the committed artifact does, and never a bare
+    64-hex source digest that a reader could mistake for a file digest.
+    """
+    stem = paths["json"].name[: -len(".json")]
+    npz = (
+        f"{verify.DIGEST_PREFIX}{hashlib.sha256(paths['npz'].read_bytes()).hexdigest()}"
+    )
+    return (
+        f"# {stem}\n\n"
+        f"The bound files are {stem}.npz, {stem}.csv and {stem}.json.\n\n"
+        f"- {stem}.npz {npz}\n"
+        f"- {stem}.csv {table_digest(paths['csv'])}\n"
+        f"- {stem}.json {table_digest(paths['json'])}\n"
+    )
+
+
 def write_artifacts(directory: Path, sources, *, stem: str = STEM) -> dict[str, Path]:
     """Write the fixture's own schema-correct quartet and return the four paths."""
     directory = Path(directory)
@@ -741,12 +782,7 @@ def write_artifacts(directory: Path, sources, *, stem: str = STEM) -> dict[str, 
         stem=stem,
     )
     paths["json"].write_text(_dump(document), encoding="utf-8", newline="")
-    json_digest = table_digest(paths["json"])
-    paths["readme"].write_text(
-        f"# {stem}\n\nThe JSON's canonical-LF digest is {json_digest}.\n"
-        f"The bound files are {stem}.json, {stem}.npz and {stem}.csv.\n",
-        encoding="utf-8",
-    )
+    paths["readme"].write_text(_readme_text(paths), encoding="utf-8")
     return paths
 
 
@@ -757,16 +793,7 @@ def load_document(paths: dict[str, Path]) -> dict[str, object]:
 def rewrap(paths: dict[str, Path], document: object) -> None:
     """Write a mutated document back in the §5 canonical form, README re-bound."""
     paths["json"].write_text(_dump(document), encoding="utf-8", newline="")
-    digest = table_digest(paths["json"])
-    text = paths["readme"].read_text(encoding="utf-8")
-    lines = [
-        line
-        for line in text.splitlines()
-        if "canonical-LF digest" not in line and "bound files" not in line
-    ]
-    lines.append(f"\nThe JSON's canonical-LF digest is {digest}.")
-    lines.append(f"The bound files are {paths['json'].name}.")
-    paths["readme"].write_text("\n".join(lines) + "\n", encoding="utf-8")
+    paths["readme"].write_text(_readme_text(paths), encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -1121,6 +1148,158 @@ def test_a_non_canonical_json_is_refused(tmp_path, monkeypatch, sources):
         run_verification(monkeypatch, sources, tmp_path)
 
 
+# ── the tightened gaps: typed refusals, code spaces, bindings ──────────
+
+
+def test_a_json_carrying_a_non_finite_number_is_a_typed_refusal(
+    tmp_path, monkeypatch, sources
+):
+    """``json.loads`` accepts the bare ``NaN`` token; §5's ``allow_nan=False`` must refuse it.
+
+    The refusal must be the verifier's own typed error, not the bare ``ValueError`` a
+    re-serialization raises, because a verifier that raises an untyped error has no message a
+    reader can act on.
+    """
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    document["window_s"] = float("nan")
+    paths["json"].write_text(
+        json.dumps(
+            document,
+            ensure_ascii=True,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=True,
+        )
+        + "\n",
+        encoding="utf-8",
+        newline="",
+    )
+    with pytest.raises(verify.Sa5VerificationError, match="non-finite"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_state_meanings_missing_an_effect_code_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """Code ``1`` carries ``undefined-operand``: a content-only scan would let it be dropped."""
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    for record in document["effects"]:
+        listed = _as_writer_state_meanings(record["state_meanings"])
+        listed["effect"] = [row for row in listed["effect"] if row["code"] != 1]
+        record["state_meanings"] = listed
+    rewrap(paths, document)
+    with pytest.raises(verify.Sa5VerificationError, match="state_meanings"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_state_meanings_with_the_two_code_spaces_swapped_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """Codes ``1`` and ``2`` differ between the spaces: a swapped nesting is not §8.
+
+    Built in the writer's list rendering, where a content-only scan that keyed nothing could
+    not tell the two spaces apart at all.
+    """
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    for record in document["effects"]:
+        listed = _as_writer_state_meanings(record["state_meanings"])
+        record["state_meanings"] = {
+            "effect": listed["participant"],
+            "participant": listed["effect"],
+        }
+    rewrap(paths, document)
+    with pytest.raises(verify.Sa5VerificationError, match="state_meanings"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_both_state_meanings_renderings_are_accepted(tmp_path, monkeypatch, sources):
+    """§5.3 fixes the §8 vocabulary, not its rendering: the writer's list form is read too."""
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    for record in document["effects"]:
+        meanings = record["state_meanings"]
+        meanings["effect"] = [
+            {"code": int(code), "text": text}
+            for code, text in meanings["effect"].items()
+        ]
+        meanings["participant"] = [
+            {"code": int(code), "text": text}
+            for code, text in meanings["participant"].items()
+        ]
+    rewrap(paths, document)
+    result = run_verification(monkeypatch, sources, tmp_path)
+    assert result.ok
+
+
+def test_a_generator_command_that_does_not_name_the_sitting_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """The command is deterministic: it must name the sitting it regenerates."""
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    document["generator_command"] = "python -m some.other.generator"
+    rewrap(paths, document)
+    with pytest.raises(verify.Sa5VerificationError, match="generator_command"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_an_inventory_plan_fingerprint_unlike_the_decoded_plan_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """§11.1: points.csv's plan identity is reconciled with the plan it was decoded from."""
+    tampered = verify.Sa5Sources(
+        decoding=SimpleNamespace(
+            points=sources.decoding.points,
+            support_mm=sources.binding.support_mm,
+            plan_fingerprint="0" * 64,
+        ),
+        binding=sources.binding,
+        effects=sources.effects,
+    )
+    write_artifacts(tmp_path, sources)
+    with pytest.raises(verify.Sa5VerificationError, match="plan fingerprint"):
+        run_verification(monkeypatch, tampered, tmp_path)
+
+
+def test_a_csv_that_is_not_utf8_is_refused_as_utf8(tmp_path, monkeypatch, sources):
+    """§6 fixes the CSV as UTF-8: an invalid byte is refused, never replaced with U+FFFD."""
+    paths = write_artifacts(tmp_path, sources)
+    raw = paths["csv"].read_bytes()
+    paths["csv"].write_bytes(raw + b"\xff\xfe\n")
+    with pytest.raises(verify.Sa5VerificationError, match="UTF-8"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_a_readme_that_mislabels_a_digest_it_binds_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """A README digest that matches no published file is refused, not ignored."""
+    paths = write_artifacts(tmp_path, sources)
+    text = paths["readme"].read_text(encoding="utf-8")
+    paths["readme"].write_text(
+        text + f"\n- {STEM}.npz sha256:{'a' * 64}\n", encoding="utf-8"
+    )
+    with pytest.raises(verify.Sa5VerificationError, match="README"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
+def test_a_readme_that_binds_only_the_json_digest_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """§7 binds the README to every published file: the NPZ and CSV digests are required."""
+    paths = write_artifacts(tmp_path, sources)
+    json_digest = table_digest(paths["json"])
+    paths["readme"].write_text(
+        f"# {STEM}\n\nThe bound file is {STEM}.json, digest {json_digest}.\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(verify.Sa5VerificationError, match="README"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
 # ── the reconciliation and the digests, last ───────────────────────────
 
 
@@ -1137,7 +1316,9 @@ def test_an_unreconciled_operand_digest_is_refused(tmp_path, monkeypatch, source
             )
     tampered = verify.Sa5Sources(
         decoding=SimpleNamespace(
-            points=tuple(updated), support_mm=sources.binding.support_mm
+            points=tuple(updated),
+            support_mm=sources.binding.support_mm,
+            plan_fingerprint=PLAN_FINGERPRINT,
         ),
         binding=sources.binding,
         effects=sources.effects,

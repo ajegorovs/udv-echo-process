@@ -46,20 +46,23 @@ new value), its mirrored shape counts and its ``npz_members`` against the recomp
 member set, its provenance rows against the reconciled binding, its ``nonvalue_rows``
 against the recomputed missing positions and its ``repeats`` against the engine's own
 descriptive groups. The digests come last, over the exact bytes this run read: the NPZ's
-file bytes, the CSV's canonical-LF bytes and the JSON's canonical-LF bytes (which the
-README must carry).
+file bytes, the CSV's canonical-LF bytes and the JSON's canonical-LF bytes, all three of which
+the README must carry (and every ``sha256:`` token the README states must be one of them).
 
 Where this verifier is deliberately lenient
 -------------------------------------------
 The doc fixes some cells exactly and leaves others to the writer's discretion; the leniency
-is named rather than silent. ``state_meanings`` is checked by *content* (every closed code's
-text must be present and a code that appears as a key must carry its own text, whatever the
-nesting), because §5.3 fixes the vocabulary but not its shape. A ``member`` cell of an
-``operand-knot`` non-value row may be the offending member's label or null, because §5.5
-fixes ``side``/``member`` only where the position is the effect's own and states the member
-rule for a ``read`` row. ``nonvalue_counts`` is read as the nested ``state → kind → total``
-mapping, which is the natural reading of §5.5's "totals by ``(state, kind)``". Nothing else
-is loosened: a wrong number, state, reason, count, order, name or digest is a refusal.
+is named rather than silent. ``state_meanings`` is checked **per code space**: §5.3 fixes the
+§8 vocabulary but not its exact rendering, so both the writer's ``{effect: [{code, text}]}``
+lists and a plain ``{effect: {code: text}}`` mapping are read, but each named space must equal
+its **own** closed table — the two spaces are not interchangeable, so a content-only scan that
+merely looked for every text somewhere would accept the tables swapped or a dropped code. A
+``member`` cell of an ``operand-knot`` non-value row may be the offending member's label or
+null, because §5.5 fixes ``side``/``member`` only where the position is the effect's own and
+states the member rule for a ``read`` row. ``nonvalue_counts`` is read as the nested
+``state → kind → total`` mapping, which is the natural reading of §5.5's "totals by
+``(state, kind)``". Nothing else is loosened: a wrong number, state, reason, count, order,
+name or digest is a refusal.
 
 Two limits are stated rather than hidden. The verifier cannot check that the JSON's
 ``analysis_commit`` names the revision this process has checked out — it never runs a
@@ -91,6 +94,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import NamedTuple
@@ -375,6 +379,17 @@ _EFFECT_CODE_BY_TEXT: Mapping[str, int] = {
 _PARTICIPANT_CODE_BY_TEXT: Mapping[str, int] = {
     text: code for code, text in PARTICIPANT_STATE_CODES.items()
 }
+
+#: The two §8 code-space labels ``state_meanings`` is read under. The vocabulary is closed and
+#: the two spaces are *not* interchangeable (codes ``1`` and ``2`` differ between them), so a
+#: space is resolved by its own label rather than by a content-only scan that could be satisfied
+#: with the two tables swapped.
+_EFFECT_SPACE = "effect"
+_PARTICIPANT_SPACE = "participant"
+
+#: A ``sha256:<64 hex>`` digest token as a published file names one; a bare 64-hex source digest
+#: (an operand's ``source_sha256``) has no prefix and is deliberately not matched by this.
+_DIGEST_TOKEN = re.compile(r"sha256:[0-9a-f]{64}")
 
 #: A knot's alignment is a refusal once the nearest native gate lies farther than half the
 #: knot pitch away; the engine's own tolerance, restated for the verifier's re-derivation.
@@ -732,6 +747,24 @@ def _reconcile_operands(failures: _Failures, sources: Sa5Sources) -> None:
     failure names the operand and the cell.
     """
     binding, decoding = sources.binding, sources.decoding
+    # The plan identity the inventory stamps on every row is a claim about *which* run the
+    # recordings belong to, so it is reconciled with the plan the recordings were decoded from.
+    # The artifact's own plan_fingerprint is compared with the binding elsewhere; without this
+    # an inventory whose plan_fingerprint field was edited would agree with a matching JSON.
+    decoded_fingerprint = getattr(decoding, "plan_fingerprint", None)
+    if decoded_fingerprint is None:
+        failures.require(
+            False,
+            "the decoded pass carries no plan fingerprint, so the committed inventory's plan "
+            "identity cannot be reconciled with the plan the recordings were decoded from",
+        )
+    else:
+        failures.require(
+            str(binding.plan_fingerprint) == str(decoded_fingerprint),
+            f"the committed inventory's plan fingerprint {binding.plan_fingerprint!r} is not "
+            f"the decoded run plan's {str(decoded_fingerprint)!r}: points.csv is not evidence "
+            f"until its plan identity reconciles with the plan it names",
+        )
     by_label: dict[str, list[object]] = {}
     for point in decoding.points:
         label = str(point.binding.point.label)  # type: ignore[attr-defined]
@@ -1181,7 +1214,19 @@ def _read_csv_text(
 ) -> tuple[bytes | None, list[dict[str, str]]]:
     """The CSV's canonical text and its parsed rows, or a recorded refusal."""
     raw = Path(path).read_bytes()
-    text = raw.decode("utf-8", errors="replace")
+    try:
+        text = raw.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        # §6 fixes the CSV as UTF-8 text. A lossy ``errors="replace"`` decode would turn a
+        # malformed byte sequence into U+FFFD cells that a reader could mistake for data, so
+        # the bytes are read strictly and a non-UTF-8 file is refused by name.
+        failures.require(
+            False,
+            f"{path.name} is not valid UTF-8 ({exc}); §6 fixes the CSV as UTF-8, so a byte "
+            f"sequence that does not decode is a refused artifact, not a cell repaired to "
+            f"U+FFFD",
+        )
+        return raw, []
     reader = csv.reader(io.StringIO(text))
     rows = list(reader)
     if not rows:
@@ -1310,7 +1355,20 @@ def _read_json(failures: _Failures, path: Path) -> tuple[bytes | None, object | 
     except json.JSONDecodeError as exc:
         failures.require(False, f"{path.name} is not strict JSON: {exc}")
         return raw, None
-    canonical = _canonical_json(document)
+    try:
+        canonical = _canonical_json(document)
+    except ValueError as exc:
+        # json.loads accepts the bare ``NaN``/``Infinity`` tokens (and a literal such as
+        # ``1e400`` that overflows binary64), while §5 fixes allow_nan=False: the document is
+        # not a §5 artifact. This is caught here so the refusal is typed rather than a bare
+        # ValueError escaping the verifier.
+        failures.require(
+            False,
+            f"{path.name} carries a non-finite number — the JSON ``NaN``/``Infinity`` token or "
+            f"a literal that overflows binary64 — and §5 fixes strict JSON with "
+            f"allow_nan=False, so a non-finite value fails the run: {exc}",
+        )
+        return raw, None
     failures.require(
         raw == canonical.encode("utf-8"),
         f"{path.name}: the bytes are not the §5 canonical strict JSON (UTF-8, "
@@ -1388,6 +1446,21 @@ def _compare_json(
             isinstance(document.get(key), str) and bool(document.get(key)),
             f"JSON {key}: a non-empty string names the revision that produced the files, "
             f"got {document.get(key)!r}",
+        )
+    # The regeneration command is deterministic, so it is not enough for it to be some
+    # non-empty string: it must name the sitting it regenerates. A command for another sitting
+    # (or one that names none) does not reproduce these bytes, and the sitting is the one piece
+    # of the command the verifier knows independently of the writer.
+    command = document.get("generator_command")
+    if isinstance(command, str) and command:
+        failures.require(
+            "\n" not in command and command == command.strip(),
+            f"JSON generator_command: one deterministic command line, got {command!r}",
+        )
+        failures.require(
+            binding.plan in command,
+            f"JSON generator_command: the command must name the sitting it regenerates "
+            f"({binding.plan!r}); it does not reproduce these files otherwise, got {command!r}",
         )
 
     _compare_checks(failures, document, effects)
@@ -1524,37 +1597,111 @@ def _compare_effects(
 
 
 def _compare_state_meanings(failures: _Failures, record: Mapping[str, object]) -> None:
-    """The §8 vocabulary by content: every code's text, whichever way it is nested."""
+    """The §8 code spaces, each under its own label, each equal to its own closed table.
+
+    §5.3 fixes the §8 vocabulary and not its exact rendering, so the writer's
+    ``{effect: [{code, text}, ...]}`` list and a plain ``{effect: {code: text}}`` mapping are
+    both read. What is *not* loose is the code space: the two spaces are not interchangeable
+    (codes ``1`` and ``2`` carry different texts), and a content-only scan that merely checked
+    that every text appeared somewhere would accept the two tables swapped, or a space whose
+    own code was dropped because the other space happens to name the same code — leaving a
+    reader unable to resolve an NPZ state code. Each named space is therefore required, and each
+    must equal its own table exactly.
+    """
     meanings = record.get("state_meanings")
-    pairs: list[tuple[str, str]] = []
-    _collect_text_pairs(meanings, pairs)
-    texts = {value for _, value in pairs}
-    by_code = {int(key): value for key, value in pairs if key.isdigit()}
-    for code, text in {**EFFECT_STATE_CODES, **PARTICIPANT_STATE_CODES}.items():
+    where = f"JSON effects[{record.get('effect_id')!r}].state_meanings"
+    if not isinstance(meanings, Mapping):
         failures.require(
-            text in texts,
-            f"JSON effects[{record.get('effect_id')!r}].state_meanings: the code {code} "
-            f"({text!r}) is not named, so a reader cannot resolve the NPZ's state codes",
+            False, f"{where}: an object naming the two code spaces, got {meanings!r}"
         )
-        if code in by_code:
-            failures.equal(
-                f"JSON effects[{record.get('effect_id')!r}].state_meanings[{code}]",
-                by_code[code],
-                text,
+        return
+    failures.equal(
+        f"{where} spaces", sorted(meanings), [_EFFECT_SPACE, _PARTICIPANT_SPACE]
+    )
+    for space, table in (
+        (_EFFECT_SPACE, EFFECT_STATE_CODES),
+        (_PARTICIPANT_SPACE, PARTICIPANT_STATE_CODES),
+    ):
+        if space not in meanings:
+            failures.require(
+                False,
+                f"{where}: the {space!r} code space is not named, so a reader cannot "
+                f"resolve the NPZ's {space} state codes",
             )
+            continue
+        codes = _space_codes(meanings[space])
+        if codes is None:
+            failures.require(
+                False,
+                f"{where}[{space!r}]: a code → text mapping, or a list of code/text rows, "
+                f"got {meanings[space]!r}",
+            )
+            continue
+        failures.equal(
+            f"{where}[{space!r}]",
+            codes,
+            {int(code): text for code, text in table.items()},
+        )
 
 
-def _collect_text_pairs(node: object, pairs: list[tuple[str, str]]) -> None:
-    """Every (key, string) pair of a nested mapping, so the shape is not assumed."""
+def _space_codes(node: object) -> dict[int, str] | None:
+    """One §8 code space's ``code → text`` mapping, whatever the rendering, or ``None``.
+
+    Accepts the two renderings the schema leaves open — a mapping keyed by the code (a decimal
+    string or an int) with text values, and a sequence of ``{code, text}`` rows (or
+    ``(code, text)`` pairs). Anything else, or any group that mixes the two, is ``None`` so the
+    caller refuses it rather than guessing which space a code belongs to.
+    """
     if isinstance(node, Mapping):
+        pairs: dict[int, str] = {}
         for key, value in node.items():
-            if isinstance(value, str):
-                pairs.append((str(key), value))
-            else:
-                _collect_text_pairs(value, pairs)
-    elif isinstance(node, list):
+            code = _state_code(key)
+            if code is None or not isinstance(value, str):
+                return None
+            pairs[code] = value
+        return pairs
+    if isinstance(node, Sequence) and not isinstance(node, str | bytes):
+        pairs = {}
         for item in node:
-            _collect_text_pairs(item, pairs)
+            pair = _code_text_pair(item)
+            if pair is None:
+                return None
+            pairs[pair[0]] = pair[1]
+        return pairs
+    return None
+
+
+def _code_text_pair(item: object) -> tuple[int, str] | None:
+    """One ``{code, text}`` row (or a two-element ``(code, text)`` pair), or ``None``."""
+    if isinstance(item, Mapping):
+        if sorted(item) != ["code", "text"]:
+            return None
+        code = _state_code(item.get("code"))
+        text = item.get("text")
+        if code is None or not isinstance(text, str):
+            return None
+        return code, text
+    if (
+        isinstance(item, Sequence)
+        and not isinstance(item, str | bytes)
+        and len(item) == 2
+    ):
+        code = _state_code(item[0])
+        if code is None or not isinstance(item[1], str):
+            return None
+        return code, item[1]
+    return None
+
+
+def _state_code(value: object) -> int | None:
+    """A state code as an int: an int itself, a bool refused, or a decimal-digit string."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.isdigit():
+        return int(value)
+    return None
 
 
 def _compare_members(
@@ -1953,11 +2100,27 @@ def _verify_digests(
     except OSError as exc:
         failures.require(False, f"{readme.name} cannot be read: {exc}")
         return
-    json_digest = table_digest(paths["json"])
+    bound = {
+        "json": table_digest(paths["json"]),
+        "csv": table_digest(paths["csv"]),
+    }
+    if raw_npz is not None:
+        bound["npz"] = f"{DIGEST_PREFIX}{_sha256(raw_npz)}"
+    # §7 binds the README's claims to every published file by digest — including the JSON's,
+    # which is the chain's entry point. A README that quoted a stale or wrong NPZ/CSV digest
+    # would pass a JSON-only check, so every file's digest must be present, and every
+    # ``sha256:<hex>`` the README states must be one of them.
+    for kind, digest in bound.items():
+        failures.require(
+            digest in readme_text,
+            f"{readme.name}: the README does not carry the {kind.upper()} digest {digest}, "
+            f"so the README → JSON → NPZ + CSV chain is not bound to {paths[kind].name}",
+        )
+    unbound = sorted(set(_DIGEST_TOKEN.findall(readme_text)) - set(bound.values()))
     failures.require(
-        json_digest in readme_text,
-        f"{readme.name}: the README does not carry the JSON's canonical-LF digest "
-        f"{json_digest}, so the README → JSON → NPZ + CSV chain has no entry point",
+        not unbound,
+        f"{readme.name}: the README states the digest(s) {unbound}, which match none of the "
+        f"files it binds; every digest it quotes is checked against the bytes on disk",
     )
     failures.require(
         f"{expected_stem}.json" in readme_text,
