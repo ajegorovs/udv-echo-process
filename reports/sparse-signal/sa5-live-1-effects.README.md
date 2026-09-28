@@ -13,7 +13,7 @@ The chain is one-way: this README binds the document, the document binds the con
 
 - `sa5-live-1-effects.npz` sha256: `sha256:af6ca0bea9693954640ce9b724bca93095495e6c111c3fddd9e2eff9ffeeac35` (over its exact file bytes).
 - `sa5-live-1-effects.csv` sha256: `sha256:9dfeaca668a0e5bb235815cde864af601e674a9258d1b53278986ba572614853` (over its canonical LF bytes, so a Windows checkout with CRLF materialised on disk hashes to the value git stores).
-- `sa5-live-1-effects.json` sha256: `sha256:b4d9eafd08d05220ee170f260f258e1919cf9fc79a6a4655c7d81d075ea09158` (canonical LF bytes; this is the reader's entry point to the chain).
+- `sa5-live-1-effects.json` sha256: `sha256:a866ad75854ecbbba3e19b34dc9f706cf2c7920f7e8a1fc732c161862c0af1c5` (canonical LF bytes; this is the reader's entry point to the chain).
 - every digest is lowercase hex with the `sha256:` prefix, computed from the bytes this run staged, at the analysis revision below — never from a tree regenerated beside the destination.
 
 ## The observation unit and the effect identity
@@ -159,16 +159,18 @@ Table B — participant read state (`<effect_id>__participant_state.npy`), the m
 - sitting: `sparse-mixer-live-1`.
 - plan: `sparse-mixer-live-1`.
 - plan fingerprint: `655298032dab02efe516e2e9d0294fc28330243f4aeb5f1e733fc5a50fd5ce86`.
-- analysis revision: `11d6a0e`.
-- generator revision: `11d6a0e`.
+- analysis revision: `3aee579`.
+- generator revision: `3aee579`.
 - window: 12 s, 100 revolutions.
 - common support: 10.138 .. 98.938000000000017 mm.
 Publication is staged: every file is written beside its destination under a unique, fsynced temporary name and moved onto its final name with one `os.replace` at a time. The four-file set is **not** a transaction, so a failure after some renames can leave a mixed set — one a reader detects by recomputing the digests above. An existing SA5 stem is never overwritten to guess ownership: a full byte-identical set is left untouched, and any missing or differing file makes the run refuse rather than replace a file it did not produce.
 
 ## Reproduce
 
+Run from a checkout of the recorded generator revision `3aee579`. Set `SA5_SCRATCH` to an absolute directory **outside the checkout**; do not regenerate into this committed report root. A later checkout has a different default revision and must not overwrite an existing artifact set.
+
 ```bash
-python -m udv_echo_process.analysis.sparse_sa5_report --sitting sparse-mixer-live-1
+python -m udv_echo_process.analysis.sparse_sa5_report --sitting sparse-mixer-live-1 --report-dir "$SA5_SCRATCH" --analysis-commit 3aee579 --generator-revision 3aee579
 ```
 
 ## What this artifact does not claim
