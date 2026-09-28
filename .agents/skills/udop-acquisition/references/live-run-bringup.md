@@ -128,12 +128,15 @@ Stated once more in the shorter form it takes where nothing gates the writing st
 reason per item.
 
 **Two directories, two surfaces, and only one of them is the dialog's field.** The Store dialog's
-`Working directory` is what the cycle asserts — and writes when it differs — while `preflight` reports it
-without changing it, so stage 3 is also the cheapest way to learn the absolute path a later stage will
-use. The application's **Save dir** (`Preferences → Record settings`) is a *different* field on a
-*different* surface, and a correct `Working directory` does not rescue it: a retired Save dir warns on
-every store attempt while the asserted field stays right. Check both before stage 4 — the first from
-`preflight`'s report, the second at the machine (`references/pitfalls.md`).
+`Working directory` is what the cycle asserts — and writes when it differs. `preflight` is the
+**non-storing probe** for that field: unlike `status` or `compile` it is not a passive read — it performs
+the normal record/stop/store-dialog cycle — but it compares the field, reports
+`store_working_directory` / `working_directory_matches`, and **cancels instead of storing**, so stage 3
+answers which absolute path a later stage will use without spending a slot. The application's **Save
+dir** (`Preferences → Record settings`) is a *different* field on a *different* surface, and a correct
+`Working directory` does not rescue it: a retired Save dir warns on every store attempt while the
+asserted field stays right. Check both before stage 4 — the first from `preflight`'s report, the second
+at the machine (`references/pitfalls.md`).
 
 **Stage 0b was added after a sitting whose only suite failures were these two modules** — five
 tests dying on `no visible TMain_Scr window` with the application closed, identical with that
@@ -157,7 +160,7 @@ run was not designed for is worse than a refusal.
 | the clean layout's control and panel counts | the driver's constants | read the counts off stage 1 and set them, or bring the item's mode/state to match — a mode that removes a panel changes the count by design |
 | the main window's **class name** | the driver's `MAIN_CLASS` | if a new build renames it, nothing resolves: set it for that install |
 | a dialog's geometry and its button band | driver predicates | dialogs are found structurally, so a changed dialog refuses loudly instead of pressing the wrong thing — verify, do not widen blindly |
-| the application's **own working directory** | asserted before every commit; reported read-only by `preflight` | set it in the application, or pass the same path; a mismatch must refuse the item, not scatter files. The path to pass is the one the report's `store_working_directory` names — the cycle writes that field, so a guessed path points the instrument's output where nobody asked |
+| the application's **own working directory** | asserted before every commit; reported without modification by `preflight` | set it in the application, or pass the same path; a mismatch must refuse the item, not scatter files. The path to pass is the one the report's `store_working_directory` names — the cycle writes that field, so a guessed path points the instrument's output where nobody asked |
 | the application's **Save dir** (`Preferences → Record settings`) | read at the machine, before a storing stage | not the dialog's field, and **not** covered by a correct one: it must name a directory that exists, or the application warns on every store attempt while the asserted `Working directory` stays right |
 | first-run configuration values (sound speed, depths, rates) | the sweep definition | these are *that* instrument's settings, not the library's: read them off the application or the first stored artefact and use those |
 | an absolute screen coordinate inside a predicate | the overlay finder | expect the fallback path (appearance diff) to carry it — see the proxy test below |
