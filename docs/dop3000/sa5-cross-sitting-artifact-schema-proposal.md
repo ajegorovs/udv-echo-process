@@ -42,8 +42,11 @@ One artifact set of four files under the plan's publish root `reports/sparse-sig
 (`ORIENTATION = "live2 - live1"`), never a per-sitting file and never a third sitting. Stage-2
 (`stage2-e20-e64/`) is context, is not a sitting, and is never bound (prespec §1). A generator
 accepts **no argument but the publish root**: the two sides are the two fixed reproducibility
-sittings, selected by name through the input layer, and the reversed orientation refuses (prespec
-§10).
+sittings, selected by name through the input layer **from the committed source
+quartets under the repository's `reports/sparse-signal/`, independent of
+`--report-dir`**. A scratch `--report-dir` redirects outputs only; it never
+redirects reads to quartets copied into the output directory. The reversed
+orientation refuses (prespec §10).
 
 ## 2. Cardinality, the comparison key and the frozen order
 
@@ -402,7 +405,7 @@ The v1 contract §5.7 convention, applied identically:
 
 `sa5-cross-sitting.csv` has **one row per comparison (72 rows)**, in the frozen §2 order, keyed
 `effect_id`. It is the **sole** home of every comparison reduction; the JSON does not repeat any of
-these. Columns, closed and in order (31 columns):
+these. Columns, closed and in order (30 columns):
 
 ```
 effect_id, view, metric, contrast, units, grid,
@@ -437,7 +440,7 @@ these are the **same count** on every comparison: the backend constructs the rec
 `defined_count=count` and `shape_defined_count=count` from one and the same `count` (the number of
 positions where the common-defined mask is `1`), and the shape correlation is attempted only over
 those `|D|` knots. The schema therefore gives the second count **no home of its own**: no
-`shape_defined_count` CSV column exists (the 31 columns above are the closed set), no JSON field and
+`shape_defined_count` CSV column exists (the 30 columns above are the closed set), no JSON field and
 no NPZ member carries it, and its only value is the **`defined_count` already published at
 `|D|`**. §12's verifier checks the equality explicitly — the recomputed `Diagnostics` must satisfy
 `shape_defined_count == defined_count == |D|` — and refuses the artifact if a run ever emits them
@@ -557,7 +560,13 @@ The v1 contract §9 gate, applied to the cross set:
 ## 12. The independent verifier
 
 The verifier is a separate program that **does not read the writer's staged values as its input**
-(v1 contract §11). It re-derives from the **two committed quartets**, then compares:
+(v1 contract §11). It may share the strict source-quartet loader and NPZ codec,
+but must **not** call the report writer or `compare_cross_sitting` /
+`compare_published` to obtain expected cross values. It resolves the source
+quartets' effect pairs itself and recomposes the §5 quantities through the pure
+cross-core primitives; a writer/verifier mistake in pairing, context assembly or
+serialization must not be shared through one orchestration path. It re-derives
+from the **two committed quartets**, then compares:
 
 1. **Re-verify both source chains** from the published bytes: for each side, README → JSON →
    NPZ/CSV, recomputing the JSON canonical-LF digest, the NPZ file-byte digest and the CSV
