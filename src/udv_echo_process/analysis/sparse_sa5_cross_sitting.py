@@ -347,9 +347,10 @@ def compare_cross_sitting(
                 "established from the frozen quartets: the §6 mapping names each operand's job "
                 "block-local anchor group, but those groups' members are ctrl-* rows published "
                 "only in `repeats` and carry no achieved-condition fields, so no numerical repeat "
-                "range is reported for them. The prespec's testing gate §11.8 cannot pass until "
-                "the anchor members' achieved conditions are published or the prespec pins the "
-                "selection to job identity."
+                "range is reported for them. This gap is accepted ancillary context, not a blocker: "
+                "under the amended prespec §11.8 an identity-unverifiable entry whose numerical "
+                "range is omitted satisfies the gate, and it neither blocks publication nor "
+                "changes the run's `ok`, any `comparison_state` or any `label_state`."
             ),
         )
     checks = {
