@@ -1447,20 +1447,18 @@ def _compare_json(
             f"JSON {key}: a non-empty string names the revision that produced the files, "
             f"got {document.get(key)!r}",
         )
-    # The regeneration command is deterministic, so it is not enough for it to be some
-    # non-empty string: it must name the sitting it regenerates. A command for another sitting
-    # (or one that names none) does not reproduce these bytes, and the sitting is the one piece
-    # of the command the verifier knows independently of the writer.
+    # Pin the canonical command independently of the writer: naming the sitting somewhere
+    # inside an otherwise foreign command is not a reproduction instruction.
     command = document.get("generator_command")
     if isinstance(command, str) and command:
-        failures.require(
-            "\n" not in command and command == command.strip(),
-            f"JSON generator_command: one deterministic command line, got {command!r}",
+        expected_command = (
+            "python -m udv_echo_process.analysis.sparse_sa5_report "
+            f"--sitting {binding.plan}"
         )
-        failures.require(
-            binding.plan in command,
-            f"JSON generator_command: the command must name the sitting it regenerates "
-            f"({binding.plan!r}); it does not reproduce these files otherwise, got {command!r}",
+        failures.equal(
+            "JSON generator_command",
+            command,
+            expected_command,
         )
 
     _compare_checks(failures, document, effects)

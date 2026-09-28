@@ -706,7 +706,8 @@ def _document(
         "analysis_commit": "0" * 40,
         "generator_revision": "synthetic-fixture",
         "generator_command": (
-            f"python -m udv_echo_process.analysis.sa5_synthetic --sitting {PLAN_NAME}"
+            "python -m udv_echo_process.analysis.sparse_sa5_report "
+            f"--sitting {PLAN_NAME}"
         ),
         "sitting": binding.plan,
         "plan": binding.plan,
@@ -1246,6 +1247,20 @@ def test_a_generator_command_that_does_not_name_the_sitting_is_refused(
         run_verification(monkeypatch, sources, tmp_path)
 
 
+def test_a_foreign_generator_that_merely_names_the_sitting_is_refused(
+    tmp_path, monkeypatch, sources
+):
+    """A matching sitting token does not make a foreign command reproducible."""
+    paths = write_artifacts(tmp_path, sources)
+    document = load_document(paths)
+    document["generator_command"] = (
+        "python -m some.other.generator --sitting sparse-mixer-live-1"
+    )
+    rewrap(paths, document)
+    with pytest.raises(verify.Sa5VerificationError, match="generator_command"):
+        run_verification(monkeypatch, sources, tmp_path)
+
+
 def test_an_inventory_plan_fingerprint_unlike_the_decoded_plan_is_refused(
     tmp_path, monkeypatch, sources
 ):
@@ -1371,9 +1386,24 @@ def test_a_matching_digest_over_a_wrong_number_is_still_refused(
 
 
 def test_the_verifier_never_imports_the_report_writer():
+    import ast
+
     source = Path(verify.__file__).read_text(encoding="utf-8")
-    assert "sparse_sa5_report" not in source
-    assert "import" in source
+    tree = ast.parse(source)
+    imports = (
+        f"{node.module}.{alias.name}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom)
+        for alias in node.names
+    )
+    assert all("sparse_sa5_report" not in module for module in imports)
+    direct_imports = (
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+    assert all("sparse_sa5_report" not in name for name in direct_imports)
 
 
 def test_the_fixture_sitting_carries_the_documented_effect_count(sources):
