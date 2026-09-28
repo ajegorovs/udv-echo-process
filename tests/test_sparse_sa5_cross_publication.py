@@ -1,8 +1,8 @@
 """Real-sitting integration: the cross writer over the two committed source quartets.
 
-No committed report is touched: the artifact set is written to pytest scratch, twice, and the
-two committed source quartets are asserted byte-unchanged. The two sides are always read from
-the fixed committed source root, never from the scratch output directory. No independent
+The committed report is left untouched: the artifact set is written to pytest scratch, twice,
+and both it and the source quartets are asserted byte-unchanged. The two sides are always read
+from the fixed committed source root, never from scratch. No independent
 verifier is imported — the writer is exercised on its own.
 """
 
@@ -25,9 +25,18 @@ def _source_snapshot() -> dict[str, str]:
     }
 
 
+def _cross_snapshot() -> dict[str, str]:
+    return {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted(REPORT_DIR.glob("sa5-cross-sitting.*"))
+    }
+
+
 def test_scratch_publication_is_reproducible_and_idempotent(tmp_path: Path) -> None:
     """The four products are built, staged and left byte-identical on a rerun."""
     before = _source_snapshot()
+    published_before = _cross_snapshot()
+    assert len(published_before) == 4
     first = w.write_cross_report(
         tmp_path, source_dir=REPORT_DIR, analysis_commit="t", generator_revision="t"
     )
@@ -43,9 +52,9 @@ def test_scratch_publication_is_reproducible_and_idempotent(tmp_path: Path) -> N
     assert second.files == first.files
     assert sorted(path.name for path in tmp_path.iterdir()) == sorted(first.names)
 
-    # The two frozen source quartets are byte-unchanged, and no cross file was committed.
+    # Scratch reruns leave both frozen source quartets and the committed cross set unchanged.
     assert _source_snapshot() == before
-    assert not list(REPORT_DIR.glob("sa5-cross-sitting.*"))
+    assert _cross_snapshot() == published_before
 
 
 def test_the_cli_publishes_the_fixed_comparison_into_scratch(tmp_path: Path) -> None:
