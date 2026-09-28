@@ -60,7 +60,6 @@
       "no_write_note": "the instrument already states 20, so no write was spent and no transition was recorded (an equal value is not a transition)",
       "observed_process_mode": "instrument",
       "parameter_mutations": [],
-      "point_log_sha256_original": "78506134cd203c78775d6b312bfb308e7a91b12c9ff2abccbd0c84e1cf5afda3",
       "points": [
         {
           "advisories": [],
@@ -138,6 +137,14 @@
           "word8_burst_length": 10
         }
       ],
+      "records_file": "records/e20-a.jsonl",
+      "records_lines": 1,
+      "records_record_types": [
+        "point"
+      ],
+      "records_sanitization": "in every record the `file_path` value was replaced with the repo-relative `outputs/live/store/<basename>`; no other value differs (checked at build time by re-parsing the raw and sanitized forms of each line and comparing every key)",
+      "records_sha256": "6c522a908e3db274791df450830306a2fd6ff472e108d851c4fcab3004c0150b",
+      "runtime_point_log_sha256_original": "78506134cd203c78775d6b312bfb308e7a91b12c9ff2abccbd0c84e1cf5afda3",
       "started_at": "2026-09-28T17:32:52.702730+03:00",
       "status": "ok",
       "step": 1,
@@ -206,7 +213,6 @@
           "write_readback": "64"
         }
       ],
-      "point_log_sha256_original": "0e73e3c2b6866ac7fc0c527c74655da65e5d74a7cf5cdf5ee21c3ede165bdcc8",
       "points": [
         {
           "advisories": [],
@@ -284,6 +290,15 @@
           "word8_burst_length": 10
         }
       ],
+      "records_file": "records/e64-a.jsonl",
+      "records_lines": 2,
+      "records_record_types": [
+        "parameter_mutation",
+        "point"
+      ],
+      "records_sanitization": "in every record the `file_path` value was replaced with the repo-relative `outputs/live/store/<basename>`; no other value differs (checked at build time by re-parsing the raw and sanitized forms of each line and comparing every key)",
+      "records_sha256": "0b248f20037bb8cac9c9a7f6bc9689a9e16b5b2dac3ec6b77ef095afd89d7171",
+      "runtime_point_log_sha256_original": "0e73e3c2b6866ac7fc0c527c74655da65e5d74a7cf5cdf5ee21c3ede165bdcc8",
       "started_at": "2026-09-28T17:35:43.039446+03:00",
       "status": "ok",
       "step": 2,
@@ -340,7 +355,6 @@
       "no_write_note": "the instrument already states 64, so no write was spent and no transition was recorded (an equal value is not a transition)",
       "observed_process_mode": "instrument",
       "parameter_mutations": [],
-      "point_log_sha256_original": "b299270b00349e91a1f103743a9a4a003b15e3f6ad7c75bca934c5c453951594",
       "points": [
         {
           "advisories": [],
@@ -418,6 +432,14 @@
           "word8_burst_length": 10
         }
       ],
+      "records_file": "records/e64-b.jsonl",
+      "records_lines": 1,
+      "records_record_types": [
+        "point"
+      ],
+      "records_sanitization": "in every record the `file_path` value was replaced with the repo-relative `outputs/live/store/<basename>`; no other value differs (checked at build time by re-parsing the raw and sanitized forms of each line and comparing every key)",
+      "records_sha256": "95565d388cff5ac935027ff298162085ea8a6a36bd24a9272cd5c4a40993873b",
+      "runtime_point_log_sha256_original": "b299270b00349e91a1f103743a9a4a003b15e3f6ad7c75bca934c5c453951594",
       "started_at": "2026-09-28T17:37:20.472636+03:00",
       "status": "ok",
       "step": 3,
@@ -486,7 +508,6 @@
           "write_readback": "20"
         }
       ],
-      "point_log_sha256_original": "d5326ccf0595ec03f459774ffb374ed3869d406f03c51fdff38a9845305be12c",
       "points": [
         {
           "advisories": [],
@@ -564,6 +585,15 @@
           "word8_burst_length": 10
         }
       ],
+      "records_file": "records/e20-b.jsonl",
+      "records_lines": 2,
+      "records_record_types": [
+        "parameter_mutation",
+        "point"
+      ],
+      "records_sanitization": "in every record the `file_path` value was replaced with the repo-relative `outputs/live/store/<basename>`; no other value differs (checked at build time by re-parsing the raw and sanitized forms of each line and comparing every key)",
+      "records_sha256": "bd0dcfa466353bf25fed98f293bf63294cbcd4de940f975bcf697bb4d8f4a909",
+      "runtime_point_log_sha256_original": "d5326ccf0595ec03f459774ffb374ed3869d406f03c51fdff38a9845305be12c",
       "started_at": "2026-09-28T17:38:09.667363+03:00",
       "status": "ok",
       "step": 4,
@@ -601,6 +631,7 @@
   "plan_fingerprint": "33314c215720bbbb5b34d02ca858f1b9f8198eff62e024905126d2b0a1d13027",
   "plan_record_sha256_original": "dc7cbd8e65e57a2de492a7df323376c854fabc41044fb2b9f538ba3e4e1a0b09",
   "purpose": "Emissions-control live commissioning: the four-job E20 -> E64 -> E64 -> E20 parameter-boundary acceptance on the instrument",
+  "records_sanitization": "in every record the `file_path` value was replaced with the repo-relative `outputs/live/store/<basename>`; no other value differs (checked at build time by re-parsing the raw and sanitized forms of each line and comparing every key)",
   "strict_facts": [
     "emissions_per_profile"
   ],

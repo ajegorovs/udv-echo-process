@@ -49,33 +49,53 @@ clip with `ClipCursor(NULL)` on each write; that is the documented, intended han
 behaviour, not an anomaly, and it did not alter the fact that the post-write read is independent.
 
 The `plan/` directory is the **actual portable plan and job definitions used**, copied from the live
-scratch location without machine-local paths. Its fingerprint is
-`33314c215720bbbb5b34d02ca858f1b9f8198eff62e024905126d2b0a1d13027`. `manifest.json` is a **derived,
-path-sanitized evidence summary**, not the unmodified runtime manifest: it carries the four jobs'
-definition fingerprints, their post-transition compile identity, the structured mutation objects, the
-original runtime-manifest/log SHA-256 values, and each BDD's SHA-256, requested values, decoded
-configuration and point label. The unmodified runtime manifests and logs remain in the local
-`outputs/live/store/` and contain absolute machine paths, so they are not committed. The original hashes
-cannot be independently checked from this repository alone; the BDD hashes and the extracted fields can.
+scratch location without machine-local paths; its fingerprint is
+`33314c215720bbbb5b34d02ca858f1b9f8198eff62e024905126d2b0a1d13027`. The `records/` directory is the
+**runtime JSONL of each job as the run wrote it**, sanitized by exactly one rule: every record's
+`file_path` value replaced with the repo-relative `outputs/live/store/<name>`. The substitution is
+asserted at build time by re-parsing the raw and sanitized forms of every line and comparing every key,
+so a record is never reinterpreted — and it makes the **emitted event order portable**: the mutation is
+each writing job's first record and its point record follows it, checkable from the committed bytes
+rather than from this summary.
+
+`manifest.json` is a **derived, path-sanitized evidence summary**, not the unmodified runtime manifest:
+it carries the four jobs' definition fingerprints, their post-transition compile identity, the structured
+mutation objects, each job's records-file SHA-256 (over LF-normalized bytes) and line count, the original
+runtime-manifest/log SHA-256 values, and each BDD's SHA-256, requested values, decoded configuration and
+point label. The unmodified runtime manifests and logs remain in the local `outputs/live/store/` and
+contain absolute machine paths, so they are not committed — which leaves exactly one thing the package
+cannot demonstrate from itself: that the committed records are byte-identical to those runtime logs. The
+recorded original hashes are that link's only trace; the plan, the records, the summary and the BDDs can
+all be checked against each other.
 
 Reproduce without instrument access:
 
 ```bash
 uv run --no-sync python data/emissions-control-live-1/verify.py
+uv run --no-sync python data/emissions-control-live-1/mutation_proof.py
 uv run --no-sync udv-acquire run-plan --plan data/emissions-control-live-1/plan/run-plan.json --check
 ```
 
-**What that first command does and does not prove.** It **re-derives**, from the committed files alone:
-the plan fingerprint, the four executed jobs' definition fingerprints and point lists, and every
-recording's SHA-256, size, stored operation words and decoded configuration — so the BDDs, the summary
-and the committed plan are tied together cryptographically, and it asserts the accepted properties
-directly (word 14 per job against *each job's own request*, the held fields identical, the no-write jobs
-carrying no event, the two ids distinct and ordered). It **cannot** re-derive the durable mutation
-objects or the compilation identities: their inputs are the runtime manifests and logs, which stay local
-because they carry absolute machine paths. For those it checks the derived summary against the
-expectations written into `verify.py` itself. The tie is load-bearing — perturbing a definition
-fingerprint, a recording byte, the summary's word 14, the mutation order, or a no-write boundary's
-`write_spent` each makes it fail (verified by mutation on scratch copies).
+**What `verify.py` does and does not prove.** It **re-derives**, from the committed files alone: the plan
+fingerprint; the four executed jobs' definition fingerprints, conditions and point lists; **the emitted
+event order** from `records/` — which jobs appended a `parameter_mutation` and which appended none, that
+the mutation is the log's first record and precedes its point record, that it is `verified` with the
+writer's own read-back *and* the independent fresh read, that it is stamped before the store it precedes
+and inside the job's reported window, and that its definition fingerprint is the committed plan's own
+fingerprint for that job; and every recording's SHA-256, size, stored operation words and decoded
+configuration. So the BDDs, the records, the summary and the committed plan are tied together, and the
+accepted properties are asserted directly (word 14 per job against *each job's own request*, the held
+fields identical, the no-write jobs carrying no event at all, the two ids distinct and ordered). It
+**cannot** re-derive that the committed records are byte-identical to the runtime logs (those stay
+local) or the compilation identities (which live in the runtime job manifests); for those the summary's
+recorded original hashes are provenance. Wherever the summary carries a claim this file can check
+against the records, the plan or the recordings, it is checked rather than trusted.
+
+**What `mutation_proof.py` does.** It applies each perturbation to a *copy* of the package and requires
+`verify.py` to fail on it — the emitted event order reversed, the verified transition dropped, duplicated,
+relabelled to another job or fabricated for a no-write job; the plan's definition fingerprint moved; a
+stored recording's byte flipped; and the summary contradicting the records or the files — then requires
+the untouched package to pass. A verifier that cannot fail proves nothing.
 
 **Stop point:** the pass is **complete — 4/4 jobs and 4 recordings**, the plan's whole point list. The
 application was left on its ready measurement screen at emissions 20, burst 10, channel 1. Two of the
