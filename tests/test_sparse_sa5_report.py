@@ -57,6 +57,7 @@ from udv_echo_process.analysis.sparse_sa5_npz import (
     EffectArrays,
     decode_effect_npz,
     effect_member_names,
+    encode_effect_npz,
 )
 from udv_echo_process.models.base import ValueModel
 
@@ -744,6 +745,80 @@ def test_the_digest_chain_binds_readme_to_json_to_npz_and_csv(
     assert json_digest not in artifacts.json.decode("utf-8")
 
 
+#: A gate index whose little-endian ``<i4`` bytes are ``0d 0a`` (``0x0A0D`` = 2573). The
+#: canonical container then carries a CRLF byte pair in a numeric payload, which a
+#: CRLF-normalising digest would silently rewrite.
+_CRLF_GATE_INDEX = 0x0A0D
+
+
+def _crlf_bearing_effect() -> EffectArrays:
+    """One §3-legal effect whose ``<i4`` gate index encodes the byte pair ``0d 0a``."""
+    knots = np.array([10.0, 20.0], dtype="<f8")
+    gate = np.array([[_CRLF_GATE_INDEX, -1]], dtype="<i4")
+    depth = np.array([[float(_CRLF_GATE_INDEX), 0.0]], dtype="<f8")
+    return EffectArrays(
+        effect_id="primary-comparison__mean__pitch_at_burst_4",
+        knot_count=2,
+        participant_count=1,
+        knots_mm=knots,
+        effect=np.array([1.0, 0.0], dtype="<f8"),
+        defined=np.array([1, 0], dtype="<u1"),
+        state=np.array([0, 1], dtype="<u1"),
+        participant_gate_index=gate,
+        participant_depth_mm=depth,
+        participant_offset_mm=np.array(
+            [[float(_CRLF_GATE_INDEX) - 10.0, 0.0]], dtype="<f8"
+        ),
+        participant_value=np.array([[2.0, 0.0]], dtype="<f8"),
+        participant_defined=np.array([[1, 0]], dtype="<u1"),
+        participant_state=np.array([[0, 6]], dtype="<u1"),
+    )
+
+
+def test_the_npz_digest_is_the_exact_bytes_and_never_crlf_normalised() -> None:
+    """§5.7: the container is hashed over its exact bytes; no CRLF normalization is applied.
+
+    A legitimate ``<i4`` gate index or ``<f8`` value can encode the byte pair ``0d 0a``, so a
+    CRLF-to-LF rule applied to container bytes would publish a digest that (a) the repository's
+    own ``sha256sum`` and (b) the sibling verifier, which hashes the container raw, would
+    contradict. The adversarial fixture forces exactly that byte pair into a legal container.
+    """
+    npz = encode_effect_npz([_crlf_bearing_effect()])
+    assert b"\r\n" in npz, "the fixture must actually carry a CRLF byte pair"
+    assert report._file_digest(npz) == "sha256:" + hashlib.sha256(npz).hexdigest()
+    # The text rule corrupts exactly this digest; it must not be the NPZ's rule.
+    assert report._canonical_digest(npz) != report._file_digest(npz)
+
+    # The writer's own artifact check agrees: the exact-byte digest passes, the CRLF one fails.
+    checks = report._artifact_checks(
+        npz=npz,
+        csv=b"",
+        rows=(),
+        npz_digest=report._file_digest(npz),
+        csv_digest=report._canonical_digest(b""),
+    )
+    assert checks["digests_match_the_staged_bytes"] is True
+    corrupted = report._artifact_checks(
+        npz=npz,
+        csv=b"",
+        rows=(),
+        npz_digest=report._canonical_digest(npz),
+        csv_digest=report._canonical_digest(b""),
+    )
+    assert corrupted["digests_match_the_staged_bytes"] is False
+
+
+def test_the_text_digest_still_normalises_crlf_for_the_csv_and_json(
+    synthetic_artifacts,
+) -> None:
+    """The CSV and the JSON keep the CRLF-to-LF text rule; only the container is exact-byte."""
+    artifacts = synthetic_artifacts[0]
+    for payload in (artifacts.csv, artifacts.json):
+        assert report._canonical_digest(payload) == (
+            "sha256:" + hashlib.sha256(payload.replace(b"\r\n", b"\n")).hexdigest()
+        )
+
+
 def test_the_readme_states_units_rules_views_and_the_no_go_list(
     synthetic_artifacts,
 ) -> None:
@@ -814,6 +889,51 @@ def test_writing_twice_into_one_destination_is_idempotent(
     assert leftovers == [], "no lock or stage file survives a publication"
 
 
+def test_a_concurrent_publication_is_judged_under_the_lock_and_never_clobbered(
+    synthetic_artifacts, tmp_path, monkeypatch
+) -> None:
+    """Ownership is decided **under** the lock, so a run that publishes in the race is refused.
+
+    Simulates the interleaving: a competing run completes a full-looking set in the window
+    between this run's destination check and the moment it takes the lock. If ownership were
+    judged before the lock (as it once was), this run — having seen an empty destination — would
+    stage and ``os.replace`` over the other run's files. Judged under the lock, the other run's
+    bytes are seen and the run refuses without replacing them.
+    """
+    artifacts = synthetic_artifacts[0]
+    destination = tmp_path / "race"
+    marker = b"another run's file\n"
+    real_acquire = report._acquire_lock
+
+    def racing_acquire(directory, stem):
+        lock = real_acquire(directory, stem)
+        # The competing run finished just before we took the lock.
+        for name, _payload in artifacts.files:
+            (directory / name).write_bytes(marker)
+        return lock
+
+    monkeypatch.setattr(report, "_acquire_lock", racing_acquire)
+    with pytest.raises(report.SparseSa5ReportError, match="did not produce"):
+        report.write_sa5_artifacts(artifacts, destination)
+    for name, _payload in artifacts.files:
+        assert (destination / name).read_bytes() == marker, name
+    assert not (destination / f".{artifacts.stem}.publish-lock").exists()
+
+
+def test_the_idempotent_set_is_also_recognised_under_the_lock(
+    synthetic_artifacts, tmp_path
+) -> None:
+    """An already-complete byte-identical set is a no-op even when the check runs under the lock."""
+    artifacts = synthetic_artifacts[0]
+    destination = tmp_path / "idem"
+    report.write_sa5_artifacts(artifacts, destination)
+    before = {name: (destination / name).read_bytes() for name in artifacts.names}
+    report.write_sa5_artifacts(artifacts, destination)
+    after = {name: (destination / name).read_bytes() for name in artifacts.names}
+    assert after == before == artifacts.payloads()
+    assert sorted(p.name for p in destination.iterdir()) == sorted(artifacts.names)
+
+
 @pytest.mark.parametrize("existing", ["partial", "differing", "non-file"])
 def test_an_existing_sa5_stem_this_run_did_not_produce_is_refused(
     synthetic_artifacts, tmp_path, existing
@@ -864,6 +984,27 @@ def test_a_frozen_or_foreign_destination_is_refused(synthetic_artifacts) -> None
     ):
         with pytest.raises(report.SparseSa5ReportError):
             report.write_sa5_artifacts(artifacts, destination)
+
+
+def test_a_frozen_name_outside_the_repo_is_anchored_not_resolved_against_the_cwd(
+    synthetic_artifacts, tmp_path, monkeypatch
+) -> None:
+    """A relative frozen path is anchored at the repository root, never the working directory.
+
+    A scratch tree that merely shares ``reports/mixer-sensitivity-analysis``'s name under an
+    unrelated cwd is the caller's own and is published. Resolving the guard against the cwd
+    would refuse it and protect the wrong location; the genuine frozen tree — passed absolute —
+    stays refused from that same cwd.
+    """
+    artifacts = synthetic_artifacts[0]
+    monkeypatch.chdir(tmp_path)
+    scratch = tmp_path / "reports" / "mixer-sensitivity-analysis"
+    report.write_sa5_artifacts(artifacts, scratch)
+    assert sorted(p.name for p in scratch.iterdir()) == sorted(artifacts.names)
+
+    frozen = report._repository_root() / "reports" / "mixer-sensitivity-analysis"
+    with pytest.raises(report.SparseSa5ReportError):
+        report.write_sa5_artifacts(artifacts, frozen)
 
 
 def test_a_destination_that_is_a_file_is_refused(synthetic_artifacts, tmp_path) -> None:

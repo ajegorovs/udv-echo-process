@@ -52,9 +52,11 @@ failure after some renames leaves a mixed set, which the digests let a reader de
 roll back. An existing SA5 stem is never overwritten to guess ownership — if all four files
 exist and are byte-identical to this run's staged products the publication is idempotent and
 does nothing; if any file is missing or differs the run refuses without replacing any existing
-file. A stage file or lock an interrupted run left behind is refused by name, and a frozen
-report tree (the WP/SA2.4 trees, ``reports/mixer-sensitivity-analysis``) is refused as a
-destination.
+file. A publication lock serializes runs and is taken **before** that ownership judgement, so a
+concurrent run that published between a check and a lock is seen as existing rather than
+clobbered. A stage file or lock an interrupted run left behind is refused by name, and a frozen
+report tree (the WP/SA2.4 trees, ``reports/mixer-sensitivity-analysis``) — anchored at the
+repository root, never the working directory — is refused as a destination.
 
 Reader entry point
 ------------------
@@ -407,18 +409,29 @@ def regeneration_command(sitting: str) -> str:
     return f"python -m udv_echo_process.analysis.sparse_sa5_report --sitting {sitting}"
 
 
-def _canonical_digest(data: bytes) -> str:
-    """A published digest: ``sha256:`` over canonical (LF) bytes, as the repository hashes.
+def _file_digest(data: bytes) -> str:
+    """A published digest over **exact file bytes**: ``sha256:`` of ``data`` unchanged.
 
-    Identical to :func:`udv_echo_process.analysis._floor_documents.table_digest` for a file, so an
-    artifact hashed here and a file hashed there agree — the NPZ over its exact file bytes
-    (already canonical by §4, so no normalization is applied), the CSV and the JSON over their
-    canonical LF bytes.
+    This is the NPZ's digest (§5.7): the container is already canonical by §4, so it is hashed
+    over its exact bytes and no normalization is applied or permitted. Applying the CRLF-to-LF
+    rule of :func:`_canonical_digest` to binary container bytes would silently change the
+    digest of any container that happens to carry the byte pair ``0x0d 0x0a`` — and the
+    independent check hashes the container raw, so the two would disagree. Binary bytes go
+    through this function and nothing else.
     """
-    return (
-        _floor_documents.DIGEST_PREFIX
-        + hashlib.sha256(data.replace(b"\r\n", b"\n")).hexdigest()
-    )
+    return _floor_documents.DIGEST_PREFIX + hashlib.sha256(data).hexdigest()
+
+
+def _canonical_digest(data: bytes) -> str:
+    """A published digest over canonical (LF) **text** bytes, as the repository hashes text.
+
+    For the CSV and the JSON only — the two published files that are UTF-8 text and may be
+    materialised with CRLF by a Windows checkout. Identical to
+    :func:`udv_echo_process.analysis._floor_documents.table_digest` for a file, so a text
+    artifact hashed here and a file hashed there agree. It must **not** be applied to the
+    binary container, whose digest is :func:`_file_digest` over its exact bytes.
+    """
+    return _file_digest(data.replace(b"\r\n", b"\n"))
 
 
 # ── the four byte products ─────────────────────────────────────────────
@@ -966,7 +979,7 @@ def build_sa5_artifacts(
     rows = _build_effect_rows(effects, binding)
     npz = encode_effect_npz([row.record for row in rows])
     csv_bytes = _csv_text(rows).encode("utf-8")
-    npz_digest = _canonical_digest(npz)
+    npz_digest = _file_digest(npz)
     csv_digest = _canonical_digest(csv_bytes)
 
     artifact_checks = _artifact_checks(
@@ -1078,8 +1091,7 @@ def _artifact_checks(
         ),
         "participant_rows_are_the_declared_order": bool(order_ok),
         "digests_match_the_staged_bytes": bool(
-            _canonical_digest(npz) == npz_digest
-            and _canonical_digest(csv) == csv_digest
+            _file_digest(npz) == npz_digest and _canonical_digest(csv) == csv_digest
         ),
     }
 
@@ -1752,49 +1764,24 @@ def write_sa5_artifacts(artifacts: Sa5Artifacts, destination: Path) -> None:
     """Publish an already-built four-file set, or refuse without replacing any existing file.
 
     The destination rules are checked first (a frozen tree, the repository root, or a tree inside
-    the repository that is not the plan's publish root is refused). Then, if any of the four
-    names already exists: the set is published idempotently and does nothing **only** when all
-    four exist and are byte-identical to this run's products; any missing or differing file makes
-    the run refuse and leave every existing file untouched. A publication lock beside the files
-    serializes two runs, and a leftover stage file or lock from an interrupted run is refused by
-    name rather than adopted or deleted.
+    the repository that is not the plan's publish root is refused). The publication lock is then
+    taken **before** the ownership of any existing file is judged, and the idempotent/differing
+    decision is made *under* the lock: if all four names already exist and are byte-identical to
+    this run's products the set is published idempotently and does nothing; any missing or
+    differing file makes the run refuse and leave every existing file untouched. Deciding
+    ownership before the lock would let a concurrent run that published between our check and our
+    lock be silently overwritten, so the check is not made outside the lock. A leftover stage file
+    or lock from an interrupted run is refused by name rather than adopted or deleted.
 
     Raises:
         SparseSa5ReportError: on any destination, ownership, lock or stage refusal.
     """
     directory = _require_destination(destination)
-    existing = [name for name, _ in artifacts.files if (directory / name).exists()]
-    if existing:
-        not_files = [name for name in existing if not (directory / name).is_file()]
-        if not_files:
-            raise _refuse(
-                f"{directory.as_posix()!r} carries a non-file entry named {not_files[0]!r}; an "
-                "SA5 artifact name must be a file this writer produced"
-            )
-        missing = [name for name, _ in artifacts.files if name not in existing]
-        if missing:
-            raise _refuse(
-                f"{directory.as_posix()!r} carries an incomplete SA5 set: existing "
-                f"{existing}, missing {missing}. A partial set is evidence of an interrupted "
-                "publication or an unrelated file, and this writer never guesses ownership, so "
-                "it refuses without replacing any existing file."
-            )
-        differing = [
-            name
-            for name, payload in artifacts.files
-            if (directory / name).read_bytes() != payload
-        ]
-        if differing:
-            raise _refuse(
-                f"{directory.as_posix()!r} carries an SA5 file this run did not produce "
-                f"({differing}); its bytes differ from this run's staged products, so the "
-                "publication refuses rather than clobber a file of unknown provenance."
-            )
-        return
-
     directory.mkdir(parents=True, exist_ok=True)
     lock = _acquire_lock(directory, artifacts.stem)
     try:
+        if _existing_set_is_this_run(directory, artifacts):
+            return
         stale = _stale_temporaries(directory, artifacts.stem)
         if stale:
             raise _refuse(
@@ -1816,6 +1803,45 @@ def write_sa5_artifacts(artifacts: Sa5Artifacts, destination: Path) -> None:
         lock.unlink(missing_ok=True)
 
 
+def _existing_set_is_this_run(directory: Path, artifacts: Sa5Artifacts) -> bool:
+    """Whether the destination already carries this run's complete byte-identical set.
+
+    Called **under** the publication lock, so a concurrent run cannot publish between the check
+    and the publish and be silently overwritten. Returns ``True`` for the idempotent case (all
+    four names present as files and byte-identical), and refuses, naming the reason, for a
+    non-file entry, an incomplete set or any differing byte.
+    """
+    existing = [name for name, _ in artifacts.files if (directory / name).exists()]
+    if not existing:
+        return False
+    not_files = [name for name in existing if not (directory / name).is_file()]
+    if not_files:
+        raise _refuse(
+            f"{directory.as_posix()!r} carries a non-file entry named {not_files[0]!r}; an "
+            "SA5 artifact name must be a file this writer produced"
+        )
+    missing = [name for name, _ in artifacts.files if name not in existing]
+    if missing:
+        raise _refuse(
+            f"{directory.as_posix()!r} carries an incomplete SA5 set: existing "
+            f"{existing}, missing {missing}. A partial set is evidence of an interrupted "
+            "publication or an unrelated file, and this writer never guesses ownership, so "
+            "it refuses without replacing any existing file."
+        )
+    differing = [
+        name
+        for name, payload in artifacts.files
+        if (directory / name).read_bytes() != payload
+    ]
+    if differing:
+        raise _refuse(
+            f"{directory.as_posix()!r} carries an SA5 file this run did not produce "
+            f"({differing}); its bytes differ from this run's staged products, so the "
+            "publication refuses rather than clobber a file of unknown provenance."
+        )
+    return True
+
+
 def _require_destination(destination: Path) -> Path:
     """Resolve and gate one destination, refusing a frozen or foreign tree (§9)."""
     directory = _resolve_destination(destination)
@@ -1825,12 +1851,17 @@ def _require_destination(destination: Path) -> Path:
     return directory
 
 
-def _resolve_destination(destination: Path) -> Path:
-    """Anchor a *relative* destination at the repository root, never the working directory."""
-    candidate = Path(destination)
+def _anchor_repository(path: Path) -> Path:
+    """Anchor a possibly-relative path at the repository root, never the working directory."""
+    candidate = Path(path)
     if candidate.is_absolute():
         return candidate
     return _repository_root() / candidate
+
+
+def _resolve_destination(destination: Path) -> Path:
+    """Anchor a *relative* destination at the repository root, never the working directory."""
+    return _anchor_repository(destination)
 
 
 def _repository_root() -> Path:
@@ -1853,12 +1884,20 @@ def _frozen_report_dirs() -> tuple[Path, ...]:
     The three committed passes' own ``report_dir``s come from the pass catalog and are never
     restated here; ``reports/mixer-sensitivity-analysis`` is a frozen tree with no ``PassRef`` of
     its own and is carried by :data:`EXTRA_FROZEN_REPORT_DIRS`, so it cannot be dropped by
-    omission.
+    omission. Every entry is a repository-relative path and is anchored at the repository root
+    (:func:`_anchor_repository`), so the guard compares against the same tree wherever the
+    command is run from — a relative path resolved against the *working* directory would point
+    at a same-named scratch tree under an unrelated cwd and protect the wrong location.
     """
     committed = tuple(
-        Path(ref.report_dir) for ref in COMMITTED_PASSES if ref.report_dir is not None
+        _anchor_repository(Path(ref.report_dir))
+        for ref in COMMITTED_PASSES
+        if ref.report_dir is not None
     )
-    return (*committed, *EXTRA_FROZEN_REPORT_DIRS)
+    return (
+        *committed,
+        *(_anchor_repository(path) for path in EXTRA_FROZEN_REPORT_DIRS),
+    )
 
 
 def _destination_refusal(directory: Path) -> str | None:

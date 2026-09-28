@@ -198,11 +198,15 @@ class EffectArrays(ArrayModel):
     C-contiguous read-only copy that never shares memory with the caller's input — mutating
     the array a caller passed in cannot alter the record.
 
-    ``knot_count`` and ``participant_count`` are *declared* metadata, not derived ones: the
-    record is refused unless every array has exactly the shape the declaration implies, so a
-    caller cannot publish one shape in the JSON and another in the NPZ. The array fields are
-    named exactly as their member suffixes, so ``getattr(record, suffix)`` is the whole
-    mapping, and there is no room for an eleventh member to creep in.
+    ``knot_count`` and ``participant_count`` are *declared* metadata, not derived ones. The
+    constructor itself checks only the two things a caller supplies directly: every array's
+    dtype — the byte order is part of it — and that each count is a genuine positive integer.
+    It does **not** re-check the arrays' shapes against those counts: shape agreement is the
+    §3 check :func:`_check_effect` performs, at encode and again at decode, where a record is
+    refused unless every array has exactly the shape the declaration implies. The effect is
+    that a caller cannot publish one shape in the JSON and another in the NPZ. The array
+    fields are named exactly as their member suffixes, so ``getattr(record, suffix)`` is the
+    whole mapping, and there is no room for an eleventh member to creep in.
 
     The field dtype is the schema's fixed little-endian one, and the **byte order is part of
     it**: an array whose own dtype is not exactly ``MEMBER_DTYPES[suffix]`` — a big-endian or
@@ -581,7 +585,9 @@ def decode_effect_npz(
             directory entry, a member is compressed, duplicated, out of order, outside the
             closed ten suffixes or stamped with anything but the fixed timestamp and
             attributes, a payload is not a stored NPY v1.0 array of the member's exact dtype
-            and shape, or the container is not byte-for-byte what this module would write.
+            and shape, a per-knot member declares a zero-knot effect or a per-participant
+            member a zero-participant one (the schema's ``K``/``P`` are positive), or the
+            container is not byte-for-byte what this module would write.
         NpzSchemaError: the arrays break a §3 invariant — an unusable state code, a mask
             that disagrees with its state, a non-finite number, a ``-1`` sentinel on an
             aligned read, or an unaligned read that is not the full sentinel tuple.
@@ -764,6 +770,19 @@ def _record(effect_id: str, members: Mapping[str, np.ndarray]) -> EffectArrays:
         raise NpzContainerError(
             f"member {member_name(effect_id, 'participant_gate_index')!r} must be (P, K), "
             f"got shape {participant.shape}"
+        )
+    if knots.shape[0] < 1:
+        raise NpzContainerError(
+            f"member {member_name(effect_id, 'knots_mm')!r} declares a zero-knot effect: "
+            "K = knot_count is a positive integer in the schema, so a (0,) per-knot member "
+            "is refused here rather than surfacing as a raw record-validation error"
+        )
+    if participant.shape[0] < 1:
+        raise NpzContainerError(
+            f"member {member_name(effect_id, 'participant_gate_index')!r} declares a "
+            "zero-participant effect: P = participant_count is a positive integer in the "
+            "schema, so a (0, K) per-participant member is refused here rather than "
+            "surfacing as a raw record-validation error"
         )
     for suffix in MEMBER_SUFFIXES:
         array = members[suffix]

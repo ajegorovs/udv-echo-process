@@ -754,6 +754,30 @@ def test_a_wrong_size_container_is_pinned_by_the_published_mirror() -> None:
         decode_effect_npz(small, expected={EFFECT_ID_BURST_4: (4, 2)})
 
 
+@pytest.mark.parametrize(
+    ("shapes", "message"),
+    [
+        pytest.param({"knot_count": 0, "participant_count": 1}, "zero-knot", id="K=0"),
+        pytest.param(
+            {"knot_count": 2, "participant_count": 0}, "zero-participant", id="P=0"
+        ),
+    ],
+)
+def test_reader_refuses_a_zero_knot_or_zero_participant_member(
+    shapes: dict[str, int], message: str
+) -> None:
+    """``K`` and ``P`` are positive in the schema, so a ``(0,)`` or ``(0, K)`` member is refused.
+
+    The refusal must be the codec's own typed :class:`NpzContainerError`, not the raw
+    ``pydantic.ValidationError`` the record constructor would raise for a zero count — a reader
+    that received a validation error could not tell a malformed container from a programming
+    fault.
+    """
+    raw = _raw({EFFECT_ID_BURST_4: _arrays(**shapes)})
+    with pytest.raises(NpzContainerError, match=message):
+        decode_effect_npz(raw)
+
+
 # ── the published mirror (§5.3/§5.4) ────────────────────────────────────
 
 
