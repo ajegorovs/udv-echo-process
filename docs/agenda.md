@@ -517,28 +517,27 @@ Binding rules that outlive that work:
   cell's whole block — so it is marked revised upstream and is no longer a
   blocker for verifying the sidebar here.
 
-- **The configured MCP entry for this checkout cannot start (found 2026-09-28,
-  open).** Hermes' `mcp_servers.marimo-inspect.command` points at
+- **The configured MCP entry no longer depends on a worktree (resolved
+  2026-09-29).** It used to point at
   `.worktrees/hermes-8bc00b93/.venv/Scripts/marimo-inspect.exe`, a worktree
-  virtualenv whose site-packages has no `annotated_types`, so the server dies on
-  import: `hermes mcp test marimo-inspect` reports *Connection failed (Connection
-  closed)* while `hermes mcp list` still shows the entry *✓ enabled* — the list
-  reports configuration, not connectivity. Re-point the command at this
-  repository's own venv (`.venv/Scripts/marimo-inspect.exe`): that install
-  starts, declares `logging`/`prompts`/`resources`/`tools`, answers
-  `resources/list` with three packaged markdown documents
-  (`workflow://marimo-inspect/co-work-loop`,
-  `workflow://marimo-inspect/live-safety`,
-  `reference://marimo-inspect/fallbacks-and-limits`) plus *0* resource templates,
-  and lists its 14 tools. Nothing here needs a provider change — only the
-  command path. Consequence while it is broken: **no MCP tool is registered in
-  this checkout at all**, so live-notebook work is driven through the marimo
-  server's own UI/HTTP surface (recorded in
-  [`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md)
-  §2). Note also that a server's MCP *resources* are reachable from the agent
-  only through the generated per-server utility tools
-  (`mcp_<server>_list_resources` / `mcp_<server>_read_resource`), which are
-  registered only when the server advertises the capability;
+  virtualenv missing `annotated_types` — the server died on import, so
+  `hermes mcp test marimo-inspect` reported *Connection failed (Connection
+  closed)* while `hermes mcp list` still showed the entry *✓ enabled* (the list
+  reports configuration, not connectivity) — and it sat inside a worktree that is
+  due to disappear. The command now points at a sibling clone of the provider,
+  `~/Repos/marimo-mcp-cowork/.venv/Scripts/marimo-inspect.exe`, checked out at
+  the same tag this repository pins (`v0.3.3`) and synced with `uv`. Verified:
+  `hermes mcp test` connects and discovers the 14 tools, a fresh session
+  registers 18 (`mcp__marimo_inspect__<tool>` — the 14 plus the generated
+  `list_resources`/`read_resource`/`list_prompts`/`get_prompt`), and
+  `list_active_notebooks` returns the live session. To take a newer provider
+  release: `git -C ~/Repos/marimo-mcp-cowork fetch --tags`, check out the tag,
+  then `uv sync --directory ~/Repos/marimo-mcp-cowork`. The provider's own README
+  asks a harness to run a *consumer* environment's console script rather than a
+  provider checkout, so this clone is a deliberate exception and should stay on a
+  released tag, keeping the MCP surface here aligned with what these docs assume.
+  A server's MCP *resources* reach the agent only through the generated utility
+  tools (`mcp__marimo_inspect__list_resources` / `__read_resource`);
   `resources/list_changed` is ignored.
 
 ---

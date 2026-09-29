@@ -34,10 +34,11 @@ change the *dependent* displays were read back as text: the heatmap caption, the
 distribution caption, the recurrence caption, the spectrum caption, the target-support table,
 the stale-gate callout — plus the notebook's error and stale-cell counts.
 
-Widgets are read and driven through the marimo UI surface, not through `marimo-inspect`:
-the configured MCP entry currently cannot start in this checkout, so the provider was not
-available for this session (recorded as an open item in [`../agenda.md`](../agenda.md)
-§ Marimo consumer follow-ups).
+Widgets were read and driven through the marimo UI surface for this session: the configured
+MCP entry could not start at the time (a worktree virtualenv missing `annotated_types`), so
+the provider was unavailable — later fixed by pointing Hermes at a sibling clone of the
+provider, which is recorded in [`../agenda.md`](../agenda.md) § Marimo consumer follow-ups.
+Either instrument works; the kernel-side one was discovered after this record was made.
 
 The state behind those read-backs was then confirmed **from the kernel**, not by rendering:
 this repository's `marimo-pair` skill ships `scripts/execute-code.sh`, which runs Python in the
