@@ -57,9 +57,14 @@ SA0/SA1 and SA2.1–SA2.4 are landed; #58 merged as `b55a819`. SA2 now provides
 the sampling-aware spectral backend, single-record preview, fixed 0–1 Hz
 fraction and deterministic scalar report. Its repeat ranges are descriptive,
 not screening floors. The [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
-records the SA4 acceptance audit: the explorer is useful now, but live widget
-read-back is not established by an executed export, and the original Welch
-wording differs from the accepted periodogram. SA5 within-sitting effects for
+records the SA4 acceptance audit: the explorer is useful now, its live widget
+read-back is established — eleven control transitions driven in one running
+session and read back both ways, with the one live-only defect they exposed (the
+gate control silently reverting to the middle gate on every view change, leaving
+its stale-gate guard unreachable) found and fixed
+([`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md)
+§2) — while the original Welch
+wording still differs from the accepted periodogram. SA5 within-sitting effects for
 both sittings are published and frozen by #61, merged as
 `ea07fda77a5d9bd6899ab427959f0e0054218ae3`. The next scientific slice is
 cross-sitting descriptive agreement over those fixed, oriented effects and
@@ -114,6 +119,24 @@ Open decisions from that register:
   the seal).
 - Decide whether the unported register items are wanted: the exclusive depth rule,
   `ChannelConfig` metadata coverage, and the visualization intents.
+
+---
+
+## Active work — single-measurement explorer: live baseline handed over
+
+`notebooks/signal_explorer.py`'s reactive chain is now verified **live** — the §SA4 gap, since
+an executed export renders one widget default and can never show a control changing under its
+consumers — and the one live-only defect it exposed (the gate control resetting to the view's
+middle on every view change, with its own stale-gate callout unreachable) is fixed. The
+baseline is **with the reader for review**; no new section starts until they steer.
+Branch `sa2-6-live-notebook-baseline`, draft PR
+[#70](https://github.com/ajegorovs/udv-echo-process/pull/70); the live record, the section →
+backend map and the iteration checklist are in
+[`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md). Resuming work
+in *this* checkout: the launch command, the kernel-side read-back recipe, the browser-driver
+scripts and the traps that cost time are in the machine-local kit
+`.hermes/scratch/marimo-live/HANDOFF.md` (git-ignored, like everything under `.hermes/`); the
+general lesson is in the repo skill `.agents/skills/marimo-pair/reference/live-verification.md`.
 
 ---
 
@@ -511,6 +534,29 @@ Binding rules that outlive that work:
   (T16) no longer reproduces** — `get_cell_outputs` returned the composed sidebar
   cell's whole block — so it is marked revised upstream and is no longer a
   blocker for verifying the sidebar here.
+
+- **The configured MCP entry no longer depends on a worktree (resolved
+  2026-09-29).** It used to point at
+  `.worktrees/hermes-8bc00b93/.venv/Scripts/marimo-inspect.exe`, a worktree
+  virtualenv missing `annotated_types` — the server died on import, so
+  `hermes mcp test marimo-inspect` reported *Connection failed (Connection
+  closed)* while `hermes mcp list` still showed the entry *✓ enabled* (the list
+  reports configuration, not connectivity) — and it sat inside a worktree that is
+  due to disappear. The command now points at a sibling clone of the provider,
+  `~/Repos/marimo-mcp-cowork/.venv/Scripts/marimo-inspect.exe`, checked out at
+  the same tag this repository pins (`v0.3.3`) and synced with `uv`. Verified:
+  `hermes mcp test` connects and discovers the 14 tools, a fresh session
+  registers 18 (`mcp__marimo_inspect__<tool>` — the 14 plus the generated
+  `list_resources`/`read_resource`/`list_prompts`/`get_prompt`), and
+  `list_active_notebooks` returns the live session. To take a newer provider
+  release: `git -C ~/Repos/marimo-mcp-cowork fetch --tags`, check out the tag,
+  then `uv sync --directory ~/Repos/marimo-mcp-cowork`. The provider's own README
+  asks a harness to run a *consumer* environment's console script rather than a
+  provider checkout, so this clone is a deliberate exception and should stay on a
+  released tag, keeping the MCP surface here aligned with what these docs assume.
+  A server's MCP *resources* reach the agent only through the generated utility
+  tools (`mcp__marimo_inspect__list_resources` / `__read_resource`);
+  `resources/list_changed` is ignored.
 
 ---
 

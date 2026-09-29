@@ -971,12 +971,35 @@ def depth_reduction_table(
 
 
 @app.cell(hide_code=True)
-def gate_picker_cell(gate_stats, mo):
-    # The gate selector for the trace, distribution and recurrence displays. Its options
-    # are the statistics result's own supported gates — the depth the result reports,
-    # with the gate's position among those columns — and its value is that position, so
-    # every consumer reads a row of the result it was shown rather than recomputing a
-    # gate index of its own. It is selection, not a statistic.
+def gate_selection_memory(mo):
+    # PRESENTATION state, and nothing else: the gate depth the reader last chose in the
+    # control below. A marimo widget does NOT keep its value when the cell that owns it
+    # re-runs — the element is re-instantiated with its *declared* default — and this
+    # control re-runs whenever the view or the recording changes. Without this memory the
+    # declared default (the middle supported gate) is re-applied on every view change and
+    # the reader's gate is silently replaced, which is the one thing `gate_position`'s
+    # guard exists to refuse. No number in any result comes from this state: it holds a
+    # selection, not a measurement.
+    #
+    # `allow_self_loops=True` is required because the control's `on_change` writes this
+    # state from the very cell that reads it, which marimo otherwise refuses as a loop. The
+    # loop settles: the re-created control's declared default is the value just chosen.
+    get_reader_gate_mm, set_reader_gate_mm = mo.state(None, allow_self_loops=True)
+    return get_reader_gate_mm, set_reader_gate_mm
+
+
+@app.cell(hide_code=True)
+def gate_picker_cell(gate_stats, get_reader_gate_mm, mo, set_reader_gate_mm):
+    # The gate selector for the trace, distribution, recurrence and spectrum displays. Its
+    # options are the statistics result's own supported gates — the depth the result
+    # reports, with the gate's position among those columns — and its value is that
+    # position, so every consumer reads a row of the result it was shown rather than
+    # recomputing a gate index of its own. It is selection, not a statistic.
+    #
+    # Its DECLARED DEFAULT is the reader's own last gate **when this view still carries
+    # that depth**, and the middle supported gate otherwise — the fallback the position
+    # guard below states in words. `on_change` records the choice; reading the memory back
+    # on each re-run is what keeps a view change from moving the reader off their gate.
     if gate_stats is not None:
         _depths = [float(depth) for depth in gate_stats.depths_mm]
         _options = {
@@ -985,11 +1008,27 @@ def gate_picker_cell(gate_stats, mo):
             )
             for position, depth in enumerate(_depths)
         }
+        _labels = list(_options)
+        _default = len(_labels) // 2
+        _wanted = get_reader_gate_mm()
+        if _wanted is not None:
+            for _position, _depth in enumerate(_depths):
+                if _depth == _wanted:
+                    _default = _position
+                    break
+
+        def _remember(_picked, _depths=_depths, _options=_options):
+            """Record the chosen gate's depth. The value is the row position, not the label."""
+            _index = _picked if isinstance(_picked, int) else _options.get(_picked)
+            if isinstance(_index, int) and 0 <= _index < len(_depths):
+                set_reader_gate_mm(_depths[_index])
+
         gate_picker = mo.ui.dropdown(
             options=_options,
-            value=list(_options)[len(_options) // 2],
+            value=_labels[_default],
             label="Gate (SA1)",
             full_width=True,
+            on_change=_remember,
         )
     else:
         gate_picker = mo.ui.dropdown(
@@ -1000,20 +1039,23 @@ def gate_picker_cell(gate_stats, mo):
 
 
 @app.cell(hide_code=True)
-def gate_position(gate_picker, gate_stats, np):
+def gate_position(gate_picker, gate_stats, get_reader_gate_mm, np):
     # The picked position, resolved once against the result it currently addresses.
     #
-    # This cell exists because a marimo widget keeps its value when its options change:
-    # moving to a narrower view — an exploration window, or one whose support drops gates —
-    # rebuilds the picker with fewer entries while the stored value stays where it was, so
-    # a consumer indexing with `gate_picker.value` directly would read past the end of the
-    # result and raise inside a figure. The guard falls back to the middle supported gate
-    # and *says so*, rather than silently showing a different gate than the one named.
+    # This cell exists because the picker is **rebuilt** whenever its options change
+    # (a view change, a different recording): the element is re-instantiated and its value
+    # is whatever default the rebuilding cell declared — never the reader's previous
+    # choice, whatever the widget held a moment ago. `gate_selection_memory` carries that
+    # choice, the picker declares it when this view still has that depth, and the note
+    # below is what makes a forced move visible: a reader is told whenever the gate shown
+    # is not the gate they asked for, instead of being handed a silently different depth.
     position = None
     position_note = ""
     if gate_stats is not None and gate_picker.value is not None:
+        _depths = np.asarray(gate_stats.depths_mm, dtype=float)
         _picked = int(gate_picker.value)
-        _count = int(np.asarray(gate_stats.depths_mm).size)
+        _count = int(_depths.size)
+        _wanted = get_reader_gate_mm()
         if 0 <= _picked < _count:
             position = _picked
         elif _count > 0:
@@ -1022,6 +1064,15 @@ def gate_position(gate_picker, gate_stats, np):
                 f"the gate position selected before this view change ({_picked}) is not in "
                 f"this view, which has {_count} supported gate(s): the middle one is shown"
             )
+        if position is not None and _wanted is not None:
+            _shown = float(_depths[position])
+            if _shown != _wanted and not position_note:
+                position_note = (
+                    f"the gate you last selected (depth {_wanted:.3f} mm) is not a "
+                    f"supported gate of this view, which has {_count} supported gate(s) from "
+                    f"{float(_depths[0]):.3f} to {float(_depths[-1]):.3f} mm: the middle "
+                    f"supported gate (depth {_shown:.3f} mm) is shown"
+                )
     return position, position_note
 
 
