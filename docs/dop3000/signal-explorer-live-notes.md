@@ -39,6 +39,15 @@ the configured MCP entry currently cannot start in this checkout, so the provide
 available for this session (recorded as an open item in [`../agenda.md`](../agenda.md)
 § Marimo consumer follow-ups).
 
+The state behind those read-backs was then confirmed **from the kernel**, not by rendering:
+this repository's `marimo-pair` skill ships `scripts/execute-code.sh`, which runs Python in the
+live session, so the remembered gate, the picker's value, the resolved position and the guard's
+own note string can simply be printed. That is the cheaper instrument and the one to reach for
+first; driving the real page is needed only when the question is interaction fidelity — which
+is exactly what the defect below turned out to be, and why the browser route found it. The
+recipe and the read-back rules are written up in
+[`../../.agents/skills/marimo-pair/reference/live-verification.md`](../../.agents/skills/marimo-pair/reference/live-verification.md).
+
 **Baseline selected state.** Pass `sparse-mixer-live-2` / job `common-reference-1` /
 recording `cr1` (`sparse3-common-reference-1-cr1-20260924T172037`) / channel `ch1`, view
 `primary-comparison`, detrending `mean`, gate depth `54.538 mm` (supported gate 25 of 49).
@@ -161,7 +170,14 @@ until the reader asks for it.
 
 | # | Section | Backend | Controls | Live test performed | Reader feedback | Adjustment | Next proposed |
 |---|---|---|---|---|---|---|---|
-| 0 | live baseline (as committed) | — | all six dropdowns + five numbers | §2: 13 transitions, driven and read back both ways; one live-only defect found and fixed (the gate reverted to the view's middle, and its own guard never fired) | *pending — baseline handed over for review* | gate memory + reachable callout (§2.3) | *pending reader steer* |
+| 0 | live baseline (as committed) | — | all six dropdowns + five numbers | §2: 13 transitions, driven and read back both ways; one live-only defect found and fixed (the gate reverted to the view's middle, and its own guard never fired) | baseline handed over for review — reader examining the notebook | gate memory + reachable callout (§2.3) | await reader steer; candidates classified in §5 |
+
+Iteration 0 is the only row so far. The rhythm from here, per the working agreement: one
+section lands, the reader interacts with it, and only then does the next one start — a
+presentation request changes the notebook, an estimator request is a separate backend decision
+with its own tests before any cell may call it. The work is on
+`sa2-6-live-notebook-baseline` and reviewable as draft PR
+[#70](https://github.com/ajegorovs/udv-echo-process/pull/70).
 
 ## 5. Candidates for the next sections
 
