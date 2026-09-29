@@ -122,6 +122,24 @@ Open decisions from that register:
 
 ---
 
+## Active work — single-measurement explorer: live baseline handed over
+
+`notebooks/signal_explorer.py`'s reactive chain is now verified **live** — the §SA4 gap, since
+an executed export renders one widget default and can never show a control changing under its
+consumers — and the one live-only defect it exposed (the gate control resetting to the view's
+middle on every view change, with its own stale-gate callout unreachable) is fixed. The
+baseline is **with the reader for review**; no new section starts until they steer.
+Branch `sa2-6-live-notebook-baseline`, draft PR
+[#70](https://github.com/ajegorovs/udv-echo-process/pull/70); the live record, the section →
+backend map and the iteration checklist are in
+[`dop3000/signal-explorer-live-notes.md`](dop3000/signal-explorer-live-notes.md). Resuming work
+in *this* checkout: the launch command, the kernel-side read-back recipe, the browser-driver
+scripts and the traps that cost time are in the machine-local kit
+`.hermes/scratch/marimo-live/HANDOFF.md` (git-ignored, like everything under `.hermes/`); the
+general lesson is in the repo skill `.agents/skills/marimo-pair/reference/live-verification.md`.
+
+---
+
 ## Active work — sidebar notebook: time/gate selection
 
 `notebooks/channel_preview_sidebar.py` is the sandbox for the live-sidebar
