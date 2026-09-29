@@ -305,5 +305,6 @@ For designing custom visual or interactive output, see
 - [execution-context.md](reference/execution-context.md) — scripts, MCP, auth, startup, and shell quoting
 - [finding-marimo.md](reference/finding-marimo.md) — choosing the right marimo invocation
 - [gotchas.md](reference/gotchas.md) — name redefinition, cached module proxies, and notebook traps
+- [live-verification.md](reference/live-verification.md) — what only a live session can show: kernel-side read-back, driving the real UI, stale-state checks
 - [rich-representations.md](reference/rich-representations.md) — custom widgets and visualizations
 - [notebook-improvements.md](reference/notebook-improvements.md) — improving existing notebooks
