@@ -61,11 +61,32 @@ records the SA4 acceptance audit: the explorer is useful now, but live widget
 read-back is not established by an executed export, and the original Welch
 wording differs from the accepted periodogram. SA5 within-sitting effects for
 both sittings are published and frozen by #61, merged as
-`ea07fda77a5d9bd6899ab427959f0e0054218ae3`. The next scientific slice is
-cross-sitting descriptive agreement over those fixed, oriented effects and
-intersecting physical support; it must not reselect operands or revise the
-within-sitting definitions. SA3/POD and SA6 UI remain demand-driven; #49
-remains open and separate.
+`ea07fda77a5d9bd6899ab427959f0e0054218ae3`. The independently verified
+cross-sitting publication (#67) merged as
+`622421a7b73745fdf0f6b1655fe00b08bd4795ce`: its four artifact blobs
+match the reviewed head, the published NPZ/CSV/JSON digests match, and all seven
+independent-verifier checks pass (72 comparisons, 280 NPZ members). Do not
+reselect operands or revise the frozen within-sitting definitions.
+
+**Next checkpoint — scientific interpretation, not publication infrastructure.**
+Read [`sa5-cross-sitting-agreement-prespec.md`](dop3000/sa5-cross-sitting-agreement-prespec.md)
+§§5–8 alongside the published
+[`sa5-cross-sitting.README.md`](../reports/sparse-signal/sa5-cross-sitting.README.md),
+CSV and JSON. First rerun `verify_cross_artifacts(REPORT_DIR)` from
+`udv_echo_process.analysis.sparse_sa5_cross_verify` against the committed
+quartets. Then write a separately reviewable, descriptive interpretation of
+the **56 comparable** `live2 - live1` effects: present signed and RMS differences,
+sign agreement, shape correlation, peak geometry, coverage, and each sitting's
+own magnitude/definedness context together rather than reducing agreement to
+one scalar. Account separately for the **16 `recurrence-peak-lag`** comparisons:
+all are `side-wholly-undefined`, with no comparison value or label. Preserve
+`deferred-pending-review` for the 56 and absent labels for the 16. Repeat
+contexts are ancillary and the `e8`/`e64`/`e128` anchor identities are
+unverifiable, so do not invent numerical ranges. Two realizations support no
+p-value, ranking, floor, population claim, or recurrence verdict. Cite effect
+IDs and frozen artifact values; any new label or inferential rule requires
+separate prespecification and review. SA3/POD and SA6 UI remain demand-driven;
+#49 remains open and separate.
 
 ---
 
