@@ -1,7 +1,7 @@
 import marimo
 
 __generated_with = "0.24.0"
-app = marimo.App(width="full")
+app = marimo.App(width="columns")
 
 
 @app.cell
@@ -63,7 +63,6 @@ def imports():
         RecurrenceError,
         RecurrenceVerdict,
         RunPlanError,
-        SparseGateStatsError,
         SparseIngestError,
         SparseViewError,
         SpectralPeriodogramError,
@@ -87,8 +86,6 @@ def imports():
         point_qc,
         primary_view,
         recurrence_of_view,
-        reduce_equal_weight,
-        reduce_native_slab,
         retains_designed_window,
         statistic_units,
         target_frequency_support,
@@ -442,19 +439,21 @@ def point_metadata(decoding, mo, point, point_qc, retains_designed_window):
 
 
 @app.cell(hide_code=True)
-def heatmap(decoding, go, mo, np, point, sparse_view, sparse_view_error):
-    # The native time–depth heatmap of **the one shared view**: the same `WindowView`
-    # object the SA1 statistics and the autocorrelation below are computed from, so the
-    # block on screen and every number under it come from one cut. There is no second
-    # "full record" control here any more — the view dropdown in the sidebar is the only
-    # place a cut is chosen, and `sa1_view_label` prints that module's own label and rule.
-    #
-    # The view's own columns are plotted: the supported gates the statistics reduce over,
-    # not the recording's whole native grid, because drawing gates that are in no
-    # statistic would invite reading a row that no number below uses. The transposition is
-    # x = time, y = the instrument's own gate coordinate. No derived quantity is plotted
-    # and no physics is overlaid; the stride and the symmetric colour axis are drawing
-    # choices, not measurements.
+def heatmap(
+    decoding,
+    gate_stats,
+    go,
+    mo,
+    np,
+    point,
+    position,
+    profile_position,
+    sparse_view,
+    sparse_view_error,
+):
+    # The native time–depth heatmap of the one shared view. The selected stored time
+    # and supported gate are drawn as crosshairs, locating the selected time slice and
+    # gate trace below on the same data without adding a derived quantity.
     _out = mo.md("_No view selected — nothing to plot._")
     if sparse_view is None:
         if sparse_view_error:
@@ -464,25 +463,49 @@ def heatmap(decoding, go, mo, np, point, sparse_view, sparse_view_error):
             )
     else:
         _time = np.asarray(sparse_view.time_s, dtype=float)
+        _depths = np.asarray(sparse_view.depths_mm, dtype=float)
         _values = np.asarray(sparse_view.values, dtype=float)
         _stride = max(1, _time.size // 800)
         _z = _values[::_stride].T
         if point.quantity == "axial_velocity":
-            # Signed velocity is symmetric about zero, so the colour axis is forced
-            # symmetric: an autoscaled range would put white somewhere other than zero.
             _scale = float(np.nanmax(np.abs(_z))) or 1.0
             _kw = dict(zmin=-_scale, zmax=_scale, colorscale="RdBu_r")
+            _crosshair = "#43A047"
         else:
             _kw = dict(colorscale="Viridis")
+            _crosshair = "#FF1744"
         _fig = go.Figure(
             go.Heatmap(
                 x=_time[::_stride],
-                y=np.asarray(sparse_view.depths_mm, dtype=float),
+                y=_depths,
                 z=_z,
                 colorbar={"title": f"{point.quantity} [{point.unit}]"},
                 **_kw,
             )
         )
+        _cursor_suffix = ""
+        if (
+            gate_stats is not None
+            and position is not None
+            and profile_position is not None
+        ):
+            _selected_time = float(_time[profile_position])
+            _selected_column = sparse_view.column_of_depth(
+                float(gate_stats.depths_mm[position])
+            )
+            _selected_depth = float(_depths[_selected_column])
+            _fig.add_vline(
+                x=_selected_time,
+                line=dict(color=_crosshair, width=2.5, dash="dot"),
+            )
+            _fig.add_hline(
+                y=_selected_depth,
+                line=dict(color=_crosshair, width=2.5, dash="dash"),
+            )
+            _cursor_suffix = (
+                f" · cursors: t = {_selected_time:.4f} s, depth = "
+                f"{_selected_depth:.3f} mm"
+            )
         _fig.update_layout(
             title=(
                 f"{point.binding.identity} — ch{decoding.plan.channel} · "
@@ -490,6 +513,7 @@ def heatmap(decoding, go, mo, np, point, sparse_view, sparse_view_error):
                 f"{sparse_view.supported_columns.size} supported of "
                 f"{sparse_view.native_gates} native gates · "
                 f"{'every profile' if _stride == 1 else f'every {_stride}th profile'} shown"
+                f"{_cursor_suffix}"
             ),
             xaxis_title="time from the record's first stored profile [s]",
             yaxis_title="native gate depth [mm] (instrument gate coordinate)",
@@ -497,6 +521,7 @@ def heatmap(decoding, go, mo, np, point, sparse_view, sparse_view_error):
         )
         _out = mo.ui.plotly(_fig)
     _out
+
     return
 
 
@@ -524,6 +549,56 @@ def heatmap_notes(mo):
     each of them is named beside every display. The primary/exploratory label on every
     view is the same rule the later slices inherit.
     """)
+    return
+
+
+@app.cell(hide_code=True)
+def time_slice_figure(
+    go,
+    mo,
+    np,
+    profile_position,
+    profile_position_note,
+    sparse_view,
+):
+    # The one selected stored profile read across the view's native supported gates. The
+    # heatmap's vertical cursor marks this exact timestamp; no interpolation or new grid
+    # is introduced.
+    _out = mo.md("_No selected time slice: no view to read._")
+    if sparse_view is not None and profile_position is not None:
+        _values = np.asarray(sparse_view.values, dtype=float)
+        _depths = np.asarray(sparse_view.depths_mm, dtype=float)
+        _columns = np.asarray(sparse_view.supported_columns)
+        _time = float(sparse_view.time_s[profile_position])
+        _fig = go.Figure(
+            go.Scatter(
+                x=_depths[_columns],
+                y=_values[profile_position, _columns],
+                mode="lines+markers",
+                name="selected stored profile",
+                hovertemplate="depth %{x:.3f} mm<br>velocity %{y:.6f} mm/s<extra></extra>",
+            )
+        )
+        _fig.update_layout(
+            title=(
+                f"{sparse_view.point_label} · selected stored profile "
+                f"{profile_position} at t = {_time:.4f} s · view "
+                f"`{sparse_view.view.value}` · supported gates only "
+                f"({_columns.size} of {_depths.size})"
+            ),
+            xaxis_title="native gate depth [mm]",
+            yaxis_title="signed axial velocity [mm/s]",
+            showlegend=False,
+            height=460,
+        )
+        _plot = mo.ui.plotly(_fig)
+        _out = (
+            mo.vstack([mo.callout(mo.md(profile_position_note), kind="warn"), _plot])
+            if profile_position_note
+            else _plot
+        )
+    _out
+
     return
 
 
@@ -557,7 +632,14 @@ def sa1_intro(mo):
 
 
 @app.cell(hide_code=True)
-def sa1_view_controls(Detrending, VIEW_LABELS, VIEW_PRIMARY, VIEW_RULES, decoding, mo):
+def sa1_view_controls(
+    Detrending,
+    VIEW_LABELS,
+    VIEW_PRIMARY,
+    VIEW_RULES,
+    decoding,
+    mo,
+):
     # The SA1 view control. Its options ARE the view module's own vocabulary
     # (`VIEW_LABELS`) and every option label carries that module's own rule text
     # (`VIEW_RULES`), so the reader sees the rule the result will carry and this notebook
@@ -615,18 +697,29 @@ def sa1_view_controls(Detrending, VIEW_LABELS, VIEW_PRIMARY, VIEW_RULES, decodin
         value=float(_hi), start=-1000.0, stop=1000.0, step=0.01,
         label="exploration depth high [mm]", full_width=True,
     )
+    # Keep the widgets alive regardless of the selected view, but keep this
+    # exploration-only configuration out of the normal sidebar scan path.
+    _exploration_bounds = mo.accordion(
+        {
+            "Exploration bounds — used only by the exploration view": mo.vstack(
+                [
+                    explore_time_start,
+                    explore_time_end,
+                    explore_depth_low,
+                    explore_depth_high,
+                ]
+            )
+        }
+    )
     mo.sidebar(
         [
             mo.md("### SA1 view"),
             gate_view,
             detrending_picker,
-            mo.md("### SA1 exploration bounds (used only by the exploration view)"),
-            explore_time_start,
-            explore_time_end,
-            explore_depth_low,
-            explore_depth_high,
+            _exploration_bounds,
         ]
     )
+
     return (
         detrending_picker,
         explore_depth_high,
@@ -643,11 +736,11 @@ def sparse_view_checkpoint(
     VIEW_EXPLORATION,
     VIEW_FULL_RECORD,
     decoding,
+    exploration_view,
     explore_depth_high,
     explore_depth_low,
     explore_time_end,
     explore_time_start,
-    exploration_view,
     full_record_view,
     gate_view,
     point,
@@ -741,7 +834,7 @@ def sa1_view_label(mo, sparse_view, sparse_view_error):
 
 
 @app.cell(hide_code=True)
-def gate_stats_result(SparseGateStatsError, gate_statistics, sparse_view):
+def gate_stats_result(SparseViewError, gate_statistics, sparse_view):
     # `gate_statistics` calls the frozen `gate_metrics` and SA1's extension on the
     # view's supported block, so the five frozen names and SA1's eleven cannot drift
     # apart. Nothing is reduced here: the result keeps one value per gate.
@@ -818,19 +911,28 @@ def sa1_stats_readout(gate_stats, gate_stats_error, mo):
 
 
 @app.cell(hide_code=True)
-def gate_profile_figure(gate_stats, go, make_subplots, mo, np, statistic_units):
+def gate_profile_figure(
+    gate_stats,
+    go,
+    make_subplots,
+    mo,
+    np,
+    statistic_units,
+):
     # Per-gate mean and variability profiles over the instrument's native depth. Every
-    # x value is a row the statistics result returned (`mean`, `q25`, `q75`, `std`,
+    # y value is a row the statistics result returned (`mean`, `q25`, `q75`, `std`,
     # `mad_scaled`) and every unit is the module's own (`statistic_units`); this cell
-    # selects rows and draws them, it computes nothing. The quantile band is the frozen
-    # `q25`/`q75` pair — the same numbers as `median ± iqr/2` — so it cannot disagree
-    # with the frozen table.
+    # selects rows and draws them, it computes nothing. The interquartile envelope is
+    # filled between invisible q75 and q25 boundary traces: they stay out of the legend
+    # but remain in the shared depth hover alongside the mean.
     _out = mo.md("_No per-gate profiles: no statistics to plot._")
     if gate_stats is not None:
         _depths = np.asarray(gate_stats.depths_mm, dtype=float)
+        _q25 = gate_stats.of("q25")
+        _q75 = gate_stats.of("q75")
         _prov = gate_stats.provenance
         _fig = make_subplots(
-            rows=1, cols=2, shared_yaxes=True, horizontal_spacing=0.09,
+            rows=1, cols=2, horizontal_spacing=0.09,
             subplot_titles=(
                 f"per-gate mean with the reported q25–q75 band "
                 f"[{statistic_units('mean')}]",
@@ -839,31 +941,38 @@ def gate_profile_figure(gate_stats, go, make_subplots, mo, np, statistic_units):
         )
         _fig.add_trace(
             go.Scatter(
-                x=gate_stats.of("q25"), y=_depths, mode="lines", name="q25",
-                line=dict(color="#90CAF9", width=1.0),
+                x=_depths, y=_q75, mode="lines",
+                name="q75 (upper quartile)",
+                line=dict(width=0),
+                showlegend=False,
+                hovertemplate="q75 (upper quartile): %{y:.3f} mm/s<extra></extra>",
             ),
             row=1, col=1,
         )
         _fig.add_trace(
             go.Scatter(
-                x=gate_stats.of("q75"), y=_depths, mode="lines",
-                name="q75 (band = the reported interquartile range)",
-                line=dict(color="#90CAF9", width=1.0), fill="tonexty",
+                x=_depths, y=_q25, mode="lines",
+                name="q25 (lower quartile)",
+                line=dict(width=0),
+                fill="tonexty",
                 fillcolor="rgba(144,202,249,0.35)",
+                showlegend=False,
+                hovertemplate="q25 (lower quartile): %{y:.3f} mm/s<extra></extra>",
             ),
             row=1, col=1,
         )
         _fig.add_trace(
             go.Scatter(
-                x=gate_stats.of("mean"), y=_depths, mode="lines",
+                x=_depths, y=gate_stats.of("mean"), mode="lines",
                 name="mean (signed axial velocity)",
                 line=dict(color="#1E88E5", width=2.4),
+                hovertemplate="mean: %{y:.3f} mm/s<extra></extra>",
             ),
             row=1, col=1,
         )
         _fig.add_trace(
             go.Scatter(
-                x=gate_stats.of("std"), y=_depths, mode="lines",
+                x=_depths, y=gate_stats.of("std"), mode="lines",
                 name=f"std (population, ddof={gate_stats.std_ddof})",
                 line=dict(color="#E53935", width=1.9),
             ),
@@ -871,7 +980,7 @@ def gate_profile_figure(gate_stats, go, make_subplots, mo, np, statistic_units):
         )
         _fig.add_trace(
             go.Scatter(
-                x=gate_stats.of("mad_scaled"), y=_depths, mode="lines",
+                x=_depths, y=gate_stats.of("mad_scaled"), mode="lines",
                 name=f"mad_scaled (MAD × {gate_stats.mad_scale:g})",
                 line=dict(color="#FB8C00", width=1.9, dash="dash"),
             ),
@@ -883,239 +992,329 @@ def gate_profile_figure(gate_stats, go, make_subplots, mo, np, statistic_units):
                 f"`{_prov.view.value}` · window {_prov.window_start_s:.4f}–"
                 f"{_prov.window_end_s:.4f} s · per-gate profiles vs native gate depth"
             ),
+            hovermode="x",
             height=560,
         )
-        _fig.update_yaxes(title_text="native gate depth [mm]", row=1, col=1)
-        _fig.update_xaxes(
+        _fig.update_xaxes(title_text="native gate depth [mm]", row=1, col=1)
+        _fig.update_xaxes(title_text="native gate depth [mm]", row=1, col=2)
+        _fig.update_yaxes(
             title_text="signed axial velocity [mm/s]", row=1, col=1
         )
-        _fig.update_xaxes(title_text="variability [mm/s]", row=1, col=2)
+        _fig.update_yaxes(title_text="variability [mm/s]", row=1, col=2)
         _out = mo.ui.plotly(_fig)
     _out
     return
 
 
 @app.cell(hide_code=True)
-def depth_reduction_table(
-    SparseGateStatsError, gate_stats, mo, reduce_equal_weight, reduce_native_slab
-):
-    # The depth reductions are `sparse_gate_stats` calls, so the scalar arrives with its
-    # weighting, its weights and the two extents it declares (the gates it actually
-    # reduced, and the support the native-slab cells were clipped to). The per-gate rows
-    # above stay on screen: the reduction is one scalar beside the profile, never a
-    # replacement for it. A statistic the module reports as undefined is refused by the
-    # reduction, and its refusal is printed as it comes back.
-    _out = mo.md("_No depth reduction: no per-gate statistics._")
-    if gate_stats is not None:
-        _depths = gate_stats.depths_mm
-        _support = gate_stats.provenance.pass_support_mm
-        _rows: list[str] = []
-        _rules: dict[str, str] = {}
-        for _name in ("mean", "std"):
-            _values = gate_stats.of(_name)
-            _weightings = (
-                (
-                    "equal",
-                    lambda values=_values, name=_name: reduce_equal_weight(
-                        values, statistic=name, depths_mm=_depths
-                    ),
-                ),
-                (
-                    "native-slab",
-                    lambda values=_values, name=_name: reduce_native_slab(
-                        values, depths_mm=_depths, statistic=name, support_mm=_support
-                    ),
-                ),
-            )
-            for _label, _call in _weightings:
-                try:
-                    _reduction = _call()
-                except SparseViewError as exc:
-                    _rows.append(
-                        f"| `{_name}` | *(refused)* | **refused**: {exc} | "
-                        "— | — | — | — | — |"
-                    )
-                    continue
-                _slab = (
-                    f"{_reduction.slab_support_mm[0]:.3f}–"
-                    f"{_reduction.slab_support_mm[1]:.3f} mm"
-                    if _reduction.slab_support_mm is not None
-                    else "— (equal weighting clips nothing)"
-                )
-                _rows.append(
-                    f"| `{_reduction.statistic}` | {_reduction.weighting} | "
-                    f"{_reduction.value:.6f} | {_reduction.units} | "
-                    f"{_reduction.gates} | {_reduction.weight_sum:.6f} | "
-                    f"{_reduction.gate_extent_mm[0]:.3f}–"
-                    f"{_reduction.gate_extent_mm[1]:.3f} mm | {_slab} |"
-                )
-                _rules.setdefault(_reduction.weighting, _reduction.weighting_rule)
-        _table = "\n".join(
-            [
-                "| statistic | weighting | value | unit | gates | weight sum | "
-                "reduced gate extent | slab support clipped to |",
-                "| --- | --- | --- | --- | --- | --- | --- | --- |",
-            ]
-            + _rows
-        )
-        _rule_lines = "\n".join(
-            f"- **{_weighting}** — {_text}" for _weighting, _text in _rules.items()
-        )
-        _out = mo.md(
-            f"**Declared depth reductions of the `{gate_stats.provenance.view.value}` "
-            f"view** (over the {_depths.size} supported gates, "
-            f"{_depths[0]:.3f}–{_depths[-1]:.3f} mm)\n\n{_table}\n\n{_rule_lines}"
-        )
-    _out
-    return
-
-
-@app.cell(hide_code=True)
 def gate_selection_memory(mo):
-    # PRESENTATION state, and nothing else: the gate depth the reader last chose in the
-    # control below. A marimo widget does NOT keep its value when the cell that owns it
-    # re-runs — the element is re-instantiated with its *declared* default — and this
-    # control re-runs whenever the view or the recording changes. Without this memory the
-    # declared default (the middle supported gate) is re-applied on every view change and
-    # the reader's gate is silently replaced, which is the one thing `gate_position`'s
-    # guard exists to refuse. No number in any result comes from this state: it holds a
-    # selection, not a measurement.
+    # PRESENTATION state only: the depth and timestamp the reader last chose. These
+    # controls re-run whenever the view or recording changes, so their widgets would
+    # otherwise return to declared middle defaults and silently move the crosshair.
+    # No result value comes from this state; it holds reader selections only.
     #
-    # `allow_self_loops=True` is required because the control's `on_change` writes this
-    # state from the very cell that reads it, which marimo otherwise refuses as a loop. The
-    # loop settles: the re-created control's declared default is the value just chosen.
+    # `allow_self_loops=True` is required because each widget's `on_change` writes the
+    # state from the cell that reads it. The loop settles on the newly declared default.
     get_reader_gate_mm, set_reader_gate_mm = mo.state(None, allow_self_loops=True)
-    return get_reader_gate_mm, set_reader_gate_mm
+    get_reader_time_s, set_reader_time_s = mo.state(None, allow_self_loops=True)
+
+    return (
+        get_reader_gate_mm,
+        get_reader_time_s,
+        set_reader_gate_mm,
+        set_reader_time_s,
+    )
 
 
 @app.cell(hide_code=True)
-def gate_picker_cell(gate_stats, get_reader_gate_mm, mo, set_reader_gate_mm):
-    # The gate selector for the trace, distribution, recurrence and spectrum displays. Its
-    # options are the statistics result's own supported gates — the depth the result
-    # reports, with the gate's position among those columns — and its value is that
-    # position, so every consumer reads a row of the result it was shown rather than
-    # recomputing a gate index of its own. It is selection, not a statistic.
-    #
-    # Its DECLARED DEFAULT is the reader's own last gate **when this view still carries
-    # that depth**, and the middle supported gate otherwise — the fallback the position
-    # guard below states in words. `on_change` records the choice; reading the memory back
-    # on each re-run is what keeps a view change from moving the reader off their gate.
-    if gate_stats is not None:
-        _depths = [float(depth) for depth in gate_stats.depths_mm]
-        _options = {
-            f"depth {depth:.3f} mm · supported gate {position + 1} of {len(_depths)}": (
-                position
-            )
-            for position, depth in enumerate(_depths)
-        }
-        _labels = list(_options)
-        _default = len(_labels) // 2
-        _wanted = get_reader_gate_mm()
-        if _wanted is not None:
-            for _position, _depth in enumerate(_depths):
-                if _depth == _wanted:
-                    _default = _position
-                    break
+def gate_picker_cell(
+    gate_stats,
+    get_reader_gate_mm,
+    get_reader_time_s,
+    mo,
+    np,
+    set_reader_gate_mm,
+    set_reader_time_s,
+    sparse_view,
+):
+    # The two SA1 cursors address the same view used by the heatmap and selected-gate
+    # displays. Both widgets use stored row positions; their remembered physical
+    # coordinates prevent a view rebuild from silently returning the reader to middle
+    # defaults.
+    if gate_stats is not None and sparse_view is not None:
+        _depths = np.asarray(gate_stats.depths_mm, dtype=float)
+        _gate_count = int(_depths.size)
+        _gate_default = _gate_count // 2
+        _wanted_gate = get_reader_gate_mm()
+        if _wanted_gate is not None:
+            _matches = np.flatnonzero(np.isclose(_depths, float(_wanted_gate)))
+            if _matches.size:
+                _gate_default = int(_matches[0])
 
-        def _remember(_picked, _depths=_depths, _options=_options):
-            """Record the chosen gate's depth. The value is the row position, not the label."""
-            _index = _picked if isinstance(_picked, int) else _options.get(_picked)
-            if isinstance(_index, int) and 0 <= _index < len(_depths):
-                set_reader_gate_mm(_depths[_index])
+        def _remember_gate(_picked, _depths=_depths):
+            """Record the chosen gate depth; the slider value is its row position."""
+            _index = int(_picked)
+            if 0 <= _index < _depths.size:
+                set_reader_gate_mm(float(_depths[_index]))
 
-        gate_picker = mo.ui.dropdown(
-            options=_options,
-            value=_labels[_default],
-            label="Gate (SA1)",
+        _time = np.asarray(sparse_view.time_s, dtype=float)
+        _profiles = int(_time.size)
+        _time_default = _profiles // 2
+        _wanted_time = get_reader_time_s()
+        if _wanted_time is not None:
+            _matches = np.flatnonzero(np.isclose(_time, float(_wanted_time)))
+            if _matches.size:
+                _time_default = int(_matches[0])
+
+        def _remember_time(_picked, _time=_time):
+            """Record the selected stored timestamp; the slider value is its index."""
+            _index = int(_picked)
+            if 0 <= _index < _time.size:
+                set_reader_time_s(float(_time[_index]))
+
+        profile_picker = mo.ui.slider(
+            start=0,
+            stop=max(1, _profiles - 1),
+            value=_time_default,
+            step=1,
+            label=(
+                f"Time (SA1) — stored profile index · t {_time[0]:.4f}–"
+                f"{_time[-1]:.4f} s"
+            ),
             full_width=True,
-            on_change=_remember,
+            show_value=True,
+            on_change=_remember_time,
+        )
+        gate_picker = mo.ui.slider(
+            start=0,
+            stop=max(1, _gate_count - 1),
+            value=_gate_default,
+            step=1,
+            label=(
+                f"Gate (SA1) — supported-gate index · depth {_depths[0]:.3f}–"
+                f"{_depths[-1]:.3f} mm ({_gate_count} gates)"
+            ),
+            full_width=True,
+            show_value=True,
+            on_change=_remember_gate,
         )
     else:
-        gate_picker = mo.ui.dropdown(
-            options=[], value=None, label="Gate (SA1)", full_width=True
+        profile_picker = mo.ui.slider(
+            start=0, stop=1, value=0, step=1, label="Time (SA1)", full_width=True
         )
-    mo.sidebar([mo.md("### Gate (SA1)"), gate_picker])
-    return (gate_picker,)
+        gate_picker = mo.ui.slider(
+            start=0, stop=1, value=0, step=1, label="Gate (SA1)", full_width=True
+        )
+    mo.sidebar(
+        [
+            mo.md("### Time (SA1)"),
+            profile_picker,
+            mo.md("### Gate (SA1)"),
+            gate_picker,
+        ]
+    )
+
+    return gate_picker, profile_picker
 
 
 @app.cell(hide_code=True)
-def gate_position(gate_picker, gate_stats, get_reader_gate_mm, np):
-    # The picked position, resolved once against the result it currently addresses.
-    #
-    # This cell exists because the picker is **rebuilt** whenever its options change
-    # (a view change, a different recording): the element is re-instantiated and its value
-    # is whatever default the rebuilding cell declared — never the reader's previous
-    # choice, whatever the widget held a moment ago. `gate_selection_memory` carries that
-    # choice, the picker declares it when this view still has that depth, and the note
-    # below is what makes a forced move visible: a reader is told whenever the gate shown
-    # is not the gate they asked for, instead of being handed a silently different depth.
+def gate_position(
+    gate_picker,
+    gate_stats,
+    get_reader_gate_mm,
+    get_reader_time_s,
+    np,
+    profile_picker,
+    sparse_view,
+):
+    # Resolve both cursor positions once against the current result and view. A view or
+    # recording may not carry the reader's previous coordinate; in that case each cursor
+    # falls back to its middle entry and states the move rather than silently changing it.
     position = None
     position_note = ""
+    profile_position = None
+    profile_position_note = ""
+
+    if sparse_view is not None and profile_picker.value is not None:
+        _time = np.asarray(sparse_view.time_s, dtype=float)
+        _picked_time = int(profile_picker.value)
+        _profile_count = int(_time.size)
+        _wanted_time = get_reader_time_s()
+        if 0 <= _picked_time < _profile_count:
+            profile_position = _picked_time
+        elif _profile_count > 0:
+            profile_position = _profile_count // 2
+            profile_position_note = (
+                f"the profile position selected before this view change ({_picked_time}) is "
+                f"not in this view, which has {_profile_count} stored profile(s): the "
+                "middle one is shown"
+            )
+        if profile_position is not None and _wanted_time is not None:
+            _shown_time = float(_time[profile_position])
+            if not np.isclose(_shown_time, float(_wanted_time)) and not profile_position_note:
+                profile_position_note = (
+                    f"the time you last selected ({float(_wanted_time):.4f} s) is not a "
+                    f"stored profile of this view: the middle stored profile at "
+                    f"{_shown_time:.4f} s is shown"
+                )
+
     if gate_stats is not None and gate_picker.value is not None:
         _depths = np.asarray(gate_stats.depths_mm, dtype=float)
-        _picked = int(gate_picker.value)
-        _count = int(_depths.size)
-        _wanted = get_reader_gate_mm()
-        if 0 <= _picked < _count:
-            position = _picked
-        elif _count > 0:
-            position = _count // 2
+        _picked_gate = int(gate_picker.value)
+        _gate_count = int(_depths.size)
+        _wanted_gate = get_reader_gate_mm()
+        if 0 <= _picked_gate < _gate_count:
+            position = _picked_gate
+        elif _gate_count > 0:
+            position = _gate_count // 2
             position_note = (
-                f"the gate position selected before this view change ({_picked}) is not in "
-                f"this view, which has {_count} supported gate(s): the middle one is shown"
+                f"the gate position selected before this view change ({_picked_gate}) is not "
+                f"in this view, which has {_gate_count} supported gate(s): the middle one "
+                "is shown"
             )
-        if position is not None and _wanted is not None:
-            _shown = float(_depths[position])
-            if _shown != _wanted and not position_note:
+        if position is not None and _wanted_gate is not None:
+            _shown_depth = float(_depths[position])
+            if _shown_depth != _wanted_gate and not position_note:
                 position_note = (
-                    f"the gate you last selected (depth {_wanted:.3f} mm) is not a "
-                    f"supported gate of this view, which has {_count} supported gate(s) from "
-                    f"{float(_depths[0]):.3f} to {float(_depths[-1]):.3f} mm: the middle "
-                    f"supported gate (depth {_shown:.3f} mm) is shown"
+                    f"the gate you last selected (depth {_wanted_gate:.3f} mm) is not a "
+                    f"supported gate of this view, which has {_gate_count} supported gate(s) "
+                    f"from {float(_depths[0]):.3f} to {float(_depths[-1]):.3f} mm: the "
+                    f"middle supported gate (depth {_shown_depth:.3f} mm) is shown"
                 )
-    return position, position_note
+
+    return position, position_note, profile_position, profile_position_note
 
 
 @app.cell(hide_code=True)
-def gate_trace_figure(gate_stats, go, mo, np, position, position_note, sparse_view):
-    # Representative gate traces: the view's own sampled columns, drawn against the
-    # view's own stored timestamps. The three representatives are index picks
-    # (shallowest, median-depth, deepest supported gate) over the view's own
-    # `supported_columns`, and the selected gate is drawn on top — its column resolved
-    # from the depth the statistics result reported, by the view's own `column_of_depth`.
-    # No trace is averaged, smoothed or decimated.
-    _out = mo.md("_No gate traces: no view to read._")
+def gate_trace_figure(
+    gate_stats,
+    go,
+    make_subplots,
+    mo,
+    np,
+    position,
+    position_note,
+    sparse_view,
+):
+    # The selected gate shown as its stored temporal trace and its distribution. Both
+    # panels share velocity as the y-axis: the right panel is a horizontal histogram,
+    # with the same reported quantile/range landmarks previously drawn separately.
+    # Nothing is averaged, smoothed or decimated.
+    _out = mo.md("_No selected-gate trace: no view to read._")
     if sparse_view is not None and gate_stats is not None and position is not None:
         _values = np.asarray(sparse_view.values, dtype=float)
         _depths = np.asarray(sparse_view.depths_mm, dtype=float)
-        _columns = np.asarray(sparse_view.supported_columns)
-        _representatives = [_columns[0], _columns[len(_columns) // 2], _columns[-1]]
         _selected = sparse_view.column_of_depth(float(gate_stats.depths_mm[position]))
-        _fig = go.Figure()
-        for _column in _representatives:
-            _fig.add_trace(
-                go.Scatter(
-                    x=sparse_view.time_s, y=_values[:, _column], mode="lines",
-                    name=f"view column {_column} · depth {_depths[_column]:.3f} mm",
-                    line=dict(width=1.3),
-                )
-            )
+        _trace = _values[:, _selected]
+        _depth = float(_depths[_selected])
+        _minimum = float(gate_stats.of("min")[position])
+        _maximum = float(gate_stats.of("max")[position])
+        _q05 = float(gate_stats.of("q05")[position])
+        _q25 = float(gate_stats.of("q25")[position])
+        _q50 = float(gate_stats.of("q50")[position])
+        _q75 = float(gate_stats.of("q75")[position])
+        _q95 = float(gate_stats.of("q95")[position])
+        _hist_counts, _ = np.histogram(_trace, bins=30)
+        _landmark_x = -max(1.0, float(_hist_counts.max()) * 0.12)
+        _fig = make_subplots(
+            rows=1,
+            cols=2,
+            shared_yaxes=True,
+            column_widths=[0.68, 0.32],
+            horizontal_spacing=0.12,
+            subplot_titles=(
+                "stored velocity over time",
+                "histogram + reported distribution landmarks",
+            ),
+        )
         _fig.add_trace(
             go.Scatter(
-                x=sparse_view.time_s, y=_values[:, _selected], mode="lines",
-                name=f"SELECTED · view column {_selected} · depth "
-                f"{_depths[_selected]:.3f} mm",
-                line=dict(width=2.6, color="#111111"),
-            )
+                x=sparse_view.time_s,
+                y=_trace,
+                mode="lines",
+                name="selected gate trace",
+                line=dict(width=1.8, color="#111111"),
+                hovertemplate="time %{x:.6f} s<br>velocity %{y:.6f} mm/s<extra></extra>",
+            ),
+            row=1,
+            col=1,
         )
+        _fig.add_trace(
+            go.Histogram(
+                y=_trace,
+                orientation="h",
+                nbinsy=30,
+                name="velocity histogram",
+                marker=dict(color="#90CAF9"),
+                hovertemplate="profiles %{x}<br>velocity bin %{y}<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=[_landmark_x, _landmark_x],
+                y=[_minimum, _maximum],
+                mode="lines",
+                name="min to max",
+                line=dict(color="#90A4AE", width=1.6),
+                hovertemplate="observed extreme: %{y:.6f} mm/s<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=[_landmark_x, _landmark_x],
+                y=[_q25, _q75],
+                mode="lines",
+                name="q25 to q75 (IQR)",
+                line=dict(color="#1E88E5", width=10),
+                hovertemplate="interquartile landmark: %{y:.6f} mm/s<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=[_landmark_x],
+                y=[_q50],
+                mode="markers",
+                name="q50 (median)",
+                marker=dict(size=13, color="#0D47A1"),
+                hovertemplate="q50 (median): %{y:.6f} mm/s<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=[_landmark_x, _landmark_x],
+                y=[_q05, _q95],
+                mode="markers",
+                name="q05 and q95",
+                marker=dict(size=9, color="#FB8C00"),
+                hovertemplate="q05/q95 landmark: %{y:.6f} mm/s<extra></extra>",
+            ),
+            row=1,
+            col=2,
+        )
+        _fig.update_xaxes(
+            title_text="time from the record's first stored profile [s]", row=1, col=1
+        )
+        _fig.update_xaxes(title_text="profiles per bin", row=1, col=2)
+        _fig.update_yaxes(title_text="signed axial velocity [mm/s]", row=1, col=1)
         _fig.update_layout(
             title=(
-                f"{sparse_view.point_label} · gate traces of the view "
-                f"`{sparse_view.view.value}` · window {sparse_view.window_start_s:.4f}–"
-                f"{sparse_view.window_end_s:.4f} s (span {sparse_view.window_s:.4f} s)"
+                f"{sparse_view.point_label} · selected gate at depth {_depth:.3f} mm · "
+                f"view `{sparse_view.view.value}` · window "
+                f"{sparse_view.window_start_s:.4f}–{sparse_view.window_end_s:.4f} s "
+                f"(span {sparse_view.window_s:.4f} s)"
             ),
-            xaxis_title="time from the record's first stored profile [s]",
-            yaxis_title="signed axial velocity [mm/s]",
+            legend=dict(
+                orientation="v", yanchor="top", y=1, xanchor="left", x=1.02
+            ),
+            margin=dict(r=190),
             height=460,
         )
         _plot = mo.ui.plotly(_fig)
@@ -1125,110 +1324,21 @@ def gate_trace_figure(gate_stats, go, mo, np, position, position_note, sparse_vi
             else _plot
         )
     _out
+
     return
 
 
 @app.cell(hide_code=True)
-def time_slice_figure(go, mo, np, sparse_view):
-    # Representative time slices: one stored profile read across the view's native
-    # gates at its own timestamp. The three slices are index picks (first, middle, last
-    # stored profile of the view) and the depth axis is the instrument's own gate
-    # coordinate; nothing is interpolated onto a new grid. Only the view's own
-    # supported columns are drawn, and they are the view's own list of them.
-    _out = mo.md("_No time slices: no view to read._")
-    if sparse_view is not None:
-        _values = np.asarray(sparse_view.values, dtype=float)
-        _depths = np.asarray(sparse_view.depths_mm, dtype=float)
-        _columns = np.asarray(sparse_view.supported_columns)
-        _profiles = _values.shape[0]
-        _indices = [0, _profiles // 2, _profiles - 1]
-        _fig = go.Figure()
-        for _index in _indices:
-            _fig.add_trace(
-                go.Scatter(
-                    x=_values[_index, _columns], y=_depths[_columns],
-                    mode="lines+markers",
-                    name=f"stored profile {_index} · t = "
-                    f"{float(sparse_view.time_s[_index]):.4f} s",
-                )
-            )
-        _fig.update_layout(
-            title=(
-                f"{sparse_view.point_label} · time slices of the view "
-                f"`{sparse_view.view.value}` · supported gates only "
-                f"({_columns.size} of {_depths.size})"
-            ),
-            xaxis_title="signed axial velocity [mm/s]",
-            yaxis_title="native gate depth [mm]",
-            height=460,
-        )
-        _out = mo.ui.plotly(_fig)
-    _out
-    return
-
-
-@app.cell(hide_code=True)
-def gate_distribution_figure(gate_stats, go, mo, np, position, statistic_units):
-    # The per-gate distribution as the statistics module reports it: min, q05, q25,
-    # q50, q75, q95 and max are read straight out of the result and drawn as they are
-    # — no box plot is re-derived here and no whisker is chosen by this notebook. The
-    # table below carries every statistic of the selected gate, and a value the module
-    # reports as NaN is printed as undefined rather than as a zero.
-    _out = mo.md("_No per-gate distribution: no statistics to show._")
+def gate_statistics_table(gate_stats, mo, np, position):
+    # Exact selected-gate statistics. The trace-and-histogram figure immediately above
+    # draws its min/max, q05/q25/q50/q75/q95 landmarks; this table remains the full,
+    # auditable readout returned by `sparse_gate_stats`.
+    _out = mo.md("_No selected-gate statistics: no result to show._")
     if gate_stats is not None and position is not None:
-        _position = position
-        _depth = float(gate_stats.depths_mm[_position])
-        _names = gate_stats.statistic_names
-        _minimum = float(gate_stats.of("min")[_position])
-        _maximum = float(gate_stats.of("max")[_position])
-        _q05 = float(gate_stats.of("q05")[_position])
-        _q25 = float(gate_stats.of("q25")[_position])
-        _q50 = float(gate_stats.of("q50")[_position])
-        _q75 = float(gate_stats.of("q75")[_position])
-        _q95 = float(gate_stats.of("q95")[_position])
-        _fig = go.Figure()
-        _fig.add_trace(
-            go.Scatter(
-                x=[_minimum, _maximum], y=[0, 0], mode="lines",
-                name="min → max (the reported extremes)",
-                line=dict(color="#90A4AE", width=1.6),
-            )
-        )
-        _fig.add_trace(
-            go.Scatter(
-                x=[_q25, _q75], y=[0, 0], mode="lines",
-                name="q25 → q75 (the reported interquartile range)",
-                line=dict(color="#1E88E5", width=10),
-            )
-        )
-        _fig.add_trace(
-            go.Scatter(
-                x=[_q50], y=[0], mode="markers", name="q50 (equals the frozen median)",
-                marker=dict(size=13, color="#0D47A1"),
-            )
-        )
-        _fig.add_trace(
-            go.Scatter(
-                x=[_q05, _q95], y=[0, 0], mode="markers+text",
-                name="q05 and q95",
-                text=[f"{_q05:.4f}", f"{_q95:.4f}"], textposition="bottom center",
-                marker=dict(size=9, color="#FB8C00"),
-            )
-        )
-        _fig.update_layout(
-            title=(
-                f"gate depth {_depth:.3f} mm · view "
-                f"`{gate_stats.provenance.view.value}` · distribution as "
-                "`sparse_gate_stats` reports it "
-                f"({gate_stats.provenance.profiles} profiles)"
-            ),
-            xaxis_title=f"velocity [{statistic_units('mean')}]",
-            yaxis=dict(showticklabels=False, range=[-1.0, 1.0]),
-            height=330,
-        )
+        _depth = float(gate_stats.depths_mm[position])
         _rows = []
-        for _index, _name in enumerate(_names):
-            _value = float(gate_stats.statistics[_index][_position])
+        for _index, _name in enumerate(gate_stats.statistic_names):
+            _value = float(gate_stats.statistics[_index][position])
             _rows.append(
                 f"| `{_name}` | "
                 + (f"{_value:.6f}" if np.isfinite(_value) else "**undefined (NaN)**")
@@ -1236,29 +1346,24 @@ def gate_distribution_figure(gate_stats, go, mo, np, position, statistic_units):
             )
         _table = "\n".join(
             [
-                f"| statistic of gate depth {_depth:.3f} mm "
-                f"(supported gate {_position + 1} of {gate_stats.depths_mm.size}) "
-                "| value | unit |",
+                f"### Exact statistics — gate depth {_depth:.3f} mm "
+                f"(supported gate {position + 1} of {gate_stats.depths_mm.size})",
+                "| statistic | value | unit |",
                 "| --- | --- | --- |",
             ]
             + _rows
         )
-        _out = mo.vstack(
-            [
-                mo.ui.plotly(_fig),
-                mo.md(
-                    _table
-                    + "\n\nAn entry marked **undefined (NaN)** is the module's own "
-                    "constant-trace rule reporting that a gate with no variance has no "
-                    "shape to describe; it is not a measured zero. "
-                    f"mad_scaled is scaled by {gate_stats.mad_scale:g} "
-                    f"({gate_stats.mad_scaling}) and every percentile uses "
-                    f"numpy's `{gate_stats.percentile_method}` interpolation, "
-                    "as the result declares."
-                ),
-            ]
+        _out = mo.md(
+            _table
+            + "\n\nAn entry marked **undefined (NaN)** is the module's own "
+            "constant-trace rule: a gate with no variance has no shape to describe; it "
+            "is not a measured zero. "
+            f"mad_scaled is scaled by {gate_stats.mad_scale:g} "
+            f"({gate_stats.mad_scaling}), and every percentile uses NumPy's "
+            f"`{gate_stats.percentile_method}` interpolation, as the result declares."
         )
     _out
+
     return
 
 
@@ -1307,12 +1412,18 @@ def recurrence_result(
 
 @app.cell(hide_code=True)
 def recurrence_figure(
-    RecurrenceVerdict, go, make_subplots, mo, np, recurrence, recurrence_error, sparse_view
+    RecurrenceVerdict,
+    go,
+    make_subplots,
+    mo,
+    np,
+    recurrence,
+    recurrence_error,
+    sparse_view,
 ):
-    # The raw trace beside the trace the module actually correlated, and the normalized
-    # autocorrelation the module returned. The curve is drawn as returned — no curve is
-    # drawn when the verdict is anything but `defined`, because the module returns none;
-    # instead its own message is printed under the raw trace, which is still shown.
+    # The selected gate's raw trace, the analysed trace, and its normalized autocorrelation.
+    # The method note makes the finite-window overlap explicit: it is an intentional feature
+    # of the estimator, not an unlabelled visual decay.
     _out = mo.md(
         "_No recurrence: no gate trace is available for the selected view._"
         + (f"\n\n`{recurrence_error}`" if recurrence_error else "")
@@ -1326,9 +1437,32 @@ def recurrence_figure(
             else np.arange(_raw.size, dtype=float)
         )
         _defined = recurrence.verdict is RecurrenceVerdict.DEFINED
+        _method = mo.md(
+            r"""
+    **Method — normalized autocorrelation.** For the analysed continuous trace
+    \(x(t)\) over a finite window \([t_0, t_1]\), the corresponding quantity is
+
+    \[
+    R(\tau) =
+    \frac{\int_{t_0}^{t_1-\tau} x(t)\,x(t+\tau)\,dt}
+         {\int_{t_0}^{t_1} x(t)^2\,dt}.
+    \]
+
+    The notebook evaluates the stored-sample version of this expression: the numerator
+    uses only pairs that overlap after a lag, while the denominator stays fixed at the
+    full zero-lag energy. Consequently, fewer pairs contribute at longer lags and the
+    curve has an intentional finite-window taper. Read local peaks, especially early
+    ones, as candidate recurrence lags; do not read a later curve height alone as an
+    untapered recurrence strength. Diamonds mark every local maximum currently reported
+    by the backend, so a split or noisy peak is visible rather than hidden. The analysed
+    trace uses the selected detrending rule.
+    """
+        )
         if _defined:
             _fig = make_subplots(
-                rows=2, cols=1, vertical_spacing=0.16,
+                rows=2,
+                cols=1,
+                vertical_spacing=0.16,
                 subplot_titles=(
                     "the trace: raw as stored, and what the module correlated",
                     "normalized autocorrelation of the analysed trace",
@@ -1336,54 +1470,70 @@ def recurrence_figure(
             )
         else:
             _fig = make_subplots(
-                rows=1, cols=1,
+                rows=1,
+                cols=1,
                 subplot_titles=("the trace: raw as stored (no curve was returned)",),
             )
         _fig.add_trace(
             go.Scatter(
-                x=_times, y=_raw, mode="lines", name="raw trace (as stored)",
+                x=_times,
+                y=_raw,
+                mode="lines",
+                name="raw trace (as stored)",
                 line=dict(color="#546E7A", width=1.4),
             ),
-            row=1, col=1,
+            row=1,
+            col=1,
         )
         if _defined:
             _fig.add_trace(
                 go.Scatter(
-                    x=_times, y=_analysed, mode="lines",
+                    x=_times,
+                    y=_analysed,
+                    mode="lines",
                     name=f"analysed trace (detrending `{recurrence.detrending.value}`)",
                     line=dict(color="#1E88E5", width=1.6),
                 ),
-                row=1, col=1,
+                row=1,
+                col=1,
             )
             _fig.add_trace(
                 go.Scatter(
-                    x=recurrence.lag_s, y=recurrence.acf, mode="lines",
+                    x=recurrence.lag_s,
+                    y=recurrence.acf,
+                    mode="lines",
                     name="normalized ACF",
                     line=dict(color="#6D4C41", width=1.9),
                 ),
-                row=2, col=1,
+                row=2,
+                col=1,
             )
-            _fig.add_hline(y=0.0, line=dict(color="#B0BEC5", width=1.0), row=2, col=1)
-            for _quantity, _colour, _dash in (
-                (recurrence.first_zero_crossing, "#E53935", "dot"),
-                (recurrence.decay_1e_lag, "#FB8C00", "dash"),
-            ):
-                if bool(_quantity.supported):
-                    _fig.add_vline(
-                        x=float(_quantity.value),
-                        line=dict(color=_colour, width=1.4, dash=_dash),
-                        row=2, col=1,
-                        annotation_text=(
-                            "first zero crossing"
-                            if _colour == "#E53935"
-                            else "1/e decay lag"
+            _peaks = tuple(recurrence.recurrence_peaks)
+            if _peaks:
+                _fig.add_trace(
+                    go.Scatter(
+                        x=[_peak.lag_s for _peak in _peaks],
+                        y=[_peak.correlation for _peak in _peaks],
+                        mode="markers",
+                        name="detected local maxima",
+                        marker=dict(color="#FB8C00", size=8, symbol="diamond"),
+                        customdata=[[_peak.weak, _peak.reason] for _peak in _peaks],
+                        hovertemplate=(
+                            "lag %{x:.4f} s<br>normalized ACF %{y:.3f}"
+                            "<br>weak %{customdata[0]}<br>%{customdata[1]}<extra></extra>"
                         ),
-                    )
+                    ),
+                    row=2,
+                    col=1,
+                )
+            _fig.add_hline(y=0.0, line=dict(color="#B0BEC5", width=1.0), row=2, col=1)
             if bool(recurrence.period_claim.supported):
                 _fig.add_vline(
                     x=float(recurrence.period_claim.period_s),
                     line=dict(color="#43A047", width=2.0, dash="dot"),
-                    row=2, col=1, annotation_text="claimed period",
+                    row=2,
+                    col=1,
+                    annotation_text="claimed period",
                 )
         _fig.update_layout(
             title=(
@@ -1395,118 +1545,293 @@ def recurrence_figure(
             ),
             height=640 if _defined else 380,
         )
-        _fig.update_xaxes(title_text="time from the record's first stored profile [s]",
-                          row=1, col=1)
+        _fig.update_xaxes(
+            title_text="time from the record's first stored profile [s]",
+            row=1,
+            col=1,
+        )
         _fig.update_yaxes(title_text=f"velocity [{recurrence.unit}]", row=1, col=1)
         if _defined:
             _fig.update_xaxes(title_text="lag [s]", row=2, col=1)
             _fig.update_yaxes(title_text="normalized autocorrelation", row=2, col=1)
-        _out = mo.ui.plotly(_fig)
+        _out = mo.vstack([_method, mo.ui.plotly(_fig)])
     _out
     return
 
 
 @app.cell(hide_code=True)
 def recurrence_readout(mo, recurrence, recurrence_error):
-    # Everything the recurrence result says about itself: the verdict and its message,
-    # the timebase verdict that decides whether a lag in seconds may be claimed at all
-    # and why, what the stored stamps resolve (lag and frequency resolution), the
-    # descriptive quantities with their own support verdicts and reasons, the peaks, and
-    # the period claim with its thresholds. An unsupported quantity is printed as the
-    # module's own statement — never as a zero and never as a number this notebook
-    # supplied — and a summary the module could not compute is printed as `None`.
+    # A compact recurrence readout: the method note above explains the estimator; this cell
+    # keeps only the evidence a reader needs to assess candidate recurrence peaks and whether
+    # the backend permits a period claim.
     if recurrence is None:
         _out = mo.md(
             "_No recurrence result._"
             + (f"\n\n`{recurrence_error}`" if recurrence_error else "")
         )
     else:
-        def _quantity_line(name, quantity):
-            if bool(quantity.supported):
-                return (
-                    f"- **{name}**: **{quantity.value!r} {quantity.unit}** — "
-                    f"{quantity.reason}"
-                )
-            return f"- **{name}**: **not reported** — {quantity.reason}"
-
-        def _measured(
-            value, unit="", prefix="", none_text="**not defined by this window**"
-        ):
-            """A timing quantity for display: `None` reads as undefined, never as a zero."""
-            return none_text if value is None else f"{prefix}{value!r}{unit}"
-
-        _lines = [
-            f"**Recurrence — gate depth {recurrence.depth_mm:.3f} mm, view "
-            f"`{recurrence.view.value}`** · `{recurrence.relative_path}` (gate column "
-            f"{recurrence.gate_index} of the view, point `{recurrence.label}`)",
-            "",
-            f"- trace: `{recurrence.quantity}` [{recurrence.unit}] · "
-            f"{recurrence.profile_count} profiles · window "
-            f"{recurrence.window_start_s:.4f}–{recurrence.window_end_s:.4f} s "
-            f"(duration {recurrence.window_duration_s!r} s)",
-            f"- estimator: {recurrence.acf_estimator} · detrending "
-            f"`{recurrence.detrending.value}`",
-            f"- **timebase `{recurrence.timebase.value}`**: {recurrence.timebase_reason} "
-            f"· this timebase supports claims in seconds, regardless of what this "
-            f"particular trace resolves: **{recurrence.lag_claims_supported}**",
-            f"- **verdict `{recurrence.verdict.value}`**: {recurrence.message}",
-            "",
-            f"- **resolution**: sample interval "
-            f"{_measured(recurrence.sample_interval_s, ' s')} · lag resolution "
-            f"{_measured(recurrence.lag_resolution_s, ' s')} (one stored profile "
-            "period — the only lag step the timestamps define) · frequency resolution "
-            f"1/window = {_measured(recurrence.frequency_resolution_hz, ' Hz')} · lag grid: "
-            f"{recurrence.lag_grid_rule}",
-            f"- reported lag range {_measured(recurrence.max_lag_s, ' s', '0 … ')} "
-            f"(requested {_measured(recurrence.requested_max_lag_s, ' s', none_text='**not requested**')}) "
-            f"· largest relative interval deviation "
-            f"{_measured(recurrence.max_relative_interval_deviation)}",
-            f"- trace summaries: mean of the trace as stored "
-            f"{recurrence.trace_mean_mm_s!r} mm/s · std of the analysed series "
-            f"{recurrence.trace_std_mm_s!r} mm/s · stored exact zeros "
-            f"{recurrence.trace_zero_fraction!r}",
-        ]
-        if recurrence.linear_trend_mm_s_per_s is not None:
-            _lines.append(
-                f"- linear trend removed by the module: "
-                f"{recurrence.linear_trend_mm_s_per_s!r} mm/s per s"
-            )
-        _lines += [
-            f"- thresholds this result carries: weak-peak correlation "
-            f"{recurrence.weak_peak_correlation!r} · min candidate cycles "
-            f"{recurrence.min_candidate_cycles!r} · min peak lag steps "
-            f"{recurrence.min_peak_lag_steps} · constant-trace threshold "
-            f"{recurrence.constant_trace_threshold_mm_s!r} mm/s",
-            "",
-            _quantity_line("first zero crossing", recurrence.first_zero_crossing),
-            _quantity_line("1/e decay lag", recurrence.decay_1e_lag),
-            _quantity_line("integral time", recurrence.integral_time),
-            "",
-            f"- **peaks**: {recurrence.peaks_reason}",
-        ]
-        for _peak in recurrence.recurrence_peaks:
-            _lines.append(
-                f"  - lag {_peak.lag_s!r} s · correlation {_peak.correlation!r} · "
-                f"weak {_peak.weak} · preceded by a dip below the weak threshold "
-                f"{_peak.preceded_by_dip_below_weak_threshold} — {_peak.reason}"
-            )
         _claim = recurrence.period_claim
-        _lines += [
-            "",
-            f"- **period claim**: supported `{_claim.supported}` — {_claim.reason}",
+        _early_peaks = [
+            _peak for _peak in recurrence.recurrence_peaks if _peak.lag_s <= 1.0
         ]
-        if _claim.peak_lag_s is not None:
-            _lines.append(
-                f"  - peak evidence: lag {_claim.peak_lag_s!r} s · correlation "
-                f"{_claim.peak_correlation!r} · candidate cycles in the window "
-                f"{_claim.candidate_cycles_in_window!r}"
+        _lines = [
+            f"**Candidate recurrence peaks — gate depth {recurrence.depth_mm:.3f} mm, "
+            f"view `{recurrence.view.value}`**",
+            "",
+            f"- analysed with `{recurrence.detrending.value}` detrending over "
+            f"{recurrence.profile_count} profiles and {recurrence.window_duration_s:.3f} s "
+            f"(lag step {recurrence.lag_resolution_s:.4f} s; timebase "
+            f"`{recurrence.timebase.value}`).",
+            f"- **period claim: `{_claim.supported}`** — {_claim.reason}",
+            "",
+            "The table lists local ACF maxima in the first second, where the finite-window "
+            "overlap taper is least severe. They are descriptive candidate lags, not periods "
+            "unless the period claim above is supported.",
+            "",
+            "| candidate lag [s] | normalized ACF | status |",
+            "| ---: | ---: | :--- |",
+        ]
+        if _early_peaks:
+            _lines.extend(
+                f"| {_peak.lag_s:.4f} | {_peak.correlation:.3f} | "
+                f"{'weak candidate' if _peak.weak else 'candidate'} |"
+                for _peak in _early_peaks
             )
-        if _claim.supported:
-            _lines.append(
-                f"  - period {_claim.period_s!r} s, resolved to one lag step "
-                f"{_claim.period_resolution_s!r} s"
-            )
+        else:
+            _lines.append("| — | — | no local maximum in the first second |")
         _out = mo.md("\n".join(_lines))
+    _out
+    return
+
+
+@app.cell(hide_code=True)
+def acf_baseline_residual(
+    RecurrenceVerdict,
+    go,
+    make_subplots,
+    mo,
+    np,
+    recurrence,
+    recurrence_error,
+):
+    # Exploratory only: separate a slowly varying ACF baseline from faster residual structure.
+    # This does not alter `recurrence`, its backend peak list, or its period claim.
+    _out = mo.md(
+        "_No ACF residual: no recurrence result is available for the selected view._"
+        + (f"\n\n`{recurrence_error}`" if recurrence_error else "")
+    )
+    if recurrence is not None and recurrence.verdict is RecurrenceVerdict.DEFINED:
+        _lag_s = np.asarray(recurrence.lag_s, dtype=float)
+        _acf = np.asarray(recurrence.acf, dtype=float)
+        _sigma_s = 0.10
+        _radius = max(1, int(np.ceil(4.0 * _sigma_s / recurrence.lag_resolution_s)))
+        _offset_s = np.arange(-_radius, _radius + 1, dtype=float) * recurrence.lag_resolution_s
+        _kernel = np.exp(-0.5 * (_offset_s / _sigma_s) ** 2)
+        _kernel /= np.sum(_kernel)
+        _baseline = np.convolve(
+            np.pad(_acf, (_radius, _radius), mode="reflect"), _kernel, mode="valid"
+        )
+        _residual = _acf - _baseline
+        _method = mo.md(
+            rf"""
+    ### Exploratory ACF residual
+
+    This cell does **not** re-estimate the trace autocorrelation or change the backend
+    period decision. It only decomposes the displayed ACF \(R(\tau)\) into a local smooth
+    baseline and a residual:
+
+    \[
+    B(\tau) = (G_{{\sigma}} * R)(\tau), \qquad
+    R_{{\mathrm{{residual}}}}(\tau) = R(\tau) - B(\tau),
+    \]
+
+    where \(G_{{\sigma}}\) is a unit-area Gaussian kernel with
+    \(\sigma = {_sigma_s:.2f}\,\mathrm{{s}}\), evaluated on the existing lag grid and
+    reflect-padded at the two ends. It is a visual high-pass separation: broad ACF
+    structure remains in \(B\), while faster departures appear in the residual. It is
+    not a fitted 2 s oscillation, a new recurrence estimator, or a period claim.
+    """
+        )
+        _fig = make_subplots(
+            rows=2,
+            cols=1,
+            vertical_spacing=0.15,
+            subplot_titles=(
+                "reported ACF and exploratory smooth baseline",
+                "ACF residual after subtracting the smooth baseline",
+            ),
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=_lag_s,
+                y=_acf,
+                mode="lines",
+                name="reported normalized ACF",
+                line=dict(color="#6D4C41", width=1.8),
+            ),
+            row=1,
+            col=1,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=_lag_s,
+                y=_baseline,
+                mode="lines",
+                name=f"Gaussian baseline (σ={_sigma_s:.2f} s)",
+                line=dict(color="#1E88E5", width=2.0),
+            ),
+            row=1,
+            col=1,
+        )
+        _fig.add_trace(
+            go.Scatter(
+                x=_lag_s,
+                y=_residual,
+                mode="lines",
+                name="ACF residual",
+                line=dict(color="#FB8C00", width=1.8),
+            ),
+            row=2,
+            col=1,
+        )
+        _fig.add_hline(y=0.0, line=dict(color="#B0BEC5", width=1.0), row=2, col=1)
+        _fig.update_layout(
+            title=(
+                f"Exploratory ACF baseline separation · gate depth "
+                f"{recurrence.depth_mm:.3f} mm · detrending "
+                f"`{recurrence.detrending.value}`"
+            ),
+            height=620,
+        )
+        _fig.update_xaxes(title_text="lag [s]", row=2, col=1)
+        _fig.update_yaxes(title_text="normalized ACF", row=1, col=1)
+        _fig.update_yaxes(title_text="ACF residual", row=2, col=1)
+        _out = mo.vstack([_method, mo.ui.plotly(_fig)])
+    _out
+    return
+
+
+@app.cell(hide_code=True)
+def acf_residual_spectrum(
+    RecurrenceVerdict,
+    go,
+    mo,
+    np,
+    recurrence,
+    recurrence_error,
+):
+    # Exploratory spectrum of the ACF residual. This is intentionally distinct from SA2.3's
+    # trace periodogram: it is a compact way to inspect scales remaining after the ACF baseline
+    # separation, not a second spectral estimator for the recorded velocity trace.
+    _out = mo.md(
+        "_No residual spectrum: no defined recurrence result is available for the selected view._"
+        + (f"\n\n`{recurrence_error}`" if recurrence_error else "")
+    )
+    if recurrence is not None and recurrence.verdict is RecurrenceVerdict.DEFINED:
+        _lag_s = np.asarray(recurrence.lag_s, dtype=float)
+        _acf = np.asarray(recurrence.acf, dtype=float)
+        _sigma_s = 0.10
+        _radius = max(1, int(np.ceil(4.0 * _sigma_s / recurrence.lag_resolution_s)))
+        _offset_s = np.arange(-_radius, _radius + 1, dtype=float) * recurrence.lag_resolution_s
+        _kernel = np.exp(-0.5 * (_offset_s / _sigma_s) ** 2)
+        _kernel /= np.sum(_kernel)
+        _baseline = np.convolve(
+            np.pad(_acf, (_radius, _radius), mode="reflect"), _kernel, mode="valid"
+        )
+        _residual = _acf - _baseline
+        _window = np.hanning(_residual.size)
+        _frequencies_hz = np.fft.rfftfreq(_residual.size, d=recurrence.lag_resolution_s)
+        _magnitude = np.abs(np.fft.rfft((_residual - np.mean(_residual)) * _window))
+        _nonzero_scale = float(np.max(_magnitude[1:]))
+        _relative_magnitude = (
+            _magnitude / _nonzero_scale
+            if _nonzero_scale > 0.0
+            else np.zeros_like(_magnitude)
+        )
+        _peak_indices = np.array(
+            [
+                _index
+                for _index in range(1, _relative_magnitude.size - 1)
+                if _relative_magnitude[_index] > _relative_magnitude[_index - 1]
+                and _relative_magnitude[_index] >= _relative_magnitude[_index + 1]
+            ],
+            dtype=int,
+        )
+        _ranked_peak_indices = _peak_indices[
+            np.argsort(_relative_magnitude[_peak_indices])[::-1]
+        ]
+        _method = mo.md(
+            rf"""
+    ### Exploratory residual-spectrum peaks
+
+    This is the one-sided FFT magnitude of the **Gaussian-baseline residual** in the
+    cell above. Before the transform, the residual mean is removed and a symmetric Hann
+    window is applied to reduce the finite-lag endpoint discontinuity. The vertical scale
+    is normalized to its largest non-zero-frequency bin, so it is for relative comparison
+    only. Orange diamonds mark every strict adjacent-bin local maximum; the compact table
+    lists the five strongest.
+
+    It is **not** SA2.3's velocity PSD and it does not make a recurrence-period claim.
+    It is an exploratory frequency view of the displayed finite ACF residual. Its bin
+    spacing is \({_frequencies_hz[1]:.4f}\,\mathrm{{Hz}}\), so a bin's reciprocal period is
+    only resolved to that finite-window grid.
+    """
+        )
+        _figure = go.Figure()
+        _figure.add_trace(
+            go.Scatter(
+                x=_frequencies_hz[1:],
+                y=_relative_magnitude[1:],
+                mode="lines",
+                name="residual FFT magnitude",
+                line=dict(color="#6D4C41", width=1.9),
+                customdata=np.column_stack((1.0 / _frequencies_hz[1:],)),
+                hovertemplate=(
+                    "frequency %{x:.4f} Hz<br>period %{customdata[0]:.4f} s"
+                    "<br>relative magnitude %{y:.3f}<extra></extra>"
+                ),
+            )
+        )
+        if _peak_indices.size:
+            _figure.add_trace(
+                go.Scatter(
+                    x=_frequencies_hz[_peak_indices],
+                    y=_relative_magnitude[_peak_indices],
+                    mode="markers",
+                    name="detected spectral peaks",
+                    marker=dict(color="#FB8C00", size=9, symbol="diamond"),
+                    customdata=np.column_stack((1.0 / _frequencies_hz[_peak_indices],)),
+                    hovertemplate=(
+                        "frequency %{x:.4f} Hz<br>period %{customdata[0]:.4f} s"
+                        "<br>relative magnitude %{y:.3f}<extra></extra>"
+                    ),
+                )
+            )
+        _figure.update_layout(
+            title=(
+                f"Exploratory FFT of ACF residual · gate depth {recurrence.depth_mm:.3f} mm "
+                f"· detrending `{recurrence.detrending.value}`"
+            ),
+            height=460,
+            xaxis=dict(title="frequency [Hz]", range=[0.0, min(10.0, _frequencies_hz[-1])]),
+            yaxis=dict(title="relative FFT magnitude [max = 1]"),
+        )
+        _lines = [
+            "**Five strongest detected residual-spectrum peaks**",
+            "",
+            "| frequency [Hz] | reciprocal period [s] | relative magnitude |",
+            "| ---: | ---: | ---: |",
+        ]
+        if _ranked_peak_indices.size:
+            _lines.extend(
+                f"| {_frequencies_hz[_index]:.4f} | "
+                f"{1.0 / _frequencies_hz[_index]:.4f} | "
+                f"{_relative_magnitude[_index]:.3f} |"
+                for _index in _ranked_peak_indices[:5]
+            )
+        else:
+            _lines.append("| — | — | no strict local maximum |")
+        _out = mo.vstack([_method, mo.ui.plotly(_figure), mo.md("\n".join(_lines))])
     _out
     return
 
@@ -1601,8 +1926,8 @@ def sa2_controls(mo):
 
 @app.cell(hide_code=True)
 def sa2_spectral_estimate(
-    SpectralPeriodogramError,
     SparseViewError,
+    SpectralPeriodogramError,
     detrending_picker,
     gate_stats,
     periodogram_of_view,
@@ -1644,7 +1969,7 @@ def sa2_spectral_estimate(
             )
         except (SpectralPeriodogramError, SparseViewError) as exc:
             spectral_error = f"{type(exc).__name__}: {exc}"
-    return spectral_estimate, spectral_error
+    return spectral_error, spectral_estimate
 
 
 @app.cell(hide_code=True)
@@ -1675,7 +2000,7 @@ def sa2_target_support(
             )
         except SpectralSupportError as exc:
             target_support_error = f"{type(exc).__name__}: {exc}"
-    return target_support_rows, target_support_error
+    return target_support_error, target_support_rows
 
 
 @app.cell(hide_code=True)
@@ -1687,8 +2012,8 @@ def sa2_spectrum_readout(
     position_note,
     sparse_view,
     sparse_view_error,
-    spectral_estimate,
     spectral_error,
+    spectral_estimate,
 ):
     # What this spectrum is, and what allowed it. Every value is read off the returned
     # `SpectralEstimate` or off the characterization / admission / provenance it carries;
@@ -1973,7 +2298,12 @@ def sa2_spectrum_figure(
 
 
 @app.cell(hide_code=True)
-def sa2_target_readout(mo, spectral_estimate, target_support_rows, target_support_error):
+def sa2_target_readout(
+    mo,
+    spectral_estimate,
+    target_support_error,
+    target_support_rows,
+):
     # The target-frequency rows. Each row shows overall supported/refused, band support,
     # analysis (admission) support, the target, the axis Nyquist, the nearest prospective
     # bin, the bin offset, the frequency resolution, `cycles_in_view` for *this* actual view
