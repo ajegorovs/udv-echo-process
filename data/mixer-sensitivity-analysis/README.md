@@ -13,7 +13,10 @@ with the settings each recording carried decoded from the file itself.
   **10 x 10 cm**, **5 cm** tall;
 - the measurement is **~2.5 cm off centre horizontally, perpendicular to the wall, at a height of
   ~2.5 cm** (i.e. at half the water depth);
-- the flow is **circular**, with **eddies in the corners**.
+- the flow is **circular**, with **eddies in the corners**;
+- *(2026-10-16, operator)* more precisely the flow is **a combination of a vortex and a toroid** — an
+  azimuthal swirl plus a toroidal recirculation. The four-probe 2x2 mounting that samples this vessel
+  is described separately, in [`../4-sensor-velocity/README.md`](../4-sensor-velocity/README.md).
 
 What that geometry looks like in the recorded numbers, read off the files: the window runs **10.16 →
 100.81 mm** of `c` = 1480 m/s path from the transducer face — from roughly 1 cm in front of the probe

@@ -91,6 +91,11 @@ byte-identical in every tree (`git hash-object` = `46f3a877`).
   [`marimo-integration-log.md`](../marimo-integration-log.md) entry 2026-10-16 (O39–O41).
 - **Inconsistency found, for step 1:** the picker's label reads "Recording (.BDD, content-sniffed)" while its option
   list also holds `.ADD` files and one misnamed `.jpg`.
+- **The rig is now described where the data lives** (owner grounding, 2026-10-16): the four-probe 2x2 layout with its
+  channel→position map, the operator's 90°-symmetry expectation (outer 6↔8, inner 7↔9), and the measured multiplexed
+  acquisition that constrains how a pair may be compared. Single homes: the mounting and the expectation in
+  [`data/4-sensor-velocity/README.md`](../../data/4-sensor-velocity/README.md), the vessel/pill/flow in
+  [`data/mixer-sensitivity-analysis/README.md`](../../data/mixer-sensitivity-analysis/README.md).
 
 **Owner priority (2026-10-16).** This is the next implementation effort after the bounded documentation
 publication/parking pass. No notebook implementation is part of that cleanup; re-derive the inventory before starting.
@@ -150,6 +155,14 @@ the instrument.
 - **Selected next (bounded): steps 1–2.** Re-derive the inventory table, then record the leading-notebook decision
   and the fate of the other twin. Stopping condition: the corrected table is in this checkpoint and the decision line
   exists — whichever outcome it records, not necessarily the recommendation.
+- **Also selected (owner, 2026-10-16), riding steps 4–5 rather than adding to them:** show the four channels so the
+  *pairs* can be compared, and decide how the **sensor placement** is presented — the two orthogonal mounts, the
+  inner and outer probe of each, the four channel numbers, and the vortex-plus-toroid flow they sample. The
+  constraint is binding: the pairs are sampled ~224 ms apart and are never simultaneous, so a pair view may put each
+  channel on its **recorded timestamps** and compare level, gate profiles or spectra, but it may **not** interpolate
+  or shift one channel onto another's samples — that is the open alignment decision, not a presentation choice.
+  Stopping condition: a recorded decision on the placement visual, and the pair comparison shown in the candidate
+  notebook with no resampling anywhere in it.
 - Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.
@@ -173,6 +186,11 @@ the instrument.
   `set_ui_value` leaves its exception in the owning cell's console-error channel while the structured error count stays
   `0`, and an integer-valued dropdown takes its option keys as strings:
   [`marimo-integration-log.md`](../marimo-integration-log.md) entry 2026-10-16 (O39–O41).
+- **2026-10-16 — the rig description and the comparison constraint are recorded with the data, not in this plan:**
+  [`data/4-sensor-velocity/README.md`](../../data/4-sensor-velocity/README.md) carries the operator's channel→position
+  map, the 90°-symmetry expectation, and the measured multiplex pattern (4 profiles per ~448 ms visit, per-channel
+  mean interval ~112 ms, visits offset 112 ms in the order 6→7→8→9), so a later session does not re-derive them. The
+  vessel, pill and flow stay single-homed in the mixer-sensitivity README.
 
 ## Next session
 
