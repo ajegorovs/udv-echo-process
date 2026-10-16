@@ -8,16 +8,17 @@ transcript.
 
 ## Current progress — 2026-10-16
 
-One row per area that is actually moving, and each row is a *position*, not a changelog:
-update it in place, in the same change that moves it. The detail behind a row is the section
-below or the area's own authority document — do not restate it here.
+One row per area that is actually moving, and each row is a *position*, not a changelog: update it in place, in the
+same change that moves it. **Rows stay short by construction** — position, next action, pointer. The detail behind a
+row lives in that area's plan (registered in [`PLANS.md`](../PLANS.md), whose convention is in `AGENTS.md` § Planning a
+task) or in the authority document the row names; it is never restated here.
 
 | Area | Current position | Next concrete action | Evidence / limits |
 |---|---|---|---|
 | Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer cursor/sidebar rework is uncommitted and preserved only in a local branch. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the cursor/sidebar rework. | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
 | Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | Review the resolvable effects and write a bounded synthesis. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
-| Four-sensor velocity recordings | **Not started**: `data/4-sensor-velocity/200RPM.BDD` loads as four staggered velocity streams, and neither an alignment nor an estimator path exists for them. | Decide how the four staggered channels are aligned — the reader emits no round/visit identity — before any estimator is built. | 4 × (400 profiles, 55 gates @ 1.095 mm, 44.2 s), adjacent-interval coefficient of variation 1.34; `io/dop/bdd.py` § Acquisition topology. |
+| Four-sensor velocity recordings | **Not started**: `data/4-sensor-velocity/200RPM.BDD` loads as four staggered velocity streams, and neither an alignment nor an estimator path exists for them. Direction selected 2026-10-16, no task plan yet ([`PLANS.md`](../PLANS.md)). | Decide how the four staggered channels are aligned — the reader emits no round/visit identity — before any estimator is built. | 4 × (400 profiles, 55 gates @ 1.095 mm, 44.2 s), adjacent-interval coefficient of variation 1.34; `io/dop/bdd.py` § Acquisition topology. |
 | `.BDD` artifact model | **Accepted**, with two hardening items still open in the rework plan. | Close them, or restate them as *proposed*. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md). |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
