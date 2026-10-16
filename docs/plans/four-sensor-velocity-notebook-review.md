@@ -154,7 +154,9 @@ the instrument.
 
 - **Selected next (bounded): steps 1–2.** Re-derive the inventory table, then record the leading-notebook decision
   and the fate of the other twin. Stopping condition: the corrected table is in this checkpoint and the decision line
-  exists — whichever outcome it records, not necessarily the recommendation.
+  exists — whichever outcome it records, not necessarily the recommendation. **Deferred on owner direction
+  (2026-10-16):** the owner directed work straight at the four-channel data, so the notebook below was built first; this
+  item is unstarted and is still the next bounded step after it.
 - **Also selected (owner, 2026-10-16), riding steps 4–5 rather than adding to them:** show the four channels so the
   *pairs* can be compared, and decide how the **sensor placement** is presented — the two orthogonal mounts, the
   inner and outer probe of each, the four channel numbers, and the vortex-plus-toroid flow they sample. The
@@ -166,6 +168,14 @@ the instrument.
   (raw values with the factor annotated, or normalised by a stated factor) — see the depth-profile test in
   [`data/4-sensor-velocity/README.md`](../../data/4-sensor-velocity/README.md), where the two expected-equal pairs agree
   in shape (r = +0.94 / +0.95) but differ in level by 1.31 / 1.24.
+- **Landed (2026-10-16), and the pair comparison it asks for: `notebooks/four_sensor_velocity.py`.** The owner asked to
+  start on the four-sensor data directly, so the four-channel view is a purpose-built notebook rather than a change to
+  the candidate under review (which keeps its single-channel scope and its reviewed file identity). It carries one
+  hardcoded recording (`data/4-sensor-velocity/200RPM.BDD`), a 2x2 overview of all four channels on **one shared
+  colour scale**, a 2x2 grid of depth profiles at the selected time, and a 2x2 grid of gate traces at the selected
+  gate; the time and gate cursors are sliders carrying the `signal_explorer.py` remembered-physical-coordinate pattern,
+  and each channel's **nearest stored profile** is used and its offset from the cursor printed rather than aligned away.
+  **Still open here:** the sensor-placement visual, and the decision on how the mount-to-mount level factor is shown.
 - Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.
@@ -194,6 +204,18 @@ the instrument.
   map, the 90°-symmetry expectation, and the measured multiplex pattern (4 profiles per ~448 ms visit, per-channel
   mean interval ~112 ms, visits offset 112 ms in the order 6→7→8→9), so a later session does not re-derive them. The
   vessel, pill and flow stay single-homed in the mixer-sensitivity README.
+- **2026-10-16 — the four-channel notebook's verification, named.** `marimo check notebooks/four_sensor_velocity.py`
+  clean; an executed HTML export whose three figures were read back at full resolution — the four heatmaps on one
+  shared ±246 mm/s scale with both cursors on every panel, the four depth profiles at the cursor time each carrying its
+  own timestamp and offset (ch6 +0.0, ch7 +112.6, ch8 −147.7, ch9 −35.5 ms) inside one shared y range, and the four gate
+  traces at gate 27 = 49.57 mm inside a shared x/y range. Two presentation defects were found this way and fixed before
+  the record was written: plotly clips a title longer than the plot area, and an unwrapped subplot title collides with
+  its neighbour's. **Also verified live**, in the browser-held session served to the tailnet: all 11 cells run to `idle`
+  with zero structured errors and no console exception; the time slider was moved 200 -> 100 and the kernel read-back
+  showed the dependent chain actually re-run (`selected_time_s` 22.2891 -> 11.1419 s, nearest profiles 100/100/99/99,
+  offsets +0.0/+111.3/-147.2/-35.6 ms) — the `mo.state` remembered-coordinate self-loop settles instead of fighting the
+  widget — and the value was then restored to its declared default 200 (22.2891 s). **Not verified:** a full `pytest`
+  run, because no `src/` change was made, so the suite was not re-run.
 
 ## Next session
 
