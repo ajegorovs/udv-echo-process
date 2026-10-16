@@ -175,7 +175,10 @@ the instrument.
   colour scale**, a 2x2 grid of depth profiles at the selected time, and a 2x2 grid of gate traces at the selected
   gate; the time and gate cursors are sliders carrying the `signal_explorer.py` remembered-physical-coordinate pattern,
   and each channel's **nearest stored profile** is used and its offset from the cursor printed rather than aligned away.
-  **Still open here:** the sensor-placement visual, and the decision on how the mount-to-mount level factor is shown.
+  The pair comparison is drawn as **overlays** (owner direction, same day): outer 6 vs 8 and inner 7 vs 9, each pair on
+  top of each other against gate depth and again against time, with one colour per channel pinned so the overlays match
+  the per-channel grids and the legend naming each trace's own stored profile or recorded span. **Still open here:** the
+  sensor-placement visual, and the decision on how the mount-to-mount level factor is shown.
 - Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.

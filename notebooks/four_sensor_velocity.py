@@ -11,11 +11,12 @@ def imports():
     import marimo as mo
     import numpy as np
     import plotly.graph_objects as go
+    from plotly.colors import qualitative
     from plotly.subplots import make_subplots
 
     from udv_echo_process.io import load
 
-    return Path, go, load, make_subplots, mo, np
+    return Path, go, load, make_subplots, mo, np, qualitative
 
 
 @app.cell(hide_code=True)
@@ -23,14 +24,17 @@ def intro(mo):
     mo.md("""
     # Four-sensor velocity preview — one recording, all four channels
 
-    The 2x2 orthogonal mounting of the four-sensor fixture (device channels 6, 7, 8, 9) in
-    four views:
+    The 2x2 orthogonal mounting of the four-sensor fixture (device channels 6, 7, 8, 9):
 
     1. **Overview** — all four channels as heatmaps on **one shared colour scale**, with
        both cursors drawn on every panel (vertical = selected time, horizontal = selected
        gate).
-    2. **Depth profiles at the selected time** — 2x2, velocity vs gate depth.
-    3. **Gate traces at the selected gate** — 2x2, velocity vs time.
+    2. **Depth profiles at the selected time** — 2x2, one channel per panel, velocity vs gate
+       depth.
+    3. **Gate traces at the selected gate** — 2x2, one channel per panel, velocity vs time.
+    4. **Pair overlays** — the pairs the mounting's 90-degree symmetry makes comparable, each
+       pair drawn on top of each other: **outer 6 vs 8** and **inner 7 vs 9**, first against
+       gate depth and then against time. This is the comparison the fixture exists for.
 
     **What this notebook refuses to do.** The four channels are *multiplexed*: one channel
     is visited at a time, ~112 ms apart in the order 6 -> 7 -> 8 -> 9, so no two channels
@@ -114,8 +118,34 @@ def channel_series(bundle, np):
         min(float(_t[0]) for _t in times.values()),
         max(float(_t[-1]) for _t in times.values()),
     )
+    # ONE colour per channel, taken from plotly's qualitative palette positionally so it
+    # matches what the per-channel grids' own colour cycle assigns: channel_ids order is the
+    # acquisition's visit order, so index 0..3 is ch6..ch9 in both places. Pinned here
+    # because a two-trace panel would otherwise take the cycle's first two colours and ch8
+    # would arrive in ch7's red.
+    channel_colors = {
+        _ch: qualitative.Plotly[_index % len(qualitative.Plotly)]
+        for _index, _ch in enumerate(channel_ids)
+    }
+    # The rig's pairing, from the operator's channel map recorded in
+    # `data/4-sensor-velocity/README.md`: channels 6 and 8 are the OUTER probes, both 30 mm
+    # from the vessel centre line in the two orthogonal mounts, and 7 and 9 are the INNER
+    # ones, both at 20 mm. That is a hardware claim, not something the numbers say, so it is
+    # written out here with its source rather than inferred — and only pairs whose members
+    # all exist in this recording are kept.
+    candidate_pairs = (
+        ("outer pair · 6 vs 8 (30 mm)", (6, 8)),
+        ("inner pair · 7 vs 9 (20 mm)", (7, 9)),
+    )
+    channel_pairs = tuple(
+        (_label, _members)
+        for _label, _members in candidate_pairs
+        if all(_member in channel_ids for _member in _members)
+    )
     return (
+        channel_colors,
         channel_ids,
+        channel_pairs,
         gate_depths_mm,
         quantity,
         same_gate_grid,
@@ -537,9 +567,187 @@ def gate_traces_at_gate(
 
 
 @app.cell(hide_code=True)
+def pair_profiles_at_time(
+    channel_colors,
+    channel_ids,
+    channel_pairs,
+    gate_depths_mm,
+    go,
+    make_subplots,
+    mo,
+    nearest_profile,
+    np,
+    profile_offset_s,
+    selected_depth_mm,
+    selected_time_s,
+    times,
+    unit,
+    values,
+):
+    # The pair overlays, first on the coordinate the channels genuinely share: the two probes
+    # the mounting's 90-degree symmetry makes equivalent, drawn ON TOP OF EACH OTHER — outer
+    # (6 vs 8) left, inner (7 vs 9) right. Depth needs no alignment at all, so each member
+    # contributes its stored profile nearest the cursor time and the legend carries that
+    # profile's own timestamp. The shared y range is what makes a level difference visible and
+    # the curves carry the shape difference; a systematic level factor is a per-mount hardware
+    # question, so it is read as an open cause from the caption below, never as "different".
+    _profile = {_ch: values[_ch][nearest_profile[_ch]] for _ch in channel_ids}
+    _span = max(float(np.nanmax(np.abs(_p))) for _p in _profile.values()) or 1.0
+    _fig = make_subplots(
+        rows=1,
+        cols=len(channel_pairs),
+        shared_yaxes=True,
+        horizontal_spacing=0.07,
+        subplot_titles=[_label for _label, _members in channel_pairs],
+    )
+    for _col, (_label, _members) in enumerate(channel_pairs, start=1):
+        for _ch in _members:
+            _fig.add_trace(
+                go.Scatter(
+                    x=gate_depths_mm,
+                    y=_profile[_ch],
+                    mode="lines+markers",
+                    name=(
+                        f"ch{_ch} · {times[_ch][nearest_profile[_ch]]:.4f} s "
+                        f"(Δ {profile_offset_s[_ch] * 1e3:+.0f} ms)"
+                    ),
+                    line=dict(width=1.8, color=channel_colors[_ch]),
+                    marker=dict(size=4),
+                    hovertemplate="depth %{x:.2f} mm<br>%{y:.2f} "
+                    + unit
+                    + "<extra></extra>",
+                ),
+                row=1,
+                col=_col,
+            )
+        _fig.add_vline(
+            x=selected_depth_mm,
+            line=dict(color="#43A047", width=1.5, dash="dash"),
+            row=1,
+            col=_col,
+        )
+    _fig.update_xaxes(range=[float(gate_depths_mm[0]), float(gate_depths_mm[-1])])
+    _fig.update_yaxes(range=[-_span, _span])
+    _title = (
+        f"pair overlays at t = {selected_time_s:.4f} s · velocity vs gate depth · shared y "
+        f"±{_span:.0f} {unit} · dashed = gate {selected_depth_mm:.2f} mm"
+    )
+    for _annotation in _fig.layout.annotations:
+        _annotation.font.size = 12
+    _fig.update_layout(
+        title=dict(text=_title, font=dict(size=13)),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, x=0, font=dict(size=11)),
+        height=660,
+        margin=dict(t=95, b=120, l=65, r=25),
+    )
+    mo.ui.plotly(_fig)
+    return
+
+
+@app.cell(hide_code=True)
+def pair_traces_at_gate(
+    channel_colors,
+    channel_ids,
+    channel_pairs,
+    go,
+    make_subplots,
+    mo,
+    np,
+    quantity,
+    selected_depth_mm,
+    selected_gate,
+    selected_time_s,
+    time_span_s,
+    times,
+    unit,
+    values,
+):
+    # The same two pairs overlaid on the TIME axis. Each channel keeps its own recorded
+    # timestamps — nothing is shifted onto the other's samples — so what this overlay shows
+    # is level, envelope and pattern on a shared axis, never a sample-by-sample pairing: at
+    # the same index the two members of a pair sit a quarter to a half visit cycle apart, and
+    # against a periodic flow that is a different process state rather than a small error.
+    _trace = {_ch: values[_ch][:, selected_gate] for _ch in channel_ids}
+    _span = max(float(np.nanmax(np.abs(_t))) for _t in _trace.values()) or 1.0
+    _fig = make_subplots(
+        rows=1,
+        cols=len(channel_pairs),
+        shared_yaxes=True,
+        horizontal_spacing=0.07,
+        subplot_titles=[_label for _label, _members in channel_pairs],
+    )
+    for _col, (_label, _members) in enumerate(channel_pairs, start=1):
+        for _ch in _members:
+            _fig.add_trace(
+                go.Scatter(
+                    x=times[_ch],
+                    y=_trace[_ch],
+                    mode="lines",
+                    name=(
+                        f"ch{_ch} · t {times[_ch][0]:.2f}–{times[_ch][-1]:.2f} s on its own "
+                        "stamps"
+                    ),
+                    line=dict(width=1.1, color=channel_colors[_ch]),
+                    hovertemplate="t %{x:.4f} s<br>%{y:.2f} " + unit + "<extra></extra>",
+                ),
+                row=1,
+                col=_col,
+            )
+        _fig.add_vline(
+            x=selected_time_s,
+            line=dict(color="#43A047", width=1.5, dash="dot"),
+            row=1,
+            col=_col,
+        )
+    _fig.update_xaxes(range=[time_span_s[0], time_span_s[1]])
+    _fig.update_yaxes(range=[-_span, _span])
+    _title = (
+        f"gate {selected_gate} = {selected_depth_mm:.2f} mm · {quantity} pair overlays vs "
+        f"time, each channel on its own recorded stamps · shared y ±{_span:.0f} {unit}"
+    )
+    for _annotation in _fig.layout.annotations:
+        _annotation.font.size = 12
+    _fig.update_layout(
+        title=dict(text=_title, font=dict(size=13)),
+        legend=dict(orientation="h", yanchor="bottom", y=-0.3, x=0, font=dict(size=11)),
+        height=660,
+        margin=dict(t=95, b=120, l=65, r=25),
+    )
+    mo.ui.plotly(_fig)
+    return
+
+
+@app.cell(hide_code=True)
+def pair_captions(mo):
+    mo.md("""
+    **Reading the pair overlays.** Each pair's two probes sample the same radii in the two
+    orthogonal mounts, so under a 90-degree-symmetric flow they should agree — these two
+    figures are where that either shows or does not.
+
+    - **Shape and level are separate readings.** Measured over all 400 profiles of this
+      recording ([`data/4-sensor-velocity/README.md`](../../data/4-sensor-velocity/README.md)),
+      the pairs' **time-mean depth profiles** agree in **shape** (r = +0.94 outer, +0.95
+      inner) and differ in **level** by **1.31** (outer) and **1.24** (inner) — the level
+      difference the shared y range makes visible here. A systematic per-mount level factor
+      has causes outside the flow being measured (probe sensitivity, coupling, mount
+      standoff), so it stays an **open cause**, and no pair is declared the same or different
+      in this notebook.
+    - **The depth overlay needs no alignment; the time overlay cannot have one.** Depth is
+      the coordinate all four channels share, so the depth overlay is a like-for-like
+      comparison. On the time axis the two traces were never sampled at the same instant —
+      read that panel for level, envelope and pattern, and take any sample-by-sample pairing
+      to the alignment decision this notebook deliberately does not make.
+    - **The legend is the provenance.** Every trace names the stored profile or the recorded
+      span it is drawn from, so a curve can always be traced back to samples rather than to
+      an interpolation.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
 def notes(mo):
     mo.md("""
-    **Reading these four views.**
+    **Reading these views.**
 
     - **Shared scales on purpose.** The heatmaps share one colour scale (± max |velocity|)
       and each 2x2 grid shares its y range. That is what lets a reader compare channels at
@@ -562,9 +770,10 @@ def notes(mo):
       convention of a mount rotated 90 degrees is not decoded here; the shared symmetric
       scale keeps the magnitudes comparable and shows the signs as stored, nothing more.
     - **Not here, deliberately.** No time alignment, no interpolation, no averaging across
-      channels, no pair difference curves and no placement figure. The placement figure and
-      the level-factor question are recorded as selected next work in
-      `docs/plans/four-sensor-velocity-notebook-review.md`.
+      channels, no *difference* curve between a pair's members (an overlay shows both signals,
+      not their difference — a difference curve would need the alignment the time axis cannot
+      justify) and no placement figure. The placement figure and the level-factor question are
+      recorded as selected next work in `docs/plans/four-sensor-velocity-notebook-review.md`.
     """)
     return
 
