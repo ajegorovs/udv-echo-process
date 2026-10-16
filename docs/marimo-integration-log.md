@@ -582,3 +582,73 @@ live in the same session without a restart.
 Sandbox recipe: launch a throwaway copy on loopback (`--headless --no-token`), materialize a session with
 `GET /sse?session_id=<uuid>&file=<abs path>` and wait for `kernel-ready`, then drive the provider. Machine bindings
 (overlay address, port, process id, sandbox path) are in the machine-local kit, not here.
+
+---
+
+### 2026-10-16 — workflow correction after four-sensor authoring audit (O42)
+
+- **O42 — MCP verification was not continuous MCP authoring.** The subsequent
+  `four_sensor_velocity.py` development wrote the initial notebook and later overlays
+  on disk, then used MCP to run/inspect them. After external edits, the live document
+  still showed 11 cells while disk held 14; a server relaunch recovered the disk version.
+  This is evidence of the observed divergence and recovery, not a general diagnosis of
+  marimo file watching and not an approved editing procedure. The earlier executed
+  exports/live read-backs remain implementation evidence, not kernel-continuity evidence.
+- **Correction to O40's scope:** disposable notebooks are for testing the tooling and
+  destructive/refusal behavior. Authorized notebook development uses the live MCP write
+  surface on the intended notebook; sandbox-only mutation is not an authoring rule.
+- **Owner decision:** the connected provider's co-work loop, live-safety and limits
+  resources own the procedure. `AGENTS.md` requires examining them before authoring,
+  MCP-first development after attachment, and preservation of the kernel for ordinary
+  edits. Provider-specific lessons are proposed at their source rather than accumulated
+  in a competing personal skill. The conflicting personal skill was archived locally;
+  this does not claim deployment to other machines or a hard runtime enforcement gate.
+- **Bounded verification of the correction:** on the existing four-sensor kernel,
+  `get_cell_data` established the baseline for `pair_captions`; `edit_cell` added a
+  temporary comment, saved-file read-back confirmed it, and `run_cell(mode="cell")`
+  ended idle with current rendered output. A fresh source read preceded restoring the
+  exact original cell source through `edit_cell`; rerun/read-back again ended idle,
+  with no structured errors or console exceptions. Server and kernel process identities
+  (including kernel creation time) stayed unchanged. No restart, external notebook
+  patch or widget reset was used. This proves one guarded live edit/restore cycle,
+  not a fresh agent's complete authoring behavior.
+- **Serialization limit measured:** the notebook was not byte-identical after that
+  cycle. Marimo regenerated function dependency arguments, final return declarations
+  and formatting in other cells. An AST comparison against the pre-probe Git version
+  confirmed every cell body unchanged except generated final return statements;
+  `marimo check notebooks` and an executed HTML export passed (zero `marimo-error`
+  markers). `git diff --check` and an added-line machine-identity scan passed.
+  The generated diff is retained for review rather than overwritten externally
+  beneath the running session. A fresh-process `hermes skills list` no longer
+  lists the retired personal skill; its complete directory has a verified local
+  archive manifest. Changes are uncommitted and unpublished.
+- **Independent read-only onboarding audit:** another agent followed `AGENTS.md`
+  and resolved all three MCP resources. It recovered the resource-first entry gate,
+  live editing, restart exceptions and source-owned lesson policy. The audit also
+  found a stale provider tag, POSIX-only launcher examples and retained third-party
+  `marimo-pair` / `retro-marimo-pair` instructions. The tag now matches the manifest
+  (`v0.3.3`), Windows launcher paths are documented, and `AGENTS.md` explicitly
+  subordinates the retained upstream skills to the provider's MCP workflow without
+  editing their hash-pinned content. These small follow-ups were checked locally;
+  the independent audit was not rerun. Session paths can be verified from discovery;
+  creator/owner identity remains unavailable. This was an instruction-clarity audit,
+  not a fresh-agent authoring trial or proof of hard enforcement.
+
+### 2026-10-16 — obsolete upstream pairing skills retired (O43)
+
+- **Owner-authorized:** removed `marimo-pair` and `retro-marimo-pair` from
+  `.agents/skills/` and their entries from `skills-lock.json`. These upstream
+  direct-script and upstream-retrospective procedures are superseded for this
+  consumer by the MCP provider's maintained resources, not runtime dependencies
+  of the installed provider. This supersedes O42's temporary decision to retain
+  and subordinate them. No provider implementation or dependency was removed.
+- **Preservation and scope:** the ten removed files were verified unchanged
+  against Git before deletion and are recoverable from baseline `fa61743`.
+  Historical installation evidence remains; the old installation instruction in
+  the integration plan is explicitly superseded to prevent reintroduction.
+  The instrument's `udop-acquisition` skill is preserved. This retirement applies
+  to this implementation worktree, not other checkouts or machines.
+- **Verification:** fresh-process Hermes skill listing contains neither retired
+  name; the lock file parses with no remaining entries; the installed provider
+  imports without those directories. Whitespace validation passed. The notebook
+  server/kernel was not modified by this retirement. Changes remain uncommitted.

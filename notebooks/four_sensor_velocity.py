@@ -87,11 +87,11 @@ def recording(Path, load, mo):
         f"{len(bundle.recording.streams)} channel(s) · "
         f"sha256:{_asset.content_sha256[:12]}…"
     )
-    return bundle, recording_path
+    return (bundle,)
 
 
 @app.cell(hide_code=True)
-def channel_series(bundle, np):
+def channel_series(bundle, np, qualitative):
     # The four channels in the recording's own stream order, which is the acquisition's
     # visit order. `load` has already frozen and owned every array, so these are read-only
     # views of the decoded signal and nothing here copies or rewrites it.
@@ -165,7 +165,12 @@ def cursor_memory(mo):
     # `on_change` writes the state the same cell reads.
     get_cursor_time_s, set_cursor_time_s = mo.state(None, allow_self_loops=True)
     get_cursor_gate_mm, set_cursor_gate_mm = mo.state(None, allow_self_loops=True)
-    return get_cursor_gate_mm, get_cursor_time_s, set_cursor_gate_mm, set_cursor_time_s
+    return (
+        get_cursor_gate_mm,
+        get_cursor_time_s,
+        set_cursor_gate_mm,
+        set_cursor_time_s,
+    )
 
 
 @app.cell(hide_code=True)
@@ -307,7 +312,6 @@ def overview_heatmaps(
     bundle,
     channel_ids,
     gate_depths_mm,
-    go,
     make_subplots,
     mo,
     np,
@@ -488,7 +492,6 @@ def depth_profiles_at_time(
 @app.cell(hide_code=True)
 def gate_traces_at_gate(
     channel_ids,
-    gate_depths_mm,
     go,
     make_subplots,
     mo,

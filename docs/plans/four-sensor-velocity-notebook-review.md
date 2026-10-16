@@ -54,6 +54,39 @@ byte-identical in every tree (`git hash-object` = `46f3a877`).
 
 ## Current checkpoint
 
+**Maintained checkpoint — 2026-10-16, workflow correction (owner-authorized).**
+The four-channel notebook and pair overlays exist at baseline `fa61743`; their
+implementation evidence is below. They were developed by disk editing followed by
+MCP inspection, not continuous MCP authoring. The owner selected correction of that
+workflow: `AGENTS.md` now gates authoring on reading the provider resources, followed
+by MCP-first edits in the attached live session with kernel continuity. The duplicate
+personal workflow was archived outside discovery, and this profile's standing rules
+now send provider-specific lessons to the owning source instead of a parallel skill.
+On subsequent owner direction the obsolete upstream `marimo-pair` and
+`retro-marimo-pair` consumer skills and their lock entries were also removed;
+integration-log O43 owns the retirement evidence and recovery baseline.
+These are local changes, not a claim of publication or fleet deployment.
+
+A comment-only edit and restoration of `pair_captions` through guarded MCP calls
+verified saving, execution, output and error read-back with the same server/kernel
+process identities. The caption source is restored; marimo's generated dependency
+signatures/return declarations and formatting remain as a reviewable notebook diff.
+All cell bodies compare equal to the Git baseline except generated final returns;
+`marimo check notebooks` passes. See integration-log O42 for scope and limits.
+This is a bounded interface check, not proof that a fresh agent follows the whole loop.
+No restart or external notebook patch was performed in this correction pass.
+
+**Remaining:** the placement visual and level-factor presentation decision remain
+selected; inventory/leading-notebook work remains deferred as recorded below. No
+alignment, estimator, merge, deployment or provider implementation is authorized by
+this correction. Continue by attaching to the intended existing notebook, not by
+recreating the worktree or restarting its kernel.
+
+### Historical baseline and preconditions (before four-channel implementation)
+
+The following inventory and initial-session observations are historical; they do not
+supersede the maintained checkpoint above or select a new implementation step.
+
 **Established (measured 2026-10-16):**
 
 | notebook | lines | plotting | controls | path |
@@ -241,11 +274,20 @@ documentation commit. The primary checkout and the WIP snapshot are preserved, a
 the notebook-session id, the sandbox that reproduces the write-side verification, and the stop path are machine
 bindings and live in the machine-local kit — not in this plan. This plan keeps the state and the criteria.
 
-**Objective (agreed).** Work steps 1–7 and meet the seven acceptance criteria, or record which are unmet and why.
+**Objective (agreed, updated 2026-10-16).** Preserve the MCP-first co-work contract
+while continuing the selected four-sensor presentation work: decide the placement
+visual and level-factor presentation before implementing them. Inventory/leading-notebook
+work remains deferred; do not infer a new priority from its old position in this plan.
 
-**First action.** If the notebook server is not running, relaunch it from the machine-local kit. Then re-derive the
-inventory table for `notebooks/*.py` and write the leading-notebook decision.
+**First action.** Read `AGENTS.md` and the connected provider's packaged workflow
+resources, then discover and confirm the existing `four_sensor_velocity.py` session
+using the machine-local target bindings. Read the full cells before live edits.
+Do not relaunch a healthy server/kernel or externally patch its notebook. Report
+missing resources/session/tool blockers before substituting a workflow.
 
-**Stopping condition.** Stop when the acceptance criteria are met with evidence or explicitly unmet, the live
-transitions are listed, and the plan owns the result with its agenda selection updated. Stop and hand back if step 3 turns
-out to require changing `src/` behaviour — that is a different slice and a different authorization.
+**Stopping condition.** For this correction, stop once the instruction cleanup,
+recoverable retirement, bounded live verification and records checks are reported
+with their limits. Future product work stops at its separately agreed presentation
+milestone; source behavior, alignment, resampling and estimator work remain outside
+this grant. A fresh-agent full authoring trial and cross-machine rollout remain
+unverified; a documentation audit alone cannot establish either.

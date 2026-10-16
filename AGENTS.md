@@ -201,9 +201,11 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   path is `uv sync --extra marimo --extra dev`, then configure the harness to
   execute `.venv/bin/marimo-inspect --transport stdio`. Read
   `README.md` §Optional live marimo co-work first; use the provider's README
-  for harness-specific setup. Do not use `uv run` as the long-lived MCP command.
+  for harness-specific setup. On Windows use
+  `.venv/Scripts/marimo-inspect.exe --transport stdio` instead of `.venv/bin/`.
+  Do not use `uv run` as the long-lived MCP command.
 - **No editable install for normal work.** This project pins provider tag
-  `v0.3.0`, which includes `TraceScrubber`; `notebooks/channel_preview.py`
+  `v0.3.3`, which includes `TraceScrubber`; `notebooks/channel_preview.py`
   therefore works from the normal `marimo` extra. A local editable provider
   override is only for testing unreleased `marimo-inspect` changes, is
   temporary, and must never be committed here.
@@ -239,13 +241,36 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   mode — both execute. Mechanism: provider
   `docs/agent-onboarding-demo-mcp.md` §Prerequisites and
   `reference://marimo-inspect/fallbacks-and-limits` §A session is not a run.
-- **MCP workflow authority:** after the server is connected, list and read its
-  packaged resources before live mutation. The normal loop is
-  `list_active_notebooks` → `get_cell_map` → read required cells → mutate/run
-  → `get_variables` / `get_cell_outputs` / `get_errors` →
-  `marimo check`. `set_ui_value` values are widget-specific; verify every
-  update by reading state back. Pass `server_url` (and `session_id` when
-  targeting) explicitly when harness session binding does not persist.
+- **MCP workflow authority and entry gate:** before notebook authoring or live
+  mutation, call the connected provider's `list_resources`, then `read_resource`
+  for `workflow://marimo-inspect/co-work-loop`,
+  `workflow://marimo-inspect/live-safety`, and
+  `reference://marimo-inspect/fallbacks-and-limits`. Re-read after context loss
+  if their contents are no longer available. These versioned provider resources
+  own the editing procedure; personal skills must not duplicate or override it.
+  If resources or required tools are unavailable, report the blocker before
+  substituting a workflow. Binding is not ownership; confirm the intended file.
+- **Authoring contract (owner-selected 2026-10-16):** for a new notebook, write
+  only a minimal scaffold on disk, launch/open it, then discover/bind the
+  browser-held session. For an existing notebook, attach to its intended live
+  session. Develop through MCP cell creation/editing, execution and read-back;
+  do not externally patch the served notebook or use server/kernel restarts as
+  file synchronization. Preserve the kernel during ordinary notebook edits.
+  Kernel-level recovery and other exceptional fallbacks follow the provider
+  resources; name the concrete blocker and obtain approval before abandoning
+  this contract. Static checks and exports supplement live verification; they
+  do not prove continuous co-work or kernel continuity.
+- **Learning without workflow drift:** marimo-specific lessons belong as
+  proposed corrections/evidence in the provider's resources or tests, not in a
+  competing personal skill. A workaround is provisional evidence, not standing
+  policy. Tooling smoke tests may use disposable notebooks; that restriction
+  does not prohibit authorized MCP edits to the notebook being developed.
+- **Retired upstream pairing skills:** `marimo-pair` and `retro-marimo-pair`
+  were removed from this consumer repository on owner direction (2026-10-16).
+  Do not reinstall them as authoring prerequisites. The provider's distributed
+  workflow resources own the MCP loop and any justified script escape hatch;
+  upstream comparison material belongs in provider development, outside this
+  consumer's skill discovery.
 - **Viz:** every plot function saves to a `Path` by default; pass
   `return_fig=True` to get the open `matplotlib` figure(s) back instead
   (needed for in-notebook display). In marimo 0.24.0 use
