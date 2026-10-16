@@ -1,5 +1,8 @@
 # Plan — give every live panel one identity before any resolver can act
 
+**Status (2026-10-16): implemented (PR #17); device ladder recorded in §5.**
+`CURSOR_INFO` was not exercised in that ladder; §5 records its separate evidence and limits.
+
 ## 1. Why this plan exists
 
 This is the evidence-triggered exception to the acquisition architecture stop condition in
