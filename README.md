@@ -108,6 +108,10 @@ Configure the chosen MCP harness to run that installed console script—not
 <project-root>/.venv/bin/marimo-inspect --transport stdio
 ```
 
+On Windows, use `<project-root>/.venv/Scripts/marimo-inspect.exe` instead.
+The notebook launcher is likewise `.venv/Scripts/marimo.exe` on Windows
+(`.venv/bin/marimo` on POSIX).
+
 Start a notebook with `--no-token`, open it in a browser to materialize a
 session, then use `list_active_notebooks`. Before editing a live notebook, read
 the server's packaged MCP resources; they are the workflow and safety authority.
