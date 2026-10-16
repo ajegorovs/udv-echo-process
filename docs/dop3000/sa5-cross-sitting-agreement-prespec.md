@@ -28,7 +28,7 @@ The inputs are **two published quartets**, one per sitting, under the plan's pub
 | live-1 | `sa5-live-1-effects.{npz,json,csv,README.md}` |
 | live-2 | `sa5-live-2-effects.{npz,json,csv,README.md}` |
 
-Each quartet is bound as **one frozen unit**: the JSON reads are bound by the v1 digest chain
+Each quartet is verified as **one frozen unit**: the JSON reads are checked against the v1 digest chain
 (README → JSON canonical-LF SHA-256 → `artifacts.npz.sha256` / `artifacts.csv.sha256`; v1 contract
 §5.7 and §7). The agreement run records for each sitting, verbatim and as published, the JSON
 canonical-LF digest and the two `artifacts` entries; it verifies the digests against published bytes and re-derives no
