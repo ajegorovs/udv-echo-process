@@ -48,7 +48,11 @@ mapping here, and persist the other mentioned tasks as unselected proposals. Sha
 this did not authorize commits, pushes, merges, notebook changes or implementing P2–P6.
 Owner extension, 2026-10-16: publish the saved documentation changes and park unfinished cleanup;
 four-sensor notebook work takes priority next. This authorizes scoped commits, push and updating draft PR #71,
-not merging, deleting worktrees, changing the explorer WIP or executing the longer notebook plan in this cleanup pass.
+not merging, deleting worktrees, changing the explorer WIP or executing the longer notebook plan in that cleanup pass.
+Later owner grants, 2026-10-16: merge PR #71 and clean its worktree; leave the locked environment residue alone;
+then close small loose ends and ensure old work cannot be forgotten before four-sensor implementation. This permits
+the wording repair, a separately published recovery snapshot, issue capture and these record corrections; no
+PR #70 merge, retirement-pack deletion, WIP implementation or P2–P6 rollout is implied.
 
 **Baseline.** Original drafting revision `cfd80a2`; execution baseline reconciled on 2026-10-16:
 branch `docs/intent-progress-pivot` at `a9d807d`, plus the documented uncommitted edits (draft PR
@@ -82,6 +86,28 @@ Authority, implementation and validation are separate claims; existing safety an
 not a divergence from an assumed ignored-plan requirement. No second plan ledger or trial report is introduced.
 
 ## Current checkpoint
+
+**Loose-end closeout (2026-10-16).** PR #71 merged as `443cd1c`; its worktree registration and local branch
+were removed. A disposable native-library residue remains and the owner explicitly chose not to pursue its locks.
+The old worktree is no longer a resumption location. Primary-checkout tracked files are unchanged; its local
+kit now points to the current records and exact-byte backup, with historical material retained.
+
+Current explorer bytes are independently recoverable from published `wip/explorer-preserved-20261016` /
+`ae128b0`; GitHub notebook blob `bd67d1f30892dbc58bb0bfaa37403544bd799d2b` matched the current save
+through Git normalization. An exact-byte private ZIP also preserves the notebook, intentional local ignore edit
+and local kit; its three entries were read back and compared before publication. The kit contains historical
+simulation-artifact findings as well as launch recipes: retain it until E4 routes those findings; do not delete it.
+
+The snapshot is unreviewed and includes ACF residual/FFT computations, not merely cursor styling. It does not
+change PR #70, validate the WIP, or satisfy the four-sensor plan. The older `e631ace` recovery commit is not the
+latest notebook save. [#73](https://github.com/ajegorovs/udv-echo-process/issues/73) owns its disposition.
+
+Deferred substantive work is discoverable without the outgoing conversation: consolidation [#72](https://github.com/ajegorovs/udv-echo-process/issues/72),
+retirement decisions [#74](https://github.com/ajegorovs/udv-echo-process/issues/74), existing model finding #49,
+retained non-ancestor branch audit [#75](https://github.com/ajegorovs/udv-echo-process/issues/75), and the agenda
+links for scientific backlog and shared-method proposals. These captures are not execution grants.
+A one-line prespec wording repair removes an unintended screening-term match without changing digest validation,
+inputs, values or scientific acceptance rules. Verification of this closeout is recorded below.
 
 **Publication verified (2026-10-16).** Commit `20e575d` was pushed to draft PR #71. GitHub's PR head matched
 that full local revision; all 13 changed document blob IDs matched GitHub's exact commit tree, the updated PR
@@ -135,22 +161,19 @@ transcript was consulted. The earlier independent onboarding check and this rest
 P1 discovery/resumption behavior only. Shared-guide hash, remote PR state, published-revision access and
 cross-machine continuation were not re-verified in this restart; no general adoption claim follows.
 
-**Recovery / continuation.** Session-end checkpoint, 2026-10-16: resume in the existing
-`.worktrees/intent-progress-pivot` worktree on `docs/intent-progress-pivot`, not the primary checkout.
-The primary checkout does not contain these updated entry instructions. Start at that worktree's `AGENTS.md`,
-then its agenda and this selected plan; do not use the outgoing conversation to fill gaps. Reconcile HEAD and the
-documentation baseline before proceeding. Publication is authorized to PR #71; verify its remote head against
-this cleanup's publication commit before claiming receipt. Preserve the primary checkout's unrelated changes and do not
-reset, switch or remove either worktree. The shared guide and its P1–P6 proposal register were published with
-exact byte readback in the prior session; that hash was not re-verified in this cleanup pass. No delegated check remains
-pending from this session. Resolve broader content destinations before removal; do not treat the successful
-first onboarding check as completing E1–E8.
+**Recovery / continuation (updated 2026-10-16).** Use a clean checkout of the merged records, then read
+`AGENTS.md` → agenda → the selected plan. Do not resume in the removed reporting worktree or infer current
+instructions from the primary checkout's older branch. Preserve its intentional ignore edit and notebook save;
+the latter is also available on the published recovery branch named above. Machine-local backup bindings remain
+in the local kit. No process termination or locked-file cleanup is selected. Shared-guide publication was verified
+in the earlier session, not rechecked here. Resolve broader content destinations before removal; the bounded
+P1 checks do not complete E1–E8.
 
 ## Remaining work
 
 **P1 bounded local stopping condition reached (2026-10-16).** Independent onboarding and same-machine
-restart checks passed within the limits recorded above. No further local restart is selected. Publication,
-another-machine availability and general adoption remain unverified, not silently waived.
+restart checks passed within the limits recorded above. No further local restart is selected. Publication is
+verified above; another-machine execution and general adoption remain unverified, not silently waived.
 **Owner disposition (2026-10-16):** publish the saved documentation and park broader consolidation behind
 the four-sensor notebook priority. Lifecycle state is blocked (owner-priority hold, not complete). P2–P6,
 cross-machine testing and broader method adoption remain unselected. Resume consolidation only when the owner
@@ -193,7 +216,29 @@ The broader consolidation below is preserved but not selected for execution; no 
 **Unselected, deliberately, and not to be started inside this plan:** the four-sensor alignment decision, its notebook
 review plan (a sibling plan in this directory), and anything that changes behaviour rather than documentation.
 
-## Publication and parking slice — 2026-10-16
+## Closeout disposition and verification
+
+This bounded pass closes recovery/publication and the small gate defect, not the substantive consolidation.
+The owner asked to prevent forgotten work before starting the next effort; issues #72–#74 link the existing
+owners rather than replacing them with a second task ledger.
+
+| Destination criterion | Disposition | Evidence / remaining condition |
+|---|---|---|
+| 1 — sole forward view | Unmet; deferred #72 | Agenda narration remains; preserve its unique constraints before trimming. |
+| 2 — no live state in old documents | Unmet; deferred #72 | E3's cited anchors and acquisition rules need verified destinations. |
+| 3 — one current system map | Unmet; deferred #72 | E5's unique measurements/rationale must survive before pointer replacement. |
+| 4 — every design-plan status | Partly met; deferred #72 | Five repaired headers are established above; full freshness audit not claimed. |
+| 5 — one home per result | E7 bounded check met | The generated preview evidence and its generator are unchanged; the requirement links the artifact. Broader uniqueness not audited. |
+| 6 — local kit has no state | Unmet; deferred #72 | Kit audited for recovery; historical simulation findings still need classification. Current selection points to agenda, recipes retained. |
+| 7 — work discovery / local resumption | Met within stated limits | Local onboarding, restart and exact remote document availability verified; no another-machine execution claim. |
+
+**Executed closeout checks.** The focused screening suite reproduced 35 passed / 2 failed on the merged base,
+then returned **37 passed** after the one-line wording repair. Ruff check of `src tests` and whitespace check passed.
+Issues #72–#74 were read back after creation; the recovery notebook blob was read back from GitHub and matched.
+No model, estimator, notebook implementation, generated artifact or scientific value was changed. No full-suite,
+new live notebook/hardware verification, pack reseal or shared-guide verification is claimed.
+
+## Publication and parking slice — 2026-10-16 (historical)
 
 **Owner-selected scope.** (1) Reconcile and verify the saved documentation diff; (2) commit explicit documentation
 paths, push the existing branch and update draft PR #71; (3) read back the remote head and PR text, leaving the
@@ -219,7 +264,7 @@ is the PR head and its verification comment, not a new handoff report. Another-m
 - Why the hand-off documents are superseded rather than merely edited — the estate guide's rule that a temporary
   transfer note cannot own unresolved work, and that durable execution state belongs in the selected effort record.
 - `docs/plans/TEMPLATE.md` — the field set every plan in this directory uses.
-- Draft PR [#71](https://github.com/ajegorovs/udv-echo-process/pull/71) — the convention this plan executes against.
+- Merged PR [#71](https://github.com/ajegorovs/udv-echo-process/pull/71) — the convention this plan executes against.
 
 ## Next session
 

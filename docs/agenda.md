@@ -26,7 +26,7 @@ Capture is not selection. Existing detailed backlog sections below remain their 
 
 - **Reporting consolidation — parked by owner, 2026-10-16:** [plan](plans/reporting-consolidation.md) is blocked
   on the owner-priority hold behind four-sensor notebook work. E1–E8 residue and content-preservation blockers
-  remain there; no closure or deletion is implied. Publication of the current documentation to draft PR #71 is authorized.
+  remain there; no closure or deletion is implied. PR #71 merged as `443cd1c`; follow-up [#72](https://github.com/ajegorovs/udv-echo-process/issues/72) keeps the parked effort visible.
 
 - **Four-sensor alignment:** `data/4-sensor-velocity/200RPM.BDD` has staggered channels; the reader emits no
   `(round_id, visit_id)` identity for `synchronize()`. Decide decoded identity versus an explicit non-invented
@@ -35,15 +35,18 @@ Capture is not selection. Existing detailed backlog sections below remain their 
   and the SA5 section below; cross-sitting synthesis is not selected by the notebook or documentation trials.
 - **Acquisition re-opening:** B7/B8 require evidence under [the existing constraints](#active-work--dop3010-acquisition-stabilize-before-extending).
 - **Retirement residue:** the [standing register](udv-analysis-reference.md) owns the attribution, pack-seal
-  and unported-item decisions; no deletion is selected.
-- **Explorer cursor/sidebar WIP:** preserve the local change; its fate remains undecided. PR #70 is the
-  explorer review, separate from reporting PR #71. Neither reference authorizes a merge.
+  and unported-item decisions; [#74](https://github.com/ajegorovs/udv-echo-process/issues/74) tracks their disposition. No deletion is selected.
+- **Explorer WIP:** current save preserved on published branch `wip/explorer-preserved-20261016` at `ae128b0`;
+  [#73](https://github.com/ajegorovs/udv-echo-process/issues/73) owns the disposition decision. It includes exploratory
+  ACF residual/FFT code as well as cursors. PR #70 remains a separate, unreviewed baseline; neither is selected for merge.
 - **Work-method follow-ups:** the authoritative shared guide `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md`
   owns P2 findings routing, P3 reader availability, P4 evidence classes, P5 safe retirement and P6 source fallback.
   Each has a proposed solution, validation condition and next decision there; none is selected for rollout here.
   Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
-- **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
-  decide a separately scoped wording repair rather than changing the scientific contract during P1.
+- **Retained branch audit:** [#75](https://github.com/ajegorovs/udv-echo-process/issues/75) captures non-ancestor
+  backup/feature refs. Some may be rebased equivalents; no branch deletion is selected without content and recovery checks.
+- **Existing model defect:** [#49](https://github.com/ajegorovs/udv-echo-process/issues/49) retains the array-model
+  JSON serialization finding. This closeout does not implement or accept a serialization contract.
 
 ## Current progress — 2026-10-16
 
@@ -54,8 +57,8 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 
 | Area | Current position | Next concrete action | Evidence / limits |
 |---|---|---|---|
-| Reporting consolidation | Published to draft PR #71; parked behind four-sensor work. Local P1 checks passed, broader cleanup unfinished. | None selected; resume cleanup only on reselection. | [Plan](plans/reporting-consolidation.md) owns preserved blockers and verification limits; cross-machine continuation unverified. |
-| Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer cursor/sidebar rework is uncommitted and preserved only in a local branch. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the cursor/sidebar rework. | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
+| Reporting consolidation | PR #71 merged; parked cleanup tracked by #72 behind four-sensor work. Local P1 checks passed, broader cleanup unfinished. | None selected; resume cleanup only on reselection. | [Plan](plans/reporting-consolidation.md) owns preserved blockers and verification limits; cross-machine continuation unverified. |
+| Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer unreviewed cursor/ACF rework is preserved on published recovery branch `wip/explorer-preserved-20261016`. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the WIP under [#73](https://github.com/ajegorovs/udv-echo-process/issues/73). | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
 | Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | None selected; bounded synthesis requires separate selection. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
 | Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
