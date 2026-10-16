@@ -65,7 +65,11 @@ now send provider-specific lessons to the owning source instead of a parallel sk
 On subsequent owner direction the obsolete upstream `marimo-pair` and
 `retro-marimo-pair` consumer skills and their lock entries were also removed;
 integration-log O43 owns the retirement evidence and recovery baseline.
-These are local changes, not a claim of publication or fleet deployment.
+The reusable workflow cleanup is published and merged independently in PR #77
+(merge `d276d6e`); its master changes are integrated into this notebook branch.
+The notebook-specific checkpoint and generated-save diff are committed locally;
+the notebook branch itself is not published. Profile-local instructions and the
+personal-skill archive remain local, not fleet deployment.
 
 A comment-only edit and restoration of `pair_captions` through guarded MCP calls
 verified saving, execution, output and error read-back with the same server/kernel

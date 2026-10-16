@@ -652,3 +652,63 @@ Sandbox recipe: launch a throwaway copy on loopback (`--headless --no-token`), m
   name; the lock file parses with no remaining entries; the installed provider
   imports without those directories. Whitespace validation passed. The notebook
   server/kernel was not modified by this retirement. Changes remain uncommitted.
+
+---
+
+## Entry 2026-10-16 — MCP-first workflow correction and skill retirement (O42–O43)
+
+**Owner-selected intent:** keep marimo notebook development in the attached live
+kernel using the maintained MCP provider, rather than let personal or legacy skills
+silently substitute disk editing and server restarts. This cleanup is independent of
+the four-sensor notebook implementation; it changes no notebook or processing code.
+
+- **O42 — workflow authority and entry gate.** `AGENTS.md` requires listing and
+  reading the connected provider's co-work loop, live-safety and limits resources
+  before authoring/live mutation, and again after context loss when needed. New
+  notebooks start as minimal scaffolds, then development proceeds through live MCP
+  edits and verification. Ordinary cell edits preserve the kernel; an unavailable
+  resource/tool or exceptional fallback must be reported rather than silently
+  replaced. Provider-specific lessons go back as proposed source/test corrections,
+  not parallel personal procedures. Static/export gates remain complementary.
+- **O43 — obsolete upstream skills retired.** Removed `marimo-pair` and
+  `retro-marimo-pair` and their lock entries: the former prescribes direct pairing
+  scripts/code mode, while the latter targets upstream marimo-team retrospectives.
+  The installed provider implements discovery and HTTP/scratchpad communication in
+  Python and uses marimo's code-mode API; it does not require these consumer skill
+  directories. Provider-documented escape hatches remain available. The ten original
+  files are recoverable from parent revision `443cd1c`; `udop-acquisition` is untouched.
+  The historical install instruction is explicitly superseded, not erased from the
+  historical result. No runtime dependency or provider implementation was removed.
+- **Evidence and limits.** A separate notebook session exposed the workflow drift:
+  source was edited externally, the live document remained at its previous cell set,
+  and a server relaunch loaded the changed file. That is an observed recovery, not a
+  general diagnosis of file watching or an accepted authoring pattern. A later bounded
+  guarded MCP comment edit/save/run/read-back/restore cycle preserved server and kernel
+  process identities with no errors. Marimo regenerated dependency signatures/returns
+  on save; this serialization effect and the notebook diff stay with the notebook
+  effort, not this cleanup. This PR does not ship or claim a fresh-agent authoring test.
+- **Consumer checks.** The provider tag in `AGENTS.md` matches `pyproject.toml`
+  (`v0.3.3`); Windows console-script paths are documented. Fresh-process skill listing
+  after retirement excluded both skills, and the installed provider still imported.
+  Independent read-only onboarding recovered the resource gate and editing contract;
+  that proves clarity only, not behavioral enforcement. Full fresh-agent authoring,
+  other checkouts/machines and fleet deployment remain unverified. Profile-local
+  instruction cleanup and personal-skill archival are not distributed by this PR.
+  The publication diff was checked for scope, JSON validity, recovery availability,
+  whitespace and added-line privacy; no notebook, source, dependency pin or data
+  change is included.
+
+### 2026-10-16 — cleanup publication and notebook-branch integration
+
+PR #77 merged the reusable cleanup into `master` as `d276d6e`. The notebook
+worktree was preserved in a verified raw-byte recovery archive and checkpoint
+commit `b8c41ee` before merging that base without rewriting its existing commits.
+The integration retains both historical evidence entries above: their references
+to uncommitted/unpublished state describe the earlier observation, not current
+publication status. The provider-resource contract remains the procedural authority.
+Agenda conflicts retain the notebook branch's newer recovery/parking facts and
+master's cleanup row. No notebook body, source behavior or live kernel was changed
+by the Git integration; notebook feature work remains separate and unpublished.
+Verification for integration: notebook raw-byte digest and kernel process identity
+are compared with the pre-cleanup baseline; static checks/export and whitespace
+validation are rerun before closing the merge.
