@@ -435,10 +435,16 @@ algorithms, and experimental-setup-specific algorithms.
 
 ## Docs & agendas
 
-- `docs/agenda.md` — current action-oriented backlog, active decisions and
+- `docs/agenda.md` — the current-progress record (**§ Current progress**: one row per
+  moving area — position, next concrete action, evidence and limits) plus the
+  action-oriented backlog, active decisions and
   acceptance blockers. Fold superseded/resolved detail into its authority
   document and `docs/agenda-history.md`; do not turn the live agenda into a
   session transcript.
+- `README.md` § Purpose — the repository's scientific goal, its ongoing efforts, its
+  deliberate non-goals, and the four efforts (processing software, instrument automation,
+  acquired measurements, scientific interpretation) that do **not** share a completion
+  state.
 - `docs/agenda-history.md` — compact historical index and superseded-concept
   map; Git retains the verbatim pre-consolidation session record.
 - `docs/hardening-plan.md` — the prioritized fix/"harden" list (what needs
@@ -472,6 +478,35 @@ algorithms, and experimental-setup-specific algorithms.
   implementation slice. Read it before re-proposing that review, before
   extending the sweep parameters, and before splitting `acquire/driver.py`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
+
+## Reporting intent and progress (binding)
+
+Progress that a later reader — human or agent — cannot reconstruct from the commits must be
+written where it lives: the current-progress record in `docs/agenda.md`, or the PR that
+carries the change. State the **intent** (the research question or capability the work
+serves), the **position**, and the **evidence** — the three things a commit message cannot
+carry on its own.
+
+- **When meaningful work changes state, update the existing row** in `docs/agenda.md`
+  § Current progress **in the same change that moves it**. Do not start a new report or
+  hand-off per session, and do not restate one status in the README, the agenda and a
+  hand-off at once.
+- **Name the state**, because they are different claims: *accepted* (landed and verified,
+  with the evidence named), *proposed / conditional* (an agreed direction, or a trigger not
+  yet reached — not current work), *superseded* (replaced by something named; do not re-open
+  without new evidence). "Done" is not a state.
+- **A meaningful PR says why, what and how it was checked**: the question or capability it
+  serves, what changed, its evidence (tests, instrument checks, published artifacts, live UI
+  checks), and its limits. Never report a scientific effort complete because its
+  implementation merged — merged code is not a measured effect.
+- **Record decisions that would otherwise live only in conversation** — "we are pursuing this
+  now", "this is a possible extension, not current work", "this direction is accepted
+  although it is not merged" — as a dated sentence in the current record or a comment on the
+  issue/PR. No decision-document ceremony, and no turning a suggestion into a commitment.
+- **Avoid:** a new report per session; duplicating one status across README/agenda/hand-offs;
+  a dashboard id or payload in the repository; percent-complete estimates without a
+  measurement; treating every TODO or open issue as the current priority; rewriting
+  historical evidence so it agrees with today's summary.
 
 ## Privacy — do not overexpose
 
