@@ -118,6 +118,16 @@ the instrument.
 
 ## Next session
 
+**Restart checkpoint (2026-10-16).** The owner selected four-sensor work for a new session; no notebook
+implementation occurred during closeout. PR #71 is merged (`443cd1c`). The bounded loose-end closeout is
+published separately in draft PR #76 and remains unmerged; its plan/agenda corrections are not yet on `master`.
+Read this plan through that published continuation before choosing an implementation baseline. Reconcile the
+actual branch, HEAD and dirty state; do not implement on the closeout branch. Establish a dedicated implementation
+branch/worktree from fetched `origin/master`, accounting explicitly for PR #76 if still unmerged rather than
+silently assuming its records have landed. Preserve the primary checkout and the recovery snapshot tracked by #73.
+No PR merge, explorer-WIP adoption, alignment, resampling or estimator work is implied by this restart.
+No notebook/server launch or delegated work remains pending from closeout.
+
 **Objective (agreed).** Work steps 1–7 and meet the seven acceptance criteria, or record which are unmet and why.
 
 **First action.** Re-derive the inventory table for `notebooks/*.py`, then read both `channel_preview` twins and write
