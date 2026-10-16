@@ -162,7 +162,10 @@ the instrument.
   channel on its **recorded timestamps** and compare level, gate profiles or spectra, but it may **not** interpolate
   or shift one channel onto another's samples — that is the open alignment decision, not a presentation choice.
   Stopping condition: a recorded decision on the placement visual, and the pair comparison shown in the candidate
-  notebook with no resampling anywhere in it.
+  notebook with no resampling anywhere in it. It must also record **how the mount-to-mount level factor is presented**
+  (raw values with the factor annotated, or normalised by a stated factor) — see the depth-profile test in
+  [`data/4-sensor-velocity/README.md`](../../data/4-sensor-velocity/README.md), where the two expected-equal pairs agree
+  in shape (r = +0.94 / +0.95) but differ in level by 1.31 / 1.24.
 - Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.

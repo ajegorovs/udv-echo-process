@@ -36,26 +36,62 @@ mounts are the obvious ways that equivalence is broken.
 
 ## Sensor positions and the channel map
 
-- Two mounts, **orthogonal** to each other; within a mount the two probes stand **10 mm** apart
-  centre-to-centre, so each mount holds one **inner** and one **outer** probe.
-- **Channels 6 and 7 are one mount (6 outer, 7 inner); channels 8 and 9 are the other (8 outer,
-  9 inner).** Operator-stated, 2026-10-16.
-- The **photo is the authority** for the mapping ("position and channels see photo"): the committed
-  frames in this folder show white tape labels reading `6,7` beside the vertical pair and `8,9`
-  beside the horizontal pair. Measured positions rest on those photos plus the note above; nothing
-  else in the repository places these four channels in space.
-- **The two mounts are not stated to be identical.** "elevation 2 mm + sensor radius (different
-  mounts)" gives an elevation rule, not a shared height, so the two pairs' beam axes may sit at
-  different heights as well as at right angles.
+Operator-stated geometry (2026-10-16), which replaces the guesswork this section first carried:
+
+- Vessel **100 mm square**; sensors **8 mm diameter, 70 mm long**.
+- **Two mounts, orthogonal** to each other. Within a mount both beams are **parallel and perpendicular
+  to that mount's wall**, offset **laterally from the vessel centre line** — **inner 20 mm, outer
+  30 mm** — so the pair's centres are 10 mm apart and their 8 mm faces sit 2 mm apart. The pair is
+  **staggered to one side of the centre line**, not symmetric about it.
+- **Channels 6 and 7 are one mount (6 outer at 30 mm, 7 inner at 20 mm); channels 8 and 9 are the
+  other, the same offsets replicated by a 90° rotation** — a rotation, not a mirror, so both mounts
+  carry their pair the same way round.
+- **Positioning height is not a factor here** (operator): the earlier elevation note is not an open
+  question for this comparison, and vertical placement is left out of it.
+- The **photo is the authority** for which channel sits where ("position and channels see photo"): the
+  committed frames in this folder show tape labels reading `6,7` beside one pair and `8,9` beside the
+  other. Which mount faces which vessel wall is still unrecorded — and by the 90° equivalence it does
+  not change the comparison, only the drawing.
 - All four channels in both takes share the **same gate grid**: 55 gates from **20.002 → 79.132 mm**
-  at 1.095 mm spacing, so the same gate index is the same depth *as measured from each probe face*.
+  at 1.095 mm spacing, so the same gate index is the same depth from each probe face.
+- **Radius mapping, derived from that geometry.** A beam at lateral offset `b` runs across the vessel,
+  so a point at depth `d` from the probe face sits at radius `r = sqrt((50 − d)² + b²)` from the
+  vessel axis. The outer beam (b = 30 mm) therefore sweeps **58.31 mm at the wall → 30 mm where it
+  crosses the centre plane**, and the inner beam (b = 20 mm) **53.85 mm → 20 mm**. The crossing is at
+  d = 50 mm, i.e. **gate 27 (49.57 mm)** — and that is where the measured along-beam mean is largest,
+  a first sign that the radial structure is real.
+- Because the mapping is the same for both beams of a pair, **6's depth axis corresponds to 8's gate
+  for gate** (and 7's to 9's): the depth dimension can be compared with no time alignment at all.
 
 ## The symmetry the pair comparison will test
 
-Because the mounting is 90°-rotationally symmetric, the expectation (operator, 2026-10-16) is that
-the **outer** probes **6 and 8** see roughly the same signal, and the **inner** probes **7 and 9**
-likewise. The within-mount pairs (6/7 and 8/9) sample different radii, so they are *not* expected to
-match. This is a stated expectation to test, not a measured result.
+Under a flow invariant under 90° rotation — square plan, pill driven on the vessel axis — the two
+mounts sample the **same radius profile**: 6 and 8 both run at a 30 mm lateral offset
+(58.31 → 30 mm), 7 and 9 both at 20 mm (53.85 → 20 mm). So the expectation (operator, 2026-10-16) is
+that **6 and 8 see roughly the same signal, and 7 and 9 likewise**, while within a mount the two
+probes sample different radii (30 vs 20 mm) and are *not* expected to match.
+
+**Measured in the depth dimension, where no time alignment is needed** — per-gate mean and RMS profiles
+over all 400 profiles (`200RPM.BDD`; `200RPM_v2.BDD` agrees):
+
+| pair | expected | mean-profile r | level ratio | RMS-profile r |
+|---|---|---|---|---|
+| 6 vs 8 (outer, 30 mm) | equal | +0.94 | **1.31** | +0.56 |
+| 7 vs 9 (inner, 20 mm) | equal | +0.95 | **1.24** | +0.59 |
+| 6 vs 7 (30 vs 20, one mount) | different | +0.86 | 0.94 | +0.40 |
+| 8 vs 9 (30 vs 20, one mount) | different | +0.94 | 0.89 | +0.51 |
+
+The *shapes* do line up within each expected-equal pair, but the **level carries a mount-dependent
+factor of 1.2–1.3 — larger than the inner/outer difference the geometry would predict**. The dominant
+variation across these four channels is mount-to-mount, not radius, and that factor has to be
+accounted for before either pair is called "the same signal": probe sensitivity, coupling or a
+mount-dependent axial offset are the plausible causes, and the flow symmetry does not explain it.
+
+Along the beam the mean also changes sign — about **−10 mm/s at the near-wall gates** (20.00 mm depth)
+rising to a peak at the centre-plane crossing (**gate 27**: +36.8, +49.0, +29.8, +37.9 mm/s for
+6, 7, 8, 9), the shape an azimuthal swirl plus a radial recirculation would produce. The sign
+convention of a rotated mount is not decoded, so a raw overlay's *sign* is not evidence by itself;
+the two pairs do correlate positively, which is consistent with a shared convention but not proof.
 
 ## What the files actually do — and why it decides how a pair may be compared
 
@@ -77,13 +113,10 @@ Measured on both takes (2026-10-16):
   **own recorded timestamps** is honest and needs no resampling; interpolating or shifting one
   channel onto another's samples *is* resampling, and that is the open
   [alignment decision](../../docs/agenda.md), not something this dataset settles.
-- **First descriptive numbers** (index-wise, therefore *not* the symmetry test): depth-averaged
-  mean / std in mm/s are `27.7 / 22.8`, `29.4 / 30.6`, `21.2 / 18.9`, `23.8 / 24.2` for channels
-  6 / 7 / 8 / 9 in `200RPM.BDD` (`200RPM_v2.BDD` is close: 27.4, 30.6, 22.1, 26.1). The 6/7 mount
-  reads ~20% higher in level than the 8/9 mount, in both takes. That difference has to be
-  explained — mount height, beam direction, mount-to-flow orientation — before either pair is
-  called "the same signal". *(The note does not say which mount is the x-direction one, so the
-  mounts are named by their channels, not by an axis.)*
+- **Level and spread per channel** (depth-averaged mean / std in mm/s): `27.7 / 22.8`, `29.4 / 30.6`,
+  `21.2 / 18.9`, `23.8 / 24.2` for channels 6 / 7 / 8 / 9 in `200RPM.BDD` (`200RPM_v2.BDD` is close:
+  27.4, 30.6, 22.1, 26.1). These need no time alignment at all; what their pair structure means is in
+  § *The symmetry the pair comparison will test*.
 
 ## The photos
 
@@ -95,10 +128,10 @@ frame dated 2026-07-23 is the only date evidence for the sitting, so the recordi
 
 ## Open questions
 
-- The two mounts' true elevations and beam angles; "elevation 2 mm + sensor radius" is not enough to
-  place either beam in space.
-- Which mount faces which vessel wall, and at what angle to the pill's rotation.
-- The pill's real speed and its stability across the 44 s.
+- **What causes the 1.2–1.3 mount-to-mount level factor** — probe sensitivity/coupling, a
+  mount-dependent axial offset, or a flow asymmetry the 90° argument misses.
+- Whether the two mounts' channels share a sign convention for the rotated axes (not decoded).
+- Which mount faces which vessel wall — drawing only; the comparison does not depend on it.
+- The pill's real speed and its stability across the 44 s; the file name is the only claim of 200 RPM.
 - The 90° equivalence assumes a square plan; the vessel's plan tolerance is unrecorded.
-- Whether the ~224 ms sampling offset between the pairs has to be handled explicitly in the intended
-  visual comparison, and how that should read on screen.
+- How the ~224 ms sampling offset between the pairs of a comparison should read on screen.
