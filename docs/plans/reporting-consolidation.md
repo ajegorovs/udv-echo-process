@@ -83,6 +83,12 @@ not a divergence from an assumed ignored-plan requirement. No second plan ledger
 
 ## Current checkpoint
 
+**Publication verified (2026-10-16).** Commit `20e575d` was pushed to draft PR #71. GitHub's PR head matched
+that full local revision; all 13 changed document blob IDs matched GitHub's exact commit tree, the updated PR
+body matched its submitted text, and the publication worktree was clean. No CI checks were reported on that head.
+This checkpoint-only follow-up records the receipt; its own final remote-head verification is recorded on PR #71.
+The primary checkout and explorer WIP were not modified; no merge or deployment was performed.
+
 **Publication baseline (2026-10-16).** `docs/intent-progress-pivot` at `a9d807d`, with the reviewed
 13-file documentation diff. Owner authorized publication to draft PR #71. The primary checkout's
 `.gitignore` and `notebooks/signal_explorer.py` edits remain outside scope. No merge or deployment selected.
