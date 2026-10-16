@@ -71,6 +71,14 @@ The notebook-specific checkpoint and generated-save diff are committed locally;
 the notebook branch itself is not published. Profile-local instructions and the
 personal-skill archive remain local, not fleet deployment.
 
+**Cleanup verified (2026-10-16):** checkpoint `b8c41ee` and merge `2c41add`
+preserve the work and integrate PR #77. The notebook raw-byte digest is unchanged,
+static checks and an executed export passed, and the same kernel process and
+creation time remain live. The finished cleanup worktree and its local/remote
+branch were removed; the notebook worktree is retained. The verified raw-byte
+recovery archive and pre-integration backup ref remain available locally.
+No additional notebook feature work or notebook-branch publication was performed.
+
 A comment-only edit and restoration of `pair_captions` through guarded MCP calls
 verified saving, execution, output and error read-back with the same server/kernel
 process identities. The caption source is restored; marimo's generated dependency
