@@ -1,6 +1,7 @@
 # Four-sensor velocity — notebook review: outdated visualization and controls
 
-**Task plan.** Written 2026-10-16. **State:** authorized. Register: [agenda](../agenda.md#selected-work). Simple by intent: this is the first slice of
+**Task plan.** Written 2026-10-16; implementation started 2026-10-16 (baseline established, no notebook edit yet).
+**State:** in progress. Register: [agenda](../agenda.md#selected-work). Simple by intent: this is the first slice of
 returning to four-sensor work, and it is about the *tooling view*, not the physics.
 
 ## Destination
@@ -44,6 +45,13 @@ Re-verify `HEAD` and `git status --short` before
 starting — the primary checkout carries an uncommitted notebook change that must be preserved, and a live marimo
 session may still be running against it.
 
+**Implementation baseline (measured 2026-10-16).** Implementation runs on branch `feat/four-sensor-notebook-review` in
+a dedicated worktree created from fetched `origin/master` (`443cd1c`, the PR #71 merge) — not from the closeout branch.
+The primary checkout is untouched: its explorer WIP is still uncommitted and the recovery snapshot tracked by #73 is
+preserved. Draft PR #76 is **still unmerged**, so its corrections to this plan and to `agenda.md` were carried forward
+verbatim in this session's documentation commit; its two other files remain with #76. The notebook under review is
+byte-identical in every tree (`git hash-object` = `46f3a877`).
+
 ## Current checkpoint
 
 **Established (measured 2026-10-16):**
@@ -64,11 +72,46 @@ session may still be running against it.
   400 profiles each over 44.2 s, adjacent-interval coefficient of variation 1.34; `.ADD` twins exist
   (`200RPM.ADD`, `200RPM_Stat.ADD`, `…_v2`).
 
+**Preconditions established this session, before any notebook edit:**
+
+- **The recommended candidate is being served, not decided.** `channel_preview_sidebar.py` runs as the *candidate* for
+  the leading notebook (step 2's recommendation) so it can be reviewed; step 2's decision line is still unwritten, and
+  this is not it.
+- **The fixture is selectable and defaults in.** The recording picker's default is
+  `data/4-sensor-velocity/200RPM.BDD`, because `io.discover_data_files()` sniffs content — 176 files (`.BDD` twins,
+  `.ADD`, and one misnamed `.jpg` that is a genuine 4-channel recording) with the four-sensor `.BDD` sorting first.
+  Re-measured on the file: `sequential`, device channels **6–9**, `(400, 55)` float64 per channel, first gate
+  20.002 mm, `sha256:643d5d56b173…`.
+- **The live notebook is healthy.** 22 cells, all `idle` with output in the running session; `marimo check` exit 0; an
+  executed HTML export completed in 6.2 s with no error markers; `lint_notebook` reported no issues.
+- **The step-7 verification route works on this notebook.** The MCP read path (`list_active_notebooks`, `get_cell_map`,
+  `get_variables`, `get_cell_outputs`, `get_errors`, `lint_notebook`, `get_dependency_graph`, `set_active_session`) was
+  exercised against the live session while a browser held it, and interaction (`set_ui_value`, `run_cell`) was confirmed
+  by kernel read-back. Findings, including two provider-surface pitfalls measured here:
+  [`marimo-integration-log.md`](../marimo-integration-log.md) entry 2026-10-16 (O39–O41).
+- **Inconsistency found, for step 1:** the picker's label reads "Recording (.BDD, content-sniffed)" while its option
+  list also holds `.ADD` files and one misnamed `.jpg`.
+
 **Owner priority (2026-10-16).** This is the next implementation effort after the bounded documentation
 publication/parking pass. No notebook implementation is part of that cleanup; re-derive the inventory before starting.
 
-**Not established.** Nothing has been changed. Which notebook leads is undecided; whether `echo_explorer.py` is
-modernised or retired is undecided; the live widget read-back has not been attempted this session.
+**Not established.** No notebook source has been changed. The step-1 inventory has **not** been re-derived this
+session, and no decision is recorded for the leading notebook (step 2), the fate of `echo_explorer.py` (step 3) or
+`TraceScrubber`'s removal (step 4). Criterion 5 is partly met only: the channel control enumerates 6–9 and channels 6,
+7 and 8 rendered during probes, but the four channels were not checked as a deliberate transition series. The step-6
+documentation reconciliation is untouched. Whether the live server should keep its token disabled is an open exposure
+question (agenda § *Unselected findings and open questions*).
+
+**Relevant revision / live target.** Branch `feat/four-sensor-notebook-review` at `origin/master` `443cd1c`, plus this
+documentation commit; one marimo edit server serving the candidate notebook, bound to the machine's overlay address
+with the token disabled. Port, overlay address, process id and notebook-session id are **machine bindings** and live in
+the machine-local kit, not in this plan; the session id is re-keyable by a browser reconnect, so re-discover it
+(`list_active_notebooks`) rather than caching one.
+
+**Working state / recovery.** The implementation worktree is otherwise clean. A disposable sandbox notebook plus its own
+loopback server were used for the mutating-tool verification and have been removed; the notebook under review was
+confirmed byte-identical afterwards. A second, pre-existing marimo server for `signal_explorer.py` was already running
+from the primary checkout on another port and was deliberately left alone.
 
 ## Steps
 
@@ -104,7 +147,10 @@ the instrument.
 
 ## Remaining work
 
-- Steps 2–7 above, and the acceptance criteria they serve.
+- **Selected next (bounded): steps 1–2.** Re-derive the inventory table, then record the leading-notebook decision
+  and the fate of the other twin. Stopping condition: the corrected table is in this checkpoint and the decision line
+  exists — whichever outcome it records, not necessarily the recommendation.
+- Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.
 
@@ -115,13 +161,44 @@ the instrument.
 - The pattern source for the method this plan follows: the estate knowledge base's
   `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md` (an estate document, not part of this repository),
   designated authoritative by the owner. P1 index ownership is a local trial, not evidence of general validation.
+- **2026-10-16 — serving the candidate is not the step-2 decision.** The sidebar twin runs for review because the plan
+  recommends it; the decision still has to be written against both files.
+- **2026-10-16 — the mutating MCP tools are not exercised on the notebook under review.** Write-side verification
+  (create/edit/delete/run/restart, plus the refusal shapes) ran on a disposable sandbox notebook; on this notebook only
+  the read path and one restored widget transition were used, and the file was confirmed byte-identical afterwards.
+- **2026-10-16 — the live server keeps its token disabled** on the overlay address, matching the existing local pattern
+  for this notebook work. The exposure this creates is recorded as an open finding in the agenda rather than accepted
+  silently.
+- Findings from the MCP co-work verification, including two provider-surface pitfalls measured here — a *refused*
+  `set_ui_value` leaves its exception in the owning cell's console-error channel while the structured error count stays
+  `0`, and an integer-valued dropdown takes its option keys as strings:
+  [`marimo-integration-log.md`](../marimo-integration-log.md) entry 2026-10-16 (O39–O41).
 
 ## Next session
 
+**Restart checkpoint (2026-10-16).** The owner selected four-sensor work for a new session; no notebook
+implementation occurred during closeout. PR #71 is merged (`443cd1c`). The bounded loose-end closeout is
+published separately in draft PR #76 and remains unmerged; its plan/agenda corrections are not yet on `master`.
+Read this plan through that published continuation before choosing an implementation baseline. Reconcile the
+actual branch, HEAD and dirty state; do not implement on the closeout branch. Establish a dedicated implementation
+branch/worktree from fetched `origin/master`, accounting explicitly for PR #76 if still unmerged rather than
+silently assuming its records have landed. Preserve the primary checkout and the recovery snapshot tracked by #73.
+No PR merge, explorer-WIP adoption, alignment, resampling or estimator work is implied by this restart.
+No notebook/server launch or delegated work remains pending from closeout.
+
+**Restart checkpoint (2026-10-16) — executed.** The dedicated worktree and branch off fetched `origin/master` exist;
+the candidate notebook is served and selectable on the four-sensor fixture; the step-7 live read-back route is verified
+on it. PR #76 is still unmerged, and its corrections to this plan and the agenda are carried in this session's
+documentation commit. The primary checkout and the WIP snapshot are preserved, and no notebook source was edited.
+
+**What the next reader must not have to rediscover.** The launch recipe, the overlay address, the port, the process id,
+the notebook-session id, the sandbox that reproduces the write-side verification, and the stop path are machine
+bindings and live in the machine-local kit — not in this plan. This plan keeps the state and the criteria.
+
 **Objective (agreed).** Work steps 1–7 and meet the seven acceptance criteria, or record which are unmet and why.
 
-**First action.** Re-derive the inventory table for `notebooks/*.py`, then read both `channel_preview` twins and write
-the leading-notebook decision.
+**First action.** If the notebook server is not running, relaunch it from the machine-local kit. Then re-derive the
+inventory table for `notebooks/*.py` and write the leading-notebook decision.
 
 **Stopping condition.** Stop when the acceptance criteria are met with evidence or explicitly unmet, the live
 transitions are listed, and the plan owns the result with its agenda selection updated. Stop and hand back if step 3 turns

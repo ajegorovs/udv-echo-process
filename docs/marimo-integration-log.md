@@ -542,3 +542,43 @@ a `fastmcp` `Client`; use a **fresh** notebook copy per attempt — a crashed ru
 leaves created cells behind, and repeated names make `create_cell` fail with
 `Multiply-defined names`. Scripts were throwaway under `/tmp`; payload evidence
 in `/tmp/tv1/tv1_evidence.json`.
+
+---
+
+### 2026-10-16 — MCP co-work verified against the four-sensor notebook (O39–O41)
+
+The notebook under review *is* the four-sensor recording (`data/4-sensor-velocity/200RPM.BDD`, channels 6–9,
+400 × 55). Server: `marimo edit --headless --no-token` bound to this box's overlay address rather than loopback,
+because the reader's browser is on another tailnet node; marimo 0.24.0 from the consumer venv, provider
+`marimo-inspect` 0.3.3 registered over stdio — `hermes mcp test` connects and lists 15 tools, and those tools were
+live in the same session without a restart.
+
+- **O39** ✅ **The read path is sound against a browser-held session.** `list_active_notebooks` (explicit
+  `server_url`) reported exactly one session and the right notebook path; `get_cell_map` 22 cells, all `idle` with
+  output; `get_errors` 0; `lint_notebook` 0 issues; `get_dependency_graph` the full graph with no cycles or
+  multiply-defined names; `get_variables`/`get_cell_outputs` returned kernel-side values and rendered sidebar text
+  (the picker's recording, `ch7 · axial_velocity (mm/s) · 400 profiles × 55 gates`, the cursor readout).
+  `set_active_session` bound the id only after validating it against that server's census, and a later argument-less
+  call resolved to it.
+- **O40** ✅ **Writes land on a browser-held session, and the sandbox is still the right place to verify them.**
+  `set_ui_value` moved the channel dropdown (7 → 8, `verified: true`) with the dependent header cell re-running to
+  `ch8`; the reader's value was then restored and read back. The rest of the write side — `create_cell` (serialized to
+  the `.py` immediately), `edit_cell` (refused `needs_read` on an unread cell, applied after `get_cell_data`),
+  `delete_cell` (then reported in `missing_cell_ids`), `run_cell` (one call ran four stale cells) and `restart_kernel`
+  (same id re-materialized, `session_id_stable: false`) — was exercised on a disposable sandbox notebook on loopback
+  with an `/sse`-materialized session, and the notebook under review was confirmed byte-identical afterwards.
+- **O41** ⚠️ **Two pitfalls to load before the next live session.**
+  *A refused `set_ui_value` is not free.* Sending `[8]` to a dropdown whose option keys are strings returned
+  `value_not_applied` with the kernel's own `ValueError` — and that exception stayed in the owning cell's **console**
+  error channel (`get_errors`: `has_console_exception` true for that cell) while the structured error count stayed
+  `0`. A refused probe therefore leaves a console marker in a human's live page; recovery is re-running the owning
+  cell, which recreates the widget at its **declared default** (the reader's value was re-applied afterwards), after
+  which `get_errors` is clean again.
+  *An integer-valued dropdown's option keys are strings.* The channel picker is built from integer device ids, yet
+  `set_ui_value` takes `["8"]`, never `[8]`; the refusal names the string keys.
+- **Re-confirms an older finding:** the rendered control reported `data-initial-value='["6"]'` while the kernel held
+  `7` — painted value and backend value disagree, so read `get_variables`, never the control.
+
+Sandbox recipe: launch a throwaway copy on loopback (`--headless --no-token`), materialize a session with
+`GET /sse?session_id=<uuid>&file=<abs path>` and wait for `kernel-ready`, then drive the provider. Machine bindings
+(overlay address, port, process id, sandbox path) are in the machine-local kit, not here.
