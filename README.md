@@ -2,6 +2,45 @@
 
 Multi-sensor Ultrasonic Doppler Velocimetry (UDV) processing for rotating machinery analysis. Supports **echo** (amplitude) and **velocity** measurements from single-sensor continuous recordings and multi-sensor rolling (round-robin) arrays, in both raw time-series and statistical-summary formats.
 
+## Purpose
+
+The scientific goal is to measure and interpret flow with a DOP3000/3010 ultrasonic Doppler
+velocimeter — in a **stirred mixer vessel** and in **rotating machinery** — and to know how
+much of what is measured is the flow rather than the instrument.
+
+The questions are: does the measured line-of-sight velocity profile agree with a
+like-for-like CFD profile on the same line, and where it does not, does the difference
+survive the acquisition settings; which settings (burst length, gate pitch, emissions per
+profile, PRF) move the measured signal by more than the rig's own run-to-run variation; and
+which features of the flow — a wandering central vortex above all — are resolvable on a
+single beam at all.
+
+Four efforts serve that goal, and **they do not share a completion state**:
+
+| Effort | "Done" means | Where it lives |
+|---|---|---|
+| Processing software | a tested API over committed data | `src/udv_echo_process/`, `tests/` |
+| Instrument automation | a gesture verified against the real application | `acquire/`, `tools/live/`, `tools/ui/` |
+| Acquired measurements | stored recordings whose decoded settings match the intent | `data/<experiment>/` |
+| Scientific interpretation | a bounded conclusion that states its own limits | `reports/`, `docs/` |
+
+The consequences are binding: merged code is not a measured effect, a stored recording is not
+a result, and no effort is finished because a neighbouring one advanced.
+
+**Ongoing efforts** (this project's vocabulary): the **sparse signal analysis** of the mixer
+sittings (ingest → per-gate profiles and traces → sampling-aware spectra → sitting effects);
+the **DOP3010 acquisition automation** that produced them; the **artifact model** the `.BDD`
+recordings are read through; and the **`udv-analysis` retirement**.
+
+**Non-goals**, deliberate: optical/camera image processing (sibling repository); instrument or
+remote notebook hosting; a CFD overlay or a cross-grid comparison before the entry wall, beam
+sign and sampling line are agreed; a general geometry/spatial-interpolation framework ahead
+of an experiment that needs one; and any dashboard, score or percentage reporting of our own
+— the repository states intent, position and evidence, and nothing more.
+
+Where the project currently stands is one record:
+[`docs/agenda.md`](docs/agenda.md) § Current progress.
+
 ## Capabilities
 
 - **Parse** any `.ADD` file — auto-detect single/multi-sensor, echo/velocity, raw/stat
