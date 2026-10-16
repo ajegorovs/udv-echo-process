@@ -87,6 +87,11 @@ not a divergence from an assumed ignored-plan requirement. No second plan ledger
 
 ## Current checkpoint
 
+**Session finalized (2026-10-16).** The bounded closeout is published in draft PR #76; it remains unmerged,
+with no implementation or merge delegated. Four-sensor work is reserved for a fresh session under its existing
+plan's restart checkpoint. Preserve the closeout branch until its review/disposition; do not delete the primary
+checkout, recovery refs or local kit. No scientific work, process termination or lock-release retry is pending.
+
 **Loose-end closeout (2026-10-16).** PR #71 merged as `443cd1c`; its worktree registration and local branch
 were removed. A disposable native-library residue remains and the owner explicitly chose not to pursue its locks.
 The old worktree is no longer a resumption location. Primary-checkout tracked files are unchanged; its local
