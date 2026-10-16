@@ -478,6 +478,40 @@ algorithms, and experimental-setup-specific algorithms.
   implementation slice. Read it before re-proposing that review, before
   extending the sweep parameters, and before splitting `acquire/driver.py`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
+- `PLANS.md` (repository root) — the selection ledger the planning convention reads first: what is selected, in what
+  state, the next-goal proposal, and the candidates that are deliberately not selected. Register a task plan there
+  when it is selected and clear it at closeout; task plans themselves live in `docs/plans/`.
+
+## Planning a task (records-first)
+
+A fresh session must be able to answer *what work is selected, in what state, and what happens next* from the
+repository alone. That is the failure this convention exists for: sessions restarted without their predecessor's
+context either did not know a task was open, or reconstructed a fraction of it.
+
+**Read in this order:** this file → `PLANS.md` (repository root) → the selected plan. The ledger is the entry point;
+the plans directory is not.
+
+- **A plan is required** for multi-session work, a consequential operation, or work with more than one verification
+  milestone. A small bounded edit needs neither a plan nor ceremony.
+- **One plan per bounded task**, tracked at `docs/plans/<slug>.md`, written from `docs/plans/TEMPLATE.md`. It carries
+  purpose, scope and exclusions, state, authorization, the baseline it starts from, the context a fresh reader needs,
+  concrete steps, expected results, validation and recovery — and then keeps its own Progress, Surprises &
+  discoveries, Decision log and Outcomes & retrospective sections current. `PLANS.md` states why task plans here are
+  tracked rather than machine-local.
+- **States:** draft, ready for review, authorized, in progress, blocked, complete, superseded, cancelled. The plan
+  header and `PLANS.md` must agree, and an empty scope may simply say no task is selected.
+- **Selection is not permission.** Record the owner's actual grant in the plan's Authorization field and stop before
+  exceeding it. Never select work by newest filename, an open checkbox, or an older plan's recommendation; and when a
+  direction is selected without an implementation slice, say *ready for review* and name the next decision instead of
+  inventing a feature to fill the plan.
+- **At every pause** update the selected plan's actual progress, evidence, blockers and remaining work, and align
+  `PLANS.md`; if it is unfinished it stays selected, and if it is complete, record the result and its limits, carry
+  durable findings to their owning document, and clear the selection. Keep a short **next-goal proposal** in
+  `PLANS.md`, marked owner-selected or agent-suggested — a proposal is not a grant.
+- **So that nothing is kept twice:** the plan holds the working state; `docs/agenda.md`'s current-progress rows stay
+  short and point at the plan; durable semantics, contracts and reusable findings belong in their own document under
+  `docs/`, never only inside a plan; machine bindings belong in the machine-local hand-off, never in a tracked plan —
+  and never a credential in either.
 
 ## Reporting intent and progress (binding)
 
