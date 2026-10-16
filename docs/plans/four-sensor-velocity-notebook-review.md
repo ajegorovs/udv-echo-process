@@ -1,6 +1,6 @@
 # Four-sensor velocity — notebook review: outdated visualization and controls
 
-**Task plan.** Written 2026-10-16. Register: [`PLANS.md`](../../PLANS.md). Simple by intent: this is the first slice of
+**Task plan.** Written 2026-10-16. **State:** authorized. Register: [agenda](../agenda.md#selected-work). Simple by intent: this is the first slice of
 returning to four-sensor work, and it is about the *tooling view*, not the physics.
 
 ## Destination
@@ -30,7 +30,7 @@ recording we want to look at is four-channel, so this has to be settled before a
    read back in a live session; the transitions driven are listed.
 
 **Non-goals, and they matter here.** No alignment, resampling or estimator work: how four staggered channels get onto
-one time base is a separate open decision (`PLANS.md` § *Unselected findings*) and the notebooks must not pre-empt it by
+one time base is a separate open decision (`docs/agenda.md` § *Unselected findings and open questions*) and the notebooks must not pre-empt it by
 resampling to make a view possible. No new dependencies. No change to `analysis/` results. No notebook becomes the home
 of an estimator — all computation stays in `src/`.
 
@@ -38,7 +38,9 @@ of an estimator — all computation stays in `src/`.
 review the current marimo notebook, replace outdated visualization methods and controls. That authorises notebook,
 documentation and plan edits. It does not authorise changing `src/` behaviour, deleting a notebook, or merging.
 
-**Baseline.** Branch `docs/intent-progress-pivot` at `cfd80a2`; re-verify `HEAD` and `git status --short` before
+**Baseline.** Original drafting revision `cfd80a2`; records reconciled 2026-10-16 at `a9d807d` on
+`docs/intent-progress-pivot`, with documentation edits uncommitted and notebook implementation unstarted.
+Re-verify `HEAD` and `git status --short` before
 starting — the primary checkout carries an uncommitted notebook change that must be preserved, and a live marimo
 session may still be running against it.
 
@@ -61,6 +63,9 @@ session may still be running against it.
 - The fixture: `data/4-sensor-velocity/200RPM.BDD` loads as four velocity streams, channels 6–9, 55 gates at 1.095 mm,
   400 profiles each over 44.2 s, adjacent-interval coefficient of variation 1.34; `.ADD` twins exist
   (`200RPM.ADD`, `200RPM_Stat.ADD`, `…_v2`).
+
+**Owner priority (2026-10-16).** This is the next implementation effort after the bounded documentation
+publication/parking pass. No notebook implementation is part of that cleanup; re-derive the inventory before starting.
 
 **Not established.** Nothing has been changed. Which notebook leads is undecided; whether `echo_explorer.py` is
 modernised or retired is undecided; the live widget read-back has not been attempted this session.
@@ -87,7 +92,7 @@ modernised or retired is undecided; the live widget read-back has not been attem
 7. **Verify and record.** `marimo check notebooks` and an executed HTML export for every changed notebook; then drive
    the controls in a live session and read the dependent displays back (the kernel-side recipe is in the machine-local
    kit — a browser is needed only when interaction fidelity is the question). Update this checkpoint, the agenda row,
-   and `PLANS.md`.
+   and its selected entry in the agenda.
 
 ## Verification
 
@@ -108,8 +113,8 @@ the instrument.
 - The measured notebook inventory in *Current checkpoint*; re-derive it before acting on it.
 - The four-channel fixture's properties, measured on the file itself.
 - The pattern source for the method this plan follows: the estate knowledge base's
-  `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md` (an estate document, not part of this repository), which is
-  more recent than the `repository-planning` skill and governs where the two differ.
+  `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md` (an estate document, not part of this repository),
+  designated authoritative by the owner. P1 index ownership is a local trial, not evidence of general validation.
 
 ## Next session
 
@@ -119,5 +124,5 @@ the instrument.
 the leading-notebook decision.
 
 **Stopping condition.** Stop when the acceptance criteria are met with evidence or explicitly unmet, the live
-transitions are listed, and the plan's checkpoint and `PLANS.md` carry the result. Stop and hand back if step 3 turns
+transitions are listed, and the plan owns the result with its agenda selection updated. Stop and hand back if step 3 turns
 out to require changing `src/` behaviour — that is a different slice and a different authorization.

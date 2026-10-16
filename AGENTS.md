@@ -222,9 +222,9 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   `ArtifactBundle`, `select_channel` → `ChannelBundle`, discriminated specs,
   bundle-closed `filter`/`resample`). All computation stays in `src/`; cells are
   thin widget wrappers.
-  `notebooks/channel_preview_sidebar.py` — the same notebook with the
-  recording → channel selection moved into a `mo.sidebar` cascade (every other
-  cell identical; both files are kept side by side).
+  `notebooks/channel_preview_sidebar.py` — the artifact-path sidebar variant. The
+  twins have diverged; the selected four-sensor notebook-review plan owns the
+  inventory and leading-notebook decision. Do not assume cell-for-cell identity.
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
@@ -435,20 +435,18 @@ algorithms, and experimental-setup-specific algorithms.
 
 ## Docs & agendas
 
-- `docs/agenda.md` — the current-progress record (**§ Current progress**: one row per
-  moving area — position, next concrete action, evidence and limits) plus the
-  action-oriented backlog, active decisions and
-  acceptance blockers. Fold superseded/resolved detail into its authority
-  document and `docs/agenda-history.md`; do not turn the live agenda into a
-  session transcript.
+- `docs/agenda.md` — the single work-discovery entry: selected-plan links, unselected findings,
+  area-level position and backlog pointers. Plans own execution checkpoints. `PLANS.md` is only a
+  compatibility pointer; task plans remain tracked in `docs/plans/`. Fold superseded detail into
+  its authority document; do not turn the agenda into a session transcript.
 - `README.md` § Purpose — the repository's scientific goal, its ongoing efforts, its
   deliberate non-goals, and the four efforts (processing software, instrument automation,
   acquired measurements, scientific interpretation) that do **not** share a completion
   state.
 - `docs/agenda-history.md` — compact historical index and superseded-concept
   map; Git retains the verbatim pre-consolidation session record.
-- `docs/hardening-plan.md` — the prioritized fix/"harden" list (what needs
-  fixing now to tie loose ends). Read before structural changes.
+- `docs/hardening-plan.md` — historical hardening evidence and pointers to the owning
+  backlog/design records; not a second current action list.
 - `docs/marimo-integration-plan.md` + `docs/marimo-integration-log.md` — the
   consumer-side marimo + `marimo-inspect` integration plan and its
   evidence log (append-only).
@@ -478,9 +476,6 @@ algorithms, and experimental-setup-specific algorithms.
   implementation slice. Read it before re-proposing that review, before
   extending the sweep parameters, and before splitting `acquire/driver.py`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
-- `PLANS.md` (repository root) — the selection ledger the planning convention reads first: what is selected, in what
-  state, the next-goal proposal, and the candidates that are deliberately not selected. Register a task plan there
-  when it is selected and clear it at closeout; task plans themselves live in `docs/plans/`.
 
 ## Planning a task (records-first)
 
@@ -488,9 +483,10 @@ A fresh session must be able to answer *what work is selected, in what state, an
 repository alone. That is the failure this convention exists for: sessions restarted without their predecessor's
 context either did not know a task was open, or reconstructed a fraction of it.
 
-**Read in this order:** this file → `PLANS.md` (repository root) → the selected plan. The ledger is the entry point;
-the plans directory is not. **No selected effort is not the same as no unresolved work** — an entry point that lists
-only active plans is incomplete.
+**Read in this order:** this file → `docs/agenda.md` § Selected work / Unselected findings → the selected plan.
+This is the owner-selected **P1 trial**, not a generally validated method. `PLANS.md` is a pointer, not another ledger.
+If the agenda is absent or conflicting, report the gap and reconcile records; do not select a plan by filename or age.
+**No selected effort is not the same as no unresolved work.**
 
 - **A plan is required** for multi-session work, a consequential operation, or work with more than one verification
   milestone. A small bounded edit needs neither a plan nor ceremony.
@@ -500,19 +496,21 @@ only active plans is incomplete.
   recovery) → **remaining work** (selected next with its stopping condition, blocked, unselected findings, deferred) →
   **decisions and evidence** → **next session** (objective, first action, stopping condition). The checkpoint is
   maintained in place; history belongs to linked evidence and version control, not to a diary in the plan.
-- **The method source**, when the plan follows something outside this repository: link it and say which governs if two
-  sources disagree. The repository's own rules are `docs/agenda.md` § Current progress, this file and `PLANS.md`; the
-  estate knowledge base's `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md` is newer than the planning skill
-  this convention was first drawn from, and governs where the two differ.
+- **Method authority:** the owner-designated shared source is the estate knowledge base's
+  `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md`. Read it through the configured share-access procedure
+  when designing the method. Authority is separate from maturity: P1 is selected for trial; P2–P6 remain proposals.
+  Skills operationalize that source; these instructions bind it to this repository. Reconcile conflicts with safety
+  constraints and explicit owner decisions; neither recency nor a draft label settles authority. If the shared source
+  is unavailable, name that limitation; do not invent a replacement policy or claim its latest version was checked.
 - **States:** draft, ready for review, authorized, in progress, blocked, complete, superseded, cancelled. The plan
-  header and `PLANS.md` must agree, and an empty scope may simply say no task is selected.
+  header and its selected entry in `docs/agenda.md` must agree, and an empty scope may simply say no task is selected.
 - **Selection is not permission.** Record the owner's actual grant in the plan's authorization field and stop before
   exceeding it. Never select work by newest filename, an open checkbox, or an older plan's recommendation; and when a
   direction is selected without an implementation slice, say *ready for review* and name the next decision instead of
   inventing a feature to fill the plan.
 - **Keep implemented, verified, accepted and deployed separate**, and write a checkpoint that can be checked:
   established behaviour, its limits, and a concrete continuation point — "made progress" is not a checkpoint.
-- **At every pause** update the selected plan's checkpoint, align `PLANS.md`, and record the next objective and
+- **At every pause** update the selected plan's checkpoint, align its agenda entry, and record the next objective and
   stopping condition, marked agreed or proposed — a proposal is not a grant. A completed implementation checklist is
   not a closed effort: close only what the evidence and the authority support, and give every remaining finding a
   durable disposition (selected, blocked, deferred, rejected, out of scope).

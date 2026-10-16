@@ -1,12 +1,16 @@
 # SA2.4 — committed-data spectral characterization: implementation contract
 
-**Status: PLAN, not started.** The contract for SA2.4, written before any code. It implements the
+**Status (2026-10-16): implemented and merged.** The contract for SA2.4, written before any code. It implements the
 design's own sentence — SA2.4 is *committed-data spectral characterization. Low-frequency structure,
 support near ~1 Hz, the supported 8.333-Hz configurations, depth dependence. Descriptive and per
 sitting — no cross-sitting statistical inference*
 ([`sa2-spectral-design.md`](sa2-spectral-design.md) §Sequence, 618-620) — against the settled contract
 (§A–§J), the merged SA2.1/SA2.2 backends, and the sparse plan's publish point
 ([`sparse-signal-analysis-plan.md`](sparse-signal-analysis-plan.md), 249-253).
+
+> **Correction (2026-10-16):** the former "PLAN, not started" header is stale: PR #56 / #58 merged
+> as `ca7b043` / `b55a819`. [Published characterization](../../reports/sparse-signal/README.md)
+> owns the results. This is committed-data evidence, not live-rig verification.
 
 > **SA2.4 adds no new estimator, no new admission rule, no threshold and no verdict change.**
 

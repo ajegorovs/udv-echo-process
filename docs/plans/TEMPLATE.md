@@ -1,8 +1,9 @@
 # <Effort name>
 
-> Copy this file to `docs/plans/<slug>.md` and fill it in. Register it in [`PLANS.md`](../../PLANS.md) when it becomes
+> Copy this file to `docs/plans/<slug>.md` and fill it in. Register it in [the agenda](../agenda.md#selected-work) when it becomes
 > current work. Keep the checkpoint current **in place**: history belongs to linked evidence and version control, not
-> to a diary here. One plan per bounded effort; delete nothing, correct with a dated line.
+> to a diary here. One plan per bounded effort; preserve historical evidence and correct it with a dated line.
+> Update the current checkpoint in place; this is not a prohibition on consolidating superseded prose.
 
 **Task plan.** Written <date>. **State:** draft | ready for review | authorized | in progress | blocked | complete |
 superseded | cancelled.

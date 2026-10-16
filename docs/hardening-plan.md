@@ -1,11 +1,10 @@
 # Hardening plan — udv-echo-process
 
-Prioritized list of what needs to be **fixed / hardened** to tie loose ends and
-give this repo a solid foundation for continued development. This is the
-*action* list; the *ideas/backlog* live in [`agenda.md`](agenda.md). Priority
-order: **P0** = correctness/hygiene that risks wrong results or a broken/leaky
-repo today · **P1** = structure & foundations · **P2** = marimo wiring (its own
-plan exists) · **P3** = polish.
+**Status correction (2026-10-16): historical hardening record, not a current action list.**
+The dated checks below retain their original scope; they do not describe today's environment.
+Current work is selected through [the agenda](agenda.md) and [plan index](../PLANS.md).
+The DOPpy experiment belongs to [its analysis](doppy-analysis.md); conditional harness wiring belongs to
+[the marimo integration plan](marimo-integration-plan.md). No P0/P1 checkbox below remains open.
 
 Status legend: `[ ]` open · `[x]` done. Evidence: ✅ observed · 📄 documented ·
 ❓ inferred.
@@ -187,7 +186,7 @@ stdio `marimo-inspect` server already sees locally-discovered sessions.
   no camera/optical tooling is implied anywhere, so no caveat note is needed.
   (AGENTS.md §Scope boundaries is current.)
 - **[ ] `DOPpy` cross-check experiment** (deferred to the `.BDD` development
-  stage — see agenda §1): decode the `.ADD`/`.BDD` twins and compare gate
+  stage — see the historical development-stage decision): decode the `.ADD`/`.BDD` twins and compare gate
   depths / PRF to validate both paths (see `doppy-analysis.md` §Relevance).
 
 ---
@@ -204,8 +203,8 @@ now tracked; `notebooks/echo_explorer.py` exists (marimo plan Phase 2, done
 explicitly gitignored. ⚠️ Runtime deps now include marimo + marimo-inspect
 (numpy/matplotlib/pydantic/marimo[recommended]).
 
-### Remaining open (development stage)
-- `.BDD` support + the DOPpy cross-check (agenda §1) — deferred to the
+### Historical deferred items (2026-09-07; current disposition in the authorities above)
+- `.BDD` support + the DOPpy cross-check — deferred to the
   development stage per the session decision.
 - Marimo plan Phase 3 (harness wiring) — default no action; revisit only if
   udv wants its own pinned server binary.

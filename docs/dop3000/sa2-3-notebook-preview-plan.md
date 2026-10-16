@@ -1,9 +1,14 @@
 # SA2.3 — notebook spectral preview
 
-**Status: PLAN, not started.** This document is the contract for SA2.3, transcribed from the
+**Status (2026-10-16): implemented and merged.** This document is the contract for SA2.3, transcribed from the
 SA2.2 final review. It is the authority for what may and may not be built; the design record it
 implements against is [`sa2-spectral-design.md`](sa2-spectral-design.md) (§A–§J), and the merged
 backend it exposes is `analysis.sparse_periodogram` (SA2.2, merged at `9ba46c4`).
+
+> **Correction (2026-10-16):** the former "PLAN, not started" header is stale: PR #54 merged as
+> `7358d6d`. Required generated evidence: [preview execution](sa2-3-notebook-preview-evidence.md),
+> not a duplicate plan and not hand-editable. This export does not establish live widget transitions;
+> their review position belongs to [the agenda](../agenda.md), not this implementation status.
 
 > **SA2.3 adds no new spectral estimator or scientific interpretation.**
 

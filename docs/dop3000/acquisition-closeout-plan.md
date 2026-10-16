@@ -1,5 +1,9 @@
 # Plan — close the acquisition refactor on the device, then run the experiment
 
+**Status (2026-10-16): acquisition closeout implemented and device-verified.** See §3 for sittings A–D
+and V1–V8; the later campaign result lives in [Stage-2 records](../../data/stage2-e20-e64/README.md).
+The §4 follow-on remains unselected. Historical body retained.
+
 **What this plan is.** The work list for the stretch that follows the observation/interpretation/action
 refactor (`refactor/acquire-foundation`, [PR #10](https://github.com/ajegorovs/udv-echo-process/pull/10)):
 land the open stack, close the refactor's **device-pending** items in a fixed and safe order, and ask the

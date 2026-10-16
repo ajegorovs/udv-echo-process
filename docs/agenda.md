@@ -6,20 +6,60 @@ outcome into the appropriate design/reference document and add a compact row to
 [`agenda-history.md`](agenda-history.md). Do not use this file as a session
 transcript.
 
+## Selected work
+
+**P1 trial (owner-selected 2026-10-16):** this agenda is the single work-discovery entry point;
+`PLANS.md` is a compatibility pointer. Plans own checkpoints and next actions. This mapping is a
+trial of the shared work-organization guide, not a generally validated method.
+
+| Effort | Lifecycle state |
+|---|---|
+| [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+
+Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
+A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
+leaving unresolved findings discoverable below or in their owning backlog. No selected effort does not mean no unresolved work.
+
+## Unselected findings and open questions
+
+Capture is not selection. Existing detailed backlog sections below remain their owning homes.
+
+- **Reporting consolidation — parked by owner, 2026-10-16:** [plan](plans/reporting-consolidation.md) is blocked
+  on the owner-priority hold behind four-sensor notebook work. E1–E8 residue and content-preservation blockers
+  remain there; no closure or deletion is implied. Publication of the current documentation to draft PR #71 is authorized.
+
+- **Four-sensor alignment:** `data/4-sensor-velocity/200RPM.BDD` has staggered channels; the reader emits no
+  `(round_id, visit_id)` identity for `synchronize()`. Decide decoded identity versus an explicit non-invented
+  alignment rule versus exclusion. The notebook review must not resample merely to make a view possible.
+- **SA5 synthesis / SA3 / SA6:** see the [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
+  and the SA5 section below; cross-sitting synthesis is not selected by the notebook or documentation trials.
+- **Acquisition re-opening:** B7/B8 require evidence under [the existing constraints](#active-work--dop3010-acquisition-stabilize-before-extending).
+- **Retirement residue:** the [standing register](udv-analysis-reference.md) owns the attribution, pack-seal
+  and unported-item decisions; no deletion is selected.
+- **Explorer cursor/sidebar WIP:** preserve the local change; its fate remains undecided. PR #70 is the
+  explorer review, separate from reporting PR #71. Neither reference authorizes a merge.
+- **Work-method follow-ups:** the authoritative shared guide `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md`
+  owns P2 findings routing, P3 reader availability, P4 evidence classes, P5 safe retirement and P6 source fallback.
+  Each has a proposed solution, validation condition and next decision there; none is selected for rollout here.
+  Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
+- **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
+  decide a separately scoped wording repair rather than changing the scientific contract during P1.
+
 ## Current progress — 2026-10-16
 
 One row per area that is actually moving, and each row is a *position*, not a changelog: update it in place, in the
 same change that moves it. **Rows stay short by construction** — position, next action, pointer. The detail behind a
-row lives in that area's plan (registered in [`PLANS.md`](../PLANS.md), whose convention is in `AGENTS.md` § Planning a
-task) or in the authority document the row names; it is never restated here.
+row lives in that area's plan (registered above; local bindings are in `AGENTS.md` § Planning a task)
+or in the authority document the row names. Do not copy plan checkpoints or next-step sequences here.
 
 | Area | Current position | Next concrete action | Evidence / limits |
 |---|---|---|---|
+| Reporting consolidation | Parked behind four-sensor work; local P1 checks passed, broader cleanup unfinished. | Publish saved documentation to draft PR #71; resume cleanup only on reselection. | [Plan](plans/reporting-consolidation.md) owns preserved blockers and verification limits; cross-machine continuation unverified. |
 | Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer cursor/sidebar rework is uncommitted and preserved only in a local branch. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the cursor/sidebar rework. | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
-| Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | Review the resolvable effects and write a bounded synthesis. | Publication + merged PR; no recurrence acceptance rule yet. |
+| Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | None selected; bounded synthesis requires separate selection. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
-| Four-sensor velocity recordings | **Not started**: `data/4-sensor-velocity/200RPM.BDD` loads as four staggered velocity streams, and neither an alignment nor an estimator path exists for them. Direction selected 2026-10-16, no task plan yet ([`PLANS.md`](../PLANS.md)). | Decide how the four staggered channels are aligned — the reader emits no round/visit identity — before any estimator is built. | 4 × (400 profiles, 55 gates @ 1.095 mm, 44.2 s), adjacent-interval coefficient of variation 1.34; `io/dop/bdd.py` § Acquisition topology. |
-| `.BDD` artifact model | **Accepted**, with two hardening items still open in the rework plan. | Close them, or restate them as *proposed*. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md). |
+| Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
+| `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
 **Reading the states.** *Accepted* — landed and verified, with the evidence named.
@@ -40,7 +80,7 @@ extension, not current work", "this direction is accepted although it is not mer
   [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
 - Current module/pipeline conventions:
   [`pipeline-conventions.md`](pipeline-conventions.md)
-- Prioritized hardening work:
+- Historical hardening record and owning-work pointers:
   [`hardening-plan.md`](hardening-plan.md)
 - Marimo integration plan and evidence:
   [`marimo-integration-plan.md`](marimo-integration-plan.md) /
@@ -55,27 +95,10 @@ extension, not current work", "this direction is accepted although it is not mer
 
 ---
 
-## Current status — signal-model rework accepted
+## Signal-model contract
 
-The Phases 1–9 implementation and post-landing hardening are **accepted**.
-Source-root registration now replays source artifact identity, and
-`OperationRecord` construction replays operation identity from its canonical
-recipe. The final gate passed with 785 tests, Ruff check/format check, static
-notebook validation, executed HTML exports for both notebooks, 67 focused
-BDD/store tests, `git diff --check`, two independent counterfeit-ID probes, and
-a fresh independent review.
-
-The accepted boundaries remain those in the rework plan: five-field frozen
-artifacts, one derivation constructor, normalized provenance, and no legacy
-adapter.
-
-### Settled synchronization contract
-
-Cross-channel synchronization matches explicit `round_id`; every participating
-row must have a non-duplicate `(round_id, visit_id)` identity, and a stream may
-have only one visit in a matched round. A round groups cross-stream visits;
-`visit_id` records within-round acquisition order. See
-[`signal-model-rework-plan.md`](signal-model-rework-plan.md) §7.4.
+Acceptance evidence and boundaries live in [`signal-model-rework-plan.md`](signal-model-rework-plan.md)
+§15; the synchronization contract lives there in §7.4. Current position is in the row above.
 
 ---
 

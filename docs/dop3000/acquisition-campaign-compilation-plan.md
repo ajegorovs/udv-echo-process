@@ -14,7 +14,10 @@
 > [`handoff-dop3010-acquisition.md`](handoff-dop3010-acquisition.md) instead. **Nothing below
 > has been altered by the freeze** — this header is the only edit.
 
-**Status: plan only. Nothing in this document is implemented.**
+**Status correction (2026-10-16): implemented; retained as historical design.** The original
+"plan only" claim is superseded by the landed records from §12 onward. Device evidence lives in
+[device-verification.md](device-verification.md); current position is in [the agenda](../agenda.md).
+The first-commit description below is historical.
 It is the first commit of the PR that carries it, which is the branch the implementation
 continues on. The slice before it — the acquisition correctness baseline — is merged
 (`262b6ea`, PR #2), and its decision record is

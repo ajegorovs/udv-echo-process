@@ -138,9 +138,8 @@ acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job l
   drift between the pipelines. There is still no `.ADD` → bundle adapter: the
   legacy `rpm_from_echo`/`udv-run-all` path and the artifact-model
   `rpm_from_channel`/`run_artifact_rpm_sweep` path are separate by design.
-- The artifact-model implementation landed through Phase 9 but has two active
-  provenance-identity acceptance fixes; see the rework plan §15 before treating
-  it as complete.
+- Artifact-model acceptance evidence and its limits live in the rework plan §15;
+  current work selection and position live in [`docs/agenda.md`](docs/agenda.md).
 - The acquisition path (`acquire/`, `uvd-acquire`, `tools/live/`) is the only
   platform-bound one: it drives the DOP3010's Windows application over Win32
   messages, so a gesture, a geometry or a painted caption can only be *verified*
