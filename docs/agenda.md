@@ -15,6 +15,7 @@ trial of the shared work-organization guide, not a generally validated method.
 | Effort | Lifecycle state |
 |---|---|
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+| [Multiplexed/rolling acquisition](plans/multiplexed-rolling-acquisition.md) | ready for review |
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
@@ -60,6 +61,7 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 | Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | None selected; bounded synthesis requires separate selection. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
 | Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
+| Multiplexed/rolling acquisition (DOP3010) | **Mapped, ready for review** (owner-directed 2026-10-19): the multiplexed workflow is inventoried surface by surface with crop and `file:line` evidence; nothing implemented, no device state touched. | Decide the offline slice (typed mode model, the multiplexed per-point refusal, the reader read-back helper); the live read-only verb needs an operator at the instrument. | [Plan](plans/multiplexed-rolling-acquisition.md) owns the mapping, the device-pending list and the re-opening basis; the `Channels` surface is unbound, so both live criteria are device-pending. |
 | `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
@@ -311,7 +313,15 @@ or abort plus "state unverified" for an unattended campaign — no automatic
 recovery, no speculative press. Full statement: campaign plan §9.1–§9.3 and
 [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md).
 
-### The one re-opening so far: burst length, as a verified transition
+**Multiplexed / rolling acquisition — mapped, nothing implemented (owner-directed 2026-10-19).** Its evidence is the
+class the constraint above allows: the four-sensor joint analysis cannot establish an essential acquisition condition
+from what it has — a channel-time identity — because the stored files carry only a block/sequence word and the reader
+deliberately refuses to derive round/visit identity from it. The capability is inventoried surface by surface, with
+its device-pending list, in [`plans/multiplexed-rolling-acquisition.md`](plans/multiplexed-rolling-acquisition.md).
+Nothing is implemented, no writer has landed, no campaign is selected, and the architecture is **not** hereby declared
+open for growth: the plan's first slice is offline-only and its two live criteria wait on an operator session.
+
+### Re-opening 1 (landed): burst length, as a verified transition
 
 **Its evidence is the sparse pass's own procedure:** burst length is not a sidebar
 parameter, so every job that recorded at a different burst needed an **operator
