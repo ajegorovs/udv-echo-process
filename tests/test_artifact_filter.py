@@ -951,6 +951,105 @@ class TestTransferredNumerics:
         assert float(np.max(b[0:95])) > 0.3
 
 
+# ── gate scope: the transform-level selection ─────────────────────────────
+
+
+def _scope_bundle(gates: int = 4) -> ChannelBundle:
+    """A synthetic bundle: a noisy ramp in each of ``gates`` gates."""
+    rng = np.random.default_rng(7)
+    time_s = np.arange(12, dtype=np.float64) * 0.01
+    return make_bundle(time_s, np.cumsum(rng.normal(size=(12, gates)), axis=0))
+
+
+class TestGateScope:
+    """``filter(..., gates=...)``: which gates one pass touches (plan §7.2).
+
+    The selection is a transform argument, not a spec field, so it is not part
+    of the recorded ``params_json``; a scoped pass and a whole-field pass stay
+    distinguishable through the derived artifact's data-derived id.
+    """
+
+    def test_the_default_processes_every_gate(self):
+        bundle = _scope_bundle()
+        width = bundle.artifact.data.values.shape[1]
+        default = filter(bundle, MEDIAN3).artifact.data
+        explicit = filter(bundle, MEDIAN3, gates=range(width)).artifact.data
+        assert np.array_equal(default.values, explicit.values)
+        assert np.array_equal(default.support.quality, explicit.support.quality)
+        assert (default.support.quality & FILTERED).all()
+
+    def test_the_selection_leaves_every_other_gate_bit_identical(self):
+        bundle = _scope_bundle()
+        before = bundle.artifact.data
+        after = filter(bundle, MEDIAN3, gates=(1,)).artifact.data
+        assert not np.array_equal(after.values[:, 1], before.values[:, 1])
+        assert np.array_equal(
+            np.delete(after.values, 1, axis=1), np.delete(before.values, 1, axis=1)
+        )
+        assert np.array_equal(
+            np.delete(after.support.quality, 1, axis=1),
+            np.delete(before.support.quality, 1, axis=1),
+        )
+
+    def test_only_the_selected_gate_is_marked_filtered(self):
+        after = filter(_scope_bundle(), MEDIAN3, gates=(2,)).artifact.data
+        flags = after.support.quality
+        assert (flags[:, 2] & FILTERED).all()
+        for gate in (0, 1, 3):
+            assert int(flags[:, gate].max()) == 0
+
+    def test_a_partial_pass_still_records_exactly_one_operation(self):
+        bundle = _scope_bundle()
+        out = filter(bundle, MEDIAN3, gates=(1,))
+        assert len(out.graph.operations) == 1
+        assert out.graph.operations[-1].kind == "filter.median"
+        assert len(bundle.graph.operations) == 0
+
+    @pytest.mark.parametrize(
+        ("gates", "message"),
+        [
+            ((), "selects no gate"),
+            ((0, 0), "more than once"),
+            ((4,), "outside this payload"),
+            ((-1,), "outside this payload"),
+        ],
+    )
+    def test_a_selection_that_is_not_usable_is_refused(self, gates, message):
+        with pytest.raises(ValueError, match=message):
+            filter(_scope_bundle(), MEDIAN3, gates=gates)
+
+    @pytest.mark.parametrize("gates", [(1.5,), (True,), ("1",)])
+    def test_a_non_integer_gate_index_is_a_type_error(self, gates):
+        # a wrong type is not a wrong value: the same distinction ``filter``
+        # draws for a payload that is not a FilterSpec
+        with pytest.raises(TypeError, match="must be integers"):
+            filter(_scope_bundle(), MEDIAN3, gates=gates)
+
+    def test_filter_sequence_passes_the_selection_through(self):
+        bundle = _scope_bundle()
+        out = filter_sequence(bundle, [MEDIAN3, MEDIAN3], gates=(3,))
+        before = bundle.artifact.data
+        after = out.artifact.data
+        assert not np.array_equal(after.values[:, 3], before.values[:, 3])
+        assert np.array_equal(
+            np.delete(after.values, 3, axis=1), np.delete(before.values, 3, axis=1)
+        )
+        assert len(out.graph.operations) == 2
+
+    def test_the_four_sensor_fixture_can_be_scoped_to_the_gate_being_read(
+        self, four_sensor_bundle
+    ):
+        # the ragged 4-row visits are unaffected: the scope changes which gates
+        # are processed, not the segmentation rules
+        spec = TvFilterSpec(weight=0.5, iterations=50, max_gap_s=0.040)
+        before = four_sensor_bundle.artifact.data
+        after = filter(four_sensor_bundle, spec, gates=(27,)).artifact.data
+        assert not np.array_equal(after.values[:, 27], before.values[:, 27])
+        assert np.array_equal(
+            np.delete(after.values, 27, axis=1), np.delete(before.values, 27, axis=1)
+        )
+
+
 # ── real .BDD fixtures through the test adapter ──────────────────────────
 
 

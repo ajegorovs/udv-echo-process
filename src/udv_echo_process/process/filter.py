@@ -25,12 +25,17 @@ otherwise. Minimum processed lengths: SAVGOL ``window``, TV 2; MEDIAN and MEAN
 have none (a 1-sample segment is processed).
 
 Always per gate, independent 1-D along time (never coupling neighbouring
-gates); only ``values`` and the accumulated quality change. The numerical
-kernels stay private here and the segment/uniformity rules live in the private
-``udv_echo_process.process.segments`` helper.
+gates); only ``values`` and the accumulated quality change. ``filter``'s
+optional ``gates`` selection restricts one pass to some of a payload's gates —
+for a reader who is looking at one gate, filtering the other 54 is wasted work —
+and every gate it does *not* name keeps its values and quality bit for bit. The
+numerical kernels stay private here and the segment/uniformity rules live in the
+private ``udv_echo_process.process.segments`` helper.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 import numpy as np
 from scipy.ndimage import median_filter, uniform_filter1d
@@ -74,8 +79,13 @@ register_operation("filter.tv", TvFilterSpec)
 _IMPLEMENTATION = implementation_ref("udv_echo_process.process.filter.filter")
 
 
-def filter(bundle: ChannelBundle, spec: FilterSpec) -> ChannelBundle:
-    """Apply one filter to every gate of ``bundle`` along time (axis 0).
+def filter(
+    bundle: ChannelBundle,
+    spec: FilterSpec,
+    *,
+    gates: Sequence[int] | None = None,
+) -> ChannelBundle:
+    """Apply one filter along time (axis 0) to ``gates`` of ``bundle``.
 
     A closed ``ChannelBundle -> ChannelBundle`` transform. It computes owned
     output arrays and routes them through
@@ -86,15 +96,26 @@ def filter(bundle: ChannelBundle, spec: FilterSpec) -> ChannelBundle:
         bundle: the validated per-channel input state.
         spec: one ``FilterSpec`` branch — ``median`` / ``mean`` / ``savgol`` /
             ``tv``.
+        gates: which gates of the payload this pass processes, by index in the
+            payload's own order. ``None`` (the default) processes every gate.
+            This is a *selection* argument on the transform — the shape
+            ``resample`` uses for its target grid — so it is deliberately **not**
+            part of the recorded ``params_json``, which is built from ``spec``
+            alone (plan §8.3); two differently scoped passes stay
+            distinguishable because a derived artifact's id is computed from its
+            output data. Gates are validated, never dropped: an index outside
+            the payload, an empty selection, a duplicate or a non-integer raises.
 
     Returns:
         A new closed ``ChannelBundle`` with the filtered payload and its
         provenance edge.
 
     Raises:
-        TypeError: when ``spec`` is not a ``FilterSpec`` branch.
+        TypeError: when ``spec`` is not a ``FilterSpec`` branch, or when a gate index
+            is not an integer.
         ValueError: when a SAVGOL/TV segment is not truly uniform (never
-            silently skipped).
+            silently skipped), or when ``gates`` does not name a usable,
+            duplicate-free set of this payload's gates.
     """
     kind = _KIND_BY_SPEC_TYPE.get(type(spec))
     if kind is None:
@@ -107,38 +128,93 @@ def filter(bundle: ChannelBundle, spec: FilterSpec) -> ChannelBundle:
         bundle.artifact.data,
         spec,
         channel=bundle.artifact.acquisition.channel.device_channel,
+        gates=gates,
     )
     return derive(
         bundle, kind=kind, spec=spec, implementation=_IMPLEMENTATION, data=data
     )
 
 
-def filter_sequence(bundle: ChannelBundle, specs: list[FilterSpec]) -> ChannelBundle:
+def filter_sequence(
+    bundle: ChannelBundle,
+    specs: list[FilterSpec],
+    *,
+    gates: Sequence[int] | None = None,
+) -> ChannelBundle:
     """Apply ``specs`` in order — the sequence-of-filters entry point.
 
     A plain fold over :func:`filter`: ``filter_sequence(b, [a, c])`` equals
     ``filter(filter(b, a), c)``. Each element adds exactly one operation
-    record; an empty sequence returns ``bundle`` unchanged.
+    record; an empty sequence returns ``bundle`` unchanged. ``gates`` is the
+    same selection :func:`filter` takes and it applies to every element of the
+    sequence; scope one pass differently by calling :func:`filter` directly for
+    it.
     """
     for spec in specs:
-        bundle = filter(bundle, spec)
+        bundle = filter(bundle, spec, gates=gates)
     return bundle
 
 
 # ── private kernels and propagation ──────────────────────────────────────
 
 
-def _filtered_data(data: SignalData, spec: FilterSpec, *, channel: int) -> SignalData:
+def _selected_gates(gates: Sequence[int] | None, *, n_gates: int) -> tuple[int, ...]:
+    """Validate a gate selection against the payload's own width.
+
+    Args:
+        gates: the caller's selection, or ``None`` to process every gate.
+        n_gates: the payload's gate count.
+
+    Returns:
+        The gate indices to process, in the caller's order.
+
+    Raises:
+        ValueError: an empty selection, a non-integer index, a duplicate or an
+            index outside ``[0, n_gates)`` — each named in the message, never
+            silently dropped or normalised away.
+    """
+    if gates is None:
+        return tuple(range(n_gates))
+    selected = tuple(gates)
+    if not selected:
+        raise ValueError(
+            "filter: gates= selects no gate; omit it to process every gate"
+        )
+    indices: list[int] = []
+    for gate in selected:
+        if isinstance(gate, bool) or not isinstance(gate, (int, np.integer)):
+            raise TypeError(f"filter: gate indices must be integers, got {gate!r}")
+        if not 0 <= int(gate) < n_gates:
+            raise ValueError(
+                f"filter: gate {int(gate)} is outside this payload's {n_gates} gates "
+                f"(valid indices 0..{n_gates - 1})"
+            )
+        indices.append(int(gate))
+    duplicates = sorted({gate for gate in indices if indices.count(gate) > 1})
+    if duplicates:
+        raise ValueError(f"filter: gates= names {duplicates} more than once")
+    return tuple(indices)
+
+
+def _filtered_data(
+    data: SignalData,
+    spec: FilterSpec,
+    *,
+    channel: int,
+    gates: Sequence[int] | None = None,
+) -> SignalData:
     """Return a fresh filtered ``SignalData`` (owned arrays, parent untouched).
 
-    ``values`` and the accumulated ``quality`` are rebuilt; support kinds,
-    validity, the time/gate axes and the row-level acquisition index are
-    carried through, each through the owning model, so no array is shared with
-    the parent.
+    ``values`` and the accumulated ``quality`` are rebuilt; only the gates in
+    ``gates`` are processed (every gate by default), and an unprocessed gate is
+    copied through bit for bit — no value, support kind or quality change.
+    Support kinds, validity, the time/gate axes and the row-level acquisition
+    index are carried through, each through the owning model, so no array is
+    shared with the parent.
     """
     values = np.array(data.values, dtype=np.float64, copy=True)
     quality = np.array(data.support.quality, copy=True)
-    for gate in range(values.shape[1]):
+    for gate in _selected_gates(gates, n_gates=values.shape[1]):
         _filter_gate(
             values[:, gate],
             quality[:, gate],
