@@ -88,6 +88,17 @@ branch were removed; the notebook worktree is retained. The verified raw-byte
 recovery archive and pre-integration backup ref remain available locally.
 No additional notebook feature work or notebook-branch publication was performed.
 
+**Published (2026-10-19).** The branch's work — the four-channel notebook, the pair overlays, the owner-directed
+time-mode (SVD) view and the sidebar TV filter with its gate-scoped library `filter(..., gates=)` — is committed and
+published as **draft PR #78** (`feat/four-sensor-notebook-review` → `master`, head `143b8c5`, 12 commits, 15 files,
++3149/−40). This supersedes three statements above: *"the notebook branch itself is not published"*, *"No additional
+notebook feature work or notebook-branch publication was performed"*, and the checkpoint's local-only framing.
+Measured at the published head: **147 passed** over `tests/test_time_modes.py` + `tests/test_artifact_filter.py`,
+`ruff check src tests` clean, `marimo check notebooks` exit 0, `marimo export html` exit 0 (1.4 MB executed page), and
+the whole suite at **8 failed / 3636 passed / 22 skipped** — the same eight by file and name as the pre-change
+baseline on this tree, so nothing regressed. PR #76 remains unmerged and is **not** this branch's base; the branch is
+off fetched `origin/master`.
+
 A comment-only edit and restoration of `pair_captions` through guarded MCP calls
 verified saving, execution, output and error read-back with the same server/kernel
 process identities. The caption source is restored; marimo's generated dependency
@@ -432,6 +443,16 @@ No notebook/server launch or delegated work remains pending from closeout.
 the candidate notebook is served and selectable on the four-sensor fixture; the step-7 live read-back route is verified
 on it. PR #76 is still unmerged, and its corrections to this plan and the agenda are carried in this session's
 documentation commit. The primary checkout and the WIP snapshot are preserved, and no notebook source was edited.
+
+**Restart checkpoint (2026-10-19) — the branch is published; resume here.** Work in this leaf
+(`C:/Repos/udv-4s-notebook`) on `feat/four-sensor-notebook-review` at `143b8c5`, tracking
+`origin/feat/four-sensor-notebook-review`; the working tree is **clean** and the branch is a fast-forward addition to
+`master`. PR #78 is open as a **draft** — flip it to ready when the work is the thing under review. **No marimo server
+or kernel is running**: the live session that made the mode view and the filter is gone and has to be started again
+(the launch, address, port and session bindings are machine-local, per *What the next reader must not have to
+rediscover*). That costs no state, because the notebook **file** is the artifact and it is committed. The first
+bounded step is unchanged and still unstarted: **steps 1–2 of § *Remaining work*** — re-derive the notebook inventory
+table, then record the leading-notebook decision and the fate of the twin.
 
 **What the next reader must not have to rediscover.** The launch recipe, the overlay address, the port, the process id,
 the notebook-session id, the sandbox that reproduces the write-side verification, and the stop path are machine
