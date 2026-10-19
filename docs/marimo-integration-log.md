@@ -712,3 +712,104 @@ by the Git integration; notebook feature work remains separate and unpublished.
 Verification for integration: notebook raw-byte digest and kernel process identity
 are compared with the pre-cleanup baseline; static checks/export and whitespace
 validation are rerun before closing the merge.
+
+---
+
+### 2026-10-16 — adding a library module during a live session (two measured pitfalls)
+
+Consumer-side observations from a bounded session that added a **new** library module
+(`analysis/time_modes.py` + `models/time_modes.py`) and two cells to the notebook a live
+session was attached to.
+
+- **A *new submodule* needs no kernel restart; a new *name in a cached package* does.** ✅
+  `from udv_echo_process.analysis import decompose_time_modes` failed inside the live kernel
+  with `ImportError: cannot import name 'decompose_time_modes'` even though the package
+  `__init__` re-exported it: `udv_echo_process.analysis` was already in `sys.modules` from
+  the notebook's earlier `from udv_echo_process.io import load`, and a cached module object
+  never gains new attributes. `from udv_echo_process.analysis.time_modes import
+  decompose_time_modes` — the submodule form the notebook already used for `io.load` —
+  imported the new file from disk with **no restart**, so the kernel, the attached page and
+  the session identity were all preserved. The provider resource lists "an imported
+  package's source changed (module cache)" as a legitimate restart trigger; this case is
+  narrower: an *added* submodule is reachable without one when the notebook imports
+  submodules rather than package attributes.
+- **A static `marimo export html` did not render this notebook's plotly figures here.** ✅
+  The export completed (~4.7 s, no error markers, correct markdown) and the page carried six
+  `marimo-plotly` elements with `window.Plotly` defined, but no `.js-plotly-plot` and no
+  `<svg>` appeared — before or after attempted scrolling. `window.scrollBy` had no visible
+  effect on that page, so lazy hydration was most likely never triggered; not diagnosed
+  further, and recorded as a limit of this route rather than a provider defect. The figure
+  was checked instead by importing the notebook file (cells are plain functions until
+  `app.run()`), calling the cell function with a stub `mo` that captured the argument to
+  `mo.ui.plotly`, and writing that figure to a standalone page with plotly.js inlined — the
+  figure inspected was the cell's own code, not a reimplementation of it. (Calling the saved cell
+  *function* stopped working once marimo had rewritten the file in-session: its generated
+  signature is `*args, **kwargs`, so the cell **body** is what to execute.)
+- **A batched edit + run leaves descendants with unregistered edges.** ✅ Editing two cells and
+  then running them produced `NameError: name 'decompose_time_modes' is not defined` inside a
+  cell whose ancestor (`imports`) had just been edited — the dependency edge was not re-registered
+  when the descendant ran. Running the edited ancestor first and the descendants afterwards, in
+  dependency order, cleared it with no other change. Batching is fine for *reads*; a
+  just-edited ancestor must be run before its dependents are queued.
+- **A module the kernel already imported keeps its old behaviour, and the divergence shows up in
+  the *output*, not in the run status.** ✅ After the same session edited two library modules the
+  notebook had already imported, the cells still ran to `idle` with zero errors on both error
+  channels — but one table column read `0.0 mm/s` for a field whose mean is 21-30 mm/s (the
+  pre-revision module stored zeros in `TimeModes.mean_profile` for the uncentred form), and the
+  helper's newly added `offset` argument would have raised `TypeError` had the cell called it.
+  Only `restart_kernel` — the provider's listed trigger for "an imported package's source
+  changed" — makes a changed module take effect; an *added* submodule does not need one (first
+  bullet). The cell was deliberately made independent of both changes instead, and that choice
+  and its cost are recorded in the plan rather than papered over.
+- **Cell ids are neither stable nor unique across saves — a deleted cell's id can come back on a
+  *different* cell.** ✅ Two cells were deleted by id and two cells created; the edits that
+  followed landed on the intended cells (each response echoed the expected `name`), but the saved
+  file then mapped `SFPL` to `tv_filter_apply` and `RGSE` to `overview_heatmaps` — ids that
+  earlier denoted the mode-readout and heatmap cells. So an id is a handle into the *session*, not
+  an identity: **confirm the `name` in every edit/run response, and re-read `get_cell_map` before
+  a series of edits**, rather than trusting ids carried over from earlier in the session. Two new
+  cells anchored to the same `after` cell also land in reverse order, so the second one is the one
+  nearest the anchor.
+- **An offline "run the notebook's own cell bodies" harness must re-inject its stub after the
+  imports cell.** ✅ Executing the saved cell bodies with a stub `mo` (to read every figure's title
+  and the note in every filter state without a browser) silently reported *nothing* — no figures,
+  no markdown, no error — because the notebook's own `import marimo as mo` rebound the real module
+  over the stub: `mo.md(...)` then returned real marimo objects and every capture was missed.
+  Re-setting `namespace["mo"] = stub` before each cell fixed it. A harness that reports emptiness
+  instead of failure is worse than none; assert the captures are non-empty.
+- **A verification harness that reads figures should not fetch them back over MCP.** ✅
+  `get_cell_outputs` on a plotly cell returns the whole encoded figure (binary-typed
+  `bdata` arrays per trace) — hundreds of kilobytes for a four-panel heatmap — and it says
+  nothing the offline harness does not: the harness reported the same figures as *8 traces,
+  z range ±246, `<title>`* in a few lines. Read the live session's outputs for markdown and
+  error state; read figures through the cell-body harness.
+- **A replaced session resets the edit baseline and re-issues cell ids.** ✅ The live session
+  was replaced between two sits (a new `session_id`, fresh kernel, same notebook). The first
+  `edit_cell` after that was refused with `needs_read` even though the id had been read earlier
+  — correct guard, since the id now denotes a cell this agent has not read *in this session* —
+  and the id→name map had shifted again. Sequence: `get_cell_map`, read the target, then edit;
+  never carry ids across a session change.
+- **A transform-level selection belongs on the transform, not smuggled into the spec for
+  provenance's sake.** ✅ Scoping a filter pass to some gates had two candidate homes: a `gates`
+  field on the (contract-pinned) spec, or a keyword-only argument on `filter`. `params_json` is
+  built from `spec.model_dump` alone (plan §8.3), so only the first would appear in the recorded
+  recipe — tempting, until `resample`'s target grid showed the established shape for "what the
+  transform acts on": a transform argument, deliberately outside the spec, with the derived
+  artifact still distinguishable because its id is computed from its data. Follow the precedent,
+  document the omission where a reader will look (the docstring and the on-screen note), and pin
+  the behaviour with tests rather than leaving it implicit.
+- **A kernel restart is the right tool when an imported module changed — budget its real costs.** ✅
+  Editing `process/filter.py` while the live kernel held the old `filter()` would have made the
+  notebook's first call raise `TypeError`, so the restart was the sanctioned action rather than a
+  convenience. Observed costs, not the documented ones: widget values back to their defaults, the
+  change tracker cleared so *every* cell needed a re-read before an edit, and **cell ids re-keyed —
+  a cell created after the restart came back under the id of a cell that had been deleted earlier
+  in the same session.** Re-map first (`get_cell_map`), confirm the `name` every response echoes,
+  and re-drive the widgets to the values the user had. The session id itself survived the restart —
+  but a **browser reconnect re-keyed it** (`s_j0c3sk` → `s_wrmt0w`) with the kernel untouched, exactly
+  as the restart tool warns; every later call has to carry the new id, and a stale id answers
+  `Invalid session id` rather than silently targeting another notebook. A **programmatically set
+  widget value is also not necessarily what a page renders**: the kernel's checkbox read `True`
+  while a separately connected page showed it unchecked, so verify the *rendered* state (or a
+  screenshot) before claiming the UI matches, and leave a live control at its default when the
+  session is being handed back.

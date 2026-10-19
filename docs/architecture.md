@@ -43,7 +43,8 @@ src/udv_echo_process/
 ├── io/           reader registry and DOP BDD reader
 ├── parser.py     independent .ADD parser returning ExtractedData
 ├── viz.py        independent .ADD visualization layer
-├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles
+├── analysis/     terminal domain algorithms: echo RPM, operating states, robust profiles,
+│                 time modes (per-channel time-direction SVD)
 ├── acquire/      the instrument path: plan/config (pure math), actuator protocol + driver
 │                 (Windows-only, lazily imported), campaign/runner/log/verify, live commands
 ├── export.py     terminal-result JSON/CSV/NPZ serialization (not bundle storage)

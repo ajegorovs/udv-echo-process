@@ -39,6 +39,15 @@ of an estimator — all computation stays in `src/`.
 review the current marimo notebook, replace outdated visualization methods and controls. That authorises notebook,
 documentation and plan edits. It does not authorise changing `src/` behaviour, deleting a notebook, or merging.
 
+**Scope note (added 2026-10-19, at publication).** The sentence above predates the branch's current
+contents. Two additions were owner-directed in the 2026-10-16 session, both recorded in this plan's
+own checkpoint: the time-mode view as a **new** library module pair (`models/time_modes.py` +
+`analysis/time_modes.py` — new code, no existing `src/` behaviour changed), and the optional
+keyword-only `gates` selection on `process/filter.py::filter`, which *does* extend an existing
+transform's signature (backward-compatibly; every gate not named keeps its values and quality bit).
+This note records the position; it does not widen the boundary above, which still governs everything
+the branch does not name.
+
 **Baseline.** Original drafting revision `cfd80a2`; records reconciled 2026-10-16 at `a9d807d` on
 `docs/intent-progress-pivot`, with documentation edits uncommitted and notebook implementation unstarted.
 Re-verify `HEAD` and `git status --short` before
@@ -88,8 +97,146 @@ All cell bodies compare equal to the Git baseline except generated final returns
 This is a bounded interface check, not proof that a fresh agent follows the whole loop.
 No restart or external notebook patch was performed in this correction pass.
 
+**Time-mode (SVD) view added (2026-10-16, owner-directed in session).** The owner asked for a
+time-direction SVD of the notebook's heatmaps — "velocity vs gate modes". Delivered under the
+corrected contract, entirely through the attached live session: the library pair
+`src/udv_echo_process/analysis/time_modes.py` + `models/time_modes.py` (exported from
+`analysis`, `models` and the package root, with 34 tests in `tests/test_time_modes.py`), and
+three MCP edits to `notebooks/four_sensor_velocity.py` — `imports` extended, `intro` given
+item 5, and two new cells (`svd_time_modes`, `svd_mode_readout`) created after `pair_captions`,
+run and read back with the same kernel process. Each channel is decomposed on its own, so no
+cross-channel mix and no alignment decision is touched, and the drawn quantity is each mode's
+per-gate **RMS** amplitude in mm/s, so the curves are velocity-scale and the four panels share
+one range. **Read revised on owner direction (same session):** the decomposition keeps the mean
+(`TimeModesSettings(center=False)`), because the owner's model of the rig is a *stationary* flow
+carrying perturbations, and the mean-removed form (the library default) cannot show where the
+mean sits. Uncentred, mode 1 is the stationary field — measured on this fixture it reproduces the
+per-gate time-mean profile at r = +0.9992…+0.9999 and holds 99.9-100% of the mean field's energy
+— and modes 2-4 are the perturbations about it, measured essentially orthogonal to that mean
+(|cos| ≤ 0.018), so the split is readable rather than arbitrary; mode 1 is drawn heavier and the
+amplitude ratio to the secondary modes is left visible. Read back live: all four touched cells
+`idle`, `get_errors` zero on both error channels, `lint_notebook` zero issues, and the readout
+table's live values — stationary share 72.3-86.1%, secondary modes 4.7-7.8%, 90%/95% of the
+non-stationary energy at 26-28/34-35 of the 51 remaining modes, time&depth means 27.7 / 29.4 /
+21.2 / 23.8 mm/s (agreeing with the dataset README's depth-averaged means). Static gates:
+`ruff check src tests` clean, 34 new tests plus the package-surface tests pass, `marimo check
+notebooks` clean. The figure was inspected visually by executing the notebook's own cell body
+(stub `mo`) into a standalone plotly page: title not clipped (132 chars), four panels on one
+shared ±52.1 mm/s range, heavy stationary curve legible against the secondary modes, legend
+intact.
+
+**Kernel-versus-file divergence — observed, then resolved by session replacement.** The live
+kernel loaded both modules before that revision (no `offset` on the helper, zeros in
+`TimeModes.mean_profile`), so the readout cell derived both quantities locally — identical to what
+the library returns.
+The session was then replaced (fresh kernel, same notebook) and the cell
+was rewritten to use them: a diagnostic cell confirmed
+`offset` present and `mean_profile.mean()` = the field mean = 27.7399 mm/s on ch6, and the table's
+numbers are unchanged (26/34, 28/35, 27/35, 28/35 at 90 %/95 %). Divergence and workaround both
+gone, measured rather than assumed; the probe cell was deleted.
+
+**Also on owner direction (same session): `depth_profiles_at_time` and `gate_traces_at_gate` were
+removed** — the two single-channel 2x2 grids (profiles at the cursor time, traces at the cursor
+gate). Both were childless in the dependency graph, so nothing else broke and no variable became
+dead; `intro`'s numbered list and `notes` were reconciled so no page text still describes a view
+that is gone (the notebook is 14 cells). `marimo check notebooks` exit 0, an executed HTML export
+completes, and the live session shows zero errors after the deletions. The overview, both pair
+overlays and the time-mode view remain.
+
+**Time-wise TV filter added on the owner's request (same session).** The notebook's sidebar gained
+a third section — a toggle plus three parameters (`λ` in mm/s, solver iteration cap, `max_gap` in
+ms) — and **one parameter set drives all four channels** on purpose: the control is the filter, not
+a per-channel tuning, and a per-channel weight would quietly make the pair overlays incomparable.
+The work is the library's: each channel goes through `process/filter.py::filter` with a
+`TvFilterSpec` (the same `ChannelBundle -> ChannelBundle` call the single-channel notebooks drive),
+so the ROF solver, the segment rules and the uniformity guard stay in `src/` and the cell only
+routes. The figures and the mode table now draw `signal_values` (raw unless the toggle is on) and
+every figure title carries `signal_label`, so filtered data can never be read as stored profiles.
+Measured on `200RPM.BDD` at λ = 1 mm/s, 200 iterations, `max_gap` 40 ms: **88 000 / 88 000 cells**
+carry `FILTERED`; rms Δ = 1.13-1.18 mm/s; **max |Δ| = 2.00 mm/s exactly, i.e. a cell moves by at
+most 2λ**, which is what makes λ readable in velocity units; each gate's time mean moves by
+≤ 1.1e-13 mm/s (ROF is mean-preserving per segment, so the depth-averaged means the captions quote
+cannot drift); and the stationary share rises slightly — ch6 86.1 → 86.9 %, ch8 81.8 → 82.9 %,
+ch7 73.4 → 74.2 %, ch9 72.3 → 73.3 % — while mode 1's shape is untouched (|cos| = 1.000000,
+mode 2 0.9997) and ch9's mode 3 flips sign (decomposition-internal, not a structural
+change). **Structural limit, stated rather than hidden:** with the visit gap at ~372 ms, TV cannot
+smooth *across* visits at all — 40 ms makes each 4-profile visit its own 4-sample segment, and any
+`max_gap` that spans the gap makes the library refuse the series; the notebook shows that refusal
+verbatim and falls back to the raw profiles instead of smoothing across a hole. Cross-visit
+smoothing would need either a uniform grid (a resampling decision this notebook refuses) or a
+visit-level series (dropping three of every four profiles) — neither is chosen here, and both are
+now recorded as unselected findings. Verified: `marimo check notebooks` exit 0; an executed HTML
+export exits 0 and carries the sidebar controls (each label present) while defaulting to raw; all
+16 cells idle with zero errors live; every figure title read back in all three states (off / on /
+refused) by executing the notebook's own cell bodies offline; and the sidebar itself inspected
+visually in the live app. The live session is left with the filter **on** at λ = 1 so the owner
+sees it immediately; the file's default is off.
+
+**Nothing is overwritten, and the original is shown where it is read (owner direction,
+2026-10-16).** `values` is the imported signal — the read-only arrays the reader froze, where a
+write raises `assignment destination is read-only` (verified) — and the filter publishes a second
+dict plus a new artifact whose parent bundle is untouched, so both fields coexist. The comparison is
+drawn *inside `pair_traces_at_gate`*: the stored samples as grey markers with the plotted curve over
+them (raw when the filter is off, the filtered curve when it is on), which is the cell that reads
+the filtered gate. Two intermediate before|after cells were built first and **removed** on the same
+direction — with a single-gate scope a four-row stored|filtered heatmap pair would have differed in
+one row — so the notebook carries one comparison instead of three.
+
+**Cost of the filter, measured (owner question).** The pass is 22 000 solver calls — 4 channels ×
+55 gates × 100 visits — at ≈0.30 ms each, 6.55 s wall at the defaults; the *same* 22 000 samples
+solved in one 1-D call take 1 ms, so the cost is per-call overhead, not the algorithm. The
+implementation is scikit-image 0.26.0's `denoise_tv_chambolle` (Chambolle's projected-gradient ROF
+solver) — stock, not custom. The repository's own *custom* TV solver (`analysis/_tv_l1.py`) is 2-D,
+L1-fidelity and private to the robust-profile chain by decision D1, so it is not a drop-in here.
+The iteration cap is not the lever: 200 → 30 leaves the time unchanged (6.55 → 6.58 s) and 100
+gives bit-identical output, while 10 costs up to 0.16 mm/s of accuracy. A batched call cannot
+preserve the semantics (skimage denoises n-D, so stacking segments would couple them), so the
+remaining lever is a library-level direct 1-D solver — a numerical-kernel change with new tests and
+a solver-contract decision, recorded as **unselected** rather than done unilaterally.
+
+**Scope narrowed to the gate being read (owner direction, 2026-10-16).** The filter is now a *gate*
+tool with the whole field one click away, because the cost is per-gate work and the view that reads
+it is a gate: `process/filter.py::filter` gained a keyword-only `gates` selection (validated, never
+silently dropped; 12 new cases in `tests/test_artifact_filter.py`), the sidebar gained a **scope**
+dropdown defaulting to the cursor's gate, and `pair_traces_at_gate` draws the stored samples as grey
+markers under each filtered line. Measured on this machine, four channels: **0.127-0.136 s** for the
+cursor's gate (400 solver calls, 1600 of 1600 cells marked `FILTERED`, every other gate untouched bit
+for bit) and **7.09 s** for all 55 gates (22 000 calls, 88 000 cells) — the note beside the figures
+reports the measured time of whatever scope is selected, so the tradeoff is visible rather than
+asserted. The scope is a *selection* argument on the transform, the shape `resample` takes for its
+target grid, which keeps `params_json` built from `spec` alone (plan §8.3) — so it is deliberately
+**not** in the recorded params, and the note says so; a scoped pass and a whole-field pass remain
+distinguishable by the derived artifact's data-derived id. **The kernel was restarted for this** —
+the one case the provider lists for it (an imported package's source changed): the running kernel
+held the pre-`gates` `filter()`, which would have raised `TypeError` on the first call. Cost paid:
+widget values back to defaults, the change tracker cleared (every cell needed a re-read), and
+cell ids re-keyed — the cell created after the restart came back under the id of a cell deleted
+earlier, which is why edits now confirm the returned `name` every time. Verified after the restart:
+all 16 cells `idle` with zero errors, both scopes driven live and read back, `marimo check
+notebooks` exit 0, an executed export exit 0, and the figures read in both scopes through the
+cell-body harness (8 traces in the pair-trace figure: 4 stored-marker traces + 4 curves).
+
+**Limits stated, not resolved:** the
+caption says the perturbation spectrum is broadband and the shares are sampling-weighted; no
+noise-vs-flow separation and no quadrature-pair test is performed, no mode is claimed to be a
+coherent structure, and the uncentred mode 1 is an approximation of the mean (r ≥ 0.999, not the
+The full suite was re-run after the gate-scope change (**8 failed, 3636 passed, 22 skipped**,
+719 s) and failed for **the same 8 by file and name** as the pre-change baseline on this tree
+(**8 failed, 3620 passed, 22 skipped**, 771 s): 5 screen-reading `test_acquire_dialog`/
+`test_acquire_live` cases (no UDOP window in this session — session 0), 2 `test_screening_terms`
+cases (a pre-existing violation at `docs/dop3000/sa5-cross-sitting-agreement-prespec.md:31`) and
+`test_sparse_signal_report_verifier` (recorded source drift in `acquire/*` and `cli.py`). The +16
+passing are the new gate-scope cases and the split of the two parameterised refusals, so nothing
+regressed; earlier in the session the same 8 were also shown to fail with the three `__init__`
+edits reverted, which is what ruled the library exports out as their cause.
+
 **Remaining:** the placement visual and level-factor presentation decision remain
-selected; inventory/leading-notebook work remains deferred as recorded below. No
+selected, joined by the question of whether the time-mode view is taken further (a pair's mode
+shapes on the shared depth axis need no alignment; a *shared* mode across channels does, so it
+stays behind the alignment decision); inventory/leading-notebook work remains deferred as
+recorded below. The 2026-10-16 mode view was added on the owner's in-session direction as a new
+library module plus notebook cells and changes no existing `src/` behaviour, so it does not
+extend the earlier grant. No
 alignment, estimator, merge, deployment or provider implementation is authorized by
 this correction. Continue by attaching to the intended existing notebook, not by
 recreating the worktree or restarting its kernel.
@@ -223,7 +370,11 @@ the instrument.
   The pair comparison is drawn as **overlays** (owner direction, same day): outer 6 vs 8 and inner 7 vs 9, each pair on
   top of each other against gate depth and again against time, with one colour per channel pinned so the overlays match
   the per-channel grids and the legend naming each trace's own stored profile or recorded span. **Still open here:** the
-  sensor-placement visual, and the decision on how the mount-to-mount level factor is shown.
+  sensor-placement visual, and the decision on how the mount-to-mount level factor is shown. **Amended the same day:**
+  the two single-channel grids named above (depth profiles at the cursor time, gate traces at the cursor gate) were
+  removed on owner direction, and the time-mode view was added — see the maintained checkpoint; the bullet is kept as
+  the landing record, not as a description of the notebook's current cells. The pair overlays ask the question a pair's
+  *mode shapes* would also answer, which is now available on the shared depth axis.
 - Then steps 3–7 and the acceptance criteria they serve.
 - **Unselected, and not to be started here:** the alignment decision for the four staggered channels; any four-sensor
   estimator; the sparse explorer's own cursor work in PR #71's sibling directory.
