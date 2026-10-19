@@ -45,6 +45,11 @@ from udv_echo_process.models.states import (
     StateDetectionSettings,
 )
 from udv_echo_process.models.support import QualityFlag, SampleSupport, SupportKind
+from udv_echo_process.models.time_modes import (
+    TimeModes,
+    TimeModeSignConvention,
+    TimeModesSettings,
+)
 
 __all__ = [
     "AcquisitionIndex",
@@ -75,6 +80,9 @@ __all__ = [
     "StateDetectionMode",
     "StateDetectionSettings",
     "SupportKind",
+    "TimeModeSignConvention",
+    "TimeModes",
+    "TimeModesSettings",
     "TvL1Settings",
     "ValueModel",
     "array_digest",
