@@ -115,8 +115,66 @@ adds the ordering rule that makes step 1 load-bearing, and the state that constr
 - round/visit identity is **not** derived from any of it, by explicit decision (the manual documents the word as a
   *block/sequence* number and nothing stronger).
 
-So criterion 6's comparison is available offline today, from the committed fixtures, without the instrument — and it
-is the cheapest evidence this plan can produce first.
+So criterion 6's comparison is available offline today, from the committed fixtures, without the instrument — and
+it is the cheapest evidence this plan can produce first.
+
+## The `Channels` surface, measured (2026-10-19)
+
+The dropdown's **control tree is readable while it is hidden**. This application keeps its menu
+panels in the tree with `WS_VISIBLE` off (the reason `_is_visible` exists), so a passive walk of the
+running application — no hover, no cursor movement, no press — returns the whole surface with
+handles and rectangles. Measured on `UDOP DOP3010.43` (window `(-8,-8,1928,1058)`, maximised), via
+`tools/live/probes/hidden_menus.py`:
+
+- the dropdown is the hidden `TSp_Panel` **hwnd 2887108, rect `(526,55,919,481)`** — 393 x 426. The
+  committed crop `UI-MENU-10` (`menu-channels.png`) is 393 x 460: the same width, and 460 − 34 = 426
+  for the menu band it also shows, so the crop and the live panel are the same surface and every
+  painted caption now has a handle;
+- the menubar's `Channels` entry is the **seventh of ten** bar buttons, hwnd 507514148, rect
+  `(526,28,596,53)`. Its dropdown starts at the button's own left — the same convention the
+  `Parameters` popup follows (`left == 169` is that button's left), which is what makes a popup-left
+  signature generalisable rather than a second hard-coded rectangle;
+- the bindings, by caption (rects are screen coordinates at that window rect; `x` pitch of the two
+  tick rows is 21 px, each strip 15 x 33):
+
+| caption | control | hwnd | rect | live value |
+|---|---|---|---|---|
+| `Use only channel` (label + its tick) | `TSp_Button` | 266390 | 536,58,658,88 | painted |
+| the ten `Use only channel` ticks | ten `TSp_Button`s | 6357834 … 6689118 | x = 687 + 21k, y 65–98 | painted |
+| `Enable multiplexer` | `TSp_Button` | 2494676 | 535,91,664,123 | painted |
+| `Roll over the channels` | `TSp_Button` | 266402 | 739,131,893,149 | painted |
+| the ten `Use channels` ticks | ten `TSp_Button`s | 2819078 … 266384 | x = 693 + 21k, y 168–201 | painted |
+| `Repeat the acquisition sequence [n] times` | `TSp_Edit` in 5834222 | 1114666 | 780,210,886,234 | `10` |
+| `Start the sequence by using channel [n]` | `TComboBox` | 1053496 | 781,244,826,265 | `1` (items `1`…`10`) |
+| `Display all channels in the same graph (if possible)` | `TSp_Button` | 266404 | 550,267,870,299 | — |
+| `For the current channel (channel 1)` | painted heading inside 4916038 | — | — | — |
+| `Apply parameters from channel [n]` | `TComboBox` | 3412402 | 782,349,832,370 | `1` (items `1`…`10`) |
+| `To current channel` | `TSp_Button` | 1708122 | 566,387,716,407 | — |
+| `To all used channels` | `TSp_Button` | 1511456 | 734,387,884,407 | — |
+| `Acquire [n] Profiles` | `TSp_Edit` in 2626410 | 1508794 | 615,436,772,460 | `5` |
+| `during [x] seconds` | `TSp_Edit` in 528502 | 855898 | 786,439,892,463 | `0.20` |
+
+**The one finding that changes the design.** There is **no `TSp_CheckBox` in this dropdown**. Every
+tick — `Use only channel`, `Roll over the channels`, the twenty channel ticks — is an owner-drawn
+`TSp_Button` that answers `BM_GETCHECK` with **0** whether or not it is ticked (all ten of a row
+report 0 while the crop paints one green tick and nine red crosses). So the multiplexer's state is
+**paint, not a message**: `Enable multiplexer` cannot be read by `BM_GETCHECK`, and a read-only
+status verb has to be a **capture** of the visible panel, exactly as a caption does. The field
+values are the exception — the two combos and the three edits answer by message across processes, so
+`Repeat`, `Acquire … Profiles`, `during … seconds` and both channel selectors *are* readable
+without a picture, and they read the application's buffered values while the panel is hidden.
+
+Two consequences for the plan's open items:
+
+- **Q1 is answerable offline in part**: `Acquire [n] Profiles` and `during [x] seconds` are two
+  separate edits in one row, both holding a value at once (`5` and `0.20` now), so they are
+  alternatives the *application* resolves — not two spellings of one field. Which one the visit
+  actually uses still needs a stored file's word 51 to compare against, exactly as Q1 says.
+- **The classifier would not name this popup.** `ui/identity.py::_is_menu_popup` is
+  `left == 169 and h > 120`, the `Parameters` rectangle; a `Channels` popup at left 526 fails it and
+  resolves as neither popup nor dialog. Any verb that opens this surface has to either generalise
+  that rule (panel left == a bar button's left, panel top == the band's bottom, panel hosts
+  `TSp_Button`s — the convention measured above) or state its own signature. Not implemented here.
 
 ## Current checkpoint
 
@@ -128,23 +186,34 @@ is the cheapest evidence this plan can produce first.
   forbids an index map), `acquire/actuator.py` (`StripControl`, the store slider's maximum), `io/dop/bdd.py`
   (the reader facts above). Revision: `d276d6e`.
 - The reader-side comparison of criterion 6 is computable offline on the committed four-channel fixture.
-- The `Parameters` path (`ensure_channel`, the dialog transaction) is proven on the instrument; nothing about the
-  multiplexer is.
+- **The `Channels` surface's control tree is measured** (2026-10-19, live, passive): the dropdown panel, the
+  menubar entry, and every control's handle and rect, bound to `UI-MENU-10`'s painted captions — § *The
+  `Channels` surface, measured*. Its ticks are owner-drawn buttons, so their state is paint and not a message.
+- The `Parameters` path (`ensure_channel`, the dialog transaction) is proven on the instrument. Nothing about the
+  multiplexer's **state** is: no tick was read, no field written, no menu opened.
 
 **Not established** (each is device-pending or a question, never an absence):
 
 - whether the `Channels` entry can be opened by the *same* gesture the `Parameters` anchor uses (real-cursor hover,
   then a posted held press on the entry): only `Parameters` has been proven live, and the entry press is
-  the ui model's §5 rule — a second anchor is a *new* claim;
-- whether the `Channels` dropdown classifies as an `OVERLAY` in the existing surface taxonomy (it is painted as a
-  dropdown, per UI-MENU-10's row, and the walk that produced the index adds that it "opens no overlay at all");
-- what each `Channels` control actually commits: checkbox semantics, whether `To all used channels` copies the
-  current channel's whole parameter set (candidate replacement for the driver's own per-channel writes — unverified,
-  and it would *bypass* the existing verification chain if adopted), and whether the two `Acquire …` forms
-  ("[n] Profiles" vs "during [x] seconds") are alternatives or an either/or that the application resolves itself;
+  the ui model's §5 rule — a second anchor is a *new* claim. **The button is identified**
+  (seventh of ten, hwnd 507514148); what is unproven is the hover;
+- how a `Channels` popup is to be *named* by the taxonomy: measured 2026-10-19 it is a hidden `TSp_Panel`
+  with its own rect whose left equals its menubar button's left (§ *The `Channels` surface, measured*), but
+  `ui/identity.py::_is_menu_popup` is the `Parameters` rectangle (`left == 169`), so this popup currently
+  resolves as neither menu popup nor dialog;
+- what each `Channels` control actually commits when pressed: the ticks are owner-drawn `TSp_Button`s whose
+  state is **paint** (all report `BM_GETCHECK` 0), so what a press changes is unverified, and whether
+  `To all used channels` copies the current channel's whole parameter set (candidate replacement for the
+  driver's own per-channel writes — unverified, and it would *bypass* the existing verification chain if
+  adopted). The two `Acquire …` forms are settled as far as the surface can settle them: they are two
+  separate edits holding values at once, so the application resolves which applies — not two spellings of
+  one field;
 - whether enabling the multiplexer makes the parameters dialog unreachable (the manual's lock) or merely refuses the
   write, and therefore what refusal the per-point cycle should raise;
-- whether a **rolling** capture is observable at all from the instrument's own UI (the file cannot show it);
+- whether a **rolling** capture is observable at all from the instrument's own UI (the file cannot show it).
+  What *is* observable — painted on the panel — is the `Roll over the channels` **setting**, which is a
+  different claim from the capture having rolled;
 - which block is selected in the store view, and where `Show block` lives — no crop, no binding;
 - **how far the strip's own evidence has actually moved.** UI-STRIP-03 (four entries `Pause`/`Record`/`Do store`/
   `Clear and restart`, captions bound to handles `1574908`/`4787852`/`2821164`/`1641666` in one instrument process on
@@ -161,10 +230,17 @@ is the cheapest evidence this plan can produce first.
 **Relevant revision / artifacts / live target.** `d276d6e` (worktree `feat/multiplexed-rolling-acquisition`). The
 four-channel fixture `data/4-sensor-velocity/200RPM.BDD` (100 blocks × 4 profiles/channel/block) is the offline
 oracle for the reader comparison. Crops that matter: UI-MENU-10, UI-STRIP-01, UI-STRIP-02, UI-OVERLAY-11,
-UI-WINDOW-01. Live target: `UDOP DOP3010.43`, unreachable from this session.
+UI-WINDOW-01. Live target: **`UDOP DOP3010.43` was running and reachable on 2026-10-19** — the passive read above
+was taken from it, and captures and hovers have a working route again (`tools/live/dispatch.sh` with a task
+registered for this worktree).
 
-**Working state / recovery needs.** Nothing dirty; no live session; no device state was written, so no restore is
-owed. The plan itself is the artifact.
+**Working state / recovery needs.** One live session on 2026-10-19, **read-only by construction**: a passive
+control-tree walk that moves no cursor and presses nothing. Two things it did *not* do, stated so a later reader
+does not infer them: no menu was opened (so no popup is stranded), and no field was written. One unintended press
+did happen earlier in that session and is recorded because it touched the instrument: the primary checkout's
+scheduled task still held an `acquire preflight` target, so a dispatch from this worktree ran **that** tree's
+preflight (record → hold 2 s → stop → `Do store` dialog → cancel). It stored nothing, exited 0, and left the strip
+`ready`; `dispatch.sh` now refuses a task that names another tree (see § *Decisions*).
 
 ## Remaining work
 
@@ -221,6 +297,22 @@ beyond the `Channels` surface.
 - **2026-10-19 — the four-sensor `time_modes` work was published separately** as PR-branch
   `feat/four-sensor-notebook-review` (12 commits, +3149/−40), because it was uncommitted in a single worktree and
   belonged to the authorized notebook effort, not to this one.
+- **2026-10-19 — the first live step is the hidden panel, not an opened menu.** The dropdown's whole control tree is
+  readable while hidden, so the mapping needed no gesture at all. Opening it was deliberately *not* done: this
+  driver cannot dismiss a hover-opened popup (cursor restore, `ESC`, a click outside and `WM_CANCELMODE` all leave
+  it up, and `WM_CLOSE` wedges the modal menu loop), so an opened `Channels` menu strands the operator's screen
+  until they clear it by hand. That makes "open it and photograph the ticks" an **operator-present** step, and it is
+  the only way to read the multiplexer's state (§ *The `Channels` surface, measured*).
+- **2026-10-19 — a dispatch must be refused when the task names another tree.** Measured the hard way: from this
+  worktree, `dispatch.sh` silently ran the primary checkout's stale `acquire preflight` target, because a scheduled
+  task's action names one tree and `task_run.py` reads *that* tree's `outputs/live/`. `dispatch.sh` now reads the
+  task's `<Arguments>` and refuses unless they name this clone's `task_run.py` (verified: refusal on
+  `hermes_gui_probe`, runs on `hermes_gui_probe_mux`); the README and the skill's bring-up reference carry the rule
+  and the second finding below it.
+- **2026-10-19 — this worktree's venv was rebuilt on the system interpreter.** A venv based on the agent host's
+  bundled Python cannot be launched as a Task Scheduler action (task reports *Running*, `pythonw` idles with no
+  child, no log is ever written), although it works from a shell. Rebuilt with `uv venv --clear --python
+  <system python>` + `uv sync --extra dev --extra acquire`; recorded in `tools/live/README.md` and the skill.
 - **D3 — the `Channels` surface is a bounded exception to "no arbitrary menu driving".** The ui model (§9) excludes
   arbitrary UDOP menu driving; this plan asks for exactly one more *proven* anchor, not a general map, and it must be
   argued on the record when it is implemented. Not yet implemented.
