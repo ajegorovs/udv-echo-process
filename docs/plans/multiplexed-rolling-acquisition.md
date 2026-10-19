@@ -165,6 +165,41 @@ values are the exception — the two combos and the three edits answer by messag
 `Repeat`, `Acquire … Profiles`, `during … seconds` and both channel selectors *are* readable
 without a picture, and they read the application's buffered values while the panel is hidden.
 
+### The open popup, read live (2026-10-19)
+
+`tools/live/probes/channels_popup.py` then **opened** it and photographed it, so the paint half is
+measured rather than inferred:
+
+- **the same gesture opens it**: the real-cursor hover on the seventh bar button at its centre
+  `(561,40)` — no entry press, no posted message — and the panel that appeared was the *same*
+  handle 2887108 at the *same* rect `(526,55,919,481)`, now visible, within the poll;
+- **the tree and the picture agree**: 39 controls, every one `IsWindowVisible == True`, every one
+  answering `BM_GETCHECK` **0** — while the frame paints **five green ticks**. That is the
+  decisive form of the finding above: even on the visible panel, a check state is not a message;
+- **the state at that moment**, read off `outputs/live/channels-popup.png` and cross-checked
+  against the same moment's text reads (`Repeat` `10`, both selectors `1`, `5` and `0.20`):
+
+  | reading | value |
+  |---|---|
+  | `Use only channel` | **ticked** (green ✓) |
+  | its ten-channel row | `1` green ring, `2`–`10` red ringed crosses — an indicator row, not a set of ticks |
+  | `Enable multiplexer` | **unticked** |
+  | `Roll over the channels` | **ticked** |
+  | `Use channels` (participants) | **1 ✓, 2 ✓, 3–9 ✗, 10 ✓** — channels 1, 2 and 10 |
+  | `Repeat the acquisition sequence [n] times` | `10` |
+  | `Start the sequence by using channel [n]` | `1` |
+  | `Acquire [n] Profiles or during [x] seconds` | `5` / `0.20` |
+
+  So this instrument is configured for **three participants (1, 2, 10), roll-over on, multiplexer
+  off** — the participant set and the roll-over flag are painted, and the multiplexer's own switch
+  is the one the automation must set last (step 6).
+- **it is a one-way gesture for this driver.** The probe leaves the popup up on purpose and says so
+  in its report: the cursor restore, `ESC`, a click outside and a posted `WM_CANCELMODE` do not
+  dismiss it and `WM_CLOSE` wedges the menu loop, so **the operator's one click clears it**. Any
+  read-only verb on this surface therefore either costs the operator a click or must read the
+  hidden panel and accept that the paint is not in it — a design choice the verb's implementation
+  has to make explicitly, not inherit.
+
 Two consequences for the plan's open items:
 
 - **Q1 is answerable offline in part**: `Acquire [n] Profiles` and `during [x] seconds` are two
@@ -190,15 +225,20 @@ Two consequences for the plan's open items:
 - **The `Channels` surface's control tree is measured** (2026-10-19, live, passive): the dropdown panel, the
   menubar entry, and every control's handle and rect, bound to `UI-MENU-10`'s painted captions — § *The
   `Channels` surface, measured*. Its ticks are owner-drawn buttons, so their state is paint and not a message.
+- **The popup has been opened once and its paint read** (2026-10-19): the hover opens it, the same handle
+  becomes visible, every control still answers `BM_GETCHECK` 0, and the frame gives the mode's settings —
+  participants 1/2/10, roll-over ticked, `Enable multiplexer` unticked, `Repeat 10`, `Acquire 5` / `0.20 s`.
+  That is the read criterion 4 wants; what is *not* done is the verb, and opening it costs the operator a click
+  (the driver cannot dismiss it) — § *The open popup, read live*.
 - The `Parameters` path (`ensure_channel`, the dialog transaction) is proven on the instrument. Nothing about the
-  multiplexer's **state** is: no tick was read, no field written, no menu opened.
+  multiplexer's **state** was written: no tick pressed, no field changed.
 
 **Not established** (each is device-pending or a question, never an absence):
 
-- whether the `Channels` entry can be opened by the *same* gesture the `Parameters` anchor uses (real-cursor hover,
-  then a posted held press on the entry): only `Parameters` has been proven live, and the entry press is
-  the ui model's §5 rule — a second anchor is a *new* claim. **The button is identified**
-  (seventh of ten, hwnd 507514148); what is unproven is the hover;
+- ~~whether the `Channels` entry can be opened by the same gesture as `Parameters`~~ — **measured
+  2026-10-19: yes.** The real-cursor hover on the seventh bar button opens it; no popup entry has to
+  be pressed, which is the one difference from the `Parameters` path. What is still unproven is
+  whether a **click** on a tick inside it commits anything, and how it is to be undone;
 - how a `Channels` popup is to be *named* by the taxonomy: measured 2026-10-19 it is a hidden `TSp_Panel`
   with its own rect whose left equals its menubar button's left (§ *The `Channels` surface, measured*), but
   `ui/identity.py::_is_menu_popup` is the `Parameters` rectangle (`left == 169`), so this popup currently
@@ -236,12 +276,14 @@ was taken from it, and captures and hovers have a working route again (`tools/li
 registered for this worktree).
 
 **Working state / recovery needs.** One live session on 2026-10-19, **read-only by construction**: a passive
-control-tree walk that moves no cursor and presses nothing. Two things it did *not* do, stated so a later reader
-does not infer them: no menu was opened (so no popup is stranded), and no field was written. One unintended press
-did happen earlier in that session and is recorded because it touched the instrument: the primary checkout's
-scheduled task still held an `acquire preflight` target, so a dispatch from this worktree ran **that** tree's
-preflight (record → hold 2 s → stop → `Do store` dialog → cancel). It stored nothing, exited 0, and left the strip
-`ready`; `dispatch.sh` now refuses a task that names another tree (see § *Decisions*).
+control-tree walk that moves no cursor and presses nothing, then one **hover** that opened the `Channels`
+dropdown for a photograph. That popup is left on screen on purpose — the driver cannot dismiss it — so **the
+operator owes one click** to clear it (`outputs/live/channels-popup.png` is the pair to that moment). Nothing was
+written: no tick pressed, no field changed, no recording started. One unintended press did happen earlier in that
+session and is recorded because it touched the instrument: the primary checkout's scheduled task still held an
+`acquire preflight` target, so a dispatch from this worktree ran **that** tree's preflight (record → hold 2 s →
+stop → `Do store` dialog → cancel). It stored nothing, exited 0, and left the strip `ready`; `dispatch.sh` now
+refuses a task that names another tree (see § *Decisions*).
 
 ## Remaining work
 
