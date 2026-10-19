@@ -156,8 +156,9 @@ handles and rectangles. Measured on `UDOP DOP3010.43` (window `(-8,-8,1928,1058)
 
 **The one finding that changes the design.** There is **no `TSp_CheckBox` in this dropdown**. Every
 tick — `Use only channel`, `Roll over the channels`, the twenty channel ticks — is an owner-drawn
-`TSp_Button` that answers `BM_GETCHECK` with **0** whether or not it is ticked (all ten of a row
-report 0 while the crop paints one green tick and nine red crosses). So the multiplexer's state is
+`TSp_Button` that answers `BM_GETCHECK` with **0** whether or not it is ticked (all twenty report 0
+while the crop paints row 1 as one green tick and nine red crosses, and row 2 as `1` and `10`
+green). So the multiplexer's state is
 **paint, not a message**: `Enable multiplexer` cannot be read by `BM_GETCHECK`, and a read-only
 status verb has to be a **capture** of the visible panel, exactly as a caption does. The field
 values are the exception — the two combos and the three edits answer by message across processes, so
