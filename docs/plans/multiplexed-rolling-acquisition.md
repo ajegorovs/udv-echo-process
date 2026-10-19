@@ -40,7 +40,9 @@ mapped before it can be implemented, and the mapping is what this plan owns.
 6. **One multiplexed recording is stored and identified from its own bytes**: the stored `.BDD`'s op words 51
    ("Nb profiles in block in multiplexer mode"), 52 (multiplexer-enable bit), 53 ("Nb blocks in multiplexer mode")
    and the per-profile block word are read back and compared with what was requested, and the comparison — including
-   any disagreement — is written down. Evidence: committed data note + the decode.
+   any disagreement — is written down. Evidence: committed data note + the decode. **Met 2026-10-19** —
+   [`data/multiplexed-first-look/`](../../data/multiplexed-first-look/README.md) carries the recording, the decode
+   and one disagreement it found (ch 2 stores 7 profiles where 0.2 s was intended).
 7. **The mode is recorded as a measured fact, not an inference.** Because roll-over is a *runtime* option that the
    stored bytes do not carry (`AcquisitionMode.ROLLING` is deliberately never emitted), the run record must state
    which mode was requested and which was verified; the plan's evidence for this is the run record of criterion 6
@@ -108,12 +110,21 @@ adds the ordering rule that makes step 1 load-bearing, and the state that constr
   set on **every** used channel, and the decoded mode is then `AcquisitionMode.SEQUENTIAL`;
 - `ROLLING` is **never emitted**: roll-over is a runtime multiplexer option, so the bytes cannot distinguish a
   rolling capture from a stopped one — a limit, not a gap to be closed by guessing;
-- op word 51 is "Nb profiles in block in multiplexer mode" and word 53 "Nb blocks in multiplexer mode"; on
-  `data/4-sensor-velocity/200RPM.BDD` the per-profile block word spans `1..100` **matching word 53**, with four
-  contiguous profiles per channel per block **matching word 51**, while on `data/echo/200.BDD` it is the constant
-  `1` across 4181 blocks;
+- op word 51 is "Nb profiles in block in multiplexer mode" and word 53 "Nb blocks in multiplexer mode";
 - round/visit identity is **not** derived from any of it, by explicit decision (the manual documents the word as a
-  *block/sequence* number and nothing stronger).
+  *block/sequence* number and nothing stronger);
+- **the per-profile block word is `0x01000000 | roll_index`**, with the index running `1 … word 53` and shared by
+  every participant of that roll — measured on two files: `data/4-sensor-velocity/200RPM.BDD` (1,604 blocks,
+  indices `1…100`, `word 53 = 100`) and `data/multiplexed-first-look/mux-sizes-20261019.BDD` (16 blocks, index 1
+  throughout, `word 53 = 1`). Reading the field as a plain integer loses that constant high byte; on
+  `data/echo/200.BDD` it is the constant 1 across 4181 blocks;
+- **profiles per channel = `word 51 × word 53 + 1`** — one profile per channel is written before the roll
+  structure begins (200RPM: `4 × 100 + 1 = 401`; the new fixture: `5 × 1 + 1 = 6`, `7 × 1 + 1 = 8`,
+  `1 × 1 + 1 = 2`). A comparison expecting exactly `word 51 × word 53` is off by one per channel;
+- **`word 51` is per channel and holds exactly the per-channel size that was set** — the new fixture was recorded
+  with three different sizes (`5`, `7`, `1` on channels 1, 2 and 10) and the bytes carry them separately, with
+  word 52 bit 0 set on all three. That is criterion 6's comparison on its strongest side and Q1's answer:
+  the size is a property of the channel, not of the run.
 
 So criterion 6's comparison is available offline today, from the committed fixtures, without the instrument — and
 it is the cheapest evidence this plan can produce first.
@@ -231,7 +242,11 @@ Two consequences for the plan's open items:
   UI-OVERLAY-11 (the trigger dialog), `acquire/ui/menu.py` (the single existing menubar anchor and the rule that
   forbids an index map), `acquire/actuator.py` (`StripControl`, the store slider's maximum), `io/dop/bdd.py`
   (the reader facts above). Revision: `d276d6e`.
-- The reader-side comparison of criterion 6 is computable offline on the committed four-channel fixture.
+- The reader-side comparison of criterion 6 is computable offline on the committed four-channel fixture, and has
+  now been **made against a real multiplexed recording**: `data/multiplexed-first-look/mux-sizes-20261019.BDD`
+  (2026-10-19, operator-recorded) gives per-channel `word 51` = `5`/`7`/`1`, `word 53` = 1, mux bit set on all
+  three, and the block word `0x01000001` throughout — with the relations in § *What a stored multiplexed file
+  already proves*. Criterion 6 is met;
 - **The `Channels` surface's control tree is measured** (2026-10-19, live, passive): the dropdown panel, the
   menubar entry, and every control's handle and rect, bound to `UI-MENU-10`'s painted captions — § *The
   `Channels` surface, measured*. Its ticks are owner-drawn buttons, so their state is paint and not a message.
@@ -282,10 +297,11 @@ Two consequences for the plan's open items:
 
 **Relevant revision / artifacts / live target.** `d276d6e` (worktree `feat/multiplexed-rolling-acquisition`). The
 four-channel fixture `data/4-sensor-velocity/200RPM.BDD` (100 blocks × 4 profiles/channel/block) is the offline
-oracle for the reader comparison. Crops that matter: UI-MENU-10, UI-STRIP-01, UI-STRIP-02, UI-OVERLAY-11,
-UI-WINDOW-01. Live target: **`UDOP DOP3010.43` was running and reachable on 2026-10-19** — the passive read above
-was taken from it, and captures and hovers have a working route again (`tools/live/dispatch.sh` with a task
-registered for this worktree).
+oracle for the reader comparison, and `data/multiplexed-first-look/mux-sizes-20261019.BDD` is the first recording
+made with the multiplexer **on** and unequal per-channel sizes. Crops that matter: UI-MENU-10, UI-STRIP-01,
+UI-STRIP-02, UI-OVERLAY-11, UI-WINDOW-01. Live target: **`UDOP DOP3010.43` was running and reachable on
+2026-10-19** — the passive read above was taken from it, and captures and hovers have a working route again
+(`tools/live/dispatch.sh` with a task registered for this worktree).
 
 **Working state / recovery needs.** One live session on 2026-10-19, **read-only by construction**: a passive
 control-tree walk that moves no cursor and presses nothing, then one **hover** that opened the `Channels`
@@ -319,12 +335,14 @@ sitting; the plan's next live item is the read-only read, not a write.
 **Unselected findings / open questions.**
 
 - **Q1 — is `Acquire [n] Profiles or during [x] seconds` the visit size, and is it one value or one per channel?**
-  **Answered by the owner, 2026-10-19:** it is **per enabled channel** — changing it means clicking through
-  `use only channel X` and setting the two fields for that channel (§ *The `Channels` surface, measured*). So the
-  run record needs **one size per participant**, and criterion 6's comparison has two independent sides per channel
-  (requested vs the stored file's word 51). Still open: which of the two forms the application actually uses when
-  both hold a value (`5` and `0.20` at once), and whether word 51 counts profiles or something derived — the
-  stored-fixture comparison settles that half, offline.
+  **Answered, twice and independently.** Owner, 2026-10-19: it is **per enabled channel** — changing it means
+  clicking through `use only channel X` and setting the two fields for that channel. File, same day:
+  `data/multiplexed-first-look/mux-sizes-20261019.BDD` was recorded with three different sizes and op word 51
+  carries them per channel (`5`, `7`, `1`), with the multiplexer enabled on all three. So the run record needs
+  **one size per participant**, and criterion 6's comparison has two independent sides per channel. Still open:
+  which of the two forms the application uses when both hold a value (that fixture's ch 10 took the duration form,
+  ch 1 and ch 2 the profile form — and ch 2's stored `7` does not correspond to the 0.2 s the operator intended,
+  which the data README records as a slip to re-read per channel).
 - **Q2 — does the multiplexed mode change the *strip* semantics?** The manual says the acquisition stops after the
   last sequence *or* rolls; whether the strip's classification in that state is one of the four measured views is
   unknown, and B10 (the four-button no-slider row, CRITICAL device-pending) sits directly in that territory.
