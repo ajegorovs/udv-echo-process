@@ -94,7 +94,7 @@ adds the ordering rule that makes step 1 load-bearing, and the state that constr
 |---|---|---|---|---|
 | 1 | **Route each participant channel** and configure its operating parameters | `Parameters → Operating parameters` channel combo, then the dialog's fields (UI-OVERLAY-05; binding rules §3.3, §5) | `ensure_channel()` + `write_parameter`/`ordered_writes`; verified on the instrument (B17) | **None.** This is the one step already proven end to end |
 | 2 | **Repeat step 1 for every participant channel** — the manual requires all of them defined *before* enabling | same as 1 | the per-point cycle does this for **one** channel per point | the run model has no "N channels configured" phase; a multiplexed run needs all participants configured in one pass, and that has to be the *same* configuration the visit structure assumes |
-| 3 | **Per-channel fields in the `Channels` dropdown**: `For the current channel (channel 1)` → `Acquire [1] Profiles or during [0.05] seconds`, `Apply parameters from channel [1 ▼]`, and the two buttons `To current channel` / `To all used channels` (UI-MENU-10) | the `Channels` menubar entry, 8th of the ten entries `UI-WINDOW-01` paints | **nothing** — the driver's only menubar binding is `Parameters` (`acquire/ui/menu.py`), and the ui model's §9 lists "arbitrary UDOP menu driving" as out of scope | the whole surface is unbound: anchor, popup identity, and the fields. `Acquire … Profiles or during … seconds` is the per-channel acquisition size, i.e. the field that decides how long each visit is — see § *Open questions* Q1 |
+| 3 | **Per-channel fields in the `Channels` dropdown**: select the channel in the `Use only channel` row, then `For the current channel (channel N)` → `Acquire [n] Profiles or during [x] seconds`, `Apply parameters from channel [1 ▼]`, and the two buttons `To current channel` / `To all used channels` (UI-MENU-10) | the `Channels` menubar entry, 7th of the ten entries `UI-WINDOW-01` paints; the whole surface is **bound** now (§ *The `Channels` surface, measured*) | **nothing implemented** — the driver's only menubar binding is `Parameters` (`acquire/ui/menu.py`) | the surface is no longer unbound, but **the size is per channel**: owner, 2026-10-19 — *"acquire and duration is set for each enabled channel … we must click through 'use only channel X' and set acquire and duration fields for each"*. So an N-participant run is N channel switches and N pairs of writes, each read back on its own channel, done *before* step 6 — and the run record must carry N sizes, not one (Q1) |
 | 4 | **Declare the participant set and the sequence's first channel** | same dropdown: `Use channels` over ten numbers (UI-MENU-10 paints `1` and `10` ticked green), `Start the sequence by using channel [1 ▼]` | **nothing** | needs a typed participant set and an order, both read back |
 | 5 | **Choose the mode** | same dropdown: `Repeat the acquisition sequence [1] times`, `Roll over the channels` (ticked green in UI-MENU-10), `Display all channels in the same graph (if possible)` | **nothing** | `Repeat … times` and roll-over are the mode's substance; `Display all channels…` is a *display* option (manual §11.2) and must not be mistaken for a measurement setting |
 | 5b | **External trigger**, if used | `External Trigger settings` (UI-OVERLAY-11: its two standing notes read `when multiplexer is OFF` and `when MPX is in sequential mode`); manual §11.2 — "Trigger each sequence" per-sequence wait | **nothing**; UI-OVERLAY-11 is `unknown (not classified)` in the index's blocking column | mapped and typed only; **driving it is deferred** (non-goal) |
@@ -182,7 +182,7 @@ measured rather than inferred:
   | reading | value |
   |---|---|
   | `Use only channel` | **ticked** (green ✓) |
-  | its ten-channel row | `1` green ring, `2`–`10` red ringed crosses — an indicator row, not a set of ticks |
+  | its ten-channel row | `1` green ring, `2`–`10` red ringed crosses — **the selector for the per-channel block**, not a set of ticks: see below |
   | `Enable multiplexer` | **unticked** |
   | `Roll over the channels` | **ticked** |
   | `Use channels` (participants) | **1 ✓, 2 ✓, 3–9 ✗, 10 ✓** — channels 1, 2 and 10 |
@@ -193,6 +193,16 @@ measured rather than inferred:
   So this instrument is configured for **three participants (1, 2, 10), roll-over on, multiplexer
   off** — the participant set and the roll-over flag are painted, and the multiplexer's own switch
   is the one the automation must set last (step 6).
+- **The first channel row is a selector, and it is what makes the bottom block per-channel.** Owner,
+  2026-10-19: *"acquire and duration is set for each enabled channel. In order to change them we must
+  click through 'use only channel X' and set acquire and duration fields for each."* So the row under
+  `Use only channel` switches **which channel the `For the current channel (channel N)` block edits**,
+  and `Acquire [n] Profiles or during [x] seconds` holds **one channel's** size at a time — `5` /
+  `0.20` in the frame above is channel 1's, not the run's. Setting a three-participant run therefore
+  costs **three channel switches and three pairs of writes**, each one verified on its own channel,
+  before `Enable multiplexer` is reached; and a run record that carries one `Acquire` value would be
+  stating a fiction. The heading `For the current channel (channel 1)` is that switch's readback in
+  words — the one place the surface says which channel the block applies to.
 - **it is a one-way gesture for this driver.** The probe leaves the popup up on purpose and says so
   in its report: the cursor restore, `ESC`, a click outside and a posted `WM_CANCELMODE` do not
   dismiss it and `WM_CLOSE` wedges the menu loop, so **the operator's one click clears it**. Any
@@ -244,10 +254,12 @@ Two consequences for the plan's open items:
   `ui/identity.py::_is_menu_popup` is the `Parameters` rectangle (`left == 169`), so this popup currently
   resolves as neither menu popup nor dialog;
 - what each `Channels` control actually commits when pressed: the ticks are owner-drawn `TSp_Button`s whose
-  state is **paint** (all report `BM_GETCHECK` 0), so what a press changes is unverified, and whether
+  state is **paint** (all report `BM_GETCHECK` 0), so what a press changes is unverified. That includes the
+  channel row under `Use only channel`, which the owner states switches the per-channel block's target
+  (2026-10-19) — an owner statement this plan records as such, not a measurement. Whether
   `To all used channels` copies the current channel's whole parameter set (candidate replacement for the
-  driver's own per-channel writes — unverified, and it would *bypass* the existing verification chain if
-  adopted). The two `Acquire …` forms are settled as far as the surface can settle them: they are two
+  driver's own per-channel writes) is likewise unverified, and it would *bypass* the existing verification
+  chain if adopted. The two `Acquire …` forms are settled as far as the surface can settle them: they are two
   separate edits holding values at once, so the application resolves which applies — not two spellings of
   one field;
 - whether enabling the multiplexer makes the parameters dialog unreachable (the manual's lock) or merely refuses the
@@ -306,10 +318,13 @@ sitting; the plan's next live item is the read-only read, not a write.
 
 **Unselected findings / open questions.**
 
-- **Q1 — is `Acquire [n] Profiles or during [x] seconds` the visit size?** If it is, then the visit's profile count
-  is a *requested* value the run record can carry, and criterion 6's comparison has two independent sides. If it is
-  something else (a memory ring depth, say), the mapping has to say so before any writer is designed. Decision owner:
-  a live read of the field's own values plus the stored file's word 51.
+- **Q1 — is `Acquire [n] Profiles or during [x] seconds` the visit size, and is it one value or one per channel?**
+  **Answered by the owner, 2026-10-19:** it is **per enabled channel** — changing it means clicking through
+  `use only channel X` and setting the two fields for that channel (§ *The `Channels` surface, measured*). So the
+  run record needs **one size per participant**, and criterion 6's comparison has two independent sides per channel
+  (requested vs the stored file's word 51). Still open: which of the two forms the application actually uses when
+  both hold a value (`5` and `0.20` at once), and whether word 51 counts profiles or something derived — the
+  stored-fixture comparison settles that half, offline.
 - **Q2 — does the multiplexed mode change the *strip* semantics?** The manual says the acquisition stops after the
   last sequence *or* rolls; whether the strip's classification in that state is one of the four measured views is
   unknown, and B10 (the four-button no-slider row, CRITICAL device-pending) sits directly in that territory.
