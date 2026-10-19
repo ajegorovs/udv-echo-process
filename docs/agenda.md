@@ -45,6 +45,20 @@ Capture is not selection. Existing detailed backlog sections below remain their 
   Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
 - **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
   decide a separately scoped wording repair rather than changing the scientific contract during P1.
+- **Crop-index check fails on `master` (measured 2026-10-19):** `uv run --extra acquire python tools/ui/crop_index.py`
+  exits non-zero with two problems — it reports `index rows: 50   crops on disk: 50` while the document's own prose
+  says 45 crops (`AGENTS.md` says 45 in two places), and `UI-STRIP-04: index says 458x133, overlay-pause.png is
+  376x133`. Every cited row still describes a file that exists; the totals and that one stated size are stale. A
+  bounded wording/size repair, not started, and not a reason to distrust a crop that is cited by id.
+- **Strip evidence ahead of its ledger and its code:** `UI-STRIP-03` and `UI-STRIP-04` — committed instrument
+  captures of 2026-09-19, with `UI-STRIP-03`'s four captions (`Pause`/`Record`/`Do store`/`Clear and restart`) each
+  bound to a handle read in one process — show the strip's row **relabelling** (`Pause`↔`Resume`, `Clear and
+  restart`↔`Clear all`) and carrying `Do store` in the row itself. `dop3000/acquisition-ui-model.md` §3.5 still names
+  only `UI-STRIP-01/02`, its ledger row B10 still reads *CRITICAL device-pending*, `dop3000/device-verification.md`
+  still lists V4 as pending, and `acquire/ui/strip.py` still classifies a four-button no-slider row as `AMBIGUOUS`
+  and refuses it. Decide the disposition — whether that evidence settles B10/V4, and only then whether the code's
+  refusal changes — before any gesture is bound to that row. Captured by the multiplexed-acquisition
+  [plan](plans/multiplexed-rolling-acquisition.md) § *Not established*; not selected.
 
 ## Current progress — 2026-10-16
 

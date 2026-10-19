@@ -21,7 +21,9 @@ mapped before it can be implemented, and the mapping is what this plan owns.
 
 1. **The workflow is mapped surface by surface**, each step naming the application surface, the control, the crop or
    `path:line` evidence for it, what the driver already does, and the gap. Evidence: § *The mapped workflow* below,
-   each row carrying its crop id or `file:line`; `tools/ui/crop_index.py` still exits 0.
+   each row carrying its crop id or `file:line`. **The index's own checker does not exit 0 on `master`** — 2
+   pre-existing problems (its prose says 45 crops while it lists 50; UI-STRIP-04's stated width disagrees with the
+   file) — recorded in the agenda, unrelated to this plan, and not a reason to trust an uncited caption.
 2. **A typed mode model exists offline** — participant channels and their order, profiles-or-duration per channel,
    sequence repeats, stop-at-end vs roll-over, external-trigger mode — that cannot express a mode the application
    could not be configured with, and that refuses by name. Evidence: module + tests on the fake actuator, no device.
@@ -97,8 +99,8 @@ adds the ordering rule that makes step 1 load-bearing, and the state that constr
 | 5 | **Choose the mode** | same dropdown: `Repeat the acquisition sequence [1] times`, `Roll over the channels` (ticked green in UI-MENU-10), `Display all channels in the same graph (if possible)` | **nothing** | `Repeat … times` and roll-over are the mode's substance; `Display all channels…` is a *display* option (manual §11.2) and must not be mistaken for a measurement setting |
 | 5b | **External trigger**, if used | `External Trigger settings` (UI-OVERLAY-11: its two standing notes read `when multiplexer is OFF` and `when MPX is in sequential mode`); manual §11.2 — "Trigger each sequence" per-sequence wait | **nothing**; UI-OVERLAY-11 is `unknown (not classified)` in the index's blocking column | mapped and typed only; **driving it is deferred** (non-goal) |
 | 6 | **Toggle `Enable multiplexer`** | the master checkbox in the same dropdown (UI-MENU-10) | **nothing** | the mode switch itself. Manual §11.2: once enabled, **the menus cannot be accessed and parameters cannot be changed**, and it is disabled again by `Use only channel` — so enabling it *suspends* steps 1–2, and the automation must refuse its per-point cycle by name while it is on (criterion 3) |
-| 7 | **Record**, like a single-channel record | strip: `Record` → `Stop` (UI-STRIP-01/02; `StripView` classification) | the full record cycle exists, verified on the instrument | **the accounting changes**: each roll repeats N blocks, the block now holds every participant channel's profiles, and the memory/`T ≤ cap × period` assertions of `udop-automation.md` §7 are stated for a single channel. The per-channel period is what a multiplexed point has to be sized against |
-| 8 | **Store**, per block | store view: `New acquisition` / `Do store` / `Clear and restart` / `Remove current block` (UI-STRIP-02), with the block slider whose maximum is the *selected block's* profile count (`acquire/actuator.py:883`) | `StripControl.REMOVE_CURRENT_BLOCK` and the store dialog's `Do store` exist; `udop/recording.py` already dismisses a leftover block view | `udop-automation.md` §7 rule 5 names exactly this: *"blocks only become meaningful for rolling/multiplexed multi-channel work, where each roll repeats N blocks and `Show block` plus a block-scoped `Do store` is exactly the needed unit"* — **which block is selected is not currently a semantic step**, and `Show block` has no binding or crop in the committed set |
+| 7 | **Record**, like a single-channel record | strip: `Record` → `Stop` (UI-STRIP-01..04; `StripView` classification) | the full record cycle exists, verified on the instrument | **the accounting changes**: each roll repeats N blocks, the block now holds every participant channel's profiles, and the memory/`T ≤ cap × period` assertions of `udop-automation.md` §7 are stated for a single channel. The per-channel period is what a multiplexed point has to be sized against |
+| 8 | **Store**, per block | store view: `New acquisition` / `Do store` / `Clear and restart` / `Remove current block` (UI-STRIP-02), with the block slider whose maximum is the *selected block's* profile count (`acquire/actuator.py:883`). **The row itself also carries `Do store`**: UI-STRIP-03 paints `Pause` / `Record` / `Do store` / `Clear and restart` with each caption bound to a handle in one instrument process, and UI-STRIP-04 paints the paused three-button state `Resume` / `Do store` / `Clear and restart` over a history slider | `StripControl.REMOVE_CURRENT_BLOCK` and the store dialog's `Do store` exist; `udop/recording.py` already dismisses a leftover block view | `udop-automation.md` §7 rule 5 names exactly this: *"blocks only become meaningful for rolling/multiplexed multi-channel work, where each roll repeats N blocks and `Show block` plus a block-scoped `Do store` is exactly the needed unit"* — **which block is selected is not currently a semantic step**, and `Show block` has no binding or crop in the committed set |
 
 **What a stored multiplexed file already proves** (reader side, `io/dop/bdd.py`, measured):
 
@@ -144,6 +146,15 @@ is the cheapest evidence this plan can produce first.
   write, and therefore what refusal the per-point cycle should raise;
 - whether a **rolling** capture is observable at all from the instrument's own UI (the file cannot show it);
 - which block is selected in the store view, and where `Show block` lives — no crop, no binding;
+- **how far the strip's own evidence has actually moved.** UI-STRIP-03 (four entries `Pause`/`Record`/`Do store`/
+  `Clear and restart`, captions bound to handles `1574908`/`4787852`/`2821164`/`1641666` in one instrument process on
+  2026-09-19) and UI-STRIP-04 (the paused `Resume`/`Do store`/`Clear and restart` row) are committed, and the index's
+  own findings record that slot 0 relabels `Pause`↔`Resume` and slot 2 relabels `Clear and restart`↔`Clear all` — but
+  `acquisition-ui-model.md` §3.5 names only UI-STRIP-01/02, its ledger row B10 still reads *CRITICAL device-pending*,
+  `device-verification.md` still lists V4 as pending, and `acquire/ui/strip.py` still classifies a four-button
+  no-slider row as `AMBIGUOUS` and refuses it. Whether that evidence settles B10/V4 — and therefore whether the code's
+  refusal should change — is a disposition this plan does **not** take; it is recorded as an open finding in the agenda
+  because the multiplexed store step runs straight through that row;
 - how the memory cap and per-channel profile period behave in multiplexed mode (`udop-automation.md` §7's
   assertions are single-channel statements).
 
@@ -189,6 +200,10 @@ sitting; the plan's next live item is the read-only read, not a write.
 - **Q4 — the decoded-metadata gate.** Words 51/52/53 have byte-level evidence and now a destination (the run record
   and the reader helper); the gate also asks for propagation rules and storage implications. Raising them into the
   domain model is a candidate change to be decided under that gate, not folded in here.
+- **Q5 — is a multiplexed recording storable per visit *and* per block?** Steps 7–8 turn on the strip's own row, whose
+  committed crops (UI-STRIP-03/04) have not yet been reconciled with the ledger or the code (see § *Not established*).
+  If the row is a relabelling pool, a per-block store is a different gesture from a per-visit one, and the multiplexed
+  store unit has to be chosen deliberately rather than inherited from the single-channel cycle.
 
 **Deferred or excluded.** A rolling campaign/run-plan mode (after one verified record); external-trigger driving;
 block-cap reading (B13 stays unproven — no invented reader); assisted mode; any generalisation of menubar driving
