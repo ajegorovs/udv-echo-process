@@ -63,6 +63,23 @@ Then dispatch (the same task is triggered on demand with `/run`):
 like a two-minute stall, and it hides *whose* time is being spent. Set
 `LIVE_TASK_NAME` to use a different task name, `PROBE_TIMEOUT_S` to change the poll cap.
 
+### One task per clone, and the interpreter it must use
+
+The task's action names **one tree**. A task registered for another checkout runs that tree's
+`task_run.py`, which reads its target from *that* tree's `outputs/live/` — so a worktree
+dispatch would leave its own target unread and execute whatever the other tree last held.
+`dispatch.sh` therefore reads the task's `<Arguments>` and **refuses** when they do not name
+this clone's `tools/live/task_run.py`; register a second task for a second clone and select it
+with `LIVE_TASK_NAME` (measured: the refusal fires on the primary's task from a linked
+worktree, and the worktree's own task runs the same probe in 6 s).
+
+The interpreter in the action must be one the scheduler can launch. A venv built on the agent
+host's own bundled Python starts fine from a shell but, as a task action, produces **no log at
+all**: the task reports *Running* while the `pythonw` process idles with no child. Check
+`pyvenv.cfg`'s `home`; if it names a host-bundled interpreter, recreate the venv on the
+system one (`uv venv --clear --python <system python>` then `uv sync --extra dev --extra
+acquire`).
+
 ### Two forms of target
 
 ```bash
