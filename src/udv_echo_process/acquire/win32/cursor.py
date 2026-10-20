@@ -190,6 +190,11 @@ def _user32():
     u32.GetClipCursor.restype = ctypes.c_int
     u32.ClipCursor.argtypes = (ctypes.c_void_p,)
     u32.ClipCursor.restype = ctypes.c_int
+    u32.GetWindowThreadProcessId.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ulong),
+    )
+    u32.GetWindowThreadProcessId.restype = ctypes.c_ulong
     return u32
 
 
@@ -385,9 +390,8 @@ def _owner_of(hwnd: int, *, user32=_user32) -> tuple[int, int]:
     process are different failures, and the second is only visible in the thread or the
     class (see :class:`~udv_echo_process.acquire.actuator.WindowTarget`).
 
-    ``_thread_of`` below is a separate, pre-existing activation seam. Its out-parameter
-    handling returns the process id, not the thread id; this target-binding change does
-    not fix that activation defect. Do not use it as evidence of thread ownership.
+    Both target binding and foreground activation consume this same parsed owner pair.
+    The API return value is the thread id; its output parameter is the process id.
     """
     process = ctypes.c_ulong()
     thread = user32().GetWindowThreadProcessId(
@@ -397,20 +401,9 @@ def _owner_of(hwnd: int, *, user32=_user32) -> tuple[int, int]:
 
 
 def _thread_of(hwnd: int, *, user32=_user32) -> int:
-    """The identity ``hwnd``'s owner call reports to this module's activation path.
-
-    ``win32process.GetWindowThreadProcessId`` is ``pywin32``'s home for this call and
-    returns ``(threadId, processId)`` — **thread first**, despite the name — but the
-    driver reaches Windows through ``ctypes`` here, so bringing a window forward needs
-    no extra import and works wherever the message layer does.
-
-    Known limitation: this legacy implementation reads the process-id out-parameter.
-    Foreground attachment needs the returned thread id instead; the target-binding
-    checkpoint does not claim to repair or validate activation.
-    """
-    owner = ctypes.c_ulong()
-    user32().GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(owner))
-    return int(owner.value)
+    """Return the owning thread id, not the process-id output parameter."""
+    thread_id, _process_id = _owner_of(hwnd, user32=user32)
+    return thread_id
 
 
 def _activate_window(hwnd: int, *, user32=_user32) -> None:

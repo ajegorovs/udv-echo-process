@@ -412,8 +412,10 @@ def test_activating_a_window_attaches_to_the_thread_that_owns_it_and_detaches() 
         def GetForegroundWindow(self) -> int:
             return 0xC0DE
 
-        def GetWindowThreadProcessId(self, hwnd, owner) -> None:
-            owner._obj.value = 111 if hwnd.value == 0xC0DE else 222  # the front window, the app
+        def GetWindowThreadProcessId(self, hwnd, owner) -> int:
+            # The output is a process id; the return is the thread id.
+            owner._obj.value = 1001 if hwnd.value == 0xC0DE else 2002
+            return 111 if hwnd.value == 0xC0DE else 222
 
         def AttachThreadInput(self, one: int, other: int, attach: bool) -> int:
             self.calls.append(("AttachThreadInput", one, other, attach))
@@ -434,6 +436,23 @@ def test_activating_a_window_attaches_to_the_thread_that_owns_it_and_detaches() 
 
 
 # ------------------------------------------------------------------ the facade still owns the seams
+
+
+def test_window_owner_api_uses_unsigned_thread_return_and_pointer_safe_signature(monkeypatch) -> None:
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    user32 = Mock()
+    monkeypatch.setattr(ctypes, 'windll', SimpleNamespace(user32=user32), raising=False)
+    cursor._user32.cache_clear()
+    try:
+        assert cursor._user32() is user32
+        assert user32.GetWindowThreadProcessId.restype is ctypes.c_ulong
+        assert user32.GetWindowThreadProcessId.argtypes == (
+            ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)
+        )
+    finally:
+        cursor._user32.cache_clear()
 
 
 def test_the_facade_re_exports_the_moved_cursor_names() -> None:
