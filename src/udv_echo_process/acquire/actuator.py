@@ -79,6 +79,7 @@ __all__ = [
     "StripControl",
     "StripState",
     "StripView",
+    "WindowTarget",
     "WriteState",
     "classify_strip_view",
     "dialog_row",
@@ -132,6 +133,28 @@ class ParamRole(str, Enum):
     VELOCITY_SCALE_FACTOR = "velocity_scale_factor"
     EMISSIONS_PER_PROFILE = "emissions_per_profile"
     DOPPLER_ANGLE = "doppler_angle_deg"
+
+
+class WindowTarget(ValueModel):
+    """The window one actuator was told to drive, and the identity it had when told.
+
+    A handle is an action reference; the owning thread and process, the class and (at the
+    moment of every resolve) visibility are the evidence that it still refers to the window
+    the caller chose. Callers can retain the returned record beside their operation
+    evidence; existing job logs do not automatically include this complete identity.
+
+    **What this is not.** It cannot prove *durable* identity: Windows may recycle a handle
+    inside the same process, to another window of the same class with the same owning thread,
+    and the reads this driver makes cannot tell that window from the one recorded here.
+    Identity is checked whenever the root window is resolved, not before every child
+    message. Child handles retain the existing tree's lifetime limitations. A caller that
+    needs stronger identity must observe the application's own state, not this record.
+    """
+
+    hwnd: int
+    thread_id: int
+    process_id: int
+    class_name: str
 
 
 #: The order the **job boundary** performs its parameter transitions in, when a job commands more

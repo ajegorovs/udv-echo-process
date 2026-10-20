@@ -42,16 +42,29 @@ class FakeGui:
     class error(Exception):
         """``win32gui.error``: what the live walk catches when a control dies mid-walk."""
 
-    def __init__(self, controls=None, *, window_visible=True, dying: set[int] | None = None) -> None:
+    def __init__(
+        self,
+        controls=None,
+        *,
+        window_visible=True,
+        dying: set[int] | None = None,
+        hidden: set[int] | None = None,
+    ) -> None:
         self.controls = dict(CONTROLS if controls is None else controls)
         self.window_visible = window_visible
         self.dying = set(dying or ())
+        self.hidden = set(hidden or ())
         self.calls: list[tuple] = []
 
     # ---- the one question
     def IsWindowVisible(self, hwnd: int) -> bool:
         self.calls.append(("IsWindowVisible", hwnd))
-        return hwnd not in HIDDEN
+        return hwnd not in HIDDEN and hwnd not in self.hidden
+
+    # ---- the target's own existence
+    def IsWindow(self, hwnd: int) -> bool:
+        self.calls.append(("IsWindow", hwnd))
+        return hwnd in self.controls
 
     # ---- the rows
     def GetWindowRect(self, hwnd: int) -> tuple[int, int, int, int]:
@@ -332,3 +345,208 @@ def test_the_win32_package_knows_no_udop_policy() -> None:
     assert driver._children_of is tree._children_of
     assert driver._descendants_of is tree._descendants_of
     assert driver._is_visible is tree._is_visible
+
+
+# ------------------------------------------------------------------ one chosen window
+
+#: ``(thread_id, process_id)`` the injected owner read answers with.
+OWNER = (11, 22)
+
+
+def owner_of(*answer: int):
+    """The identity read, injected — no ``user32`` and no live handle in these tests."""
+    return lambda _hwnd: tuple(answer)
+
+
+def test_a_window_target_records_the_identity_the_handle_had_when_chosen() -> None:
+    """The handle is an action reference; the pid and thread are the evidence a caller cites.
+
+    ``window_target`` is the *one* identification of a caller-chosen window: class, owning
+    thread and process are read here, not trusted from a caller's record.
+    """
+    gui = gui_with_main_window()
+    target = tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+
+    assert target.hwnd == WINDOW
+    assert target.class_name == MAIN_CLASS
+    assert (target.thread_id, target.process_id) == OWNER
+    assert type(target).__name__ == "WindowTarget"
+    assert target.model_dump(mode="json") == {
+        "hwnd": WINDOW,
+        "thread_id": OWNER[0],
+        "process_id": OWNER[1],
+        "class_name": MAIN_CLASS,
+    }
+
+
+def test_a_gone_handle_cannot_be_a_target() -> None:
+    """``IsWindow`` false is a named refusal that carries the handle the caller chose."""
+    gui = gui_with_main_window()
+    del gui.controls[WINDOW]
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+
+    assert hex(WINDOW) in str(excinfo.value)
+    assert "no longer exists" in str(excinfo.value)
+
+
+def test_a_handle_recycled_to_another_class_cannot_be_a_target() -> None:
+    """A handle is only ours while it still answers with the class we chose."""
+    gui = gui_with_main_window()
+    gui.controls[WINDOW] = ("TForm", (0, 0, 1280, 900))
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+
+    assert "TForm" in str(excinfo.value)
+    assert MAIN_CLASS in str(excinfo.value)
+
+
+def test_a_window_with_no_owning_process_cannot_be_a_target() -> None:
+    """``(0, 0)`` is the unreadable answer, never "an owner we do not know"."""
+    gui = gui_with_main_window()
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(0, 0))
+
+    assert "owning" in str(excinfo.value)
+
+
+def test_an_invisible_window_cannot_be_a_target() -> None:
+    """Presence is not visibility: a hidden window has no readable control tree to drive."""
+    gui = gui_with_main_window()
+    gui.hidden.add(WINDOW)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+
+    assert "not visible" in str(excinfo.value)
+
+
+def test_a_matching_identity_is_not_a_mismatch() -> None:
+    """The per-operation check is silent while the recorded identity still holds."""
+    gui = gui_with_main_window()
+    target = tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+
+    assert tree.target_mismatch(target, gui=lambda: (gui, None), owner=owner_of(*OWNER)) is None
+
+
+@pytest.mark.parametrize(
+    ("break_it", "expected"),
+    [
+        ("gone", "no longer exists"),
+        ("class", "recycled"),
+        ("owner", "owned by"),
+        ("hidden", "not visible"),
+    ],
+)
+def test_the_per_operation_check_names_the_way_the_target_stopped_being_drivable(
+    break_it: str, expected: str
+) -> None:
+    """Four ways a chosen handle stops being the chosen window — one distinct sentence each."""
+    gui = gui_with_main_window()
+    target = tree.window_target(WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER))
+    owner = owner_of(*OWNER)
+
+    if break_it == "gone":
+        del gui.controls[WINDOW]
+    elif break_it == "class":
+        gui.controls[WINDOW] = ("TForm", (0, 0, 1280, 900))
+    elif break_it == "owner":
+        owner = owner_of(33, 44)
+    else:
+        gui.hidden.add(WINDOW)
+
+    clause = tree.target_mismatch(target, gui=lambda: (gui, None), owner=owner)
+
+    assert clause is not None, "a target that can no longer be driven must be refused"
+    assert expected in clause
+    assert hex(WINDOW) in clause
+    assert tree._main_hwnd  # the selector seam itself is untouched
+
+
+# ------------------------------------------------------- validating a record already in hand
+
+
+def test_validate_target_checks_a_supplied_record_without_re_identifying_it() -> None:
+    """The constructor's question: does this record still describe the window, yes or no?
+
+    ``window_target`` captures the identity a handle has *now*; ``validate_target`` compares a
+    record taken earlier against it and returns that same record, so no caller's evidence is
+    replaced by whatever the handle answers at construction time.
+    """
+    gui = gui_with_main_window()
+    recorded = tree.window_target(
+        WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER)
+    )
+
+    def no_enumeration(*_a, **_kw):
+        raise AssertionError("validating a record must never enumerate the window")
+
+    gui.EnumWindows = no_enumeration  # type: ignore[method-assign]
+
+    assert (
+        tree.validate_target(
+            recorded,
+            class_name=MAIN_CLASS,
+            gui=lambda: (gui, None),
+            owner=owner_of(*OWNER),
+        )
+        is recorded
+    )
+
+
+def test_validate_target_refuses_a_record_whose_owner_changed() -> None:
+    """Same handle, another owner: a refusal naming both identities, never an adoption."""
+    gui = gui_with_main_window()
+    recorded = tree.window_target(
+        WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER)
+    )
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        tree.validate_target(
+            recorded, gui=lambda: (gui, None), owner=owner_of(33, 44)
+        )
+
+    message = str(excinfo.value)
+    assert "owned by" in message
+    assert "pid 44" in message and "pid 22" in message
+
+
+def test_validate_target_refuses_a_record_with_a_partial_owner_before_reading_it() -> None:
+    """A zero/partial record is unreadable identity — refused without asking the owner API."""
+    gui = gui_with_main_window()
+    called: list[int] = []
+
+    def owner(hwnd: int) -> tuple[int, int]:
+        called.append(hwnd)
+        return OWNER
+
+    for thread_id, process_id in ((0, 0), (0, 22), (11, 0)):
+        recorded = tree.WindowTarget(
+            hwnd=WINDOW,
+            thread_id=thread_id,
+            process_id=process_id,
+            class_name=MAIN_CLASS,
+        )
+        with pytest.raises(driver.AcquisitionError, match="no owning identity"):
+            tree.validate_target(recorded, gui=lambda: (gui, None), owner=owner)
+
+    assert called == []
+
+
+def test_validate_target_fails_closed_when_the_owner_read_raises() -> None:
+    """A raising owner API becomes an ``AcquisitionError`` with the cause, never a leak."""
+    gui = gui_with_main_window()
+    recorded = tree.window_target(
+        WINDOW, MAIN_CLASS, gui=lambda: (gui, None), owner=owner_of(*OWNER)
+    )
+
+    def broken(_hwnd: int) -> tuple[int, int]:
+        raise OSError("owner read failed")
+
+    with pytest.raises(driver.AcquisitionError, match="could not verify") as excinfo:
+        tree.validate_target(recorded, gui=lambda: (gui, None), owner=broken)
+
+    assert "owner read failed" in str(excinfo.value)

@@ -79,6 +79,7 @@ __all__ = [
     "_gui",
     "_hover_centre",
     "_move_real_cursor",
+    "_owner_of",
     "_release_clip",
     "_require_foreground",
     "_restore_cursor",
@@ -375,13 +376,37 @@ def _foreground_window(*, user32=_user32) -> int:
     return user32().GetForegroundWindow()
 
 
+def _owner_of(hwnd: int, *, user32=_user32) -> tuple[int, int]:
+    """``(thread_id, process_id)`` of ``hwnd`` — ``(0, 0)`` when the handle is gone.
+
+    ``GetWindowThreadProcessId`` **returns** the owning thread id and fills its one
+    out-parameter with the process id. Both are read here, because a target's identity is
+    the pair: a handle recycled by another process and a handle recycled within the same
+    process are different failures, and the second is only visible in the thread or the
+    class (see :class:`~udv_echo_process.acquire.actuator.WindowTarget`).
+
+    ``_thread_of`` below is a separate, pre-existing activation seam. Its out-parameter
+    handling returns the process id, not the thread id; this target-binding change does
+    not fix that activation defect. Do not use it as evidence of thread ownership.
+    """
+    process = ctypes.c_ulong()
+    thread = user32().GetWindowThreadProcessId(
+        ctypes.c_void_p(hwnd), ctypes.byref(process)
+    )
+    return int(thread), int(process.value)
+
+
 def _thread_of(hwnd: int, *, user32=_user32) -> int:
-    """The thread that owns ``hwnd``.
+    """The identity ``hwnd``'s owner call reports to this module's activation path.
 
     ``win32process.GetWindowThreadProcessId`` is ``pywin32``'s home for this call and
     returns ``(threadId, processId)`` — **thread first**, despite the name — but the
     driver reaches Windows through ``ctypes`` here, so bringing a window forward needs
     no extra import and works wherever the message layer does.
+
+    Known limitation: this legacy implementation reads the process-id out-parameter.
+    Foreground attachment needs the returned thread id instead; the target-binding
+    checkpoint does not claim to repair or validate activation.
     """
     owner = ctypes.c_ulong()
     user32().GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(owner))

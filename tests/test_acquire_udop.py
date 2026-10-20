@@ -154,6 +154,7 @@ FACADE_METHODS = (
     "_require_foreground",
     "_hover_centre",
     "_main_hwnd",
+    "bind_target",
     "_children_of",
     "_param_rows",
     "_resolve",
@@ -235,6 +236,7 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
+    "bind_target",
     "_screen_anchor_text",
     "write_dialog_burst_length",
     "_row_reading",

@@ -3345,3 +3345,424 @@ def test_the_slider_read_is_still_a_seam_on_the_live_class() -> None:
     assert actuator._has_slider(roles, {"hwnd": HWND_SEAM_STRIP}) is True
     # Both answers came off the panel's own children, by the panel's own handle.
     assert actuator.enumerated == [HWND_SEAM_NO_SLIDER, HWND_SEAM_STRIP]
+
+
+# ------------------------------------------------------------------ one chosen window
+
+#: A two-instance screen: both are ``TMain_Scr``, the **sibling** is the smaller one. Each owns
+#: the same minimal control tree — a menu band, the tall parameter column (one value button with
+#: its inner edit) and a status band — so the production resolver, not a fake role map, decides
+#: what a read/write addresses.
+BOUND_MAIN, BOUND_SIBLING = 6700, 6701
+BOUND_MAIN_MENU, BOUND_MAIN_PANEL, BOUND_MAIN_BUTTON, BOUND_MAIN_EDIT = 6702, 6703, 6704, 6705
+BOUND_MAIN_STATUS = 6706
+BOUND_SIB_MENU, BOUND_SIB_PANEL, BOUND_SIB_BUTTON, BOUND_SIB_EDIT = 6712, 6713, 6714, 6715
+BOUND_SIB_STATUS = 6716
+BOUND_CONTROLS = {
+    BOUND_MAIN: (driver.MAIN_CLASS, 0, (0, 0, 1280, 900), True),
+    BOUND_SIBLING: (driver.MAIN_CLASS, 0, (400, 0, 700, 200), True),
+    BOUND_MAIN_MENU: ("TSp_Panel", BOUND_MAIN, (0, 0, 1280, 30), True),
+    BOUND_MAIN_PANEL: ("TSp_Panel", BOUND_MAIN, (0, 30, 190, 830), True),
+    BOUND_MAIN_BUTTON: ("TSp_Value_Button", BOUND_MAIN_PANEL, (0, 40, 190, 80), True),
+    BOUND_MAIN_EDIT: ("TSp_Edit", BOUND_MAIN_BUTTON, (10, 50, 180, 70), True),
+    BOUND_MAIN_STATUS: ("TSp_Panel", BOUND_MAIN, (0, 830, 1280, 900), True),
+    BOUND_SIB_MENU: ("TSp_Panel", BOUND_SIBLING, (400, 0, 700, 30), True),
+    BOUND_SIB_PANEL: ("TSp_Panel", BOUND_SIBLING, (400, 30, 590, 170), True),
+    BOUND_SIB_BUTTON: ("TSp_Value_Button", BOUND_SIB_PANEL, (400, 40, 590, 80), True),
+    BOUND_SIB_EDIT: ("TSp_Edit", BOUND_SIB_BUTTON, (410, 50, 580, 70), True),
+    BOUND_SIB_STATUS: ("TSp_Panel", BOUND_SIBLING, (400, 170, 700, 200), True),
+}
+
+
+class _BoundGui:
+    """``win32gui`` for two same-class windows — and an ``EnumWindows`` that refuses to run.
+
+    Bound mode's structural claim is that no selector runs after the caller chooses, so the
+    enumeration is booby-trapped: reaching it is the failure, whichever window it would pick.
+    Unbound tests disable the trap because the default *is* the enumeration.
+    """
+
+    class error(Exception):
+        """``win32gui.error``."""
+
+    def __init__(self, *, raise_on_enum: bool = True) -> None:
+        self.controls = dict(BOUND_CONTROLS)
+        self.owners = {BOUND_MAIN: (11, 22), BOUND_SIBLING: (11, 22)}
+        self.texts = {BOUND_MAIN_EDIT: "10.0", BOUND_SIB_EDIT: "20.0"}
+        self.writes: list[tuple[int, str, int | None]] = []
+        self.enumerations = 0
+        self.raise_on_enum = raise_on_enum
+
+    def IsWindow(self, hwnd: int) -> bool:
+        return hwnd in self.controls
+
+    def IsWindowVisible(self, hwnd: int) -> bool:
+        return self.controls[hwnd][3]
+
+    def GetClassName(self, hwnd: int) -> str:
+        return self.controls[hwnd][0]
+
+    def GetWindowText(self, _hwnd: int) -> str:
+        return ""
+
+    def GetDlgCtrlID(self, hwnd: int) -> int:
+        return hwnd
+
+    def GetWindowRect(self, hwnd: int) -> tuple[int, int, int, int]:
+        return self.controls[hwnd][2]
+
+    def GetClientRect(self, hwnd: int) -> tuple[int, int, int, int]:
+        left, top, right, bottom = self.controls[hwnd][2]
+        return (0, 0, right - left, bottom - top)
+
+    def ClientToScreen(self, hwnd: int, point: tuple[int, int]) -> tuple[int, int]:
+        left, top, _right, _bottom = self.controls[hwnd][2]
+        return (left + point[0], top + point[1])
+
+    def GetParent(self, hwnd: int) -> int:
+        return self.controls[hwnd][1]
+
+    def EnumChildWindows(self, win: int, callback, _lparam) -> int:
+        def walk(parent: int) -> None:
+            for hwnd, row in list(self.controls.items()):
+                if row[1] == parent:
+                    callback(hwnd, None)
+                    walk(hwnd)
+
+        walk(win)
+        return 1
+
+    def EnumWindows(self, callback, _lparam) -> int:
+        self.enumerations += 1
+        if self.raise_on_enum:
+            raise AssertionError(
+                "bound mode enumerated the desktop: a second selector can redirect the target"
+            )
+        for hwnd, row in list(self.controls.items()):
+            if row[1] == 0:
+                callback(hwnd, None)
+        return 1
+
+
+def bound_actuator(
+    monkeypatch: pytest.MonkeyPatch, gui: _BoundGui, **kwargs
+) -> driver.Win32Actuator:
+    """A real ``Win32Actuator`` over the two-window fake; only the transport is diverted.
+
+    The enumeration, the class/visibility reads, ``IsWindow``/``GetWindowThreadProcessId``
+    (through the injected owner read), ``_resolve`` and the parameter column are the
+    production ones.
+    """
+    monkeypatch.setattr(driver, "_gui", lambda: (gui, None))
+    monkeypatch.setattr(driver, "_owner_of", lambda hwnd, **_kw: gui.owners.get(hwnd, (0, 0)))
+
+    def read(hwnd: int, **_kw) -> str:
+        return gui.texts[hwnd]
+
+    def write(hwnd: int, text: str, parent: int | None = None, **_kw) -> None:
+        gui.writes.append((hwnd, text, parent))
+        gui.texts[hwnd] = text
+
+    monkeypatch.setattr(driver, "_get_text", read)
+    monkeypatch.setattr(driver, "_set_text_commit", write)
+    return driver.Win32Actuator(channel=1, **kwargs)
+
+
+def test_the_unbound_default_still_selects_the_largest_visible_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Additive: with no target chosen the driver is exactly what it was — enumeration and all."""
+    gui = _BoundGui(raise_on_enum=False)
+    actuator = bound_actuator(monkeypatch, gui)
+
+    assert actuator._main_hwnd() == BOUND_MAIN
+    assert actuator._resolve()["window"] == BOUND_MAIN
+    assert actuator.read_parameter(ParamRole.US_FREQUENCY) == "10.0"
+    assert gui.enumerations == 3  # _main_hwnd + two resolves: the selector ran, as it always did
+
+
+def test_binding_the_smaller_same_class_window_reads_and_writes_that_window_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """F2/B1 against the consumer chain: the caller's handle wins over the largest-window rule."""
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+
+    target = actuator.bind_target(BOUND_SIBLING)
+
+    assert target.hwnd == BOUND_SIBLING
+    assert actuator.read_parameter(ParamRole.US_FREQUENCY) == "20.0"
+    assert actuator.write_parameter(ParamRole.US_FREQUENCY, "5.0") == "5.0"
+    assert gui.writes == [(BOUND_SIB_EDIT, "5.0", BOUND_SIB_BUTTON)]
+    # The larger sibling's text was never read into a write and never touched.
+    assert gui.texts[BOUND_MAIN_EDIT] == "10.0"
+    assert gui.enumerations == 0
+
+
+def test_every_repeated_resolve_keeps_the_selected_handle_and_never_enumerates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Validity is per operation, but the *choice* never becomes a selector again."""
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    actuator.bind_target(BOUND_SIBLING)
+
+    assert [actuator._main_hwnd() for _ in range(3)] == [BOUND_SIBLING] * 3
+    assert [actuator._resolve()["window"] for _ in range(2)] == [BOUND_SIBLING] * 2
+    assert actuator.strip_state().button_count == 0  # the recording read path, same window
+    assert gui.enumerations == 0
+
+
+@pytest.mark.parametrize(
+    ("break_it", "expected"),
+    [
+        ("gone", "no longer exists"),
+        ("class", "recycled"),
+        ("owner", "owned by"),
+        ("hidden", "not visible"),
+    ],
+)
+def test_a_target_that_stopped_being_drivable_refuses_before_anything_is_sent(
+    monkeypatch: pytest.MonkeyPatch, break_it: str, expected: str
+) -> None:
+    """Identity, class or visibility failure is a named refusal — never a fallback.
+
+    The write path is used because the failure order is what matters: a refusal that arrived
+    after ``WM_SETTEXT`` would already have changed the wrong window.
+    """
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    actuator.bind_target(BOUND_SIBLING)
+
+    if break_it == "gone":
+        for hwnd in (
+            BOUND_SIBLING,
+            BOUND_SIB_MENU,
+            BOUND_SIB_PANEL,
+            BOUND_SIB_BUTTON,
+            BOUND_SIB_EDIT,
+            BOUND_SIB_STATUS,
+        ):
+            del gui.controls[hwnd]
+    elif break_it == "class":
+        gui.controls[BOUND_SIBLING] = ("TForm", 0, (400, 0, 700, 200), True)
+    elif break_it == "owner":
+        gui.owners[BOUND_SIBLING] = (33, 44)
+    else:
+        gui.controls[BOUND_SIBLING] = (driver.MAIN_CLASS, 0, (400, 0, 700, 200), False)
+
+    with pytest.raises(driver.AcquisitionError) as excinfo:
+        actuator.write_parameter(ParamRole.US_FREQUENCY, "5.0")
+
+    assert expected in str(excinfo.value)
+    assert hex(BOUND_SIBLING) in str(excinfo.value)
+    assert gui.writes == []  # nothing reached the window layer
+    assert gui.enumerations == 0  # and the larger sibling was never selected instead
+
+
+def test_dialog_entry_resolves_the_bound_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``_open_parameters_dialog`` enters through the same seam, so it cannot select the sibling."""
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    actuator.bind_target(BOUND_SIBLING)
+    seen: list[int] = []
+    real = actuator._main_hwnd
+
+    def record() -> int:
+        hwnd = real()
+        seen.append(hwnd)
+        return hwnd
+
+    actuator._main_hwnd = record  # type: ignore[method-assign]
+
+    # This screen proves no `Parameters` anchor, so the dialog step refuses by name — after
+    # resolving, which is the point: the window it resolved is the bound one.
+    with pytest.raises(driver.AcquisitionError, match="Parameters"):
+        actuator._open_parameters_dialog()
+
+    assert seen and set(seen) == {BOUND_SIBLING}
+    assert gui.enumerations == 0
+
+
+def test_rebinding_is_explicit_and_a_failed_rebind_keeps_the_current_target(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Replacement only on success; a dead handle cannot leave the driver without a target."""
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    actuator.bind_target(BOUND_SIBLING)
+
+    with pytest.raises(driver.AcquisitionError, match="no longer exists"):
+        actuator.bind_target(9999)
+
+    assert actuator._main_hwnd() == BOUND_SIBLING  # explicit refusal, no implicit fallback
+
+    assert actuator.bind_target(BOUND_MAIN).hwnd == BOUND_MAIN
+    assert actuator._resolve()["window"] == BOUND_MAIN
+    assert actuator.bind_target(BOUND_SIBLING).hwnd == BOUND_SIBLING
+    assert actuator._main_hwnd() == BOUND_SIBLING
+
+
+def test_a_matching_constructor_record_is_validated_and_kept_unchanged(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The constructor checks a record; it does not re-capture the identity it carries."""
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    supplied = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=11,
+        process_id=22,
+        class_name=driver.MAIN_CLASS,
+    )
+    actuator = bound_actuator(monkeypatch, gui, target=supplied)
+
+    assert actuator._target is supplied  # the caller's evidence, not a fresh record
+    assert actuator._main_hwnd() == BOUND_SIBLING
+    assert gui.enumerations == 0
+
+
+def test_a_constructor_record_whose_handle_now_belongs_to_another_owner_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A stale record must refuse, never silently adopt the process that owns the handle now."""
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    stale = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=99,
+        process_id=98,
+        class_name=driver.MAIN_CLASS,
+    )
+
+    with pytest.raises(driver.AcquisitionError, match="owned by") as excinfo:
+        bound_actuator(monkeypatch, gui, target=stale)
+
+    assert hex(BOUND_SIBLING) in str(excinfo.value)
+    assert "pid 22" in str(excinfo.value)  # names the current owner it will not adopt
+    assert gui.enumerations == 0  # no selector ran while refusing
+
+
+def test_a_constructor_record_with_the_wrong_class_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The record's class is part of the identity; a different one is not reinterpreted."""
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    wrong_class = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=11,
+        process_id=22,
+        class_name="TForm",
+    )
+
+    with pytest.raises(driver.AcquisitionError, match="recorded as class 'TForm'"):
+        bound_actuator(monkeypatch, gui, target=wrong_class)
+    assert gui.enumerations == 0
+
+    # The record's class agrees with the driver but the handle now answers another class.
+    gui = _BoundGui()
+    gui.controls[BOUND_SIBLING] = ("TForm", 0, (400, 0, 700, 200), True)
+    recycled = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=11,
+        process_id=22,
+        class_name=driver.MAIN_CLASS,
+    )
+    with pytest.raises(driver.AcquisitionError, match="recycled"):
+        bound_actuator(monkeypatch, gui, target=recycled)
+
+
+@pytest.mark.parametrize(("thread_id", "process_id"), [(0, 0), (0, 22), (11, 0)])
+def test_a_constructor_record_without_a_complete_owner_refuses(
+    monkeypatch: pytest.MonkeyPatch, thread_id: int, process_id: int
+) -> None:
+    """A zero/partial owner is an unreadable identity, not one that matches by accident."""
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    partial = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=thread_id,
+        process_id=process_id,
+        class_name=driver.MAIN_CLASS,
+    )
+
+    with pytest.raises(driver.AcquisitionError, match="no owning identity"):
+        bound_actuator(monkeypatch, gui, target=partial)
+
+
+def test_an_unreadable_owner_fails_closed_as_an_acquisition_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A raising owner API is a refusal with a reason, never a leaked transport exception."""
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    supplied = WindowTarget(
+        hwnd=BOUND_SIBLING,
+        thread_id=11,
+        process_id=22,
+        class_name=driver.MAIN_CLASS,
+    )
+
+    def broken_owner(_hwnd: int, **_kw) -> tuple[int, int]:
+        raise OSError("GetWindowThreadProcessId failed")
+
+    bound_actuator(monkeypatch, gui)  # installs the fake gui; then break only the owner read
+    monkeypatch.setattr(driver, "_owner_of", broken_owner)
+
+    with pytest.raises(driver.AcquisitionError, match="could not verify") as excinfo:
+        driver.Win32Actuator(channel=1, target=supplied)
+
+    assert "GetWindowThreadProcessId failed" in str(excinfo.value)
+    assert gui.enumerations == 0
+
+
+def test_a_dead_constructor_handle_still_refuses_naming_the_handle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from udv_echo_process.acquire.actuator import WindowTarget
+
+    gui = _BoundGui()
+    dead = WindowTarget(hwnd=9999, thread_id=99, process_id=98, class_name=driver.MAIN_CLASS)
+    with pytest.raises(driver.AcquisitionError, match="no longer exists"):
+        bound_actuator(monkeypatch, gui, target=dead)
+
+
+@pytest.mark.parametrize("owner", [(0, 22), (11, 0), (-1, 22), (11, -1)])
+def test_binding_refuses_incomplete_owner_without_replacing_target(monkeypatch, owner):
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    previous = actuator.bind_target(BOUND_SIBLING)
+    gui.owners[BOUND_MAIN] = owner
+    with pytest.raises(driver.AcquisitionError, match="owning"):
+        actuator.bind_target(BOUND_MAIN)
+    assert actuator._target is previous
+    assert gui.writes == []
+    assert gui.enumerations == 0
+
+
+@pytest.mark.parametrize("stage", ["bind", "write", "gui"])
+def test_bound_identity_transport_failure_is_acquisition_error(monkeypatch, stage):
+    gui = _BoundGui()
+    actuator = bound_actuator(monkeypatch, gui)
+    previous = actuator.bind_target(BOUND_SIBLING)
+
+    def broken(*_args, **_kwargs):
+        raise OSError("identity transport unavailable")
+
+    monkeypatch.setattr(driver, "_gui" if stage == "gui" else "_owner_of", broken)
+    with pytest.raises(driver.AcquisitionError, match="identity transport unavailable"):
+        if stage in {"bind", "gui"}:
+            actuator.bind_target(BOUND_MAIN)
+        else:
+            actuator.write_parameter(ParamRole.US_FREQUENCY, "20")
+    assert actuator._target is previous
+    assert gui.writes == []
+    assert gui.enumerations == 0

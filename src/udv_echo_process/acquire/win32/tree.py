@@ -45,9 +45,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 
+from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.ui.model import UiNode
 from udv_echo_process.acquire.win32 import _acquisition_error
-from udv_echo_process.acquire.win32.cursor import _gui
+from udv_echo_process.acquire.win32.cursor import _gui, _owner_of
 
 __all__ = [
     "_children_of",
@@ -56,7 +57,10 @@ __all__ = [
     "_is_visible",
     "_main_hwnd",
     "_visible_children",
+    "target_mismatch",
     "ui_nodes",
+    "validate_target",
+    "window_target",
 ]
 
 
@@ -163,6 +167,177 @@ def _main_hwnd(class_name: str, *, gui=_gui) -> int:
             f"no visible {class_name} window — is UDOP on its startup screen?"
         )
     return max(found)[1]
+
+
+def window_target(
+    hwnd: int,
+    class_name: str,
+    *,
+    gui=_gui,
+    owner=_owner_of,
+) -> WindowTarget:
+    """Identify one caller-chosen window, or refuse naming why it cannot be a target.
+
+    This is identification, not selection: the caller observed the handle (for example
+    ``screen_fingerprint().hwnd``) and that observation is the authority. A handle is
+    refused when it is gone, when it now answers another class, when no process owns it,
+    or when it is not visible — the same four facts :func:`target_mismatch` re-checks
+    before every operation. Neither a non-largest window nor a non-foreground one is
+    refused: refusing those would reintroduce the selector this seam replaces.
+    """
+    try:
+        win32gui, _ = gui()
+    except Exception as exc:
+        raise _acquisition_error()(f"could not verify target identity: {exc}") from exc
+    if not _is_window(win32gui, hwnd):
+        raise _acquisition_error()(_gone_clause(hwnd, class_name))
+    try:
+        actual = win32gui.GetClassName(hwnd)
+    except Exception:  # noqa: BLE001 - a handle that cannot answer is gone
+        raise _acquisition_error()(_gone_clause(hwnd, class_name)) from None
+    if actual != class_name:
+        raise _acquisition_error()(_class_clause(hwnd, class_name, actual))
+    try:
+        thread_id, process_id = owner(hwnd)
+    except Exception as exc:
+        raise _acquisition_error()(f"could not verify target identity: {exc}") from exc
+    if not _complete_owner(thread_id, process_id):
+        raise _acquisition_error()(
+            f"the window {hex(hwnd)} has no owning thread/process — Windows returned "
+            f"thread {thread_id}, pid {process_id}; refusing to drive an incomplete identity"
+        )
+    if not _is_visible(hwnd, gui=lambda: (win32gui, None)):
+        raise _acquisition_error()(_hidden_clause(hwnd))
+    return WindowTarget(
+        hwnd=hwnd,
+        thread_id=thread_id,
+        process_id=process_id,
+        class_name=class_name,
+    )
+
+
+def validate_target(
+    target: WindowTarget,
+    *,
+    class_name: str | None = None,
+    gui=_gui,
+    owner=_owner_of,
+) -> WindowTarget:
+    """Check a record already in hand against the window it names; never re-identify it.
+
+    This is the constructor's question, and it is the opposite of :func:`window_target`:
+    ``window_target(hwnd)`` **captures** the identity a handle has now (the explicit
+    ``bind_target`` route), whereas this function takes an identity recorded at an earlier
+    moment and refuses when the handle no longer answers with it. The record is returned
+    unchanged on success, so the caller keeps the evidence it supplied rather than silently
+    adopting whatever process owns the handle at construction time.
+
+    Refusal is total: a class that differs from the record (or from ``class_name``, the class
+    this driver was constructed for), a zero/partial owning thread or process in the record,
+    an owner read that raises, and any answer :func:`target_mismatch` names all raise
+    :class:`AcquisitionError`. There is no fallback enumeration and no rebind.
+    """
+    if class_name is not None and target.class_name != class_name:
+        raise _acquisition_error()(
+            f"the recorded target window {hex(target.hwnd)} was recorded as class "
+            f"{target.class_name!r}, but this driver drives {class_name!r} — refusing to "
+            "reinterpret the record as a different window"
+        )
+    if not _complete_owner(target.thread_id, target.process_id):
+        raise _acquisition_error()(
+            f"the recorded target window {hex(target.hwnd)} carries no owning identity "
+            f"(thread {target.thread_id}, pid {target.process_id}) — a record must hold the "
+            "thread/process read when the window was chosen; bind_target captures it"
+        )
+    try:
+        clause = target_mismatch(target, gui=gui, owner=owner)
+    except Exception as exc:  # an unverifiable record is not a valid one
+        raise _acquisition_error()(
+            f"could not verify the recorded target window {hex(target.hwnd)} "
+            f"({target.class_name}): {exc} — refusing to trust an identity that cannot be "
+            "read"
+        ) from exc
+    if clause is not None:
+        raise _acquisition_error()(clause)
+    return target
+
+
+def target_mismatch(
+    target: WindowTarget,
+    *,
+    gui=_gui,
+    owner=_owner_of,
+) -> str | None:
+    """Why ``target`` may no longer be driven, or ``None`` when it still may.
+
+    The root-resolve check: role-map resolution uses this question. It does not
+    revalidate individual child handles before every message or gesture. It returns
+    a refusal clause so the caller can keep the facade's own error type.
+
+    The check cannot see a handle recycled *within the same process* to another window of
+    the same class owned by the same thread; that limit is stated on
+    :class:`~udv_echo_process.acquire.actuator.WindowTarget` and is not claimed closed.
+    """
+    try:
+        win32gui, _ = gui()
+    except Exception as exc:  # noqa: BLE001 - boundary failure is a refusal clause
+        return f"could not verify target identity: {exc}"
+    if not _is_window(win32gui, target.hwnd):
+        return _gone_clause(target.hwnd, target.class_name)
+    try:
+        actual = win32gui.GetClassName(target.hwnd)
+    except Exception:  # noqa: BLE001 - a handle that cannot answer is gone
+        return _gone_clause(target.hwnd, target.class_name)
+    if actual != target.class_name:
+        return _class_clause(target.hwnd, target.class_name, actual)
+    try:
+        thread_id, process_id = owner(target.hwnd)
+    except Exception as exc:  # noqa: BLE001 - boundary failure is a refusal clause
+        return f"could not verify target identity: {exc}"
+    if not _complete_owner(thread_id, process_id):
+        return f"the bound target has no complete owning identity (thread {thread_id}, pid {process_id})"
+    if (thread_id, process_id) != (target.thread_id, target.process_id):
+        return (
+            f"the bound target window {hex(target.hwnd)} is now owned by pid {process_id}"
+            f"/thread {thread_id}, not pid {target.process_id}/thread {target.thread_id} "
+            "— the handle was recycled by another process; nothing was pressed"
+        )
+    if not _is_visible(target.hwnd, gui=lambda: (win32gui, None)):
+        return _hidden_clause(target.hwnd)
+    return None
+
+
+def _complete_owner(thread_id: int, process_id: int) -> bool:
+    return thread_id > 0 and process_id > 0
+
+
+def _is_window(win32gui, hwnd: int) -> bool:
+    """``IsWindow`` as a predicate: an unreadable answer is "gone", never "present"."""
+    try:
+        return bool(win32gui.IsWindow(hwnd))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _gone_clause(hwnd: int, class_name: str) -> str:
+    return (
+        f"the bound target window {hex(hwnd)} ({class_name}) no longer exists — UDOP was "
+        "closed or restarted; re-bind to the window the driver should drive"
+    )
+
+
+def _class_clause(hwnd: int, class_name: str, actual: str) -> str:
+    return (
+        f"the bound target window {hex(hwnd)} is now class {actual!r}, not {class_name!r} "
+        "— the handle was recycled; refusing to drive a different window"
+    )
+
+
+def _hidden_clause(hwnd: int) -> str:
+    return (
+        f"the bound target window {hex(hwnd)} is not visible — refusing to read a hidden "
+        "target"
+    )
 
 
 def _children_of(parent: int, roles: dict, *, gui=_gui) -> list[dict]:

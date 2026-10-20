@@ -213,6 +213,7 @@ from udv_echo_process.acquire.actuator import (
     StripControl,
     StripState,
     StripView,
+    WindowTarget,
     classify_strip_view,
     dialog_row,
     ordered_writes,
@@ -374,6 +375,7 @@ from udv_echo_process.acquire.win32.cursor import (
     _gui,
     _hover_centre,
     _move_real_cursor,
+    _owner_of,
     _release_clip,
     _require_foreground,
     _restore_cursor,
@@ -424,6 +426,15 @@ from udv_echo_process.acquire.win32.tree import (
     _is_visible,
     _main_hwnd,
     _visible_children,
+)
+from udv_echo_process.acquire.win32.tree import (
+    target_mismatch as _target_mismatch,
+)
+from udv_echo_process.acquire.win32.tree import (
+    validate_target as _validate_target,
+)
+from udv_echo_process.acquire.win32.tree import (
+    window_target as _window_target,
 )
 
 __all__ = [
@@ -682,6 +693,7 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         channel: int | None = None,
         note_sink: Callable[[str], None] | None = None,
         allow_real_input: bool = True,
+        target: WindowTarget | None = None,
     ) -> None:
         """``channel`` is the measurement channel — the one knob.
 
@@ -701,6 +713,10 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         not touch the entry path.
         """
         self._class_name = class_name
+        #: The window this driver was told to drive, or ``None`` for the ambient rule
+        #: (largest visible window of the class). Chosen explicitly with :meth:`bind_target`
+        #: or the constructor's ``target``, and never re-derived when it stops being valid.
+        self._target: WindowTarget | None = None
         self._channel_setting = (
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
@@ -720,6 +736,13 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         #: run must be told what the application did, not merely that a step failed.
         self.last_entry_attempt: dict | None = None
         self.warnings: list[str] = []
+        if target is not None:
+            # Validated, never re-identified: the record is the caller's evidence from an
+            # earlier moment, so a handle that now answers another identity, class or owner
+            # refuses here. Rebinding is only ever explicit, through ``bind_target``.
+            self._target = _validate_target(
+                target, class_name=self._class_name, gui=_gui, owner=_owner_of
+            )
 
 
     # ------------------------------------------------------------------ plumbing
@@ -941,8 +964,34 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
     # ------------------------------------------------------------------ binding
 
     def _main_hwnd(self) -> int:
-        """Handle of the visible main window (largest if several exist)."""
-        return _main_hwnd(self._class_name, gui=_gui)
+        """Handle of the visible main window (largest if several exist), or the bound one.
+
+        Unbound — the default — this is unchanged: enumerate the class and take the largest
+        visible window. Bound, the caller's handle is the answer, re-checked for existence,
+        class, owning thread/process and visibility before *every* resolve. A target that
+        fails any check is a named refusal; it is never replaced by a fresh enumeration.
+        """
+        target = self._target
+        if target is None:
+            return _main_hwnd(self._class_name, gui=_gui)
+        clause = _target_mismatch(target, gui=_gui, owner=_owner_of)
+        if clause is not None:
+            raise AcquisitionError(clause)
+        return target.hwnd
+
+    def bind_target(self, hwnd: int) -> WindowTarget:
+        """Drive exactly this window from now on; the caller's observation is the authority.
+
+        The handle is identified before it replaces the current target, so a dead, wrong-class,
+        ownerless or hidden handle refuses and leaves the existing binding in place. Returns
+        the record (handle, thread, process, class) for the caller's evidence. This adds no
+        operation authority: it fixes the root selected by subsequent role-map resolves.
+        Child-handle lifetime checks remain those of the existing surface methods.
+        Rebinding is explicit; there is no automatic failover when a target disappears.
+        """
+        target = _window_target(hwnd, self._class_name, gui=_gui, owner=_owner_of)
+        self._target = target
+        return target
 
     @staticmethod
     def _children_of(parent: int, roles: dict) -> list[dict]:
