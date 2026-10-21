@@ -298,10 +298,12 @@ press.
 | **store view** (after `Stop`) | 3 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart]` |
 | store view, four buttons | 4 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart] [Remove current block]` |
 | **store view, after a multiplexed run** | **2** top-row buttons **+** a `TSp_Sliding_Bar` child, plus the block/channel `TComboBox` pair | `[Do store] [Clear and restart]` |
+| **store view, after a repeated multiplexed run** | **3** top-row buttons **+** a `TSp_Sliding_Bar` child on a `477x123` panel, painted widths `91 / 138 / 198`, plus the block/channel `TComboBox` pair | `[Do store] [Clear and restart] [Remove current sequence]` — *accepted only when that exact measured geometry selects `StripRowVariant.REPEATED_MPX_COMPLETION`; a three-button row without it stays the legacy row above and is refused* |
 | stopped with data, four buttons | 4 top-row buttons, **no** slider | **nothing — the roles are unresolved**, and the row is refused (below) |
 
 **The row's length is part of the binding, not a detail of it.** `Do store` is
-slot 0 in the two-button row and slot 1 in both longer store rows, so a press
+slot 0 in the two-button row and in the repeated-run row below, and slot 1 in both
+legacy longer store rows, so a press
 keyed on a fixed position — or on a width — lands on `New acquisition` or on a
 neighbour. The count is taken from the **visible** top-row buttons only.
 
@@ -322,6 +324,28 @@ says nothing about how the instrument answers it. `New acquisition` and
 `Remove current block` are absent from this row by measurement, not by choice;
 asking for either here is a refusal.
 
+**A repeated multiplexed run was measured to end in a three-button store row**
+*(2026-10-21, read-only tree capture of the same instant as
+`outputs/live/top-level-windows-full-a.png`)*. The panel is `477x123` with three
+painted `TSp_Button` widths of 91, 138 and 198 px, the visible slider and the
+block/channel `TComboBox` pair; the frame paints `Do store` / `Clear and restart` /
+`Remove current sequence` across them, and the tree's button text is empty. It is
+recorded as its own variant, `StripRowVariant.REPEATED_MPX_COMPLETION`, selected
+by **exact** match on that measured signature — panel size and all three widths.
+`Remove current sequence` is its own role and not `Remove current block`: the two
+captions were never compared on one screen, and no command presses either.
+
+**What the store paths accept is then exactly two measured rows, each on its own
+evidence.** `store-completed` and `record-multiplexed` share one predicate
+(`store_completed.is_completed_row`) over `_COMPLETED_ROWS`: the two-button row
+above and the repeated-run three-button row above. Neither is accepted by its
+length or by an inferred caption: the three-button row is accepted only when its
+measured geometry selected `REPEATED_MPX_COMPLETION`, so the legacy
+`New acquisition` / `Do store` / `Clear and restart` store row — `Do store` in slot
+1 — and any unmeasured three-button row are refused by name with nothing pressed,
+as are every four-button row, a non-store view and a missing slider. `Do store` is
+slot 0 in both accepted rows, which is the only fact the press depends on.
+
 **The one-button row means `Stop` on a single channel and is unresolved in MPX.** With rolling MPX
 **enabled but not armed**, the operator reported on 2026-10-21 that a manual `Record` leaves a sole
 `Clear and restart` button — not `Stop`. That is an *operator report*, not a tree read, so the role
@@ -330,8 +354,9 @@ store row above — that capture is the naturally completed MPX store view, whil
 active acquisition, so the two observations are separate. Because the two readings are
 structurally identical — one top-row button, no slider — the classifier cannot separate them, and
 this table's `[Stop]` must not be applied to an MPX configuration: pressing `STOP` there would
-clear the block. The `STOP` binding stays **single-channel**; for MPX the only row this document
-binds from evidence is the two-button store row above, and the 1-button MPX state has no binding of
+clear the block. The `STOP` binding stays **single-channel**; for MPX the only rows this document
+binds from evidence are the two completed store rows above (two-button, and the repeated-run
+three-button row by its measured signature), and the 1-button MPX state has no binding of
 its own, so nothing may be posted from it by generic classification.
 
 **The four-button, no-slider row presses nothing.** `UI-STRIP-01`
@@ -753,8 +778,11 @@ relationship, and any post-save MPX-mode state.
 The historical live run used a **store-only probe**, not the subsequently integrated command.
 The package now exposes `udv-acquire store-completed NAME --channel 1 2 --profiles 50
 --stated-by operator --store-dir DIR --json` (or the same verb through
-`python -m udv_echo_process.cli acquire`). It requires an existing directory and the completed
-two-button store row, refuses collisions, and issues no Record, Stop or Clear. Channels/profiles
+`python -m udv_echo_process.cli acquire`). It requires an existing directory and a measured
+completed multiplexer store row — the two-button row, or the repeated-run three-button row whose
+geometry selects `REPEATED_MPX_COMPLETION` (the legacy `New acquisition`-first three-button row, an
+unmeasured three-button row and every four-button row are refused) — refuses collisions, and issues
+no Record, Stop or Clear. Channels/profiles
 are attributed **operator declarations**, not independently decoded facts in the command's report.
 It may rewrite the Store dialog's remembered directory to the explicitly selected one.
 **Package-command acceptance, 2026-10-21:** after a second operator-recorded block completed
@@ -791,6 +819,23 @@ exactly channels 1 and 2, axial velocity, **50 profiles × 80 gates each**, appr
 per channel, resolution 0.74 mm, PRF period 600 µs, emissions/profile 50, sound speed 1480 m/s
 and burst length 4. The declaration matches these decoded counts; no 25→50 mapping is inferred.
 The file and raw logs remain generated local evidence, not committed fixtures.
+
+Two boundaries belong to the command rather than to this one run. **The enable flag is a
+declaration.** `--mpx-enabled` is required and is taken as the caller's statement that the
+multiplexer is enabled; nothing in this workflow reads the mode back (no passive MPX
+discriminator exists, and no Disable is pressed), so the flag is never reported as a post-run
+fact and the mode-unknown obligation is carried on every stored run. **The post-store check
+reports stored blocks, not visits.** The file's own block/sequence numbers partition the stored
+rows, and that partition is compared with a repeated declaration; the word is a block/sequence
+number, never a visit identity, so `partition-consistent` means the stored blocks split the rows
+as declared, not that M visits ran (see `docs/mpx-artifact-verification.md`).
+
+The completion row accepted by the press is not limited to the two-button row this run ended in:
+`record-multiplexed` and `store-completed` share one predicate that accepts the two-button row and
+the repeated-run three-button row **only** when its measured `477x123` geometry selects
+`REPEATED_MPX_COMPLETION`. The repeated-run row is accepted from a read-only capture; no live run
+of `record-multiplexed` has yet ended in it, and the legacy `New acquisition`-first three-button
+row stays refused.
 
 **Accepted scope:** one operator-configured finite MPX Record → natural completion → store cycle.
 **Not established:** repeatability, automated mode enable/configuration, armed/external-trigger

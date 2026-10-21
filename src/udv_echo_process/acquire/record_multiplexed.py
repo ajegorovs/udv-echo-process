@@ -86,6 +86,8 @@ from udv_echo_process.acquire.store_completed import (
     CompletedBlockDeclaration,
     CompletedStoreResult,
     block_declaration_clauses,
+    completed_row_clauses,
+    is_completed_row,
     screen_clauses,
     store_completed,
     store_preflight,
@@ -125,8 +127,10 @@ _READY_ROW = (
     StripControl.CLEAR_AND_RESTART,
 )
 
-#: The measured MPX completion row, which is the only row this command stores from.
-_COMPLETION_ROW = (StripControl.DO_STORE, StripControl.CLEAR_AND_RESTART)
+#: The MPX completion rows this command stores from are ``store_completed``'s
+#: (:func:`…store_completed.is_completed_row`), not a copy kept here: this command and the
+#: store-only path must accept exactly the same rows, and a second table is how they would
+#: stop doing so.
 
 #: The one sentence every non-stored report carries: the mode is never read, here or after.
 MPX_MODE_NOT_READ = (
@@ -149,7 +153,8 @@ class MultiplexedRecordingDeclaration(ValueModel):
       store-only path applies to the same statement. ``profiles_per_visit`` with
       ``sequence_repeats`` is the explicit repeated-sequence basis, mutually exclusive with the
       legacy total: their product is the expected stored total, computed once by the store-only
-      declaration, and the repeat count itself is never compared with anything decoded.
+      declaration, and the repeat count itself is compared only with the reader's stored block
+      partition — never with a visit count, which is not decoded.
     - ``stated_by`` — who said so. An unattributed 'yes' is not a declaration.
     """
 
@@ -589,11 +594,7 @@ def record_multiplexed(
         if state.view is StripView.RECORDING:
             recording_seen = True
         elif state.view is StripView.STORE:
-            if (
-                state.has_slider
-                and state.button_count == 2
-                and STRIP_BUTTON_ORDER.get((StripView.STORE, 2)) == _COMPLETION_ROW
-            ):
+            if state.has_slider and is_completed_row(state):
                 break
             return result(
                 MpxStage.COMPLETION_UNKNOWN,
@@ -601,9 +602,11 @@ def record_multiplexed(
                 record_started=recording_seen,
                 reason=(
                     f"the strip reads {state.view.value!r} with {state.button_count} button(s) "
-                    f"and {'a' if state.has_slider else 'no'} slider where the measured "
-                    "two-button multiplexed completion row is required: this row binds roles "
-                    "this command does not store from, and an unsettled completion is terminal"
+                    f"and {'a' if state.has_slider else 'no'} slider where a measured "
+                    "multiplexed completion row is required "
+                    f"('Do store' first; {completed_row_clauses(state)[0]}): this row binds "
+                    "roles this command does not store from, and an unsettled completion is "
+                    "terminal"
                 ),
                 observed=tuple(observed),
                 owed=(

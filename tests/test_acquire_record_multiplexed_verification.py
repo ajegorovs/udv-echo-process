@@ -21,7 +21,7 @@ from udv_echo_process.acquire.actuator import (
     StripState,
     WindowTarget,
 )
-from udv_echo_process.acquire.mpx_artifact import MpxVerdict
+from udv_echo_process.acquire.mpx_artifact import MpxRepeatVerification, MpxVerdict
 from udv_echo_process.acquire.record_multiplexed import (
     MPX_MODE_NOT_READ,
     MpxStage,
@@ -203,14 +203,16 @@ def test_filename_is_not_used_to_infer_the_declared_channels(tmp_path: Path):
     assert report.declared_channels == (6, 7)
 
 
-def test_repeated_declaration_compares_the_total_and_keeps_the_repeat_unknown(
+def test_repeated_declaration_compares_the_stored_block_partition_not_visits(
     tmp_path: Path,
 ):
-    """4 per visit x 100 repeats reaches the 400 stored rows; the visits stay unverified.
+    """4 per visit x 100 repeats matches 100 stored blocks of 4 rows; visits stay unclaimed.
 
-    The furnished file is authentic (a 100-block multiplexed acquisition), so this is a
-    real arithmetic agreement with real bytes — but the decoder flattens the blocks, so
-    the run must not claim 100 visits ran.
+    The furnished file is authentic (a 100-block multiplexed acquisition) and the reader
+    reports each stored block's own block/sequence word, so the stated split is compared with
+    a **stored block partition** and the run reports it consistent. The footer word is a
+    block/sequence number, not a visit identity, so the run must not claim 100 visits ran:
+    the declaration's own unknown is still owed in words.
     """
     screen = StoredScreen(FIXTURE.read_bytes())
     declar = declaration(
@@ -221,18 +223,30 @@ def test_repeated_declaration_compares_the_total_and_keeps_the_repeat_unknown(
     assert result.stage is MpxStage.STORED
     report = result.artifact_verification
     assert report is not None
-    assert report.verdict is MpxVerdict.UNVERIFIABLE
-    assert result.artifact_consistent is False
+    assert report.verdict is MpxVerdict.CONSISTENT
+    assert result.artifact_consistent is True
     assert report.expected_total_profiles == PROFILES
     assert report.declared_profiles_per_channel is None
     assert report.declared_profiles_per_visit == 4
     assert report.declared_sequence_repeats == 100
     profiles = [c for c in report.clauses if c.subject.startswith("profiles:")]
     assert {c.status for c in profiles} == {MpxVerdict.CONSISTENT}
+    # The stored partition is what was compared: 100 block numbers x 4 rows per channel.
+    assert {c.channel for c in report.block_partition} == set(CHANNELS)
+    for channel_report in report.block_partition:
+        assert len(channel_report.stored_block_numbers) == 100
+        assert channel_report.blocks_with_unknown_number == 0
+        assert {group.profiles for group in channel_report.groups} == {4}
+    assert report.repeat_verification is MpxRepeatVerification.PARTITION_CONSISTENT
     repeats = [c for c in report.clauses if c.subject == "repeats"]
-    assert len(repeats) == 1 and repeats[0].status is MpxVerdict.UNVERIFIABLE
+    assert len(repeats) == 1 and repeats[0].status is MpxVerdict.CONSISTENT
+    assert repeats[0].expected == 100 and repeats[0].observed == 100
+    assert "footer word is documented as a block/sequence number" in repeats[0].detail
+    assert "not a visit identity" in repeats[0].detail
+    # A consistent partition is still not a decoded visit count.
+    assert "not a decoded visit or round count" in report.repeat_note
     # The operator's own per-visit/repeat numbers survive into the stored declaration and
-    # are reported as an unknown obligation, not as a verified count.
+    # the visit unknown is still owed in words beside the partition result.
     assert result.declaration.profiles_per_visit == 4
     assert result.declaration.sequence_repeats == 100
     assert result.store is not None

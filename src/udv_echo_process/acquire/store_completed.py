@@ -20,9 +20,12 @@ here derives the profile count, and nothing converts a requested count into an o
 1. exactly one visible ``TMain_Scr`` window, and it is the handle bound with ``bind_target``;
 2. the caption states the instrument (``UDOP DOP3010…``) — never the simulator, never nothing;
 3. no overlay is already up;
-4. the strip is the measured MPX completion row: store view, slider visible, exactly
-   ``Do store`` and ``Clear and restart`` — so a ready, recording, ambiguous, three-button or
-   four-button row is refused;
+4. the strip is a measured MPX completion row: store view, slider visible, and a role map
+   that starts with ``Do store`` — the two-button row (2026-10-20) or the repeated run's
+   three-button row whose measured geometry selected
+   :attr:`…actuator.StripRowVariant.REPEATED_MPX_COMPLETION` (2026-10-21). A ready,
+   recording or ambiguous row, the legacy ``New acquisition``-first three-button row, an
+   unmeasured three-button row and every four-button row are refused;
 5. the operator's explicit declaration (more than one channel named, positive profile count,
    named operator) is valid;
 6. the store name is one safe file-name **stem**, the directory exists and can be listed, and no
@@ -77,7 +80,8 @@ __all__ = [
     "StoreAttempt",
     "block_declaration_clauses",
     "collision_clause",
-    "completed_strip_clauses",
+    "completed_row_clauses",
+    "is_completed_row",
     "screen_clauses",
     "store_completed",
     "store_directory",
@@ -102,9 +106,22 @@ _RESERVED_NAMES = frozenset(
     | {f"lpt{i}" for i in range(1, 10)}
 )
 
-#: The measured MPX completion row: store view, two buttons, ``Do store`` then
-#: ``Clear and restart`` (:data:`STRIP_BUTTON_ORDER`).
-_COMPLETED_ROW = (StripControl.DO_STORE, StripControl.CLEAR_AND_RESTART)
+#: The measured multiplexer completion rows this command stores from, as role maps.
+#:
+#: ``Do store`` is **index 0** in both, and that is the only fact the press depends on: the
+#: two-button row of the 2026-10-20 MPX run, and the three-button row a *repeated* MPX run was
+#: measured to end in on 2026-10-21 (``StripRowVariant.REPEATED_MPX_COMPLETION``). The second is
+#: a different row from the legacy ``(STORE, 3)`` entry, which starts with ``New acquisition``;
+#: a state only answers the second when its measured signature selected that variant, so a
+#: three-button row of unknown shape is still refused here.
+_COMPLETED_ROWS: tuple[tuple[StripControl, ...], ...] = (
+    (StripControl.DO_STORE, StripControl.CLEAR_AND_RESTART),
+    (
+        StripControl.DO_STORE,
+        StripControl.CLEAR_AND_RESTART,
+        StripControl.REMOVE_CURRENT_SEQUENCE,
+    ),
+)
 
 
 class ProfileCountBasis(str, Enum):
@@ -130,9 +147,11 @@ class CompletedBlockDeclaration(ValueModel):
     ``sequence_repeats`` is the explicit repeated-sequence basis: the operator's per-visit
     count and repeat count, whose product is the expected stored total. A declaration states
     exactly one basis; stating both, or half of the pair, is refused rather than interpreted.
-    Neither stated number is ever a decoded fact: the decoder flattens every stored block into
-    one stream per channel, so the visit partition and the actual repeat count are unknown and
-    stay unknown (see :attr:`repeat_verification_unknown`).
+    Neither stated number is ever a decoded fact: the reader reports each stored block's own
+    block/sequence word, but that word is a block/sequence number and not a visit identity, so
+    the actual visit count is unknown and stays unknown. The stored block partition can be
+    compared with the stated split; it is a partition of rows, never a count of visits (see
+    :attr:`repeat_verification_unknown`).
     """
 
     channels: tuple[Annotated[int, Field(strict=True, gt=0)], ...]
@@ -142,8 +161,9 @@ class CompletedBlockDeclaration(ValueModel):
     profiles_per_channel: int | None = Field(default=None, strict=True)
     #: The operator's stated count for **one visit**. Only valid paired with ``sequence_repeats``.
     profiles_per_visit: int | None = Field(default=None, strict=True)
-    #: The operator's stated repeat count. Multiplied by ``profiles_per_visit``, never compared
-    #: with anything decoded: no block/visit count is decoded.
+    #: The operator's stated repeat count. Multiplied by ``profiles_per_visit``, and compared
+    #: only with the reader's stored block partition — never with a visit count, which is not
+    #: decoded.
     sequence_repeats: int | None = Field(default=None, strict=True)
     stated_by: str
     stated_at: str = ""
@@ -200,9 +220,10 @@ class CompletedBlockDeclaration(ValueModel):
         return (
             f"the actual number of stored visits is unknown: the operator stated "
             f"{self.sequence_repeats} repeat(s) of {self.profiles_per_visit} profile(s) per "
-            f"visit, but the decoder flattens every stored block into one stream per channel, "
-            f"so only the total ({self.expected_total_profiles}) could be compared and a "
-            f"matching total is not proof that {self.sequence_repeats} visit(s) were stored"
+            f"visit, but the stored footer word is a block/sequence number and not a visit "
+            f"identity, so a matching total ({self.expected_total_profiles}) or a matching "
+            f"stored block partition is not proof that "
+            f"{self.sequence_repeats} visit(s) were stored"
         )
 
     def count_summary(self) -> str:
@@ -515,15 +536,22 @@ def stored_file_clauses(
     return tuple(out)
 
 
-def completed_strip_clauses(state: StripState) -> tuple[str, ...]:
-    """Why ``state`` is not the completed multiplexed row this command stores from, or ``()``.
+def completed_row_clauses(state: StripState) -> tuple[str, ...]:
+    """Why ``state``'s row is not a completed multiplexer row, or ``()`` when it is one.
 
-    The measured MPX completion is the two-button, slider-bearing row (``269x123``, 2026-10-20
-    capture): ``STRIP_BUTTON_ORDER[(STORE, 2)]`` binds exactly ``Do store`` and
-    ``Clear and restart``. The three- and four-button store rows bind ``New acquisition`` /
-    ``Remove current block`` as well, so a press from them would have to choose a role this
-    command does not own; every such row, and every recording/ready/ambiguous row, is refused by
-    name with nothing pressed.
+    **One predicate, two commands.** :func:`store_completed` and
+    :func:`…record_multiplexed.record_multiplexed` both have to answer "is this the row an
+    MPX run ends in, and does ``Do store`` sit at index 0 of it?", so both ask here instead of
+    keeping a copy that could drift apart.
+
+    The accepted roles are :data:`_COMPLETED_ROWS` — the two-button row measured on 2026-10-20
+    and the three-button repeated-run row measured on 2026-10-21. Nothing is accepted because
+    of its *length*: a three-button state answers the repeated row only when its measured
+    signature selected :attr:`…actuator.StripRowVariant.REPEATED_MPX_COMPLETION`, so the legacy
+    ``New acquisition`` / ``Do store`` / ``Clear and restart`` row — and any unmeasured
+    three-button row — is refused by name rather than pressing its index 1. A row of any other
+    length, a row carrying other roles, a non-store view and a missing slider are all refused
+    the same way: nothing is pressed.
     """
     view = state.view
     if view is not StripView.STORE:
@@ -550,17 +578,39 @@ def completed_strip_clauses(state: StripState) -> tuple[str, ...]:
                 "STRIP_BUTTON_ORDER: no press is bound in it"
             ),
         )
-    if STRIP_BUTTON_ORDER[(view, state.button_count)] != _COMPLETED_ROW:
+    row = state.controls
+    if row in _COMPLETED_ROWS:
+        return ()
+    variant = state.row_variant
+    if variant is None and state.button_count == 3:
         return (
             (
                 "the completed row binds "
-                f"{[c.value for c in STRIP_BUTTON_ORDER[(view, state.button_count)]]} where this "
-                "command requires exactly 'Do store' and 'Clear and restart' (the measured "
-                "two-button MPX completion row): a row carrying any other role makes a press "
-                "here a choice this command does not make, and nothing is pressed"
+                f"{[c.value for c in row]} — the legacy three-button row, whose first button is "
+                "'New acquisition' — where this command requires a row that starts with 'Do "
+                "store'. A three-button store row alone does not say which row it is: the "
+                "repeated multiplexer completion row ('Do store' / 'Clear and restart' / "
+                "'Remove current sequence') is only accepted when its measured geometry matches "
+                "the captured 477x123 row exactly, and this row's did not, so nothing is "
+                "pressed and nothing is guessed"
             ),
         )
-    return ()
+    return (
+        (
+            "the completed row binds "
+            f"{[c.value for c in row]} where this command requires a row that starts with "
+            "'Do store' and is bound as exactly 'Do store' / 'Clear and restart' (the measured "
+            "two-button MPX completion row) or 'Do store' / 'Clear and restart' / 'Remove "
+            "current sequence' (the measured repeated-MPX completion row): a row carrying any "
+            "other role makes a press here a choice this command does not make, and nothing is "
+            "pressed"
+        ),
+    )
+
+
+def is_completed_row(state: StripState) -> bool:
+    """True when ``state`` is a measured MPX completion row — the shared predicate."""
+    return not completed_row_clauses(state)
 
 
 def _verify_store_directory(live, directory: Path) -> StoreDirectoryVerification:
@@ -612,7 +662,7 @@ def screen_clauses(
     windows: Sequence[int],
     *,
     class_name: str,
-    strip: Callable[[StripState], tuple[str, ...]] = completed_strip_clauses,
+    strip: Callable[[StripState], tuple[str, ...]] = completed_row_clauses,
 ) -> tuple[tuple[str, ...], StripState | None]:
     """The window/caption/overlay/row preconditions, as refused clauses and the strip read.
 

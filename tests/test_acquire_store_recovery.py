@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
+from test_acquire_mpx_row_variant import CAPTURED
 from test_acquire_multiplexer_strip import MPX_PANEL, MPX_VISIBLE_KIDS, _widget
 from test_acquire_runner import (
     CLEAR,
@@ -44,6 +45,7 @@ from udv_echo_process.acquire import driver
 from udv_echo_process.acquire.actuator import (
     ProcessMode,
     StripControl,
+    StripRowVariant,
     StripState,
     StripView,
 )
@@ -54,6 +56,7 @@ from udv_echo_process.acquire.ui.strip import (
     has_slider,
     new_acquisition_refusal,
     strip_row,
+    strip_state_of,
 )
 
 READY_THREE = StripState(button_count=3)
@@ -61,6 +64,12 @@ RECORDING_ONE = StripState(button_count=1)
 STORE_TWO = StripState(button_count=2, has_slider=True)
 STORE_THREE = StripState(button_count=3, has_slider=True)
 STORE_FOUR = StripState(button_count=4, has_slider=True)
+
+#: The **measured** repeated-MPX completion row (2026-10-21 capture): three buttons, a slider,
+#: and the exact ``477x123`` / ``91-138-198`` signature that selects
+#: ``StripRowVariant.REPEATED_MPX_COMPLETION``. Its row binds ``Do store`` / ``Clear and
+#: restart`` / ``Remove current sequence`` — no ``New acquisition``, so no supported recovery.
+STORE_THREE_REPEATED = strip_state_of(3, True, 100, row_signature=CAPTURED)
 
 #: The three-button store row ``STRIP_BUTTON_ORDER`` already bound; ``New acquisition`` is its
 #: leftmost button, which is what makes the recovery supported.
@@ -320,3 +329,73 @@ def test_the_pre_point_reset_still_clears_a_three_button_store_row(
 
     assert "unsaved block" not in str(outcome.reason), outcome.reason
     assert [call for call in fake.calls if call[:2] == ("press", CLEAR)], fake.calls
+
+
+# --------------------------------------- the measured repeated-MPX completion row (2026-10-21)
+
+
+def test_the_measured_repeated_mpx_row_refuses_the_new_acquisition_recovery() -> None:
+    """The variant row binds no ``New acquisition`` either, and the clause says which row.
+
+    The two-button row above is one measurement; this is a second, *distinct* row that shares
+    ``(STORE, 3)`` with the legacy row. It is the case a count-keyed reading gets wrong: the
+    legacy three-button row binds ``New acquisition`` and its recovery stays supported, while
+    this one binds ``Do store`` / ``Clear and restart`` / ``Remove current sequence`` and has no
+    gesture out that does not act on the operator's unsaved block.
+    """
+    assert STORE_THREE_REPEATED.row_variant is StripRowVariant.REPEATED_MPX_COMPLETION
+    refusal = new_acquisition_refusal(STORE_THREE_REPEATED)
+
+    assert refusal is not None, "the measured row must not be handed the legacy recovery"
+    assert "3 button(s)" in refusal
+    assert "do_store" in refusal and "clear_and_restart" in refusal
+    assert "remove_current_sequence" in refusal
+    assert "repeated multiplexed (MPX) completion row" in refusal, refusal
+    assert "unsaved block" in refusal
+    # The same key without the measurement is the legacy row, and its recovery is unchanged.
+    assert STORE_THREE.row_variant is None
+    assert new_acquisition_refusal(STORE_THREE) is None
+
+
+class RepeatedCompletionActuator(FakeActuator):
+    """The runner's fake, in the *measured* repeated-MPX completion row."""
+
+    def _state(self) -> StripState:
+        state = super()._state()
+        if state.view is StripView.STORE:
+            return STORE_THREE_REPEATED
+        return state
+
+
+def test_the_pre_point_reset_refuses_on_the_measured_repeated_mpx_row(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No ``Clear``, no ``Remove current sequence`` and no ``Record``: the point stops.
+
+    ``Clear and restart`` *is* bound at index 1 of this measured row, and ``Remove current
+    sequence`` at index 2 — pressing either would act on the operator's unsaved block — so the
+    same clause that guards the two-button row has to guard this one before any press is posted.
+    """
+    fake, engine, _, _ = make_runner(
+        tmp_path, monkeypatch, fake_class=RepeatedCompletionActuator
+    )
+    fake.view = StripView.STORE
+    assert fake._state().row_variant is StripRowVariant.REPEATED_MPX_COMPLETION
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is True, "an operator remedy ends the run, it does not continue it"
+    assert "unsaved block" in outcome.reason, outcome.reason
+    assert "repeated multiplexed (MPX) completion row" in outcome.reason, outcome.reason
+    assert outcome.reason.endswith(ABORT_NOTE)
+    posted = [call[1] for call in fake.calls if call[0] == "press"]
+    assert posted == [], f"a press was posted out of an unbound completion row: {posted}"
+    for refused in (
+        StripControl.CLEAR_AND_RESTART,
+        StripControl.REMOVE_CURRENT_SEQUENCE,
+        StripControl.RECORD,
+        StripControl.NEW_ACQUISITION,
+    ):
+        assert [call for call in fake.calls if call[:2] == ("press", refused.value)] == []
+    assert [call for call in fake.calls if call[0] == "record_and_store"] == []

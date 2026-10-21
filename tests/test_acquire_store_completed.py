@@ -231,12 +231,21 @@ def test_incompatible_ready_view_refuses_before_any_press(tmp_path: Path) -> Non
 
 
 def test_three_button_store_row_refuses_before_any_press(tmp_path: Path) -> None:
-    """The store view alone is not enough: the row must bind exactly Do store / Clear and restart."""
+    """A three-button store row is not enough: an *unmeasured* one binds ``New acquisition``.
+
+    The repeated-MPX completion row is also three buttons, so the length cannot decide. Without
+    a measured signature the state answers the legacy row, whose first button is ``New
+    acquisition``, and the refusal names that rather than pressing index 1 (``Clear and
+    restart``) on the operator's unsaved block.
+    """
     screen = FakeStoreScreen(state=StripState(button_count=3, has_slider=True))
     with pytest.raises(AcquisitionError) as raised:
         run(tmp_path, screen=screen)
 
-    assert "requires exactly 'Do store' and 'Clear and restart'" in str(raised.value)
+    message = str(raised.value)
+    assert "legacy three-button row" in message
+    assert "requires a row that starts with 'Do store'" in message
+    assert "measured geometry" in message
     assert screen.presses == []
 
 
@@ -555,10 +564,11 @@ class ScriptedScreen(FakeStoreScreen):
 def test_a_row_that_turns_three_button_between_the_checks_refuses_before_the_press(
     tmp_path: Path,
 ) -> None:
-    """The completed row read first, a three-button store row read second: nothing is pressed.
+    """The completed row read first, an unmeasured three-button store row second: no press.
 
     The second read is the one that authorizes the gesture, so a row that gains a role between
-    the checks makes a press a choice this command does not make.
+    the checks makes a press a choice this command does not make — and a three-button row that
+    is not the *measured* repeated-MPX row is that role change, not a completion.
     """
     screen = ScriptedScreen(
         states=[
@@ -570,7 +580,7 @@ def test_a_row_that_turns_three_button_between_the_checks_refuses_before_the_pre
     with pytest.raises(AcquisitionError) as raised:
         run(tmp_path, screen=screen)
 
-    assert "requires exactly 'Do store' and 'Clear and restart'" in str(raised.value)
+    assert "legacy three-button row" in str(raised.value)
     # Both checks ran: the first read accepted the row, the second one refused it.
     assert screen.strip_reads == 2
     assert screen.presses == []

@@ -188,7 +188,7 @@ def test_invalid_declaration_is_refused_before_any_decode(monkeypatch) -> None:
     def explode(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("decode must not run for an invalid declaration")
 
-    monkeypatch.setattr(mpx_artifact, "load", explode)
+    monkeypatch.setattr(mpx_artifact, "_decode", explode)
     # model_construct bypasses the model's own validation, so this exercises the
     # workflow's own before-decode guard rather than the constructor's.
     unvalidated = CompletedBlockDeclaration.model_construct(
@@ -211,7 +211,7 @@ def test_cli_invalid_declaration_exits_2_concise_without_decode(
     def explode(*_args: object, **_kwargs: object) -> None:
         raise AssertionError("decode must not run for an invalid declaration")
 
-    monkeypatch.setattr(mpx_artifact, "load", explode)
+    monkeypatch.setattr(mpx_artifact, "_decode", explode)
 
     with pytest.raises(SystemExit) as raised:
         cli.acquire_main(
@@ -268,7 +268,7 @@ def test_cli_unverifiable_decode_exits_3(monkeypatch) -> None:
             source_asset=real.recording.source_asset,
         )
     )
-    monkeypatch.setattr(mpx_artifact, "load", lambda _path: decoded)
+    monkeypatch.setattr(mpx_artifact, "_decode", lambda _path: (decoded, None))
 
     with pytest.raises(SystemExit) as raised:
         cli.acquire_main(
@@ -335,9 +335,9 @@ def test_file_replaced_during_verification_claims_nothing(
 
     def replace_then_decode(_path: Path):
         path.write_bytes(path.read_bytes() + b"replacement")
-        return decoded
+        return decoded, None
 
-    monkeypatch.setattr(mpx_artifact, "load", replace_then_decode)
+    monkeypatch.setattr(mpx_artifact, "_decode", replace_then_decode)
 
     result = mpx_artifact.verify_mpx_artifact(path, declaration())
 
@@ -369,7 +369,7 @@ def test_decoder_digest_disagreement_is_unreadable_with_both_digests(
             source_asset=wrong_asset,
         )
     )
-    monkeypatch.setattr(mpx_artifact, "load", lambda _path: decoded)
+    monkeypatch.setattr(mpx_artifact, "_decode", lambda _path: (decoded, None))
 
     result = mpx_artifact.verify_mpx_artifact(FIXTURE, declaration())
 

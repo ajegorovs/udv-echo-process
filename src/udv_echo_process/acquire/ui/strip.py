@@ -63,6 +63,8 @@ from udv_echo_process.acquire.actuator import (
     STARTABLE_VIEWS,
     STRIP_BUTTON_ORDER,
     StripControl,
+    StripRowSignature,
+    StripRowVariant,
     StripState,
     StripView,
     classify_strip_view,
@@ -85,6 +87,7 @@ __all__ = [
     "strip_clauses",
     "strip_controls",
     "strip_row",
+    "strip_row_signature",
     "strip_state_of",
 ]
 
@@ -110,6 +113,40 @@ def strip_row(panel: dict, kids: Sequence[dict]) -> list[dict]:
     )
 
 
+def strip_row_signature(panel: dict, kids: Sequence[dict]) -> StripRowSignature | None:
+    """The measured structure of this panel's top row, or ``None`` when it is not one reading.
+
+    The signature is **evidence for a row variant** (:data:`…actuator.MEASURED_ROW_VARIANTS`),
+    never an address: the buttons are still pressed by position. It is built only from what the
+    resolving boundary actually read:
+
+    - the panel's own width and height, as its rect states them;
+    - the widths of the **painted** top-row buttons, left → right.
+
+    A child that states ``visible: false`` is not part of the row and is left out — the live
+    resolver never returns one (:func:`…win32.tree._visible_children` enumerates visible
+    descendants only), so a capture that does carry the hidden siblings and a live read of the
+    same row both produce the same signature. The hidden siblings' widths are therefore
+    **provenance in the capture note, never a live discriminator**: they cannot be read at this
+    boundary, and a signature field that is permanently unreadable would be a claim, not a
+    measurement.
+
+    ``None`` means *this row was not measured*: no panel size, no painted button, or a missing
+    width. Nothing is guessed from a count — that is the whole point, since the count is what
+    two rows share.
+    """
+    width, height = panel.get("w"), panel.get("h")
+    if not isinstance(width, int) or not isinstance(height, int):
+        return None
+    painted = [k for k in strip_row(panel, kids) if k.get("visible", True) is not False]
+    widths = tuple(int(k["w"]) for k in painted if isinstance(k.get("w"), int))
+    if not widths or len(widths) != len(painted):
+        return None
+    return StripRowSignature(
+        panel_width=width, panel_height=height, visible_widths=widths
+    )
+
+
 def has_slider(kids: Sequence[Mapping]) -> bool:
     """True when the panel owns a ``TSp_Sliding_Bar`` child — the store view's own mark.
 
@@ -121,14 +158,26 @@ def has_slider(kids: Sequence[Mapping]) -> bool:
 
 
 def strip_state_of(
-    button_count: int, has_slider: bool, slider_max: int | None = None
+    button_count: int,
+    has_slider: bool,
+    slider_max: int | None = None,
+    row_signature: StripRowSignature | None = None,
 ) -> StripState:
     """The strip state implied by a structure just resolved — the reading, not a choice.
 
     ``slider_max`` (the selected block's profile count) is deliberately defaulted to ``None``:
     the reference never read the slider's range, and guessing is worse than saying nothing.
+
+    ``row_signature`` is the measured top row (:func:`strip_row_signature`) when the caller
+    resolved one. It is optional because a hand-built state has measured nothing, and an
+    unmeasured row must stay unmeasured rather than borrow the shape of the last one read.
     """
-    return StripState(button_count=button_count, has_slider=has_slider, slider_max=slider_max)
+    return StripState(
+        button_count=button_count,
+        has_slider=has_slider,
+        slider_max=slider_max,
+        row_signature=row_signature,
+    )
 
 
 def press_refusal(state: StripState) -> str | None:
@@ -181,10 +230,17 @@ def new_acquisition_refusal(state: StripState) -> str | None:
     if StripControl.NEW_ACQUISITION in state.controls:
         return None
     bound = [control.value for control in state.controls]
+    variant = state.row_variant
+    row = (
+        "the repeated multiplexed (MPX) completion row"
+        if variant is StripRowVariant.REPEATED_MPX_COMPLETION
+        else "the row a multiplexed (MPX) acquisition ends in"
+    )
+    named = f" ({variant.value!r})" if variant is not None else ""
     return (
         "the strip is holding an unsaved block: the store view is up with "
-        f"{state.button_count} button(s) bound as {bound}, and that row binds no "
-        "'New acquisition' — it is the row a multiplexed (MPX) acquisition ends in, where the "
+        f"{state.button_count} button(s) bound as {bound}{named}, and that row binds no "
+        f"'New acquisition' — it is {row}, where the "
         "button is absent by measurement. Nothing is pressed, and nothing is stored, cleared or "
         "discarded from here, because each of those acts on the operator's unsaved data: store "
         "the block with 'Do store' or discard it with 'Clear and restart' on the instrument, "

@@ -9,9 +9,14 @@ statement costs no decode and produces no claim.
 What a verdict means
 --------------------
 
-Only two things are compared, because they are the two things the declaration states:
-the exact decoded channel set and the stored profile count per channel. The result is
-one typed clause per comparison:
+The declaration states a channel set, a profile count and — on the repeated basis — a
+per-visit count with a repeat count. So the exact decoded channel set and the stored
+profile count per channel are compared, and a repeated declaration is additionally
+compared with the reader's **stored container partition**, projected per channel and
+per quantity into *runs*: maximal contiguous stretches of the file's own measurement
+containers that carry the same stored vendor block/sequence word. A block, in this
+module's reports, always means one such run — never a physical acquisition, round or
+visit. The result is one typed clause per comparison:
 
 ``CONSISTENT``
     The declared set/count equals what the decoded file holds.
@@ -40,12 +45,21 @@ Deliberate limits
 * **No order and no rolling.** The existing model decodes ``AcquisitionMode.SEQUENTIAL``
   from the multiplexer-enable bit and ``UNKNOWN`` otherwise. Sequential emission is not
   evidence of channel order, and roll-over is a runtime option the file does not store.
-  No round/visit/roll count is inferred from block numbering, timestamps, or the order
-  in which profiles happen to decode.
-* **No per-channel profile count is read from a private word parser.** The stored count
-  compared here is the number of decoded profile rows in that channel's own stream.
-  A truncated file can decode fewer complete blocks and is reported as a contradicted
-  count, not as a corrupt-file claim.
+  Stored block/sequence words and timestamps are reported as stored facts only: the
+  manual documents the footer word as a block/sequence number — it is not proof that a
+  physical event was acquired — so no round, visit or roll identity is derived from it,
+  from timestamps, or from decode order.
+* **No word is parsed here.** The stored count compared here is the number of decoded
+  profile rows in that channel's own stream, and the container partition is the owning
+  reader's ``ProfileContainerEvidence`` from the same single read. A truncated file can
+  decode fewer complete containers and is reported as a contradicted count, not as a
+  corrupt-file claim.
+* **Runs are never merged across a reuse.** Containers sharing one stored word are a
+  single run only when they are contiguous in the channel's own container order.
+  Per-channel projection tolerates the other channels' containers between them, but a
+  word that reappears after a different word is a *reused* number, not more of the same
+  block: the partition is then reported unknown rather than summed into a convenient
+  total.
 * **Zero is signal.** A stream of all zeros is reported with ``abs_max == 0.0``; it is
   not a failure, not a quality grade, and never a statement about the target ("no
   returns" is a physical claim this command does not make).
@@ -81,13 +95,16 @@ from udv_echo_process.acquire.store_completed import (
     CompletedBlockDeclaration,
     ProfileCountBasis,
 )
-from udv_echo_process.io import load
+from udv_echo_process.io.dop import bdd as bdd_reader
+from udv_echo_process.io.dop.bdd import ProfileContainerEvidence
 from udv_echo_process.models.base import ValueModel
 from udv_echo_process.models.signal import ChannelArtifact
 from udv_echo_process.provenance import ArtifactBundle
 
 __all__ = [
     "MpxArtifactReport",
+    "MpxBlockRun",
+    "MpxChannelBlockReport",
     "MpxClause",
     "MpxRepeatVerification",
     "MpxStreamReport",
@@ -113,16 +130,26 @@ class MpxVerdict(str, Enum):
 
 
 class MpxRepeatVerification(str, Enum):
-    """What the check established about the *number of stored visits*.
+    """What the check established about the declared repeat count.
 
-    Only ever one of these two: this decoder has no visit/block partition to compare, so a
-    declared repeat count can never be called verified.
+    A repeated declaration is compared against the reader's **stored container
+    partition**, projected per channel and quantity into runs of contiguous
+    containers sharing one stored block/sequence word. It is never compared
+    against a visit identity: the format documents that footer word as a
+    block/sequence number, so ``PARTITION_CONSISTENT`` means "the stored runs
+    split the rows the declaration says", not "M visits ran".
     """
 
     #: The declaration stated no repeat count, so nothing is claimed about visits.
     NOT_DECLARED = "not-declared"
-    #: A repeat count was stated; the actual count/partition is not decoded and is unknown.
+    #: A repeat count was stated, but the stored containers do not settle the partition
+    #: (one run, an unreadable word, a reused non-contiguous word, mixed quantities,
+    #: or channels whose ordered run sequences differ).
     UNKNOWN = "unknown"
+    #: The stored runs match the stated repeats x per-visit split.
+    PARTITION_CONSISTENT = "partition-consistent"
+    #: The stored runs contradict the stated repeats x per-visit split.
+    PARTITION_CONTRADICTED = "partition-contradicted"
 
 
 class MpxClause(ValueModel):
@@ -160,6 +187,53 @@ class MpxStreamReport(ValueModel):
     abs_max: float | None = None
 
 
+class MpxBlockRun(ValueModel):
+    """One run of contiguous stored containers sharing a block/sequence word.
+
+    A run is the module's unit of report-level "block": maximal consecutive
+    containers (in that channel's own container order, so other channels'
+    containers between them are ignored) that carry the **same** stored word for
+    one quantity. ``block_number`` is that raw stored word; ``None`` when the
+    run's own container footers did not carry an identity. ``containers`` and
+    ``source_ordinals`` keep the reader's source evidence, so a reviewer can see
+    which containers were merged into the run and how many rows it holds.
+
+    A word that reappears after a different word starts a *new* run and is never
+    merged with the earlier one: reuse is reported, not summed away. Counts are
+    never summed across quantities.
+    """
+
+    channel: int
+    quantity: str
+    block_number: int | None
+    containers: int = Field(ge=0)
+    source_ordinals: tuple[int, ...] = ()
+    profiles: int = Field(ge=0)
+
+
+class MpxChannelBlockReport(ValueModel):
+    """One channel's stored container partition beside its **configured** block words.
+
+    ``groups`` are the channel's runs in source order, per quantity.
+    ``stored_block_numbers`` lists the runs' stored words in first-run order, so a
+    reused word appears once here while ``len(groups)`` shows the reuse.
+    ``blocks_with_unknown_number`` counts runs whose stored word was absent.
+
+    ``configured_containers_in_mode`` is op word 53 ("Nb blocks in multiplexer
+    mode") and ``configured_profiles_per_container`` is op word 51 ("Nb profiles
+    in block in multiplexer mode") — the vendor's configured words, reported
+    separately from the containers the file actually stores. They are never
+    substituted for the observed partition and never used as a divisor.
+    """
+
+    channel: int
+    groups: tuple[MpxBlockRun, ...] = ()
+    stored_block_numbers: tuple[int, ...] = ()
+    blocks_with_unknown_number: int = Field(ge=0)
+    configured_containers_in_mode: int | None = None
+    configured_profiles_per_container: int | None = None
+
+
 class MpxArtifactReport(ValueModel):
     """The whole check: file identity, decoded streams, clauses and one verdict."""
 
@@ -180,13 +254,18 @@ class MpxArtifactReport(ValueModel):
     expected_total_profiles: int
     decoded_channels: tuple[int, ...]
     streams: tuple[MpxStreamReport, ...] = ()
+    #: The reader's stored container partition per channel, as runs beside the
+    #: configured block words it reports separately. Empty when nothing could be
+    #: decoded.
+    block_partition: tuple[MpxChannelBlockReport, ...] = ()
     #: The operator's stated per-visit count (``None`` on the legacy total basis).
     declared_profiles_per_visit: int | None = None
     #: The operator's stated repeat count (``None`` when no repeat was declared).
     declared_sequence_repeats: int | None = None
     count_basis: ProfileCountBasis = ProfileCountBasis.STATED_TOTAL
-    #: Whether the number of stored visits could be checked. Always ``unknown`` when repeats
-    #: were declared, because the decoder flattens every stored block into one stream.
+    #: Whether the stored container partition could be compared. ``unknown`` when repeats
+    #: were declared but the partition is unsettled (one run, an unknown stored word, a
+    #: reused non-contiguous word, more than one quantity, or differing run sequences).
     repeat_verification: MpxRepeatVerification = MpxRepeatVerification.NOT_DECLARED
     #: The repeat unknown in words, empty on the legacy basis.
     repeat_note: str = ""
@@ -206,7 +285,14 @@ class MpxArtifactReport(ValueModel):
                 f"; expected total {self.expected_total_profiles} per channel from "
                 f"{self.declared_sequence_repeats} repeat(s) x "
                 f"{self.declared_profiles_per_visit} per visit (operator-stated arithmetic); "
-                "actual repeats/visits unknown (not decoded)"
+                "stored container partition unknown"
+            )
+        elif self.repeat_verification is not MpxRepeatVerification.NOT_DECLARED:
+            head += (
+                f"; expected split {self.declared_sequence_repeats} run(s) x "
+                f"{self.declared_profiles_per_visit} profile(s) per channel; stored "
+                f"container partition {self.repeat_verification.value} (block/sequence "
+                "words, not a visit law)"
             )
         if not self.streams:
             return f"{head}; {self.identity_note}"
@@ -308,6 +394,15 @@ def _same_stat(before: os.stat_result, after: os.stat_result) -> bool:
     )
 
 
+def _decode(target: Path) -> tuple[ArtifactBundle, ProfileContainerEvidence]:
+    """Decode one file through the owning reader: bundle plus container evidence.
+
+    One seam, one read. The reader parses every word; this module only consumes
+    its facts, so no block/word interpretation lives here.
+    """
+    return bdd_reader.read_with_containers(target)
+
+
 def verify_mpx_artifact(
     path: Path | str, declaration: CompletedBlockDeclaration
 ) -> MpxArtifactReport:
@@ -351,7 +446,9 @@ def verify_mpx_artifact(
     size_before = int(stat_before.st_size)
 
     try:
-        bundle = load(target)
+        # The decoder owns both facts: the bundle it always produced and its own
+        # per-block account of the same bytes. No word parsing happens here.
+        bundle, evidence = _decode(target)
     except _DECODE_ERRORS as exc:
         return _unreadable(
             target,
@@ -407,6 +504,7 @@ def verify_mpx_artifact(
         target,
         bundle,
         declaration,
+        evidence=evidence,
         sha256=sha_before,
         byte_size=size_before,
         stat_note=(
@@ -425,6 +523,7 @@ def _report_from_bundle(
     bundle: ArtifactBundle,
     declaration: CompletedBlockDeclaration,
     *,
+    evidence: ProfileContainerEvidence | None = None,
     sha256: str,
     byte_size: int,
     stat_note: str,
@@ -432,9 +531,12 @@ def _report_from_bundle(
     """Build the report from an already-decoded, identity-checked bundle."""
     streams = tuple(_summarize_stream(stream) for stream in bundle.recording.streams)
     decoded_channels = tuple(sorted({stream.channel for stream in streams}))
+    partition = _channel_block_reports(evidence) if evidence is not None else ()
     clauses = list(_channel_clauses(decoded_channels, declaration))
     clauses.extend(_profile_clauses(streams, declaration))
-    clauses.extend(_repeat_clauses(declaration))
+    repeat_clause = _repeat_clauses(declaration, partition)
+    if repeat_clause is not None:
+        clauses.append(repeat_clause)
     clauses.extend(_data_clauses(streams))
     verdict = _verdict(clauses)
     mode = bundle.recording.acquisition_mode
@@ -460,15 +562,12 @@ def _report_from_bundle(
         expected_total_profiles=declaration.expected_total_profiles,
         decoded_channels=decoded_channels,
         streams=streams,
+        block_partition=partition,
         declared_profiles_per_visit=declaration.profiles_per_visit,
         declared_sequence_repeats=declaration.sequence_repeats,
         count_basis=declaration.count_basis,
-        repeat_verification=(
-            MpxRepeatVerification.NOT_DECLARED
-            if declaration.sequence_repeats is None
-            else MpxRepeatVerification.UNKNOWN
-        ),
-        repeat_note=declaration.repeat_verification_unknown,
+        repeat_verification=_repeat_verification(repeat_clause),
+        repeat_note=_repeat_note(declaration, repeat_clause),
         clauses=tuple(clauses),
         verdict=verdict,
     )
@@ -646,36 +745,260 @@ def _profile_detail(
     )
 
 
+def _channel_block_reports(
+    evidence: ProfileContainerEvidence,
+) -> tuple[MpxChannelBlockReport, ...]:
+    """Project the reader's per-container facts into per-channel runs.
+
+    Only the owning reader's facts are used. For each channel and quantity the
+    containers carrying that quantity are taken in **source order** and cut into
+    maximal runs of equal stored word, so the other channels' containers (and
+    other quantities' containers) between them do not break a run: that
+    interleave is the normal multiplexer pattern, not a partition boundary.
+
+    A word that reappears after a different word opens a *new* run and is never
+    merged into the earlier one, so a reused non-contiguous number stays visible
+    as two runs instead of being summed into one convenient group. Containers
+    whose stored word is unknown keep their own run with ``block_number=None``
+    and their rows; ``source_ordinals`` and ``containers`` keep the evidence.
+    """
+    reports: list[MpxChannelBlockReport] = []
+    for channel in sorted({c.channel for c in evidence.containers}):
+        containers = [c for c in evidence.containers if c.channel == channel]
+        quantities = sorted({p.quantity for c in containers for p in c.profiles})
+        groups: list[MpxBlockRun] = []
+        for quantity in quantities:
+            # (stored word, container ordinals, row count) of the run being built.
+            current: tuple[int | None, list[int], int] | None = None
+            for container in containers:  # already in source order
+                rows = 0
+                for count in container.profiles:
+                    if count.quantity == quantity:
+                        rows = count.profiles
+                        break
+                if rows == 0:
+                    continue
+                if current is not None and current[0] == container.stored_sequence:
+                    current[1].append(container.source_ordinal)
+                    current = (current[0], current[1], current[2] + rows)
+                    continue
+                if current is not None:
+                    groups.append(
+                        MpxBlockRun(
+                            channel=channel,
+                            quantity=quantity,
+                            block_number=current[0],
+                            containers=len(current[1]),
+                            source_ordinals=tuple(current[1]),
+                            profiles=current[2],
+                        )
+                    )
+                current = (container.stored_sequence, [container.source_ordinal], rows)
+            if current is not None:
+                groups.append(
+                    MpxBlockRun(
+                        channel=channel,
+                        quantity=quantity,
+                        block_number=current[0],
+                        containers=len(current[1]),
+                        source_ordinals=tuple(current[1]),
+                        profiles=current[2],
+                    )
+                )
+        setting = evidence.configured_for(channel)
+        reports.append(
+            MpxChannelBlockReport(
+                channel=channel,
+                groups=tuple(groups),
+                stored_block_numbers=tuple(
+                    dict.fromkeys(
+                        group.block_number
+                        for group in groups
+                        if group.block_number is not None
+                    )
+                ),
+                blocks_with_unknown_number=sum(
+                    1 for group in groups if group.block_number is None
+                ),
+                configured_containers_in_mode=(
+                    setting.containers_in_mode if setting is not None else None
+                ),
+                configured_profiles_per_container=(
+                    setting.profiles_per_container if setting is not None else None
+                ),
+            )
+        )
+    return tuple(reports)
+
+
+def _configured_note(partition: tuple[MpxChannelBlockReport, ...]) -> str:
+    """Name the configured vendor block words separately from the observed partition."""
+    parts = [
+        f"ch {report.channel}: op 53 = {report.configured_containers_in_mode}, "
+        f"op 51 = {report.configured_profiles_per_container}"
+        for report in partition
+    ]
+    return (
+        "configured multiplexer block words ("
+        + "; ".join(parts)
+        + ") are configuration: they are not evidence that those profile containers, or "
+        "those runs, exist in this file, and they are not substituted for the stored "
+        "block/sequence words"
+    )
+
+
 def _repeat_clauses(
     declaration: CompletedBlockDeclaration,
-) -> tuple[MpxClause, ...]:
-    """The repeat count's own clause: always unverifiable, because nothing decodes visits.
+    partition: tuple[MpxChannelBlockReport, ...],
+) -> MpxClause | None:
+    """Compare the stated repeats x per-visit split with the stored container runs.
 
-    This is not a missing feature worked around privately: the existing reader accumulates
-    every stored block of a channel into one stream, and no block/visit/round field is owned
-    or decoded. The clause therefore states the unknown rather than letting a matching total
-    read as a verified repeat count, and the overall verdict becomes ``unverifiable`` for any
-    repeated declaration even when the total agrees.
+    The comparison is against the reader's own container evidence, projected per
+    channel and quantity into runs of *contiguous* containers sharing one stored
+    block/sequence word — never against an arithmetic total, never against op
+    word 53, and never by summing a reused word across the file. Each stored word
+    must also be one instance and the ordered run sequence must agree across the
+    declared channels; only then is the partition called consistent or
+    contradicted. A single run, an unknown word, a reused non-contiguous word, a
+    channel whose containers mix quantities, or channels with differing ordered
+    sequences stay ``unverifiable``. The clause says in words that the vendor word
+    is a block/sequence number, not a visit identity, so consistency is a
+    statement about stored containers only.
     """
     if declaration.sequence_repeats is None:
-        return ()
-    expected = declaration.expected_total_profiles
-    return (
-        MpxClause(
-            subject="repeats",
-            status=MpxVerdict.UNVERIFIABLE,
-            detail=(
-                f"the operator stated {declaration.sequence_repeats} repeat(s) of "
-                f"{declaration.profiles_per_visit} profile(s) per visit, so the expected total "
-                f"is {expected} = {declaration.sequence_repeats} x "
-                f"{declaration.profiles_per_visit} (operator-stated arithmetic); only that "
-                "total can be compared, because the decoder flattens every stored block into "
-                "one stream per channel and decodes no repeat, block or visit count — the "
-                f"actual number of stored visits is unknown, and a total of {expected} per "
-                f"channel is not proof that {declaration.sequence_repeats} visit(s) ran"
-            ),
-            expected=declaration.sequence_repeats,
+        return None
+    repeats = declaration.sequence_repeats
+    per_visit = declaration.profiles_per_visit
+    assert per_visit is not None  # guaranteed by the declaration's own clauses
+
+    statuses: list[MpxVerdict] = []
+    details: list[str] = []
+    sequences: dict[int, tuple[int | None, ...]] = {}
+    by_channel = {report.channel: report for report in partition}
+    for channel in sorted(declaration.channels):
+        report = by_channel.get(channel)
+        if report is None or not report.groups:
+            details.append(f"ch {channel}: no stored profile rows were decoded")
+            statuses.append(MpxVerdict.UNVERIFIABLE)
+            continue
+        quantities = sorted({group.quantity for group in report.groups})
+        if len(quantities) > 1:
+            details.append(
+                f"ch {channel}: its containers carry more than one quantity "
+                f"({', '.join(quantities)}); the counts stay separate and no split is claimed"
+            )
+            statuses.append(MpxVerdict.UNVERIFIABLE)
+            continue
+        if report.blocks_with_unknown_number:
+            details.append(
+                f"ch {channel}: {report.blocks_with_unknown_number} stored run(s) have an "
+                f"unknown block/sequence number; their decoded counts are preserved as "
+                f"{[(group.block_number, group.profiles) for group in report.groups]}"
+            )
+            statuses.append(MpxVerdict.UNVERIFIABLE)
+            continue
+        numbers = [group.block_number for group in report.groups]
+        rows = [group.profiles for group in report.groups]
+        reused = sorted({number for number in numbers if numbers.count(number) > 1})
+        if reused:
+            details.append(
+                f"ch {channel}: the stored block/sequence word(s) {reused} reappear in "
+                f"more than one non-contiguous run ({len(numbers)} run(s) holding "
+                f"{rows} profile(s)); a reused word is not merged, so the partition is "
+                "not settled by these containers"
+            )
+            statuses.append(MpxVerdict.UNVERIFIABLE)
+            continue
+        sequences[channel] = tuple(numbers)
+        observed = f"ch {channel}: {len(numbers)} stored run(s) {numbers} holding {rows} profile(s)"
+        if len(numbers) == 1 and repeats > 1:
+            details.append(
+                observed
+                + " — a single stored run cannot show the per-visit split, so the "
+                "stated repeats are not settled by this file"
+            )
+            statuses.append(MpxVerdict.UNVERIFIABLE)
+        elif len(numbers) == repeats and all(rows_ == per_visit for rows_ in rows):
+            details.append(observed + f", matching {repeats} x {per_visit}")
+            statuses.append(MpxVerdict.CONSISTENT)
+        else:
+            details.append(
+                observed + f", which does not match the stated {repeats} run(s) x "
+                f"{per_visit} profile(s)"
+            )
+            statuses.append(MpxVerdict.CONTRADICTED)
+
+    # One ordered sequence across channels: a shared partition is only claimed
+    # when every settled declared channel carries the same run order. Per-channel
+    # projection already tolerates the multiplexer's channel interleave, so a
+    # differing order is a real disagreement between channels, not an artefact.
+    if len(set(sequences.values())) > 1:
+        descriptions = "; ".join(
+            f"ch {channel}: {list(sequence)}"
+            for channel, sequence in sorted(sequences.items())
+        )
+        details.append(
+            "the ordered stored run sequence differs between channels "
+            f"({descriptions}); a shared partition is not established"
+        )
+        statuses.append(MpxVerdict.UNVERIFIABLE)
+
+    if MpxVerdict.CONTRADICTED in statuses:
+        status = MpxVerdict.CONTRADICTED
+    elif MpxVerdict.UNVERIFIABLE in statuses:
+        status = MpxVerdict.UNVERIFIABLE
+    else:
+        status = MpxVerdict.CONSISTENT
+    detail = (
+        f"the operator stated {repeats} repeat(s) of {per_visit} profile(s) per visit "
+        f"(expected total {declaration.expected_total_profiles} per channel, operator "
+        "arithmetic); the reader's stored container partition per channel and quantity "
+        "is "
+        + "; ".join(details)
+        + ". The footer word is documented as a block/sequence number, not a visit "
+        "identity, so this compares contiguous stored containers and does not "
+        "establish a visit law; " + _configured_note(partition) + "."
+    )
+    return MpxClause(
+        subject="repeats",
+        status=status,
+        detail=detail,
+        expected=repeats,
+        observed=(
+            max(
+                (len(report.stored_block_numbers) for report in partition),
+                default=0,
+            )
+            if partition
+            else None
         ),
+    )
+
+
+def _repeat_verification(clause: MpxClause | None) -> MpxRepeatVerification:
+    """Map the repeat clause's status onto the report's repeat field."""
+    if clause is None:
+        return MpxRepeatVerification.NOT_DECLARED
+    if clause.status is MpxVerdict.CONSISTENT:
+        return MpxRepeatVerification.PARTITION_CONSISTENT
+    if clause.status is MpxVerdict.CONTRADICTED:
+        return MpxRepeatVerification.PARTITION_CONTRADICTED
+    return MpxRepeatVerification.UNKNOWN
+
+
+def _repeat_note(
+    declaration: CompletedBlockDeclaration, clause: MpxClause | None
+) -> str:
+    """The repeat field's own words: the declaration's unknown, or the block caveat."""
+    if clause is None:
+        return ""
+    if clause.status is MpxVerdict.UNVERIFIABLE:
+        return declaration.repeat_verification_unknown
+    return (
+        f"{clause.status.value} as a stored container partition: the file's own "
+        f"block/sequence words group contiguous containers into {clause.observed} run(s) "
+        "per channel; the format documents that word as a block/sequence number, not a "
+        "visit identity, so this is not a decoded visit or round count"
     )
 
 

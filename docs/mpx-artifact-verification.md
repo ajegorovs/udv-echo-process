@@ -4,8 +4,25 @@
 operator's completed-block declaration. `acquire record-multiplexed` runs the same
 check automatically on the file its own store just produced. Both are offline from
 the instrument's point of view: no window, no instrument, no network, and nothing
-written. Both reuse the existing `io.load` decoder and the existing
-`CompletedBlockDeclaration`; no word parser is added.
+written. Both reuse the existing reader (`io.dop.bdd.read_with_containers`, which returns the
+same `ArtifactBundle` plus the reader's own per-container evidence) and the existing
+`CompletedBlockDeclaration`; no word parser is added to this command. The plain
+`io.load` / `bdd.read` path is untouched: evidence is opt-in, so an ordinary decode builds
+no per-container models and parses no footer word beyond the rows it needs.
+
+Measured plain-read cost on this host (CPython 3.14.3, `time.perf_counter` +
+`tracemalloc` peak, seven warm runs per file, median; **traced peak, not process-family
+memory**):
+
+| file | before (evidence always built) | after (opt-in, not requested) |
+| --- | --- | --- |
+| `data/4-sensor-velocity/200RPM.BDD` (150184 B) | 316.0 ms, 5647 KiB | 214.7 ms, 3013 KiB |
+| `data/echo/200.BDD` (219439 B) | 493.9 ms, 13328 KiB | 224.8 ms, 6441 KiB |
+
+Decoded rows, artifact ids, `recording_id` and the timestamp clock are identical before and
+after (asserted in `tests/test_bdd_block_evidence.py`); the evidence itself is not free —
+`read_with_containers` on the same two files measured 307.6 ms / 5574 KiB and
+433.4 ms / 12060 KiB.
 
 ```bash
 uv run python -m udv_echo_process.cli acquire mpx-check FILE.BDD \
@@ -28,6 +45,9 @@ Exactly two facts, because they are the two the declaration states:
 
 - the exact decoded channel set;
 - the decoded profile count for each declared channel.
+
+A declaration that states its count as a per-visit count plus a repeat count adds a third
+comparison — the stored container partition, described under *Repeated declarations*.
 
 Each result is a typed clause with status `consistent`, `contradicted`, `unverifiable`
 or `unreadable`. Exit codes: 0 consistent, 1 contradicted, 2 invalid declaration,
@@ -71,11 +91,17 @@ interpretation of the stored bytes.
 
 ## Limits
 
-- **No ordering or rolling claim.** `sequential` is the decoded multiplexer-enable bit,
-  not a channel order, and roll-over is a runtime option the file does not store. No
-  round/visit/roll count is inferred from block numbering, timestamps or decode order.
+- **No ordering, rolling or visit claim.** `sequential` is the decoded multiplexer-enable
+  bit, not a channel order, and roll-over is a runtime option the file does not store.
+  The reader now reports each stored container's own vendor block/sequence word, but the
+  manual documents that word **only** as a block/sequence number: no round, visit or roll
+  identity is derived from it, from timestamps, or from decode order. It is a stored word,
+  not proof that a physical acquisition event happened.
+- **A "block" in the report is a run, not an instrument block.** The report calls a run of
+  *contiguous* containers sharing one stored word a block. Containers are never counted as
+  "N blocks stored" from a histogram over the raw words.
 - **Truncation is a count, not a corruption verdict.** The existing decoder keeps every
-  complete block, so a truncated file decodes fewer profiles and is reported as a
+  complete container, so a truncated file decodes fewer profiles and is reported as a
   contradicted count. The command does not brand the file as corrupt.
 - **`unreadable` is one status for several causes.** The existing decoder has no typed
   decode error: `ValueError` covers "these bytes are not a DOP3000 `.BDD` file", a failed
@@ -165,7 +191,7 @@ merely because it pressed no Stop or Disable.
 ## Repeated sequences: `--profiles-per-visit` with `--repeats`
 
 `--profiles` keeps its original meaning: the operator's stated **total** per channel for
-the whole stored block. A repeated sequence is stated explicitly instead, and the two
+the whole stored file. A repeated sequence is stated explicitly instead, and the two
 bases are mutually exclusive:
 
 ```bash
@@ -185,20 +211,69 @@ uv run python -m udv_echo_process.cli acquire mpx-check FILE.BDD \
   `declared_profiles_per_visit`, `declared_sequence_repeats`, `count_basis`
   (`stated-total` or `per-visit-times-repeats`) — and never presents them as decoded facts.
 
-**What a repeat declaration cannot establish.** The existing decoder accumulates every
-stored block of a channel into one `ChannelArtifact`, so only the **total** rows per
-channel are decoded. The repeat count and the number of stored visits are therefore
-unknown, and a repeated declaration always carries a `repeats` clause with status
-`unverifiable` plus `repeat_verification: unknown` and a `repeat_note`. The overall
-verdict is `unverifiable` (exit `3`) even when the total matches the expected product; the
-per-channel count clauses still report `consistent` for that total. A total match is not
-proof that `M` visits ran, and a single stored block holding the whole total is not
-evidence of either one visit or `M` visits.
+**What a repeat declaration is compared with.** On request (`read_with_containers`) the
+reader keeps every profile container and reports, per container, its 0-based source ordinal,
+its raw vendor block/sequence word and how many profile rows of each quantity it holds
+(`ProfileContainerEvidence` in `io/dop/bdd.py`). The `repeats` clause projects those facts
+per channel and per quantity into **runs**: maximal stretches of *contiguous* containers in
+the channel's own container order that share one stored word. Other channels' containers
+between them do not break a run — that interleave is the normal multiplexer visit pattern —
+but a word that reappears after a different word opens a new run and is **never** merged
+with the earlier one. The stated `M x N` split is compared with that partition:
 
-On an authentic 100-block fixture (`data/4-sensor-velocity/200RPM.BDD`, 400 rows per
-channel), `--profiles-per-visit 4 --repeats 100` reaches the matching total and still
-reports the repeat count unknown — that is the honest result, not a failure. `--profiles
-400` remains `consistent` exactly as before. No repeat ≥ 2 recording with a known
-operator setting exists on this host, so no live acceptance is claimed for repeats; the
-block-scoped-store question (does a repeat>1 acquisition store one block or all of them)
-is still unmeasured.
+- `consistent` — the channel has exactly `M` runs, each holding exactly `N` profile rows,
+  every stored word appears in exactly one run, and the ordered run sequence is the same on
+  every declared channel (`repeat_verification: partition-consistent`, exit not forced by
+  this clause);
+- `contradicted` — the runs settle the partition and disagree with `M x N`
+  (`partition-contradicted`);
+- `unverifiable` — the file cannot settle it: only **one** run with `M > 1` (a single run
+  cannot show the per-visit split), a container whose own footer does not yield a word (a
+  `0` word, or a container shorter than its 12-byte footer), a **reused** word that appears
+  in more than one non-contiguous run, a channel whose containers carry more than one
+  quantity, or declared channels whose ordered run sequences differ. The partial
+  per-container counts, source ordinals and run lengths are still reported.
+
+The clause always states that the footer word is a block/sequence number, not a visit
+identity, so even `consistent` means "the stored containers split the rows as declared",
+never "M visits ran", and never a claim about physical acquisitions. The **configured**
+values are reported beside the partition and never substituted for it: op word 53 ("Nb
+blocks in multiplexer mode") and op word 51 ("Nb profiles in block in multiplexer mode")
+appear as `configured_containers_in_mode` / `configured_profiles_per_container` on every
+channel, and the clause says explicitly that configuration is not evidence that those
+containers or runs exist. Word 51 is configuration only and is never used as a divisor.
+
+Measured on stored artifacts (each figure is the reader's own walk, 0 trailing bytes):
+
+- `outputs/live/store/mpx12-50profiles-repeat2-01.BDD`, 43674 bytes, SHA-256
+  `bc79760cdc9cd91e22334db713feea3ca95e4d8eb9a6d15ac8d3a274e00dfbc8` (git-ignored, not
+  published): **202 profile containers** — one depth-only container plus 100 single-row
+  velocity containers per channel. Channels 1 and 2 each hold 100 velocity rows of 42
+  gates in **two runs** of 50 rows, with stored words `1` and `2`; op 53 = 2, op 51 = 50.
+  `--channel 1 2 --profiles-per-visit 50 --repeats 2` reports every clause `consistent`,
+  `repeat_verification: partition-consistent`, and runs `[(1, 50, 50), (2, 50, 50)]`
+  (word, rows, containers) per channel.
+- `data/4-sensor-velocity/200RPM.BDD` (tracked authentic multiplexed capture, 150184 bytes,
+  400 rows per channel): **1604 profile containers** — one depth-only container plus 400
+  single-row velocity containers per channel, four contiguous containers per stored word.
+  `--profiles-per-visit 4 --repeats 100` reports 100 runs of 4 rows per channel with the
+  same ordered words `1..100` on all four channels, `partition-consistent`; op 53 = 100,
+  op 51 = 4; `--profiles 400` remains `consistent` exactly as before.
+- `outputs/live/store/mpx12-50profiles-verified-01.BDD` (the single-cycle accepted run):
+  102 profile containers; one depth-only container plus 50 single-row velocity containers
+  per channel, all with stored word `1`, op 53 = 1 — the single-run case, `unverifiable`
+  for any `M > 1` and consistent with `--profiles 50`.
+
+A crafted mutation of the authentic capture (its 400 velocity containers per channel
+rewritten to alternate `1,2` every two containers, so 200 runs of 2 rows) is the
+regression for the partition rule: a histogram that summed every `1` and every `2` would
+see "2 blocks of 200 rows" and call `2 x 200` consistent, and the reader instead reports
+the reused words and `repeat_verification: unknown`. That case is covered in
+`tests/test_bdd_block_evidence.py`.
+
+These are offline decodes of already-stored files, not live repeat acceptances: no
+operator-stated repeat setting exists on this host for the repeat-2 file, so its
+`repeats` clause is evidence about the stored container partition only. Whether a repeat>1
+acquisition stores one word or several is settled for this one artifact (both words were
+stored) and remains unmeasured elsewhere; the word is a block/sequence number and is not
+proof of the physical acquisitions behind it.

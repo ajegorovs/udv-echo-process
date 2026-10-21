@@ -338,6 +338,7 @@ from udv_echo_process.acquire.ui.model import Rect
 from udv_echo_process.acquire.ui.strip import (
     has_slider,
     new_acquisition_refusal,
+    strip_row_signature,
     strip_state_of,
 )
 from udv_echo_process.acquire.ui.strip import (
@@ -582,6 +583,7 @@ __all__ = [
     "same_directory",
     "screen_mode",
     "strip_press_refusal",
+    "strip_row_signature",
     "strip_state_of",
     "text_at",
 ]
@@ -1285,6 +1287,14 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         strip_kids = children_of(strip_panel["hwnd"]) if strip_panel is not None else []
         row = _strip_row(strip_panel, strip_kids) if strip_panel is not None else []
         roles["strip_row"] = row
+        # The row's measured rectangle, carried on the map for the same reason the slider's
+        # mark is: the state that names a row *variant* must be readable from this one tree,
+        # and only geometry the resolver actually enumerated may be in it.
+        roles["strip_signature"] = (
+            strip_row_signature(strip_panel, strip_kids)
+            if strip_panel is not None
+            else None
+        )
         # The slider's mark is read once, here, and carried on the map: it is one of the two facts
         # the view is classified from (``ui/strip.py`` :func:`…ui.strip.has_slider`), and a state
         # read that had to enumerate the panel again could not be taken from a captured tree.

@@ -1,13 +1,15 @@
-"""Repeated-sequence declarations: honest expected-total arithmetic, unknown repeat count.
+"""Repeated-sequence declarations: expected-total arithmetic plus a stored container partition.
 
-The one measurable fact is the **stored total** per channel. ``--profiles`` keeps its
-legacy meaning (that total). The explicit pair ``--profiles-per-visit N --repeats M``
-states the operator's per-visit count and repeat count, and the expected total is their
-product — arithmetic over the operator's own numbers, never a decoded fact. The
-authentic 200RPM fixture is a 100-block multiplexed acquisition with 400 stored rows per
-channel: declaring 4 per visit x 100 repeats reaches the matching total, and the check
-must still report the actual repeat/visit count as unknown, because the decoder flattens
-every stored block into one stream per channel.
+``--profiles`` keeps its legacy meaning (the stored total). The explicit pair
+``--profiles-per-visit N --repeats M`` states the operator's per-visit count and repeat
+count, and the expected total is their product — arithmetic over the operator's own
+numbers, never a decoded fact. The authentic 200RPM fixture is a multiplexed acquisition
+with 400 stored rows per channel in 1600 profile containers, four contiguous containers per
+stored block/sequence word: declaring 4 per visit x 100 repeats matches the reader's
+**stored container partition** projected into 100 runs of 4 rows per channel, so the repeat
+clause is reported consistent. That word is a block/sequence number, not a visit identity,
+so no visit count is claimed; a single run, an unknown word, a reused non-contiguous word or
+a mixed-quantity channel keeps the repeat unknown (``tests/test_bdd_block_evidence.py``).
 """
 
 from __future__ import annotations
@@ -98,30 +100,32 @@ def test_synthetic_declaration_normalizes_expected_total_once() -> None:
     )
 
 
-# ------------------------------------------------- authentic 100-block fixture, repeats stated
+# ------------------------------------- authentic 1600-container fixture, repeats stated
 
 
-def test_authentic_400_row_fixture_matches_the_total_but_not_the_repeat_count() -> None:
-    """4 per visit x 100 repeats = the 400 decoded rows, and the repeats stay unknown.
+def test_authentic_fixture_matches_the_stored_container_partition() -> None:
+    """4 per visit x 100 repeats matches 100 runs of 4 rows per channel.
 
-    This is arithmetic agreement with an **authentic** multiplexed file. It is not proof
-    that 100 visits ran: the decoder emits one unpartitioned stream per channel, so the
-    visited count is unestablished and the verdict is ``unverifiable``, never
-    ``consistent``.
+    The reader reports, on request, each container's own block/sequence word and the
+    rows it holds, so the stated split is compared with a **stored container
+    partition** projected into contiguous runs, not with a total alone. This is still
+    not proof that 100 visits ran: the format documents that footer word as a
+    block/sequence number.
     """
 
     report = mpx_artifact.verify_mpx_artifact(FIXTURE, repeated())
 
-    assert report.verdict is mpx_artifact.MpxVerdict.UNVERIFIABLE
-    assert report.verdict is not mpx_artifact.MpxVerdict.CONSISTENT
+    assert report.verdict is mpx_artifact.MpxVerdict.CONSISTENT
     assert report.count_basis is ProfileCountBasis.PER_VISIT_TIMES_REPEATS
     assert report.declared_profiles_per_channel is None
     assert report.declared_profiles_per_visit == 4
     assert report.declared_sequence_repeats == 100
     assert report.expected_total_profiles == TOTAL
-    assert report.repeat_verification is mpx_artifact.MpxRepeatVerification.UNKNOWN
-    assert "actual number of stored visits is unknown" in report.repeat_note
-    assert "not proof that 100 visit(s)" in report.repeat_note
+    assert (
+        report.repeat_verification
+        is mpx_artifact.MpxRepeatVerification.PARTITION_CONSISTENT
+    )
+    assert "not a decoded visit or round count" in report.repeat_note
 
     profiles = [c for c in report.clauses if c.subject.startswith("profiles:")]
     assert len(profiles) == len(CHANNELS)
@@ -132,13 +136,26 @@ def test_authentic_400_row_fixture_matches_the_total_but_not_the_repeat_count() 
         # The derivation is named, so the per-visit number is never silently converted.
         assert "= 100 repeat(s) x 4 per visit" in clause.detail
 
+    # The stored partition itself: 100 distinct words, 4 rows each in a contiguous
+    # run, and the configured op 53 = 100 reported beside it rather than substituted.
+    assert {c.channel for c in report.block_partition} == set(CHANNELS)
+    for channel_report in report.block_partition:
+        assert len(channel_report.stored_block_numbers) == 100
+        assert channel_report.blocks_with_unknown_number == 0
+        assert {group.profiles for group in channel_report.groups} == {4}
+        assert channel_report.configured_containers_in_mode == 100
+        assert channel_report.configured_profiles_per_container == 4
+
     repeats = [c for c in report.clauses if c.subject == "repeats"]
     assert len(repeats) == 1
-    assert repeats[0].status is mpx_artifact.MpxVerdict.UNVERIFIABLE
+    assert repeats[0].status is mpx_artifact.MpxVerdict.CONSISTENT
     assert repeats[0].expected == 100
-    assert "decodes no repeat, block or visit count" in repeats[0].detail
-    assert "actual number of stored visits is unknown" in repeats[0].detail
-    assert "unknown" in report.summary()
+    assert repeats[0].observed == 100
+    assert "stored container partition" in repeats[0].detail
+    assert "not a visit identity" in repeats[0].detail
+    assert "op 53 = 100" in repeats[0].detail
+    assert "not evidence that those profile containers" in repeats[0].detail
+    assert "partition-consistent" in report.summary()
 
 
 def test_repeated_declaration_with_a_wrong_product_is_contradicted() -> None:
@@ -151,8 +168,12 @@ def test_repeated_declaration_with_a_wrong_product_is_contradicted() -> None:
     profiles = [c for c in report.clauses if c.subject.startswith("profiles:")]
     assert {c.expected for c in profiles} == {500}
     assert {c.observed for c in profiles} == {TOTAL}
-    # The repeat unknown is still reported beside the contradiction.
-    assert report.repeat_verification is mpx_artifact.MpxRepeatVerification.UNKNOWN
+    # The stored blocks contradict the per-visit count as well (4 rows per block
+    # against a stated 5), and that is reported beside the total contradiction.
+    assert (
+        report.repeat_verification
+        is mpx_artifact.MpxRepeatVerification.PARTITION_CONTRADICTED
+    )
 
 
 # ------------------------------------------------------------ strict refusals, before a read
@@ -279,7 +300,7 @@ def test_cli_legacy_profiles_exits_zero(capsys) -> None:
     assert "repeats" not in captured.out
 
 
-def test_cli_per_visit_pair_exits_three_and_names_the_unknown(capsys) -> None:
+def test_cli_per_visit_pair_exits_zero_and_names_the_block_partition(capsys) -> None:
     code = run_cli(
         [
             "mpx-check",
@@ -296,12 +317,12 @@ def test_cli_per_visit_pair_exits_three_and_names_the_unknown(capsys) -> None:
         ]
     )
     captured = capsys.readouterr()
-    assert code == 3
-    assert '"verdict": "unverifiable"' in captured.out
+    assert code == 0
+    assert '"verdict": "consistent"' in captured.out
     assert '"expected_total_profiles": 400' in captured.out
     assert '"declared_sequence_repeats": 100' in captured.out
-    assert '"repeat_verification": "unknown"' in captured.out
-    assert '"verdict": "consistent"' not in captured.out
+    assert '"repeat_verification": "partition-consistent"' in captured.out
+    assert '"configured_containers_in_mode": 100' in captured.out
 
 
 @pytest.mark.parametrize(

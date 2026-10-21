@@ -24,6 +24,8 @@ from udv_echo_process.acquire import record_multiplexed as workflow
 from udv_echo_process.acquire.actuator import (
     OverlayKind,
     StripControl,
+    StripRowSignature,
+    StripRowVariant,
     StripState,
     WindowTarget,
 )
@@ -58,6 +60,24 @@ READY = StripState(button_count=3, has_slider=False)
 RECORDING = StripState(button_count=1, has_slider=False)
 COMPLETED = StripState(button_count=2, has_slider=True, slider_max=50)
 AMBIGUOUS = StripState(button_count=4, has_slider=False)
+#: The three-button, slider-bearing row a *repeated* MPX run was observed to end in
+#: (2026-10-21 capture). Same key as the non-MPX three-button store row, different captions:
+#: see ``tests/test_acquire_mpx_store3_row_ambiguity.py``. **As a bare count it is not a
+#: completion row** — this state carries no measured geometry, so it answers the legacy row and
+#: is refused; ``STORE_THREE_MEASURED`` is the same row with the captured signature.
+STORE_THREE = StripState(button_count=3, has_slider=True, slider_max=100)
+#: The signature read off the 2026-10-21 capture: a 477x123 panel whose three painted top-row
+#: buttons are 91, 138 and 198 px wide, left → right. The evidence, not a role map.
+REPEATED_COMPLETION_SIGNATURE = StripRowSignature(
+    panel_width=477, panel_height=123, visible_widths=(91, 138, 198)
+)
+#: The same three-button row **with** its measurement: the variant names ``Do store`` first.
+STORE_THREE_MEASURED = StripState(
+    button_count=3,
+    has_slider=True,
+    slider_max=100,
+    row_signature=REPEATED_COMPLETION_SIGNATURE,
+)
 
 
 class FakeMpxScreen:
@@ -332,6 +352,55 @@ def test_unsettled_completion_row_is_terminal_and_stores_nothing(tmp_path: Path)
     assert result.store is None
     assert screen.controls_pressed() == [StripControl.RECORD]
     assert screen.commits == 0
+
+
+def test_the_observed_three_button_completion_row_is_terminal_and_stores_nothing(
+    tmp_path: Path,
+):
+    """The 2026-10-21 repeated-run row *as a bare count*: refused, nothing stored.
+
+    Its key ``(STORE, 3)`` is shared with the non-MPX three-button store row, where ``Do
+    store`` sits at index 1. A count alone therefore states no role, so this reading is
+    terminal: the flow reports the row it read and presses nothing beyond the one ``Record``.
+    Only the captured *signature* names the row (next test).
+    """
+    screen = FakeMpxScreen(after_press=(RECORDING, STORE_THREE))
+    result = run(tmp_path, screen=screen, sleep=lambda _s: None)
+
+    assert result.stage is MpxStage.COMPLETION_UNKNOWN
+    assert result.record_started is True
+    assert result.store is None and result.stored_path is None
+    assert result.store_invoked is False
+    assert screen.controls_pressed() == [StripControl.RECORD]
+    assert screen.commits == 0
+    assert "3 button(s)" in result.reason
+    assert "the block remains unstored on the strip" in " ".join(result.owed)
+
+
+def test_the_measured_repeated_completion_row_is_stored_once_from_do_store(
+    tmp_path: Path,
+):
+    """The same row **with** the captured geometry: one Record, one Do store, one commit.
+
+    The discriminator is the measurement, not the length: the state carries the 477x123 /
+    91-138-198 signature, so ``Do store`` resolves to index 0 and the store-only path accepts
+    the row. ``Clear and restart`` and ``Remove current sequence`` are never pressed, and no
+    other gesture is added to the flow.
+    """
+    screen = FakeMpxScreen(after_press=(RECORDING, STORE_THREE_MEASURED))
+    result = run(tmp_path, screen=screen, verify_artifact=_fixture_verifier)
+
+    assert result.stage is MpxStage.STORED
+    assert result.completion_state is not None
+    assert result.completion_state.button_count == 3
+    assert (
+        result.completion_state.row_variant is StripRowVariant.REPEATED_MPX_COMPLETION
+    )
+    # 'Do store' is index 0 in this row, and that is the press that was made.
+    assert result.completion_state.index_of(StripControl.DO_STORE) == 0
+    assert screen.controls_pressed() == [StripControl.RECORD, StripControl.DO_STORE]
+    assert screen.commits == 1
+    assert (tmp_path / "mpx-run.BDD").exists()
 
 
 def test_a_read_error_is_reported_with_its_original_facts(tmp_path: Path):

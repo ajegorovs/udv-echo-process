@@ -177,6 +177,7 @@ class RecordingSurface:
             button_count=len(roles["strip_row"]),
             has_slider=slider,
             slider_max=None,
+            row_signature=roles.get("strip_signature"),
         )
 
     def _find_overlay(self, roles: dict | None = None):
