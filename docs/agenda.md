@@ -15,7 +15,6 @@ trial of the shared work-organization guide, not a generally validated method.
 | Effort | Lifecycle state |
 |---|---|
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
-| [BDD dual-quantity streams](plans/bdd-dual-quantity-streams.md) | ready for review |
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
@@ -24,6 +23,12 @@ leaving unresolved findings discoverable below or in their owning backlog. No se
 ## Unselected findings and open questions
 
 Capture is not selection. Existing detailed backlog sections below remain their owning homes.
+
+- **Dual-quantity `.BDD` residue — carried from the closed [BDD dual-quantity streams](plans/bdd-dual-quantity-streams.md) effort (merged `dac63ca`):**
+  the three single-stream-only analysis helpers (`analysis/_native_grid.py`, `reference_repeat.py`,
+  `sparse_inventory.py`) still refuse a dual-quantity file — decide whether they take a quantity argument
+  or keep refusing; and the sibling `10MHz.BDD` / recording set `002` are measured only by the same raw
+  scan, not by a committed fixture. Neither blocks the merged reader behaviour.
 
 - **Reporting consolidation — parked by owner, 2026-10-16:** [plan](plans/reporting-consolidation.md) is blocked
   on the owner-priority hold behind four-sensor notebook work. E1–E8 residue and content-preservation blockers
