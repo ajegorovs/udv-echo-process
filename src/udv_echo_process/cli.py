@@ -54,6 +54,7 @@ from udv_echo_process.analysis import (
 )
 from udv_echo_process.io import load
 from udv_echo_process.io.dop.bdd import sniff_bdd
+from udv_echo_process.models.identity import SignalQuantity
 from udv_echo_process.parser import MAGIC_PREFIX, extract
 from udv_echo_process.provenance import ArtifactBundle
 from udv_echo_process.viz import DEFAULT_OUTPUT_DIR, discover_data_files, plot_all
@@ -99,7 +100,12 @@ def _describe_bundle(bundle: ArtifactBundle) -> str:
             lines.append(f"    Sound speed:      {cfg.sound_speed_ms:.0f} m/s")
         if cfg.resolution_mm is not None:
             lines.append(f"    Resolution:       {cfg.resolution_mm:.4f} mm")
-        if cfg.velo_max_ms is not None:
+        if cfg.velo_max_ms is not None and descriptor.quantity is (
+            SignalQuantity.AXIAL_VELOCITY
+        ):
+            # The velocity scale is a property of the Doppler measurement; an echo
+            # stream of the same channel carries the same config but not the
+            # quantity that scale describes.
             lines.append(f"    Max velocity:     ±{cfg.velo_max_ms:.2f} mm/s")
         lines.append("")
     return "\n".join(lines)

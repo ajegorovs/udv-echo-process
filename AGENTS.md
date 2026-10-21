@@ -102,7 +102,12 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
   echo/velocity, raw/stat. `.BDD` is the binary twin and **is** parsed:
   `io/dop/bdd.py` returns an `ArtifactBundle` with content-SHA-256 source
-  identity, a decoded `AcquisitionMode`, and all-observed support. Discovery in
+  identity, a decoded `AcquisitionMode`, and all-observed support. A block that
+  stores **two quantities** — the instrument's two-plot velocity+echo display
+  writes one profile of each into the same block — yields **two streams on one
+  channel**, so a stream is identified by `(channel, quantity)` and
+  `select_channel`/`replace_channel` take the quantity (plan §6.7 amendment).
+  Discovery in
   `viz.py` is `.ADD`-only and magic-checked, while the reader sniffs *bytes*, not
   extensions — so `data/echo-4-sensors-2x2/20260723_143754.jpg` (a genuine
   4-channel echo BDD with the wrong extension) loads correctly and is not

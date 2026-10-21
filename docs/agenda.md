@@ -15,6 +15,7 @@ trial of the shared work-organization guide, not a generally validated method.
 | Effort | Lifecycle state |
 |---|---|
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+| [BDD dual-quantity streams](plans/bdd-dual-quantity-streams.md) | ready for review |
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,

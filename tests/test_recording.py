@@ -249,6 +249,49 @@ def test_recording_rejects_duplicate_channel_keys():
         _recording((first, second))
 
 
+def test_recording_accepts_two_quantities_on_one_channel():
+    """A dual-quantity block stores one stream per (channel, quantity) (§6.7)."""
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    recording = _recording((velocity, echo))
+    assert [s.descriptor.quantity for s in recording.streams] == [
+        SignalQuantity.AXIAL_VELOCITY,
+        SignalQuantity.ECHO_AMPLITUDE,
+    ]
+    assert len({s.acquisition.channel for s in recording.streams}) == 1
+    assert len({s.artifact_id for s in recording.streams}) == 2
+
+
+def test_recording_rejects_a_repeated_channel_and_quantity():
+    """Uniqueness is per pair: the same (channel, quantity) twice still fails."""
+    first = _artifact(4, descriptor=_VELOCITY)
+    second = _artifact(4, descriptor=_VELOCITY, n_rows=4)
+    with pytest.raises(ValidationError, match="unique per quantity"):
+        _recording((first, second))
+
+
+def test_acquisition_order_counts_a_dual_quantity_channel_once():
+    """The order is over channels, so two streams on one channel need one key."""
+    streams = (
+        _artifact(4, descriptor=_VELOCITY),
+        _artifact(4, descriptor=_ECHO),
+        _artifact(5, descriptor=_VELOCITY),
+    )
+    order = tuple(ChannelKey(device_channel=ch) for ch in (4, 5))
+    recording = _recording(streams, order=order)
+    assert recording.acquisition_order == order
+
+
+def test_acquisition_order_still_rejects_a_missing_dual_quantity_channel():
+    streams = (
+        _artifact(4, descriptor=_VELOCITY),
+        _artifact(4, descriptor=_ECHO),
+        _artifact(5, descriptor=_VELOCITY),
+    )
+    with pytest.raises(ValidationError, match="permutation"):
+        _recording(streams, order=(ChannelKey(device_channel=4),))
+
+
 def test_recording_rejects_duplicate_artifact_ids():
     first = _artifact_with_id(_id(5), 6)
     second = _artifact_with_id(_id(5), 7)
@@ -639,6 +682,54 @@ def test_select_channel_rejects_an_absent_channel():
     bundle = _bundle((_artifact(4),))
     with pytest.raises(ValueError, match="channel"):
         select_channel(bundle, ChannelKey(device_channel=7))
+
+
+def test_select_channel_requires_the_quantity_when_a_channel_carries_two():
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    with pytest.raises(ValueError, match="pass quantity="):
+        select_channel(bundle, ChannelKey(device_channel=4))
+
+
+def test_select_channel_returns_the_chosen_quantity_stream():
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    key = ChannelKey(device_channel=4)
+    assert (
+        select_channel(bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY).artifact
+        is velocity
+    )
+    assert (
+        select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+        is echo
+    )
+
+
+def test_select_channel_rejects_a_quantity_the_channel_does_not_carry():
+    bundle = _bundle((_artifact(4, descriptor=_VELOCITY),))
+    with pytest.raises(ValueError, match="echo_amplitude"):
+        select_channel(
+            bundle, ChannelKey(device_channel=4), quantity=SignalQuantity.ECHO_AMPLITUDE
+        )
+
+
+def test_replace_channel_targets_the_matching_quantity_stream():
+    """Replacing the echo stream must leave the velocity stream of that channel."""
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    replacement = _artifact(4, descriptor=_ECHO, n_rows=5)
+    graph = register_root_artifact(bundle.graph, replacement.artifact_id)
+    updated = replace_channel(bundle, ChannelBundle(artifact=replacement, graph=graph))
+    assert [s.artifact_id for s in updated.recording.streams] == [
+        velocity.artifact_id,
+        replacement.artifact_id,
+    ]
+    assert updated.recording.streams[0].descriptor.quantity is (
+        SignalQuantity.AXIAL_VELOCITY
+    )
 
 
 def test_select_channel_leaves_its_input_untouched():

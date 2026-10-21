@@ -29,7 +29,7 @@ from pydantic import ValidationInfo, field_validator, model_validator
 
 from udv_echo_process.models._canonical import canonical_json_bytes, stable_id
 from udv_echo_process.models.base import ArrayModel, ValueModel
-from udv_echo_process.models.identity import ChannelKey
+from udv_echo_process.models.identity import ChannelKey, SignalQuantity
 from udv_echo_process.models.recording import Recording
 from udv_echo_process.models.signal import (
     ChannelArtifact,
@@ -593,32 +593,72 @@ def source_bundle(artifact: ChannelArtifact) -> ChannelBundle:
     )
 
 
-def select_channel(bundle: ArtifactBundle, key: ChannelKey) -> ChannelBundle:
+def select_channel(
+    bundle: ArtifactBundle,
+    key: ChannelKey,
+    quantity: SignalQuantity | None = None,
+) -> ChannelBundle:
     """Return the per-channel processing state for ``key`` (plan §7.1).
 
     Pure: the deeply immutable graph is reused by reference (no provenance is
     copied) and the input bundle is never touched. This is the supported bridge
     from recording-level to per-channel processing.
 
+    A channel may carry more than one stream when the recording stored more than
+    one measured quantity per block (a two-plot velocity *and* echo capture;
+    plan §6.7 amendment), so ``quantity`` selects which one. Omitting it is only
+    legal for a channel with exactly one stream: silently picking the first of
+    two quantities would hand back the wrong physics under the right channel
+    number.
+
     Args:
         bundle: the recording-level bundle to select from.
         key: the channel to project into a ``ChannelBundle``.
+        quantity: which measured quantity of that channel to select. Required
+            when the channel carries more than one.
 
     Returns:
         The ``ChannelBundle`` pairing that stream's artifact with the bundle's
         own graph (the same object, not a copy).
 
     Raises:
-        ValueError: when the recording carries no such channel.
+        ValueError: when the recording carries no such channel, when the channel
+            carries no stream of ``quantity``, or when the channel carries
+            several quantities and ``quantity`` is ``None``.
     """
-    for stream in bundle.recording.streams:
-        if stream.acquisition.channel == key:
-            return ChannelBundle(artifact=stream, graph=bundle.graph)
-    channels = [s.acquisition.channel.device_channel for s in bundle.recording.streams]
-    raise ValueError(
-        f"channel {key.device_channel} is not part of recording "
-        f"{bundle.recording.recording_id!r}; it carries channels {channels}"
-    )
+    matches = [
+        stream
+        for stream in bundle.recording.streams
+        if stream.acquisition.channel == key
+    ]
+    if not matches:
+        channels = [
+            s.acquisition.channel.device_channel for s in bundle.recording.streams
+        ]
+        raise ValueError(
+            f"channel {key.device_channel} is not part of recording "
+            f"{bundle.recording.recording_id!r}; it carries channels {channels}"
+        )
+    available = [stream.descriptor.quantity for stream in matches]
+    if quantity is not None:
+        matches = [
+            stream for stream in matches if stream.descriptor.quantity is quantity
+        ]
+        if not matches:
+            names = [item.value for item in available]
+            raise ValueError(
+                f"channel {key.device_channel} of recording "
+                f"{bundle.recording.recording_id!r} carries no {quantity.value} "
+                f"stream; it carries {names}"
+            )
+    if len(matches) > 1:
+        names = [stream.descriptor.quantity.value for stream in matches]
+        raise ValueError(
+            f"channel {key.device_channel} of recording "
+            f"{bundle.recording.recording_id!r} carries {len(matches)} streams "
+            f"({names}); pass quantity= to select one"
+        )
+    return ChannelBundle(artifact=matches[0], graph=bundle.graph)
 
 
 def replace_channel(bundle: ArtifactBundle, channel: ChannelBundle) -> ArtifactBundle:
@@ -662,12 +702,27 @@ def replace_channel(bundle: ArtifactBundle, channel: ChannelBundle) -> ArtifactB
         for index, stream in enumerate(actual.streams)
         if stream.acquisition.channel == ref.channel
     ]
+    if len(positions) > 1:
+        # A channel that carries several quantities (plan §6.7 amendment) is
+        # disambiguated by the replacement's own quantity — replacing by channel
+        # alone would either lose one quantity's stream or duplicate the other.
+        same_quantity = [
+            index
+            for index in positions
+            if actual.streams[index].descriptor.quantity is artifact.descriptor.quantity
+        ]
+        if len(same_quantity) == 1:
+            positions = same_quantity
     if len(positions) != 1:
-        channels = [s.acquisition.channel.device_channel for s in actual.streams]
+        carried = [
+            (s.acquisition.channel.device_channel, s.descriptor.quantity.value)
+            for s in actual.streams
+        ]
         raise ValueError(
-            f"replace_channel: channel {ref.channel.device_channel} is not "
-            f"exactly one stream of recording {actual.recording_id!r}; the "
-            f"recording carries channels {channels}"
+            f"replace_channel: channel {ref.channel.device_channel} "
+            f"({artifact.descriptor.quantity.value}) is not exactly one stream "
+            f"of recording {actual.recording_id!r}; the recording carries "
+            f"(channel, quantity) pairs {carried}"
         )
     streams = list(actual.streams)
     streams[positions[0]] = artifact

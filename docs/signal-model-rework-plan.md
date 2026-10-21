@@ -437,9 +437,11 @@ Validation:
 - `streams` is non-empty;
 - all stream `AcquisitionRef.recording_id` values equal `recording_id` and all
   source asset IDs equal `source_asset.asset_id`;
-- channel keys and artifact IDs are unique;
+- stream `(device_channel, descriptor.quantity)` pairs are unique — one stream
+  per channel **and** measured quantity — and artifact IDs are unique;
 - if `acquisition_order` is supplied, it is a duplicate-free exact permutation
-  of stream channel keys;
+  of the *channels* the streams carry (a channel that carries two quantities
+  contributes one key);
 - mode is never inferred. A one-stream recording can still be `SEQUENTIAL`;
   a multi-stream recording can be `SIMULTANEOUS`;
 - BDD decoding sets the mode from decoded acquisition topology. If the file
@@ -448,6 +450,22 @@ Validation:
   streams, a round groups visits known to belong together; visit IDs reflect
   acquisition order within that round. Missing visits stay missing and are not
   renumbered.
+
+**Amendment — a dual-quantity channel is two streams.** The uniqueness bullet
+above originally read "channel keys and artifact IDs are unique", which forbade
+the case the instrument actually produces: with two plots on its monitor
+(velocity *and* echo) one measurement block carries one profile of *each*
+quantity, so one channel yields two measurements per acquisition. Measured on a
+six-sensor multiplexed capture (`data/dual-profile-mux/4MHz.BDD`, DOP3010
+`BINUDOPV6.07.4`): 2004 measurement blocks, every signal block carrying profile
+type 0 (velocity, `int8`) and type 1 (echo, `uint8`) over the same 42-gate axis,
+500 signal blocks per channel for channels 1–4 — 500 velocity and 500 echo rows
+per channel, both stamped with the block's single timestamp. Uniqueness is
+therefore per `(channel, quantity)`, while `acquisition_order` stays an order
+over channels. §6.6's five `ChannelArtifact` fields are unchanged: two quantities
+on one channel are two content-addressed source streams, never one wider
+artifact, and `select_channel`/`replace_channel` take the quantity to
+disambiguate them.
 
 `ProfileStatistics(ValueModel)` is a terminal result, not a `Recording`:
 

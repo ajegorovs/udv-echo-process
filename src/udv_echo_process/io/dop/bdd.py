@@ -15,10 +15,13 @@ cross-checked against the sibling DOPpy reader on this repo's fixtures):
   footer: ``timeStamp`` (ms/10, ``uint32``, overflow-corrected),
   ``triggerState``, ``block``, and ``channel`` at ``meas_end - 3``.
 
-Data emission: one ``ChannelArtifact`` per channel, with its own
-overflow-corrected timestamps (seconds) and its own ``ChannelConfig``. Velocity
-is decoded to **mm/s** (the ``.ADD`` ``mm/s`` convention); echo to
-module-scale-reflected amplitude.
+Data emission: one ``ChannelArtifact`` per channel **and measured quantity**, with
+its own overflow-corrected timestamps (seconds) and its own ``ChannelConfig``.
+Velocity is decoded to **mm/s** (the ``.ADD`` ``mm/s`` convention); echo to
+module-scale-reflected amplitude. A block that stores one profile of each
+quantity — the instrument's two-plot velocity+echo display does exactly that —
+yields two streams on the same channel, each carrying the block's own timestamp
+so the two series stay row-aligned (plan §6.7 amendment).
 
 Gate depths are **calculated** from the per-channel operation parameters —
 word 9 (``gate1``), word 10 (``resolution``), word 19 (``sound speed``), word 29
@@ -230,6 +233,13 @@ _DESCRIPTOR_BY_MEAS_TYPE = {
 
 _PROFILE_NAME = {0: "velo", 1: "echo", 2: "energy", 25: "depth"}
 _PROFILE_FMT = {0: "b", 1: "B", 2: "b", 25: "h"}
+
+#: The measured quantities a single measurement block can carry, in the fixed
+#: order streams are emitted. Stable order matters: a two-plot capture stores
+#: velocity and echo in the *same* block, so stream order must not depend on the
+#: order the profiles happen to appear in.
+_SIGNAL_PROFILES = ("velo", "echo")
+_MEAS_TYPE_BY_PROFILE = {"velo": MeasType.VELOCITY, "echo": MeasType.ECHO}
 
 _EMIT_POWER = {0: "low", 1: "medium", 2: "high"}
 _SENSITIVITY = {20: "very low", 12: "low", 8: "medium", 4: "high", 2: "very high"}
@@ -465,15 +475,25 @@ def _velo_max_ms(op: dict[str, object]) -> float | None:
 
 
 class _Acc:
-    """Per-channel accumulation during the block walk."""
+    """Per-channel accumulation during the block walk.
 
-    __slots__ = ("channel", "depth", "echo", "time", "velo")
+    Every measured quantity keeps its **own** rows, but the channel keeps **one**
+    clock: :attr:`blocks` records each block's raw timestamp once, with the set of
+    quantities that block carried. Unwrapping per quantity would let two series
+    disagree by a full timestamp period at the 32-bit rollover whenever a quantity
+    is missing from the blocks on one side of it, so the clock is unwrapped once
+    per channel and each quantity picks out its own rows (review finding F1).
+    """
+
+    __slots__ = ("blocks", "channel", "depth", "series")
 
     def __init__(self, channel: int) -> None:
         self.channel = channel
-        self.time: list[int] = []
-        self.velo: list[np.ndarray] = []
-        self.echo: list[np.ndarray] = []
+        self.series: dict[str, list[np.ndarray]] = {
+            name: [] for name in _SIGNAL_PROFILES
+        }
+        #: ``(raw timestamp, quantities present)`` per signal block, in file order.
+        self.blocks: list[tuple[int, tuple[str, ...]]] = []
         self.depth: np.ndarray | None = None
 
 
@@ -626,7 +646,7 @@ def read(path: Path) -> ArtifactBundle:
 
         # walk nested profile sub-blocks
         prof_start = meas_start + 2
-        saw_signal = False
+        present: list[str] = []
         while True:
             plen = buf.at(prof_start, "H")
             if plen == 0:
@@ -637,64 +657,86 @@ def read(path: Path) -> ArtifactBundle:
             name = _PROFILE_NAME.get(ptype)
             if name == "depth":
                 a.depth = np.frombuffer(payload, dtype=np.int16).astype(float) / 10.0
-            elif name in ("velo", "echo"):
+            elif name in _SIGNAL_PROFILES:
                 dtype = np.uint8 if ptype == 1 else np.int8
                 arr = np.frombuffer(payload, dtype=dtype).astype(float)
                 if name == "velo":
-                    a.velo.append(_decode_velocity(arr, op[channel]))
+                    decoded = _decode_velocity(arr, op[channel])
                 else:
-                    a.echo.append(_decode_echo(arr, op[channel]))
-                saw_signal = True
+                    decoded = _decode_echo(arr, op[channel])
+                a.series[name].append(decoded)
+                present.append(name)
             prof_start += plen + 3
 
         # A depth-only block is not a measurement timestep (matches DOPpy
-        # `_scanFile`), so only record a time when actual signal was present.
-        if saw_signal:
-            a.time.append(ts_raw)
+        # `_scanFile`), so it contributes no clock reading. A signal block records
+        # its timestamp ONCE, together with the quantities it carried.
+        if present:
+            a.blocks.append((ts_raw, tuple(present)))
+
         meas_start = meas_end
 
-    # ── build one source artifact per used channel ────────────────────
+    # ── build one source artifact per (channel, measured quantity) ────
     streams: list[ChannelArtifact] = []
     used_channels: list[int] = []
     for ch in sorted(acc):
         a = acc[ch]
-        if not (a.velo or a.echo):
+        present = [name for name in _SIGNAL_PROFILES if a.series[name]]
+        if not present:
             continue
         depth = _canonical_depth_mm(a.depth, op[ch], path.name, ch)
-        time_s = _correct_time(np.array(a.time))
-        if a.velo:
-            values = np.vstack(a.velo)
-            meas_type = MeasType.VELOCITY
-        else:
-            values = np.vstack(a.echo)
-            meas_type = MeasType.ECHO
-        if values.shape[1] != depth.shape[0]:
-            raise ValueError(
-                f"channel {ch} of {path.name} decoded {values.shape[1]} gates "
-                f"but {depth.shape[0]} gate depths"
+        # One unwrapped clock for the channel; each quantity takes its own rows, so
+        # the velocity and echo series can never disagree about a shared block
+        # (review finding F1).
+        clock = _correct_time(np.array([raw_ts for raw_ts, _ in a.blocks]))
+        for name in present:
+            # A block that stored both profile types yields two streams on one
+            # channel, not one: §6.6 keeps ChannelArtifact at five fields and a
+            # channel is not a stream identity on its own (plan §6.7 amendment).
+            rows = np.array(
+                [index for index, (_, names) in enumerate(a.blocks) if name in names],
+                dtype=np.int64,
             )
-        data = observed_signal(
-            time_s,
-            depth,
-            values,
-            acquisition=AcquisitionIndex(
-                sample_id=np.arange(time_s.shape[0], dtype=np.int64),
-                acquisition_time_s=time_s,
-            ),
-        )
-        ref = AcquisitionRef(
-            recording_id=recording_id,
-            source_asset_id=asset_id,
-            channel=ChannelKey(device_channel=ch),
-        )
-        streams.append(
-            source_artifact(
-                ref,
-                _DESCRIPTOR_BY_MEAS_TYPE[meas_type],
-                _build_config(op[ch], depth),
-                data,
+            if rows.shape[0] != len(a.series[name]):
+                raise ValueError(
+                    f"channel {ch} ({name}) of {path.name} decoded "
+                    f"{len(a.series[name])} profiles but {rows.shape[0]} block "
+                    "timestamps"
+                )
+            values = np.vstack(a.series[name])
+            time_s = clock[rows]
+            meas_type = _MEAS_TYPE_BY_PROFILE[name]
+            if values.shape[1] != depth.shape[0]:
+                raise ValueError(
+                    f"channel {ch} ({name}) of {path.name} decoded "
+                    f"{values.shape[1]} gates but {depth.shape[0]} gate depths"
+                )
+            data = observed_signal(
+                time_s,
+                depth,
+                values,
+                acquisition=AcquisitionIndex(
+                    # sample_id is the source acquisition row this series row came
+                    # from (plan §6.4), not its position in this series: a quantity
+                    # that skips blocks keeps the gaps, so the same block carries
+                    # the same id in every quantity of the channel (review F4).
+                    sample_id=rows,
+                    acquisition_time_s=time_s,
+                ),
             )
-        )
+            ref = AcquisitionRef(
+                recording_id=recording_id,
+                source_asset_id=asset_id,
+                channel=ChannelKey(device_channel=ch),
+            )
+            streams.append(
+                source_artifact(
+                    ref,
+                    _DESCRIPTOR_BY_MEAS_TYPE[meas_type],
+                    _build_config(op[ch], depth),
+                    data,
+                )
+            )
         used_channels.append(ch)
 
     if not streams:
