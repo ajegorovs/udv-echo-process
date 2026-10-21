@@ -70,8 +70,9 @@ authoritative documents for this instrument, and this skill **points at them ins
 them**: architecture, layering and invariants —
 `docs/dop3000/acquisition-architecture.md`; surfaces, widgets, bindings and the blind-spot ledger
 B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verification procedure —
-`docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
-chain — `docs/dop3000/udop-automation.md`; the state of the work —
+`docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine, store
+chain **and the observed MPX mode entry/exit semantics (§12.13 there — do not restate them here)** —
+`docs/dop3000/udop-automation.md`; the state of the work —
 `docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
 quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, the current structural-size
 and measured-period laws, and the planner that now computes the whole period law —

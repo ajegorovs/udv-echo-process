@@ -46,6 +46,7 @@ import hashlib
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
 from udv_echo_process.acquire.caption_band import CaptionAttribution
+from udv_echo_process.acquire.mode_marks import ModeMarkAttribution
 from udv_echo_process.models.base import ValueModel
 
 if TYPE_CHECKING:  # the report type is read, never constructed here
@@ -213,6 +214,10 @@ class CaptureEvidence(ValueModel):
     #: ``ok``, its two frames were stable, and both frames recognised the same exact result.
     #: ``None`` means no recognition was invoked — never that the line was read as absent.
     visual_caption: CaptionAttribution | None = None
+    #: The MPX mode entry and rollover mark as a **visual attribution**, present only when this
+    #: capture was ``ok``, both frames were stable, and the crop is the measured settings popup
+    #: shape. ``None`` means no mode read was attempted — never that the popup states no mode.
+    visual_mode_mark: ModeMarkAttribution | None = None
     unknown_reasons: tuple[str, ...] = ()
     uncertainties: tuple[str, ...] = ()
     setup_verified: Literal[False] = False
@@ -494,6 +499,7 @@ def assemble(
     refusals: tuple[str, ...] = (),
     directory: str | None = None,
     visual_caption: CaptionAttribution | None = None,
+    visual_mode_mark: ModeMarkAttribution | None = None,
 ) -> CaptureEvidence:
     """One evidence record, with every failed check named and no caption invented.
 
@@ -550,6 +556,7 @@ def assemble(
         guards=guards,
         numeric=numeric,
         visual_caption=visual_caption,
+        visual_mode_mark=visual_mode_mark,
         unknown_reasons=tuple(reasons),
         uncertainties=(
             (

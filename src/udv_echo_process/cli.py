@@ -40,6 +40,7 @@ from udv_echo_process.acquire import (
     channels_select,
     driver,
     live,
+    mode_marks,
     mpx_artifact,
     record_multiplexed,
     run_plan,
@@ -1470,6 +1471,25 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
 
+    mpx_mode_parser = subcommands.add_parser(
+        "mpx-mode-read",
+        help=(
+            "read a retained MPX mode capture, pressing nothing: the mode entry line and the "
+            "rollover mark as a visual attribution"
+        ),
+    )
+    mpx_mode_parser.add_argument(
+        "--capture-dir",
+        default=None,
+        help=(
+            "a retained capture directory holding channels-roi-frame-1.png and -2.png; either "
+            "measured shape is read (the full settings popup, 393x426, or the clipped "
+            "one-entry popup, 158x43). The clipped shape states the mode and no rolling state "
+            "and needs no numeric settings bracketing"
+        ),
+    )
+    mpx_mode_parser.add_argument("--json", action="store_true")
+
     channels_repeat_parser = subcommands.add_parser(
         "channels-repeat",
         help=(
@@ -2074,6 +2094,28 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     for reason in channel_report.capture.unknown_reasons:
                         print(f"udv-acquire: capture: {reason}", file=sys.stderr)
                     code = 3
+        elif args.command == "mpx-mode-read":
+            # A retained-evidence read: no window is bound, no gesture exists on this path, and
+            # nothing is captured. The record states ``acquisition_context="retained"``,
+            # ``freshness="not_established"`` and ``integrity="decoded-pair-only"``; its mode
+            # entry label and rollover mark stay a visual attribution (``native_fact`` and
+            # ``action_authority`` are always false) and ``enable_precondition`` is always
+            # false — the retained pair is history, not a licence to press anything. An unknown
+            # mode is exit 2.
+            if not args.capture_dir:
+                print(
+                    "udv-acquire: mpx-mode-read needs --capture-dir: this command reads a "
+                    "retained two-frame capture and takes no screen grab of its own",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                mode_report = mode_marks.attribute_capture(args.capture_dir)
+                _acquire_report(mode_report, as_json)
+                if mode_report.mode == "UNKNOWN":
+                    for reason in mode_report.unknown_reasons:
+                        print(f"udv-acquire: mode: {reason}", file=sys.stderr)
+                    code = 2
         elif args.command == "channels-repeat":
             repeat_result = channels_repeat.acquire_repeat(
                 expect=args.expect,

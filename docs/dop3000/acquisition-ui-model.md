@@ -181,7 +181,9 @@ acquisition`, `Stop` and `Remove current block` are not in this row and asking f
 name; the four-button **no-slider** row's status is B10's below and did not move.
 
 **The one-button row classifies structure, not role, and in MPX it is not `Stop`.** On 2026-10-21
-the operator reported that with rolling MPX **enabled but not armed**, a manual `Record` leaves a
+the operator reported that with rolling MPX **enabled and idle** — the ready row that enabling with
+roll-over on leaves, and the only state a manual `Record` can be pressed in (entry semantics:
+`udop-automation.md` §12.13) — a manual `Record` leaves a
 single-button row whose caption is `Clear and restart` — not `Stop`. That is an *operator report*,
 not a tree read: no capture of that state exists here, so the row's role in an MPX configuration
 stays unknown (ledger B21). It is also a different state from the captured two-button store row
@@ -304,7 +306,7 @@ assertion is not available yet.
 | B18 | multiple parameter frames appeared across assisted/manual/tour operations | session state drifts far from the declared frame | compile against a live snapshot immediately before the campaign | live-supported; **verified on the instrument 2026-09-19** (sitting D: the six-point campaign compiled against a live snapshot immediately before it — `declared_only: false`, `skipped_without_evidence: []` — and the stored files agree) |
 | B19 | the Store dialog (and other modal panels) clip the cursor | real-input recovery can fail | drive by messages and always close in a `finally`; state is unverified if the close fails | live-proven; **exercised on the instrument 2026-09-19** (sitting D: every gesture's log records the popup's clip and the driver's release of it, and the V8 pointer probe found the cursor free outside the window's own rect with the application still foreground) |
 | B20 | a popup cannot be safely dismissed programmatically | a recovery gesture wedges the application | abort and require an operator restart; never `WM_CLOSE`. `open_popup` means only that a non-layout button panel is up, not that it is the `Parameters` popup: the stranded-menu report uses the measured menu rectangle, and otherwise names only an unknown panel and presses nothing | live-proven |
-| B21 | in an MPX configuration the one-button active row's role is not `Stop`: the operator reported `Clear and restart` with rolling MPX enabled but not armed (2026-10-21) | a generic one-button classification presses `Stop` and instead clears the block, losing the recording | `StripControl.STOP` stays a **single-channel** binding; no press from a one-button row in an MPX configuration until a tree read in that state fixes the role | operator-reported; no capture of that state; device-pending |
+| B21 | in an MPX configuration the one-button active row's role is not `Stop`: the operator reported `Clear and restart` after `Record` from an enabled-idle rolling MPX row (2026-10-21; entry semantics `udop-automation.md` §12.13) | a generic one-button classification presses `Stop` and instead clears the block, losing the recording | `StripControl.STOP` stays a **single-channel** binding; no press from a one-button row in an MPX configuration until a tree read in that state fixes the role | operator-reported; no capture of that state; device-pending |
 
 ## 7. Priority before any real acquisition after the refactor
 

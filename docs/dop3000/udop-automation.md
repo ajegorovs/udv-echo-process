@@ -256,12 +256,15 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
     The `.BDD` op-parameter block (words 0–95) *is* the sweep log; the status-bar
     `Profile` counter is not trustworthy for pacing.
 
-**The `Stop` gesture above is the single-channel recipe, and MPX does not inherit it.** On
-2026-10-21 the operator reported that with rolling MPX enabled but not armed, a manual `Record`
-leaves a sole `Clear and restart` button rather than `Stop`; no tree read of that state exists, so
-the MPX stop gesture is unresolved (ledger B21) and this chain's step 4 must not be posted there
-(§5). What *was* verified for MPX is the store half — step 5 onward — and it was verified with the
-recording already completed by the operator (§12.6).
+**The `Stop` gesture above is the single-channel recipe, and MPX does not inherit it.** During a
+multiplexed acquisition there is no `Stop`: `Clear and restart` and the Channels menu's
+disable entry are the only operator routes out (§12.13). A manual `Record` in an MPX idle row does
+not raise `Stop` either, and what that idle row *is* depends on the roll-over toggle at enable time
+(§12.13): roll-over **on** leaves `Pause` / `Record` / `Clear and restart`; roll-over **off**
+auto-arms and records on enable. No tree read of the active MPX row exists, so the MPX stop gesture
+is unresolved (ledger B21) and this chain's step 4 must not be posted there (§5). What *was*
+verified for MPX is the store half — step 5 onward — and it was verified with the recording already
+completed by the operator or by `record-multiplexed` (§§12.6–12.7).
 
 **Strip buttons outside the record cycle:**
 
@@ -347,17 +350,19 @@ as are every four-button row, a non-store view and a missing slider. `Do store` 
 slot 0 in both accepted rows, which is the only fact the press depends on.
 
 **The one-button row means `Stop` on a single channel and is unresolved in MPX.** With rolling MPX
-**enabled but not armed**, the operator reported on 2026-10-21 that a manual `Record` leaves a sole
-`Clear and restart` button — not `Stop`. That is an *operator report*, not a tree read, so the role
-in that state is unknown (`acquisition-ui-model.md` ledger B21). This is not the captured two-button
+enabled and roll-over **on** (the ready row), the operator reported on 2026-10-21 that a manual
+`Record` leaves a sole `Clear and restart` button — not `Stop` — and the operator's route out of an
+active MPX acquisition is `Clear and restart` or the Channels menu's disable entry, never `Stop`
+(§12.13). That is an *operator report* plus a §12.7 one-button active-row observation, not a role
+read, so the role in that state is unknown (`acquisition-ui-model.md` ledger B21). This is not the captured two-button
 store row above — that capture is the naturally completed MPX store view, while this report is the row during an
 active acquisition, so the two observations are separate. Because the two readings are
 structurally identical — one top-row button, no slider — the classifier cannot separate them, and
 this table's `[Stop]` must not be applied to an MPX configuration: pressing `STOP` there would
 clear the block. The `STOP` binding stays **single-channel**; for MPX the only rows this document
 binds from evidence are the two completed store rows above (two-button, and the repeated-run
-three-button row by its measured signature), and the 1-button MPX state has no binding of
-its own, so nothing may be posted from it by generic classification.
+three-button row by its measured signature), and the 1-button MPX state has no binding of its
+own, so nothing may be posted from it by generic classification.
 
 **The four-button, no-slider row presses nothing.** `UI-STRIP-01`
 (`ui-crops/run-controls.png`) paints `Pause` / `Record` / `Clear and restart`
@@ -748,8 +753,10 @@ One live acceptance covered the **store half** of the chain on the instrument, a
 It is a record of one run, not a general MPX result, and it changes no rule in §§1–11 or the staging
 in §12.1:
 
-- **The recording was the operator's, in manual mode.** Rolling MPX was *enabled but not armed*.
-  Nothing here establishes the armed or rolling recording path.
+- **The recording was the operator's, in manual mode.** Rolling MPX was *enabled and idle* — the
+  enabled row the operator left it in. Which entry path produced it (roll-over on: enable leaves the
+  ready row; roll-over off: enable auto-arms) was not recorded, and the toggle state at that enable
+  is unmeasured (§12.13). Nothing here establishes the armed or rolling recording path.
 - **The store was automated.** The recording had ended naturally in the two-button `Do store` /
   `Clear and restart` store row. A store-only probe — it starts no recording — pressed `Do store` on
   the strip **once**, then the Store dialog's own `Do store` **once**. One press each, and the
@@ -1111,6 +1118,42 @@ both records; the cell handle is the ordinal's own). Arms: `--expect-channel 1 -
 Generated logs, records and captures for §12.11 and §12.12
 (`profiles-channel1-*`, `select-channel*`, `select-live-baseline*`) are local evidence under a
 git-ignored scratch directory and are not committed fixtures.
+
+### 12.13 MPX mode entry and exit, 2026-10-21 — operator semantics, read-only evidence
+
+One disabled → enabled → disabled round trip, **every mode gesture the operator's**; automation
+only read the tree and captured popup crops. This subsection is the single home for MPX mode-entry
+semantics; the skill and the surface model point here rather than restating it.
+
+| state | what the surface shows | provenance |
+|---|---|---|
+| disabled | Channels popup unclipped (full settings surface); the mode toggle's painted caption is `Enable multiplexer` | visual caption on the measured build; the toggle's state is not in the tree (ledger B15) |
+| **enable with `Roll over the channels` ON** | three-button ready row — `Pause` / `Record` / `Clear and restart`, no slider: *enabled and idle*, awaiting a manual `Record` | captured operator trial (entry capture + crops); strip structure from the tree, captions painted |
+| `Record` from that row | one-button, no-slider active row; **no `Stop`** | operator report; the same one-button active row was observed in §12.7; the role stays unbound (B21) |
+| **enable with `Roll over the channels` OFF** | the acquisition **arms and records on enable** and runs on its own to the Save/Reset store row (`Do store` / `Clear and restart`) | **operator report only** — not exercised, not captured, not automation-measured; no evidence of the transition exists |
+| active acquisition, any entry path | `Clear and restart` and the Channels menu's disable entry are the only routes out; nothing in the strip is a `Stop` | operator report + §12.7/§12.13 reads |
+| exit while enabled | Channels popup clipped to a single entry, painted caption `Desable multiplexer` (**exact spelling, sic**) | capture + operator attribution |
+
+**Paired restoration evidence (same sitting).** After the operator re-disabled multiplexing, the
+captured state was: painted caption back to `Enable multiplexer`, roll-over mark a red cross (the
+trial's recorded roll-over-off state; the mark is a visual reading, not a tree fact), channel `1`,
+profiles `50`, seconds `2.01`, repeat `2`. Restoration owed: **none**. The
+automation pressed no mode control, issued no `Record`, and performed no restoration gesture of
+its own — the captures are read-only.
+
+**What this does not establish.** The captions are painted pixels read visually, not native state:
+no `IsWindowEnabled`-style or checkbox fact for enable, roll-over or the tick strips exists in the
+tree, and an empty widget text is not an "off". The `profiles`/`seconds` pair is attributed to
+channel `1` only by the group's painted caption. The whole table is one build
+(`UDOP DOP3010.43`), one window geometry and one sitting, so it is **not** a universal geometry or
+caption law; a different build, scale or layout must be re-measured, not inferred. Nothing here
+covers relay behaviour, post-save mode, repeat>1 multi-block behaviour, or a `Stop` binding for MPX.
+
+Evidence: `.hermes/scratch/multiplexer-development/mode-entry-roundtrip-acceptance.json` with
+`mode-disabled-baseline.log`, `mode-enabled-entry-capture.log`, `mode-enabled-entry-crop-a.png`,
+`mode-enabled-entry-crop-b.png` and `mode-disabled-restored.log` — git-ignored local evidence, not
+committed fixtures; the JSON states its own limits, including "not native checked state" and "no
+automated mode press recipe was exercised".
 
 ---
 

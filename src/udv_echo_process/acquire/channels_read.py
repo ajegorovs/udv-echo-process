@@ -31,6 +31,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from udv_echo_process.acquire import mode_marks
 from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.caption_band import attribute_frames
 from udv_echo_process.acquire.channels_capture import (
@@ -305,7 +306,23 @@ def _capture(
                 "visual_caption": attribute_frames(
                     tuple(frame.path for frame in evidence.frames),
                     tuple(frame.digest for frame in evidence.frames),
-                )
+                ),
+                # The mode entry and rollover mark are read from the same still pair, and only
+                # when the crop is the measured settings popup: that shape is the only one this
+                # capture can hold (its guards require ``settings_popup``), and a smaller crop
+                # would have no rollover row to read. Additive: ``caption`` stays UNKNOWN.
+                # This is the *live* path, so the record says so: the two grabs bracket the
+                # numeric read on this one bound window, and their digests are the capture's
+                # own evidence — never a retained directory's, and never a press licence.
+                "visual_mode_mark": (
+                    mode_marks.attribute_frames(
+                        tuple(frame.path for frame in evidence.frames),
+                        tuple(frame.digest for frame in evidence.frames),
+                        context="live-bracketed",
+                    )
+                    if mode_marks.is_settings_rect(evidence.roi)
+                    else None
+                ),
             }
         )
     return ChannelsRead(**{**read.model_dump(), "capture": evidence})
