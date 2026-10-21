@@ -192,7 +192,9 @@ is about finding valid *source* files, not plotting.
 *Original proposal (below this section) chose a pandas-backed
 `SensorSeries`/`Recording` with a `models/raw.py` + `models/dataset.py` split.
 The 2026-09-08 model convergence (Option B — full new model) replaced it:
-canonical storage is **numpy arrays inside Pydantic models**, one per channel,
+canonical storage is **numpy arrays inside Pydantic models**, one per channel
+and measured quantity (a two-plot velocity+echo block is two streams on one
+channel — plan §6.7 amendment),
 with no `raw`/`dataset` split. This section describes the landed model.*
 
 ```
