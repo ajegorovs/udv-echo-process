@@ -43,9 +43,10 @@ helpers (`analysis/_native_grid.py`, `reference_repeat.py`,
 
 **Authorization boundaries.** Owner asked for double-plot reading on 2026-10-21
 and proposed a fresh worktree + PR. That grant covers the reader, model
-invariant, provenance bridges, tests, fixture and documentation. It does **not**
-cover merging, publishing beyond the draft PR, or editing `AGENTS.md` (that is a
-protected file and needs the owner's explicit approval).
+invariant, provenance bridges, tests, fixture and documentation. The owner then
+explicitly approved the `AGENTS.md` short-form edit (protected
+agent-instruction file) on 2026-10-21. Merging and publication beyond the draft
+PR are still **not** covered.
 
 **Baseline.** Branch `feat/bdd-dual-profile`, worktree seeded from
 `origin/master` = `d276d6e` (2026-10-21). Full suite on that revision, agent
@@ -92,12 +93,12 @@ Measured facts a fresh reader would otherwise re-derive:
   measured-structure README.
 - `udv-inspect` lists both quantities and no longer prints `Max velocity` on an
   echo stream.
+- `AGENTS.md`'s short-form "Data" bullet names the dual-quantity case and the
+  `(channel, quantity)` stream identity (owner approved 2026-10-21).
 
-**Not established.** Nothing is merged or released. `AGENTS.md`'s "Data" bullet
-does not yet mention dual-quantity streams (protected file, owner approval
-pending). Whether the sibling `10MHz.BDD` capture and the second recording set
-behave identically is measured only by the same raw scan, not by a committed
-fixture.
+**Not established.** Nothing is merged or released. Whether the sibling
+`10MHz.BDD` capture and the second recording set behave identically is measured
+only by the same raw scan, not by a committed fixture.
 
 **Relevant revision / artifacts / live target.** Branch `feat/bdd-dual-profile`
 in worktree `udv-double-plot`; no live instrument involved.
@@ -110,8 +111,9 @@ in worktree `udv-double-plot`; no live instrument involved.
 **Selected next.** Owner review of the draft PR — in particular the §6.7
 amendment, since it is a model-schema decision rather than a bug fix.
 
-**Blocked.** `AGENTS.md` short-form update: protected file, needs explicit owner
-approval.
+**Blocked.** Nothing. (The `AGENTS.md` short-form update needed the owner's
+explicit approval for a protected agent-instruction file; granted 2026-10-21 and
+landed in this PR.)
 
 **Unselected findings / open questions.**
 
