@@ -96,6 +96,7 @@ __all__ = [
     "attribute_capture",
     "attribute_frames",
     "build_templates",
+    "is_entry_rect",
     "is_settings_rect",
     "load_frame",
     "recognize",
@@ -485,6 +486,18 @@ def is_settings_rect(rect: tuple[int, int, int, int] | None) -> bool:
     if rect is None:
         return False
     return (rect[2] - rect[0], rect[3] - rect[1]) == SETTINGS_SIZE
+
+
+def is_entry_rect(rect: tuple[int, int, int, int] | None) -> bool:
+    """Whether a crop rectangle is exactly the measured clipped one-entry popup shape.
+
+    The enabled entry popup is the only other shape this module has templates for. The size is
+    measured here, in the module that owns the templates, so the capture path never restates
+    158x43 and a caller cannot admit an arbitrary crop by claiming it is "the small one".
+    """
+    if rect is None:
+        return False
+    return (rect[2] - rect[0], rect[3] - rect[1]) == ENTRY_SIZE
 
 
 def _ascii(mask: list[bool], width: int) -> tuple[str, ...]:

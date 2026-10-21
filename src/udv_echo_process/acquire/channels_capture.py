@@ -54,6 +54,9 @@ if TYPE_CHECKING:  # the report type is read, never constructed here
 
 __all__ = [
     "CAPTION_EVIDENCE",
+    "CAPTURE_ENTRY_NO_NUMERIC",
+    "CAPTURE_SETTINGS_NUMERIC",
+    "ENTRY_NUMERIC_NOTE",
     "ROI_SOURCE",
     "Bracket",
     "CaptureEvidence",
@@ -76,6 +79,20 @@ __all__ = [
 
 #: The only caption state this module can report: nothing here recognises glyphs.
 UNKNOWN = "UNKNOWN"
+
+#: The settings popup: five numeric amounts bracketed, the measured settings shape.
+CAPTURE_SETTINGS_NUMERIC = "settings_numeric"
+
+#: The clipped one-entry popup: no numeric settings fields exist to bracket.
+CAPTURE_ENTRY_NO_NUMERIC = "entry_no_numeric"
+
+#: Why an entry capture states no numeric pairing — a shape fact, not a relaxed settings read.
+ENTRY_NUMERIC_NOTE = (
+    "the clipped one-entry popup declares no numeric settings fields, so there is no amount "
+    "to read before and after the crop: this capture is ``entry_no_numeric`` and its evidence "
+    "rests on the measured shape, the paired frame digests and the window guards. The "
+    "settings capture's all-five-amounts contract is unchanged and is not applied here"
+)
 
 #: Carried on every report so a reader never has to open this file to know what was not done.
 CAPTION_EVIDENCE = (
@@ -186,6 +203,9 @@ class NumericBracketing(ValueModel):
     slots: tuple[Bracket, ...] = ()
     consistent: bool = False
     note: str = ""
+    #: ``False`` only for an ``entry_no_numeric`` capture, whose popup has no amounts at all.
+    #: A settings capture is always applicable, and its five-amount contract is unchanged.
+    applicable: bool = True
 
 
 class CaptureEvidence(ValueModel):
@@ -200,6 +220,12 @@ class CaptureEvidence(ValueModel):
     status: Literal["ok", "UNKNOWN"] = UNKNOWN
     captured: bool = False
     roi: tuple[int, int, int, int] | None = None
+    #: Which contract this capture was held to. Explicit, never inferred by a consumer: a
+    #: settings capture is ``settings_numeric`` (all five amounts bracketed) and a clipped
+    #: one-entry popup is ``entry_no_numeric`` (structurally no amounts exist).
+    capture_kind: Literal["settings_numeric", "entry_no_numeric"] = (
+        CAPTURE_SETTINGS_NUMERIC
+    )
     #: The run directory this capture exclusively claimed under the caller's path, if any.
     directory: str | None = None
     roi_source: str = ROI_SOURCE
@@ -328,12 +354,21 @@ def digest(image: object) -> str:
 
 
 def compare_guards(
-    before: WindowGuard, after: WindowGuard | None, target_hwnd: int | None
+    before: WindowGuard,
+    after: WindowGuard | None,
+    target_hwnd: int | None,
+    *,
+    expected_surface: str = "settings_popup",
 ) -> GuardComparison:
     """Hold the capture to one target: same window, same frame, foreground, not minimised.
 
     A missing reading is a failure, never a pass: ``foreground=None`` means the foreground could
     not be read, and an unreadable precondition cannot support an attributed picture.
+
+    ``expected_surface`` is the one surface this capture's contract covers — the full settings
+    popup for ``settings_numeric``, the clipped one-entry popup for ``entry_no_numeric``. Any
+    other surface fails here, so a caller that mistook one shape for the other is refused rather
+    than read under the wrong contract.
     """
     failures: list[str] = []
     for guard in (before, after):
@@ -354,10 +389,10 @@ def compare_guards(
                 f"{guard.label}: the instrument window is minimised or its state is unreadable "
                 f"({guard.minimized!r})"
             )
-        if guard.surface != "settings_popup":
+        if guard.surface != expected_surface:
             failures.append(
-                f"{guard.label}: the surface read {guard.surface!r}, so there is no settings "
-                "popup ROI to crop"
+                f"{guard.label}: the surface read {guard.surface!r} where {expected_surface!r} "
+                "is required, so this capture contract has no ROI to crop"
             )
         if guard.popup_rect is None:
             failures.append(f"{guard.label}: the report states no popup rectangle")
@@ -494,6 +529,9 @@ def assemble(
     frames: tuple[FrameEvidence, ...],
     guards: GuardComparison,
     numeric: NumericBracketing,
+    capture_kind: Literal[
+        "settings_numeric", "entry_no_numeric"
+    ] = CAPTURE_SETTINGS_NUMERIC,
     readable: bool = True,
     after_readable: bool | None = None,
     refusals: tuple[str, ...] = (),
@@ -507,6 +545,12 @@ def assemble(
     rather than ``True`` by default, because a single grab cannot witness that nothing moved.
     A structural report that refused part of the popup (``readable=False``) cannot produce an
     ``ok`` capture: the amounts it refused are exactly the ones a pairing would need.
+
+    ``capture_kind`` selects the contract explicitly. ``settings_numeric`` keeps the existing
+    requirement that all five amounts bracket consistently; ``entry_no_numeric`` requires that no
+    amount was paired at all (``numeric.applicable`` false and no slots), because the clipped
+    popup states none. Neither kind is inferred from the other, and the entry kind never relaxes
+    the settings check.
     """
     reasons: list[str] = []
     if not readable:
@@ -544,12 +588,34 @@ def assemble(
         reasons.append("fewer than two frames: two-frame stability was not established")
     if not guards.consistent:
         reasons.extend(guards.failures)
-    if not numeric.consistent:
+    expected_surface = (
+        "multiplexer_on_entry"
+        if capture_kind == CAPTURE_ENTRY_NO_NUMERIC
+        else "settings_popup"
+    )
+    if guards.before.surface is not None and guards.before.surface != expected_surface:
+        reasons.append(
+            f"the capture is held to {capture_kind!r} but its before-guard read surface "
+            f"{guards.before.surface!r} rather than {expected_surface!r}"
+        )
+    if capture_kind == CAPTURE_ENTRY_NO_NUMERIC:
+        if numeric.applicable or numeric.slots:
+            reasons.append(
+                "an entry_no_numeric capture states no numeric settings amounts, and this one "
+                "carries a numeric bracketing: the two contracts are not mixed"
+            )
+    elif not numeric.applicable:
+        reasons.append(
+            "a settings_numeric capture requires all five amounts bracketed, and this one "
+            "declares the numeric contract inapplicable"
+        )
+    elif not numeric.consistent:
         reasons.append(numeric.note)
     return CaptureEvidence(
         status="ok" if not reasons else UNKNOWN,
         captured=bool(frames),
         roi=roi,
+        capture_kind=capture_kind,
         directory=directory,
         frames=frames,
         stable=stable,

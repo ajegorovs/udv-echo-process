@@ -38,9 +38,13 @@ the requirement on the operator and measure the interval:
   ``max_boundary_seconds`` gets an enforced limit, and then it refuses with zero presses.
 
 ``posted`` stays ``"unknown"`` after a press: attempted is not delivered. The post state is read
-but never claimed, and **no capture is attempted after the press**, so ``post_mode`` is ``UNKNOWN``
-in production: the operator reopens ``Channels`` to read it — or uses ``Disable multiplexer`` as a
-separate gesture.
+and, **only when that read resolves the clipped one-entry popup**, one fresh post-press capture
+pair is taken and held to the entry contract: ``VISUAL_ENABLED`` is reported only when that pair
+is ``ok``, its frames agree, its digests re-derive, its guards bind the original window and popup,
+and both frames paint ``Desable multiplexer`` at the measured 158x43 entry shape. When no entry is
+visible the mode stays ``UNKNOWN`` explicitly — it is never inferred from the press, from a
+``ready`` strip, or from a different surface — and no retry, ``Record`` or ``Disable`` follows.
+The operator still owns the enabled interval; ``Disable multiplexer`` remains their gesture.
 
 Rolling is a separate fact and it is load-bearing. With ``Roll over the channels`` **off** a mode
 entry auto-arms and records (``docs/dop3000/udop-automation.md`` §12.13), which this command must
@@ -77,6 +81,7 @@ from typing import Literal
 
 from udv_echo_process.acquire import mode_marks
 from udv_echo_process.acquire.actuator import WindowTarget
+from udv_echo_process.acquire.channels_capture import CAPTURE_ENTRY_NO_NUMERIC
 from udv_echo_process.acquire.channels_read import read_channels
 from udv_echo_process.acquire.channels_repeat import (
     _strip_not_recording,
@@ -91,6 +96,7 @@ from udv_echo_process.acquire.ui.channels import (
     ENABLE_CAPTION,
     TOGGLE_CAPTIONS,
     ChannelsRead,
+    ChannelsSurface,
     ModeToggle,
     bind_enable_toggle,
 )
@@ -200,11 +206,14 @@ class EnableMultiplexedResult(ValueModel):
     #: Monotonic measurement of the boundary, and its terms: diagnostic only.
     boundary_seconds: float | None = None
     boundary_evidence: str = BOUNDARY_DIAGNOSTIC
-    #: The post-press read: the surface it found, and the mode — unknown without a new capture,
-    #: which this command never takes, so production always reports ``UNKNOWN``.
+    #: The post-press read: the surface it found, and the mode — stated only from a fresh entry
+    #: pair taken when that read resolves the clipped one-entry popup.
     post_surface: str = "UNKNOWN"
     post_mode: Literal["VISUAL_ENABLED", "UNKNOWN"] = "UNKNOWN"
     post_rolling: str = "UNKNOWN"
+    post_capture_dir: str = ""
+    post_capture_kind: str = ""
+    post_frame_digests: tuple[str, str] | None = None
     post_error: str = ""
     presses: int = 0
     press: Literal["not_attempted", "attempted"] = "not_attempted"
@@ -320,6 +329,127 @@ def _verified_capture(
             "conjunction check: nothing was pressed"
         )
     return mark
+
+
+def _post_entry_evidence(
+    report: ChannelsRead,
+    *,
+    target: WindowTarget,
+    popup_hwnd: int,
+    directory: Path,
+) -> tuple[Literal["VISUAL_ENABLED", "UNKNOWN"], str, tuple[str, str] | None, str]:
+    """The post-press mode from one fresh entry pair, or ``UNKNOWN`` and why.
+
+    This is the only place the enabled post state is stated, and it states it from pixels and
+    identity facts, never from the fact that this command pressed:
+
+    * the pair must be a fresh ``entry_no_numeric`` capture whose ``status`` is ``ok`` and whose
+      two frames agreed, so a torn or repainting popup states nothing;
+    * the mode attribution must be the exact ``MULTIPLEXER_ON_ENTRY`` template match painting
+      ``Desable multiplexer`` — an absent, altered, translated or unrecognised line is not
+      enabled;
+    * both guards must name the **original** bound window and the **original** popup panel, so a
+      different panel's entry line is never read as this popup's;
+    * the run directory must be the one this invocation claimed under its own capture root, and
+      the digests must be two re-derived 64-character pair digests.
+
+    The clipped entry popup structurally has no rollover row, so ``post_rolling`` stays unknown;
+    a ``ready`` strip is not consulted and implies no mode.
+    """
+
+    def unknown(reason: str, claim: str = "") -> tuple:
+        return ("UNKNOWN", claim, None, reason)
+
+    capture = report.capture
+    if capture is None:
+        return unknown(
+            "the clipped entry was reported but this invocation holds no fresh capture for it: "
+            "a retained pair is history, so the mode after the press is unknown and nothing is "
+            "retried"
+        )
+    claim = capture.directory or ""
+    if capture.capture_kind != CAPTURE_ENTRY_NO_NUMERIC:
+        return unknown(
+            f"the post-press capture is {capture.capture_kind!r} where the clipped entry's "
+            "contract is required: the settings and entry contracts are never interchanged",
+            claim,
+        )
+    if capture.status != "ok":
+        reasons = "; ".join(capture.unknown_reasons) or "status is not ok"
+        return unknown(
+            f"the post-press entry capture is not ok ({reasons}): the enabled mode is not "
+            "claimed and nothing is retried",
+            claim,
+        )
+    guards = capture.guards
+    if not guards.consistent or guards.after is None:
+        return unknown(
+            "the post-press entry pair's window guards do not agree across the capture: "
+            + ("; ".join(guards.failures) or "no closing guard"),
+            claim,
+        )
+    for guard in (guards.before, guards.after):
+        if guard.hwnd != target.hwnd:
+            return unknown(
+                f"the post-press capture's {guard.label} guard resolved hwnd {guard.hwnd} "
+                f"where the original binding is {target.hwnd}: identity drift, so no mode is "
+                "claimed",
+                claim,
+            )
+        if guard.popup_hwnd != popup_hwnd:
+            return unknown(
+                f"the post-press capture's {guard.label} guard resolved popup hwnd "
+                f"{guard.popup_hwnd} where the licensed popup is {popup_hwnd}: a different "
+                "panel's entry line states nothing about this popup",
+                claim,
+            )
+    if claim and Path(claim).parent.resolve() != directory.resolve():
+        return unknown(
+            f"the post-press pair was claimed at {claim!r}, outside this invocation's capture "
+            f"root {str(directory)!r}: a pair from elsewhere is not this press's evidence",
+            claim,
+        )
+    mark = capture.visual_mode_mark
+    if mark is None:
+        return unknown(
+            "the post-press entry capture carries no mode attribution for the measured clipped "
+            "shape, so the enabled mode is unknown",
+            claim,
+        )
+    if (
+        mark.surface != mode_marks.MULTIPLEXER_ON_ENTRY
+        or mark.label != "DESABLE_MULTIPLEXER"
+        or mark.mode != "VISUAL_ENABLED"
+    ):
+        return unknown(
+            f"the post-press pair reads surface={mark.surface!r} label={mark.label!r} "
+            f"mode={mark.mode!r} where the measured ``Desable multiplexer`` entry is required: "
+            "an absent, altered, wrong-sized or otherwise unattributed entry states no enabled "
+            "mode",
+            claim,
+        )
+    if (
+        mark.recognition != "EXACT_TEMPLATE_MATCH"
+        or mark.frames_agreed is not True
+        or mark.acquisition_context != _FRESH_CONTEXT
+        or mark.freshness != "live_bracketed"
+        or mark.integrity != _FRESH_INTEGRITY
+    ):
+        return unknown(
+            "the post-press entry pair is not a fresh live-bracketed digest-verified agreement "
+            f"(recognition={mark.recognition!r}, agreed={mark.frames_agreed!r}, "
+            f"context={mark.acquisition_context!r}, freshness={mark.freshness!r}, "
+            f"integrity={mark.integrity!r})",
+            claim,
+        )
+    digests = mark.frame_digests
+    if digests is None or len(digests) != 2 or any(len(item) != 64 for item in digests):
+        return unknown(
+            "the post-press entry pair carries no two genuine frame digests, so the enabled "
+            "mode is not claimed",
+            claim,
+        )
+    return "VISUAL_ENABLED", claim, (digests[0], digests[1]), ""
 
 
 # ---------------------------------------------------------------------------------------------
@@ -605,24 +735,53 @@ def acquire_enable_multiplexed(
     presses, press_state, posted = 1, "attempted", "unknown"
     stage = EnableStage.PRESS_RAISED if press_error else EnableStage.PRESSED
 
-    # The post state is a read, never a claim: no capture follows the press, so an enabled mode
-    # can never be inferred from the fact that this command pressed.
+    # The post state is read, and one fresh pair is taken **only** when that read resolves the
+    # clipped one-entry popup. An enabled mode is never inferred from the press, a ready strip or
+    # any other surface, and nothing is retried when the entry is absent.
     post_error = ""
     post_surface = "UNKNOWN"
     post_mode: Literal["VISUAL_ENABLED", "UNKNOWN"] = "UNKNOWN"
     post_rolling = "UNKNOWN"
+    post_capture_dir = ""
+    post_capture_kind = ""
+    post_frame_digests: tuple[str, str] | None = None
     try:
         post = read_fn(live, target=target)
     except Exception as exc:  # noqa: BLE001 - an unreadable screen is a fact
         post_error = f"the screen could not be read after the press: {_reason(exc)}"
     else:
         post_surface = post.surface.value
-        post_error = (
-            "the mode after the press is unknown: this command takes no capture after the "
-            "press, so it cannot state whether the application is enabled — the operator must "
-            "reopen Channels to read the mode, or use Disable multiplexer when asked. "
-            + RELAY_WARNING
-        )
+        if post.surface is ChannelsSurface.MULTIPLEXER_ON_ENTRY:
+            try:
+                captured = capture_fn(live, target=target, capture_dir=directory)
+            except Exception as exc:  # noqa: BLE001 - a failed capture is not a retry
+                post_error = (
+                    "the clipped entry was visible after the press, but the fresh post-press "
+                    f"capture could not be taken ({_reason(exc)}): the enabled mode is unknown "
+                    "and nothing is retried"
+                )
+            else:
+                (
+                    post_mode,
+                    post_capture_dir,
+                    post_frame_digests,
+                    post_error,
+                ) = _post_entry_evidence(
+                    captured,
+                    target=target,
+                    popup_hwnd=popup_hwnd,
+                    directory=directory,
+                )
+                if captured.capture is not None:
+                    post_capture_kind = captured.capture.capture_kind
+        else:
+            post_error = (
+                f"the post-press read resolved surface {post_surface!r}, not the clipped "
+                "one-entry popup: enabling is not inferred from the press, from a ready strip "
+                "or from any other surface, so the mode after the press is UNKNOWN and nothing "
+                "is retried; reopen Channels by hand to read it, or use Disable multiplexer "
+                "when asked. " + RELAY_WARNING
+            )
 
     payload = dict(obligation)
     payload.update(
@@ -637,6 +796,9 @@ def acquire_enable_multiplexed(
             "post_surface": post_surface,
             "post_mode": post_mode,
             "post_rolling": post_rolling,
+            "post_capture_dir": post_capture_dir,
+            "post_capture_kind": post_capture_kind,
+            "post_frame_digests": list(post_frame_digests or ()),
             "press_error": press_error,
             "post_error": post_error,
             "final_label": final.label if final is not None else "",
@@ -668,6 +830,9 @@ def acquire_enable_multiplexed(
             f"{None if final is None else final.rolling}"
         ),
         f"boundary:seconds={boundary.seconds!r}",
+        f"post:surface={post_surface}",
+        f"post:mode={post_mode}",
+        f"post:capture={post_capture_dir or None}",
     ]
     return EnableMultiplexedResult(
         stage=stage,
@@ -696,6 +861,9 @@ def acquire_enable_multiplexed(
         post_surface=post_surface,
         post_mode=post_mode,
         post_rolling=post_rolling,
+        post_capture_dir=post_capture_dir,
+        post_capture_kind=post_capture_kind,
+        post_frame_digests=post_frame_digests,
         post_error=post_error,
         presses=presses,
         press=press_state,

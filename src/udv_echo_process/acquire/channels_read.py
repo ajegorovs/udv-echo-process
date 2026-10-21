@@ -35,6 +35,9 @@ from udv_echo_process.acquire import mode_marks
 from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.caption_band import attribute_frames
 from udv_echo_process.acquire.channels_capture import (
+    CAPTURE_ENTRY_NO_NUMERIC,
+    CAPTURE_SETTINGS_NUMERIC,
+    ENTRY_NUMERIC_NOTE,
     CaptureEvidence,
     FrameEvidence,
     NumericBracketing,
@@ -54,7 +57,11 @@ from udv_echo_process.acquire.driver import (
     AcquisitionError,
     Win32Actuator,
 )
-from udv_echo_process.acquire.ui.channels import ChannelsRead, read_bound_channels
+from udv_echo_process.acquire.ui.channels import (
+    ChannelsRead,
+    ChannelsSurface,
+    read_bound_channels,
+)
 from udv_echo_process.acquire.ui.layout import MAIN_CLASS
 from udv_echo_process.acquire.win32.tree import visible_main_windows
 
@@ -202,8 +209,16 @@ def _capture(
     Order: guards from the first read, two frames, then a second read of the same popup on the
     same binding. Nothing is captured when the report resolved no popup rectangle, and a failed
     grab is reported as unknown rather than written as an empty picture.
+
+    The contract is explicit: the full settings popup is captured as ``settings_numeric`` (five
+    amounts bracketed, unchanged), and the clipped one-entry popup as ``entry_no_numeric`` (guards
+    and the fresh pair only — that shape states no amount). No other surface is admitted under
+    either contract, and the numeric bracketing is never attempted for the entry shape.
     """
     directory = Path(capture_dir)
+    entry_shape = read.surface is ChannelsSurface.MULTIPLEXER_ON_ENTRY
+    capture_kind = CAPTURE_ENTRY_NO_NUMERIC if entry_shape else CAPTURE_SETTINGS_NUMERIC
+    expected_surface = read.surface.value if entry_shape else "settings_popup"
     before_guard = _guard(
         "before", read, fingerprint, window_state(target.hwnd), target
     )
@@ -272,12 +287,22 @@ def _capture(
         after_guard = _guard(
             "after", after, after_fingerprint, window_state(target.hwnd), target
         )
-        numeric = bracket_numeric(read, after)
+        numeric = (
+            NumericBracketing(applicable=False, note=ENTRY_NUMERIC_NOTE)
+            if entry_shape
+            else bracket_numeric(read, after)
+        )
     evidence = assemble(
         roi=roi,
         frames=tuple(frames),
-        guards=compare_guards(before_guard, after_guard, target.hwnd),
+        guards=compare_guards(
+            before_guard,
+            after_guard,
+            target.hwnd,
+            expected_surface=expected_surface,
+        ),
         numeric=numeric,
+        capture_kind=capture_kind,
         readable=read.readable,
         after_readable=None if after is None else after.readable,
         refusals=read.refusals,
@@ -321,6 +346,7 @@ def _capture(
                         context="live-bracketed",
                     )
                     if mode_marks.is_settings_rect(evidence.roi)
+                    or mode_marks.is_entry_rect(evidence.roi)
                     else None
                 ),
             }

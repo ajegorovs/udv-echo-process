@@ -1164,16 +1164,79 @@ presses the `Enable multiplexer` toggle **once** with the held press recipe. Rol
 `OFF_PROVEN` is refused with zero presses and no cleanup, because that path auto-arms and records.
 The target is resolved by the reader's 8-band signature and toggle-role provenance, and the
 action boundary re-resolves the binding, popup, signature and exact toggle handle before posting.
-It never presses `Record`, `Disable`, `Stop`, `Clear`, never retries, and never infers the post
-mode: after the press the mode is `UNKNOWN` unless a fresh visual verification states otherwise,
-so the CLI exits non-zero and the operator must reopen Channels to read the mode (or choose
-Disable when asked).
+It never presses `Record`, `Disable`, `Stop`, `Clear` and never retries.
 
-**Unverified live.** The press has **not** been exercised on the instrument, and the enabled
-interval that follows it is unmeasured. A bounded operator trial is required before treating the
-command as a working mode entry: one supervised press from a verified disabled + rolling-ON popup,
-then a reopened Channels read (or the disable entry) to establish what the application kept. None
-of §12.13's entries above change; the command only automates the one gesture this table describes.
+**Post-press readback (offline verified, 2026-10-22).** After its one press the command reads the
+screen again. Only when that read resolves the clipped one-entry popup does it take a **fresh**
+post-press capture pair under its own run directory and hold it to the explicit
+`entry_no_numeric` contract: two still 158x43 frames of the measured entry shape, the exact
+`Desable multiplexer` template match on both, re-derived pair digests, and before/after guards
+naming the original bound window and the licensed popup panel. Only that conjunction reports
+`post_mode: VISUAL_ENABLED` and lets the CLI exit `0`. If no clipped entry is visible (the popup is
+closed, full, or a different surface) the mode stays `UNKNOWN` **explicitly** — it is not inferred
+from the press, a ready strip or any other surface — and nothing is retried. The clipped entry
+structurally carries no rollover row, so `post_rolling` stays `UNKNOWN`.
+
+The settings capture's contract is unchanged: `settings_numeric` still requires all five amounts
+bracketed consistently. The entry shape is a separate, explicit `capture_kind`; it neither
+loosens that check nor reuses a retained directory.
+
+**Guarded disable command (`acquire disable-multiplexed`), 2026-10-22 — offline only.** The
+clipped popup's one entry is now reachable from the CLI. It binds exactly one window, takes a
+**fresh same-invocation** 158x43 `entry_no_numeric` pair, and requires the reader's own
+`Disable multiplexer` attribution with `live-bracketed` / `capture-digest-verified` evidence,
+plus a structural target: the popup is the measured clipped size and exactly one **direct**
+`TSp_Button` owns the entry label band. Caption order, an ordinal, a stored handle and the Enable
+toggle's coordinates are not identity. `entry_no_numeric` is **mandatory** for every entry pair:
+a `settings_numeric` capture can never licence this press, and the two contracts are never
+interchanged.
+
+Both pairs are the reader's own exclusive `capture-NNN` runs **under this invocation's
+`--capture-dir` root**: a pair claimed outside that root, or the decision's run reused as the
+licence, is refused with zero presses. The licensing pair must also resolve the **same popup
+handle** the decision capture bound, and its two digests must be its own frames. At the press the
+popup and entry rectangles are read **then**, from the same win32 enumeration owner the resolver
+uses — the licensing read's rects are not taken as an assertion — and the entry's live
+popup-relative rect must equal the licensed one, so a moved, resized or repainted row refuses
+with nothing posted and zero presses recorded.
+
+The durable obligation is claimed (`O_EXCL` + `fsync`) before that second licensing capture at
+the action boundary, and only the fresh binding is pressed once. The pre-press record says
+`phase: obligation`, `action: pending`, `obligation_open: true`, `press: not_attempted`, and
+`press_state_as_of` states that `not_attempted` is **as of that write** — a press may follow and
+is not reflected there. If the post-press rewrite fails, that pre-press record is what remains on
+disk; it is never rewritten as a success and must not be read as "no press happened". The CLI
+then exits `1`.
+
+After the press the module re-reads the screen and takes a **fresh settings** pair only when the
+operator's full popup is visible; only a `settings_numeric` pair whose guards name the original
+window and whose exact `Enable multiplexer` line reads `VISUAL_DISABLED` reports
+`post_mode: VISUAL_DISABLED`. The CLI exits `0` only for that fresh pair with two re-derived
+digests, one attempted press and **no** press, post or trial-record error — a raised press or a
+boundary refusal can never be reported as a verified post. Any other surface, an absent capture
+or a supplied-but-unproved capture leaves the post mode `UNKNOWN` and exits `1`.
+
+**What `ready` means here.** The strip's three-button ready row is the only store fact the command
+reads: it states that the strip reports no recording and no held/stored data. Data the strip does
+**not** report — an invisible historical store, a block scrolled out of view, a recording started
+elsewhere — may still exist and is not inspected. The command takes no destructive action: it
+never presses `Enable`, `Record`, `Stop` or `Clear`, never opens the popup and never retries.
+**No live acceptance:** the press and its readback have not been exercised on the instrument; the
+source test uses authentic entry/settings fixtures and a Win32 double.
+
+The new enable post-press readback above is likewise **offline verified only**; neither command's
+post-press readback has been exercised live.
+
+**Live press observed once, 2026-10-22.** The guarded enable was exercised once on the instrument
+from a verified `VISUAL_DISABLED` + `ON_PROVEN` full popup: one press, `posted: unknown`. Under
+the build of that run the command took no post capture and therefore exited `1`; the operator's
+separate read-only top-level capture of the clipped popup (158x43) then showed its painted caption
+`Desable multiplexer` on two stable frames, and the operator restored the previous state
+(`VISUAL_DISABLED`, rolling off) with their own gestures. That is an observed visual
+corroboration, not a native checked state, and **no physical relay behaviour was measured** — the
+relay warning stands. The automatic post readback above has **not** yet been exercised live.
+Source: `.hermes/scratch/multiplexer-development/enable-live-01-acceptance.json` and its
+`enable-live-01*.log` / entry PNGs (git-ignored local evidence).
 
 **Label-band correction (pre-live), 2026-10-22.** The `ENABLE_MULTIPLEXER` raster was learned from
 the full popup's first ink band, rows 14–26 — which is the separate `Use only channel` control's

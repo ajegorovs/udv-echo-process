@@ -21,6 +21,8 @@ from udv_echo_process.acquire import enable_multiplexed, mode_marks
 from udv_echo_process.acquire.actuator import StripState, WindowTarget
 from udv_echo_process.acquire.channels_capture import (
     CaptureEvidence,
+    FrameEvidence,
+    FrameStats,
     GuardComparison,
     NumericBracketing,
     WindowGuard,
@@ -149,6 +151,7 @@ def _run(
     *,
     reads: list[ChannelsRead] | None = None,
     post: ChannelsRead | None = None,
+    post_capture: ChannelsRead | None = None,
     **kwargs,
 ):
     capture_reads = list(reads or [_report(), _report()])
@@ -157,12 +160,20 @@ def _run(
         if post is not None
         else ChannelsRead(surface=ChannelsSurface.ABSENT, readable=False)
     )
+
+    def capture_popup(*_args, **_kwargs):
+        if capture_reads:
+            return capture_reads.pop(0)
+        if post_capture is not None:
+            return post_capture
+        raise AssertionError("a capture was taken where the workflow must take none")
+
     params = {
         "capture_dir": tmp_path / "captures",
         "trial_record": tmp_path / "trial.json",
         "actuator": live or FakeEnableActuator(),
         "enumerate_windows": lambda: (WINDOW,),
-        "capture_popup": lambda *a, **k: capture_reads.pop(0),
+        "capture_popup": capture_popup,
         "read_popup": lambda *a, **k: post_read,
     }
     params.update(kwargs)
@@ -283,6 +294,7 @@ def test_a_consumed_popup_leaves_the_post_mode_unknown(tmp_path) -> None:
     assert result.post_surface == "absent"
     assert result.post_mode == "UNKNOWN"
     assert "reopen Channels" in result.post_error
+    assert result.post_frame_digests is None
 
 
 # ---------------------------------------------------------------------------------------------
@@ -332,7 +344,13 @@ def test_cli_exits_nonzero_when_the_post_mode_is_unknown(
 
 
 def test_cli_exits_zero_only_on_a_verified_enabled_post(tmp_path, monkeypatch) -> None:
-    _patch_cli(monkeypatch, _cli_result(post_mode="VISUAL_ENABLED"))
+    _patch_cli(
+        monkeypatch,
+        _cli_result(
+            post_mode="VISUAL_ENABLED",
+            post_frame_digests=("a" * 64, "b" * 64),
+        ),
+    )
     with pytest.raises(SystemExit) as excinfo:
         acquire_main(
             [
@@ -656,13 +674,14 @@ def test_the_action_boundary_requires_the_licensed_rect_exactly() -> None:
 
 
 def test_production_never_claims_an_enabled_mode_after_the_press(tmp_path) -> None:
-    # A popup is still up after the press, and the two-capture list is already exhausted: any
-    # post-press capture would raise, so this also measures that none is attempted.
+    # The full settings popup is still up after the press: that is not the enabled entry shape,
+    # and the two-capture list is exhausted, so any capture would raise. No mode is inferred.
     result = _run(tmp_path, post=_report(ON))
     assert result.presses == 1
     assert result.post_surface == "settings_popup"
     assert result.post_mode == "UNKNOWN"
-    assert "reopen Channels" in result.post_error
+    assert "not the clipped one-entry popup" in result.post_error
+    assert result.post_frame_digests is None
     assert result.final_mode == "VISUAL_DISABLED"
     assert _record(tmp_path)["post_mode"] == "UNKNOWN"
 
@@ -715,3 +734,255 @@ def test_an_unknown_mode_label_refuses_the_enable_with_zero_presses(tmp_path):
     with pytest.raises(AcquisitionError, match="disabled settings surface is required"):
         _run(tmp_path, live, reads=[unlicensed] * 2)
     assert live.presses == []
+
+
+# ---------------------------------------------------------------------------------------------
+# the post-press entry pair: the only source of a VISUAL_ENABLED post state
+# ---------------------------------------------------------------------------------------------
+
+ENTRY = DATA / "entry-clipped-enabled"
+
+
+def _entry_mark() -> mode_marks.ModeMarkAttribution:
+    """The operator's real clipped ``Desable multiplexer`` pair, recognised by the live path."""
+    return _live_mark(ENTRY)
+
+
+def _entry_capture(
+    root: Path,
+    *,
+    mark: mode_marks.ModeMarkAttribution | None = None,
+    kind: str = "entry_no_numeric",
+    popup: int = 1000,
+    hwnd: int = WINDOW,
+    status: str = "ok",
+    digests: tuple[str, ...] | None = None,
+    claim: Path | None = None,
+) -> CaptureEvidence:
+    paths = _pair(ENTRY)
+    real_digests = tuple(frame_digest(mode_marks.load_frame(path)) for path in paths)
+    rect = (8, 8, 166, 51)
+    stats = FrameStats(
+        width=158,
+        height=43,
+        mode="RGB",
+        distinct_grey_levels=11,
+        dominant_fraction=0.31,
+        non_blank=True,
+    )
+    frames = tuple(
+        FrameEvidence(
+            index=index,
+            path=paths[index - 1],
+            rect=rect,
+            stats=stats,
+            digest=(digests or real_digests)[index - 1],
+        )
+        for index in (1, 2)
+    )
+    before = WindowGuard(
+        label="before",
+        hwnd=hwnd,
+        rect=(0, 0, 1920, 1080),
+        foreground=True,
+        minimized=False,
+        surface="multiplexer_on_entry",
+        popup_rect=rect,
+        popup_hwnd=popup,
+    )
+    after = before.model_copy(update={"label": "after"})
+    return CaptureEvidence(
+        status=status,
+        captured=True,
+        roi=rect,
+        capture_kind=kind,
+        directory=str(claim or (root / "captures" / "capture-003")),
+        frames=frames,
+        stable=True,
+        guards=GuardComparison(before=before, after=after, consistent=True),
+        numeric=NumericBracketing(
+            applicable=kind == "settings_numeric",
+            note="no numeric settings fields on the clipped entry popup",
+        ),
+        visual_mode_mark=_entry_mark() if mark is None else mark,
+    )
+
+
+def _entry_report(capture: CaptureEvidence | None = None) -> ChannelsRead:
+    return ChannelsRead(
+        surface=ChannelsSurface.MULTIPLEXER_ON_ENTRY,
+        readable=True,
+        capture=capture,
+    )
+
+
+def _entry_run(tmp_path, *, capture=None, post=None, **kwargs):
+    evidence = _entry_capture(tmp_path) if capture is None else capture
+    return _run(
+        tmp_path,
+        post=post if post is not None else _entry_report(),
+        post_capture=_entry_report(evidence),
+        **kwargs,
+    )
+
+
+def test_a_fresh_post_press_entry_pair_proves_the_enabled_mode(tmp_path) -> None:
+    live = FakeEnableActuator()
+    result = _entry_run(tmp_path, live=live)
+    assert live.presses == [ENABLE_HWND]
+    assert result.presses == 1
+    assert result.post_surface == "multiplexer_on_entry"
+    assert result.post_mode == "VISUAL_ENABLED"
+    assert result.post_capture_kind == "entry_no_numeric"
+    assert result.post_error == ""
+    assert result.post_frame_digests is not None
+    assert len(result.post_frame_digests) == 2
+    assert all(len(digest) == 64 for digest in result.post_frame_digests)
+    assert result.post_rolling == "UNKNOWN"
+    record = _record(tmp_path)
+    assert record["post_mode"] == "VISUAL_ENABLED"
+    assert record["post_capture_kind"] == "entry_no_numeric"
+    assert record["post_frame_digests"] == list(result.post_frame_digests)
+
+
+def test_an_entry_read_without_capture_evidence_is_unknown(tmp_path) -> None:
+    result = _run(
+        tmp_path,
+        post=_entry_report(),
+        post_capture=_entry_report(None),
+    )
+    assert result.post_mode == "UNKNOWN"
+    assert "no fresh capture" in result.post_error
+    assert result.post_frame_digests is None
+    assert result.presses == 1
+
+
+def test_an_altered_entry_label_is_not_enabled(tmp_path) -> None:
+    mark = _entry_mark().model_copy(
+        update={"label": "ENABLE_MULTIPLEXER", "mode": "UNKNOWN"}
+    )
+    result = _entry_run(tmp_path, capture=_entry_capture(tmp_path, mark=mark))
+    assert result.post_mode == "UNKNOWN"
+    assert "label='ENABLE_MULTIPLEXER'" in result.post_error
+
+
+def test_a_wrong_sized_entry_crop_is_unknown(tmp_path) -> None:
+    mark = mode_marks.ModeMarkAttribution(
+        surface="UNSUPPORTED",
+        label="UNRECOGNIZED",
+        mode="UNKNOWN",
+        mark="NOT_READ",
+        rolling="UNKNOWN",
+        recognition="NOT_MATCHED",
+    )
+    result = _entry_run(tmp_path, capture=_entry_capture(tmp_path, mark=mark))
+    assert result.post_mode == "UNKNOWN"
+    assert "wrong-sized or otherwise unattributed" in result.post_error
+
+
+def test_a_retained_or_unverified_entry_pair_is_not_a_post_mode(tmp_path) -> None:
+    mark = _entry_mark().model_copy(
+        update={
+            "acquisition_context": "retained",
+            "freshness": "not_established",
+            "integrity": "decoded-pair-only",
+        }
+    )
+    result = _entry_run(tmp_path, capture=_entry_capture(tmp_path, mark=mark))
+    assert result.post_mode == "UNKNOWN"
+    assert "not a fresh live-bracketed" in result.post_error
+
+
+def test_a_pair_without_two_digests_states_no_enabled_mode(tmp_path) -> None:
+    mark = _entry_mark().model_copy(update={"frame_digests": None})
+    result = _entry_run(tmp_path, capture=_entry_capture(tmp_path, mark=mark))
+    assert result.post_mode == "UNKNOWN"
+    assert "no two genuine frame digests" in result.post_error
+    assert result.post_frame_digests is None
+
+
+def test_identity_drift_on_the_post_pair_is_unknown(tmp_path) -> None:
+    result = _entry_run(tmp_path, capture=_entry_capture(tmp_path, popup=2222))
+    assert result.post_mode == "UNKNOWN"
+    assert "different panel's entry line" in result.post_error
+    assert result.post_frame_digests is None
+
+
+def test_a_post_pair_from_outside_the_capture_root_is_unknown(tmp_path) -> None:
+    result = _entry_run(
+        tmp_path,
+        capture=_entry_capture(tmp_path, claim=tmp_path / "elsewhere" / "capture-001"),
+    )
+    assert result.post_mode == "UNKNOWN"
+    assert "outside this invocation's capture root" in result.post_error
+
+
+def test_a_settings_capture_never_satisfies_the_entry_contract(tmp_path) -> None:
+    result = _entry_run(
+        tmp_path, capture=_entry_capture(tmp_path, kind="settings_numeric")
+    )
+    assert result.post_mode == "UNKNOWN"
+    assert "never interchanged" in result.post_error
+
+
+def test_a_raised_post_capture_leaves_the_mode_unknown(tmp_path) -> None:
+    # No capture double is supplied for the post pair: the capture call raises and the
+    # workflow records it as unknown instead of retrying.
+    result = _run(tmp_path, post=_entry_report())
+    assert result.post_mode == "UNKNOWN"
+    assert "could not be taken" in result.post_error
+    assert result.presses == 1
+
+
+def test_a_record_rewrite_failure_keeps_the_verified_post_and_reports_it(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setattr(
+        enable_multiplexed, "update_trial_record", lambda *a, **k: "disk full"
+    )
+    result = _entry_run(tmp_path)
+    assert result.post_mode == "VISUAL_ENABLED"
+    assert result.trial_record_error == "disk full"
+
+
+def test_cli_exits_nonzero_when_enabled_has_no_fresh_digests(
+    tmp_path, monkeypatch
+) -> None:
+    _patch_cli(monkeypatch, _cli_result(post_mode="VISUAL_ENABLED"))
+    with pytest.raises(SystemExit) as excinfo:
+        acquire_main(
+            [
+                "enable-multiplexed",
+                "--capture-dir",
+                str(tmp_path),
+                "--trial-record",
+                str(tmp_path / "t.json"),
+                "--json",
+            ]
+        )
+    assert excinfo.value.code == 1
+
+
+def test_cli_exits_nonzero_when_the_press_raised_even_if_the_post_reads_enabled(
+    tmp_path, monkeypatch
+) -> None:
+    _patch_cli(
+        monkeypatch,
+        _cli_result(
+            post_mode="VISUAL_ENABLED",
+            post_frame_digests=("a" * 64, "b" * 64),
+            press_error="the press raised RuntimeError: boom",
+        ),
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        acquire_main(
+            [
+                "enable-multiplexed",
+                "--capture-dir",
+                str(tmp_path),
+                "--trial-record",
+                str(tmp_path / "t.json"),
+                "--json",
+            ]
+        )
+    assert excinfo.value.code == 1

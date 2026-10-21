@@ -38,6 +38,7 @@ from udv_echo_process.acquire import (
     channels_read,
     channels_repeat,
     channels_select,
+    disable_multiplexed,
     driver,
     enable_multiplexed,
     live,
@@ -1520,6 +1521,36 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     enable_mpx_parser.add_argument("--json", action="store_true")
 
+    disable_mpx_parser = subcommands.add_parser(
+        "disable-multiplexed",
+        help=(
+            "press the operator-opened clipped Channels popup's Disable multiplexer entry once, "
+            "only from a fresh verified enabled entry capture. A decision capture comes first; "
+            "the durable trial record is then claimed, and a final licensing capture is taken at "
+            "the action boundary immediately before the press. Exit 0 only when a fresh post-press "
+            "settings capture proves VISUAL_DISABLED with no press, post or record error; keep "
+            "hands off the instrument for the whole command"
+        ),
+    )
+    disable_mpx_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame captures are claimed: the clipped entry pair before the "
+            "press and, when the operator has the full settings popup open, the post-press pair"
+        ),
+    )
+    disable_mpx_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "disable-multiplexed-trial.json inside it); it records the licensed entry, the press "
+            "attempt and every fact that could not be established, and is never overwritten"
+        ),
+    )
+    disable_mpx_parser.add_argument("--json", action="store_true")
+
     channels_repeat_parser = subcommands.add_parser(
         "channels-repeat",
         help=(
@@ -2270,14 +2301,80 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 print(f"udv-acquire: {enable_result.post_error}", file=sys.stderr)
             for owed in enable_result.restoration_owed:
                 print(f"udv-acquire: owed: {owed}", file=sys.stderr)
-            if enable_result.post_mode != "VISUAL_ENABLED":
+            # Zero only on a fresh, verified post-press entry pair on the original binding with
+            # two re-derived digests and no error anywhere in this invocation.
+            post_digests = enable_result.post_frame_digests
+            verified_post = (
+                enable_result.post_mode == "VISUAL_ENABLED"
+                and post_digests is not None
+                and len(post_digests) == 2
+                and all(len(digest) == 64 for digest in post_digests)
+                and not enable_result.post_error
+                and not enable_result.press_error
+            )
+            if not verified_post:
                 print(
-                    "udv-acquire: post-press mode is unknown, not enabled: a pressed toggle is "
-                    "a gesture, so reopen Channels to read the mode (or use Disable when asked)",
+                    "udv-acquire: no fresh verified enabled entry after the press: a pressed "
+                    "toggle is a gesture, not a mode. Reopen Channels to read the mode (or use "
+                    "Disable when asked); nothing was retried",
                     file=sys.stderr,
                 )
                 code = 1
             if enable_result.trial_record_error:
+                code = 1
+        elif args.command == "disable-multiplexed":
+            disable_result = disable_multiplexed.acquire_disable_multiplexed(
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                # The production live helpers: the same reader for the clipped entry pair and
+                # for the post-press settings pair. It is the only capture that attributes the
+                # entry shape, and the module refuses a report it did not take in this run.
+                capture_entry=channels_read.read_channels,
+                capture_settings=channels_read.read_channels,
+                notes=notes,
+            )
+            _acquire_report(disable_result, as_json)
+            for observed in disable_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if disable_result.press_error:
+                print(f"udv-acquire: {disable_result.press_error}", file=sys.stderr)
+            if disable_result.post_error:
+                print(f"udv-acquire: {disable_result.post_error}", file=sys.stderr)
+            for owed in disable_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            # Zero only on a fresh, verified post-press settings pair on the original binding
+            # with two re-derived digests and no press, post or record error. A raised press
+            # can never be reported as a verified post.
+            post_digests = disable_result.post_frame_digests
+            verified_post = (
+                disable_result.post_mode == "VISUAL_DISABLED"
+                and post_digests is not None
+                and len(post_digests) == 2
+                and all(len(digest) == 64 for digest in post_digests)
+                and not disable_result.post_error
+                and not disable_result.press_error
+                # A boundary refusal posted nothing: a true disabled readback does not make the
+                # requested press have happened, so it is not this invocation's success.
+                and disable_result.presses == 1
+                and disable_result.press == "attempted"
+            )
+            if not verified_post:
+                print(
+                    "udv-acquire: no fresh verified disabled settings entry after the press: a "
+                    "pressed entry is a gesture, not a mode. Reopen Channels by hand to read the "
+                    "mode; nothing was retried",
+                    file=sys.stderr,
+                )
+                code = 1
+            if disable_result.trial_record_error:
+                print(
+                    "udv-acquire: the post-press record could not be written: the last durable "
+                    f"statement is the pre-press obligation at {disable_result.trial_record} "
+                    "(action pending, obligation open, press not_attempted as of that write). It "
+                    "does not say the press did not happen — keep it and settle the obligation "
+                    "by hand",
+                    file=sys.stderr,
+                )
                 code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)

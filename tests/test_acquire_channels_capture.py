@@ -610,3 +610,110 @@ def test_a_changed_popup_handle_with_the_same_rect_is_refused(tmp_path) -> None:
         "popup" in reason and "identity" in reason
         for reason in evidence.unknown_reasons
     ), evidence.unknown_reasons
+
+
+# ---------------------------------------------------------------------------------------------
+# the explicit capture kinds: entry_no_numeric never relaxes settings_numeric
+# ---------------------------------------------------------------------------------------------
+
+
+def _kind_evidence(
+    kind: str,
+    *,
+    surface: str,
+    applicable: bool,
+    slots: tuple = (),
+    roi=(0, 0, 158, 43),
+):
+    """One assembled record at the chosen contract, with two non-blank agreeing frames."""
+    width, height = roi[2] - roi[0], roi[3] - roi[1]
+    frames = tuple(
+        channels_capture.FrameEvidence(
+            index=index,
+            path=f"frame-{index}.png",
+            rect=roi,
+            stats=channels_capture.FrameStats(
+                width=width,
+                height=height,
+                distinct_grey_levels=4,
+                dominant_fraction=0.4,
+                non_blank=True,
+            ),
+            digest="a" * 64,
+        )
+        for index in (1, 2)
+    )
+    guard = channels_capture.WindowGuard(
+        label="before",
+        hwnd=WINDOW,
+        rect=(0, 0, 1920, 1080),
+        foreground=True,
+        minimized=False,
+        surface=surface,
+        popup_rect=roi,
+        popup_hwnd=1000,
+    )
+    return channels_capture.assemble(
+        roi=roi,
+        frames=frames,
+        guards=channels_capture.GuardComparison(
+            before=guard,
+            after=guard.model_copy(update={"label": "after"}),
+            consistent=True,
+        ),
+        numeric=channels_capture.NumericBracketing(
+            slots=slots,
+            consistent=not applicable,
+            note="no numeric settings fields on the clipped entry popup",
+            applicable=applicable,
+        ),
+        capture_kind=kind,
+    )
+
+
+def test_an_entry_capture_is_ok_without_any_numeric_pairing() -> None:
+    evidence = _kind_evidence(
+        channels_capture.CAPTURE_ENTRY_NO_NUMERIC,
+        surface="multiplexer_on_entry",
+        applicable=False,
+    )
+    assert evidence.status == "ok"
+    assert evidence.capture_kind == "entry_no_numeric"
+    assert evidence.stable is True
+    assert evidence.numeric.slots == ()
+    assert evidence.numeric.applicable is False
+
+
+def test_an_entry_capture_that_pairs_an_amount_is_not_ok() -> None:
+    slot = channels_capture.Bracket(slot="profiles", consistent=True)
+    evidence = _kind_evidence(
+        channels_capture.CAPTURE_ENTRY_NO_NUMERIC,
+        surface="multiplexer_on_entry",
+        applicable=True,
+        slots=(slot,),
+    )
+    assert evidence.status == "UNKNOWN"
+    assert any("not mixed" in reason for reason in evidence.unknown_reasons)
+
+
+def test_the_settings_contract_still_requires_all_five_amounts() -> None:
+    evidence = _kind_evidence(
+        channels_capture.CAPTURE_SETTINGS_NUMERIC,
+        surface="settings_popup",
+        applicable=False,
+        roi=(0, 0, 393, 426),
+    )
+    assert evidence.status == "UNKNOWN"
+    assert any(
+        "numeric contract inapplicable" in reason for reason in evidence.unknown_reasons
+    )
+
+
+def test_an_entry_kind_over_a_settings_surface_is_refused() -> None:
+    evidence = _kind_evidence(
+        channels_capture.CAPTURE_ENTRY_NO_NUMERIC,
+        surface="settings_popup",
+        applicable=False,
+    )
+    assert evidence.status == "UNKNOWN"
+    assert any("settings_popup" in reason for reason in evidence.unknown_reasons)
