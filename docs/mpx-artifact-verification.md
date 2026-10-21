@@ -128,48 +128,96 @@ interpretation of the stored bytes.
   never a recording, stopping, re-storing or cleanup step, and `store-completed` does not
   run it.
 
-## Live acceptance record (2026-10-21)
+## Live acceptance records (2026-10-21)
 
-One operator-authorized run of the automatic path, on the real instrument, stored one
-block and its own verifier reported it `consistent`. This is a single invocation by one
-operator, not concurrent or unattended certification. What was observed, with the raw
-command log kept locally:
+Three operator-authorized runs of the automatic path, on the real instrument. Each is one
+invocation by one operator, not concurrent or unattended certification; the raw command
+logs and captures are kept locally. All three stored one block under one `Record` press
+and one `Do store` commit, and exited `0`; each run's own `notes` record that it pressed
+no Stop, Pause, Clear and restart, New acquisition, Remove current block, Disable
+multiplexer, Channels menu or parameter write. The asymmetric run's channel-2 count was
+changed by a separate Channels trial before it (and restored after, below), not by the run.
 
-- Command: `acquire record-multiplexed mpx12-50profiles-verified-01 --channel 1 2
-  --profiles 50 --stated-by operator --mpx-enabled --completion-timeout 60 --json`,
-  store directory the repository's `outputs/live/store`. Exactly one `Record` press and
-  one `Do store` commit; no Stop, Pause, Clear and restart, New acquisition, Remove
-  current block, Disable multiplexer, Channels menu or parameter write (`notes` of the
-  result). Exit `0`.
-- Result: `stage: stored`, and `artifact_verification` carried as a **separate** report
-  beside `stored_path`, `store` and the declaration — the store result does not contain
-  or derive from the verdict. All three clauses (`channels`, `profiles:channel 1`,
-  `profiles:channel 2`) read `consistent`; decoded channel set `[1, 2]`, 50 profiles per
-  channel.
-- Artifact: 37574 bytes, SHA-256
-  `20195ac66088abf4355f904d61df458f98a96c28b94cd8b399ac72b1be7295d5`,
-  `identity_verified: true` (both streamed reads equal each other and the decoder's own
-  digest and size), `acquisition_mode: sequential` — the multiplexer-enable bit only.
-- Per-stream summary, both channels `axial_velocity` / `mm/s`: 50 profiles, 42 gates,
-  2100 finite cells, 0 non-finite, 0 nonzero samples, `abs_max 0.0`; spans 1.9777 s
-  (channel 1: 0.0 → 1.9777 s, channel 2: 2.0297 → 4.0074 s). A span is not coverage and
-  not the requested duration; the two spans are not a roll or ordering claim.
-- A separate `acquire status` read taken after the run exited `0` and reported the strip
-  in view `ready` with the measurement surface active, no menu popup and 0 dialog panels:
-  the run left the application Ready rather than in the Store dialog or a store view.
+| run (in `outputs/live/store/`) | declared | stored per channel | gates | verdict | artifact |
+| --- | --- | --- | --- | --- | --- |
+| `mpx12-50profiles-verified-01` | `--channel 1 2 --profiles 50` | 50 / 50 | 42 | `consistent` | 37574 B |
+| `mpx12-50profiles-repeat2-auto-01` | `--channel 1 2 --profiles-per-visit 50 --repeats 2` | 100 / 100, two runs of 50 | 42 | `consistent`, `partition-consistent` | 43674 B |
+| `mpx12-50-75profiles-repeat2-auto-01` | `--channel 1 2 --channel-profiles 1=50 2=75 --repeats 2` | 100 / 150, runs 50+50 and 75+75 | 42 | `consistent`, `partition-consistent` | 46724 B |
 
-Two limits belong to this record specifically:
+Common to all three: `stage: stored`, with `artifact_verification` carried as a
+**separate** report beside `stored_path`, `store` and the declaration — the store result
+does not contain or derive from the verdict; `identity_verified: true` (both streamed
+reads agree with each other and with the decoder's own digest and size);
+`acquisition_mode: sequential` (the multiplexer-enable bit only); both channels
+`axial_velocity` / `mm/s`; 0 non-finite cells; 0 nonzero samples; `abs_max 0.0`.
 
-- **The zeros are expected here and prove nothing physical.** After the run, the operator
-  stated that the sensors had been removed and would remain disconnected for days; no
+SHA-256 of each retained artifact, as reported by the verifier and confirmed by re-hashing
+the file on disk (the artifacts are git-ignored, not published):
+
+- `20195ac66088abf4355f904d61df458f98a96c28b94cd8b399ac72b1be7295d5` (37574 B)
+- `cca9bcefe09a843d988a758c250a1d7e50fa48e49afbabebacd1119115a11b52` (43674 B)
+- `9ecc5bd08dabb642f9e5bd1c556dfac7f8320bc67bcfd53fa1fff6ce3ad614e0` (46724 B)
+
+After the asymmetric run, a separate `acquire status` read reported the strip in view
+`ready` with the measurement surface active, no menu popup and 0 dialog panels: the run
+left the application Ready rather than in the Store dialog or a store view.
+
+### Asymmetric run: channels 1=50, 2=75, repeats 2
+
+`acquire record-multiplexed mpx12-50-75profiles-repeat2-auto-01 --channel 1 2
+--channel-profiles 1=50 2=75 --repeats 2 --stated-by operator --mpx-enabled
+--completion-timeout 60 --statement
+operator-confirmed-channels-1-2-pervisit-50-75-repeats2-rollover-on-mpx-enabled`.
+
+- Every clause `consistent`: channel set `[1, 2]`; `profiles:channel 1` expected `100`
+  (`2 x 50` for that channel), decoded 100; `profiles:channel 2` expected `150`
+  (`2 x 75`), decoded 150; `repeats` `partition-consistent` — stored words `1, 2` on both
+  channels, channel 1 holding `[50, 50]` profiles and channel 2 `[75, 75]`.
+- Streams: 100 and 150 profiles of 42 gates (4200 and 6300 finite cells), 0 non-finite,
+  0 nonzero samples, `abs_max 0.0`; spans 7.0393 s and 8.0551 s, which are spans, not
+  coverage, not the requested duration and not a roll or ordering claim.
+- Artifact retained: 46724 bytes, SHA-256
+  `9ecc5bd08dabb642f9e5bd1c556dfac7f8320bc67bcfd53fa1fff6ce3ad614e0`,
+  `identity_verified: true`.
+
+The trial changed one setting (channel 2, 50 → 75 profiles) and had to put it back. The
+profile field's duration is the application's own arithmetic over the profile count, so it
+moves with the write rather than measuring an acquisition:
+
+| step | channel 2 profiles | channel 2 seconds | state |
+| --- | --- | --- | --- |
+| baseline, before the trial | 50 | 2.01 | popup read |
+| trial setting (write 50 → 75) | 75 | 3.02 | `persisted: unknown`, obligation open |
+| restoration (write 75 → 50) | 50 | 2.01 | `restored_baseline: true`, obligation still open |
+| after the operator reopened the dialog | 50 | 2.01 | the read that closes the obligation |
+
+- Both writes recomputed the seconds (`seconds_recomputed: true`); 2.01 s and 3.02 s are
+  the field's derivation from 50 and 75 profiles, not measured durations.
+- A write proves the field, not that the application kept it. Only a read from a reopened
+  dialog counts here, and the operator took it: `restoration_owed: false`, no restoration
+  obligation remains.
+- Final state: channel 1 selected, repeat `2`, channel 1 at 50 profiles / 2.01 s — the
+  trial's selection and repeat were preserved.
+- The popup paints the channel it belongs to in its caption and states nothing in its
+  tree, so channel identity in these reads is operator-declared with caption
+  corroboration, not a native checked-state proof; and restoration was verified after
+  reopening the popup, not after an application restart.
+
+### What these records do not say
+
+- **The zeros are expected here and prove nothing physical.** After the asymmetric run the
+  operator stated the sensors had been removed and would remain disconnected for days; no
   removal time was established. Zero-valued samples are compatible with that context, and
-  the `0 nonzero` counts above are evidence about the artifact and the decode only — not
-  a statement that the target produced no returns, not a failure, and not a quality
-  grade. See [Zero is signal](#limits) above, which still applies unchanged.
+  the `0 nonzero` counts are evidence about the artifact and the decode only — not a
+  statement that the target produced no returns, not a failure, and not a quality grade.
+  See [Zero is signal](#limits) above, which still applies unchanged.
 - **The multiplexer's final state is unknown.** The run's own `owed` note stands: no
-  passive MPX discriminator exists, this command presses no Disable, and the operator's
+  passive MPX discriminator exists, the command presses no Disable, and the operator's
   declaration is the only statement of the mode. Nothing here reads back whether the
   multiplexer is still enabled, so `--mpx-enabled` is a caller claim, not a post-run fact.
+- **The stored partition is not a visit count.** A matching per-channel total and a
+  matching run split are not proof that two visits were stored; the footer word is a
+  block/sequence number.
 
 ## Not setting-free: the remembered Store directory
 
@@ -271,10 +319,11 @@ see "2 blocks of 200 rows" and call `2 x 200` consistent, and the reader instead
 the reused words and `repeat_verification: unknown`. That case is covered in
 `tests/test_bdd_block_evidence.py`.
 
-These are offline decodes of already-stored files, not live repeat acceptances: no
-operator-stated repeat setting exists on this host for the repeat-2 file, so its
-`repeats` clause is evidence about the stored container partition only. Whether a repeat>1
-acquisition stores one word or several is settled for this one artifact (both words were
+These are offline decodes of already-stored files. The `mpx12-50profiles-repeat2-01.BDD`
+artifact has no operator-stated declaration attached to its own acquisition, so its
+`repeats` clause is evidence about the stored container partition only; the live repeat-2
+acceptance on this host is the auto row in the records above. Whether a repeat>1
+acquisition stores one word or several is settled for these artifacts (both words were
 stored) and remains unmeasured elsewhere; the word is a block/sequence number and is not
 proof of the physical acquisitions behind it.
 
@@ -320,11 +369,11 @@ uv run python -m udv_echo_process.cli acquire mpx-check FILE.BDD \
 Measured on the real repeat-2 capture (git-ignored, not published —
 `outputs/live/store/mpx12-50profiles-repeat2-01.BDD`, SHA-256
 `bc79760…e00dfbc8`): channels 1 and 2 each hold 100 rows in two runs of 50.
-`--channel 1 2 --channel-profiles 1=50 2=75 --repeats 2` reports channel 1 `consistent`
-(`100 = 2 x 50`), channel 2 `contradicted` (`150` expected, `100` stored), and the run
-split contradicted for channel 2 only — a **correct negative**, not an acceptance. No real
-asymmetric acquisition exists on this host; the `1=50 2=75` arithmetic itself is checked
-only on a hand-written SYNTHETIC declaration, which is not evidence about any recording.
+`--channel 1 2 --channel-profiles 1=50 2=75 --repeats 2` on that uniform file reports
+channel 1 `consistent` (`100 = 2 x 50`), channel 2 `contradicted` (`150` expected, `100`
+stored), and the run split contradicted for channel 2 only — a **correct negative**. The
+real asymmetric acquisition is the accepted `mpx12-50-75profiles-repeat2-auto-01` run in
+the records above (100 and 150 profiles, runs 50+50 and 75+75, every clause `consistent`).
 The tracked `data/4-sensor-velocity/200RPM.BDD` still reports `consistent` for
 `--profiles 400`, and also for an explicit mapping whose counts agree (four channels at
 `4` per visit x `100` repeats).
