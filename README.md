@@ -118,7 +118,11 @@ acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job l
   channel with the operator's completed-block declaration, reports typed
   consistent/contradicted/unverifiable/unreadable clauses, and writes nothing. No
   order, rolling or "no returns" claim is made; zero-valued samples are reported
-  without a signal-quality verdict. See
+  without a signal-quality verdict. `acquire record-multiplexed` runs the same check
+  automatically on the exact path its store returned, against the run's original
+  declaration, as a separate `artifact_verification` report: the stored fact stands
+  whatever the verdict, and the CLI exits nonzero (with the saved path named) unless
+  the run both stored and verified consistent. See
   [`docs/mpx-artifact-verification.md`](docs/mpx-artifact-verification.md).
 
 For the package map, boundaries, public entry points, and testing workflow, see

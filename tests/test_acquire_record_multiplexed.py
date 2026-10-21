@@ -27,6 +27,7 @@ from udv_echo_process.acquire.actuator import (
     StripState,
     WindowTarget,
 )
+from udv_echo_process.acquire.mpx_artifact import verify_mpx_artifact
 from udv_echo_process.acquire.record_multiplexed import (
     MpxStage,
     MultiplexedRecordingDeclaration,
@@ -40,6 +41,18 @@ from udv_echo_process.acquire.ui.layout import MAIN_CLASS
 from udv_echo_process.cli import acquire_main
 
 HWND = 4711
+
+#: The committed 4-channel multiplexed fixture; verification in these tests is the production
+#: verifier on it, so a stored run's artifact report is a real decode rather than a stand-in.
+FIXTURE = Path("data/4-sensor-velocity/200RPM.BDD")
+FIXTURE_CHANNELS = (6, 7, 8, 9)
+FIXTURE_PROFILES = 400
+
+
+def _fixture_verifier(_path: Path, declaration):
+    """Production verification of the committed fixture, for runs whose store writes b'\\x00'."""
+    return verify_mpx_artifact(FIXTURE, declaration)
+
 
 READY = StripState(button_count=3, has_slider=False)
 RECORDING = StripState(button_count=1, has_slider=False)
@@ -66,12 +79,14 @@ class FakeMpxScreen:
         read_error: Exception | None = None,
         target_thread: int = 11,
         target_process: int = 22,
+        payload: bytes | None = None,
     ) -> None:
         self.entry = entry
         self.after_press = tuple(after_press) or (COMPLETED,)
         self.caption = caption
         self.overlay = overlay
         self.read_error = read_error
+        self.payload = payload
         self.target: WindowTarget | None = None
         self.target_thread = target_thread
         self.target_process = target_process
@@ -150,7 +165,7 @@ class FakeMpxScreen:
 
     def wait_for_stored_file(self, directory: Path, *, known, timeout_s: float) -> Path:
         path = Path(directory) / f"{self._pending}.BDD"
-        path.write_bytes(b"\x00")
+        path.write_bytes(b"\x00" if self.payload is None else self.payload)
         return path
 
     def controls_pressed(self) -> list[StripControl]:
@@ -213,7 +228,7 @@ class FakeClock:
 def test_default_composition_records_once_and_stores_once_on_the_bound_window(
     tmp_path: Path, monkeypatch
 ):
-    screen = FakeMpxScreen()
+    screen = FakeMpxScreen(payload=FIXTURE.read_bytes())
     monkeypatch.setattr(workflow, "Win32Actuator", lambda **kwargs: screen)
     monkeypatch.setattr(workflow, "visible_main_windows", lambda *args: (HWND,))
 
@@ -223,10 +238,9 @@ def test_default_composition_records_once_and_stores_once_on_the_bound_window(
                 "record-multiplexed",
                 "mpx-run",
                 "--channel",
-                "1",
-                "2",
+                *[str(channel) for channel in FIXTURE_CHANNELS],
                 "--profiles",
-                "50",
+                str(FIXTURE_PROFILES),
                 "--stated-by",
                 "operator",
                 "--mpx-enabled",
@@ -249,7 +263,7 @@ def test_default_composition_records_once_and_stores_once_on_the_bound_window(
 
 def test_workflow_result_carries_the_same_binding_through_the_store(tmp_path: Path):
     screen = FakeMpxScreen()
-    result = run(tmp_path, screen=screen)
+    result = run(tmp_path, screen=screen, verify_artifact=_fixture_verifier)
 
     assert result.stage is MpxStage.STORED
     assert result.stored and result.stored_path == tmp_path / "mpx-run.BDD"
@@ -267,7 +281,7 @@ def test_workflow_result_carries_the_same_binding_through_the_store(tmp_path: Pa
 def test_queued_press_is_provisional_inside_the_grace(tmp_path: Path):
     """A 'ready' row straight after the press is not a failure: the press is queued."""
     screen = FakeMpxScreen(after_press=(READY, READY, RECORDING, COMPLETED))
-    result = run(tmp_path, screen=screen)
+    result = run(tmp_path, screen=screen, verify_artifact=_fixture_verifier)
 
     assert result.stage is MpxStage.STORED
     assert any("ready" in reading for reading in result.observed)

@@ -44,6 +44,16 @@ operator needs; only a refusal **before** any press raises
 :class:`~udv_echo_process.acquire.udop.AcquisitionError`, which is the boundary the CLI turns into
 one line and exit 2.
 
+**The stored artifact is verified, and the store stays stored.** After the one store returns a
+path, that exact path — never a directory listing or a name guess — is decoded with the existing
+:func:`…mpx_artifact.verify_mpx_artifact` against the **original validated declaration**
+(:meth:`MultiplexedRecordingDeclaration.completed_block`, so the operator's own ``stated_by`` /
+``stated_at`` / ``statement`` are the ones judged). The result is a separate typed
+``artifact_verification`` report; the stored fact is unaffected by what it says. A contradiction,
+an unverifiable or unreadable file, and even a verifier that raises or returns no typed report
+are all reported as a stored run with the verification outcome (or an explicit verification
+unknown), never as a re-record, a re-store, a retry or a cleanup.
+
 Nothing here runs at import time: no window is read, no message posted, no file written.
 """
 
@@ -67,6 +77,11 @@ from udv_echo_process.acquire.actuator import (
     WindowTarget,
 )
 from udv_echo_process.acquire.driver import Win32Actuator
+from udv_echo_process.acquire.mpx_artifact import (
+    MpxArtifactReport,
+    MpxVerdict,
+    verify_mpx_artifact,
+)
 from udv_echo_process.acquire.store_completed import (
     CompletedBlockDeclaration,
     CompletedStoreResult,
@@ -227,6 +242,13 @@ class MultiplexedRecordingResult(ValueModel):
     #: The store-only command's result, when it returned one. ``None`` on every other path.
     store: CompletedStoreResult | None = None
     stored_path: Path | None = None
+    #: The post-store check of ``stored_path`` against the **original** declaration. ``None``
+    #: before a store, and after one only when the verifier itself failed
+    #: (``artifact_verification_error`` then says so): a verification unknown, never a store
+    #: failure and never a reason to act twice.
+    artifact_verification: MpxArtifactReport | None = None
+    #: ``Type: message`` from a verifier that raised. Empty when the check ran.
+    artifact_verification_error: str = ""
     #: Whether :func:`…store_completed.store_completed` was invoked at all.
     store_invoked: bool = False
     #: The original failure text, ``Type: message`` — empty when nothing failed.
@@ -243,6 +265,14 @@ class MultiplexedRecordingResult(ValueModel):
         """Whether a new entry attributed to the requested name appeared."""
         return self.stage is MpxStage.STORED
 
+    @property
+    def artifact_consistent(self) -> bool:
+        """Whether the stored artifact matched the original declaration (never a store test)."""
+        return (
+            self.artifact_verification is not None
+            and self.artifact_verification.verdict is MpxVerdict.CONSISTENT
+        )
+
     def summary(self) -> str:
         """One line for a log: what the run established, or why it stopped and what is owed."""
         head = (
@@ -252,6 +282,16 @@ class MultiplexedRecordingResult(ValueModel):
         )
         if self.stored and self.store is not None:
             head += f" {self.stored_path}; {self.store.summary()}"
+            if self.artifact_verification is not None:
+                head += (
+                    f"; artifact verification {self.artifact_verification.verdict.value} "
+                    f"(sha256 {self.artifact_verification.file_sha256 or 'unknown'})"
+                )
+            elif self.artifact_verification_error:
+                head += (
+                    "; artifact verification unknown: "
+                    f"{self.artifact_verification_error}"
+                )
         elif self.reason:
             head += f" — {self.reason}"
         if self.owed:
@@ -310,6 +350,37 @@ def _positive_seconds(label: str, value: float) -> float:
     return float(value)
 
 
+def _post_store_verification(
+    verify: Callable[[Path, CompletedBlockDeclaration], MpxArtifactReport],
+    path: Path,
+    declaration: CompletedBlockDeclaration,
+) -> tuple[MpxArtifactReport | None, str]:
+    """Check the stored file, turning any verifier failure into an explicit unknown.
+
+    The store has already happened, so nothing here may undo it: a verifier that raises is
+    reported as ``(None, "Type: message")`` rather than escaping to the caller's refusal
+    boundary, and no retry, re-store or cleanup follows.
+
+    The report is also checked at this boundary. A verifier is a caller-supplied seam, so a
+    ``None`` or a wrongly typed return (a ``dict``, a bare verdict) is a *report-less* check,
+    not a consistent one: it becomes the same explicit verification unknown with a reason
+    naming what arrived. Reading ``.verdict`` — or ``.clauses`` downstream — off such a value
+    must never be the way the caller finds out, so the stored facts and path are returned
+    untouched beside ``(None, reason)``.
+    """
+    try:
+        report = verify(path, declaration)
+    except Exception as exc:  # noqa: BLE001 - a post-store verification failure is a report
+        return None, f"{type(exc).__name__}: {exc}"
+    if not isinstance(report, MpxArtifactReport):
+        arrived = "None" if report is None else type(report).__name__
+        return None, (
+            f"the artifact verifier returned {arrived} where an MpxArtifactReport was "
+            "required, so the stored file's content was not verified"
+        )
+    return report, ""
+
+
 def record_multiplexed(
     name: str,
     directory: Path,
@@ -326,6 +397,9 @@ def record_multiplexed(
     class_name: str = MAIN_CLASS,
     clock: Callable[[], float] = time.monotonic,
     sleep: Callable[[float], None] = time.sleep,
+    verify_artifact: Callable[
+        [Path, CompletedBlockDeclaration], MpxArtifactReport
+    ] = verify_mpx_artifact,
     notes: list[str] | None = None,
 ) -> MultiplexedRecordingResult:
     """One ``Record``, the application's own completion, one store — or a report saying why not.
@@ -341,6 +415,12 @@ def record_multiplexed(
     a row the vocabulary does not settle, a deadline that expired with the recording still
     running, and a store that failed are all facts the operator has to act on, and none of them
     triggers a second attempt or a cleanup press.
+
+    Once the store returns a path, that exact path is checked against the original validated
+    declaration and the typed report is carried beside the stored facts. The check cannot change
+    the stored stage, cannot fail the run, and never causes a second Record, store or cleanup;
+    a verifier that raises or returns no typed report leaves an explicit verification unknown
+    instead.
     """
     try:
         declaration = MultiplexedRecordingDeclaration.model_validate(declaration)
@@ -610,6 +690,30 @@ def record_multiplexed(
             ),
         )
 
+    # --- the stored artifact, against the original declaration (never a second action) ------
+    # The store already succeeded, so this cannot change the stage: a contradiction, an
+    # unverifiable/unreadable file or a raising verifier are all reported beside a stored run.
+    artifact_verification, verification_error = _post_store_verification(
+        verify_artifact, stored.stored_path, declaration.completed_block()
+    )
+    verification_owed: tuple[str, ...] = ()
+    if artifact_verification is None:
+        verification_owed = (
+            (
+                "the stored file's content was not verified against the declaration "
+                f"({verification_error or 'no reason reported'}); the file remains stored at "
+                "the reported path and is neither re-recorded nor rewritten"
+            ),
+        )
+    elif artifact_verification.verdict is not MpxVerdict.CONSISTENT:
+        verification_owed = (
+            (
+                "the stored file's artifact verification is "
+                f"{artifact_verification.verdict.value}, not consistent: the file remains "
+                "stored at the reported path and is neither re-recorded nor re-stored"
+            ),
+        )
+
     return MultiplexedRecordingResult(
         stage=MpxStage.STORED,
         declaration=declaration,
@@ -622,6 +726,8 @@ def record_multiplexed(
         completion_state=completion_state,
         store=stored,
         stored_path=stored.stored_path,
+        artifact_verification=artifact_verification,
+        artifact_verification_error=verification_error,
         store_invoked=True,
         driver_notes=tuple(getattr(live, "warnings", ())),
         notes=(
@@ -631,5 +737,5 @@ def record_multiplexed(
                 "Disable multiplexer, Channels menu or parameter write"
             ),
         ),
-        owed=(MPX_MODE_NOT_READ,),
+        owed=(MPX_MODE_NOT_READ,) + verification_owed,
     )

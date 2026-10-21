@@ -694,6 +694,25 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     raise SystemExit(0)
 
 
+def _print_artifact_clauses(report) -> None:
+    """Print every clause that did not come out consistent, one line each (human output)."""
+    if report is None:
+        return
+    for clause in report.clauses:
+        if clause.status is not mpx_artifact.MpxVerdict.CONSISTENT:
+            print(f"  {clause.status.value}: {clause.subject}: {clause.detail}")
+
+
+def _artifact_exit_code(report) -> int:
+    """The artifact check's own exit code, shared by every command that prints one."""
+    return {
+        mpx_artifact.MpxVerdict.CONSISTENT: 0,
+        mpx_artifact.MpxVerdict.CONTRADICTED: 1,
+        mpx_artifact.MpxVerdict.UNVERIFIABLE: 3,
+        mpx_artifact.MpxVerdict.UNREADABLE: 4,
+    }[report.verdict]
+
+
 def _acquire_report(value: object, as_json: bool) -> None:
     """Print a report: JSON for a machine, one ``field: value`` line each for a person."""
     if hasattr(value, "model_dump"):
@@ -1655,7 +1674,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "record-multiplexed",
         help=(
             "one 'Record' on an operator-enabled multiplexer, the application's own completion, "
-            "one store (never Stop)"
+            "one store, then a check of the stored file against the same declaration (never Stop)"
         ),
     )
     record_multiplexed_parser.add_argument(
@@ -2061,18 +2080,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _acquire_report(artifact_report, True)
                 else:
                     print(artifact_report.summary())
-                    for clause in artifact_report.clauses:
-                        if clause.status is not mpx_artifact.MpxVerdict.CONSISTENT:
-                            print(
-                                f"  {clause.status.value}: {clause.subject}: "
-                                f"{clause.detail}"
-                            )
-                code = {
-                    mpx_artifact.MpxVerdict.CONSISTENT: 0,
-                    mpx_artifact.MpxVerdict.CONTRADICTED: 1,
-                    mpx_artifact.MpxVerdict.UNVERIFIABLE: 3,
-                    mpx_artifact.MpxVerdict.UNREADABLE: 4,
-                }[artifact_report.verdict]
+                    _print_artifact_clauses(artifact_report)
+                code = _artifact_exit_code(artifact_report)
         elif args.command == "record-multiplexed":
             try:
                 mpx_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
@@ -2099,6 +2108,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _acquire_report(mpx_result, True)
                 else:
                     print(mpx_result.summary())
+                    _print_artifact_clauses(mpx_result.artifact_verification)
                 if not mpx_result.stored:
                     # A recording that started and did not end in a store is a result, not a
                     # refusal: the instrument may still be recording, so the reason and what it
@@ -2108,6 +2118,26 @@ def acquire_main(argv: list[str] | None = None) -> None:
                         file=sys.stderr,
                     )
                     code = 1
+                elif mpx_result.artifact_verification is None:
+                    # The store succeeded; only its post-store check failed. Exit 3 is the
+                    # "unverifiable" code: the file is stored, but nothing is claimed about it.
+                    print(
+                        f"udv-acquire: stored {mpx_result.stored_path} but artifact "
+                        f"verification failed ({mpx_result.artifact_verification_error}); the "
+                        "file was stored once and is neither rewritten nor re-stored",
+                        file=sys.stderr,
+                    )
+                    code = 3
+                else:
+                    code = _artifact_exit_code(mpx_result.artifact_verification)
+                    if code:
+                        print(
+                            f"udv-acquire: stored {mpx_result.stored_path} but artifact "
+                            f"verification is "
+                            f"{mpx_result.artifact_verification.verdict.value}; the file was "
+                            "stored once and is neither rewritten nor re-stored",
+                            file=sys.stderr,
+                        )
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(

@@ -1,8 +1,10 @@
-# Offline multiplexed artifact check (`acquire mpx-check`)
+# Multiplexed artifact verification (`acquire mpx-check`, `record-multiplexed`)
 
 `acquire mpx-check` verifies one **already-stored** multiplexed `.BDD` against the
-operator's completed-block declaration. It is offline: no window, no instrument, no
-network, and nothing written. It reuses the existing `io.load` decoder and the existing
+operator's completed-block declaration. `acquire record-multiplexed` runs the same
+check automatically on the file its own store just produced. Both are offline from
+the instrument's point of view: no window, no instrument, no network, and nothing
+written. Both reuse the existing `io.load` decoder and the existing
 `CompletedBlockDeclaration`; no word parser is added.
 
 ```bash
@@ -38,6 +40,35 @@ and `abs_max` over finite cells.
 coverage**: it is not the requested block duration and it makes no claim that no profile
 is missing or that the sampling rate was honoured.
 
+## Automatic post-store check (`record-multiplexed`)
+
+After `record-multiplexed`'s one store returns a path, that **exact** returned path is
+decoded with the same verifier and compared with the **original validated
+declaration** the run began with — its channels, its per-channel profile count, and
+its own `stated_by` / `stated_at` / `statement` provenance. The run's result carries
+this as a separate typed `artifact_verification` report next to `stored_path`,
+`store` and the declaration.
+
+The stored fact does not depend on the verdict:
+
+- `consistent`, `contradicted`, `unverifiable` and `unreadable` are all reported on a
+  run whose `stage` is `stored`;
+- a verifier that raises is reported as an explicit verification unknown
+  (`artifact_verification: null` with `artifact_verification_error` set), never as a
+  store failure and never as a pre-press refusal (exit 2);
+- nothing is re-recorded, re-stored, retried or cleaned up, whatever the check says.
+
+CLI exit codes for `record-multiplexed`: `0` only when the block was stored **and**
+the artifact was `consistent`; `1` stored but `contradicted`; `3` stored but
+`unverifiable`, or the verification itself failed; `4` stored but `unreadable`. The
+nonzero messages name the saved path and state that the file was stored once and is
+neither rewritten nor re-stored. The existing mode-unknown obligation is still
+reported on every stored run.
+
+`store-completed` (the store-only sibling) is unchanged: its legacy workflow returns
+one store result, and its CLI contract was not asked to grow an exit-code
+interpretation of the stored bytes.
+
 ## Limits
 
 - **No ordering or rolling claim.** `sequential` is the decoded multiplexer-enable bit,
@@ -67,5 +98,6 @@ is missing or that the sampling rate was honoured.
   size. Disagreement reports the actual digest on both sides. If the bytes changed, the
   verdict is `unreadable` and no clause is called consistent. This is content identity,
   not proof the file was never rewritten with the same bytes.
-- This command is an artifact check only; it is not wired into the recording or store
-  pipeline.
+- This is an artifact check only. `record-multiplexed` runs it after its own store; it is
+  never a recording, stopping, re-storing or cleanup step, and `store-completed` does not
+  run it.
