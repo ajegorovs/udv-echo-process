@@ -107,6 +107,11 @@ Measured facts a fresh reader would otherwise re-derive:
   cells across four channels and gates 0/1/5/20/41, verified to fail on a
   255→256 echo-scale mutation; F3 reworded in the fixture README, the test
   docstring and this plan.
+- **Review round 2 (2026-10-21) answered:** F4 — `sample_id` was `arange` over
+  each series, renumbering a quantity that skipped a block; it is now the source
+  block row, so both quantities share an id for the block they share and a gap
+  stays a gap (pre-fix echo `[0, 1]` against velocity `[0, 1, 2]`; now `[0, 2]`).
+  No artifact id moved, because a gapless series has `rows == arange`.
 - **Identity regression checked:** the `origin/master` reader and this branch's
   reader were run over all 176 committed `data/**` BDD bytes — 175 give identical
   recording *and* artifact ids (173 single-stream files plus the two 4-channel
