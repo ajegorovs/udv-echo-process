@@ -716,7 +716,11 @@ def read(path: Path) -> ArtifactBundle:
                 depth,
                 values,
                 acquisition=AcquisitionIndex(
-                    sample_id=np.arange(time_s.shape[0], dtype=np.int64),
+                    # sample_id is the source acquisition row this series row came
+                    # from (plan §6.4), not its position in this series: a quantity
+                    # that skips blocks keeps the gaps, so the same block carries
+                    # the same id in every quantity of the channel (review F4).
+                    sample_id=rows,
                     acquisition_time_s=time_s,
                 ),
             )

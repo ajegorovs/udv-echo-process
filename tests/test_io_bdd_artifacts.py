@@ -761,6 +761,13 @@ def test_dual_profile_streams_share_the_timestamp_and_gate_axis(channel):
     echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
     assert np.array_equal(velocity.data.time_s, echo.data.time_s)
     assert np.array_equal(velocity.data.gate_depths_mm, echo.data.gate_depths_mm)
+    # Both quantities carry the same source-row identity for the same block.
+    assert np.array_equal(
+        velocity.data.acquisition.sample_id, echo.data.acquisition.sample_id
+    )
+    assert np.array_equal(
+        velocity.data.acquisition.sample_id, np.arange(500, dtype=np.int64)
+    )
     assert velocity.config.pulse_repetition_freq_hz == (
         echo.config.pulse_repetition_freq_hz
     )
@@ -1001,6 +1008,16 @@ def test_a_quantity_absent_from_some_blocks_keeps_its_own_rows(tmp_path):
     assert velocity.data.time_s.shape[0] == 3
     assert echo.data.time_s.shape[0] == 2
     assert np.array_equal(echo.data.time_s, velocity.data.time_s[[0, 2]])
+    # sample_id is the source acquisition row, so a skipped block leaves a gap in
+    # echo's ids instead of renumbering them; both quantities agree on the block
+    # they share (review F4).
+    assert velocity.data.acquisition.sample_id.tolist() == [0, 1, 2]
+    assert echo.data.acquisition.sample_id.tolist() == [0, 2]
+    assert (
+        echo.data.acquisition.sample_id[1]
+        == velocity.data.acquisition.sample_id[2]
+        == 2
+    )
     # The first echo row is the block-1 payload (200 counts) and the second is the
     # block-3 payload (90 counts): a shifted mapping would repeat one of them.
     assert echo.data.values[0, 0] == pytest.approx(200 * 2048 / 255)
