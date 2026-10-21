@@ -251,6 +251,23 @@ record update failed reports `trial_record_phase: "obligation"` — the file sti
 pre-write obligation, and that is what the next run reads. Logs from sequential dispatches share a
 slug and overwrite each other, so copy each aside before the next run.
 
+**2g. Take the popup's picture as evidence, and never let it become a reading.**
+`acquire channels-read --capture-dir DIR` is the packaged capture: it crops the popup's **own**
+rect — the one the structural report resolved, never a constant box — out of two whole-screen
+frames into `DIR/capture-NNN/`, holding both frames to target handle/rect, foreground,
+not-minimised and same-popup-handle guards and bracketing all five amounts across the capture.
+It reads nothing: the caption stays `UNKNOWN` with `recognition: NOT_PERFORMED`, because these
+captions are paint and there is no validated glyph reader — so drop the operator's stated caption
+into the **operator's** column and never into the fact column, however confident the phrase
+sounds. Two exit codes, two different failures: **2** is an unreadable structural report, **3**
+is a capture that could not be attributed (blank/one-colour crop, frames differ, a guard failed,
+a number moved) — the frames stay on disk with their reasons on stderr. Re-running claims a fresh
+`capture-NNN/`, so earlier frames survive; do not "clean up" a directory before a second attempt.
+What a `status: ok` capture still does not establish: pixel alignment under display scaling
+(refused when the grab's bitmap size disagrees with the reported virtual screen, 1:1 only at
+100 %), atomic stillness (two frames cannot distinguish a screen that changed and changed back),
+or any authority to press anything.
+
 **3. Verify with a coupled observable, never with an echo.** Reading back the field you just
 wrote only proves the text buffer changed. Pick a value the app *recomputes from* that
 parameter (a status-bar readout, a derived count, a timestamp interval, the parameters

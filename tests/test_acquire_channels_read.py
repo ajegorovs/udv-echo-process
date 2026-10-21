@@ -519,3 +519,70 @@ def test_the_cli_exits_two_on_an_unreadable_screen_and_says_why(
     captured = capsys.readouterr()
     assert json.loads(captured.out)["surface"] == "absent"
     assert "never opens one" in captured.err
+
+
+def test_the_default_backend_states_the_real_virtual_screen_beside_the_grab(
+    monkeypatch,
+) -> None:
+    """``_grab_screen`` reads its metrics through ``win32api`` — the module that owns them.
+
+    The four reads are the session's own: the spy delegates to the real ``GetSystemMetrics``,
+    so the origin and size asserted below are measured, not invented. Only the screenshot is
+    substituted, which is what keeps the default backend exercisable without a desktop or a
+    recording. ``win32gui`` exposes no ``GetSystemMetrics``, so the earlier import failed with
+    ``AttributeError`` on any live run while every injected-backend test stayed green.
+
+    This pins the metadata contract only. Equal size says the bitmap container and the
+    reported virtual desktop agree; it does **not** establish that cropped screen coordinates
+    line up with pixels on a scaled or multi-monitor desktop — that alignment remains untested
+    here and must not be inferred from this test passing.
+    """
+    # ``pywin32`` and Pillow are the *instrument* extras, so this test is the one place in the
+    # suite that needs them: skip rather than fail on a clone that cannot reach the instrument
+    # (Linux/CI), instead of turning an importable-only dependency into a broken test file.
+    win32api = pytest.importorskip(
+        "win32api",
+        reason="the default grab backend reads the virtual screen through pywin32",
+    )
+    win32gui = pytest.importorskip(
+        "win32gui",
+        reason="the default grab backend reads window state through pywin32",
+    )
+    image_module = pytest.importorskip(
+        "PIL.Image",
+        reason="the default grab backend needs Pillow (the acquire extra)",
+    )
+    image_grab = pytest.importorskip(
+        "PIL.ImageGrab",
+        reason="the default grab backend needs Pillow (the acquire extra)",
+    )
+
+    real_metrics = win32api.GetSystemMetrics
+    calls: list[int] = []
+
+    def measured(index: int) -> int:
+        calls.append(index)
+        return real_metrics(index)
+
+    assert not hasattr(win32gui, "GetSystemMetrics"), (
+        "win32gui grew GetSystemMetrics: revisit the backend's metric source"
+    )
+    monkeypatch.setattr(win32api, "GetSystemMetrics", measured)
+    grabbed: dict[str, object] = {}
+    fixture = image_module.new(
+        "RGB",
+        (max(int(real_metrics(78)), 1), max(int(real_metrics(79)), 1)),
+        (10, 20, 30),
+    )
+
+    def grab(**kwargs: object) -> object:
+        grabbed.update(kwargs)
+        return fixture
+
+    monkeypatch.setattr(image_grab, "grab", grab)
+    frame = channels_read._grab_screen()
+    assert calls == [76, 77, 78, 79]
+    assert frame.origin == (real_metrics(76), real_metrics(77))
+    assert frame.size == (real_metrics(78), real_metrics(79))
+    assert frame.image is fixture
+    assert grabbed == {"all_screens": True}

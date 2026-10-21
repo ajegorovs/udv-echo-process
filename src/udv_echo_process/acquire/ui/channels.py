@@ -44,6 +44,7 @@ import math
 from enum import Enum
 from typing import Literal
 
+from udv_echo_process.acquire.channels_capture import CaptureEvidence
 from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode, UiTree
 from udv_echo_process.models.base import ValueModel
 
@@ -241,6 +242,9 @@ class ChannelsRead(ValueModel):
     channel_ticks: tuple[ChannelCell, ...] = ()
     toggles: tuple[ModeToggle, ...] = ()
     entry: EntryRow | None = None
+    #: Capture evidence, and only when the caller asked for it (``--capture-dir``). ``None`` is
+    #: the original single-read report: this field is additive and never a reading.
+    capture: CaptureEvidence | None = None
     caption_source: str = CAPTION_SOURCE
     uncertainties: tuple[str, ...] = ()
     refusals: tuple[str, ...] = ()

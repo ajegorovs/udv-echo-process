@@ -83,6 +83,7 @@ what the ported probe scripts could not be — they reached into the driver's pr
 | command | what it does | writes to the app? |
 |---|---|---|
 | `acquire channels-read --json` | reads an operator-opened Channels popup without opening, closing or clicking anything; numeric texts are queried, painted tick/toggle states remain UNKNOWN | no |
+| `acquire channels-read --capture-dir DIR --json` | the same read **plus capture evidence**: two whole-screen frames around a re-read, the popup's own rect (from that report, never a constant) cropped out of each as lossless PNG into a freshly claimed `capture-NNN/` directory, with before/after target, foreground, non-minimised and popup-rect guards and a bracketing of all five amounts. The caption stays `UNKNOWN` — no OCR runs, so the picture is evidence, not a reading | no |
 | `acquire channels-repeat --expect N --value M --baseline B --mpx-disabled --trial-record PATH` | one guarded write of the operator-opened popup's `Repeat`: requires the popup to state `--expect`, commits `--value` once, and claims its own trial record first; persistence stays `unknown` until the popup is reopened. One record per invocation — a forward write and its restore are two records, each passing the **same original** `--baseline`, reconciled by reading them in order | only the one `Repeat` field |
 | `acquire status` | read-only inventory: window class/rect/maximised, screen, panels, visible control count, strip view, overlay, `layout_note`, cursor, foreground | no |
 | `acquire channel <n>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, and reports the channel's mode (manual/assisted) with the panel counts | only if the channel differs |
@@ -118,6 +119,16 @@ nothing to do.
 `UDV_STORE_DIR` (the cycle **asserts** the Store dialog against it, so a wrong value refuses the
 point rather than scattering files). `--json` prints a machine-readable report — notes then go
 to stderr, so stdout stays parseable — and the exit codes are 0 ok, 1 a refused point, 2 usage.
+
+`channels-read` splits its two failures on purpose. **Exit 2** is a structural report that could
+not be read (no popup, wrong band order, amount stated as empty text); **exit 3** is a
+`--capture-dir` capture that could not be attributed — a blank or one-colour crop, two frames
+that differ, a failed target/foreground/minimised/same-popup guard, or an amount that moved
+across the frames. The capture's reasons go to stderr, its frames stay on disk as evidence, and
+its `status` is `UNKNOWN`, so a still-readable popup never turns a bad picture into exit 0 and a
+bad read never hides a bad picture. Nothing in either path reads glyphs: the caption is
+`UNKNOWN`/`NOT_PERFORMED`, and a caption an operator states stays their statement. Each run
+claims a fresh `capture-NNN/` directory, so a re-run never overwrites the earlier frames.
 
 ### What is still a probe
 

@@ -107,6 +107,12 @@ acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job l
   messages, so a gesture, a geometry or a painted caption can only be *verified*
   on a machine that runs that application. Everything else about it — planning,
   the cycle, verification, the log — runs and is tested anywhere.
+- `acquire channels-read --capture-dir DIR` is the one picture-taking command in
+  the package: it crops the operator-opened `Channels` popup's own rect out of two
+  guarded frames into `DIR/capture-NNN/` as lossless PNG, brackets every numeric
+  amount across the capture, and reports the caption as `UNKNOWN` because no
+  recognition runs. A capture that cannot be attributed exits 3, an unreadable
+  popup exits 2, and neither is evidence about mode, ticks or setup.
 
 For the package map, boundaries, public entry points, and testing workflow, see
 [`docs/architecture.md`](docs/architecture.md). The precise artifact contracts

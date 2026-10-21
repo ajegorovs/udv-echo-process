@@ -878,6 +878,37 @@ fixtures. The offline suite in `tests/test_acquire_channels_repeat.py` holds the
 separation, both write directions, the undeclared-baseline record, the unknown-failure
 instructions, the failed-record-update phase and the timestamp shape.
 
+### 12.10 Acceptance, 2026-10-21 — capture evidence for the Channels popup (`--capture-dir`)
+
+One public invocation on the same operator-opened full Channels popup:
+`acquire channels-read --capture-dir DIR --json` returned **exit 0** with `readable: true`,
+`surface: settings_popup`, the measured eight-band signature, and repeat `1` / start channel `1` /
+apply-from `1` / profiles `50` / seconds `2.01`. Its additive `capture` record stated
+`status: "ok"`, `stable: true`, `directory: …/capture-001`, `frames:` the two saved
+`channels-roi-frame-{1,2}.png` crops of the popup's own rect, and `unknown_reasons: []`; all five
+amounts bracketed consistently — same text, value, edit handle and owning widget before and after
+the frames. The caption is **`UNKNOWN`** with `recognition: NOT_PERFORMED`: nothing in this path
+reads glyphs, so the record says *this is that popup, the screen was still, these numbers did not
+move* and never what the caption says. `setup_verified` stays `false`; an operator's stated
+caption is not promoted to a native fact.
+
+**3 and 2 are different failures.** **3** is a capture that could not be attributed: the
+structural read succeeded but a frame was blank or one colour, the two frames differed, a guard
+failed (target handle/rect, foreground, not-minimised, same popup handle and rect across the
+capture) or an amount moved — the reasons are printed to stderr and the frames stay on disk as
+evidence. **2** remains an unreadable structural report (measured by the same command with the
+popup closed: exit 2, `surface: absent`, no image taken). A capture failure is therefore never
+reported as a bad reading, and a bad reading is never reported as a capture failure.
+
+**Not established:** alignment between cropped screen coordinates and pixels under display
+scaling (the default backend reads the virtual-screen origin/size from `win32api` and refuses a
+frame whose bitmap size disagrees, but 100 % scaling is the only case measured as 1:1); atomic
+sample stability (two frames of the same ROI — a screen that changed and changed back between the
+grabs is indistinguishable from a still one); and any action authority (no press, commit, mode
+change, popup open or close). The report and the two PNGs are generated local evidence, not
+committed fixtures; `tests/test_acquire_channels_capture.py` covers the workflow, both exit
+codes and the guards offline against an injected image backend.
+
 ---
 
 ## Live validation (simulator)

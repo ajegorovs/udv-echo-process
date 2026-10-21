@@ -1342,6 +1342,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
     no settings or tick state inferred. A popup that is absent, ambiguous, behind a dialog, of
     another band order, or stating an amount as empty text is reported with refusals and exits 2.
 
+    ``--capture-dir`` adds **capture evidence** to that read and nothing more: two whole-screen
+    frames are taken around a second inspection of the same popup, the popup's own rect (from
+    the structural report, never a constant) is cropped and saved as PNG, and the pair is held
+    to before/after target, foreground, non-minimised and popup-rect guards plus a numeric
+    bracketing of every amount. A capture that cannot be attributed, that is blank, that differs
+    between the two frames, or whose numbers moved is reported ``status: UNKNOWN`` with its
+    reasons and exits 3. No OCR runs: the caption stays ``UNKNOWN`` and an operator's stated
+    caption is never promoted to a native fact. Without the flag the report is unchanged.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1405,6 +1414,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
     channels_read_parser.add_argument("--json", action="store_true")
+    channels_read_parser.add_argument(
+        "--capture-dir",
+        default=None,
+        help=(
+            "also save lossless PNG crops of the popup's own rect from two guarded frames "
+            "into this directory, with before/after target, foreground, non-minimised and "
+            "numeric guards; recognises nothing, so the caption stays UNKNOWN"
+        ),
+    )
 
     channels_repeat_parser = subcommands.add_parser(
         "channels-repeat",
@@ -1733,13 +1751,22 @@ def acquire_main(argv: list[str] | None = None) -> None:
             # One read of the operator-opened popup and nothing else: no press, no hover, no
             # commit, no popup opened or closed. The report is printed either way, because the
             # refusals are the useful part of an unreadable screen; the exit code carries the
-            # verdict (0 a successful inspection, 2 unreadable) and never means "setup verified".
-            channel_report = channels_read.read_channels()
+            # verdict (0 a successful inspection, 2 unreadable, 3 a capture that could not be
+            # attributed) and never means "setup verified".
+            channel_report = channels_read.read_channels(capture_dir=args.capture_dir)
             _acquire_report(channel_report, as_json)
             if not channel_report.readable:
                 for refusal in channel_report.refusals:
                     print(f"udv-acquire: {refusal}", file=sys.stderr)
                 code = 2
+            elif channel_report.capture is not None:
+                # The capture is opt-in, so its verdict is its own: an inspection that succeeded
+                # beside a capture that could not be attributed exits 3 rather than 0, and the
+                # caption is still unknown because nothing here recognises glyphs.
+                if channel_report.capture.status != "ok":
+                    for reason in channel_report.capture.unknown_reasons:
+                        print(f"udv-acquire: capture: {reason}", file=sys.stderr)
+                    code = 3
         elif args.command == "channels-repeat":
             repeat_result = channels_repeat.acquire_repeat(
                 expect=args.expect,
