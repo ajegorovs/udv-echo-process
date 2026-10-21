@@ -256,10 +256,11 @@ slug and overwrite each other, so copy each aside before the next run.
 rect — the one the structural report resolved, never a constant box — out of two whole-screen
 frames into `DIR/capture-NNN/`, holding both frames to target handle/rect, foreground,
 not-minimised and same-popup-handle guards and bracketing all five amounts across the capture.
-It reads nothing: the caption stays `UNKNOWN` with `recognition: NOT_PERFORMED`, because these
-captions are paint and there is no validated glyph reader — so drop the operator's stated caption
-into the **operator's** column and never into the fact column, however confident the phrase
-sounds. Two exit codes, two different failures: **2** is an unreadable structural report, **3**
+The native caption stays `UNKNOWN` with `recognition: NOT_PERFORMED`. A separate
+`capture.visual_caption` may recognize photographed channels 1, 2 or 10 by exact templates;
+it is visual evidence, never native text or write authority. Keep operator declarations separate.
+See `docs/dop3000/painted-caption-recognition.md`.
+Two exit codes, two different failures: **2** is an unreadable structural report, **3**
 is a capture that could not be attributed (blank/one-colour crop, frames differ, a guard failed,
 a number moved) — the frames stay on disk with their reasons on stderr. Re-running claims a fresh
 `capture-NNN/`, so earlier frames survive; do not "clean up" a directory before a second attempt.
@@ -267,6 +268,38 @@ What a `status: ok` capture still does not establish: pixel alignment under disp
 (refused when the grab's bitmap size disagrees with the reported virtual screen, 1:1 only at
 100 %), atomic stillness (two frames cannot distinguish a screen that changed and changed back),
 or any authority to press anything.
+
+**2h. The sibling writer — `Profiles` — is offline verified only, and its channel is a declaration.**
+`acquire channels-profiles --expect N --value M --operator-channel C --baseline B --mpx-disabled
+--trial-record PATH` writes the same popup's per-channel `Acquire … Profiles` exactly once. **No
+live acceptance exists for this slot**: it has never been run against the instrument, so do not
+report it as rehearsed, and do not borrow §12.9's `Repeat` acceptance for it. The flags that differ
+from `channels-repeat` are the ones that carry the limits:
+
+- `--operator-channel` is a **declaration, not a proof**. The group's channel is painted in a
+  caption (`For the current channel (channel N)`) and the tree states nothing, so the read leaves
+  `per_channel.channel` `UNKNOWN`; the argument is checked only against the numbers the popup
+  paints and `channel_verified` is `Literal[False]`. Never quote a declared channel as measured.
+- `seconds` is **recomputed by the application** when the count changes, so it is not a preserved
+  fact: it is reported before/after, the fresh amount must be valid and positive, and a movement is
+  expected rather than a refusal. `repeat`, `start_channel`, `apply_from` are the preserved facts.
+- `--baseline B` is the trial's **original** count, on every invocation; it is never defaulted from
+  `--expect`, so a restore run does not owe an undo of itself. One exclusive record per invocation,
+  both records naming the same baseline.
+- **Only the operator's reopened popup closes the obligation.** The command never opens or closes
+  the popup, presses, records, retries or repairs; `persisted: "unknown"` and
+  `obligation_open: true` are the correct outcome of a write, and restoration plus the closing read
+  are the operator's by hand.
+
+**Why it stays supervised (state this precisely).** There is no *verified* automatic non-mutating
+route to reopen the popup and take the acceptance/restoration read. That missing verification — not
+a claim that such a route is impossible — is the blocker. Do not repeat the older framing that
+reopening must mutate or exit the process: the operator has repeatedly closed and reopened this
+popup by hand with success, and §12.10's capture now yields the popup's own frames, but visual
+caption recognition is **evidence only** (the separate `capture.visual_caption` field does not
+supply write authority). Do not answer this with a new autonomy predicate, a gate/"go" service or a
+threshold: the limits are one supervised binding, a reopened popup indistinguishable from the one
+read, child handles not identities after the tree changes, and `setup_verified: false`.
 
 **3. Verify with a coupled observable, never with an echo.** Reading back the field you just
 wrote only proves the text buffer changed. Pick a value the app *recomputes from* that

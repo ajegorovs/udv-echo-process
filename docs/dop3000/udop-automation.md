@@ -911,6 +911,82 @@ codes and the guards offline against an injected image backend.
 
 ---
 
+### 12.11 Offline verification — supervised `Profiles` writer (`channels-profiles`)
+
+**Status: OFFLINE VERIFIED, NO LIVE ACCEPTANCE.** `acquire channels-profiles` has never been run
+against the instrument. Everything below is established by the source and by
+`tests/test_acquire_channels_profiles.py` (67 focused tests pass across it and
+`tests/test_acquire_channels_repeat.py`; `ruff check src tests` clean) against injected surfaces.
+No popup was opened, no field was written, and no reopened read exists for this slot. The `Repeat`
+acceptance in §12.9 and the capture acceptance in §12.10 do **not** transfer: a different field, a
+different coupled amount, and a different obligation.
+
+Exact interface, from `uv run udv-acquire channels-profiles --help` (and the same command through
+`./tools/live/dispatch.sh -m udv_echo_process.cli acquire channels-profiles`):
+
+```
+--expect N              the profiles count the popup must state before any write (required)
+--value M               the profiles count to commit, once (required)
+--operator-channel C    the operator's declaration of which channel the amounts belong to (required)
+--baseline B            the trial's original profiles count (optional; omitted = none stated)
+--mpx-disabled          the operator's declaration that the multiplexer is disabled (required)
+--trial-record PATH     a path claimed exclusively; a directory gets channels-profiles-trial.json
+--json                  machine-readable report
+```
+
+- **The operator's channel is a declaration, never a proof.** The group box's channel lives in a
+  painted caption (`For the current channel (channel N)`) and the control tree states nothing for
+  it, so `per_channel.channel` stays `UNKNOWN`. `--operator-channel` is recorded verbatim, is
+  checked only against the channel numbers the popup itself paints (a number it does not offer is
+  refused with zero writes), and can never become `channel_verified` — that field is
+  `Literal[False]` by construction. The module reads no picture, so nothing here attributes the
+  amounts to a channel.
+- **`seconds` is coupled, not preserved.** Changing the profile count makes the application
+  recompute the neighbouring `… during seconds` amount, so it is **not** part of the verdict:
+  it is reported before and after, and the fresh post-write amount must be valid and strictly
+  positive, otherwise the stage is `write_unverified`. `repeat`, `start_channel` and `apply_from`
+  are the preserved facts; a movement there is reported (`written_other_facts_changed`) and is not
+  exit-0 evidence.
+- **`--baseline` is the trial's original count and is never defaulted from `--expect`.** This is
+  the defect §12.9 fixed for the repeat writer, carried over by construction: a restore run
+  (`--expect 8 --value 7 --baseline 7`) records `restores_baseline: true` instead of owing an undo
+  of itself. Each invocation claims its own record file exclusively (no ledger, no overwrite), so a
+  forward write and its restore are two records, both naming the same original baseline and
+  reconciled by reading them in order.
+- **Only the operator's reopened popup can close the obligation.** The post-write read comes from
+  the still-open popup, so `persisted` is `unknown` on every write and `obligation_open` stays
+  `true`. The command never opens, closes, presses, records, retries or repairs; the acceptance read
+  and any restoration are the operator's, by hand, after a close-and-reopen.
+- **Zero-write refusals** (raised `AcquisitionError`, nothing committed): not exactly one visible
+  instrument window; caption/overlay/stopped-row clauses at the binding; absent, clipped, dialog-
+  covered or unreadable popup; a profiles text that is not an integer count; a missing owning value
+  button; a channel argument the popup does not paint; a count that differs from `--expect`; an
+  invalid pre-write `seconds`. The caption/overlay/row/window clauses are then asked **again on a
+  fresh enumeration immediately before the commit**, so a recording or modal that appeared between
+  the reads refuses rather than being written through.
+
+**Autonomy blocker, stated precisely.** There is **no verified automatic non-mutating route to
+reopen the Channels popup and take the acceptance (and restoration) read**; that missing
+verification — not a claim that no such route can exist — is what keeps this workflow supervised.
+Two things must not be overclaimed in either direction: the operator has repeatedly closed and
+reopened this popup by hand with success, so manual reopening is a working step rather than an
+obstacle; and the capture path now yields the popup's own cropped frames (§12.10), so a caption
+*image* exists, but visual caption recognition is **evidence only** — `recognition: NOT_PERFORMED`,
+the caption stays `UNKNOWN`, and nothing in this repository reads glyphs to decide which channel or
+which state is on screen. Closing the gap would need a measured, non-mutating reopen/read-back
+route and a validated reader for those captions; neither has been established. No autonomy
+predicate, gate service or "go" framework is introduced for this, and no staleness threshold is
+invented: the observed limits are the ones the code and its tests state (one supervised binding, a
+popup closed and reopened between reads indistinguishable from the one read, child handles not
+identities after the tree changes, `setup_verified: false`).
+
+**Not established:** any live invocation, a persisted value, `seconds` behaviour on the real
+application, the coupled amount after a reopen, behaviour when the popup is reopened between reads,
+a second write in one trial, an application restart, or any downstream acquisition effect of the
+changed count. Generated reports from an offline run are test evidence, not fixtures.
+
+---
+
 ## Live validation (simulator)
 
 Three points were executed by the committed driver (`Win32Actuator`) on the

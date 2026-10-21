@@ -34,6 +34,7 @@ from pathlib import Path
 from udv_echo_process import run_all
 from udv_echo_process.acquire import (
     campaign,
+    channels_profiles,
     channels_read,
     channels_repeat,
     driver,
@@ -1357,6 +1358,22 @@ def acquire_main(argv: list[str] | None = None) -> None:
     amount, and it is never taken from what the caller declared. Without the flag the report is
     unchanged.
 
+    ``channels-profiles`` is the second supervised single-field write: the group box's
+    per-channel ``Acquire … Profiles`` amount, set from a declared ``--expect`` to a declared
+    ``--value`` **once**. The group's channel is caption-only and the tree states nothing, so the
+    operator declares it with a required ``--operator-channel``; that declaration is checked
+    against the channels the popup paints, is recorded as a declaration, and is never a verified
+    channel. It requires one bound instrument window, the instrument caption, no overlay, the
+    stopped row and the full readable settings popup, re-resolves the exact profiles edit and its
+    owner immediately before one commit, and refuses with zero writes on any mismatch. The
+    coupled ``seconds`` amount is reported before and after and must be valid and positive
+    afterwards — the application recomputes it when the count changes, so it is not required to
+    stay put; ``repeat``/``start``/``apply-from`` must, and a movement is reported. The trial
+    obligation is claimed on disk before the commit, ``--baseline`` is the trial's original count
+    (never this invocation's ``--expect``), and only the operator's fresh read from a reopened
+    popup closes it. It never presses anything, records nothing and retries nothing; a failure
+    that cannot be written to the record exits 1.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1440,7 +1457,10 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
     channels_repeat_parser.add_argument(
-        "--expect", type=int, required=True, help="the repeat the popup must state before any write"
+        "--expect",
+        type=int,
+        required=True,
+        help="the repeat the popup must state before any write",
     )
     channels_repeat_parser.add_argument(
         "--value", type=int, required=True, help="the repeat to commit, once"
@@ -1475,6 +1495,62 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
     channels_repeat_parser.add_argument("--json", action="store_true")
+
+    channels_profiles_parser = subcommands.add_parser(
+        "channels-profiles",
+        help=(
+            "set the Channels popup's per-channel Profiles from a declared count to another, "
+            "once (the operator declares the channel; persistence is unproven)"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--expect",
+        type=int,
+        required=True,
+        help="the profiles count the popup must state before any write",
+    )
+    channels_profiles_parser.add_argument(
+        "--value", type=int, required=True, help="the profiles count to commit, once"
+    )
+    channels_profiles_parser.add_argument(
+        "--operator-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of which channel the per-channel amounts belong to; "
+            "the popup's caption is painted and the tree states nothing, so this is never a "
+            "verified channel"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--baseline",
+        type=int,
+        default=None,
+        help=(
+            "the trial's original profiles count, which restoration owes; declare it on every "
+            "invocation of one trial so a restore run does not record its own starting count "
+            "as the baseline (omitted: the record states no baseline)"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-profiles-trial.json inside it): one record per invocation, so a forward "
+            "write and its restore are two records, each naming the same original --baseline; "
+            "reconcile by reading them in order. An existing record is never overwritten"
+        ),
+    )
+    channels_profiles_parser.add_argument("--json", action="store_true")
 
     channel_parser = subcommands.add_parser(
         "channel", help="verify the measurement channel (writes it only if it differs)"
@@ -1512,7 +1588,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
             "and nothing else)"
         ),
     )
-    store_completed_parser.add_argument("name", help="store file-name stem (collisions refused)")
+    store_completed_parser.add_argument(
+        "name", help="store file-name stem (collisions refused)"
+    )
     store_completed_parser.add_argument(
         "--channel",
         type=int,
@@ -1527,10 +1605,14 @@ def acquire_main(argv: list[str] | None = None) -> None:
         help="profiles per channel in the completed block, as the operator states them",
     )
     store_completed_parser.add_argument(
-        "--stated-by", required=True, help="who declares the completed block's channels/profiles"
+        "--stated-by",
+        required=True,
+        help="who declares the completed block's channels/profiles",
     )
     store_completed_parser.add_argument(
-        "--statement", default="", help="the operator's own words, kept raw for the report"
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
     )
     store_completed_parser.add_argument("--store-dir", default=None)
     store_completed_parser.add_argument("--json", action="store_true")
@@ -1786,6 +1868,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 notes=notes,
             )
             _acquire_report(repeat_result, as_json)
+            # A preserved fact that moved is the operator's business, not a detail of the JSON
+            # dump: name each one on stderr, because it is the reason the run is unsettled and
+            # a reader of the one-line summary has to see which fact moved.
+            for change in repeat_result.other_changes:
+                print(f"udv-acquire: other fact moved: {change}", file=sys.stderr)
+            for unreadable in repeat_result.other_facts_unreadable:
+                print(
+                    f"udv-acquire: other fact unreadable: {unreadable}", file=sys.stderr
+                )
             settled = (
                 channels_repeat.RepeatWriteStage.UNCHANGED,
                 channels_repeat.RepeatWriteStage.WRITTEN,
@@ -1797,6 +1888,41 @@ def acquire_main(argv: list[str] | None = None) -> None:
             # field read the new value. The failure and the restoration still owed are named.
             if repeat_result.stage not in settled or repeat_result.trial_record_error:
                 for owed in repeat_result.restoration_owed:
+                    print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+                code = 1
+        elif args.command == "channels-profiles":
+            profiles_result = channels_profiles.acquire_profiles(
+                expect=args.expect,
+                value=args.value,
+                operator_channel=args.operator_channel,
+                baseline=args.baseline,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(profiles_result, as_json)
+            # The preserved facts are the verdict's whole subject: ``seconds`` may legitimately
+            # move, so when a run is unsettled the one thing the operator must see is *which*
+            # fact moved (or could no longer be read) — on stderr, beside the owed lines.
+            for change in profiles_result.other_changes:
+                print(f"udv-acquire: other fact moved: {change}", file=sys.stderr)
+            for unreadable in profiles_result.other_facts_unreadable:
+                print(
+                    f"udv-acquire: other fact unreadable: {unreadable}", file=sys.stderr
+                )
+            # ``seconds`` legitimately moves when the count changes, so it is not part of the
+            # verdict; a preserved fact that moved is, and so is a failure that never reached
+            # the trial record. Either one leaves the run unfinished.
+            profiles_settled = (
+                channels_profiles.ProfilesWriteStage.UNCHANGED,
+                channels_profiles.ProfilesWriteStage.WRITTEN,
+                channels_profiles.ProfilesWriteStage.WRITTEN_SECONDS_RECOMPUTED,
+            )
+            if (
+                profiles_result.stage not in profiles_settled
+                or profiles_result.trial_record_error
+            ):
+                for owed in profiles_result.restoration_owed:
                     print(f"udv-acquire: owed: {owed}", file=sys.stderr)
                 code = 1
         elif args.command == "plan":

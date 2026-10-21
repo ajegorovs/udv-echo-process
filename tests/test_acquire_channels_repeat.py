@@ -151,6 +151,7 @@ class FakePopupActuator:
         overlay=None,
         on_read=None,
         on_commit=None,
+        on_caption=None,
         commit_error: Exception | None = None,
         close_after_commit: bool = False,
     ) -> None:
@@ -161,10 +162,12 @@ class FakePopupActuator:
         self.overlay = overlay
         self.on_read = on_read
         self.on_commit = on_commit
+        self.on_caption = on_caption
         self.commit_error = commit_error
         self.close_after_commit = close_after_commit
         self.binds = 0
         self.reads = 0
+        self.captions = 0
         self.commits: list[tuple[int, str, int | None]] = []
         self.warnings: list[str] = []
         self._target: WindowTarget | None = None
@@ -203,6 +206,9 @@ class FakePopupActuator:
         return row["text"]
 
     def window_caption(self) -> str:
+        self.captions += 1
+        if self.on_caption is not None:
+            self.on_caption(self)
         return self.caption
 
     def peek_overlay(self):
@@ -865,3 +871,98 @@ def test_the_reader_still_works_without_a_target_and_does_not_rebind_with_one(
         slot="repeat", attribution=Attribution(caption="x"), text="1", value=1
     )
     assert (slot.hwnd, slot.owner_hwnd) == (None, None)
+
+
+# ---------------------------------------------------------------------------------------------
+# a partial post-write read: what it did state is kept, what it did not is "unread"
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_fact_the_post_read_did_not_state_is_unread_not_a_movement(tmp_path) -> None:
+    """``profiles``/``seconds`` becoming unreadable is not ``profiles: '7' -> None``.
+
+    Before this rule the group box losing its measured band signature made the writer report
+    ``profiles: '7' -> None`` — a movement it never observed — and stage the write as
+    ``written_other_facts_changed`` on the strength of it.
+    """
+
+    def break_group(actuator: FakePopupActuator) -> None:
+        if actuator.reads == 3:
+            actuator.rows = tuple(row for row in SETTINGS_ROWS if row[0] != 1023)
+
+    actuator = FakePopupActuator(on_read=break_group)
+    result = _run(tmp_path, actuator, expect=1, value=2)
+
+    assert result.stage is RepeatWriteStage.WRITTEN
+    assert result.new_text == "2"
+    assert result.other_changes == ()
+    assert result.other_facts_unreadable == (
+        "apply_from: '1' -> unread",
+        "profiles: '7' -> unread",
+        "seconds: '0.28' -> unread",
+    )
+    assert result.other_facts_after == {"start_channel": "1"}
+    on_disk = _record(tmp_path)
+    assert on_disk["other_changes"] == []
+    assert on_disk["other_facts_unreadable"] == [
+        "apply_from: '1' -> unread",
+        "profiles: '7' -> unread",
+        "seconds: '0.28' -> unread",
+    ]
+
+
+def test_the_moved_fact_is_named_in_the_summary(tmp_path) -> None:
+    def move_profiles(actuator: FakePopupActuator) -> None:
+        actuator.texts[1027] = "8"
+
+    result = _run(
+        tmp_path, FakePopupActuator(on_commit=move_profiles), expect=1, value=2
+    )
+
+    assert result.other_changes == ("profiles: '7' -> '8'",)
+    assert "other facts moved: profiles: '7' -> '8'" in result.summary()
+
+
+def test_the_cli_names_the_moved_fact_on_stderr(tmp_path, monkeypatch, capsys) -> None:
+    def move_profiles(actuator: FakePopupActuator) -> None:
+        actuator.texts[1027] = "8"
+
+    actuator = FakePopupActuator(on_commit=move_profiles)
+    monkeypatch.setattr(channels_repeat, "Win32Actuator", lambda **kwargs: actuator)
+    with pytest.raises(SystemExit) as exit_info:
+        acquire_main(
+            [
+                "channels-repeat",
+                "--expect",
+                "1",
+                "--value",
+                "2",
+                "--mpx-disabled",
+                "--trial-record",
+                str(tmp_path),
+            ]
+        )
+
+    assert exit_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "udv-acquire: other fact moved: profiles: '7' -> '8'" in captured.err
+
+
+# ---------------------------------------------------------------------------------------------
+# the caption/overlay/ready clauses are asked again immediately before the commit
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_recording_that_starts_after_the_preflight_refuses_with_zero_writes(
+    tmp_path,
+) -> None:
+    def start_recording(actuator: FakePopupActuator) -> None:
+        if actuator.captions == 2:
+            actuator.strip = StripState(button_count=1, has_slider=False)
+
+    actuator = FakePopupActuator(on_caption=start_recording)
+    with pytest.raises(AcquisitionError, match="immediately before the commit"):
+        _run(tmp_path, actuator, expect=1, value=2)
+
+    assert actuator.commits == []
+    assert not (tmp_path / "trial").exists()

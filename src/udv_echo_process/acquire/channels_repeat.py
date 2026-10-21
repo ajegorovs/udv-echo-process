@@ -162,6 +162,8 @@ class ChannelRepeatResult(ValueModel):
     other_facts_after: dict[str, str] = Field(default_factory=dict)
     #: Facts that differ after the write — evidence, never repaired here.
     other_changes: tuple[str, ...] = ()
+    #: Facts the earlier read stated and the post-write read did not: unknown, never "gone".
+    other_facts_unreadable: tuple[str, ...] = ()
     writes: int = 0
     #: ``True`` when this write landed exactly on the declared trial baseline.
     restored_baseline: bool = False
@@ -179,7 +181,7 @@ class ChannelRepeatResult(ValueModel):
     notes: tuple[str, ...] = ()
 
     def summary(self) -> str:
-        """One log line: the stage, the two readings, the trial baseline, and what is owed."""
+        """One log line: the stage, the two readings, the facts that moved, and what is owed."""
         baseline = "unstated" if self.baseline is None else str(self.baseline)
         head = (
             f"channels repeat {self.old_text or '?'} -> "
@@ -187,9 +189,13 @@ class ChannelRepeatResult(ValueModel):
             f"(stage {self.stage.value}, writes {self.writes}, persisted {self.persisted}, "
             f"trial baseline {baseline})"
         )
-        return (
-            "; ".join((head, *self.restoration_owed)) if self.restoration_owed else head
+        moved = (
+            f"other facts moved: {'; '.join(self.other_changes)}"
+            if self.other_changes
+            else ""
         )
+        parts = [part for part in (head, moved, *self.restoration_owed) if part]
+        return "; ".join(parts)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -233,11 +239,16 @@ def _require_mpx_disabled(declared: object) -> None:
 # ---------------------------------------------------------------------------------------------
 
 
-def trial_record_file(path: Path | str) -> Path:
-    """The record file to claim: ``path`` itself, or ``TRIAL_FILE_NAME`` inside it if a dir."""
+def trial_record_file(path: Path | str, *, name: str = TRIAL_FILE_NAME) -> Path:
+    """The record file to claim: ``path`` itself, or ``name`` inside it if ``path`` is a dir.
+
+    ``name`` is a parameter because the per-channel ``profiles`` writer
+    (:mod:`udv_echo_process.acquire.channels_profiles`) reuses this claim/update machinery with its
+    own file name: one record contract, two narrow writers, and never a second ledger.
+    """
     candidate = Path(path)
     if candidate.is_dir():
-        return candidate / TRIAL_FILE_NAME
+        return candidate / name
     parent = candidate.parent
     if not parent.is_dir():
         raise AcquisitionError(
@@ -356,13 +367,52 @@ def _facts(report: ChannelsRead) -> dict[str, str]:
     return facts
 
 
+def _facts_after(report: ChannelsRead) -> dict[str, str] | None:
+    """The facts a post-write reading states, or ``None`` when it states no comparable ones.
+
+    Only a full settings-popup reading can be compared with the pre-write facts. A clipped
+    multiplexer-on surface, a dialog in front, an absent or reshaped popup states none of the
+    group box's amounts — their absence there is *unknown*, so it is passed as ``None`` rather
+    than as an empty mapping, which :func:`_other_changes` would read as every fact vanishing.
+    """
+    if report.surface is not ChannelsSurface.SETTINGS_POPUP:
+        return None
+    return _facts(report)
+
+
 def _other_changes(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
-    """The facts that moved, named — an observation, never a repair."""
-    out: list[str] = []
-    for key in sorted(set(before) | set(after)):
-        if before.get(key) != after.get(key):
-            out.append(f"{key}: {before.get(key)!r} -> {after.get(key)!r}")
-    return tuple(out)
+    """The facts that **demonstrably** moved, named — an observation, never a repair.
+
+    Only a key both readings state is compared. A fact the later read does not state is
+    *unknown*, not gone: the post-write reading can be of a surface that reads none of these
+    amounts (clipped, refused, or a group box that stopped resolving), and calling that a move
+    would accuse the application of a change this command never saw — and, in the stage rule
+    below, fail a run on it. Those keys are reported by :func:`_facts_unreadable` instead.
+    """
+    return tuple(
+        f"{key}: {before[key]!r} -> {after[key]!r}"
+        for key in sorted(set(before) & set(after))
+        if before[key] != after[key]
+    )
+
+
+def _facts_unreadable(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
+    """The facts the first reading stated and the second does not — unknown, not absent.
+
+    This is not a movement and must never be counted as one; it is the honest shape of a
+    partial post-write read, and it is carried so the operator can see what could not be
+    checked instead of reading an empty ``other_changes`` as "everything stayed put".
+    """
+    return tuple(
+        f"{key}: {before[key]!r} -> unread"
+        for key in sorted(before)
+        if key not in after
+    )
+
+
+def _fact_moves(before: dict[str, str], after: dict[str, str]) -> tuple[str, ...]:
+    """Everything that moved **or** became unreadable — a refusal reason, never a verdict."""
+    return _other_changes(before, after) + _facts_unreadable(before, after)
 
 
 # ---------------------------------------------------------------------------------------------
@@ -400,7 +450,10 @@ def acquire_repeat(
     Everything is settled before the commit: the arguments, the operator's mode declaration,
     the record path, the single window binding, the caption/overlay/ready-row preconditions, the
     full settings popup, the current value against ``expect``, and a **fresh** re-resolution of
-    the same edit and owner. A refusal on any of them raises
+    the same edit and owner. The caption, overlay, row and window clauses are then **asked
+    again on a fresh enumeration immediately before the commit** — they are preconditions of
+    writing, and a recording that started or a modal that appeared between the two readings
+    refuses with zero writes rather than being written through. A refusal on any of them raises
     :class:`~udv_echo_process.acquire.driver.AcquisitionError` having written nothing.
 
     After the commit every outcome is returned, never raised: a commit that failed, a popup that
@@ -509,13 +562,29 @@ def acquire_repeat(
             f"({fresh.repeat.hwnd}, {fresh.repeat.owner_hwnd}) where the reading named "
             f"({repeat.hwnd}, {repeat.owner_hwnd}): the tree changed, so nothing was written"
         )
-    if _facts(fresh) != before:
+    if _fact_moves(before, _facts(fresh)):
         raise AcquisitionError(
             "another readable fact moved between the two reads "
-            f"({list(_other_changes(before, _facts(fresh)))!r}): this command writes one field, "
+            f"({list(_fact_moves(before, _facts(fresh)))!r}): this command writes one field, "
             "so nothing was written"
         )
     edit_hwnd, owner_hwnd = int(repeat.hwnd), int(repeat.owner_hwnd)
+
+    # The whole screen is asked again immediately before the commit, not only at the binding:
+    # the caption (the only surface that states the process), the overlay, the stopped row and
+    # the single visible window are preconditions of *writing*, and the two readings above take
+    # time. A recording that started, a modal that appeared or a second copy launched in that
+    # window refuses here with zero writes — the refused clause names which one. Nothing is
+    # inferred from the operator's declaration: the caption is read again, or the run refuses.
+    clauses, _state = screen_clauses(
+        live,
+        target,
+        tuple(enumerate_windows_fn()),
+        class_name=class_name,
+        strip=_strip_not_recording,
+    )
+    if clauses:
+        raise AcquisitionError("immediately before the commit: " + "; ".join(clauses))
 
     if restores_baseline:
         owed_after = (
@@ -621,6 +690,11 @@ def acquire_repeat(
                 )
             owed.append(confirm)
         changes = () if other_after is None else _other_changes(before, other_after)
+        # A fact the post-write read did not state is unknown, not gone: it is carried as its
+        # own observation so an empty ``other_changes`` never reads as "all of them held".
+        unreadable = (
+            () if other_after is None else _facts_unreadable(before, other_after)
+        )
         record = {
             **obligation,
             "phase": "after",
@@ -632,6 +706,7 @@ def acquire_repeat(
             "new_value": new_value,
             "other_facts_after": other_after if other_after is not None else {},
             "other_changes": list(changes),
+            "other_facts_unreadable": list(unreadable),
             "error": error,
             "owed_after": confirm or obligation["owed_after"],
             # ``restores_baseline`` above is the pre-write intent; this is the observation.
@@ -662,6 +737,7 @@ def acquire_repeat(
             other_facts=before,
             other_facts_after=dict(other_after or {}),
             other_changes=changes,
+            other_facts_unreadable=unreadable,
             writes=writes,
             # Claimed only from the post-write reading: a commit that raised, a closed popup
             # and a value that did not take are all unknown, never "restored".
@@ -701,16 +777,25 @@ def acquire_repeat(
             ),
         )
     if post.surface is not ChannelsSurface.SETTINGS_POPUP or post.repeat is None:
+        # The reading is still carried: a refused/clipped/reshaped surface states no repeat
+        # amount, but reporting it with ``post=None`` would throw away everything it *did*
+        # state (which amounts were there, what the field reads as text) as if no read had
+        # been taken. ``other_after`` is the surface gate's answer: unknown, not empty.
+        stated = "" if post.repeat is None else post.repeat.text
         return after(
             RepeatWriteStage.WRITE_UNVERIFIED,
             writes=1,
+            post=post,
+            other_after=_facts_after(post),
             error=(
-                f"the popup reads {post.surface.value!r} after the write, so the field's new "
-                "value could not be seen; whether the write landed is unknown and nothing was "
-                "retried"
+                f"the popup reads {post.surface.value!r} after the write"
+                + (f" and its repeat widget states {stated!r}" if stated else "")
+                + ", so the field's new value could not be seen; whether the write landed is "
+                "unknown and nothing was retried"
             ),
         )
-    other_after = _facts(post)
+    other_after = _facts_after(post)
+    assert other_after is not None  # the guard above passed on the settings popup
     changes = _other_changes(before, other_after)
     if post.repeat.value != value:
         return after(
