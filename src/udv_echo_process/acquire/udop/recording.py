@@ -53,6 +53,7 @@ from udv_echo_process.acquire.ui.channels import (
     _PANEL_CLASSES,
     USE_ONLY_CHANNEL,
     ChannelsSurface,
+    bind_enable_toggle,
     read_bound_channels,
 )
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
@@ -406,6 +407,99 @@ class RecordingSurface:
             )
         self._click_hold(int(cell_hwnd))
 
+    def press_mode_toggle(
+        self,
+        *,
+        target: WindowTarget,
+        popup_hwnd: int,
+        toggle_hwnd: int,
+        toggle_rect: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        """Press the ``Enable multiplexer`` toggle of the full settings popup, held — and nothing else.
+
+        Like :meth:`press_channel_cell`, this is a narrow target-bound entry point rather than a
+        generic ``press(handle)``: it re-establishes the chain live at the action boundary.
+        ``popup_hwnd`` must be a panel child of the bound window; ``toggle_hwnd`` must be a
+        ``TSp_Button`` child of that popup; and one bounded re-read on this same binding must
+        resolve the measured 8-band settings signature and, through
+        :func:`…ui.channels.bind_enable_toggle`, **exactly one** toggle that both carries the
+        ``Enable multiplexer`` attribution and owns the measured Enable row band — its
+        popup-relative rect contains that band and never the rollover mark band — with that
+        toggle's handle being ``toggle_hwnd``.
+
+        ``toggle_rect`` is the rectangle the caller decided on, popup-relative. When it is given
+        the boundary requires the live re-read to place the same control at **exactly** that
+        rect: a control that moved by a pixel between the licensing capture and this message is
+        not the control that was licensed, even when its handle and caption still agree. A changed
+        popup, signature, role, handle or rect refuses with nothing posted.
+        """
+        if self._target is None or self._target != target:
+            raise AcquisitionError(
+                "the mode-toggle press was asked for a window this surface is not bound to: "
+                f"bound {None if self._target is None else self._target.hwnd}, asked "
+                f"{target.hwnd} — nothing was posted"
+            )
+        self._main_hwnd()
+        if _class_of(popup_hwnd) not in _PANEL_CLASSES:
+            raise AcquisitionError(
+                f"hwnd {popup_hwnd} is not a panel, so it cannot be the Channels popup: "
+                "nothing was posted"
+            )
+        if _parent_of(popup_hwnd) != int(target.hwnd):
+            raise AcquisitionError(
+                f"hwnd {popup_hwnd} does not hang off the bound window {target.hwnd}: nothing "
+                "was posted"
+            )
+        if _class_of(toggle_hwnd) != _CELL_CLASS:
+            raise AcquisitionError(
+                f"hwnd {toggle_hwnd} is class {_class_of(toggle_hwnd)!r}, not a {_CELL_CLASS} "
+                "toggle: nothing was posted"
+            )
+        if _parent_of(toggle_hwnd) != int(popup_hwnd):
+            raise AcquisitionError(
+                f"hwnd {toggle_hwnd} does not hang off the popup {popup_hwnd}, so it is not a "
+                "toggle of it: nothing was posted"
+            )
+        bound = read_bound_channels(self, target)
+        if bound.unavailable is not None:
+            raise AcquisitionError(
+                f"{bound.unavailable}, so the toggle's role cannot be read at the press: "
+                "nothing was posted"
+            )
+        report = bound.read
+        if report.surface is not ChannelsSurface.SETTINGS_POPUP or report.popup is None:
+            raise AcquisitionError(
+                "the Channels popup no longer reads as the full settings surface at the press "
+                f"(surface {report.surface.value!r}): nothing was posted"
+            )
+        if report.popup.hwnd is None or int(report.popup.hwnd) != int(popup_hwnd):
+            raise AcquisitionError(
+                f"the settings popup reads as {report.popup.hwnd} where {popup_hwnd} was "
+                "resolved: the popup moved, so nothing was posted"
+            )
+        if not report.readable or report.refusals:
+            raise AcquisitionError(
+                "the settings popup did not read cleanly at the press "
+                f"({'; '.join(report.refusals) or 'readable is False'}): nothing was posted"
+            )
+        try:
+            bound_toggle = bind_enable_toggle(report)
+        except AcquisitionError as exc:
+            raise AcquisitionError(f"{exc} — nothing was posted") from exc
+        if bound_toggle.hwnd is None or int(bound_toggle.hwnd) != int(toggle_hwnd):
+            raise AcquisitionError(
+                f"hwnd {toggle_hwnd} is not the one toggle the reader binds to "
+                f"Enable multiplexer (measured {bound_toggle.hwnd!r}): "
+                "the control moved, so nothing was posted"
+            )
+        if toggle_rect is not None and bound_toggle.rect != tuple(toggle_rect):
+            raise AcquisitionError(
+                f"the Enable toggle reads at rect {bound_toggle.rect!r} where the licensed "
+                f"target was {tuple(toggle_rect)!r}: the control moved between the capture and "
+                "the press, so nothing was posted"
+            )
+        self._click_hold(int(toggle_hwnd))
+
     def press(self, control: StripControl) -> None:
         """Press one strip button of the *current* view, **held**, by position.
 
@@ -634,7 +728,9 @@ class RecordingSurface:
                 self.ensure_channel()
                 self._note("the channel is verified; pressing Record")
             else:
-                self._note("the channel was verified once for this run; pressing Record")
+                self._note(
+                    "the channel was verified once for this run; pressing Record"
+                )
             self.press(StripControl.RECORD)
             state = self._wait_for_view_guarded((StripView.RECORDING,), VIEW_TIMEOUT_S)
             if state.view is not StripView.RECORDING:

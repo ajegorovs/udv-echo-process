@@ -133,7 +133,7 @@ def _changed(image, x: int, y: int, pixel: tuple[int, int, int]):
 def test_one_changed_label_pixel_is_unrecognised_but_the_mark_still_reads():
     image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
     rows = mode_marks._rows(image)
-    box = mode_marks._label_box(rows)
+    box = mode_marks._label_box(rows, mode_marks.SETTINGS_FULL)
     # The first background pixel of the line: painting it ink changes exactly one mask cell.
     spot = next(
         (x, y)
@@ -321,7 +321,7 @@ def test_recognition_is_not_matched_when_the_only_rollover_fact_is_structural_ab
     """
     image = mode_marks.load_frame(ENTRY / "channels-roi-frame-1.png")
     rows = mode_marks._rows(image)
-    box = mode_marks._label_box(rows)
+    box = mode_marks._label_box(rows, mode_marks.MULTIPLEXER_ON_ENTRY)
     spot = next(
         (x, y)
         for y in range(box[1], box[3])
@@ -347,7 +347,7 @@ def test_the_mask_is_a_shape_and_colour_variance_inside_the_ink_band_still_match
     """
     image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
     rows = mode_marks._rows(image)
-    box = mode_marks._label_box(rows)
+    box = mode_marks._label_box(rows, mode_marks.SETTINGS_FULL)
     spot = next(
         (x, y)
         for y in range(box[1], box[3])
@@ -471,3 +471,139 @@ def test_a_second_frame_that_is_not_a_raster_source_still_has_to_agree():
         assert first == second
         record = _read(directory)
         assert record.frames_agreed is True
+
+
+# ---------------------------------------------------------------------------------------------
+# the Enable line's own row: the Use only channel caption is never a mode-entry source
+# ---------------------------------------------------------------------------------------------
+
+
+def _blank(image, band: tuple[int, int, int, int]):
+    """A copy with one measured band filled with the popup background — no fixture written."""
+    from PIL import Image
+
+    copy = image.copy()
+    copy.paste(
+        Image.new("RGB", (band[2] - band[0], band[3] - band[1]), mode_marks.BACKGROUND),
+        (band[0], band[1]),
+    )
+    return copy
+
+
+def _paint(source, band: tuple[int, int, int, int], target, at: tuple[int, int]):
+    """Paste the raster inside ``band`` of ``source`` onto ``target`` at ``at``."""
+    copy = target.copy()
+    copy.paste(source.crop(band), at)
+    return copy
+
+
+def test_the_enable_template_is_the_enable_row_not_the_use_only_channel_row():
+    """The committed raster comes from the Enable line's band, never the popup's first band."""
+    template = mode_marks.TEMPLATES.label("ENABLE_MULTIPLEXER")
+    assert template.surface == mode_marks.SETTINGS_FULL
+    assert template.box == mode_marks.ENABLE_LABEL_BAND == (29, 48, 138, 61)
+    assert template.box != mode_marks.USE_ONLY_CHANNEL_BAND
+    assert (
+        mode_marks.LABEL_BANDS[mode_marks.SETTINGS_FULL] == mode_marks.ENABLE_LABEL_BAND
+    )
+    # The two rows are disjoint and the Enable band never reaches the rollover mark.
+    assert not mode_marks._bands_overlap(
+        mode_marks.ENABLE_LABEL_BAND, mode_marks.USE_ONLY_CHANNEL_BAND
+    )
+    assert not mode_marks._bands_overlap(
+        mode_marks.ENABLE_LABEL_BAND, mode_marks.ROLLOVER_BAND
+    )
+    # And the rasters really differ: "Enable multiplexer" is not "Use only channel".
+    use_only = mode_marks._rows(mode_marks.load_frame(ON / "channels-roi-frame-1.png"))
+    left, top, right, bottom = mode_marks.USE_ONLY_CHANNEL_BAND
+    raster = mode_marks._ascii(
+        mode_marks._mask(use_only, top, bottom, left, right, mode_marks._is_ink),
+        right - left,
+    )
+    assert raster != template.rows
+
+
+def test_removing_the_enable_line_is_unknown_while_the_rollover_still_reads():
+    """RED: this frame used to read ``VISUAL_DISABLED`` from the untouched Use only channel row."""
+    image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
+    erased = _blank(image, mode_marks.ENABLE_LABEL_BAND)
+    record = mode_marks.recognize(erased)
+    assert record.surface == mode_marks.SETTINGS_FULL
+    assert record.label == "UNRECOGNIZED"
+    assert record.mode == "UNKNOWN"
+    assert record.recognition == "NOT_MATCHED"
+    # The rolling witness is independent and survives the missing label.
+    assert record.mark == "GREEN_CHECK"
+    assert record.rolling == "ON_PROVEN"
+    assert record.enable_precondition is False
+
+
+def test_repainting_the_enable_line_with_the_use_only_channel_caption_is_unknown():
+    """A correct-looking ``Use only channel`` prefix must never stand in for the Enable line."""
+    image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
+    repainted = _blank(image, mode_marks.ENABLE_LABEL_BAND)
+    repainted = _paint(
+        image,
+        mode_marks.USE_ONLY_CHANNEL_BAND,
+        repainted,
+        (mode_marks.ENABLE_LABEL_BAND[0], mode_marks.ENABLE_LABEL_BAND[1]),
+    )
+    record = mode_marks.recognize(repainted)
+    assert record.label == "UNRECOGNIZED"
+    assert record.mode == "UNKNOWN"
+    assert record.rolling == "ON_PROVEN"
+
+
+def test_swapping_the_enable_line_for_desable_multiplexer_is_unknown_not_enabled():
+    entry = mode_marks.load_frame(ENTRY / "channels-roi-frame-1.png")
+    image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
+    swapped = _blank(image, mode_marks.ENABLE_LABEL_BAND)
+    swapped = _paint(
+        entry,
+        mode_marks.ENTRY_LABEL_BAND,
+        swapped,
+        (mode_marks.ENABLE_LABEL_BAND[0], mode_marks.ENABLE_LABEL_BAND[1]),
+    )
+    record = mode_marks.recognize(swapped)
+    assert record.surface == mode_marks.SETTINGS_FULL
+    assert (
+        record.mode == "UNKNOWN"
+    )  # never the enabled reading the string names elsewhere
+    assert record.rolling == "ON_PROVEN"
+
+
+def test_changing_the_use_only_channel_row_does_not_change_the_mode():
+    """The other control's line is not a mode fact on either shape."""
+    image = mode_marks.load_frame(ON / "channels-roi-frame-1.png")
+    before = mode_marks.recognize(image)
+    altered = _blank(image, mode_marks.USE_ONLY_CHANNEL_BAND)
+    after = mode_marks.recognize(altered)
+    assert before.mode == after.mode == "VISUAL_DISABLED"
+    assert before.label == after.label == "ENABLE_MULTIPLEXER"
+    assert before.rolling == after.rolling == "ON_PROVEN"
+
+
+def test_a_mutated_enable_line_blocks_the_enable_precondition_at_pair_level(
+    tmp_path: Path,
+):
+    """The conjunction fails at the label half: UNKNOWN mode, rolling kept, no licence."""
+    from PIL import Image
+
+    erased = _blank(
+        mode_marks.load_frame(ON / "channels-roi-frame-1.png"),
+        mode_marks.ENABLE_LABEL_BAND,
+    )
+    paths = []
+    for name in mode_marks.PAIR_FILES:
+        path = tmp_path / name
+        erased.save(path)
+        paths.append(str(path))
+    record = mode_marks.attribute_frames(
+        tuple(paths), _digests(tuple(paths)), context="live-bracketed"
+    )
+    assert record.mode == "UNKNOWN"
+    assert record.rolling == "ON_PROVEN"
+    assert record.frames_agreed is True
+    assert record.enable_precondition is False
+    # The fixture itself is untouched: the mutation was made in memory and written to tmp only.
+    assert Image.open(ON / "channels-roi-frame-1.png").size == (393, 426)

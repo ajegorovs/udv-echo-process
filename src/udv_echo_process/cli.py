@@ -39,6 +39,7 @@ from udv_echo_process.acquire import (
     channels_repeat,
     channels_select,
     driver,
+    enable_multiplexed,
     live,
     mode_marks,
     mpx_artifact,
@@ -1490,6 +1491,35 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     mpx_mode_parser.add_argument("--json", action="store_true")
 
+    enable_mpx_parser = subcommands.add_parser(
+        "enable-multiplexed",
+        help=(
+            "press the operator-opened Channels popup's Enable multiplexer toggle once and only "
+            "with rolling proven ON. A decision capture comes first; the durable trial record is "
+            "then claimed, and a final licensing capture is taken at the action boundary "
+            "immediately before the press (the mode itself stays unknown after it, so reopen "
+            "Channels to read it). Keep hands off the instrument for the whole command"
+        ),
+    )
+    enable_mpx_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame capture is claimed: a mode press needs a capture taken "
+            "in this same invocation whose conjunction and capture-time digests verify"
+        ),
+    )
+    enable_mpx_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "enable-multiplexed-trial.json inside it); it records the old rolling evidence, the "
+            "target control and the owed restoration before the press, and is never overwritten"
+        ),
+    )
+    enable_mpx_parser.add_argument("--json", action="store_true")
+
     channels_repeat_parser = subcommands.add_parser(
         "channels-repeat",
         help=(
@@ -2224,6 +2254,30 @@ def acquire_main(argv: list[str] | None = None) -> None:
             if select_result.stage is not channels_select.SelectStage.NO_OP:
                 code = 1
             if select_result.trial_record_error:
+                code = 1
+        elif args.command == "enable-multiplexed":
+            enable_result = enable_multiplexed.acquire_enable_multiplexed(
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(enable_result, as_json)
+            for observed in enable_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if enable_result.press_error:
+                print(f"udv-acquire: {enable_result.press_error}", file=sys.stderr)
+            if enable_result.post_error:
+                print(f"udv-acquire: {enable_result.post_error}", file=sys.stderr)
+            for owed in enable_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            if enable_result.post_mode != "VISUAL_ENABLED":
+                print(
+                    "udv-acquire: post-press mode is unknown, not enabled: a pressed toggle is "
+                    "a gesture, so reopen Channels to read the mode (or use Disable when asked)",
+                    file=sys.stderr,
+                )
+                code = 1
+            if enable_result.trial_record_error:
                 code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)

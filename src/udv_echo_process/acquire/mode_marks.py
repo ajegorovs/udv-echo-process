@@ -2,13 +2,20 @@
 
 This module answers two separate questions from pixels only, at two measured popup shapes:
 
-===================================  =========  =========================  =====================
-surface                              crop       mode-entry line            rollover row
-===================================  =========  =========================  =====================
-``SETTINGS_FULL``                    393 x 426  ``Enable multiplexer``     measured red cross
-                                                               / ``Desable``  (OFF) or green check (ON)
-``MULTIPLEXER_ON_ENTRY``             158 x 43   ``Desable multiplexer``    absent by structure
-===================================  =========  =========================  =====================
+===================================  =========  ============================  =====================
+surface                              crop       mode-entry line                rollover row
+===================================  =========  ============================  =====================
+``SETTINGS_FULL``                    393 x 426  ``Enable multiplexer`` at      measured red cross
+                                                rows 48-60, left 29, right 137 (OFF) or green
+                                                                               check (ON)
+``MULTIPLEXER_ON_ENTRY``             158 x 43   ``Desable multiplexer`` at     absent by structure
+                                                rows 14-26, left 30, right 147
+===================================  =========  ============================  =====================
+
+The two shapes paint their line at **different** rows: the full popup's rows 14-26 carry the
+separate ``Use only channel`` control's caption, which is *never* a mode-entry source. Each
+surface therefore owns its own measured band (:data:`LABEL_BANDS`); there is no "first band"
+fallback, because the first band of the full popup is a different control's line.
 
 The shapes are named after what the tree says they are, not after the state this reader
 derives: ``MULTIPLEXER_ON_ENTRY`` is the *clipped one-entry popup* that only exists while the
@@ -66,21 +73,24 @@ from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "BACKGROUND",
+    "ENABLE_LABEL_BAND",
     "ENTRY_FRAME",
+    "ENTRY_LABEL_BAND",
     "ENTRY_SIZE",
     "GREEN_INK",
     "INK_MIN",
-    "LABEL_LEFT",
-    "LABEL_ROWS",
+    "LABEL_BANDS",
     "MEASURED_SIZES",
     "MODE_ENTRY_LABELS",
     "MULTIPLEXER_ON_ENTRY",
     "PAIR_FILES",
+    "ROLLOVER_BAND",
     "ROLLOVER_INK",
     "ROLLOVER_RECT",
     "SETTINGS_FULL",
     "SETTINGS_SIZE",
     "SIGNATURE",
+    "USE_ONLY_CHANNEL_BAND",
     "FrameUnreadable",
     "ModeMarkAttribution",
     "attribute_capture",
@@ -104,9 +114,6 @@ ENTRY_SIZE = (158, 43)
 #: Every shape this reader will decode. Nothing else is loaded, not even its header rows.
 MEASURED_SIZES = (SETTINGS_SIZE, ENTRY_SIZE)
 
-#: The mode-entry line: one font, one left margin, both shapes.
-LABEL_ROWS = (14, 26)
-LABEL_LEFT = 30
 #: The clipped popup is the entry row plus a 3 px white frame on all sides.
 ENTRY_FRAME = 3
 
@@ -115,8 +122,76 @@ ROLLOVER_RECT = (215, 77, 228, 92)
 ROLLOVER_INK = 70  # red cross, rolling OFF
 GREEN_INK = 22  # green check, rolling ON
 
+#: The **Enable multiplexer** row's label band of the full settings popup, popup-relative letter
+#: bounds: the ink box of the line that toggle paints. Measured on both committed settings pairs
+#: (``tests/data/mpx-mode/disabled-rolling-on`` and ``-off``, identical at this band): rows 48-60,
+#: left 29, right 137 (so right-exclusive 138). This is the line the mode read and every target
+#: rect are held to.
+ENABLE_LABEL_BAND = (29, 48, 138, 61)
+#: The **Use only channel** row of the same popup, rows 14-26, left 30, right 130 (exclusive 131).
+#: It is a *different* control's caption and never a mode-entry source; it is named here so the
+#: band a false template was once learned from is explicit, and so no read may fall back to it.
+USE_ONLY_CHANNEL_BAND = (30, 14, 131, 27)
+#: The clipped one-entry popup's own line — the literal ``Desable multiplexer`` — at rows 14-26,
+#: left 30, right 147 (exclusive 148). Popup-relative, and *not* the full popup's rows 14-26.
+ENTRY_LABEL_BAND = (30, 14, 148, 27)
+
+#: ``surface -> its own measured label band``. The two shapes paint their line at different rows,
+#: so neither may inherit the other's position, and there is no ordinal/first-band default.
+LABEL_BANDS = {
+    SETTINGS_FULL: ENABLE_LABEL_BAND,
+    MULTIPLEXER_ON_ENTRY: ENTRY_LABEL_BAND,
+}
+
+#: The rollover row's mark band, as the band no Enable target rect may contain.
+ROLLOVER_BAND = ROLLOVER_RECT
+
 INK_MIN = 250
 BACKGROUND = (64, 72, 112)
+
+
+def _bands_overlap(
+    one: tuple[int, int, int, int], other: tuple[int, int, int, int]
+) -> bool:
+    return not (
+        one[2] <= other[0]
+        or other[2] <= one[0]
+        or one[3] <= other[1]
+        or other[3] <= one[1]
+    )
+
+
+def _check_measured_bands() -> None:
+    """Refuse an import whose label geometry would let one row stand for another.
+
+    The full popup paints ``Use only channel`` at rows 14-26 and ``Enable multiplexer`` at rows
+    48-60. A template learned from the first band and labelled with the second string is a
+    semantic false proof — the popup would read ``VISUAL_DISABLED`` while the Enable line was
+    absent. This is the structural guard, not a per-frame heuristic: the two bands must be
+    disjoint, the Enable band must stay clear of the rollover mark, and every band must sit
+    inside the popup it belongs to.
+    """
+    for surface, band in LABEL_BANDS.items():
+        width, height = SETTINGS_SIZE if surface == SETTINGS_FULL else ENTRY_SIZE
+        left, top, right, bottom = band
+        if not (0 <= left < right <= width and 0 <= top < bottom <= height):
+            raise ValueError(
+                f"the measured {surface} label band {band!r} is not inside its "
+                f"{width}x{height} popup: the label geometry is not a measured one"
+            )
+    if _bands_overlap(ENABLE_LABEL_BAND, USE_ONLY_CHANNEL_BAND):
+        raise ValueError(
+            f"the Enable label band {ENABLE_LABEL_BAND!r} overlaps the Use only channel row "
+            f"{USE_ONLY_CHANNEL_BAND!r}: one line would stand for the other"
+        )
+    if _bands_overlap(ENABLE_LABEL_BAND, ROLLOVER_BAND):
+        raise ValueError(
+            f"the Enable label band {ENABLE_LABEL_BAND!r} overlaps the rollover mark "
+            f"{ROLLOVER_BAND!r}: the rollover row would be read as the Enable line"
+        )
+
+
+_check_measured_bands()
 
 #: Carried on every record: which reader produced it and what it is allowed to mean. The ink
 #: counts are read from the committed rasters themselves, so the string cannot drift from the
@@ -154,6 +229,9 @@ class ModeLabelTemplate(ValueModel):
     """One committed mode-entry raster: its exact ink rows, box and provenance."""
 
     label: Literal["ENABLE_MULTIPLEXER", "DESABLE_MULTIPLEXER"]
+    #: The one shape this raster was measured on. A raster is never reused across surfaces:
+    #: the full popup's rows 14-26 belong to ``Use only channel``, not to this vocabulary.
+    surface: Literal["SETTINGS_FULL", "MULTIPLEXER_ON_ENTRY"]
     rows: tuple[str, ...]
     box: tuple[int, int, int, int]
     ink: int
@@ -416,25 +494,37 @@ def _ascii(mask: list[bool], width: int) -> tuple[str, ...]:
     )
 
 
-def _label_box(rows) -> tuple[int, int, int, int]:
-    """The entry line's own ink box, bounded by the frame's inner edge."""
-    top, bottom = LABEL_ROWS[0], LABEL_ROWS[1] + 1
+def _label_box(rows, surface: str) -> tuple[int, int, int, int]:
+    """The measured label line's own ink box **on this surface**, bounded by its frame.
+
+    The band is looked up per surface: the full settings popup's Enable line is rows 48-60 while
+    the clipped entry's ``Desable`` line is rows 14-26. Nothing here scans for "the first band"
+    — on the full popup that band is the ``Use only channel`` caption, a different control's
+    line, and treating it as the mode entry is exactly the false proof this geometry excludes.
+    """
+    if surface not in LABEL_BANDS:
+        raise FrameUnreadable(f"{surface!r} has no measured label band")
+    left, top, right_measured, bottom = LABEL_BANDS[surface]
     inset = _frame_inset(rows) or 1
-    right = LABEL_LEFT
-    for x in range(LABEL_LEFT, len(rows[0]) - inset):
+    right = left
+    for x in range(left, len(rows[0]) - inset):
         if any(_is_ink(rows[y][x]) for y in range(top, bottom)):
             right = x + 1
-    if right == LABEL_LEFT:
-        raise FrameUnreadable("the mode-entry line holds no ink")
-    if any(
-        _is_ink(rows[y][x])
-        for y in range(top, bottom)
-        for x in range(inset, LABEL_LEFT)
-    ):
+    if right == left:
+        raise FrameUnreadable(
+            f"the measured {surface} label band {LABEL_BANDS[surface]!r} holds no ink: the "
+            "line is absent or was repainted, so no mode-entry string is read there"
+        )
+    if any(_is_ink(rows[y][x]) for y in range(top, bottom) for x in range(inset, left)):
         raise FrameUnreadable(
             "ink sits left of the measured label margin: this is not the measured layout"
         )
-    return (LABEL_LEFT, top, right, bottom)
+    if right > right_measured:
+        raise FrameUnreadable(
+            f"the {surface} label ink runs to x={right} past the measured band "
+            f"{LABEL_BANDS[surface]!r}: a longer or shifted string is not this line"
+        )
+    return (left, top, right, bottom)
 
 
 def build_templates(
@@ -454,14 +544,15 @@ def build_templates(
             raise FrameUnreadable(
                 f"{Path(path).name} is not the measured {surface} shape"
             )
-        box = _label_box(rows)
-        mask = _mask(rows, box[1], box[3], box[0], box[2], _is_ink)
-        expected = MODE_ENTRY_LABELS[name]
         if (surface, name) not in _LABEL_MODE:
             raise FrameUnreadable(f"{name} is not a measured label of {surface}")
+        box = _label_box(rows, surface)
+        mask = _mask(rows, box[1], box[3], box[0], box[2], _is_ink)
+        expected = MODE_ENTRY_LABELS[name]
         learned_labels.append(
             ModeLabelTemplate(
                 label=name,  # type: ignore[arg-type]
+                surface=surface,  # type: ignore[arg-type]
                 rows=_ascii(mask, box[2] - box[0]),
                 box=box,
                 ink=sum(mask),
@@ -519,6 +610,7 @@ TEMPLATES = TemplateSet(
     labels=tuple(
         ModeLabelTemplate(
             label=entry.label,
+            surface=entry.surface,
             rows=entry.rows,
             box=entry.box,
             ink=entry.ink,
@@ -557,12 +649,20 @@ def _unknown(reason: str, *more: str, **update) -> ModeMarkAttribution:
 def _read_label(
     rows, surface: str
 ) -> tuple[str, tuple[int, int, int, int], str, list[str]]:
+    band = LABEL_BANDS.get(surface)
+    if band is None:
+        return (
+            "UNRECOGNIZED",
+            (0, 0, 0, 0),
+            "",
+            [f"{surface!r} has no measured label band"],
+        )
     try:
-        box = _label_box(rows)
+        box = _label_box(rows, surface)
     except FrameUnreadable as exc:
         return (
             "UNRECOGNIZED",
-            (LABEL_LEFT, LABEL_ROWS[0], LABEL_LEFT, LABEL_ROWS[1] + 1),
+            band,
             "",
             [str(exc)],
         )
@@ -572,7 +672,11 @@ def _read_label(
         if (surface, name) not in _LABEL_MODE:
             continue
         template = TEMPLATES.label(name)
-        if template.box == box and template.rows == raster:
+        if (
+            template.surface == surface
+            and template.box == box
+            and template.rows == raster
+        ):
             return name, box, _digest(mask), []
     return (
         "UNRECOGNIZED",
@@ -580,9 +684,10 @@ def _read_label(
         _digest(mask),
         [
             (
-                f"the mode-entry raster at {box} equals neither measured caption "
-                f"({list(MODE_ENTRY_LABELS.values())!r}): an altered, translated or unmeasured "
-                "string is not read as its nearest look-alike"
+                f"the raster at the measured {surface} label band {box} equals neither string "
+                f"measured on that surface ({sorted(n for s, n in _LABEL_MODE if s == surface)!r}): "
+                "an absent, altered, translated or swapped caption — including the "
+                "`Use only channel` line at another row — is not read as the mode entry"
             )
         ],
     )

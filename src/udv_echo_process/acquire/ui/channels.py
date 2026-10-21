@@ -46,14 +46,17 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from udv_echo_process.acquire import mode_marks
 from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.channels_capture import CaptureEvidence
+from udv_echo_process.acquire.driver import AcquisitionError
 from udv_echo_process.acquire.ui.layout import observation_of
 from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode, UiTree
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "CAPTION_SOURCE",
+    "ENABLE_CAPTION",
     "STATES_EVIDENCE",
     "USE_CHANNELS",
     "USE_ONLY_CHANNEL",
@@ -66,6 +69,7 @@ __all__ = [
     "ModeToggle",
     "PerChannelAmounts",
     "ValueSlot",
+    "bind_enable_toggle",
     "read_bound_channels",
     "resolve_channels",
     "strip_cells",
@@ -100,6 +104,15 @@ SETTINGS_SIGNATURE: tuple[str, ...] = (
     "combo",
     "toggle",
     "group",
+)
+
+#: The four toggle roles of the settings popup, in the reader's screen order. This is the one
+#: owner of that vocabulary: the reader attributes with it and consumers compare against it.
+TOGGLE_CAPTIONS: tuple[str, ...] = (
+    "Use only channel",
+    "Enable multiplexer",
+    "Roll over the channels",
+    "Display all channels in the same graph",
 )
 
 #: The group box's own band shape: the apply-from combo, its two action buttons on one row, and
@@ -214,6 +227,10 @@ class ModeToggle(ValueModel):
     state: Literal["UNKNOWN"] = UNKNOWN
     state_evidence: str = STATES_EVIDENCE
     hwnd: int | None = None
+    #: The button's rectangle **relative to its popup**, so a consumer can hold the control to the
+    #: measured row band without depending on where the popup was on that screen. Geometry is
+    #: evidence of the moment it was read, never an identity, and ``None`` says it did not resolve.
+    rect: tuple[int, int, int, int] | None = None
 
 
 class PerChannelAmounts(ValueModel):
@@ -269,6 +286,132 @@ class ChannelsRead(ValueModel):
     uncertainties: tuple[str, ...] = ()
     refusals: tuple[str, ...] = ()
     setup_verified: Literal[False] = False
+
+
+#: The caption the Enable row carries, and the only role this module's bind helper will bind.
+ENABLE_CAPTION = "Enable multiplexer"
+
+
+def _contains(rect: tuple[int, int, int, int], band: tuple[int, int, int, int]) -> bool:
+    """True when ``band`` lies inside ``rect`` — both popup-relative, edge-inclusive."""
+    return (
+        rect[0] <= band[0]
+        and rect[1] <= band[1]
+        and band[2] <= rect[2]
+        and band[3] <= rect[3]
+    )
+
+
+def _relative(node: UiNode, panel: UiNode) -> tuple[int, int, int, int] | None:
+    """``node``'s rect in ``panel`` coordinates, or ``None`` when either did not resolve."""
+    if node.rect is None or panel.rect is None:
+        return None
+    left, top, right, bottom = node.rect.as_tuple()
+    return (
+        left - panel.rect.left,
+        top - panel.rect.top,
+        right - panel.rect.left,
+        bottom - panel.rect.top,
+    )
+
+
+def _intersects(
+    rect: tuple[int, int, int, int], band: tuple[int, int, int, int]
+) -> bool:
+    """True when ``rect`` and ``band`` share any pixel — both popup-relative."""
+    return not (
+        rect[2] <= band[0]
+        or band[2] <= rect[0]
+        or rect[3] <= band[1]
+        or band[3] <= rect[1]
+    )
+
+
+def bind_enable_toggle(report: ChannelsRead) -> ModeToggle:
+    """The one toggle that **owns** the Enable row, or a refusal naming the clause that failed.
+
+    Identity has two independent halves, and both are required:
+
+    * the reader's measured caption attribution — ``Enable multiplexer`` with the reader's own
+      caption provenance — and **exactly one** toggle carrying it;
+    * the measured row geometry: the button's **popup-relative** rect must contain
+      :data:`~udv_echo_process.acquire.mode_marks.ENABLE_LABEL_BAND` — the Enable line's true
+      letter bounds, rows 48-60, measured on the committed settings captures — and must not
+      contain, or even overlap, :data:`~udv_echo_process.acquire.mode_marks.ROLLOVER_BAND` (the
+      rollover row's mark). The band is looked up by surface; the full popup's first ink band
+      (rows 14-26) is the ``Use only channel`` caption and is not an Enable target.
+
+    Caption order alone is *not* identity. The reader hands the measured captions to toggle bands
+    in screen order, so a tree whose toggle order or rectangles are permuted would otherwise hand
+    a caller the rollover or display control under the Enable caption. Exactly one toggle may own
+    the band: two buttons covering the same measured line state no single target. There is no
+    ordinal or index fallback — a caption without the owning rect is refused, not defaulted.
+
+    This module still attributes captions from the measured capture (never from native text), and
+    the bind grants no authority by itself: the action boundary re-runs the same rule against a
+    live re-read immediately before it posts anything.
+    """
+    if report.surface is not ChannelsSurface.SETTINGS_POPUP or report.popup is None:
+        raise AcquisitionError(
+            "the operator-opened Channels popup is not the full settings surface: a mode "
+            "toggle is bound only inside that popup — nothing was pressed"
+        )
+    if report.popup.rect is None:
+        raise AcquisitionError(
+            "the popup's own rectangle did not resolve, so no toggle can be held to the "
+            "measured Enable row band: nothing was pressed"
+        )
+    if not report.readable or report.refusals:
+        raise AcquisitionError(
+            "the settings popup did not read cleanly "
+            f"({'; '.join(report.refusals) or 'readable is False'}): nothing was pressed"
+        )
+    if tuple(report.signature) != SETTINGS_SIGNATURE:
+        raise AcquisitionError(
+            f"the popup's bands read {report.signature!r} where the measured 8-band settings "
+            f"signature is {SETTINGS_SIGNATURE!r}: the Enable toggle has no established role on "
+            "this surface, so nothing was pressed"
+        )
+    captions = tuple(toggle.attribution.caption for toggle in report.toggles)
+    if captions != TOGGLE_CAPTIONS:
+        raise AcquisitionError(
+            f"the popup's toggles read {captions!r} where the measured roles are "
+            f"{TOGGLE_CAPTIONS!r}: the Enable role is not attributable, so nothing was pressed"
+        )
+    band = mode_marks.ENABLE_LABEL_BAND
+    mark = mode_marks.ROLLOVER_BAND
+    owning = tuple(
+        toggle
+        for toggle in report.toggles
+        if toggle.hwnd is not None
+        and toggle.rect is not None
+        and _contains(toggle.rect, band)
+    )
+    if len(owning) != 1:
+        raise AcquisitionError(
+            f"{len(owning)} toggle(s) own a rect in the measured Enable band {band!r} "
+            f"(rects {[toggle.rect for toggle in report.toggles]!r}) where exactly one "
+            "TSp_Button may: caption order alone does not say which control the line belongs "
+            "to, so nothing was pressed"
+        )
+    target = owning[0]
+    if (
+        target.attribution.caption != ENABLE_CAPTION
+        or target.attribution.provenance != CAPTION_SOURCE
+    ):
+        raise AcquisitionError(
+            f"the toggle that owns the measured Enable band reads "
+            f"{target.attribution.caption!r} with provenance "
+            f"{target.attribution.provenance!r}: the band and the caption disagree, so nothing "
+            "was pressed"
+        )
+    if _intersects(target.rect, mark):
+        raise AcquisitionError(
+            f"the toggle's rect {target.rect!r} reaches into the rollover mark band {mark!r}: "
+            "that row is the Roll over the channels control, not the Enable line — nothing was "
+            "pressed"
+        )
+    return target
 
 
 # ---------------------------------------------------------------------------------------------
@@ -521,12 +664,7 @@ def _settings(
         )
 
     toggles: list[ModeToggle] = []
-    toggle_captions = [
-        "Use only channel",
-        "Enable multiplexer",
-        "Roll over the channels",
-        "Display all channels in the same graph",
-    ]
+    toggle_captions = list(TOGGLE_CAPTIONS)
     for band in bands:
         for node in band:
             if node.cls == _CELL_CLASS and _edit_under(tree, node) is None:
@@ -536,7 +674,11 @@ def _settings(
                     else UNKNOWN
                 )
                 toggles.append(
-                    ModeToggle(attribution=Attribution(caption=caption), hwnd=node.hwnd)
+                    ModeToggle(
+                        attribution=Attribution(caption=caption),
+                        hwnd=node.hwnd,
+                        rect=_relative(node, panel),
+                    )
                 )
 
     channel_ticks: list[ChannelCell] = []
@@ -718,10 +860,23 @@ def read_bound_channels(actuator, target: WindowTarget) -> BoundRead:
     roles = getattr(actuator, "last_roles", None)
     if not isinstance(roles, dict):
         reason = "the screen read published no role map"
-        return BoundRead(_refused(ChannelsSurface.CHANGED_STRUCTURE, (f"{reason}: nothing is bound from it",)), fingerprint, reason)
+        return BoundRead(
+            _refused(
+                ChannelsSurface.CHANGED_STRUCTURE,
+                (f"{reason}: nothing is bound from it",),
+            ),
+            fingerprint,
+            reason,
+        )
     if roles.get("window") != fingerprint.hwnd or fingerprint.hwnd != target.hwnd:
         reason = "the role map, fingerprint and original window binding disagree"
-        return BoundRead(_refused(ChannelsSurface.CHANGED_STRUCTURE, (f"{reason}, so no popup is bound",)), fingerprint, reason)
+        return BoundRead(
+            _refused(
+                ChannelsSurface.CHANGED_STRUCTURE, (f"{reason}, so no popup is bound",)
+            ),
+            fingerprint,
+            reason,
+        )
     actuator.verify_bound_target(target)
     rows = []
     for source in roles.get("raw", ()):
@@ -730,7 +885,9 @@ def read_bound_channels(actuator, target: WindowTarget) -> BoundRead:
             row["text"] = actuator._get_text(row["hwnd"])
         rows.append(row)
     actuator.verify_bound_target(target)
-    return BoundRead(resolve_channels(observation_of({**roles, "raw": rows})), fingerprint)
+    return BoundRead(
+        resolve_channels(observation_of({**roles, "raw": rows})), fingerprint
+    )
 
 
 def _entry(tree: UiTree, panel: UiNode, kids: tuple[UiNode, ...]) -> ChannelsRead:

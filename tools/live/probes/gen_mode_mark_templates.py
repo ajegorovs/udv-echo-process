@@ -8,6 +8,11 @@ The fixtures in ``tests/data/mpx-mode/`` are the operator's real captured popup 
 and renamed so the report vocabulary carries no machine identity. Nothing here synthesises a
 raster: :func:`udv_echo_process.acquire.mode_marks.build_templates` learns each one from its
 own frame, exactly as ``tests/test_acquire_mpx_mode_marks.py`` re-derives it.
+
+Each label names its **surface**, and the surface owns the measured band the raster is cut from
+(``mode_marks.LABEL_BANDS``). ``ENABLE_MULTIPLEXER`` is the full settings popup's rows 48-60
+(``Enable multiplexer``), never its first ink band: rows 14-26 of that popup paint the separate
+``Use only channel`` control and must never become this vocabulary's raster.
 """
 
 from __future__ import annotations
@@ -55,6 +60,11 @@ def main() -> None:
         "fixtures in ``tests/data/mpx-mode/`` (real operator captures, renamed only); do not",
         "edit by hand. Each row string is one exact ink bitmap at the measured box or rect, so",
         "a shifted mark or a translated caption has no entry here.",
+        "",
+        "Each label carries the one surface it was measured on. ``ENABLE_MULTIPLEXER`` is the",
+        "full settings popup's ``Enable multiplexer`` line at rows 48-60 (box ``(29, 48, 138,",
+        "61)``). The same popup's rows 14-26 paint ``Use only channel`` — a different control's",
+        "caption — and are not a mode-entry source on any surface.",
         '"""',
         "",
         "from __future__ import annotations",
@@ -64,6 +74,7 @@ def main() -> None:
         "",
         "class _Label(NamedTuple):",
         "    label: str",
+        "    surface: str",
         "    rows: tuple[str, ...]",
         "    box: tuple[int, int, int, int]",
         "    ink: int",
@@ -82,12 +93,13 @@ def main() -> None:
         "",
         "LABELS: tuple[_Label, ...] = (",
     ]
-    for label, rows, box, ink, source, digest in (
-        (t.label, t.rows, t.box, t.ink, t.source, t.source_digest)
+    for label, surface, rows, box, ink, source, digest in (
+        (t.label, t.surface, t.rows, t.box, t.ink, t.source, t.source_digest)
         for t in templates.labels
     ):
         lines.append("    _Label(")
         lines.append(f"        label={label!r},")
+        lines.append(f"        surface={surface!r},")
         lines.append("        rows=(")
         for row in rows:
             lines.append(f"            {row!r},")

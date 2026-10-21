@@ -6,10 +6,39 @@ its rollover mark from pixels. Nothing here presses, hovers, opens or closes any
 
 ## What is read
 
-| surface (structural) | crop | mode-entry line | rollover row |
+| surface (structural) | crop | mode-entry line (its own measured band) | rollover row |
 |---|---|---|---|
-| `SETTINGS_FULL` | 393x426, 3 px frame | `Enable multiplexer` | measured red cross (OFF, 70 px) or green check (ON, 22 px) |
-| `MULTIPLEXER_ON_ENTRY` | 158x43, 3 px frame, one band | `Desable multiplexer` | absent by structure |
+| `SETTINGS_FULL` | 393x426, 3 px frame | `Enable multiplexer`, ink box `(29,48,138,61)` (rows 48–60) | measured red cross (OFF, 70 px) or green check (ON, 22 px) |
+| `MULTIPLEXER_ON_ENTRY` | 158x43, 3 px frame, one band | `Desable multiplexer`, ink box `(30,14,148,27)` (rows 14–26) | absent by structure |
+
+### Label provenance: the Enable row is not the popup's first band
+
+The full popup's **first** ink band (rows 14–26, left 30, right 130) is the separate
+`Use only channel` control's caption; the Enable line is rows 48–60. An earlier revision of this
+reader cut the raster for the `ENABLE_MULTIPLEXER` label from that first band, so the committed
+template was, cell for cell, the `Use only channel` bitmap labelled `Enable multiplexer`. That is
+a semantic false mode proof, not a provenance wrinkle: a popup painting `Use only channel` with
+the Enable row absent, repainted or swapped for `Desable multiplexer` would have matched and
+reported `VISUAL_DISABLED`, licensing the guarded enable on a caption that never says "Enable".
+
+The correction is structural:
+
+- each surface owns its own measured band (`mode_marks.LABEL_BANDS`); there is no ordinal or
+  first-band default, and `ENABLE_MULTIPLEXER` is cut at `(29,48,138,61)` on the settings popup;
+- a raster is bound to the one surface it was measured on (`ModeLabelTemplate.surface`), so the
+  clipped entry's `Desable multiplexer` raster can never be matched on the settings popup;
+- the measured bands are validated at import: the Enable band must be inside the popup, disjoint
+  from `USE_ONLY_CHANNEL_BAND` and clear of the rollover mark;
+- the action binder (`ui.channels.bind_enable_toggle`) holds a target rect to the same letter
+  bounds and refuses a rect that reaches the rollover mark — a caption sequence or an index is
+  never an identity.
+
+Consequently an absent, repainted or swapped Enable line is `UNRECOGNIZED` / `mode: UNKNOWN`,
+even when the `Use only channel` row is intact and its caption matches byte for byte. The
+rollover mark stays an independent witness (`rolling: ON_PROVEN` may still be read), but
+`recognition` is `NOT_MATCHED` and `enable_precondition` is `false`, so the guarded enable
+refuses with zero presses. A change confined to the `Use only channel` row does not alter
+`mode`, because that row is not a mode fact on either shape.
 
 Derived values, none of which is a native fact:
 

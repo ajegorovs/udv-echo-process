@@ -108,6 +108,7 @@ RECORDING_METHODS = (
     "wait_for_view",
     "press",
     "press_channel_cell",
+    "press_mode_toggle",
     "answer_overlay",
     "hold_recording",
     "wait_for_view_guarded",
@@ -258,6 +259,7 @@ CLASS_ADDITIONS = (
     "_burst_refusal",
     "verify_working_directory",
     "press_channel_cell",
+    "press_mode_toggle",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

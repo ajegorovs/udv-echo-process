@@ -1155,6 +1155,36 @@ Evidence: `.hermes/scratch/multiplexer-development/mode-entry-roundtrip-acceptan
 committed fixtures; the JSON states its own limits, including "not native checked state" and "no
 automated mode press recipe was exercised".
 
+**Guarded enable command (`acquire enable-multiplexed`), 2026-10-22 — offline only.** One
+command now exists for the entry row: it binds exactly one window, requires a **fresh
+same-invocation** two-frame capture of the full settings popup whose conjunction reads
+`VISUAL_DISABLED` + `ON_PROVEN` with `live-bracketed` / `capture-digest-verified` evidence (a
+retained `mpx-mode-read` pair or a bare `enable_precondition` boolean is not a precondition), and
+presses the `Enable multiplexer` toggle **once** with the held press recipe. Rolling
+`OFF_PROVEN` is refused with zero presses and no cleanup, because that path auto-arms and records.
+The target is resolved by the reader's 8-band signature and toggle-role provenance, and the
+action boundary re-resolves the binding, popup, signature and exact toggle handle before posting.
+It never presses `Record`, `Disable`, `Stop`, `Clear`, never retries, and never infers the post
+mode: after the press the mode is `UNKNOWN` unless a fresh visual verification states otherwise,
+so the CLI exits non-zero and the operator must reopen Channels to read the mode (or choose
+Disable when asked).
+
+**Unverified live.** The press has **not** been exercised on the instrument, and the enabled
+interval that follows it is unmeasured. A bounded operator trial is required before treating the
+command as a working mode entry: one supervised press from a verified disabled + rolling-ON popup,
+then a reopened Channels read (or the disable entry) to establish what the application kept. None
+of §12.13's entries above change; the command only automates the one gesture this table describes.
+
+**Label-band correction (pre-live), 2026-10-22.** The `ENABLE_MULTIPLEXER` raster was learned from
+the full popup's first ink band, rows 14–26 — which is the separate `Use only channel` control's
+caption, not the Enable line (true letter bounds rows 48–60, `(29,48,138,61)`). The template is a
+semantic false mode proof in that state: a popup with the Enable row absent, repainted or swapped
+for `Desable multiplexer` still matched and read `VISUAL_DISABLED`, which the guarded enable would
+have accepted. The raster has been relearned from the committed authentic disabled-rolling-ON/OFF
+frames at the Enable band and the generator, constants and bind now carry per-surface bands with no
+first-band default. The fixtures were not modified; the retained captures and their digests are
+untouched. See `docs/dop3000/mpx-mode-read.md` §"Label provenance".
+
 ---
 
 ## Live validation (simulator)
