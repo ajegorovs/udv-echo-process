@@ -41,17 +41,24 @@ because nothing here establishes a mode, a tick, or an installed configuration.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
+from dataclasses import dataclass
 from enum import Enum
 from typing import Literal
 
+from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.channels_capture import CaptureEvidence
+from udv_echo_process.acquire.ui.layout import observation_of
 from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode, UiTree
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "CAPTION_SOURCE",
     "STATES_EVIDENCE",
+    "USE_CHANNELS",
+    "USE_ONLY_CHANNEL",
     "Attribution",
+    "BoundRead",
     "ChannelCell",
     "ChannelsRead",
     "ChannelsSurface",
@@ -59,7 +66,9 @@ __all__ = [
     "ModeToggle",
     "PerChannelAmounts",
     "ValueSlot",
+    "read_bound_channels",
     "resolve_channels",
+    "strip_cells",
 ]
 
 #: The only state a caption-less custom button can have here.
@@ -68,6 +77,14 @@ UNKNOWN = "UNKNOWN"
 #: A ten-cell channel row is what this build paints (labels ``1``..``10``); a strip of another
 #: size is a different surface and is refused rather than re-indexed.
 STRIP_SIZE = 10
+
+#: The **radio row**'s attribution: the strip beside the ``Use only channel`` toggle. This module
+#: owns the name, so a consumer that has to ask "is this panel *that* row" compares against it
+#: rather than holding a second copy of the string.
+USE_ONLY_CHANNEL = "use_only_channel"
+
+#: The standalone ``Use channels`` tick row's attribution — a different control, never a target.
+USE_CHANNELS = "use_channels"
 
 #: Band kinds in screen order, measured on the retained settings-popup capture
 #: (``channels-inspection-20261020T195526-72bf1c``): the ``Use only channel`` toggle beside its
@@ -185,6 +202,9 @@ class ChannelCell(ValueModel):
     state: Literal["UNKNOWN"] = UNKNOWN
     state_evidence: str = STATES_EVIDENCE
     hwnd: int | None = None
+    #: The strip panel that **owns** this cell. An action boundary asks it, and the cell's own
+    #: handle, together: a handle that no longer hangs off this panel is not this ordinal.
+    owner_hwnd: int | None = None
 
 
 class ModeToggle(ValueModel):
@@ -295,14 +315,56 @@ def _children(tree: UiTree, panel: UiNode) -> tuple[UiNode, ...]:
     )
 
 
+def strip_cells(nodes: Iterable[UiNode]) -> tuple[UiNode, ...]:
+    """The cells of **one** ten-cell strip in left → right order, or ``()` when it is not one.
+
+    This is the single owner of the strip's geometry and of what its ordinal *is*: a position on
+    the row, not a child index. A row is accepted only when every one of these holds, because each
+    one is a way a different control could be read as this strip:
+
+    * exactly :data:`STRIP_SIZE` cells, all of class ``TSp_Button``, each with a handle and a rect;
+    * **one band** — the cells share their top and bottom edges within a pixel, so a row split over
+      two lines is refused rather than re-ordered, and so is a cell of another height;
+    * **consistent geometry** — the same width within a pixel, so a cell of another shape is not
+      counted as a member;
+    * **a left-to-right sequence** — strictly increasing, distinct left edges and right edges, and
+      no two cells overlapping, so a duplicated or superimposed cell cannot alias an ordinal;
+    * **distinct handles** — two cells that name one handle are one control, not two ordinals.
+
+    Callers that press a cell get the ordinal from this order and nothing else.
+    """
+    cells = tuple(nodes)
+    if len(cells) != STRIP_SIZE or any(cell.cls != _CELL_CLASS for cell in cells):
+        return ()
+    if any(cell.hwnd is None or cell.rect is None for cell in cells):
+        return ()
+    tops = [cell.rect.top for cell in cells]
+    bottoms = [cell.rect.bottom for cell in cells]
+    widths = [cell.rect.width for cell in cells]
+    if (
+        max(tops) - min(tops) > 1
+        or max(bottoms) - min(bottoms) > 1
+        or max(widths) - min(widths) > 1
+    ):
+        return ()
+    ordered = tuple(sorted(cells, key=lambda cell: cell.rect.left))
+    lefts = [cell.rect.left for cell in ordered]
+    if len(set(lefts)) != STRIP_SIZE:
+        return ()
+    if len({cell.rect.right for cell in ordered}) != STRIP_SIZE:
+        return ()
+    if any(
+        lefts[index] < ordered[index - 1].rect.right for index in range(1, STRIP_SIZE)
+    ):
+        return ()
+    if len({cell.hwnd for cell in ordered}) != STRIP_SIZE:
+        return ()
+    return ordered
+
+
 def _strip_children(tree: UiTree, panel: UiNode) -> tuple[UiNode, ...]:
     """The panel's ten cells, left → right; empty when the panel is not a ten-cell strip."""
-    kids = _children(tree, panel)
-    if len(kids) != STRIP_SIZE or any(kid.cls != _CELL_CLASS for kid in kids):
-        return ()
-    if len({kid.rect.left for kid in kids}) != STRIP_SIZE:
-        return ()
-    return kids
+    return strip_cells(_children(tree, panel))
 
 
 def _edit_under(tree: UiTree, owner: UiNode) -> UiNode | None:
@@ -423,6 +485,7 @@ def _strip_tokens(
             index=index,
             attribution=Attribution(caption=f"{caption} · channel {index}"),
             hwnd=cell.hwnd,
+            owner_hwnd=panel.hwnd,
         )
         for index, cell in enumerate(_strip_children(tree, panel), start=1)
     )
@@ -486,14 +549,28 @@ def _settings(
                 # ``Use channels`` tick row. The band kind is what tells them apart.
                 if kind == "toggle+strip":
                     channel_ticks.extend(
-                        _strip_tokens(
-                            tree, "Use only channel", node, "use_only_channel"
-                        )
+                        _strip_tokens(tree, "Use only channel", node, USE_ONLY_CHANNEL)
                     )
                 else:
                     channel_ticks.extend(
-                        _strip_tokens(tree, "Use channels", node, "use_channels")
+                        _strip_tokens(tree, "Use channels", node, USE_CHANNELS)
                     )
+
+    # The two strips are different controls, so no handle may sit in both: a tree that aliases a
+    # cell across the radio row and the tick row cannot say which control an ordinal belongs to.
+    # This is the reader's own refusal — a consumer never re-derives it.
+    by_strip: dict[str, set[int]] = {}
+    for cell in channel_ticks:
+        if cell.hwnd is not None:
+            by_strip.setdefault(cell.strip, set()).add(int(cell.hwnd))
+    aliased = sorted(
+        by_strip.get(USE_ONLY_CHANNEL, set()) & by_strip.get(USE_CHANNELS, set())
+    )
+    if aliased:
+        refusals.append(
+            f"the two channel strips share handles {aliased}: they are different controls, so "
+            "no ordinal on either row is a target"
+        )
 
     repeat_owner = one("value")
     start_owner = one("combo")
@@ -610,6 +687,50 @@ def _refused(
         ),
         refusals=refusals,
     )
+
+
+@dataclass(frozen=True)
+class BoundRead:
+    """One bounded read on a caller-held binding, and why it could not be taken, if it could not."""
+
+    read: ChannelsRead
+    fingerprint: object
+    #: ``None`` when the screen read resolved; otherwise the reason no popup is bound from it.
+    unavailable: str | None = None
+
+
+def read_bound_channels(actuator, target: WindowTarget) -> BoundRead:
+    """One boundary read: the open popup resolved from a binding the caller already holds.
+
+    This is what an **action boundary** asks before it posts anything, and it is deliberately the
+    narrower read: it never enumerates the screen for a window, never binds and never rebinds. It
+    takes the caller's own binding, reads one role map, queries the visible edit controls' text
+    through the driver's bounded reader, and verifies that same binding **before and after** those
+    queries. Geometry, ordinal order and strip attribution stay :func:`resolve_channels`' alone, so
+    a caller asking "is this panel the top radio row?" reads the answer here instead of
+    re-deriving it from ancestry or from counting cells.
+
+    A screen it cannot read is reported, not raised: ``unavailable`` says why (a role map that
+    was never published, a map whose window disagrees with the binding), and ``read`` then carries
+    the matching refusal, the same way every other unreadable screen does.
+    """
+    fingerprint = actuator.screen_fingerprint()
+    roles = getattr(actuator, "last_roles", None)
+    if not isinstance(roles, dict):
+        reason = "the screen read published no role map"
+        return BoundRead(_refused(ChannelsSurface.CHANGED_STRUCTURE, (f"{reason}: nothing is bound from it",)), fingerprint, reason)
+    if roles.get("window") != fingerprint.hwnd or fingerprint.hwnd != target.hwnd:
+        reason = "the role map, fingerprint and original window binding disagree"
+        return BoundRead(_refused(ChannelsSurface.CHANGED_STRUCTURE, (f"{reason}, so no popup is bound",)), fingerprint, reason)
+    actuator.verify_bound_target(target)
+    rows = []
+    for source in roles.get("raw", ()):
+        row = dict(source)
+        if row.get("cls") in {"Edit", "TSp_Edit"} and row.get("visible", True):
+            row["text"] = actuator._get_text(row["hwnd"])
+        rows.append(row)
+    actuator.verify_bound_target(target)
+    return BoundRead(resolve_channels(observation_of({**roles, "raw": rows})), fingerprint)
 
 
 def _entry(tree: UiTree, panel: UiNode, kids: tuple[UiNode, ...]) -> ChannelsRead:

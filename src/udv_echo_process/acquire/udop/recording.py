@@ -44,9 +44,17 @@ from udv_echo_process.acquire.actuator import (
     StripControl,
     StripState,
     StripView,
+    WindowTarget,
     overlay_answer,
 )
 from udv_echo_process.acquire.udop import AcquisitionError
+from udv_echo_process.acquire.ui.channels import (
+    _CELL_CLASS,
+    _PANEL_CLASSES,
+    USE_ONLY_CHANNEL,
+    ChannelsSurface,
+    read_bound_channels,
+)
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
 from udv_echo_process.acquire.ui.identity import PanelIdentity
 from udv_echo_process.acquire.ui.strip import (
@@ -55,6 +63,10 @@ from udv_echo_process.acquire.ui.strip import (
 )
 from udv_echo_process.acquire.ui.strip import (
     press_refusal as strip_press_refusal,
+)
+from udv_echo_process.acquire.win32.tree import (
+    _class_of,
+    _parent_of,
 )
 
 # ------------------------------------------------------------------------ the strip's cadence
@@ -264,6 +276,135 @@ class RecordingSurface:
             time.sleep(_POLL_S - 0.05)
             state = self.strip_state()
         return state
+
+    def press_channel_cell(
+        self,
+        *,
+        target: WindowTarget,
+        popup_hwnd: int,
+        row_hwnd: int,
+        cell_hwnd: int,
+        ordinal: int,
+    ) -> None:
+        """Press one cell of the ``Channels`` popup's **top radio row**, held — and nothing else.
+
+        There is no "press any handle" entry point on this surface, on purpose: a bare
+        ``press(handle)`` facade would hand every caller arbitrary press authority over whatever
+        control it named. This method is the one narrow press, and it re-establishes the whole
+        chain at the *action* boundary, live, immediately before the message is posted:
+
+        * the caller's ``target`` is **this** surface's binding, and the bound window still
+          resolves to that handle;
+        * ``popup_hwnd`` is a direct child of the bound window and is a panel;
+        * ``row_hwnd`` is a direct child of the popup and is a panel;
+        * ``cell_hwnd`` is a child of ``row_hwnd``, of class ``TSp_Button``, and **the row is
+          the radio row the reader attributes to**
+          :data:`~udv_echo_process.acquire.ui.channels.USE_ONLY_CHANNEL`: the popup is re-read
+          once on this same binding, and that reading — not a local redescription of the tree —
+          must put ``row_hwnd`` at the head of the ``Use only channel`` strip and ``cell_hwnd``
+          at ``ordinal`` on it. The lower ``Use channels`` tick row has the same ancestry and ten
+          cells of its own, so ancestry alone would let a caller press the wrong control.
+
+        Any disagreement raises with **nothing posted**. The message itself is the strip's own
+        recipe (:func:`…win32.messages._click_hold`) on the cell's handle: never ``BM_CLICK``,
+        never a coordinate, never a second attempt.
+        """
+        if self._target is None or self._target != target:
+            raise AcquisitionError(
+                "the channel-cell press was asked for a window this surface is not bound to: "
+                f"bound {None if self._target is None else self._target.hwnd}, asked "
+                f"{target.hwnd} — nothing was posted"
+            )
+        self._main_hwnd()  # the binding's own live identity check, before any child message
+        if _class_of(popup_hwnd) not in _PANEL_CLASSES:
+            raise AcquisitionError(
+                f"hwnd {popup_hwnd} is not a panel, so it cannot be the Channels popup: "
+                "nothing was posted"
+            )
+        if _parent_of(popup_hwnd) != int(target.hwnd):
+            raise AcquisitionError(
+                f"hwnd {popup_hwnd} does not hang off the bound window {target.hwnd}, so it is "
+                "not this window's popup: nothing was posted"
+            )
+        if _class_of(row_hwnd) not in _PANEL_CLASSES:
+            raise AcquisitionError(
+                f"hwnd {row_hwnd} is not a panel, so it cannot be the radio row: nothing was "
+                "posted"
+            )
+        if _parent_of(row_hwnd) != int(popup_hwnd):
+            raise AcquisitionError(
+                f"hwnd {row_hwnd} does not hang off the popup {popup_hwnd}: nothing was posted"
+            )
+        if _class_of(cell_hwnd) != _CELL_CLASS:
+            raise AcquisitionError(
+                f"hwnd {cell_hwnd} is class {_class_of(cell_hwnd)!r}, not a {_CELL_CLASS} cell "
+                "of a channel row: nothing was posted"
+            )
+        if _parent_of(cell_hwnd) != int(row_hwnd):
+            raise AcquisitionError(
+                f"hwnd {cell_hwnd} does not hang off the row {row_hwnd}, so it is not a cell of "
+                "it: nothing was posted"
+            )
+        # The ancestry and class checks above say "a panel hanging off this popup, holding cells
+        # of the right class" — and that is all they can say. The lower ``Use channels`` tick row
+        # is also a panel child of the popup with ten ``TSp_Button`` children of its own, so a
+        # caller that handed this method *that* row and one of its cells would pass every check
+        # above and post a press on a different control. Which row a panel **is** is the reader's
+        # fact, not a structural one: one bounded re-read on this same binding
+        # (:func:`…ui.channels.read_bound_channels` — one role map, one resolution, the binding
+        # verified around the queries) states the strips' attributions and each cell's ordinal, so
+        # this method asks it instead of re-deriving geometry from the descendants itself.
+        bound = read_bound_channels(self, target)
+        if bound.unavailable is not None:
+            raise AcquisitionError(
+                f"{bound.unavailable}, so the row's identity cannot be read at the press: "
+                "nothing was posted"
+            )
+        report = bound.read
+        if report.surface is not ChannelsSurface.SETTINGS_POPUP or report.popup is None:
+            raise AcquisitionError(
+                f"the Channels popup no longer reads as the full settings surface at the press "
+                f"(surface {report.surface.value!r}): nothing was posted"
+            )
+        if report.popup.hwnd is None or int(report.popup.hwnd) != int(popup_hwnd):
+            raise AcquisitionError(
+                f"the settings popup reads as {report.popup.hwnd} where {popup_hwnd} was "
+                "resolved: the popup moved, so nothing was posted"
+            )
+        if not report.readable or report.refusals:
+            raise AcquisitionError(
+                "the settings popup did not read cleanly at the press "
+                f"({'; '.join(report.refusals) or 'readable is False'}): nothing was posted"
+            )
+        owned = tuple(
+            cell
+            for cell in report.channel_ticks
+            if cell.strip == USE_ONLY_CHANNEL
+            and cell.owner_hwnd is not None
+            and int(cell.owner_hwnd) == int(row_hwnd)
+        )
+        if not owned:
+            owners = sorted(
+                {
+                    int(cell.owner_hwnd)
+                    for cell in report.channel_ticks
+                    if cell.strip == USE_ONLY_CHANNEL and cell.owner_hwnd is not None
+                }
+            )
+            raise AcquisitionError(
+                f"row {row_hwnd} is not the panel the reader attributes to {USE_ONLY_CHANNEL!r} "
+                f"(the radio row beside 'Use only channel'; that strip measured {owners!r}): the "
+                "standalone 'Use channels' tick row is a different control, so nothing was posted"
+            )
+        placed = next((cell for cell in owned if cell.index == int(ordinal)), None)
+        if placed is None or placed.hwnd is None or int(placed.hwnd) != int(cell_hwnd):
+            raise AcquisitionError(
+                f"hwnd {cell_hwnd} is not the cell the reader places at ordinal {ordinal} of the "
+                f"{USE_ONLY_CHANNEL!r} row {row_hwnd} (measured "
+                f"{None if placed is None else placed.hwnd!r}): the row moved, so nothing was "
+                "posted"
+            )
+        self._click_hold(int(cell_hwnd))
 
     def press(self, control: StripControl) -> None:
         """Press one strip button of the *current* view, **held**, by position.

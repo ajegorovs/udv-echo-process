@@ -151,10 +151,11 @@ class MultiplexedRecordingDeclaration(ValueModel):
     - ``channels`` / ``profiles_per_channel`` — the configured channel set and each channel's
       profile count, judged by :func:`…store_completed.block_declaration_clauses`, the rule the
       store-only path applies to the same statement. ``profiles_per_visit`` with
-      ``sequence_repeats`` is the explicit repeated-sequence basis, mutually exclusive with the
-      legacy total: their product is the expected stored total, computed once by the store-only
-      declaration, and the repeat count itself is compared only with the reader's stored block
-      partition — never with a visit count, which is not decoded.
+      ``sequence_repeats`` is the explicit uniform repeated-sequence basis, and
+      ``channel_profiles`` with ``sequence_repeats`` the per-channel one (the channels need not
+      agree); both are mutually exclusive with the legacy total, and every expected total is
+      computed once by the store-only declaration. The repeat count itself is compared only with
+      the reader's stored block partition — never with a visit count, which is not decoded.
     - ``stated_by`` — who said so. An unattributed 'yes' is not a declaration.
     """
 
@@ -167,6 +168,20 @@ class MultiplexedRecordingDeclaration(ValueModel):
     profiles_per_visit: int | None = Field(default=None, strict=True)
     #: The operator's stated repeat count. Never compared with a decoded count.
     sequence_repeats: int | None = Field(default=None, strict=True)
+    #: The operator's stated per-visit count **per channel**, as ``(channel, count)`` pairs.
+    #: The third count basis, judged by the store owner's own rule; the pairs must name
+    #: exactly the declared channels once each, and each channel's expected total is its own
+    #: count times ``sequence_repeats`` — never one uniform total.
+    channel_profiles: (
+        tuple[
+            tuple[
+                Annotated[int, Field(strict=True, gt=0)],
+                Annotated[int, Field(strict=True, gt=0)],
+            ],
+            ...,
+        ]
+        | None
+    ) = None
     stated_by: str
     stated_at: str = ""
     #: The operator's own words, kept raw for the report.
@@ -195,6 +210,7 @@ class MultiplexedRecordingDeclaration(ValueModel):
                 self.stated_by,
                 profiles_per_visit=self.profiles_per_visit,
                 sequence_repeats=self.sequence_repeats,
+                channel_profiles=self.channel_profiles,
             )
         )
         return tuple(out)
@@ -212,14 +228,20 @@ class MultiplexedRecordingDeclaration(ValueModel):
             profiles_per_channel=self.profiles_per_channel,
             profiles_per_visit=self.profiles_per_visit,
             sequence_repeats=self.sequence_repeats,
+            channel_profiles=self.channel_profiles,
             stated_by=self.stated_by,
             stated_at=self.stated_at,
             statement=self.statement,
         )
 
     @property
-    def expected_total_profiles(self) -> int:
-        """The expected stored total per channel, normalized by the completed-block owner."""
+    def expected_total_profiles(self) -> int | None:
+        """The uniform expected total per channel (``None`` for a per-channel declaration).
+
+        Normalized by the completed-block owner, which is the only place the arithmetic
+        lives; a per-channel statement has no single total and says so here rather than
+        borrowing a neighbour's number.
+        """
         return self.completed_block().expected_total_profiles
 
     @property

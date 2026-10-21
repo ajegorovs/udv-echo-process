@@ -26,8 +26,9 @@ here derives the profile count, and nothing converts a requested count into an o
    :attr:`…actuator.StripRowVariant.REPEATED_MPX_COMPLETION` (2026-10-21). A ready,
    recording or ambiguous row, the legacy ``New acquisition``-first three-button row, an
    unmeasured three-button row and every four-button row are refused;
-5. the operator's explicit declaration (more than one channel named, positive profile count,
-   named operator) is valid;
+5. the operator's explicit declaration (more than one channel named, a positive profile
+   count — one total, one per-visit/repeat pair, or one count per channel — and a named
+   operator) is valid;
 6. the store name is one safe file-name **stem**, the directory exists and can be listed, and no
    entry in it already has that stem.
 
@@ -47,6 +48,7 @@ Nothing here runs at import time: no window is read, no message posted, no file 
 from __future__ import annotations
 
 import math
+import re
 import time
 from collections.abc import Callable, Iterable, Sequence
 from enum import Enum
@@ -82,6 +84,7 @@ __all__ = [
     "collision_clause",
     "completed_row_clauses",
     "is_completed_row",
+    "parse_channel_profiles",
     "screen_clauses",
     "store_completed",
     "store_directory",
@@ -94,6 +97,10 @@ __all__ = [
 #: recording surface's private ``_POLL_S`` (0.4 s); this module keeps its own copy rather than
 #: importing a private, and the value is a poll interval, not a decision.
 DIALOG_POLL_S = 0.4
+
+#: The one grammar for a per-channel declaration: a positive decimal integer with no sign,
+#: whitespace or leading zero. ``fullmatch`` is used, so nothing is accepted by prefix.
+_DECIMAL = re.compile(r"[1-9][0-9]*")
 
 #: Characters that cannot be part of a single Windows file name: a store name carrying one is a
 #: path or an illegal name, never a stem the dialog can store under.
@@ -131,6 +138,9 @@ class ProfileCountBasis(str, Enum):
     STATED_TOTAL = "stated-total"
     #: The operator stated one visit's count and a repeat count; the total is their product.
     PER_VISIT_TIMES_REPEATS = "per-visit-times-repeats"
+    #: The operator stated a per-visit count **per channel** and one repeat count; each
+    #: channel's total is that channel's own product, so there is no uniform total.
+    PER_CHANNEL_PER_VISIT_TIMES_REPEATS = "per-channel-per-visit-times-repeats"
 
 
 class CompletedBlockDeclaration(ValueModel):
@@ -141,12 +151,17 @@ class CompletedBlockDeclaration(ValueModel):
     attributed to a person and optionally dated. Each stated number is retained exactly as
     stated — never a default and never derived from a requested value.
 
-    **Two mutually exclusive count bases, and one place that normalizes them.**
+    **Three mutually exclusive count bases, and one place that normalizes them.**
     ``profiles_per_channel`` is the legacy basis: one stated *total* per channel across the
     whole stored block, and its meaning is unchanged. ``profiles_per_visit`` together with
-    ``sequence_repeats`` is the explicit repeated-sequence basis: the operator's per-visit
-    count and repeat count, whose product is the expected stored total. A declaration states
-    exactly one basis; stating both, or half of the pair, is refused rather than interpreted.
+    ``sequence_repeats`` is the explicit repeated-sequence basis: one per-visit count for
+    every channel and one repeat count, whose product is the expected stored total.
+    ``channel_profiles`` together with ``sequence_repeats`` is the per-channel repeated
+    basis: one per-visit count *per channel* (the channels need not agree), and each
+    channel's own product is its expected total. A declaration states exactly one basis;
+    stating two, half of a pair, or a mapping that does not name every declared channel
+    exactly once is refused rather than interpreted, and an asymmetric statement is never
+    collapsed into one uniform count.
     Neither stated number is ever a decoded fact: the reader reports each stored block's own
     block/sequence word, but that word is a block/sequence number and not a visit identity, so
     the actual visit count is unknown and stays unknown. The stored block partition can be
@@ -165,6 +180,21 @@ class CompletedBlockDeclaration(ValueModel):
     #: only with the reader's stored block partition — never with a visit count, which is not
     #: decoded.
     sequence_repeats: int | None = Field(default=None, strict=True)
+    #: The operator's stated per-visit count **per channel**, as ``(channel, count)`` pairs.
+    #: Only valid with ``sequence_repeats`` and with neither ``profiles_per_channel`` nor
+    #: ``profiles_per_visit``; the pairs must name exactly the declared channels once each.
+    #: Kept in the operator's own order as stated; :meth:`expected_profiles_by_channel`
+    #: normalizes them to the declared channel order, once.
+    channel_profiles: (
+        tuple[
+            tuple[
+                Annotated[int, Field(strict=True, gt=0)],
+                Annotated[int, Field(strict=True, gt=0)],
+            ],
+            ...,
+        ]
+        | None
+    ) = None
     stated_by: str
     stated_at: str = ""
     #: The operator's own words, kept raw for the report.
@@ -185,6 +215,7 @@ class CompletedBlockDeclaration(ValueModel):
             self.stated_by,
             profiles_per_visit=self.profiles_per_visit,
             sequence_repeats=self.sequence_repeats,
+            channel_profiles=self.channel_profiles,
         )
 
     @property
@@ -192,23 +223,96 @@ class CompletedBlockDeclaration(ValueModel):
         """Which basis the profile count is stated on."""
         if self.profiles_per_channel is not None:
             return ProfileCountBasis.STATED_TOTAL
+        if self.channel_profiles is not None:
+            return ProfileCountBasis.PER_CHANNEL_PER_VISIT_TIMES_REPEATS
         return ProfileCountBasis.PER_VISIT_TIMES_REPEATS
 
     @property
-    def expected_total_profiles(self) -> int:
-        """The expected stored total per channel, normalized here and nowhere else.
+    def per_visit_profiles_by_channel(self) -> tuple[tuple[int, int], ...] | None:
+        """Each declared channel's stated per-visit count, in the caller's channel order.
 
-        On the legacy basis this is the operator's stated total, unchanged. On the repeated
-        basis it is ``profiles_per_visit * sequence_repeats`` — the operator's own arithmetic
-        over the operator's own numbers, not a decoded fact and not evidence that the visits
-        happened.
+        The single normalization of the per-channel statement: a per-channel declaration's
+        own pairs are read here, a uniform per-visit declaration yields the same count for
+        every declared channel, and the legacy stated-total basis yields ``None`` (it states
+        no per-visit count at all). Pairs are re-ordered to ``channels`` and never repaired:
+        a duplicate, missing, extra or non-integer channel/count is refused by
+        :meth:`clauses` before this is reached.
+        """
+        if self.channel_profiles is not None:
+            stated = dict(self.channel_profiles)
+            return tuple((channel, stated[channel]) for channel in self.channels)
+        if self.profiles_per_visit is None:
+            return None
+        return tuple((channel, self.profiles_per_visit) for channel in self.channels)
+
+    def per_visit_for_channel(self, channel: int) -> int | None:
+        """The stated per-visit count for one declared channel; ``None`` on a total basis."""
+        mapping = self.per_visit_profiles_by_channel
+        if mapping is None:
+            return None
+        for declared, count in mapping:
+            if declared == channel:
+                return count
+        raise ValueError(
+            f"channel {channel} is not in the declared channels {list(self.channels)}: this "
+            "declaration states no count for it"
+        )
+
+    def count_for_channel(self, channel: int) -> int:
+        """The expected stored **total** for one declared channel — normalized once, here.
+
+        Every consumer (the artifact check, a stored-run report, a CLI) asks this method
+        instead of multiplying, re-reading the mapping or borrowing another channel's
+        number, so an asymmetric declaration can never be rendered as one uniform count.
+        On the legacy total basis every declared channel gets the operator's stated total;
+        on either repeated basis the channel's own per-visit count times the one stated
+        repeat count.
+        """
+        if channel not in self.channels:
+            raise ValueError(
+                f"channel {channel} is not in the declared channels {list(self.channels)}: "
+                "this declaration states no count for it"
+            )
+        per_visit = self.per_visit_for_channel(channel)
+        if per_visit is None:
+            if self.profiles_per_channel is None:
+                raise ValueError(
+                    "the declaration states no profile count: no total, no per-visit/repeat "
+                    "pair and no per-channel mapping were given"
+                )
+            return self.profiles_per_channel
+        assert (
+            self.sequence_repeats is not None
+        )  # guaranteed by this declaration's clauses
+        return per_visit * self.sequence_repeats
+
+    @property
+    def expected_profiles_by_channel(self) -> tuple[tuple[int, int], ...]:
+        """Each declared channel's expected stored total, in the caller's channel order."""
+        return tuple(
+            (channel, self.count_for_channel(channel)) for channel in self.channels
+        )
+
+    @property
+    def expected_total_profiles(self) -> int | None:
+        """The uniform expected stored total per channel, or ``None`` when there is none.
+
+        On the legacy basis this is the operator's stated total, unchanged; on the uniform
+        repeated basis it is ``profiles_per_visit * sequence_repeats``. A per-channel
+        declaration has **no** single total — returning one channel's number would silently
+        present an asymmetric statement as a uniform one — so it reports ``None`` and every
+        consumer uses :meth:`count_for_channel` / :attr:`expected_profiles_by_channel`. The
+        arithmetic is over the operator's own numbers, never a decoded fact and never
+        evidence that the visits happened.
         """
         if self.profiles_per_channel is not None:
             return self.profiles_per_channel
+        if self.channel_profiles is not None:
+            return None
         if self.profiles_per_visit is None or self.sequence_repeats is None:
             raise ValueError(
-                "the declaration states no profile count: no total and no per-visit/repeat "
-                "pair were given"
+                "the declaration states no profile count: no total, no per-visit/repeat "
+                "pair and no per-channel mapping were given"
             )
         return self.profiles_per_visit * self.sequence_repeats
 
@@ -217,12 +321,18 @@ class CompletedBlockDeclaration(ValueModel):
         """The unknown a repeated declaration carries, or ``""`` on the legacy basis."""
         if self.sequence_repeats is None:
             return ""
+        if self.channel_profiles is not None:
+            stated = ", ".join(
+                f"channel {channel}: {count} profile(s) per visit"
+                for channel, count in (self.per_visit_profiles_by_channel or ())
+            )
+        else:
+            stated = f"{self.profiles_per_visit} profile(s) per visit on every channel"
         return (
             f"the actual number of stored visits is unknown: the operator stated "
-            f"{self.sequence_repeats} repeat(s) of {self.profiles_per_visit} profile(s) per "
-            f"visit, but the stored footer word is a block/sequence number and not a visit "
-            f"identity, so a matching total ({self.expected_total_profiles}) or a matching "
-            f"stored block partition is not proof that "
+            f"{self.sequence_repeats} repeat(s) of {stated}, but the stored footer word is a "
+            "block/sequence number and not a visit identity, so a matching per-channel "
+            "total or a matching stored block partition is not proof that "
             f"{self.sequence_repeats} visit(s) were stored"
         )
 
@@ -230,11 +340,59 @@ class CompletedBlockDeclaration(ValueModel):
         """One person-readable clause naming the count, its basis and its arithmetic."""
         if self.count_basis is ProfileCountBasis.STATED_TOTAL:
             return f"{self.profiles_per_channel} profiles each (the operator's stated total)"
+        if self.channel_profiles is not None:
+            stated = ", ".join(
+                f"channel {channel}: {total} expected = {self.sequence_repeats} repeat(s) "
+                f"x {self.per_visit_for_channel(channel)} per visit"
+                for channel, total in self.expected_profiles_by_channel
+            )
+            return (
+                f"{stated} (the operator's per-channel per-visit counts, operator-stated "
+                "arithmetic; the repeat count is not decoded)"
+            )
         return (
             f"{self.expected_total_profiles} profiles each expected: "
             f"{self.sequence_repeats} repeat(s) x {self.profiles_per_visit} per visit "
             "(operator-stated arithmetic; the repeat count is not decoded)"
         )
+
+
+def parse_channel_profiles(specs: Sequence[str]) -> tuple[tuple[int, int], ...]:
+    """Parse ``CHANNEL=COUNT`` declarations strictly, or raise :class:`ValueError`.
+
+    One grammar and no repair: both sides must be positive decimal integers written without
+    a sign, whitespace or leading zero, because ``01``, ``+1`` and ``1_0`` are spellings of a
+    number the operator did not state. A channel named twice is refused here; the
+    declaration's own channel-set check refuses missing and extra channels. Nothing is
+    sorted, defaulted or reinterpreted: the pairs come back in the order given, and the
+    declaration owner re-orders them to the caller's channel order exactly once.
+    """
+    out: list[tuple[int, int]] = []
+    seen: set[int] = set()
+    for spec in specs:
+        text = str(spec)
+        parts = text.split("=")
+        if len(parts) != 2:
+            raise ValueError(
+                f"--channel-profiles value {text!r} is not CHANNEL=COUNT: one '=' separates "
+                "the channel from that channel's per-visit profile count"
+            )
+        channel_text, count_text = parts
+        if not (_DECIMAL.fullmatch(channel_text) and _DECIMAL.fullmatch(count_text)):
+            raise ValueError(
+                f"--channel-profiles value {text!r} is not CHANNEL=COUNT with positive "
+                "decimal integers written without a sign, whitespace or leading zero: "
+                "nothing here rewrites a channel number or a count the operator did not state"
+            )
+        channel, count = int(channel_text), int(count_text)
+        if channel in seen:
+            raise ValueError(
+                f"--channel-profiles states channel {channel} more than once: a channel is "
+                "named once in a completed block"
+            )
+        seen.add(channel)
+        out.append((channel, count))
+    return tuple(out)
 
 
 def block_declaration_clauses(
@@ -244,6 +402,7 @@ def block_declaration_clauses(
     *,
     profiles_per_visit: int | None = None,
     sequence_repeats: int | None = None,
+    channel_profiles: Sequence[tuple[int, int]] | None = None,
 ) -> tuple[str, ...]:
     """Why an operator's block statement is not one, or ``()`` when it is.
 
@@ -253,10 +412,13 @@ def block_declaration_clauses(
     Both are the operator's statement about the block — never a reading, never a derived count —
     so both are judged here rather than in two copies that could drift.
 
-    The count is stated on exactly one basis: the legacy total (``profiles_per_channel``) or
-    the explicit pair (``profiles_per_visit`` and ``sequence_repeats``). A total beside either
-    half of the pair, a pair with one half missing, and a non-positive or non-integer value are
-    all refused by name rather than resolved by a guess.
+    The count is stated on exactly one basis: the legacy total (``profiles_per_channel``),
+    the uniform pair (``profiles_per_visit`` and ``sequence_repeats``), or the per-channel
+    mapping (``channel_profiles`` and ``sequence_repeats``). A total beside another basis,
+    two bases at once, a pair with one half missing, a mapping without a repeat count, and a
+    non-positive or non-integer value are all refused by name rather than resolved by a
+    guess. A mapping must name every declared channel exactly once: a duplicate, missing or
+    extra channel is refused, never repaired or defaulted to a neighbour's count.
     """
     out: list[str] = []
     if not channels:
@@ -280,13 +442,32 @@ def block_declaration_clauses(
                 f"the declared channels {list(channels)} include a non-positive "
                 "number: no channel is numbered zero or below"
             )
-    stated_pair = profiles_per_visit is not None or sequence_repeats is not None
-    if profiles_per_channel is not None and stated_pair:
+    mapping_stated = channel_profiles is not None
+    # A repeat count belongs to whichever per-visit basis was stated: beside a mapping it is
+    # half of *that* basis, not a second one.
+    stated_pair = profiles_per_visit is not None or (
+        sequence_repeats is not None and not mapping_stated
+    )
+    bases = [
+        name
+        for name, stated in (
+            (
+                "a total profile count per channel",
+                profiles_per_channel is not None,
+            ),
+            ("a per-visit/repeat pair", stated_pair),
+            ("a per-channel per-visit mapping", mapping_stated),
+        )
+        if stated
+    ]
+    if len(bases) > 1:
         out.append(
-            "the declaration states both a total profile count per channel "
-            f"({profiles_per_channel}) and a per-visit/repeat pair "
-            f"({profiles_per_visit} x {sequence_repeats}): one declaration states one basis, "
-            "and nothing here picks between two readings of the same block"
+            "the declaration states "
+            + " and ".join(bases)
+            + f" ({profiles_per_channel} total, {profiles_per_visit} x "
+            f"{sequence_repeats} per visit, {list(channel_profiles or ())} per channel): one "
+            "declaration states one basis, and nothing here picks between two readings of "
+            "the same block"
         )
     elif profiles_per_channel is not None:
         if not _positive_count(profiles_per_channel):
@@ -294,6 +475,10 @@ def block_declaration_clauses(
                 "the declaration does not state a positive profile count per channel: the "
                 "count is the operator's reading of the completed block, never a default"
             )
+    elif mapping_stated:
+        out.extend(
+            _channel_mapping_clauses(channels, channel_profiles or (), sequence_repeats)
+        )
     elif stated_pair:
         if profiles_per_visit is None:
             out.append(
@@ -323,14 +508,77 @@ def block_declaration_clauses(
     else:
         out.append(
             "the declaration states no profile count: state the per-channel total with "
-            "'profiles_per_channel', or the per-visit count and the repeat count together — "
-            "the count is the operator's reading of the completed block, never a default"
+            "'profiles_per_channel', the per-visit count and the repeat count together, or "
+            "one per-visit count per channel with the repeat count — the count is the "
+            "operator's reading of the completed block, never a default"
         )
     if not stated_by.strip():
         out.append(
             "the declaration names no operator: an unattributed 'yes' is not one"
         )
     return tuple(out)
+
+
+def _channel_mapping_clauses(
+    channels: Sequence[int],
+    channel_profiles: Sequence[tuple[int, int]],
+    sequence_repeats: int | None,
+) -> list[str]:
+    """Why a per-channel per-visit mapping does not describe the declared block, or ``[]``.
+
+    The mapping is judged as stated: every key and count is a positive integer, each
+    declared channel appears exactly once, no undeclared channel appears, and the one repeat
+    count it is multiplied by is stated and positive. Nothing is filled in, copied from
+    another channel or dropped to make the mapping fit.
+    """
+    out: list[str] = []
+    keys = [channel for channel, _count in channel_profiles]
+    for channel, count in channel_profiles:
+        if not _positive_count(channel):
+            out.append(
+                f"the per-channel mapping states channel {channel!r}: a channel is a "
+                "positive integer, never a repaired or defaulted value"
+            )
+        if not _positive_count(count):
+            out.append(
+                f"the per-channel mapping states {count!r} profile(s) for channel "
+                f"{channel!r}: a per-visit count is a positive integer as the operator "
+                "states it, never defaulted or inferred from a total"
+            )
+    duplicates = sorted({channel for channel in keys if keys.count(channel) > 1})
+    if duplicates:
+        out.append(
+            f"the per-channel mapping names channel(s) {duplicates} more than once: a "
+            "channel is named once in a completed block, and the repeat of one is not a "
+            "second count"
+        )
+    declared = list(dict.fromkeys(channels))
+    extra = sorted(set(keys) - set(declared))
+    missing = sorted(set(declared) - set(keys))
+    if extra:
+        out.append(
+            f"the per-channel mapping names channel(s) {extra} which the declared "
+            f"channels {declared} do not include: the mapping describes exactly the "
+            "declared block, and nothing is added or dropped to make it fit"
+        )
+    if missing:
+        out.append(
+            f"the per-channel mapping states no count for declared channel(s) {missing}: "
+            "every declared channel is stated, and no count is defaulted or copied from "
+            "another channel"
+        )
+    if sequence_repeats is None:
+        out.append(
+            "the declaration states a per-channel per-visit mapping without a repeat "
+            "count: a per-visit count alone fixes no total per channel, and nothing here "
+            "invents the repeat it is multiplied by"
+        )
+    elif not _positive_count(sequence_repeats):
+        out.append(
+            "the declaration does not state a positive repeat count: a repeat of zero or "
+            "fewer is not a finite repeated sequence, and the count is never defaulted"
+        )
+    return out
 
 
 def _positive_count(value: object) -> bool:

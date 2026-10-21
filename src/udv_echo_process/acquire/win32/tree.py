@@ -52,10 +52,12 @@ from udv_echo_process.acquire.win32.cursor import _gui, _owner_of
 
 __all__ = [
     "_children_of",
+    "_class_of",
     "_descendants_of",
     "_hidden_panels",
     "_is_visible",
     "_main_hwnd",
+    "_parent_of",
     "_visible_children",
     "target_mismatch",
     "ui_nodes",
@@ -416,6 +418,31 @@ def _descendants_of(hwnd: int, *, gui=_gui) -> list[dict]:
                 pass
             child = win32gui.GetWindow(child, 2)  # GW_HWNDNEXT
     return rows
+
+
+def _parent_of(hwnd: int, *, gui=_gui) -> int | None:
+    """The parent Windows states for ``hwnd``, or ``None`` when it states none or is gone.
+
+    The *ownership* question an action boundary asks before it posts anything: a control is only
+    the control a reading named if it still hangs off that reading's panel. This is the raw
+    ``GetParent`` answer, not a resolver rule — deciding what a parent *means* stays above this
+    layer.
+    """
+    win32gui, _ = gui()
+    try:
+        parent = win32gui.GetParent(hwnd)
+    except Exception:  # noqa: BLE001 - a dead handle states no parent
+        return None
+    return int(parent) if parent else None
+
+
+def _class_of(hwnd: int, *, gui=_gui) -> str:
+    """The window class Windows states for ``hwnd``, or ``""`` when it cannot be read."""
+    win32gui, _ = gui()
+    try:
+        return str(win32gui.GetClassName(hwnd))
+    except Exception:  # noqa: BLE001 - a dead handle states no class
+        return ""
 
 
 def ui_nodes(rows: Iterable[Mapping]) -> tuple[UiNode, ...]:

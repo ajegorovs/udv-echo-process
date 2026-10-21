@@ -52,9 +52,8 @@ from udv_echo_process.acquire.channels_capture import (
 from udv_echo_process.acquire.driver import (
     AcquisitionError,
     Win32Actuator,
-    observation_of,
 )
-from udv_echo_process.acquire.ui.channels import ChannelsRead, resolve_channels
+from udv_echo_process.acquire.ui.channels import ChannelsRead, read_bound_channels
 from udv_echo_process.acquire.ui.layout import MAIN_CLASS
 from udv_echo_process.acquire.win32.tree import visible_main_windows
 
@@ -128,24 +127,18 @@ def _bound(
 def _read_once(
     actuator: Win32Actuator, target: WindowTarget
 ) -> tuple[ChannelsRead, object]:
-    """One inspection of the already-open popup, plus the screen fingerprint behind it."""
-    fingerprint = actuator.screen_fingerprint()
-    roles = getattr(actuator, "last_roles", None)
-    if not isinstance(roles, dict):
-        raise ChannelsReadUnavailable("the screen read published no role map")
-    if roles.get("window") != fingerprint.hwnd or fingerprint.hwnd != target.hwnd:
-        raise ChannelsReadUnavailable(
-            "the role map, fingerprint and original window binding disagree"
-        )
-    actuator.verify_bound_target(target)
-    rows = []
-    for source in roles.get("raw", ()):
-        row = dict(source)
-        if row.get("cls") in {"Edit", "TSp_Edit"} and row.get("visible", True):
-            row["text"] = actuator._get_text(row["hwnd"])
-        rows.append(row)
-    actuator.verify_bound_target(target)
-    return resolve_channels(observation_of({**roles, "raw": rows})), fingerprint
+    """One inspection of the already-open popup, plus the screen fingerprint behind it.
+
+    The read itself is :func:`~udv_echo_process.acquire.ui.channels.read_bound_channels` — one role
+    map, one resolution, the binding verified around the text queries — so an action boundary and
+    this reader cannot disagree about what the popup states. What is local here is only this
+    command's stricter answer to a screen it cannot read at all: ``read_channels`` says so by
+    raising rather than by returning a report.
+    """
+    bound = read_bound_channels(actuator, target)
+    if bound.unavailable is not None:
+        raise ChannelsReadUnavailable(bound.unavailable)
+    return bound.read, bound.fingerprint
 
 
 def _guard(

@@ -269,12 +269,14 @@ What a `status: ok` capture still does not establish: pixel alignment under disp
 100 %), atomic stillness (two frames cannot distinguish a screen that changed and changed back),
 or any authority to press anything.
 
-**2h. The sibling writer — `Profiles` — is offline verified only, and its channel is a declaration.**
-`acquire channels-profiles --expect N --value M --operator-channel C --baseline B --mpx-disabled
---trial-record PATH` writes the same popup's per-channel `Acquire … Profiles` exactly once. **No
-live acceptance exists for this slot**: it has never been run against the instrument, so do not
-report it as rehearsed, and do not borrow §12.9's `Repeat` acceptance for it. The flags that differ
-from `channels-repeat` are the ones that carry the limits:
+**2h. The sibling writer — `Profiles` — is live accepted for one scope only, and its channel is a
+declaration.** `acquire channels-profiles --expect N --value M --operator-channel C --baseline B
+--mpx-disabled --trial-record PATH` writes the same popup's per-channel `Acquire … Profiles` exactly
+once. **Live acceptance covers one narrow scope** — channel 1 (operator-declared), `50 → 51 → 50`,
+popup closed and reopened before each read (`docs/dop3000/udop-automation.md` §12.11). Do not
+generalise it: no second channel, no application restart, no downstream acquisition effect, and
+never quote the declared channel as measured. Do not borrow §12.9's `Repeat` acceptance either. The
+flags that differ from `channels-repeat` are the ones that carry the limits:
 
 - `--operator-channel` is a **declaration, not a proof**. The group's channel is painted in a
   caption (`For the current channel (channel N)`) and the tree states nothing, so the read leaves
@@ -288,8 +290,62 @@ from `channels-repeat` are the ones that carry the limits:
   both records naming the same baseline.
 - **Only the operator's reopened popup closes the obligation.** The command never opens or closes
   the popup, presses, records, retries or repairs; `persisted: "unknown"` and
-  `obligation_open: true` are the correct outcome of a write, and restoration plus the closing read
-  are the operator's by hand.
+  `obligation_open: true` are the correct outcome of a write. The restore *write* is a second
+  invocation of the same command (the accepted trial's was), but the **closing read** is the
+  operator's close-and-reopen; no record text should claim the restore needs a hand.
+
+**2i. `channels-select` presses the top radio row once, and can never report a selection.**
+`acquire channels-select --expect-channel C --channel D --expect-start-channel S --restore-channel R
+--mpx-disabled --trial-record PATH [--visual-corroboration TEXT]` presses **one** cell of the
+popup's top radio row (`Use only channel`, the reader's `use_only_channel` strip) and nothing else.
+Limits that matter when reading a result:
+
+- **The press goes through one target-bound helper, never a handle facade.**
+  `RecordingSurface.press_channel_cell(target=…, popup_hwnd=…, row_hwnd=…, cell_hwnd=…,
+  ordinal=…)` re-establishes, live and immediately before posting: the caller's binding is this
+  surface's and still resolves to that window, the popup is a panel and a direct child of the
+  bound window, the row is a panel and a direct child of the popup, the cell is a `TSp_Button`
+  child of that row, and the row's own cells (`ui.channels.strip_cells`, the single owner of the
+  strip's geometry and left → right ordinal) put it at `ordinal`. Any disagreement raises with
+  nothing posted. There is no `press(handle)` entry point and none should be added: a bare handle
+  is arbitrary press authority.
+- The row is separated from the lower `Use channels` tick row by the reader's attribution; the
+  **reader** owns completeness, band and geometry, ordering, duplicate/overlapping rects, repeated
+  handles inside a row, and a handle shared between the two rows. A strip that fails any of those
+  is not a strip, so the surface reads as `changed_structure` and the command refuses with zero
+  presses. Do not re-derive those clauses in a consumer.
+- **`--expect-channel` is a declaration, not a measurement**: the ticked radio is painted glyph and
+  every cell answers `""`. `--expect-channel`, `--expect-start-channel` and `--restore-channel` are
+  strict integers in **1..10** (declaring a state is not pressing it); only `--channel` is limited
+  to the measured press set. `--restore-channel` is **required and explicit** — the trial's
+  original is never defaulted from `--expect-channel`, because that would record a restoration
+  nobody declared. `--expect-start-channel` *is* checkable, because the start-channel combo states
+  text; a mismatch, or text that is not an integer in 1..10, refuses.
+- `selection: "UNKNOWN"`, `native_proof: false`, `posted: "unknown"`, `persisted: "unknown"` are
+  the correct outcome of a press. **Attempted is not posted**: an exception from the press
+  primitive yields `stage: "press_raised"`, `press: "attempted"`, `posted: "unknown"` and a
+  non-zero exit — never `pressed`, never a retry. `--visual-corroboration` is recorded as a
+  **post-hoc observation only** on every path; it never becomes the command's evidence and the
+  attribution type that carries a caption states `action_authority: Literal[False]`.
+- The exclusive record is claimed **after** the fresh preflight and the final bound-target check,
+  and **before** the press: it carries the full bound target, the popup/row/cell handles and the
+  ordinal, and the readable facts before and after (with `facts_unreadable`). A pre-action refusal
+  therefore leaves no record at all — no obligation exists for a gesture that was never pending.
+- Facts that move after the press (the new channel's own `profiles`/`seconds`) are reported as
+  `facts_moved`, never as an error and never repaired. One press, no retry, no cleanup; a failed
+  record update reports `trial_record_phase: "obligation"` and exits non-zero.
+- Exit codes: `no_op` (the declaration already names the target) is **0**; an attempted press, a
+  raised press, an unknown selection and a record error are **1**. There is no success exit,
+  because a gesture is not a selection. An accepted live `1 -> 2 -> 1` trial exited **1 on both
+  invocations** (`docs/dop3000/udop-automation.md` §12.12): `1` with `stage: pressed` means *done,
+  unproven*, and a caller that needs a zero is asking for a result the command cannot produce.
+- **The owed restoration is a gesture, not an executor.** The acceptance trial's restore was a
+  second supervised invocation of this same command, and it worked; the owed text therefore names
+  the press to take, never "by hand". Likewise `press_evidence` names the attempted held press and
+  its recipe while `posted` stays `unknown` — no field claims a delivered message.
+- Only channels **1, 2 and 10** are accepted as the **press target** until a measured ordinal →
+  painted-label mapping exists for the rest; that mapping, not a wider `SELECTABLE_CHANNELS`, is
+  what unblocks the others.
 
 **Why it stays supervised (state this precisely).** There is no *verified* automatic non-mutating
 route to reopen the popup and take the acceptance/restoration read. That missing verification — not

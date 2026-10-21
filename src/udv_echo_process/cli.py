@@ -37,6 +37,7 @@ from udv_echo_process.acquire import (
     channels_profiles,
     channels_read,
     channels_repeat,
+    channels_select,
     driver,
     live,
     mpx_artifact,
@@ -1572,6 +1573,75 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channels_profiles_parser.add_argument("--json", action="store_true")
 
+    channels_select_parser = subcommands.add_parser(
+        "channels-select",
+        help=(
+            "press the Channels popup's top radio row once to select one channel "
+            "(the selection itself stays unknown: the cells paint their tick)"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--expect-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of the channel the popup is on now (1..10); it is a "
+            "declaration, never a measured state, and it never stands in for "
+            "--restore-channel"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--channel",
+        type=int,
+        required=True,
+        help="the top-row channel cell to press, once (supported: 1, 2, 10)",
+    )
+    channels_select_parser.add_argument(
+        "--expect-start-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of the popup's start-channel field; it is checked "
+            "against the field's own text before anything is pressed"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--restore-channel",
+        type=int,
+        required=True,
+        help=(
+            "the trial's original channel, declared explicitly on every invocation (1..10); it "
+            "is never defaulted from --expect-channel, because that would record a restoration "
+            "nobody declared and a restore run would owe an undo of itself"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--visual-corroboration",
+        default="",
+        help=(
+            "an operator/capture observation taken after the press, recorded separately; it is "
+            "post-hoc corroboration and never the command's own proof of a selection"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-select-trial.json inside it): one record per invocation, claimed after "
+            "the fresh preflight and before the press. An existing record is never overwritten"
+        ),
+    )
+    channels_select_parser.add_argument("--json", action="store_true")
+
     channel_parser = subcommands.add_parser(
         "channel", help="verify the measurement channel (writes it only if it differs)"
     )
@@ -1621,8 +1691,33 @@ def acquire_main(argv: list[str] | None = None) -> None:
     store_completed_parser.add_argument(
         "--profiles",
         type=int,
-        required=True,
-        help="profiles per channel in the completed block, as the operator states them",
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel in the completed block "
+            "(legacy basis; exclusive with --channel-profiles/--repeats)"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
     )
     store_completed_parser.add_argument(
         "--stated-by",
@@ -1675,8 +1770,21 @@ def acquire_main(argv: list[str] | None = None) -> None:
         type=int,
         default=None,
         help=(
-            "the operator's stated repeat count; requires --profiles-per-visit. The repeat "
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
             "count itself is never verified: the decoder decodes no visit/block count"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
         ),
     )
     mpx_check_parser.add_argument(
@@ -1735,8 +1843,21 @@ def acquire_main(argv: list[str] | None = None) -> None:
         type=int,
         default=None,
         help=(
-            "the operator's stated repeat count; requires --profiles-per-visit. The repeat "
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
             "count itself is never verified: the decoder decodes no visit/block count"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
         ),
     )
     record_multiplexed_parser.add_argument(
@@ -2020,6 +2141,48 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 for owed in profiles_result.restoration_owed:
                     print(f"udv-acquire: owed: {owed}", file=sys.stderr)
                 code = 1
+        elif args.command == "channels-select":
+            select_result = channels_select.acquire_select_channel(
+                expect_channel=args.expect_channel,
+                channel=args.channel,
+                expect_start_channel=args.expect_start_channel,
+                restore_channel=args.restore_channel,
+                visual_corroboration=args.visual_corroboration,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(select_result, as_json)
+            # The press is a gesture, so this command never reports a selection, a post or a
+            # success. What it can report is the attempt, what moved, what could not be read and
+            # what the operator still owes — and an unknown selection is a non-zero exit, because
+            # a script that ignored it would be treating a gesture as a result.
+            for change in select_result.facts_moved:
+                print(f"udv-acquire: fact moved: {change}", file=sys.stderr)
+            for unreadable in select_result.facts_unreadable:
+                print(f"udv-acquire: fact unreadable: {unreadable}", file=sys.stderr)
+            if select_result.press_error:
+                print(
+                    f"udv-acquire: {select_result.press_error}",
+                    file=sys.stderr,
+                )
+            if select_result.post_error:
+                print(f"udv-acquire: {select_result.post_error}", file=sys.stderr)
+            print(
+                "udv-acquire: selection unknown — the radio cells paint their tick, and "
+                f"posted is {select_result.posted}; corroborating the tick needs a separate "
+                "visual observation, and any restoration still owed is simply another "
+                "selection of the declared original",
+                file=sys.stderr,
+            )
+            for owed in select_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            # Exit 1 for an attempted press: the selection, the post and the outcome are all
+            # unknown, so a zero here would read as a result. Only the settled no-op is 0.
+            if select_result.stage is not channels_select.SelectStage.NO_OP:
+                code = 1
+            if select_result.trial_record_error:
+                code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
         elif args.command == "compile":
@@ -2071,19 +2234,40 @@ def acquire_main(argv: list[str] | None = None) -> None:
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
         elif args.command == "store-completed":
+            # The declaration is judged by the shared rule first, so a malformed mapping is
+            # one refusal line (exit 2) with nothing pressed — never pydantic's multi-line
+            # dump and never a device action.
             try:
+                store_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                store_refusals = (str(exc),)
+            else:
+                store_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=store_channel_profiles,
+                )
+            if store_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(store_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
                 declaration = store_completed.CompletedBlockDeclaration(
                     channels=tuple(args.channel),
                     profiles_per_channel=args.profiles,
+                    channel_profiles=store_channel_profiles,
+                    sequence_repeats=args.repeats,
                     stated_by=args.stated_by,
                     statement=args.statement,
                 )
-            except ValueError as exc:
-                # The operator's declaration is a contract, so an invalid one is refused here
-                # (one line, exit 2) rather than reaching the workflow or the instrument.
-                print(f"udv-acquire: refused: {exc}", file=sys.stderr)
-                code = 2
-            else:
                 result = store_completed.store_completed(
                     args.name,
                     _acquire_store_directory(args.store_dir),
@@ -2099,13 +2283,23 @@ def acquire_main(argv: list[str] | None = None) -> None:
             # or decoded, so an invalid statement — including an ambiguous total/per-visit
             # combination — produces no decode, no claim and one concise refusal line rather
             # than pydantic's multi-line validation dump.
-            mpx_check_refusals = store_completed.block_declaration_clauses(
-                tuple(args.channel),
-                args.profiles,
-                args.stated_by,
-                profiles_per_visit=args.profiles_per_visit,
-                sequence_repeats=args.repeats,
-            )
+            try:
+                mpx_check_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                mpx_check_refusals = (str(exc),)
+            else:
+                mpx_check_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_check_channel_profiles,
+                )
             if mpx_check_refusals:
                 print(
                     f"udv-acquire: refused: {'; '.join(mpx_check_refusals)}",
@@ -2118,6 +2312,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     profiles_per_channel=args.profiles,
                     profiles_per_visit=args.profiles_per_visit,
                     sequence_repeats=args.repeats,
+                    channel_profiles=mpx_check_channel_profiles,
                     stated_by=args.stated_by,
                     statement=args.statement,
                 )
@@ -2131,13 +2326,23 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _print_artifact_clauses(artifact_report)
                 code = _artifact_exit_code(artifact_report)
         elif args.command == "record-multiplexed":
-            mpx_refusals = store_completed.block_declaration_clauses(
-                tuple(args.channel),
-                args.profiles,
-                args.stated_by,
-                profiles_per_visit=args.profiles_per_visit,
-                sequence_repeats=args.repeats,
-            )
+            try:
+                mpx_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                mpx_refusals = (str(exc),)
+            else:
+                mpx_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_channel_profiles,
+                )
             if mpx_refusals:
                 # One line, exit 2, before any window is read.
                 print(
@@ -2152,6 +2357,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     profiles_per_channel=args.profiles,
                     profiles_per_visit=args.profiles_per_visit,
                     sequence_repeats=args.repeats,
+                    channel_profiles=mpx_channel_profiles,
                     stated_by=args.stated_by,
                     statement=args.statement,
                 )

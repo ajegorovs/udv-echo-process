@@ -956,13 +956,17 @@ codes and the guards offline against an injected image backend.
 
 ---
 
-### 12.11 Offline verification — supervised `Profiles` writer (`channels-profiles`)
+### 12.11 Supervised `Profiles` writer (`channels-profiles`)
 
-**Status: OFFLINE VERIFIED, NO LIVE ACCEPTANCE.** `acquire channels-profiles` has never been run
-against the instrument. Everything below is established by the source and by
+**Status: OFFLINE VERIFIED, AND LIVE ACCEPTED FOR ONE SCOPE** — one operator-declared channel
+(channel 1), `50 → 51 → 50`, with the popup closed and reopened before each acceptance read.
+Everything below that is offline is established by the source and by
 `tests/test_acquire_channels_profiles.py` (67 focused tests pass across it and
 `tests/test_acquire_channels_repeat.py`; `ruff check src tests` clean) against injected surfaces.
-No popup was opened, no field was written, and no reopened read exists for this slot. The `Repeat`
+The live scope is narrow on purpose: **one channel, one temporary count, one restoration, three
+reads**. It does not accept the writer generally — the operator's channel stays a declaration, and
+another channel, the coupled `seconds` on the real application, an application restart and any
+downstream acquisition effect remain unestablished (see the live block below). The `Repeat`
 acceptance in §12.9 and the capture acceptance in §12.10 do **not** transfer: a different field, a
 different coupled amount, and a different obligation.
 
@@ -1025,10 +1029,88 @@ invented: the observed limits are the ones the code and its tests state (one sup
 popup closed and reopened between reads indistinguishable from the one read, child handles not
 identities after the tree changes, `setup_verified: false`).
 
-**Not established:** any live invocation, a persisted value, `seconds` behaviour on the real
-application, the coupled amount after a reopen, behaviour when the popup is reopened between reads,
-a second write in one trial, an application restart, or any downstream acquisition effect of the
-changed count. Generated reports from an offline run are test evidence, not fixtures.
+**Live acceptance, 2026-10-21 — channel 1, `profiles 50 → 51 → 50`.** Two supervised invocations of
+`acquire channels-profiles` on the operator-opened popup, one record each, with the popup closed and
+reopened between every read; the operator declared channel 1, and a separate visual-caption reading
+corroborated it for this trial only (`channel_verified` stays `false`, by construction). Facts, from
+the two records and the three reads:
+
+- **baseline** `50` profiles / `2.01` s (reopened read), `repeat 2`;
+- **forward write** committed `51`; `restore_to 50`, `restore_to_source: declared-trial-baseline`;
+  the reopened read stated `51` / `2.05` s — the coupled `seconds` moved, as the coupled-amount
+  rule above predicts;
+- **restoration write** (a second invocation of the same command, `--expect 51 --value 50
+  --baseline 50`) committed `50` and recorded `restores_baseline: true`, so no further restoration
+  is owed; the reopened read stated `50` / `2.01` s and `repeat 2` — the trial's original readable
+  state is back;
+- `persisted` stayed `unknown` and `obligation_open` stayed `true` on both records: closing it was
+  the operator's reopened read, quoted in the acceptance record
+  (`profiles-channel1-roundtrip-acceptance.json`, local generated evidence, not a committed
+  fixture), which is what states `restoration_owed: false`.
+
+**What this acceptance does and does not establish.** It establishes the writer's live forward and
+restore path for **one operator-declared channel and one pair of counts**, including the coupled
+`seconds` recomputation and retention across a popup close-and-reopen. It establishes nothing
+globally: the channel is still a declaration (never a native readback), no second channel was
+written, no application restart was tried, and no acquisition was run against the changed count, so
+no downstream effect is claimed. The popup was reopened by the operator — the automation route that
+would remove that step remains unverified (§12.11, "Autonomy blocker").
+
+**Not established:** a persisted value the command can read itself; `seconds` on a channel other
+than 1; the coupled amount beyond the two observed values (`2.01` / `2.05`); behaviour when the
+popup is reopened between the write and the post-write read (the live trial closed and reopened
+*before* each read, which is the operator's step, not the command's); more than one forward write in
+one trial; an application restart; or any downstream acquisition effect of the changed count.
+Generated reports from an offline run are test evidence, not fixtures.
+
+---
+
+### 12.12 Live acceptance, 2026-10-21 — supervised channel selection `1 → 2 → 1`
+
+`acquire channels-select` was run twice against the real instrument, one press per invocation, on
+one bound window and one popup that stayed open throughout (`popup_hwnd` and `row_hwnd` identical in
+both records; the cell handle is the ordinal's own). Arms: `--expect-channel 1 --channel 2` then
+`--expect-channel 2 --channel 1`, both with `--restore-channel 1 --expect-start-channel 1
+--mpx-disabled` and their own record.
+
+- **Both invocations:** `stage: pressed`, `presses: 1`, `press: attempted`, `posted: unknown`,
+  `selection: UNKNOWN`, `native_proof: false`, `press_error` empty, `post_error` empty.
+- **The readable facts did not move:** before and after each press `repeat 2`, `start_channel 1`,
+  `apply_from 1`, `profiles 50`, `seconds 2.01`; `facts_moved: []`, `facts_unreadable: []`.
+  **`50` profiles and `2.01` s with `repeat 2` are preserved by the selection**, which is the
+  whole reason the trial was run — a channel switch here is not a profile or repeat change.
+- **Exit `1` on both, and that is the expected result.** Only the settled `no_op` exits `0`; an
+  attempted press is a gesture whose selection and delivery are unknown, so a zero would read as a
+  result. A caller must treat `1` with `stage: pressed` as *done, unproven*, not as a failure.
+- **Caption corroboration, no native proof.** After each press a `channels-read --capture-dir`
+  captured the popup's own crops, and the tick was read **visually** from them: `1` at baseline,
+  `2` after the forward press, `1` after the restore. The reader's own answer stayed
+  `per_channel.channel: UNKNOWN` in all three reads, so this is a post-hoc visual observation and
+  not a measured state. Note the provenance precisely: the two trial records carry
+  `visual_corroboration: ""`, so the corroboration lives in the separate acceptance record
+  (`select-channel-roundtrip-acceptance.json`), **not** in the command's records. Nothing here
+  reads glyphs, and no evidence of a checked radio exists in the control tree.
+- **The restoration was the automation's own second invocation** — the command was never restricted
+  to hands. Two reporting defects the trial exposed were corrected in the same change, with no new
+  authority: the owed line used to instruct "select channel 1 again on the top radio row **by
+  hand**", which misdescribed a gesture a further supervised invocation takes (and did take, 40 s
+  later), so it now names the gesture and its two possible takers; and `press_evidence` used to read
+  "one **posted** held press" while `posted` is `unknown` on every path, so it now states the
+  attempt, the recipe, and that delivery is unknown. **The two accepted records were not edited**:
+  they are the evidence of what the command said at the time and keep the old wording, so a reader
+  comparing them with today's output should expect that difference, and only new records carry the
+  corrected wording.
+- **Not established:** that a tick survives a popup close-and-reopen or an application restart (the
+  popup stayed open); channel `10`, or any channel outside the measured press set; where the lower
+  `Use channels` tick row's cells would land (never a target); behaviour with a recording or the
+  multiplexer enabled (the mode was the operator's declaration only); what a raised press leaves
+  selected; and any downstream acquisition effect of the newly selected channel. The switched-to
+  channel's own per-channel amounts were **not** read as a change, because they did not move here —
+  a trial where they do move would be reported as `facts_moved`, not as an error.
+
+Generated logs, records and captures for §12.11 and §12.12
+(`profiles-channel1-*`, `select-channel*`, `select-live-baseline*`) are local evidence under a
+git-ignored scratch directory and are not committed fixtures.
 
 ---
 

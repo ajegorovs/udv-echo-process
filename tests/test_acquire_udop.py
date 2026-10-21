@@ -16,8 +16,8 @@ this module pins is the *composition* the move produced and the boundary it draw
   through ``sys.modules`` surgery. ``udop/session.py`` is the *compatibility name* of that facade:
   a documented re-export, so ``driver.Win32Actuator is session.Win32Actuator`` and every name the
   facade publishes resolves from both.
-* the class's own 97 names are ``bfbbb10``'s recorded 96-name surface plus the one documented
-  addition (``FLAT_CLASS_SURFACE`` / ``CLASS_ADDITIONS``), so a method that leaves the class fails
+* the class's own 98 names are ``bfbbb10``'s recorded 96-name surface plus the documented
+  additions (``FLAT_CLASS_SURFACE`` / ``CLASS_ADDITIONS``), so a method that leaves the class fails
   here by name — the four lists alone cannot see that, being closed over themselves.
 * every name ``driver.__all__`` publishes resolves from ``driver`` and from the compatibility name,
   and the re-exported names are the *same objects* their surface defines. The flat module's whole
@@ -107,6 +107,7 @@ RECORDING_METHODS = (
     "strip_state",
     "wait_for_view",
     "press",
+    "press_channel_cell",
     "answer_overlay",
     "hold_recording",
     "wait_for_view_guarded",
@@ -235,9 +236,16 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
 #: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
-#: ``_answer_burst_rejection``, and ``verify_working_directory`` (``udop/store.py``), the typed
-#: working-directory readback that ``assert_working_directory`` now delegates to. The class's own
-#: name set at this tip is 104, not 96
+#: ``_answer_burst_rejection``, ``verify_working_directory`` (``udop/store.py``), the typed
+#: working-directory readback that ``assert_working_directory`` now delegates to, and
+#: ``press_channel_cell`` (``udop/recording.py``), the held press on one cell of the ``Channels``
+#: popup's top radio row that the channel selection needs — the same ``_click_hold`` recipe
+#: ``press`` gives the strip row, but **target-bound**: the binding, the popup and the cell class
+#: are re-checked live at the action boundary, and the row's *identity* comes from a bounded
+#: re-read through the reader (the panel the reader attributes to ``use_only_channel``, at that
+#: cell's ordinal) rather than from ancestry or a ten-cell count, which the lower ``Use channels``
+#: tick row also satisfies. So no caller ever gets a press-any-handle facade. The class's own name
+#: set at this tip is 105, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "bind_target",
@@ -249,6 +257,7 @@ CLASS_ADDITIONS = (
     "_answer_burst_rejection",
     "_burst_refusal",
     "verify_working_directory",
+    "press_channel_cell",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

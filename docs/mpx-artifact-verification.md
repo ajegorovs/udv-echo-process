@@ -277,3 +277,54 @@ operator-stated repeat setting exists on this host for the repeat-2 file, so its
 acquisition stores one word or several is settled for this one artifact (both words were
 stored) and remains unmeasured elsewhere; the word is a block/sequence number and is not
 proof of the physical acquisitions behind it.
+
+## Per-channel counts: `--channel-profiles` with `--repeats`
+
+The multiplexer's channels need not be configured for the same profile count, so the
+operator can state one per-visit count **per channel** instead of one uniform number:
+
+```bash
+uv run python -m udv_echo_process.cli acquire mpx-check FILE.BDD \
+  --channel 1 2 --channel-profiles 1=50 2=75 --repeats 2 --json
+# same flags exist on `record-multiplexed` and `store-completed`
+```
+
+- `--channel-profiles CHANNEL=COUNT ...` states each channel's profiles for **one visit**
+  and requires `--repeats`. Each channel's expected stored total is that channel's own
+  count times the one repeat count — `100` for channel 1 and `150` for channel 2 above.
+- The grammar is one grammar, with no repair: `CHANNEL=COUNT` with positive decimal
+  integers and no sign, whitespace or leading zero. `1=050`, `+1=50`, `1 = 50` and `1`
+  are refused by name, and a channel stated twice is refused.
+- The mapping must name **exactly** the declared channels once each. A duplicate key, a
+  declared channel with no stated count, and a key the declared channels do not include
+  are all refused; nothing is filled in, copied from a neighbour or dropped to make the
+  mapping fit.
+- It is a third count basis, mutually exclusive with `--profiles` and
+  `--profiles-per-visit`. Stating it beside either, or without `--repeats`, exits `2` with
+  one refusal line **before** the file is opened (`mpx-check`, `store-completed`) or any
+  window is read (`record-multiplexed`), so an invalid statement produces no decode, no
+  claim and no device action. `--profiles` and `--profiles-per-visit` keep their existing
+  meanings unchanged.
+- **One owner normalizes the mapping.** `CompletedBlockDeclaration` re-orders the pairs to
+  the caller's channel order exactly once and exposes `count_for_channel(channel)` and
+  `expected_profiles_by_channel`; the uniform bases delegate to the same method, so there
+  is no second multiplication anywhere. Because an asymmetric statement has no single
+  total, `expected_total_profiles` is `None` for it — a consumer that needs a total asks
+  the owner per channel rather than presenting one channel's number as a uniform one.
+- The report keeps the operator's pairs as `declared_channel_profiles` and adds
+  `expected_profiles_by_channel` (normalized totals, in declared channel order). Each
+  `profiles:channel N` clause compares against that channel's own expectation and names
+  the per-channel derivation; the `repeats` clause compares each channel's run size with
+  that channel's per-visit count.
+
+Measured on the real repeat-2 capture (git-ignored, not published —
+`outputs/live/store/mpx12-50profiles-repeat2-01.BDD`, SHA-256
+`bc79760…e00dfbc8`): channels 1 and 2 each hold 100 rows in two runs of 50.
+`--channel 1 2 --channel-profiles 1=50 2=75 --repeats 2` reports channel 1 `consistent`
+(`100 = 2 x 50`), channel 2 `contradicted` (`150` expected, `100` stored), and the run
+split contradicted for channel 2 only — a **correct negative**, not an acceptance. No real
+asymmetric acquisition exists on this host; the `1=50 2=75` arithmetic itself is checked
+only on a hand-written SYNTHETIC declaration, which is not evidence about any recording.
+The tracked `data/4-sensor-velocity/200RPM.BDD` still reports `consistent` for
+`--profiles 400`, and also for an explicit mapping whose counts agree (four channels at
+`4` per visit x `100` repeats).
