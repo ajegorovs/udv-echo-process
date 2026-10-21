@@ -81,6 +81,7 @@ from udv_echo_process.storage.models import ARRAY_DTYPES
 
 DATA = Path("data")
 ECHO_200 = DATA / "echo" / "200.BDD"
+DUAL_4MHZ = DATA / "dual-profile-mux" / "4MHz.BDD"
 
 MANIFEST = "manifest.json"
 COMPLETE = "COMPLETE"
@@ -404,6 +405,27 @@ def test_round_trip_committed_bdd_fixture(tmp_path):
     assert loaded.graph.operations == ()
     assert loaded.recording.streams[0].data.values.shape == (4180, 26)
     assert loaded.recording.streams[0].data.acquisition is not None
+
+
+def test_round_trip_dual_quantity_bdd_fixture(tmp_path):
+    """Two streams on one channel must round-trip as two entries, not one."""
+    bundle = read_bdd(DUAL_4MHZ)
+    assert len(bundle.recording.streams) == 8
+    destination = tmp_path / "dual"
+    store_bundle(bundle, destination)
+    loaded = load_bundle(destination)
+    _assert_bundle_equal(loaded, bundle)
+    assert [
+        (s.acquisition.channel.device_channel, s.descriptor.quantity.value)
+        for s in loaded.recording.streams
+    ] == [
+        (channel, quantity)
+        for channel in (1, 2, 3, 4)
+        for quantity in ("axial_velocity", "echo_amplitude")
+    ]
+    for stream in loaded.recording.streams:
+        safe = stream.artifact_id.removeprefix("sha256:")
+        assert (destination / ARRAYS / safe).is_dir()
 
 
 def test_manifest_contains_arefs_and_no_inline_arrays(tmp_path):

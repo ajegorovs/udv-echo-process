@@ -28,6 +28,15 @@ the DOP3000-3010 manual reference):
   index 1 — the manual's "bit 2: UDV MD mode"), word 51 ("Nb profiles in block
   in multiplexer mode", row 51) = ``4``, word 53 ("Nb blocks in multiplexer
   mode", row 53) = ``100``.
+* ``data/dual-profile-mux/4MHz.BDD`` — 4-channel multiplexed capture recorded
+  with the instrument's **two-plot** display, so every signal block carries one
+  profile of *each* quantity: type 0 velocity (``int8``) and type 1 echo
+  (``uint8``), same 42 gates, same footer timestamp. Channels ``1,2,3,4``, 500
+  signal blocks per channel, so the reader emits **eight** streams — four
+  channels × two quantities — and ``(channel, quantity)`` is the stream identity
+  (plan §6.7 amendment). Word 51 = ``50`` and word 53 = ``10``: each channel is
+  measured in ten 50-profile multiplexer visits (71.4 ms apart) separated by a
+  10.83 s hole while the multiplexer serves the other three channels.
 * The per-profile footer (manual ``10-storing-and-reading-measures.md`` §10.7,
   points E–K) carries the timestamp (E, 4 bytes at ``meas_end-12``) and the
   block number (F, 2 bytes at ``meas_end-8``) and the multiplexer channel (J,
@@ -75,11 +84,13 @@ from udv_echo_process.provenance import ArtifactBundle, ChannelBundle, select_ch
 DATA = Path("data")
 ECHO = DATA / "echo"
 VEL = DATA / "4-sensor-velocity"
+DUAL = DATA / "dual-profile-mux"
 
 ECHO_200 = ECHO / "200.BDD"
 ECHO_650 = ECHO / "650.BDD"
 FOUR_SENSOR = VEL / "200RPM.BDD"
 FOUR_SENSOR_V2 = VEL / "200RPM_v2.BDD"
+DUAL_4MHZ = DUAL / "4MHz.BDD"
 
 _OBSERVED = int(SupportKind.OBSERVED)
 
@@ -692,7 +703,129 @@ def test_every_discovered_fixture_round_trips_to_a_closed_bundle():
         assert bundle.recording.acquisition_mode in set(AcquisitionMode)
         for stream in bundle.recording.streams:
             assert (
-                select_channel(bundle, stream.acquisition.channel).graph is bundle.graph
+                select_channel(
+                    bundle,
+                    stream.acquisition.channel,
+                    quantity=stream.descriptor.quantity,
+                ).graph
+                is bundle.graph
             )
         seen_modes.add(bundle.recording.acquisition_mode)
     assert {AcquisitionMode.UNKNOWN, AcquisitionMode.SEQUENTIAL} <= seen_modes
+
+
+# ── a two-plot (velocity + echo) capture: two streams on one channel ─────
+
+
+def test_dual_profile_file_yields_one_stream_per_channel_and_quantity():
+    """Every block of ``4MHz.BDD`` stores a velocity *and* an echo profile.
+
+    Measured structure: 2004 measurement blocks, 1 depth-only block per channel
+    and 500 signal blocks per channel, each signal block carrying profile type 0
+    (velocity, ``int8``) and type 1 (echo, ``uint8``) over the same 42-gate axis.
+    The reader must surface both, not the velocity profile alone.
+    """
+    bundle = read(DUAL_4MHZ)
+    pairs = [
+        (
+            stream.acquisition.channel.device_channel,
+            stream.descriptor.quantity.value,
+        )
+        for stream in bundle.recording.streams
+    ]
+    assert pairs == [
+        (channel, quantity)
+        for channel in (1, 2, 3, 4)
+        for quantity in ("axial_velocity", "echo_amplitude")
+    ]
+    assert len({stream.artifact_id for stream in bundle.recording.streams}) == 8
+    assert set(bundle.graph.root_artifacts) == {
+        stream.artifact_id for stream in bundle.recording.streams
+    }
+    assert bundle.recording.acquisition_mode is AcquisitionMode.SEQUENTIAL
+
+
+@pytest.mark.parametrize("channel", [1, 2, 3, 4])
+def test_dual_profile_streams_share_the_timestamp_and_gate_axis(channel):
+    """The two profiles of a block carry the block's own timestamp.
+
+    Sharing one timestamp per block is what makes the velocity and echo rows of a
+    channel simultaneously aligned; a reader that stamped them separately would
+    make the pair look like two interleaved acquisitions.
+    """
+    bundle = read(DUAL_4MHZ)
+    key = ChannelKey(device_channel=channel)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    assert np.array_equal(velocity.data.time_s, echo.data.time_s)
+    assert np.array_equal(velocity.data.gate_depths_mm, echo.data.gate_depths_mm)
+    assert velocity.config.pulse_repetition_freq_hz == (
+        echo.config.pulse_repetition_freq_hz
+    )
+    assert velocity.data.values.shape == echo.data.values.shape == (500, 42)
+
+
+def test_dual_profile_echo_is_decoded_on_the_module_scale():
+    """Echo stores raw ``uint8`` counts reflected into the module scale (2048)."""
+    bundle = read(DUAL_4MHZ)
+    echo = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.ECHO_AMPLITUDE,
+    ).artifact
+    values = echo.data.values
+    assert echo.descriptor.unit == "module"
+    assert np.isfinite(values).all()
+    assert values.min() >= 0.0
+    assert values.max() == 2048.0  # the module scale clips at full count
+    assert echo.config.module_scale == 2048
+
+
+def test_dual_profile_quantities_are_not_a_rescaling_of_each_other():
+    """The echo series is an independent measurement, not the velocity series.
+
+    A reader that decoded the same bytes twice (or mapped one onto the other)
+    would produce two perfectly correlated streams; these are uncorrelated.
+    """
+    bundle = read(DUAL_4MHZ)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    correlation = float(
+        np.corrcoef(velocity.data.values.ravel(), echo.data.values.ravel())[0, 1]
+    )
+    assert abs(correlation) < 0.5
+
+
+def test_dual_profile_channel_needs_a_quantity_to_select():
+    """``select_channel`` refuses to guess between the two physical quantities."""
+    bundle = read(DUAL_4MHZ)
+    with pytest.raises(ValueError, match="pass quantity="):
+        select_channel(bundle, ChannelKey(device_channel=2))
+
+
+def test_dual_profile_mux_visits_are_measured_from_the_timestamps():
+    """Each channel's 500 samples arrive in ten 50-profile multiplexer visits.
+
+    Op word 51 ("Nb profiles in block in multiplexer mode") = 50 and word 53
+    ("Nb blocks") = 10 for this capture, and the per-channel timeline shows
+    exactly that: 50 samples at ~71.4 ms spacing, then a ~10.8 s hole while the
+    multiplexer serves the other three channels.
+    """
+    bundle = read(DUAL_4MHZ)
+    stream = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.AXIAL_VELOCITY,
+    ).artifact
+    deltas = np.diff(stream.data.time_s)
+    gaps = np.flatnonzero(deltas > 1.0)
+    assert gaps.tolist() == [49, 99, 149, 199, 249, 299, 349, 399, 449]
+    assert np.allclose(deltas[gaps], 10.83, atol=0.06)
+    within_visit = np.delete(deltas, gaps)
+    assert within_visit.min() > 0.071
+    assert within_visit.max() < 0.072
