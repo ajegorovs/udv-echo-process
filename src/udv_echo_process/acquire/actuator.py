@@ -431,7 +431,10 @@ class StripView(str, Enum):
     #: Stopped with data, no slider: the three-button ``Pause`` / ``Record`` /
     #: ``Clear and restart`` row (``UI-STRIP-01``).
     READY = "ready"
-    #: After ``Stop``: three top-row buttons **and** a ``TSp_Sliding_Bar`` child.
+    #: After ``Stop``: a ``TSp_Sliding_Bar`` child, and **two, three or four** top-row
+    #: buttons — the slider, never the count, decides the view. Every length that carries a
+    #: binding here is a :data:`STRIP_BUTTON_ORDER` row for this view (``2``, ``3``, ``4``);
+    #: the measured multiplexed run ends in the two-button one (``269x123``, 2026-10-20).
     STORE = "store"
     #: The four-button, no-slider row: **no executable binding** (ledger B10, critical and
     #: device-pending). ``UI-STRIP-01`` (``ui-crops/run-controls.png``) paints ``Pause`` /
@@ -464,11 +467,35 @@ class StripView(str, Enum):
 #: ``UI-STRIP-02``'s grown frame paints ``New acquisition`` / ``Do store`` / ``Clear and restart``
 #: / ``Remove current block``, whose first two positions are **not** those two buttons. A row
 #: that has no binding is a refusal, never a default.
+#:
+#: **``(STORE, 2)`` is the row a multiplexed acquisition ends in** — measured from a
+#: read-only control-tree capture taken 2026-10-20 on the instrument
+#: (``UDOP DOP3010.43``, multiplexer sequence probe): the strip panel built 269x123 holds
+#: two visible top-row ``TSp_Button`` widgets (91 px and 138 px wide — again too close to
+#: tell apart by width), the visible ``TSp_Sliding_Bar``, and the block/channel combo pair;
+#: two further buttons are painted behind the row with ``visible: false`` and are not part
+#: of it. The slider therefore already classified the view :attr:`StripView.STORE` — the
+#: view was reachable while this table carried no row for its length, so a
+#: ``press(DO_STORE)`` out of exactly the state an MPX run ends in raised instead of
+#: committing the store.
+#:
+#: The two roles are ``Do store`` (left) then ``Clear and restart`` (right), as the
+#: operator read them off that captured frame by hand. That is a **caption inspection and
+#: not an automated press**: no click was posted to this row to land the binding, so the
+#: row states which position means which role, and nothing about how the instrument
+#: answers it (``tests/test_acquire_multiplexer_strip.py`` pins the binding against the
+#: captured structure; ``docs/dop3000/acquisition-ui-model.md`` §3.5 carries the note).
+#: ``New acquisition`` and ``Remove current block`` are absent from this row by
+#: measurement, not by choice — asking for either here is a refusal.
 STRIP_BUTTON_ORDER: dict[tuple[StripView, int], tuple[StripControl, ...]] = {
     (StripView.RECORDING, 1): (StripControl.STOP,),
     (StripView.READY, 3): (
         StripControl.PAUSE,
         StripControl.RECORD,
+        StripControl.CLEAR_AND_RESTART,
+    ),
+    (StripView.STORE, 2): (
+        StripControl.DO_STORE,
         StripControl.CLEAR_AND_RESTART,
     ),
     (StripView.STORE, 3): (

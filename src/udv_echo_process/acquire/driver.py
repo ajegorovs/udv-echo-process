@@ -337,6 +337,7 @@ from udv_echo_process.acquire.ui.menu import observation_text as _observation_te
 from udv_echo_process.acquire.ui.model import Rect
 from udv_echo_process.acquire.ui.strip import (
     has_slider,
+    new_acquisition_refusal,
     strip_state_of,
 )
 from udv_echo_process.acquire.ui.strip import (
@@ -1669,6 +1670,13 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             state = self.strip_state()
             started_from = state.view.value
             if state.view is StripView.STORE:
+                # The same clause the record cycle obeys: a store row that binds no
+                # `New acquisition` (the two-button multiplexed row) leaves its unsaved block to
+                # the operator, so the preflight refuses before the first press instead of
+                # posting a role the row does not carry.
+                refusal = new_acquisition_refusal(state)
+                if refusal is not None:
+                    raise AcquisitionError(refusal)
                 self.press(StripControl.NEW_ACQUISITION)
                 self._note("a leftover store view was up: cleared and restarted")
                 state = self.wait_for_view_guarded((StripView.READY,), VIEW_TIMEOUT_S)

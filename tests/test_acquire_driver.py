@@ -596,9 +596,13 @@ def test_the_documented_button_rows_are_the_only_ones_that_press() -> None:
     """Every row the driver may bind to is a documented ``(view, count)`` pair."""
     # ...and there is deliberately no `(READY, 4)`: a four-button row without a slider is
     # `AMBIGUOUS`, it binds nothing, and the table is where that is said (ledger B10).
+    # `(STORE, 2)` is the row a multiplexed acquisition's store view builds, bound
+    # `Do store` / `Clear and restart` from the 2026-10-20 capture; its case lives in
+    # `tests/test_acquire_multiplexer_strip.py`.
     assert set(STRIP_BUTTON_ORDER) == {
         (StripView.RECORDING, 1),
         (StripView.READY, 3),
+        (StripView.STORE, 2),
         (StripView.STORE, 3),
         (StripView.STORE, 4),
     }

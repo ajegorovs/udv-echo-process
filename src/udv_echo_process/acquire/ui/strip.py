@@ -9,8 +9,13 @@ reading the resolver took.
 
 - the strip's **row geometry** (:func:`strip_row`, which is ``driver._strip_row`` moved verbatim)
   and the **slider mark** that decides the view (:func:`has_slider`) — the panel is draggable and
-  morphs (``98x40`` → ``352x40`` → ``413x123``), so its buttons are identified by their order in
-  the current row, never by a width (134 vs 138 px is too close) and never by a caption;
+  morphs (``98x40`` → ``352x40`` → ``413x123``, and ``269x123`` for the two-button store row a
+  multiplexed run ends in, measured 2026-10-20), so its buttons are identified by their order in
+  the current row, never by a width (134 vs 138 px is too close) and never by a caption. Those
+  sizes are the shapes that have been **measured**, not an enumeration of the shapes the panel
+  may take: no code ranges over them and nothing here bounds how far a live rect may drift
+  outside them, so a size not in this list is unmeasured rather than evidence of a different
+  surface;
 - the **state** one resolved strip is in (:func:`strip_state_of`) and the refusal a press out of
   that state gets (:func:`press_refusal`);
 - the shape gate's strip clauses (:func:`strip_clauses`), so the gate asks this module what the row
@@ -74,6 +79,7 @@ __all__ = [
     "StripView",
     "classify_strip_view",
     "has_slider",
+    "new_acquisition_refusal",
     "press_index",
     "press_refusal",
     "strip_clauses",
@@ -148,6 +154,41 @@ def press_refusal(state: StripState) -> str | None:
         "to settle it — so the row is ambiguous, it has no executable binding, and a live tree "
         "capture has to resolve it before anything is pressed from it "
         "(docs/dop3000/device-verification.md V4)"
+    )
+
+
+def new_acquisition_refusal(state: StripState) -> str | None:
+    """Why this store view may **not** be left by pressing ``New acquisition``, or ``None``.
+
+    A store view holds a block that was never stored, and the gesture every recovery path uses to
+    get back to the ready view without committing it is ``New acquisition``. That gesture is a
+    *binding*, so whether it exists is asked of the binding's owner — :data:`…actuator.
+    STRIP_BUTTON_ORDER`, through :attr:`…actuator.StripState.controls` — and never of a button
+    count: the three- and four-entry store rows bind it (``UI-STRIP-02``'s captions are the
+    four's), and the two-entry row a multiplexed (MPX) acquisition ends in does not
+    (``tests/test_acquire_multiplexer_strip.py``, the 2026-10-20 capture).
+
+    On a row that binds no ``New acquisition`` the block is the operator's unsaved data, so there
+    is no gesture here that leaves the view: storing it would commit a block under a name this
+    driver invented, and ``Clear and restart`` would discard it. Neither is substituted, and
+    nothing is pressed — the clause names the row it read and hands the decision back.
+
+    ``None`` means *a press is bound here*, never "nothing was checked": a non-store view is left
+    to :func:`press_refusal` and :func:`…actuator.press_index`, which own the other two refusals.
+    """
+    if state.view is not StripView.STORE:
+        return None
+    if StripControl.NEW_ACQUISITION in state.controls:
+        return None
+    bound = [control.value for control in state.controls]
+    return (
+        "the strip is holding an unsaved block: the store view is up with "
+        f"{state.button_count} button(s) bound as {bound}, and that row binds no "
+        "'New acquisition' — it is the row a multiplexed (MPX) acquisition ends in, where the "
+        "button is absent by measurement. Nothing is pressed, and nothing is stored, cleared or "
+        "discarded from here, because each of those acts on the operator's unsaved data: store "
+        "the block with 'Do store' or discard it with 'Clear and restart' on the instrument, "
+        "then re-run"
     )
 
 

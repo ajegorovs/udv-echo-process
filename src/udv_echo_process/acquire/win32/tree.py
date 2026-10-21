@@ -60,6 +60,7 @@ __all__ = [
     "target_mismatch",
     "ui_nodes",
     "validate_target",
+    "visible_main_windows",
     "window_target",
 ]
 
@@ -167,6 +168,36 @@ def _main_hwnd(class_name: str, *, gui=_gui) -> int:
             f"no visible {class_name} window — is UDOP on its startup screen?"
         )
     return max(found)[1]
+
+
+def visible_main_windows(class_name: str, *, gui=_gui) -> tuple[int, ...]:
+    """Every **visible** top-level window of ``class_name``, ascending.
+
+    The same two facts :func:`_main_hwnd` filters on — class equality and visibility — and no
+    third one. This answers *how many* copies of the application are up, which the largest-window
+    locator deliberately does not: a precondition that drives exactly one application must be able
+    to refuse a second copy rather than silently take the bigger one. It is a count for a
+    precondition, never a selection — the handle a caller drives still comes from
+    :func:`window_target`.
+    """
+    try:
+        win32gui, _ = gui()
+    except Exception as exc:  # pragma: no cover - requires a host with pywin32
+        raise _acquisition_error()(
+            f"cannot enumerate windows: pywin32/win32gui is unavailable ({exc})"
+        ) from exc
+    found: list[int] = []
+
+    def cb(h, _lparam):
+        try:
+            if win32gui.GetClassName(h) == class_name and win32gui.IsWindowVisible(h):
+                found.append(h)
+        except Exception:  # noqa: BLE001, S110 - a window dying mid-enumeration is not ours
+            pass
+        return True
+
+    win32gui.EnumWindows(cb, None)
+    return tuple(sorted(found))
 
 
 def window_target(

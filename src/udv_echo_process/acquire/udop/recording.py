@@ -50,10 +50,11 @@ from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
 from udv_echo_process.acquire.ui.identity import PanelIdentity
 from udv_echo_process.acquire.ui.strip import (
-    press_refusal as strip_press_refusal,
+    new_acquisition_refusal,
+    strip_state_of,
 )
 from udv_echo_process.acquire.ui.strip import (
-    strip_state_of,
+    press_refusal as strip_press_refusal,
 )
 
 # ------------------------------------------------------------------------ the strip's cadence
@@ -450,6 +451,11 @@ class RecordingSurface:
         before anything is pressed: a run measured in simulation refuses to record against the
         instrument, and vice versa, naming the caption it saw rather than calling the screen
         unclean.
+
+        A leftover store view is cleared with ``New acquisition`` — but only when that row binds
+        the role. The two-button store row a multiplexed (MPX) acquisition ends in does not, and
+        its block is unsaved, so that case raises before any press and leaves the block to the
+        operator (:func:`…ui.strip.new_acquisition_refusal`) instead of storing or discarding it.
         """
         # DEVIATION: §24.4 names this method `record(*, expected_mode)`; the port's name is
         # `record_and_store` and is kept, because the runner, the live verbs and every fake call it
@@ -460,6 +466,15 @@ class RecordingSurface:
                 raise AcquisitionError(f"refusing to start: {note}")
             state = self.strip_state()
             if state.view is StripView.STORE:
+                # A store view holds a block that was never stored. Leaving it with
+                # `New acquisition` is a *binding* this row may not carry (a multiplexed run
+                # ends in a two-button store row: tests/test_acquire_multiplexer_strip.py), so
+                # the recovery is refused here — before any press — rather than letting the
+                # missing role surface as an unexpected ValueError, and the block stays the
+                # operator's to store or discard.
+                refusal = new_acquisition_refusal(state)
+                if refusal is not None:
+                    raise AcquisitionError(refusal)
                 self.press(
                     StripControl.NEW_ACQUISITION
                 )  # dismiss the leftover block view

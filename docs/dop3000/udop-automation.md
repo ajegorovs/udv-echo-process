@@ -214,8 +214,8 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
    the status-bar `Profile` counter restarts **per block** (1948 → 420), not
    cumulatively.
 3. **Wait the point's duration `T`.** Seconds define the point (§8).
-4. **`Stop`** — the panel grows to the store view (413x123) and a
-   `TSp_Sliding_Bar` child appears.
+4. **`Stop`** — the panel grows to the store view (413x123 here; `269x123` in
+   the two-button row of §5) and a `TSp_Sliding_Bar` child appears.
 5. **`Do store`** on the strip opens the **Store dialog**. It is not a top-level
    window — it is a **child panel** (e.g. `(676,391) 584x330`), which is why an
    `EnumWindows` check reports "nothing happened":
@@ -256,10 +256,18 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
     The `.BDD` op-parameter block (words 0–95) *is* the sweep log; the status-bar
     `Profile` counter is not trustworthy for pacing.
 
+**The `Stop` gesture above is the single-channel recipe, and MPX does not inherit it.** On
+2026-10-21 the operator reported that with rolling MPX enabled but not armed, a manual `Record`
+leaves a sole `Clear and restart` button rather than `Stop`; no tree read of that state exists, so
+the MPX stop gesture is unresolved (ledger B21) and this chain's step 4 must not be posted there
+(§5). What *was* verified for MPX is the store half — step 5 onward — and it was verified with the
+recording already completed by the operator (§12.6).
+
 **Strip buttons outside the record cycle:**
 
 - `New acquisition` — dismisses the store prompt and returns to the recording
-  view; it can raise a data-loss warning.
+  view; it can raise a data-loss warning. It is **absent** from the two-button
+  store row a multiplexed run ends in (§5), where asking for it is a refusal.
 - `Remove current block` — deletes the selected block, guarded by
   `WARNING — All data contained in the current block removed from memory`, whose
   `[Cancel]` is the left of its button pair.
@@ -268,29 +276,85 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
   two buttons for **~3–4 s** while the buffer is rebuilt, so the loop must
   **poll until the `Record` button is present again** before pressing `Record`.
   Pressed from the *store* view it produced no visible change here, so its effect
-  is view-dependent: press it in the no-slider view, then poll.
+  is view-dependent: press it in the no-slider view, then poll. In the two-button
+  store row it is the **right-hand** button, and no press on that row has been
+  measured — only the position/role binding is (§5).
 
 ---
 
 ## 5. The strip's view states — recognise structurally, press by order
 
 The strip is a **draggable floating panel**, and its own rectangle changes with
-the view (`352x40` → `98x40` → `413x123`). Locate it **structurally** (the parent
-of the recording widgets), never by remembered coordinates, and re-resolve after
-every press.
+the view (`352x40` → `98x40` → `413x123`, and `269x123` for the two-button store
+row measured on 2026-10-20). Locate it **structurally** (the parent of the
+recording widgets), never by remembered coordinates, and re-resolve after every
+press.
 
 | view | how to recognise it | buttons, left → right |
 |---|---|---|
-| recording | 1 top-row button, no slider | `[Stop]` |
-| stopped, no data | fewer than 3 buttons | `[Record]` |
+| recording | 1 top-row button, no slider | `[Stop]` — *single-channel only; in an MPX configuration the same structure was operator-reported as `Clear and restart`, so this row binds nothing there (below)* |
+| stopped, no data | fewer than 3 top-row buttons, no slider | `[Record]` — *live-reported; only the 1-button row is bound, so 0 or 2 buttons classify `unknown` and nothing is pressed* |
 | **stopped with data** | 3 top-row buttons, **no** `TSp_Sliding_Bar` child | `[Pause] [Record] [Clear and restart]` |
-| **store view** (after `Stop`) | 3 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart] [Remove current block]` |
+| **store view** (after `Stop`) | 3 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart]` |
+| store view, four buttons | 4 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart] [Remove current block]` |
+| **store view, after a multiplexed run** | **2** top-row buttons **+** a `TSp_Sliding_Bar` child, plus the block/channel `TComboBox` pair | `[Do store] [Clear and restart]` |
+| stopped with data, four buttons | 4 top-row buttons, **no** slider | **nothing — the roles are unresolved**, and the row is refused (below) |
+
+**The row's length is part of the binding, not a detail of it.** `Do store` is
+slot 0 in the two-button row and slot 1 in both longer store rows, so a press
+keyed on a fixed position — or on a width — lands on `New acquisition` or on a
+neighbour. The count is taken from the **visible** top-row buttons only.
+
+**The two-button store row is where a multiplexed run ends** *(measured
+2026-10-20)*. A read-only control-tree capture on the instrument (`UDOP
+DOP3010.43`, multiplexer sequence probe) shows the strip panel built `269x123`
+holding two visible top-row `TSp_Button` widgets (91 px and 138 px wide — again
+too close to tell apart by width), the visible `TSp_Sliding_Bar`, and two
+`TComboBox` children for block and channel; two further buttons are painted
+*behind* the row at the same height with `visible: false` and are not part of it.
+The slider had already classified that structure as the store view, so the view
+was reachable while this table carried no row for its length — a `Do store` press
+out of exactly the state an MPX run ends in **raised instead of committing the
+store**. The two roles are `Do store` (left) then `Clear and restart` (right),
+and their provenance is narrow: they were **read by hand off that captured frame,
+not landed by a press** — the capture fixes which position means which role, and
+says nothing about how the instrument answers it. `New acquisition` and
+`Remove current block` are absent from this row by measurement, not by choice;
+asking for either here is a refusal.
+
+**The one-button row means `Stop` on a single channel and is unresolved in MPX.** With rolling MPX
+**enabled but not armed**, the operator reported on 2026-10-21 that a manual `Record` leaves a sole
+`Clear and restart` button — not `Stop`. That is an *operator report*, not a tree read, so the role
+in that state is unknown (`acquisition-ui-model.md` ledger B21). This is not the captured two-button
+store row above — that capture is the naturally completed MPX store view, while this report is the row during an
+active acquisition, so the two observations are separate. Because the two readings are
+structurally identical — one top-row button, no slider — the classifier cannot separate them, and
+this table's `[Stop]` must not be applied to an MPX configuration: pressing `STOP` there would
+clear the block. The `STOP` binding stays **single-channel**; for MPX the only row this document
+binds from evidence is the two-button store row above, and the 1-button MPX state has no binding of
+its own, so nothing may be posted from it by generic classification.
+
+**The four-button, no-slider row presses nothing.** `UI-STRIP-01`
+(`ui-crops/run-controls.png`) paints `Pause` / `Record` / `Clear and restart`
+for the *three*-button row, while `UI-STRIP-02`
+(`ui-crops/overlay-record-extra-block.png`, the grown state) paints
+`New acquisition` / `Do store` / `Clear and restart` / `Remove current block`
+for this one: the third slot is demonstrably the same button in both frames, the
+first two are not. No tree of that state exists, so the row has **no binding at
+all** — it classifies as its own ambiguous view (`StripView.AMBIGUOUS` in
+`acquire/actuator.py`), `strip_controls` / `press_index` refuse it by name, and a
+press is refused *before* anything is posted. `device-verification.md` V4 is
+where a live tree settles it (ledger B10).
 
 - **Identify buttons by their ORDER in the view, never by width.** 134 px vs
-  138 px was the difference that once produced a data-loss warning.
+  138 px was the difference that once produced a data-loss warning, and the
+  two-button row's 91 vs 138 is no better.
 - The strip's child list is **not** the three buttons you can see — it is up to
-  ten windows, including state-specific buttons, the store slider, two combos
-  and two never-painted buttons below the panel's rect.
+  ten windows, including state-specific buttons, the store slider, two combos,
+  and buttons the panel never paints. The row is counted from the **visible**
+  children: the 2026-10-20 capture carries two buttons behind the row at the
+  same height with `visible: false`, and counting them would make that row four
+  wide (an earlier store view carried two below the panel's rect instead).
 - The buttons are real, enabled, visible `TSp_Button` child windows
   (`IsWindowEnabled` true, nothing covering them — `WindowFromPoint` at each
   centre returns the button), so an unreachable-looking control is a *recipe*
@@ -574,6 +638,11 @@ from `word 10 + word 19` alone.
 6. **The external-trigger / `Auto record` path is unexercised.** It remains the
    better design — it takes the strip out of the critical path entirely, and one
    arming can produce several files — but only the rig can exercise it.
+7. **The earlier 25-requested / 50-decoded profile gap remains unexplained.** On
+   2026-10-20 the operator stated a 25-profile request, but the saved block decoded
+   to 50 profiles per channel. The separate 2026-10-21 run requested **50** and
+   decoded to **50** (§12.6); it does not reproduce or explain the earlier mismatch.
+   No conversion factor or multiplicity rule is inferred.
 
 ---
 
@@ -647,6 +716,58 @@ whole chain can be re-run cheaply. **Production points will be 10–20 s.** Noth
 in the driver may depend on the short duration: a point stays a duration in
 seconds (§8), the cap assertion stays `T ≤ cap × period`, and the period stays
 whatever the instrument reports for that configuration.
+
+### 12.6 Acceptance, 2026-10-21 — the MPX store path, scoped
+
+One live acceptance covered the **store half** of the chain on the instrument, and only that half.
+It is a record of one run, not a general MPX result, and it changes no rule in §§1–11 or the staging
+in §12.1:
+
+- **The recording was the operator's, in manual mode.** Rolling MPX was *enabled but not armed*.
+  Nothing here establishes the armed or rolling recording path.
+- **The store was automated.** The recording had ended naturally in the two-button `Do store` /
+  `Clear and restart` store row. A store-only probe — it starts no recording — pressed `Do store` on
+  the strip **once**, then the Store dialog's own `Do store` **once**. One press each, and the
+  application raised **no** warning.
+- **Stored artifact:** `mpx12-50profiles-manual-01.BDD`, **41,526 B**, SHA-256
+  `f9124cd24f886a923bb31f2fcc7ba51056de5743d9487ea8022d6bbde90379f0` (it was written under the
+  repository's generated-output tree, not committed). It is a local output and **not** a fixture:
+  the name and digest record what was written, they do not make the bytes available from this
+  repository.
+- **The decode is independent of the store path**, taken with the public `uv run udv-inspect`:
+  sequential channels **1** and **2**, axial velocity, **50 profiles × 80 gates each**, 1.98 s.
+  `WordFacts`: gates 80, resolution 0.74 mm, PRF 600 µs, emissions 50, sound speed 1480 m/s,
+  burst 4.
+- **The post-save screen was clean, but its mode was not read.** The same root screen came back
+  with a three-button ready row, no slider, no overlay, and no layout-shape reason reported. **No
+  positive post-save MPX-mode read exists**, so nothing here says a store disarms, clears or
+  preserves the MPX configuration — that question stays open.
+- **One number is unexplained.** A request of 25 profiles and a decode of 50 per channel are still
+  unreconciled — the stored file's own name records `50profiles`. No factor is inferred from one
+  file; it stays unexplained (§11) and must not be normalised into a multiplier.
+
+**Accepted:** real manual recording → automated store → commit once → independent decode of both
+channels. **Not accepted:** the MPX stop gesture, armed/rolling recording, the 25→50 profile
+relationship, and any post-save MPX-mode state.
+
+The historical live run used a **store-only probe**, not the subsequently integrated command.
+The package now exposes `udv-acquire store-completed NAME --channel 1 2 --profiles 50
+--stated-by operator --store-dir DIR --json` (or the same verb through
+`python -m udv_echo_process.cli acquire`). It requires an existing directory and the completed
+two-button store row, refuses collisions, and issues no Record, Stop or Clear. Channels/profiles
+are attributed **operator declarations**, not independently decoded facts in the command's report.
+It may rewrite the Store dialog's remembered directory to the explicitly selected one.
+**Package-command acceptance, 2026-10-21:** after a second operator-recorded block completed
+naturally, the supported CLI stored `mpx12-50profiles-cli-01.BDD` with exit 0, one commit,
+zero warnings, and no working-directory rewrite. The file is **41,526 B**, SHA-256
+`3a980cd7adbe3efdc5037ec117f7cdc35911fed9d3823f09abc141df7dc3cc6e`.
+Independent `udv-inspect` and per-channel `acquire decode` reads established sequential acquisition,
+channels 1 and 2, axial velocity, **50 profiles × 80 gates each**, approximately 1.98 s per channel,
+and the same decoded configuration as the earlier probe run. These are decoded observations,
+not merely the CLI's operator declaration. The post-store read returned Ready, no overlay and
+no layout error. The command also refused a preceding Ready-state attempt with exit 2 and no
+requested file created. This accepts the real CLI store path, not automated recording or a
+post-save multiplexer-mode claim. Both recordings remain generated local outputs, not fixtures.
 
 ---
 

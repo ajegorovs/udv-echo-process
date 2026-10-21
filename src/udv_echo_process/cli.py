@@ -32,7 +32,7 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, driver, live, run_plan
+from udv_echo_process.acquire import campaign, driver, live, run_plan, store_completed
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
@@ -1305,6 +1305,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
     spent. Only ``campaign`` records: it compiles, then runs the points through the same live
     actuator the other subcommands use.
 
+    ``store-completed`` records nothing either: it is the store-only verb for a multiplexed block
+    the operator already recorded by hand and the application already finished. It declares the
+    block's channels and per-channel profile count as the operator's own statement (never a
+    reading, never derived), verifies exactly one instrument window, the instrument caption, no
+    overlay and the measured two-button ``Do store`` / ``Clear and restart`` row, refuses a store
+    name or directory it could not attribute a file to, then presses ``Do store`` **once** and
+    commits once. It never presses ``Record``, ``Stop``, ``Clear and restart``, opens the
+    ``Channels`` menu or writes a parameter, and it retries nothing.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1388,6 +1397,36 @@ def acquire_main(argv: list[str] | None = None) -> None:
     expect_mode_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
+
+    store_completed_parser = subcommands.add_parser(
+        "store-completed",
+        help=(
+            "store a multiplexed block the application has already completed (one 'Do store' "
+            "and nothing else)"
+        ),
+    )
+    store_completed_parser.add_argument("name", help="store file-name stem (collisions refused)")
+    store_completed_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels of the completed block, as the operator states them",
+    )
+    store_completed_parser.add_argument(
+        "--profiles",
+        type=int,
+        required=True,
+        help="profiles per channel in the completed block, as the operator states them",
+    )
+    store_completed_parser.add_argument(
+        "--stated-by", required=True, help="who declares the completed block's channels/profiles"
+    )
+    store_completed_parser.add_argument(
+        "--statement", default="", help="the operator's own words, kept raw for the report"
+    )
+    store_completed_parser.add_argument("--store-dir", default=None)
+    store_completed_parser.add_argument("--json", action="store_true")
 
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
@@ -1601,6 +1640,30 @@ def acquire_main(argv: list[str] | None = None) -> None:
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
+        elif args.command == "store-completed":
+            try:
+                declaration = store_completed.CompletedBlockDeclaration(
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+            except ValueError as exc:
+                # The operator's declaration is a contract, so an invalid one is refused here
+                # (one line, exit 2) rather than reaching the workflow or the instrument.
+                print(f"udv-acquire: refused: {exc}", file=sys.stderr)
+                code = 2
+            else:
+                result = store_completed.store_completed(
+                    args.name,
+                    _acquire_store_directory(args.store_dir),
+                    declaration=declaration,
+                    notes=notes,
+                )
+                if as_json:
+                    _acquire_report(result, True)
+                else:
+                    print(result.summary())
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(
