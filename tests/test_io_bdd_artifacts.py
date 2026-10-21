@@ -829,3 +829,177 @@ def test_dual_profile_mux_visits_are_measured_from_the_timestamps():
     within_visit = np.delete(deltas, gaps)
     assert within_visit.min() > 0.071
     assert within_visit.max() < 0.072
+
+
+# ── crafted blocks: clock, profile order, absent quantities (F1) ─────────
+
+
+def _real_depth_payload(channel: int) -> bytes:
+    """Return the real depth-only block's payload for ``channel``.
+
+    The op-parameter table and gate depths in a crafted file come from the real
+    capture (its first 31,268 bytes are reused verbatim), so the reader's
+    calculated gate vector matches the stored pseudo-profile exactly and no depth
+    arithmetic is re-derived in the test.
+    """
+    raw = DUAL_4MHZ.read_bytes()
+    start = 31268
+    while start + 4 <= len(raw):
+        length = struct.unpack_from("<H", raw, start)[0]
+        end = start + length
+        if length == 0 or end > len(raw):
+            break
+        if raw[end - 3] == channel:
+            types: list[int] = []
+            payloads: list[bytes] = []
+            cursor = start + 2
+            while True:
+                plen = struct.unpack_from("<H", raw, cursor)[0]
+                if plen == 0:
+                    break
+                types.append(raw[cursor + 2])
+                payloads.append(raw[cursor + 3 : cursor + 3 + plen])
+                cursor += plen + 3
+            if set(types) == {25}:
+                return payloads[0]
+        start = end
+    raise AssertionError(f"no depth-only block for channel {channel}")
+
+
+def _crafted_bdd(
+    tmp_path: Path,
+    blocks: list[tuple[int, int, list[tuple[int, bytes]]]],
+    *,
+    name: str = "crafted.BDD",
+) -> Path:
+    """Write a ``.BDD`` from the real header/op-params plus the given blocks.
+
+    ``blocks`` is ``(channel, raw timestamp, [(profile type, payload), ...])``.
+    The footer is laid out exactly as the reader documents it: 2 bytes, the
+    ``uint32`` timestamp, the ``uint16`` block number, 3 bytes, the channel byte,
+    2 bytes — i.e. ``channel`` at ``meas_end - 3`` and the timestamp at
+    ``meas_end - 12``.
+    """
+    raw = DUAL_4MHZ.read_bytes()
+    out = bytearray(raw[:31268])
+    for block_number, (channel, timestamp, profiles) in enumerate(blocks, start=1):
+        body = bytearray()
+        for profile_type, payload in profiles:
+            body += struct.pack("<H", len(payload)) + bytes([profile_type]) + payload
+        footer = (
+            b"\x00\x00"
+            + struct.pack("<I", timestamp)
+            + struct.pack("<H", block_number)
+            + b"\x00\x00\x00"
+            + bytes([channel])
+            + b"\x00\x00"
+        )
+        out += struct.pack("<H", 2 + len(body) + len(footer)) + body + footer
+    path = tmp_path / name
+    path.write_bytes(bytes(out))
+    return path
+
+
+_VELO_GATES = bytes([7]) * 42
+_ECHO_GATES = bytes([200]) * 42
+_ECHO_GATES_ALT = bytes([90]) * 42
+
+
+def test_rollover_keeps_a_missing_quantity_on_the_same_clock(tmp_path):
+    """F1: the clock is unwrapped once per channel, not once per quantity.
+
+    Channel 1 has a velocity-only block *before* the 32-bit timestamp rollover and
+    two dual blocks after it. Unwrapping each quantity separately would leave echo
+    (which never sees a backward step) four days below velocity for the very same
+    block; one channel clock keeps them together.
+    """
+    near_wrap = 2**32 - 100
+    path = _crafted_bdd(
+        tmp_path,
+        [
+            (1, near_wrap, [(25, _real_depth_payload(1)), (0, _VELO_GATES)]),
+            (1, 100, [(0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 300, [(0, _VELO_GATES), (1, _ECHO_GATES)]),
+        ],
+    )
+    bundle = read(path)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+
+    assert velocity.data.time_s.shape[0] == 3
+    assert echo.data.time_s.shape[0] == 2
+    # The two post-rollover blocks are shared: same absolute seconds, cell for cell.
+    assert np.array_equal(echo.data.time_s, velocity.data.time_s[1:])
+    # One overflow period (~4.97 days) would be the divergence a per-quantity
+    # unwrap produces; the shared clock leaves only the true 20 ms gap.
+    assert echo.data.time_s[0] - velocity.data.time_s[0] < 1.0
+    assert velocity.data.time_s[1] - velocity.data.time_s[0] < 1.0
+
+
+def test_profile_order_inside_a_block_does_not_change_the_decode(tmp_path):
+    """Echo-then-velocity must decode identically to velocity-then-echo."""
+    forward = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 500, [(0, _VELO_GATES), (1, _ECHO_GATES_ALT)]),
+        ],
+        name="forward.BDD",
+    )
+    reversed_ = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (1, _ECHO_GATES), (0, _VELO_GATES)]),
+            (1, 500, [(1, _ECHO_GATES_ALT), (0, _VELO_GATES)]),
+        ],
+        name="reversed.BDD",
+    )
+    key = ChannelKey(device_channel=1)
+    decoded = {}
+    for label, path in (("forward", forward), ("reversed", reversed_)):
+        bundle = read(path)
+        decoded[label] = {
+            quantity: select_channel(bundle, key, quantity=quantity).artifact
+            for quantity in (
+                SignalQuantity.AXIAL_VELOCITY,
+                SignalQuantity.ECHO_AMPLITUDE,
+            )
+        }
+    for quantity in decoded["forward"]:
+        left = decoded["forward"][quantity]
+        right = decoded["reversed"][quantity]
+        assert np.array_equal(left.data.values, right.data.values)
+        assert np.array_equal(left.data.time_s, right.data.time_s)
+    # and the two quantities are distinguishable, so the comparison is not vacuous
+    assert not np.array_equal(
+        decoded["forward"][SignalQuantity.AXIAL_VELOCITY].data.values,
+        decoded["forward"][SignalQuantity.ECHO_AMPLITUDE].data.values,
+    )
+
+
+def test_a_quantity_absent_from_some_blocks_keeps_its_own_rows(tmp_path):
+    """A missing echo profile leaves a hole in echo's rows, never a row shift."""
+    path = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 500, [(0, _VELO_GATES)]),  # echo truly absent from this block
+            (1, 900, [(0, _VELO_GATES), (1, _ECHO_GATES_ALT)]),
+        ],
+    )
+    bundle = read(path)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    assert velocity.data.time_s.shape[0] == 3
+    assert echo.data.time_s.shape[0] == 2
+    assert np.array_equal(echo.data.time_s, velocity.data.time_s[[0, 2]])
+    # The first echo row is the block-1 payload (200 counts) and the second is the
+    # block-3 payload (90 counts): a shifted mapping would repeat one of them.
+    assert echo.data.values[0, 0] == pytest.approx(200 * 2048 / 255)
+    assert echo.data.values[1, 0] == pytest.approx(90 * 2048 / 255)

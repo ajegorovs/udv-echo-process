@@ -477,20 +477,23 @@ def _velo_max_ms(op: dict[str, object]) -> float | None:
 class _Acc:
     """Per-channel accumulation during the block walk.
 
-    Every measured quantity keeps its **own** rows and its own timestamps. A
-    block may carry one profile per quantity (a two-plot velocity+echo capture),
-    only one of them, or neither; a single shared time vector would silently
-    misalign a series that was absent from some blocks.
+    Every measured quantity keeps its **own** rows, but the channel keeps **one**
+    clock: :attr:`blocks` records each block's raw timestamp once, with the set of
+    quantities that block carried. Unwrapping per quantity would let two series
+    disagree by a full timestamp period at the 32-bit rollover whenever a quantity
+    is missing from the blocks on one side of it, so the clock is unwrapped once
+    per channel and each quantity picks out its own rows (review finding F1).
     """
 
-    __slots__ = ("channel", "depth", "series", "times")
+    __slots__ = ("blocks", "channel", "depth", "series")
 
     def __init__(self, channel: int) -> None:
         self.channel = channel
         self.series: dict[str, list[np.ndarray]] = {
             name: [] for name in _SIGNAL_PROFILES
         }
-        self.times: dict[str, list[int]] = {name: [] for name in _SIGNAL_PROFILES}
+        #: ``(raw timestamp, quantities present)`` per signal block, in file order.
+        self.blocks: list[tuple[int, tuple[str, ...]]] = []
         self.depth: np.ndarray | None = None
 
 
@@ -643,6 +646,7 @@ def read(path: Path) -> ArtifactBundle:
 
         # walk nested profile sub-blocks
         prof_start = meas_start + 2
+        present: list[str] = []
         while True:
             plen = buf.at(prof_start, "H")
             if plen == 0:
@@ -661,11 +665,14 @@ def read(path: Path) -> ArtifactBundle:
                 else:
                     decoded = _decode_echo(arr, op[channel])
                 a.series[name].append(decoded)
-                # One timestamp per (block, quantity): the two profile types of a
-                # two-plot block share the block's single footer timestamp, so
-                # the velocity and echo rows stay simultaneously aligned.
-                a.times[name].append(ts_raw)
+                present.append(name)
             prof_start += plen + 3
+
+        # A depth-only block is not a measurement timestep (matches DOPpy
+        # `_scanFile`), so it contributes no clock reading. A signal block records
+        # its timestamp ONCE, together with the quantities it carried.
+        if present:
+            a.blocks.append((ts_raw, tuple(present)))
 
         meas_start = meas_end
 
@@ -678,12 +685,26 @@ def read(path: Path) -> ArtifactBundle:
         if not present:
             continue
         depth = _canonical_depth_mm(a.depth, op[ch], path.name, ch)
+        # One unwrapped clock for the channel; each quantity takes its own rows, so
+        # the velocity and echo series can never disagree about a shared block
+        # (review finding F1).
+        clock = _correct_time(np.array([raw_ts for raw_ts, _ in a.blocks]))
         for name in present:
             # A block that stored both profile types yields two streams on one
             # channel, not one: §6.6 keeps ChannelArtifact at five fields and a
             # channel is not a stream identity on its own (plan §6.7 amendment).
+            rows = np.array(
+                [index for index, (_, names) in enumerate(a.blocks) if name in names],
+                dtype=np.int64,
+            )
+            if rows.shape[0] != len(a.series[name]):
+                raise ValueError(
+                    f"channel {ch} ({name}) of {path.name} decoded "
+                    f"{len(a.series[name])} profiles but {rows.shape[0]} block "
+                    "timestamps"
+                )
             values = np.vstack(a.series[name])
-            time_s = _correct_time(np.array(a.times[name]))
+            time_s = clock[rows]
             meas_type = _MEAS_TYPE_BY_PROFILE[name]
             if values.shape[1] != depth.shape[0]:
                 raise ValueError(
