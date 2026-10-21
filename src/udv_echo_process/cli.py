@@ -1655,8 +1655,29 @@ def acquire_main(argv: list[str] | None = None) -> None:
     mpx_check_parser.add_argument(
         "--profiles",
         type=int,
-        required=True,
-        help="profiles per channel in the completed block, as the operator states them",
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel across the stored block "
+            "(legacy basis; exclusive with --profiles-per-visit/--repeats)"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated profile count for ONE visit; requires --repeats, and the "
+            "expected total is their product (exclusive with --profiles)"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; requires --profiles-per-visit. The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
     )
     mpx_check_parser.add_argument(
         "--stated-by",
@@ -1694,8 +1715,29 @@ def acquire_main(argv: list[str] | None = None) -> None:
     record_multiplexed_parser.add_argument(
         "--profiles",
         type=int,
-        required=True,
-        help="profiles per channel the recording is configured for, as the operator states them",
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel across the stored block "
+            "(legacy basis; exclusive with --profiles-per-visit/--repeats)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated profile count for ONE visit; requires --repeats, and the "
+            "expected total is their product (exclusive with --profiles)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; requires --profiles-per-visit. The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
     )
     record_multiplexed_parser.add_argument(
         "--stated-by",
@@ -2053,12 +2095,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 else:
                     print(result.summary())
         elif args.command == "mpx-check":
-            # The declaration is the contract: judge it with the same pure clause function
-            # every block command uses, before the file is read or decoded, so an invalid
-            # statement produces no decode, no claim and one concise refusal line rather
+            # The declaration is the contract: build (and so judge) it before the file is read
+            # or decoded, so an invalid statement — including an ambiguous total/per-visit
+            # combination — produces no decode, no claim and one concise refusal line rather
             # than pydantic's multi-line validation dump.
             mpx_check_refusals = store_completed.block_declaration_clauses(
-                tuple(args.channel), args.profiles, args.stated_by
+                tuple(args.channel),
+                args.profiles,
+                args.stated_by,
+                profiles_per_visit=args.profiles_per_visit,
+                sequence_repeats=args.repeats,
             )
             if mpx_check_refusals:
                 print(
@@ -2070,6 +2116,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 mpx_check_declaration = store_completed.CompletedBlockDeclaration(
                     channels=tuple(args.channel),
                     profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
                     stated_by=args.stated_by,
                     statement=args.statement,
                 )
@@ -2083,20 +2131,30 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _print_artifact_clauses(artifact_report)
                 code = _artifact_exit_code(artifact_report)
         elif args.command == "record-multiplexed":
-            try:
+            mpx_refusals = store_completed.block_declaration_clauses(
+                tuple(args.channel),
+                args.profiles,
+                args.stated_by,
+                profiles_per_visit=args.profiles_per_visit,
+                sequence_repeats=args.repeats,
+            )
+            if mpx_refusals:
+                # One line, exit 2, before any window is read.
+                print(
+                    f"udv-acquire: refused: {'; '.join(mpx_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
                 mpx_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
                     multiplexer_enabled=args.mpx_enabled,
                     channels=tuple(args.channel),
                     profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
                     stated_by=args.stated_by,
                     statement=args.statement,
                 )
-            except ValueError as exc:
-                # The operator's declaration (the mode included) is a contract, so an invalid one
-                # is refused here — one line, exit 2 — long before any window is read.
-                print(f"udv-acquire: refused: {exc}", file=sys.stderr)
-                code = 2
-            else:
                 mpx_result = record_multiplexed.record_multiplexed(
                     args.name,
                     _acquire_store_directory(args.store_dir),

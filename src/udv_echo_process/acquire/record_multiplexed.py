@@ -146,14 +146,22 @@ class MultiplexedRecordingDeclaration(ValueModel):
       the strip's ``ready`` row, because that row is the *same* row in both modes.
     - ``channels`` / ``profiles_per_channel`` — the configured channel set and each channel's
       profile count, judged by :func:`…store_completed.block_declaration_clauses`, the rule the
-      store-only path applies to the same statement.
+      store-only path applies to the same statement. ``profiles_per_visit`` with
+      ``sequence_repeats`` is the explicit repeated-sequence basis, mutually exclusive with the
+      legacy total: their product is the expected stored total, computed once by the store-only
+      declaration, and the repeat count itself is never compared with anything decoded.
     - ``stated_by`` — who said so. An unattributed 'yes' is not a declaration.
     """
 
     multiplexer_enabled: bool = Field(strict=True)
     channels: tuple[Annotated[int, Field(strict=True, gt=0)], ...]
-    #: Strict: a bool or a string is not a count the operator stated.
-    profiles_per_channel: int = Field(strict=True)
+    #: The operator's stated **total** per channel (the legacy basis); ``None`` when the count
+    #: is stated per visit and repeated instead. Strict: a bool or a string is not a count.
+    profiles_per_channel: int | None = Field(default=None, strict=True)
+    #: The operator's stated count for one visit; only valid paired with ``sequence_repeats``.
+    profiles_per_visit: int | None = Field(default=None, strict=True)
+    #: The operator's stated repeat count. Never compared with a decoded count.
+    sequence_repeats: int | None = Field(default=None, strict=True)
     stated_by: str
     stated_at: str = ""
     #: The operator's own words, kept raw for the report.
@@ -177,7 +185,11 @@ class MultiplexedRecordingDeclaration(ValueModel):
             )
         out.extend(
             block_declaration_clauses(
-                self.channels, self.profiles_per_channel, self.stated_by
+                self.channels,
+                self.profiles_per_channel,
+                self.stated_by,
+                profiles_per_visit=self.profiles_per_visit,
+                sequence_repeats=self.sequence_repeats,
             )
         )
         return tuple(out)
@@ -193,10 +205,26 @@ class MultiplexedRecordingDeclaration(ValueModel):
         return CompletedBlockDeclaration(
             channels=self.channels,
             profiles_per_channel=self.profiles_per_channel,
+            profiles_per_visit=self.profiles_per_visit,
+            sequence_repeats=self.sequence_repeats,
             stated_by=self.stated_by,
             stated_at=self.stated_at,
             statement=self.statement,
         )
+
+    @property
+    def expected_total_profiles(self) -> int:
+        """The expected stored total per channel, normalized by the completed-block owner."""
+        return self.completed_block().expected_total_profiles
+
+    @property
+    def repeat_verification_unknown(self) -> str:
+        """The visit-count unknown this declaration carries, or ``""`` on the legacy basis."""
+        return self.completed_block().repeat_verification_unknown
+
+    def count_summary(self) -> str:
+        """One person-readable clause naming the count, its basis and its arithmetic."""
+        return self.completed_block().count_summary()
 
 
 class MpxStage(str, Enum):
@@ -277,7 +305,7 @@ class MultiplexedRecordingResult(ValueModel):
         """One line for a log: what the run established, or why it stopped and what is owed."""
         head = (
             f"multiplexed recording on channels {list(self.declaration.channels)} "
-            f"({self.declaration.profiles_per_channel} profiles each, as stated by "
+            f"({self.declaration.count_summary()}, as stated by "
             f"{self.declaration.stated_by!r}): {self.stage.value}"
         )
         if self.stored and self.store is not None:
@@ -713,6 +741,14 @@ def record_multiplexed(
                 "stored at the reported path and is neither re-recorded nor re-stored"
             ),
         )
+    # A repeated declaration's per-visit/repeat pair is the operator's arithmetic, never a
+    # decoded partition: the stored bytes carry an unpartitioned total, so the repeat count
+    # stays owed even when that total matches the expectation.
+    repeat_owed: tuple[str, ...] = (
+        ()
+        if declaration.sequence_repeats is None
+        else (declaration.repeat_verification_unknown,)
+    )
 
     return MultiplexedRecordingResult(
         stage=MpxStage.STORED,
@@ -737,5 +773,5 @@ def record_multiplexed(
                 "Disable multiplexer, Channels menu or parameter write"
             ),
         ),
-        owed=(MPX_MODE_NOT_READ,) + verification_owed,
+        owed=(MPX_MODE_NOT_READ,) + repeat_owed + verification_owed,
     )

@@ -77,7 +77,10 @@ from pathlib import Path
 import numpy as np
 from pydantic import Field
 
-from udv_echo_process.acquire.store_completed import CompletedBlockDeclaration
+from udv_echo_process.acquire.store_completed import (
+    CompletedBlockDeclaration,
+    ProfileCountBasis,
+)
 from udv_echo_process.io import load
 from udv_echo_process.models.base import ValueModel
 from udv_echo_process.models.signal import ChannelArtifact
@@ -86,6 +89,7 @@ from udv_echo_process.provenance import ArtifactBundle
 __all__ = [
     "MpxArtifactReport",
     "MpxClause",
+    "MpxRepeatVerification",
     "MpxStreamReport",
     "MpxVerdict",
     "verify_mpx_artifact",
@@ -106,6 +110,19 @@ class MpxVerdict(str, Enum):
     CONTRADICTED = "contradicted"
     UNVERIFIABLE = "unverifiable"
     UNREADABLE = "unreadable"
+
+
+class MpxRepeatVerification(str, Enum):
+    """What the check established about the *number of stored visits*.
+
+    Only ever one of these two: this decoder has no visit/block partition to compare, so a
+    declared repeat count can never be called verified.
+    """
+
+    #: The declaration stated no repeat count, so nothing is claimed about visits.
+    NOT_DECLARED = "not-declared"
+    #: A repeat count was stated; the actual count/partition is not decoded and is unknown.
+    UNKNOWN = "unknown"
 
 
 class MpxClause(ValueModel):
@@ -154,9 +171,25 @@ class MpxArtifactReport(ValueModel):
     acquisition_mode: str
     mode_note: str
     declared_channels: tuple[int, ...]
-    declared_profiles_per_channel: int
+    #: The operator's stated **total** per channel, or ``None`` when the count is stated as a
+    #: per-visit count and a repeat count instead. Never a decoded fact.
+    declared_profiles_per_channel: int | None
+    #: The expected stored total per channel, normalized once by the declaration: the stated
+    #: total on the legacy basis, or ``per_visit * repeats`` — the operator's arithmetic, not a
+    #: decoding of what happened.
+    expected_total_profiles: int
     decoded_channels: tuple[int, ...]
     streams: tuple[MpxStreamReport, ...] = ()
+    #: The operator's stated per-visit count (``None`` on the legacy total basis).
+    declared_profiles_per_visit: int | None = None
+    #: The operator's stated repeat count (``None`` when no repeat was declared).
+    declared_sequence_repeats: int | None = None
+    count_basis: ProfileCountBasis = ProfileCountBasis.STATED_TOTAL
+    #: Whether the number of stored visits could be checked. Always ``unknown`` when repeats
+    #: were declared, because the decoder flattens every stored block into one stream.
+    repeat_verification: MpxRepeatVerification = MpxRepeatVerification.NOT_DECLARED
+    #: The repeat unknown in words, empty on the legacy basis.
+    repeat_note: str = ""
     clauses: tuple[MpxClause, ...] = ()
     verdict: MpxVerdict
 
@@ -168,6 +201,13 @@ class MpxArtifactReport(ValueModel):
             f"{self.file_sha256 or 'unknown'}; {self.byte_size} bytes; identity "
             f"{identity}; mode {self.acquisition_mode}"
         )
+        if self.repeat_verification is MpxRepeatVerification.UNKNOWN:
+            head += (
+                f"; expected total {self.expected_total_profiles} per channel from "
+                f"{self.declared_sequence_repeats} repeat(s) x "
+                f"{self.declared_profiles_per_visit} per visit (operator-stated arithmetic); "
+                "actual repeats/visits unknown (not decoded)"
+            )
         if not self.streams:
             return f"{head}; {self.identity_note}"
         streams = "; ".join(
@@ -212,7 +252,17 @@ def _unreadable(
         mode_note="not decoded",
         declared_channels=tuple(sorted(declaration.channels)),
         declared_profiles_per_channel=declaration.profiles_per_channel,
+        expected_total_profiles=declaration.expected_total_profiles,
         decoded_channels=(),
+        declared_profiles_per_visit=declaration.profiles_per_visit,
+        declared_sequence_repeats=declaration.sequence_repeats,
+        count_basis=declaration.count_basis,
+        repeat_verification=(
+            MpxRepeatVerification.NOT_DECLARED
+            if declaration.sequence_repeats is None
+            else MpxRepeatVerification.UNKNOWN
+        ),
+        repeat_note=declaration.repeat_verification_unknown,
         clauses=(MpxClause(subject="file", status=MpxVerdict.UNREADABLE, detail=note),),
         verdict=MpxVerdict.UNREADABLE,
     )
@@ -384,6 +434,7 @@ def _report_from_bundle(
     decoded_channels = tuple(sorted({stream.channel for stream in streams}))
     clauses = list(_channel_clauses(decoded_channels, declaration))
     clauses.extend(_profile_clauses(streams, declaration))
+    clauses.extend(_repeat_clauses(declaration))
     clauses.extend(_data_clauses(streams))
     verdict = _verdict(clauses)
     mode = bundle.recording.acquisition_mode
@@ -406,8 +457,18 @@ def _report_from_bundle(
         ),
         declared_channels=tuple(sorted(declaration.channels)),
         declared_profiles_per_channel=declaration.profiles_per_channel,
+        expected_total_profiles=declaration.expected_total_profiles,
         decoded_channels=decoded_channels,
         streams=streams,
+        declared_profiles_per_visit=declaration.profiles_per_visit,
+        declared_sequence_repeats=declaration.sequence_repeats,
+        count_basis=declaration.count_basis,
+        repeat_verification=(
+            MpxRepeatVerification.NOT_DECLARED
+            if declaration.sequence_repeats is None
+            else MpxRepeatVerification.UNKNOWN
+        ),
+        repeat_note=declaration.repeat_verification_unknown,
         clauses=tuple(clauses),
         verdict=verdict,
     )
@@ -481,8 +542,16 @@ def _channel_clauses(
 def _profile_clauses(
     streams: tuple[MpxStreamReport, ...], declaration: CompletedBlockDeclaration
 ) -> tuple[MpxClause, ...]:
-    """The stored profile count per channel, kept per stream and never conflated."""
+    """The stored profile count per channel, kept per stream and never conflated.
+
+    ``expected`` is the declaration's normalized expected **total** — the stated total on the
+    legacy basis, or the operator's per-visit count times the operator's repeat count. That
+    product is arithmetic over the operator's numbers: it is not a decoded partition, so a
+    matching count says nothing about how many visits the file actually holds (see
+    :func:`_repeat_clauses`).
+    """
     declared = set(declaration.channels)
+    expected_total = declaration.expected_total_profiles
     by_channel: dict[int, list[MpxStreamReport]] = {}
     for stream in streams:
         by_channel.setdefault(stream.channel, []).append(stream)
@@ -499,7 +568,7 @@ def _profile_clauses(
                         f"channel {channel} was declared but not decoded, so there is no "
                         "stored count to compare"
                     ),
-                    expected=declaration.profiles_per_channel,
+                    expected=expected_total,
                 )
             )
             continue
@@ -524,7 +593,7 @@ def _profile_clauses(
                     subject=subject,
                     status=MpxVerdict.UNVERIFIABLE,
                     detail=reason,
-                    expected=declaration.profiles_per_channel,
+                    expected=expected_total,
                 )
             )
             continue
@@ -542,9 +611,9 @@ def _profile_clauses(
                 )
             )
             continue
-        expected = declaration.profiles_per_channel
+        expected = expected_total
         consistent = stream.profiles == expected
-        detail = f"declared {expected}, decoded {stream.profiles} profiles ({stream.quantity})"
+        detail = _profile_detail(expected, stream, declaration)
         if not consistent:
             detail += (
                 "; a shorter decode can mean a truncated file, which is reported as "
@@ -562,6 +631,52 @@ def _profile_clauses(
             )
         )
     return tuple(clauses)
+
+
+def _profile_detail(
+    expected: int, stream: MpxStreamReport, declaration: CompletedBlockDeclaration
+) -> str:
+    """Name the expected total's basis so the count is never silently converted."""
+    if declaration.count_basis is ProfileCountBasis.STATED_TOTAL:
+        return f"declared {expected}, decoded {stream.profiles} profiles ({stream.quantity})"
+    return (
+        f"expected {expected} profiles per channel = {declaration.sequence_repeats} "
+        f"repeat(s) x {declaration.profiles_per_visit} per visit (operator-stated "
+        f"arithmetic), decoded {stream.profiles} profiles ({stream.quantity})"
+    )
+
+
+def _repeat_clauses(
+    declaration: CompletedBlockDeclaration,
+) -> tuple[MpxClause, ...]:
+    """The repeat count's own clause: always unverifiable, because nothing decodes visits.
+
+    This is not a missing feature worked around privately: the existing reader accumulates
+    every stored block of a channel into one stream, and no block/visit/round field is owned
+    or decoded. The clause therefore states the unknown rather than letting a matching total
+    read as a verified repeat count, and the overall verdict becomes ``unverifiable`` for any
+    repeated declaration even when the total agrees.
+    """
+    if declaration.sequence_repeats is None:
+        return ()
+    expected = declaration.expected_total_profiles
+    return (
+        MpxClause(
+            subject="repeats",
+            status=MpxVerdict.UNVERIFIABLE,
+            detail=(
+                f"the operator stated {declaration.sequence_repeats} repeat(s) of "
+                f"{declaration.profiles_per_visit} profile(s) per visit, so the expected total "
+                f"is {expected} = {declaration.sequence_repeats} x "
+                f"{declaration.profiles_per_visit} (operator-stated arithmetic); only that "
+                "total can be compared, because the decoder flattens every stored block into "
+                "one stream per channel and decodes no repeat, block or visit count — the "
+                f"actual number of stored visits is unknown, and a total of {expected} per "
+                f"channel is not proof that {declaration.sequence_repeats} visit(s) ran"
+            ),
+            expected=declaration.sequence_repeats,
+        ),
+    )
 
 
 def _data_clauses(streams: tuple[MpxStreamReport, ...]) -> tuple[MpxClause, ...]:

@@ -101,3 +101,104 @@ interpretation of the stored bytes.
 - This is an artifact check only. `record-multiplexed` runs it after its own store; it is
   never a recording, stopping, re-storing or cleanup step, and `store-completed` does not
   run it.
+
+## Live acceptance record (2026-10-21)
+
+One operator-authorized run of the automatic path, on the real instrument, stored one
+block and its own verifier reported it `consistent`. This is a single invocation by one
+operator, not concurrent or unattended certification. What was observed, with the raw
+command log kept locally:
+
+- Command: `acquire record-multiplexed mpx12-50profiles-verified-01 --channel 1 2
+  --profiles 50 --stated-by operator --mpx-enabled --completion-timeout 60 --json`,
+  store directory the repository's `outputs/live/store`. Exactly one `Record` press and
+  one `Do store` commit; no Stop, Pause, Clear and restart, New acquisition, Remove
+  current block, Disable multiplexer, Channels menu or parameter write (`notes` of the
+  result). Exit `0`.
+- Result: `stage: stored`, and `artifact_verification` carried as a **separate** report
+  beside `stored_path`, `store` and the declaration — the store result does not contain
+  or derive from the verdict. All three clauses (`channels`, `profiles:channel 1`,
+  `profiles:channel 2`) read `consistent`; decoded channel set `[1, 2]`, 50 profiles per
+  channel.
+- Artifact: 37574 bytes, SHA-256
+  `20195ac66088abf4355f904d61df458f98a96c28b94cd8b399ac72b1be7295d5`,
+  `identity_verified: true` (both streamed reads equal each other and the decoder's own
+  digest and size), `acquisition_mode: sequential` — the multiplexer-enable bit only.
+- Per-stream summary, both channels `axial_velocity` / `mm/s`: 50 profiles, 42 gates,
+  2100 finite cells, 0 non-finite, 0 nonzero samples, `abs_max 0.0`; spans 1.9777 s
+  (channel 1: 0.0 → 1.9777 s, channel 2: 2.0297 → 4.0074 s). A span is not coverage and
+  not the requested duration; the two spans are not a roll or ordering claim.
+- A separate `acquire status` read taken after the run exited `0` and reported the strip
+  in view `ready` with the measurement surface active, no menu popup and 0 dialog panels:
+  the run left the application Ready rather than in the Store dialog or a store view.
+
+Two limits belong to this record specifically:
+
+- **The zeros are expected here and prove nothing physical.** After the run, the operator
+  stated that the sensors had been removed and would remain disconnected for days; no
+  removal time was established. Zero-valued samples are compatible with that context, and
+  the `0 nonzero` counts above are evidence about the artifact and the decode only — not
+  a statement that the target produced no returns, not a failure, and not a quality
+  grade. See [Zero is signal](#limits) above, which still applies unchanged.
+- **The multiplexer's final state is unknown.** The run's own `owed` note stands: no
+  passive MPX discriminator exists, this command presses no Disable, and the operator's
+  declaration is the only statement of the mode. Nothing here reads back whether the
+  multiplexer is still enabled, so `--mpx-enabled` is a caller claim, not a post-run fact.
+
+## Not setting-free: the remembered Store directory
+
+`record-multiplexed` writes the Store dialog's **Working directory** field to the
+caller's `--store-dir` and commits it, because the application resolves the stored path
+itself and a relative path would verify in this process while storing elsewhere. That
+write is not reverted: the dialog keeps the caller's directory, so a later store — from
+this tool or from the operator's hands — starts from the repository's output directory
+instead of whatever the dialog remembered before. On this run the field held a previous
+experiment folder and was rewritten; the result reports it as
+`store.directory_rewritten: true` with the before/after texts in
+`store.directory_verification` and one `driver_notes` line.
+
+So the run **changes persistent application state**: it is an artifact check with a
+GUI-state side effect, not a read-only operation. Treat the reported before/after as the
+record of it, and do not describe a stored run as leaving the instrument untouched
+merely because it pressed no Stop or Disable.
+
+## Repeated sequences: `--profiles-per-visit` with `--repeats`
+
+`--profiles` keeps its original meaning: the operator's stated **total** per channel for
+the whole stored block. A repeated sequence is stated explicitly instead, and the two
+bases are mutually exclusive:
+
+```bash
+uv run python -m udv_echo_process.cli acquire mpx-check FILE.BDD \
+  --channel 1 2 --profiles-per-visit 50 --repeats 2 --json
+# same flags exist on `record-multiplexed`; --profiles 100 is refused beside either
+```
+
+- `--profiles-per-visit N` and `--repeats M` must be given together and both are positive
+  strict integers. The expected total (`N × M`) is normalized once, in
+  `CompletedBlockDeclaration.expected_total_profiles`, and reported as
+  `expected_total_profiles`.
+- Stating `--profiles` together with either half, or only half of the pair, exits `2` with
+  one refusal line before the file is opened or any window is read. The same holds for
+  `record-multiplexed`, where the refusal precedes every device action.
+- The report retains the operator's own numbers as such —
+  `declared_profiles_per_visit`, `declared_sequence_repeats`, `count_basis`
+  (`stated-total` or `per-visit-times-repeats`) — and never presents them as decoded facts.
+
+**What a repeat declaration cannot establish.** The existing decoder accumulates every
+stored block of a channel into one `ChannelArtifact`, so only the **total** rows per
+channel are decoded. The repeat count and the number of stored visits are therefore
+unknown, and a repeated declaration always carries a `repeats` clause with status
+`unverifiable` plus `repeat_verification: unknown` and a `repeat_note`. The overall
+verdict is `unverifiable` (exit `3`) even when the total matches the expected product; the
+per-channel count clauses still report `consistent` for that total. A total match is not
+proof that `M` visits ran, and a single stored block holding the whole total is not
+evidence of either one visit or `M` visits.
+
+On an authentic 100-block fixture (`data/4-sensor-velocity/200RPM.BDD`, 400 rows per
+channel), `--profiles-per-visit 4 --repeats 100` reaches the matching total and still
+reports the repeat count unknown — that is the honest result, not a failure. `--profiles
+400` remains `consistent` exactly as before. No repeat ≥ 2 recording with a known
+operator setting exists on this host, so no live acceptance is claimed for repeats; the
+block-scoped-store question (does a repeat>1 acquisition store one block or all of them)
+is still unmeasured.

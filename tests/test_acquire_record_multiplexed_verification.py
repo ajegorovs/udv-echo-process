@@ -203,6 +203,49 @@ def test_filename_is_not_used_to_infer_the_declared_channels(tmp_path: Path):
     assert report.declared_channels == (6, 7)
 
 
+def test_repeated_declaration_compares_the_total_and_keeps_the_repeat_unknown(
+    tmp_path: Path,
+):
+    """4 per visit x 100 repeats reaches the 400 stored rows; the visits stay unverified.
+
+    The furnished file is authentic (a 100-block multiplexed acquisition), so this is a
+    real arithmetic agreement with real bytes — but the decoder flattens the blocks, so
+    the run must not claim 100 visits ran.
+    """
+    screen = StoredScreen(FIXTURE.read_bytes())
+    declar = declaration(
+        profiles_per_channel=None, profiles_per_visit=4, sequence_repeats=100
+    )
+    result = run(tmp_path, screen=screen, declar=declar)
+
+    assert result.stage is MpxStage.STORED
+    report = result.artifact_verification
+    assert report is not None
+    assert report.verdict is MpxVerdict.UNVERIFIABLE
+    assert result.artifact_consistent is False
+    assert report.expected_total_profiles == PROFILES
+    assert report.declared_profiles_per_channel is None
+    assert report.declared_profiles_per_visit == 4
+    assert report.declared_sequence_repeats == 100
+    profiles = [c for c in report.clauses if c.subject.startswith("profiles:")]
+    assert {c.status for c in profiles} == {MpxVerdict.CONSISTENT}
+    repeats = [c for c in report.clauses if c.subject == "repeats"]
+    assert len(repeats) == 1 and repeats[0].status is MpxVerdict.UNVERIFIABLE
+    # The operator's own per-visit/repeat numbers survive into the stored declaration and
+    # are reported as an unknown obligation, not as a verified count.
+    assert result.declaration.profiles_per_visit == 4
+    assert result.declaration.sequence_repeats == 100
+    assert result.store is not None
+    assert result.store.declaration.expected_total_profiles == PROFILES
+    assert result.owed[0] == MPX_MODE_NOT_READ
+    assert any(
+        "actual number of stored visits is unknown" in item for item in result.owed
+    )
+    assert "not proof that 100 visit(s)" in result.owed[1]
+    assert screen.controls() == [StripControl.RECORD, StripControl.DO_STORE]
+    assert screen.commits == 1
+
+
 # ------------------------------------------------------------- stored but not consistent
 
 
@@ -258,6 +301,7 @@ def test_an_unverifiable_report_still_leaves_the_file_stored(tmp_path: Path):
             mode_note="injected boundary",
             declared_channels=CHANNELS,
             declared_profiles_per_channel=PROFILES,
+            expected_total_profiles=PROFILES,
             decoded_channels=CHANNELS,
             clauses=(
                 MpxClause(
@@ -500,6 +544,7 @@ def test_cli_exits_3_on_an_unverifiable_report_and_names_the_stored_path(
             mode_note="injected boundary",
             declared_channels=CHANNELS,
             declared_profiles_per_channel=PROFILES,
+            expected_total_profiles=PROFILES,
             decoded_channels=CHANNELS,
             clauses=(
                 MpxClause(
