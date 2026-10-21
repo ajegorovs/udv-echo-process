@@ -784,10 +784,12 @@ def test_dual_profile_echo_is_decoded_on_the_module_scale():
 
 
 def test_dual_profile_quantities_are_not_a_rescaling_of_each_other():
-    """The echo series is an independent measurement, not the velocity series.
+    """A weak guard against one quantity being a rescaled copy of the other.
 
-    A reader that decoded the same bytes twice (or mapped one onto the other)
-    would produce two perfectly correlated streams; these are uncorrelated.
+    Byte-level oracles are the real check (see
+    ``test_decoded_cells_match_the_byte_level_oracle``); this only rejects the
+    specific failure where the same payload is emitted twice under two units. Low
+    correlation is *not* evidence of statistical independence.
     """
     bundle = read(DUAL_4MHZ)
     key = ChannelKey(device_channel=1)

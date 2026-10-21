@@ -32,8 +32,10 @@ is deliberately not committed — it would duplicate the coverage at 300 KB.
 Both profiles of a block carry that block's single footer timestamp, so for one
 channel the velocity and echo streams share `time_s` and `gate_depths_mm`
 exactly — the two plots are row-aligned, not two interleaved acquisitions. The
-echo series is an independent measurement: its absolute correlation with the
-velocity series of the same channel is below 0.5 across all 21,000 cells.
+two quantities are *distinct profile payloads* (deterministically checked cell by
+cell in `tests/test_io_bdd_artifacts.py`); their absolute correlation is below
+0.5 across all 21,000 cells, which additionally rules out a simple rescaling but
+is not a test of statistical independence and is not offered as one.
 
 `uv run udv-inspect data/dual-profile-mux/4MHz.BDD` lists all eight streams
 (four channels × two quantities).
