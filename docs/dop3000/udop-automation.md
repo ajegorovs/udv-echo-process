@@ -818,6 +818,66 @@ permission to write settings. A prior closed-popup read returned exit 2 with the
 surface. The raw live report remains generated local evidence, not a committed fixture; portable
 de-identified projected capture shapes cover the resolver offline.
 
+### 12.9 Acceptance, 2026-10-21 — supervised `Repeat` round trip, and the reporting defect it found
+
+One instrument, one operator, the full Channels popup left open by the operator; every popup
+close and reopen between steps was the operator's. `acquire channels-repeat` did the writes only.
+Two invocations, at most one commit each:
+
+| step | command | popup stated before | committed | post-write reading (same open popup) |
+|---|---|---|---|---|
+| 1 | `channels-repeat` | repeat `1` | `2` | `2`, stage `written` |
+| 2 | `channels-repeat` (restore) | repeat `2` | `1` | `1`, stage `written` |
+
+- **Acceptance is the reopened read.** After the forward write the operator closed and reopened
+  the popup, which stated repeat **2**; after the restore, a second reopen stated **1**. Each
+  command's own post-write read came from the still-open popup and therefore reported
+  `persisted: "unknown"` — correctly, because an open surface is not an acceptance read.
+- **Nothing else moved.** `start channel 1`, `apply-from 1`, `profiles 50`, `seconds 2.01` read
+  the same before and after both writes; the only changed fact was the repeat field.
+- **The multiplexer-off state was the operator's declaration** (`--mpx-disabled`), not a passive
+  mode read, and the popup's ticks stay unread.
+- **Not exercised:** an application restart, anything downstream of the setting (acquisition
+  behaviour), more than two writes in one trial, or a value that already equalled the target —
+  the equal-value no-write path is covered offline only.
+
+**The defect this run exposed, and its correction.** The restore invocation was given
+`--expect 2 --value 1`. The command had one numeric argument for two different facts, so it
+recorded `baseline: expect` and `restore_to: expect`: the 2→1 record at the time demanded
+"restore repeat == 2", the value the run had *just left*, and its stated obligation contradicted
+the field it had just set back to `1`. The trial's real origin (`1`) existed only in the earlier
+record. The pre-fix records are preserved verbatim as history; the current shape is:
+
+- `--expect` is **this invocation's** precondition and nothing else;
+- `--baseline` is the trial's **original** value — declare it on every invocation of one trial.
+  `restore_to` is that value, and the record names its source (`declared-trial-baseline` or
+  `this-invocation`), never an alias of `expect`;
+- a write whose target equals the declared baseline records `restores_baseline: true` and renders
+  its obligation as "returned to the trial baseline, so no further restoration is owed";
+- with no `--baseline` the record carries `baseline: null` and names only the command's own
+  starting value as the possible undo, rather than calling it the baseline;
+- a raised commit, a closed popup and a field that did not take the value keep the same declared
+  target and never claim a restoration; `restored_baseline` is true only when the post-write read
+  states the baseline. Those outcomes no longer ask the operator to *confirm* the committed value
+  (the reading just contradicted it): they ask them to reopen the popup, read the repeat as it
+  actually states, and then restore the trial baseline.
+- **one record per invocation, not a ledger.** Each run claims its own `--trial-record` file
+  exclusively, so this sitting's forward write and its restore are two records; every invocation
+  of one trial declares the same original `--baseline`, and reconciliation is reading the trial's
+  records in order (the newest names what is still owed). A second invocation with the same path
+  refuses rather than appending or overwriting.
+- `written_at`/`completed_at` are timezone-aware ISO 8601 wall-clock stamps, matching the other
+  persisted manifests; a monotonic counter value would not be a timestamp once read from disk.
+- a record update that fails leaves the file at phase `obligation` and the result reports
+  `trial_record_phase: "obligation"` with the failure under `restoration_owed`, so a run never
+  claims its outcome reached disk when it did not.
+
+The run's own outputs (the two structured records, the baseline and reopened reads, and the two
+dispatch logs, all named `repeat-*20261021.*`) are generated local evidence and are not committed
+fixtures. The offline suite in `tests/test_acquire_channels_repeat.py` holds the argument
+separation, both write directions, the undeclared-baseline record, the unknown-failure
+instructions, the failed-record-update phase and the timestamp shape.
+
 ---
 
 ## Live validation (simulator)

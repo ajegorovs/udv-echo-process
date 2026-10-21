@@ -236,6 +236,21 @@ accepted*, read back — and when the coupled field was itself the value under s
 correct, because an approximate substitute silently changes what was measured. Write the determining knob
 first, and re-read the whole group before the irreversible step.
 
+**2f. Use the repository's writer for a supervised one-field settings trial; it owns the record.**
+`acquire channels-repeat --expect N --value M --baseline B --mpx-disabled --trial-record PATH`
+writes only the operator-opened Channels popup's `Repeat` and requires the popup to already state
+`--expect`, so re-read before declaring it. `--expect` is that invocation's precondition;
+`--baseline` is the trial's **original** value and belongs on every invocation of the trial —
+passing the current value there makes a restore run owe an undo of itself. Each invocation claims
+its **own** record file exclusively (never a shared ledger, never overwritten), so a forward write
+and its restore are two records; reconcile by reading them in order. The command never opens or
+closes the popup and never presses Record/Stop/Clear; its post-write read is the still-open popup,
+so `persisted: "unknown"` is correct and the acceptance read is the operator's close-and-reopen
+(after which the value must be read afresh, not remembered from the open field). A result whose
+record update failed reports `trial_record_phase: "obligation"` — the file still holds the
+pre-write obligation, and that is what the next run reads. Logs from sequential dispatches share a
+slug and overwrite each other, so copy each aside before the next run.
+
 **3. Verify with a coupled observable, never with an echo.** Reading back the field you just
 wrote only proves the text buffer changed. Pick a value the app *recomputes from* that
 parameter (a status-bar readout, a derived count, a timestamp interval, the parameters

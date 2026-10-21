@@ -35,6 +35,7 @@ from udv_echo_process import run_all
 from udv_echo_process.acquire import (
     campaign,
     channels_read,
+    channels_repeat,
     driver,
     live,
     record_multiplexed,
@@ -1405,6 +1406,50 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channels_read_parser.add_argument("--json", action="store_true")
 
+    channels_repeat_parser = subcommands.add_parser(
+        "channels-repeat",
+        help=(
+            "set the Channels popup's Repeat from a declared value to another, once "
+            "(persistence is unproven: the dialog must be reopened)"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--expect", type=int, required=True, help="the repeat the popup must state before any write"
+    )
+    channels_repeat_parser.add_argument(
+        "--value", type=int, required=True, help="the repeat to commit, once"
+    )
+    channels_repeat_parser.add_argument(
+        "--baseline",
+        type=int,
+        default=None,
+        help=(
+            "the trial's original repeat, which restoration owes; declare it on every "
+            "invocation of one trial so a restore run does not record its own starting value "
+            "as the baseline (omitted: the record states no baseline and names only this "
+            "invocation's own starting value)"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-repeat-trial.json inside it): one record per invocation, so a forward "
+            "write and its restore are two records, each naming the same original --baseline; "
+            "reconcile by reading them in order. An existing record is never overwritten"
+        ),
+    )
+    channels_repeat_parser.add_argument("--json", action="store_true")
+
     channel_parser = subcommands.add_parser(
         "channel", help="verify the measurement channel (writes it only if it differs)"
     )
@@ -1695,6 +1740,29 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 for refusal in channel_report.refusals:
                     print(f"udv-acquire: {refusal}", file=sys.stderr)
                 code = 2
+        elif args.command == "channels-repeat":
+            repeat_result = channels_repeat.acquire_repeat(
+                expect=args.expect,
+                value=args.value,
+                baseline=args.baseline,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(repeat_result, as_json)
+            settled = (
+                channels_repeat.RepeatWriteStage.UNCHANGED,
+                channels_repeat.RepeatWriteStage.WRITTEN,
+            )
+            # A settled stage says only that the write itself landed and was read back. An
+            # outcome that could not be written to the trial record leaves the file at
+            # ``obligation``: the write may have landed and the next run reads the pre-write
+            # obligation, so the command did not finish and must not exit 0 merely because the
+            # field read the new value. The failure and the restoration still owed are named.
+            if repeat_result.stage not in settled or repeat_result.trial_record_error:
+                for owed in repeat_result.restoration_owed:
+                    print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+                code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
         elif args.command == "compile":

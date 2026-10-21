@@ -83,6 +83,7 @@ what the ported probe scripts could not be — they reached into the driver's pr
 | command | what it does | writes to the app? |
 |---|---|---|
 | `acquire channels-read --json` | reads an operator-opened Channels popup without opening, closing or clicking anything; numeric texts are queried, painted tick/toggle states remain UNKNOWN | no |
+| `acquire channels-repeat --expect N --value M --baseline B --mpx-disabled --trial-record PATH` | one guarded write of the operator-opened popup's `Repeat`: requires the popup to state `--expect`, commits `--value` once, and claims its own trial record first; persistence stays `unknown` until the popup is reopened. One record per invocation — a forward write and its restore are two records, each passing the **same original** `--baseline`, reconciled by reading them in order | only the one `Repeat` field |
 | `acquire status` | read-only inventory: window class/rect/maximised, screen, panels, visible control count, strip view, overlay, `layout_note`, cursor, foreground | no |
 | `acquire channel <n>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, and reports the channel's mode (manual/assisted) with the panel counts | only if the channel differs |
 | `acquire preflight [--seconds N]` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel with its **left** button | no store; presses the strip |

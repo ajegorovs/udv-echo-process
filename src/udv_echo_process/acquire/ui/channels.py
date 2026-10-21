@@ -153,6 +153,11 @@ class ValueSlot(ValueModel):
     ``slot`` is the structural position, ``text`` the exact raw text, and ``value`` its parse.
     ``unknown`` says why ``value`` is ``None``; it is set only when the widget states nothing
     parseable, which is also a refusal on the report.
+
+    ``hwnd``/``owner_hwnd`` are **action references, not permission**: the edit the text was read
+    from and the value button that owns it, carried so a caller that writes this one field can
+    re-resolve the same pair and compare it, rather than guessing a handle. Reading a slot still
+    binds nothing, and a reference is stale the moment the tree changes.
     """
 
     slot: str
@@ -160,6 +165,10 @@ class ValueSlot(ValueModel):
     text: str = ""
     value: int | float | None = None
     unknown: str | None = None
+    #: The text control the value was read from, or ``None`` when it did not resolve.
+    hwnd: int | None = None
+    #: The value button that owns that text control, or ``None`` when it did not resolve.
+    owner_hwnd: int | None = None
 
 
 class ChannelCell(ValueModel):
@@ -381,6 +390,8 @@ def _slot(
         attribution=Attribution(caption=caption),
         text=text,
         value=value,
+        hwnd=None if edit is None else edit.hwnd,
+        owner_hwnd=None if owner is None else owner.hwnd,
         unknown=None
         if value is not None
         else f"the {slot} widget states {text!r}, which is not a {value_kind} amount; nothing is assumed",

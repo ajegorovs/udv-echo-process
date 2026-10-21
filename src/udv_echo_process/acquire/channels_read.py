@@ -10,6 +10,7 @@ handle lifetime limitations remain.
 
 from __future__ import annotations
 
+from udv_echo_process.acquire.actuator import WindowTarget
 from udv_echo_process.acquire.driver import (
     AcquisitionError,
     Win32Actuator,
@@ -26,8 +27,18 @@ class ChannelsReadUnavailable(AcquisitionError):
     """No attributable popup reading could be obtained; never mistaken for absence."""
 
 
-def read_channels(actuator: Win32Actuator | None = None) -> ChannelsRead:
-    """Inspect the already-open popup on one bound window; never perform a gesture."""
+def read_channels(
+    actuator: Win32Actuator | None = None,
+    *,
+    target: WindowTarget | None = None,
+) -> ChannelsRead:
+    """Inspect the already-open popup on one bound window; never perform a gesture.
+
+    ``target`` is for a caller that already bound the window in an earlier step: the binding is
+    then **verified**, never replaced, so a read taken right before a write cannot silently
+    migrate to a different window. Without it the one visible window is bound here, which is the
+    read-only command's behaviour and stays the default.
+    """
     windows = visible_main_windows(MAIN_CLASS)
     if len(windows) != 1:
         raise ChannelsReadUnavailable(
@@ -35,7 +46,13 @@ def read_channels(actuator: Win32Actuator | None = None) -> ChannelsRead:
         )
     if actuator is None:
         actuator = Win32Actuator(allow_real_input=False)
-    target = actuator.bind_target(windows[0])
+    if target is None:
+        target = actuator.bind_target(windows[0])
+    elif int(windows[0]) != target.hwnd:
+        raise ChannelsReadUnavailable(
+            f"the only visible window is {windows[0]} where the caller's binding is "
+            f"{target.hwnd}: nothing is rebound"
+        )
     fingerprint = actuator.screen_fingerprint()
     roles = getattr(actuator, "last_roles", None)
     if not isinstance(roles, dict):
