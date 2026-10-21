@@ -113,6 +113,13 @@ acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job l
   amount across the capture, and reports the caption as `UNKNOWN` because no
   recognition runs. A capture that cannot be attributed exits 3, an unreadable
   popup exits 2, and neither is evidence about mode, ticks or setup.
+- `acquire mpx-check FILE.BDD --channel … --profiles …` is the offline artifact
+  check: it compares the exact decoded channel set and the stored profile count per
+  channel with the operator's completed-block declaration, reports typed
+  consistent/contradicted/unverifiable/unreadable clauses, and writes nothing. No
+  order, rolling or "no returns" claim is made; zero-valued samples are reported
+  without a signal-quality verdict. See
+  [`docs/mpx-artifact-verification.md`](docs/mpx-artifact-verification.md).
 
 For the package map, boundaries, public entry points, and testing workflow, see
 [`docs/architecture.md`](docs/architecture.md). The precise artifact contracts

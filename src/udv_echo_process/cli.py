@@ -39,6 +39,7 @@ from udv_echo_process.acquire import (
     channels_repeat,
     driver,
     live,
+    mpx_artifact,
     record_multiplexed,
     run_plan,
     store_completed,
@@ -1617,6 +1618,39 @@ def acquire_main(argv: list[str] | None = None) -> None:
     store_completed_parser.add_argument("--store-dir", default=None)
     store_completed_parser.add_argument("--json", action="store_true")
 
+    mpx_check_parser = subcommands.add_parser(
+        "mpx-check",
+        help=(
+            "verify one stored multiplexed .BDD against the operator's completed-block "
+            "declaration (offline: no window, no instrument, nothing written)"
+        ),
+    )
+    mpx_check_parser.add_argument("file", help="the stored .BDD file to verify")
+    mpx_check_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels of the completed block, as the operator states them",
+    )
+    mpx_check_parser.add_argument(
+        "--profiles",
+        type=int,
+        required=True,
+        help="profiles per channel in the completed block, as the operator states them",
+    )
+    mpx_check_parser.add_argument(
+        "--stated-by",
+        default="cli",
+        help="who states the channels/profiles (default: cli)",
+    )
+    mpx_check_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    mpx_check_parser.add_argument("--json", action="store_true")
+
     record_multiplexed_parser = subcommands.add_parser(
         "record-multiplexed",
         help=(
@@ -1999,6 +2033,46 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _acquire_report(result, True)
                 else:
                     print(result.summary())
+        elif args.command == "mpx-check":
+            # The declaration is the contract: judge it with the same pure clause function
+            # every block command uses, before the file is read or decoded, so an invalid
+            # statement produces no decode, no claim and one concise refusal line rather
+            # than pydantic's multi-line validation dump.
+            mpx_check_refusals = store_completed.block_declaration_clauses(
+                tuple(args.channel), args.profiles, args.stated_by
+            )
+            if mpx_check_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(mpx_check_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                mpx_check_declaration = store_completed.CompletedBlockDeclaration(
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                artifact_report = mpx_artifact.verify_mpx_artifact(
+                    Path(args.file), mpx_check_declaration
+                )
+                if as_json:
+                    _acquire_report(artifact_report, True)
+                else:
+                    print(artifact_report.summary())
+                    for clause in artifact_report.clauses:
+                        if clause.status is not mpx_artifact.MpxVerdict.CONSISTENT:
+                            print(
+                                f"  {clause.status.value}: {clause.subject}: "
+                                f"{clause.detail}"
+                            )
+                code = {
+                    mpx_artifact.MpxVerdict.CONSISTENT: 0,
+                    mpx_artifact.MpxVerdict.CONTRADICTED: 1,
+                    mpx_artifact.MpxVerdict.UNVERIFIABLE: 3,
+                    mpx_artifact.MpxVerdict.UNREADABLE: 4,
+                }[artifact_report.verdict]
         elif args.command == "record-multiplexed":
             try:
                 mpx_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
