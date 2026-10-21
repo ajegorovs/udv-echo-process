@@ -32,7 +32,14 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, driver, live, run_plan, store_completed
+from udv_echo_process.acquire import (
+    campaign,
+    driver,
+    live,
+    record_multiplexed,
+    run_plan,
+    store_completed,
+)
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
@@ -1314,6 +1321,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
     commits once. It never presses ``Record``, ``Stop``, ``Clear and restart``, opens the
     ``Channels`` menu or writes a parameter, and it retries nothing.
 
+    ``record-multiplexed`` is the one live verb that both records and stores a multiplexed block:
+    the operator declares the enabled multiplexer, its channels and its per-channel profile count
+    (never read off the screen — the mode has no passive discriminator), names a completion bound
+    in seconds, and the command verifies one instrument window, the caption, no overlay and the
+    three-button ready row, proves the output name/directory/collision, presses ``Record``
+    **once**, polls the strip for the application's own two-button completion, and stores through
+    the same store-only path on the same binding. It presses no ``Stop``, ``Clear and restart``,
+    ``Disable multiplexer`` or menu, never retries, and leaves a recording that outlives the bound
+    **running** — reported as ``still_running`` with nothing discarded.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1427,6 +1444,64 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     store_completed_parser.add_argument("--store-dir", default=None)
     store_completed_parser.add_argument("--json", action="store_true")
+
+    record_multiplexed_parser = subcommands.add_parser(
+        "record-multiplexed",
+        help=(
+            "one 'Record' on an operator-enabled multiplexer, the application's own completion, "
+            "one store (never Stop)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "name", help="store file-name stem (collisions refused before the press)"
+    )
+    # DEVIATION from `store-completed`'s spelling by necessity, not by taste: this command records,
+    # so it takes the same declaration *before* the block exists. `--channel` / `--profiles` /
+    # `--stated-by` / `--statement` are the same flags with the same meaning, and `--mpx-enabled`
+    # is the mode declaration §24.4 has no passive read for — required, so it can never be implied.
+    record_multiplexed_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels the multiplexer is configured for, as the operator states them",
+    )
+    record_multiplexed_parser.add_argument(
+        "--profiles",
+        type=int,
+        required=True,
+        help="profiles per channel the recording is configured for, as the operator states them",
+    )
+    record_multiplexed_parser.add_argument(
+        "--stated-by",
+        required=True,
+        help="who declares the multiplexer's mode and channel set",
+    )
+    record_multiplexed_parser.add_argument(
+        "--mpx-enabled",
+        action="store_true",
+        required=True,
+        help=(
+            "the operator's own statement that the multiplexer is enabled and its channels "
+            "configured (there is no passive read of the mode)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--completion-timeout",
+        type=float,
+        required=True,
+        help=(
+            "the caller's bound, in seconds, on the wait for the application's own completion "
+            "(not a dwell, and never derived from --profiles)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    record_multiplexed_parser.add_argument("--store-dir", default=None)
+    record_multiplexed_parser.add_argument("--json", action="store_true")
 
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
@@ -1664,6 +1739,41 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     _acquire_report(result, True)
                 else:
                     print(result.summary())
+        elif args.command == "record-multiplexed":
+            try:
+                mpx_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
+                    multiplexer_enabled=args.mpx_enabled,
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+            except ValueError as exc:
+                # The operator's declaration (the mode included) is a contract, so an invalid one
+                # is refused here — one line, exit 2 — long before any window is read.
+                print(f"udv-acquire: refused: {exc}", file=sys.stderr)
+                code = 2
+            else:
+                mpx_result = record_multiplexed.record_multiplexed(
+                    args.name,
+                    _acquire_store_directory(args.store_dir),
+                    declaration=mpx_declaration,
+                    completion_timeout_s=args.completion_timeout,
+                    notes=notes,
+                )
+                if as_json:
+                    _acquire_report(mpx_result, True)
+                else:
+                    print(mpx_result.summary())
+                if not mpx_result.stored:
+                    # A recording that started and did not end in a store is a result, not a
+                    # refusal: the instrument may still be recording, so the reason and what it
+                    # still owes are on stderr and the exit says the command did not finish.
+                    print(
+                        f"udv-acquire: {mpx_result.stage.value}: {mpx_result.reason}",
+                        file=sys.stderr,
+                    )
+                    code = 1
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(

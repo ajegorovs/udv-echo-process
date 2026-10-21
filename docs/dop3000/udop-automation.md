@@ -769,6 +769,35 @@ no layout error. The command also refused a preceding Ready-state attempt with e
 requested file created. This accepts the real CLI store path, not automated recording or a
 post-save multiplexer-mode claim. Both recordings remain generated local outputs, not fixtures.
 
+### 12.7 Acceptance, 2026-10-21 — automated MPX Record to store
+
+After the operator freshly confirmed rolling multiplexing active for channels 1 and 2,
+50 acquisition profiles each, `acquire record-multiplexed` completed one real instrument run
+with exit 0. The pre-read showed Ready (three buttons, no slider), no popup/dialog, and the
+instrument caption. The hidden parameter sidebar produced a full-layout warning; this strip-only
+workflow performed no sidebar writes and did not relax that gate.
+
+The workflow sent **one Record**, observed the one-button/no-slider active row without pressing
+it, waited for natural completion into **Store / two buttons / slider**, then sent one Do store
+and committed once on the original binding. No Stop, Clear, Disable, channel selection or parameter
+write was requested. No warning was answered and the structured directory readback reported
+unchanged before/after text. The post-read showed the same root handle, instrument caption, Ready,
+no overlay and no layout error. Post-save multiplexing mode was not positively read.
+
+Artifact: `mpx12-50profiles-auto-01.BDD`, **41,526 B**, SHA-256
+`475785c06dee0bfaa6d1d983c6e967e0c5d5bd4f83d02f119f636f06eb4e2b25`.
+Independent `udv-inspect` and per-channel `acquire decode` reads established sequential acquisition,
+exactly channels 1 and 2, axial velocity, **50 profiles × 80 gates each**, approximately 1.98 s
+per channel, resolution 0.74 mm, PRF period 600 µs, emissions/profile 50, sound speed 1480 m/s
+and burst length 4. The declaration matches these decoded counts; no 25→50 mapping is inferred.
+The file and raw logs remain generated local evidence, not committed fixtures.
+
+**Accepted scope:** one operator-configured finite MPX Record → natural completion → store cycle.
+**Not established:** repeatability, automated mode enable/configuration, armed/external-trigger
+operation, a multi-point campaign, physical signal quality, live timeout/failure cleanup, or
+post-save mode. Failure paths are tested offline; the command never stops or clears a timed-out
+recording. Root/child handle lifetime limitations remain those of the existing driver.
+
 ---
 
 ## Live validation (simulator)

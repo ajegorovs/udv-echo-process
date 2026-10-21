@@ -73,11 +73,14 @@ __all__ = [
     "CompletedBlockDeclaration",
     "CompletedStoreResult",
     "StoreAttempt",
+    "block_declaration_clauses",
     "collision_clause",
     "completed_strip_clauses",
+    "screen_clauses",
     "store_completed",
     "store_directory",
     "store_name_clause",
+    "store_preflight",
     "stored_file_clauses",
 ]
 
@@ -129,39 +132,55 @@ class CompletedBlockDeclaration(ValueModel):
 
     def clauses(self) -> tuple[str, ...]:
         """Everything this declaration fails to state, as refused clauses (empty when valid)."""
-        out: list[str] = []
-        if not self.channels:
+        return block_declaration_clauses(
+            self.channels, self.profiles_per_channel, self.stated_by
+        )
+
+
+def block_declaration_clauses(
+    channels: Sequence[int], profiles_per_channel: int, stated_by: str
+) -> tuple[str, ...]:
+    """Why an operator's block statement is not one, or ``()`` when it is.
+
+    One rule for every command that stores a multiplexed block, whatever stage it is at: the
+    store-only path states a block that has **already completed**, and the record-multiplexed
+    path states the same channels and per-channel count **before** its one ``Record`` press.
+    Both are the operator's statement about the block — never a reading, never a derived count —
+    so both are judged here rather than in two copies that could drift.
+    """
+    out: list[str] = []
+    if not channels:
+        out.append(
+            "the declaration names no channels: a completed block is stored under the "
+            "channel set the operator states, and an empty statement names nothing"
+        )
+    else:
+        if len(set(channels)) != len(channels):
             out.append(
-                "the declaration names no channels: a completed block is stored under the "
-                "channel set the operator states, and an empty statement names nothing"
+                f"the declared channels {list(channels)} repeat one: a channel is "
+                "named once in a completed block"
             )
-        else:
-            if len(set(self.channels)) != len(self.channels):
-                out.append(
-                    f"the declared channels {list(self.channels)} repeat one: a channel is "
-                    "named once in a completed block"
-                )
-            if len(self.channels) < 2:
-                out.append(
-                    f"the declaration names {len(self.channels)} channel(s): this command "
-                    "stores a multiplexed block, and a single-channel completion is not one"
-                )
-            if any(int(channel) < 1 for channel in self.channels):
-                out.append(
-                    f"the declared channels {list(self.channels)} include a non-positive "
-                    "number: no channel is numbered zero or below"
-                )
-        profiles = self.profiles_per_channel
-        if isinstance(profiles, bool) or not isinstance(profiles, int) or profiles < 1:
+        if len(channels) < 2:
             out.append(
-                "the declaration does not state a positive profile count per channel: the "
-                "count is the operator's reading of the completed block, never a default"
+                f"the declaration names {len(channels)} channel(s): this command "
+                "stores a multiplexed block, and a single-channel completion is not one"
             )
-        if not self.stated_by.strip():
+        if any(int(channel) < 1 for channel in channels):
             out.append(
-                "the declaration names no operator: an unattributed 'yes' is not one"
+                f"the declared channels {list(channels)} include a non-positive "
+                "number: no channel is numbered zero or below"
             )
-        return tuple(out)
+    profiles = profiles_per_channel
+    if isinstance(profiles, bool) or not isinstance(profiles, int) or profiles < 1:
+        out.append(
+            "the declaration does not state a positive profile count per channel: the "
+            "count is the operator's reading of the completed block, never a default"
+        )
+    if not stated_by.strip():
+        out.append(
+            "the declaration names no operator: an unattributed 'yes' is not one"
+        )
+    return tuple(out)
 
 
 class StoreAttempt(ValueModel):
@@ -427,14 +446,47 @@ def _verify_store_directory(live, directory: Path) -> StoreDirectoryVerification
     return verification
 
 
-def _screen_check(
+def store_preflight(name: str, directory: Path) -> Path:
+    """The store's own **pre-press** checks, as one rule every caller runs: the directory.
+
+    The name is one safe file-name stem, the directory exists and can be listed, and no entry in
+    it already has that stem. All three are refused together and nothing is pressed — a store
+    that would have to be thrown away is never started, whether the caller found it by hand
+    (:func:`store_completed`) or before its one ``Record`` press
+    (:func:`…record_multiplexed.record_multiplexed`). The absolute directory is returned so the
+    caller watches exactly the folder that was validated.
+    """
+    target_dir = store_directory(directory)
+    clause = store_name_clause(name)
+    if clause is not None:
+        raise AcquisitionError(f"{clause} (refused before anything is pressed)")
+    if not target_dir.is_dir():
+        raise AcquisitionError(
+            f"the store directory {target_dir} does not exist (or is not a directory): the "
+            "Store dialog's working directory is set by this command, and nothing is pressed "
+            "for a folder that is not there"
+        )
+    taken = collision_clause(name, target_dir)
+    if taken is not None:
+        raise AcquisitionError(f"{taken} (refused before anything is pressed)")
+    return target_dir
+
+
+def screen_clauses(
     actuator,
     target: WindowTarget,
     windows: Sequence[int],
     *,
     class_name: str,
+    strip: Callable[[StripState], tuple[str, ...]] = completed_strip_clauses,
 ) -> tuple[tuple[str, ...], StripState | None]:
-    """The window/caption/overlay/row preconditions, as refused clauses and the strip read."""
+    """The window/caption/overlay/row preconditions, as refused clauses and the strip read.
+
+    ``strip`` is the row rule of the command asking: this module's completed row, or the
+    ``ready`` row :func:`…record_multiplexed.record_multiplexed` starts from. The window count,
+    the binding, the caption and the overlay are the same four questions for both, so they are
+    asked once, here, rather than in a second copy that could disagree.
+    """
     out: list[str] = []
     if len(windows) != 1:
         out.append(
@@ -468,7 +520,7 @@ def _screen_check(
             f"the recording strip could not be read: {type(exc).__name__}: {exc}"
         )
     else:
-        out.extend(completed_strip_clauses(state))
+        out.extend(strip(state))
     return tuple(out), state
 
 
@@ -483,6 +535,7 @@ def store_completed(
     actuator=None,
     enumerate_windows: Callable[[], Sequence[int]] | None = None,
     class_name: str = MAIN_CLASS,
+    target: WindowTarget | None = None,
     notes: list[str] | None = None,
 ) -> CompletedStoreResult:
     """Store the block that is already on screen, once, under ``name``.
@@ -497,6 +550,13 @@ def store_completed(
     before the count is known) bound with ``bind_target`` to the single visible ``TMain_Scr``
     window. ``actuator`` and ``enumerate_windows`` exist so an offline test can hand in
     driver-shaped objects; passing them changes nothing about the composition under test.
+
+    ``target`` is for a caller that already bound the window and drove it (:func:`…record_
+    multiplexed.record_multiplexed`). It is **verified, never replaced**: the single visible
+    window must be that handle's, the actuator must still hold the original binding, and its live
+    identity must match the caller's record. No second bind occurs. A handle that now names a
+    different thread, process or class is refused, so a run can never finish its
+    store against a window it did not record from.
 
     Raises :class:`~udv_echo_process.acquire.udop.AcquisitionError` for every refusal: the name,
     the directory, a collision, an unreadable screen, a window count other than one, a simulator
@@ -522,19 +582,7 @@ def store_completed(
             raise AcquisitionError(
                 f"{label} must be finite positive seconds, got {value!r}"
             )
-    target_dir = store_directory(directory)
-    clause = store_name_clause(name)
-    if clause is not None:
-        raise AcquisitionError(f"{clause} (refused before anything is pressed)")
-    if not target_dir.is_dir():
-        raise AcquisitionError(
-            f"the store directory {target_dir} does not exist (or is not a directory): the "
-            "Store dialog's working directory is set by this command, and nothing is pressed "
-            "for a folder that is not there"
-        )
-    taken = collision_clause(name, target_dir)
-    if taken is not None:
-        raise AcquisitionError(f"{taken} (refused before anything is pressed)")
+    target_dir = store_preflight(name, directory)
 
     sink = notes if notes is not None else []
     live = (
@@ -554,8 +602,29 @@ def store_completed(
             f"{len(windows)} visible {class_name} window(s) are up {list(windows)}: exactly one "
             "application must be running, and this command does not choose between copies"
         )
-    target = live.bind_target(int(windows[0]))
-    clauses, state = _screen_check(live, target, windows, class_name=class_name)
+    if target is None:
+        target = live.bind_target(int(windows[0]))
+    else:
+        if int(windows[0]) != target.hwnd:
+            raise AcquisitionError(
+                f"the only visible {class_name} window is {windows[0]} where the caller's bound "
+                f"target is {target.hwnd}: refusing to store from a window the caller did not "
+                "bind, and this command never selects a replacement"
+            )
+        bound = live.verify_bound_target(target)
+        if (
+            bound.thread_id,
+            bound.process_id,
+            bound.class_name,
+        ) != (target.thread_id, target.process_id, target.class_name):
+            raise AcquisitionError(
+                f"the handle {target.hwnd} now names thread {bound.thread_id}, process "
+                f"{bound.process_id}, class {bound.class_name!r} where this run bound thread "
+                f"{target.thread_id}, process {target.process_id}, class "
+                f"{target.class_name!r}: the window was replaced under the binding, and nothing "
+                "is stored from another one"
+            )
+    clauses, state = screen_clauses(live, target, windows, class_name=class_name)
     if clauses:
         raise AcquisitionError("; ".join(clauses))
     assert (
@@ -565,7 +634,7 @@ def store_completed(
     # The screen can change between the check above and the gesture, so the row, the overlay and
     # the name are re-read here; ``before`` is the snapshot the new-entry wait is given.
     before = _directory_names(target_dir)
-    clauses, current_state = _screen_check(
+    clauses, current_state = screen_clauses(
         live, target, tuple(enumerate_windows_fn()), class_name=class_name
     )
     taken = collision_clause(name, target_dir, before)

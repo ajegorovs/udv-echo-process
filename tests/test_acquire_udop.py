@@ -156,6 +156,7 @@ FACADE_METHODS = (
     "_hover_centre",
     "_main_hwnd",
     "bind_target",
+    "verify_bound_target",
     "_children_of",
     "_param_rows",
     "_resolve",
@@ -236,10 +237,11 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
 #: ``_answer_burst_rejection``, and ``verify_working_directory`` (``udop/store.py``), the typed
 #: working-directory readback that ``assert_working_directory`` now delegates to. The class's own
-#: name set at this tip is 103, not 96
+#: name set at this tip is 104, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "bind_target",
+    "verify_bound_target",
     "_screen_anchor_text",
     "write_dialog_burst_length",
     "_row_reading",

@@ -994,6 +994,16 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         self._target = target
         return target
 
+    def verify_bound_target(self, expected: WindowTarget) -> WindowTarget:
+        """Check the existing binding and its live identity without selecting or replacing it."""
+        if self._target != expected:
+            raise AcquisitionError(
+                f"the actuator binding differs from the run's original target {expected.hwnd}; "
+                "nothing is rebound or pressed"
+            )
+        self._main_hwnd()
+        return expected
+
     @staticmethod
     def _children_of(parent: int, roles: dict) -> list[dict]:
         """The already-enumerated children whose parent is ``parent``."""

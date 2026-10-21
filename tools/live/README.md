@@ -86,12 +86,24 @@ what the ported probe scripts could not be — they reached into the driver's pr
 | `acquire channel <n>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, and reports the channel's mode (manual/assisted) with the panel counts | only if the channel differs |
 | `acquire preflight [--seconds N]` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel with its **left** button | no store; presses the strip |
 | `acquire store-completed NAME --channel 1 2 --profiles 50 --stated-by operator --store-dir DIR` | stores an already naturally completed multiplexed block; one strip `Do store` and one dialog commit, no Record/Stop/Clear | stores one file; may rewrite the remembered Store directory |
+| `acquire record-multiplexed NAME --channel 1 2 --profiles 50 --stated-by operator --mpx-enabled --completion-timeout 120 --store-dir DIR` | one Record, bounded wait for natural completion, then store on the original binding; requires freshly operator-configured multiplexing | records and stores one file; never Stop/Clear; timeout leaves acquisition untouched |
 | `acquire point <name> --seconds N` | one whole point: reset, channel, record `N` seconds, stop, name the file, store, read it back and decode it | stores one file |
 | `acquire sweep --seconds N --rungs 1,2` | the runner's own path for a multi-point sweep: `plan_sweep` → write → read back → record → store → decode → verify → one JSONL entry per point | stores files |
 | `acquire plan --definition FILE` | loads and validates a campaign definition and prints its points, with a note wherever the window outruns what the block will keep | no |
 | `acquire campaign --definition FILE [--resume]` | runs a definition point by point through the runner — one JSONL entry per point, a job manifest beside the log, and `--resume` skipping what the log already holds | stores files |
 | `acquire report --log FILE` | reads a finished job (log + manifest) and prints each point's status and the summary | no |
 | `acquire decode <file> --channel N` | a stored file's own operation words, off the instrument: the file is the authority | no |
+
+`record-multiplexed` passed **one live Record-to-store acceptance on 2026-10-21**:
+channels 1 and 2, declared and independently decoded at 50 profiles each (80 gates, axial velocity),
+with natural completion and no Stop/Clear press. This is one configuration, not an unattended
+campaign or failure-path acceptance; see `docs/dop3000/udop-automation.md` §12.7. Enable and configure
+multiplexing manually, leave the strip ready, and supply a fresh explicit mode declaration before
+running it. Do not press Record yourself for this command: it sends that press once. The wait
+never presses the lone active-MPX button (operator-reported as Clear and restart), and a timeout
+leaves the acquisition untouched for the operator. Mode and configured profiles are declarations;
+decode the stored file independently before claiming they were recorded. A successful store does
+not prove that multiplexing remains enabled afterward.
 
 The campaign is the near-term goal written down: one channel, one 10-15 s window, a slot of
 parameter permutations. `examples/campaign-single-channel.json` is a working one — 12 s points
