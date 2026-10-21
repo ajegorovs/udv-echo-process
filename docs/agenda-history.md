@@ -36,6 +36,8 @@ recoverable from Git history.
 
 | 2026-09-24 | Burst B4 commissioning passed for control: four verified dialog transitions, stored word-8 agreement and restoration. Offline manual review explains constant word 27 as the receiver-bandwidth definition while burst can raise effective displayed thickness; the precise bandwidth ladder is not calibrated. B5 may start without another B4 live run; B6 handles stored-index provenance separately. | `data/burst-commissioning-b4/README.md`, `docs/dop3000/burst-length-control-plan.md` |
 
+| 2026-10-21 | The `.BDD` reader stopped discarding echo: a two-plot velocity+echo block stores one profile of each quantity, so a recording stream is now identified by `(channel, quantity)` — a §6.7 amendment, not a workaround. Fixture `data/dual-profile-mux/4MHz.BDD` (8 streams, 500×42 each, row-aligned timestamps) and 44 byte-level oracle cells. Two review rounds added one clock per channel at the 32-bit rollover (F1) and source-row `sample_id` identity (F4). Identity invariance held: 175 of 176 committed BDD files keep byte-identical artifact ids, the divergence being the new fixture's intended 4 → 8 streams. | `docs/plans/bdd-dual-quantity-streams.md`, `docs/signal-model-rework-plan.md` §6.7, `data/dual-profile-mux/README.md`, `AGENTS.md` |
+
 ## Superseded concepts and where to find the replacement
 
 | Historical concept | Status | Current authority |

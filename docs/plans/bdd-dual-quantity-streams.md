@@ -1,6 +1,7 @@
 # BDD dual-quantity streams (velocity + echo in one block)
 
-**Task plan.** Written 2026-10-21. **State:** ready for review.
+**Task plan.** Written 2026-10-21. **State:** complete — merged as `dac63ca`
+(PR #80), review rounds 1–2 with F1–F4 resolved and the §6.7 amendment accepted.
 
 ## Destination
 
@@ -118,29 +119,35 @@ Measured facts a fresh reader would otherwise re-derive:
   velocity files); the only divergence is the new dual fixture, 4 → 8 streams,
   which is the change itself.
 
-**Not established.** Nothing is merged or released. Whether the sibling
-`10MHz.BDD` capture and the second recording set behave identically is measured
-only by the same raw scan, not by a committed fixture.
+**Not established.** Whether the sibling `10MHz.BDD` capture and the second
+recording set behave identically is measured only by the same raw scan, not by a
+committed fixture.
 
-**Relevant revision / artifacts / live target.** Branch `feat/bdd-dual-profile`
-in worktree `udv-double-plot`; no live instrument involved.
+**Relevant revision / artifacts / live target.** Merged on `master` at
+`dac63ca` (merge of PR #80, head `ff3b075`); the merge commit's tree is
+byte-identical to the reviewed head (`git diff --numstat ff3b075 dac63ca` → 0
+lines). No live instrument involved.
 
-**Working state / recovery needs.** Clean tree after the documentation commit;
-`.venv` is a fresh `uv sync --frozen --extra dev`.
+**Working state / recovery needs.** Branch `feat/bdd-dual-profile` is retained
+(merged, not deleted) and the `udv-double-plot` worktree is clean; `.venv` is a
+`uv sync --frozen --extra dev`. Post-merge spot check on `dac63ca`: `ruff check
+src tests` clean, 201 passed across the BDD/model/storage tier,
+`udv-inspect data/dual-profile-mux/4MHz.BDD` lists 8 streams.
 
 ## Remaining work
 
-**Selected next.** Owner review of the draft PR — in particular the §6.7
-amendment, since it is a model-schema decision rather than a bug fix.
+**Selected next.** None — the effort is closed. This plan stays as the durable
+record of the §6.7 amendment and the review rounds; the fixture's measured
+structure lives in `data/dual-profile-mux/README.md`.
 
-**Blocked.** Nothing. (The `AGENTS.md` short-form update needed the owner's
-explicit approval for a protected agent-instruction file; granted 2026-10-21 and
-landed in this PR.)
+**Blocked.** Nothing.
 
-**Unselected findings / open questions.**
+**Unselected findings / open questions** (carried to the agenda at closeout;
+nothing here blocks the merged behaviour):
 
-- The single-stream-only analysis helpers refuse a dual-quantity file. Decide
-  whether they should accept a quantity argument or keep refusing.
+- The single-stream-only analysis helpers (`analysis/_native_grid.py`,
+  `reference_repeat.py`, `sparse_inventory.py`) refuse a dual-quantity file.
+  Decide whether they should take a quantity argument or keep refusing.
 - `10MHz.BDD` and recording set `002` show the same structure in a raw scan but
   are not committed; add a fixture only if a divergence appears.
 - The multiplexer block word still carries no round/visit identity (unchanged);
@@ -174,9 +181,14 @@ op-parameter block per channel, not per quantity.
 
 ## Next session
 
-**Objective.** Agreed: close the review loop on the draft PR.
+**Objective.** Closed 2026-10-21: the review loop ended with both rounds resolved
+(F1–F4) and the §6.7 amendment accepted; PR #80 merged as `dac63ca`. The stopping
+condition was met by the first outcome, not the fallback.
 
-**First action.** Read the reviewer's findings and answer them commit by commit.
+**First action if this is ever reopened.** Read
+`data/dual-profile-mux/README.md` and the §6.7 amendment in
+`docs/signal-model-rework-plan.md` — between them they carry the measured format
+facts and the model rule, so nothing needs re-deriving from a conversation.
 
-**Stopping condition.** PR merged, or the amendment rejected and the reader
-change reverted with the fixture removed.
+**Stopping condition.** Any follow-up (the analysis helpers) is its own effort
+with its own criteria.
