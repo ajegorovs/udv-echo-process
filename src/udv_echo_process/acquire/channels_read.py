@@ -13,12 +13,18 @@ cropped out of two whole-screen frames, saved as lossless PNG, and held to
 before/after target, foreground, non-minimised and popup-rect guards plus a
 numeric bracketing of every amount. It is opt-in, it claims a fresh
 ``capture-NNN`` run directory under the path the caller names (an earlier run's
-frames are never overwritten), and it recognises nothing: the caption stays
-``UNKNOWN``. The image backend must report the virtual-screen origin and size
+frames are never overwritten). The image backend must report the virtual-screen origin and size
 the grab was taken from, because a popup rect is in screen coordinates; a grab
 whose bitmap size disagrees with that screen is refused rather than rescaled.
 The image backend and the window-state read are injectable, so the whole path
 is exercisable without a desktop.
+
+Only after that capture is ``ok`` **and** its two frames are stable are the frames handed to
+:func:`udv_echo_process.acquire.caption_band.attribute_frames`, which returns a **visual
+attribution** of the painted caption line in ``capture.visual_caption`` when — and only when —
+both frames read the same exact result. That attribution is not native text (the report's
+``caption`` stays ``UNKNOWN``), carries no action authority, never touches
+``per_channel.channel`` or an amount, and is not derived from anything the caller declared.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from udv_echo_process.acquire.actuator import WindowTarget
+from udv_echo_process.acquire.caption_band import attribute_frames
 from udv_echo_process.acquire.channels_capture import (
     CaptureEvidence,
     FrameEvidence,
@@ -290,6 +297,24 @@ def _capture(
                 "unknown_reasons": (*evidence.unknown_reasons, backend_error),
             }
         )
+    # The painted caption is attributed **only** from an attributed, still capture whose two
+    # frames read the same exact thing. The recogniser never sees the amounts, the caller's
+    # declaration or the operator's statement, and its result stays a visual attribution: the
+    # report's ``caption`` is untouched, and nothing downstream may treat it as native text or
+    # as permission to press.
+    if (
+        evidence.status == "ok"
+        and evidence.stable is True
+        and len(evidence.frames) >= 2
+    ):
+        evidence = evidence.model_copy(
+            update={
+                "visual_caption": attribute_frames(
+                    tuple(frame.path for frame in evidence.frames),
+                    tuple(frame.digest for frame in evidence.frames),
+                )
+            }
+        )
     return ChannelsRead(**{**read.model_dump(), "capture": evidence})
 
 
@@ -311,9 +336,12 @@ def read_channels(
     ``capture_dir`` is opt-in and additive: without it this is the original single read and the
     report's ``capture`` stays ``None``. With it the report carries
     :class:`~udv_echo_process.acquire.channels_capture.CaptureEvidence`, the popup is read once
-    more around the capture for the numeric bracketing, and the caption stays ``UNKNOWN``
-    because no recognition runs. ``image_backend``/``window_state`` are injection points for
-    exercising the whole path without a desktop.
+    more around the capture for the numeric bracketing, and — only when that capture is ``ok`` and
+    both of its frames are stable — ``capture.visual_caption`` carries the painted caption line as
+    a **visual attribution**. The report's own ``caption`` stays ``UNKNOWN`` either way: no native
+    text is read, and no amount, channel or declaration is derived from the picture.
+    ``image_backend``/``window_state`` are injection points for exercising the whole path without
+    a desktop.
     """
     actuator, target = _bound(actuator, target)
     read, fingerprint = _read_once(actuator, target)

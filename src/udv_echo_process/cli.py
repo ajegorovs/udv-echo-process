@@ -1348,8 +1348,14 @@ def acquire_main(argv: list[str] | None = None) -> None:
     to before/after target, foreground, non-minimised and popup-rect guards plus a numeric
     bracketing of every amount. A capture that cannot be attributed, that is blank, that differs
     between the two frames, or whose numbers moved is reported ``status: UNKNOWN`` with its
-    reasons and exits 3. No OCR runs: the caption stays ``UNKNOWN`` and an operator's stated
-    caption is never promoted to a native fact. Without the flag the report is unchanged.
+    reasons and exits 3. No OCR runs: the native ``caption`` stays ``UNKNOWN`` and an
+    operator's stated caption is never promoted to a native fact. When the capture is ``ok`` and
+    its two frames are stable, ``capture.visual_caption`` additionally carries the painted caption
+    line as a **visual attribution** by exact template match — a separate field with
+    ``native_fact`` and ``action_authority`` both false, restricted to photographed channels
+    ``1``, ``2`` and ``10``; it never fills ``caption``, ``per_channel.channel`` or an
+    amount, and it is never taken from what the caller declared. Without the flag the report is
+    unchanged.
 
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
@@ -1420,7 +1426,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
         help=(
             "also save lossless PNG crops of the popup's own rect from two guarded frames "
             "into this directory, with before/after target, foreground, non-minimised and "
-            "numeric guards; recognises nothing, so the caption stays UNKNOWN"
+            "numeric guards; the native caption stays UNKNOWN, and a separate visual "
+            "attribution is reported only from a still capture whose two frames read the "
+            "same exact result"
         ),
     )
 
@@ -1761,8 +1769,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 code = 2
             elif channel_report.capture is not None:
                 # The capture is opt-in, so its verdict is its own: an inspection that succeeded
-                # beside a capture that could not be attributed exits 3 rather than 0, and the
-                # caption is still unknown because nothing here recognises glyphs.
+                # beside a capture that could not be attributed exits 3 rather than 0. The native
+                # caption is still UNKNOWN: a visual attribution, when the capture supports one,
+                # is its own field and never a fact.
                 if channel_report.capture.status != "ok":
                     for reason in channel_report.capture.unknown_reasons:
                         print(f"udv-acquire: capture: {reason}", file=sys.stderr)

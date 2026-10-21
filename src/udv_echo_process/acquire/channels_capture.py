@@ -10,12 +10,20 @@ picture **as evidence** and refuses to turn it into a fact:
 * it checks the two frames' ROI digests and reports ``stable``;
 * it brackets every numeric amount with a read taken **before** and **after** the capture and
   refuses to pair a number with an image when the two reads disagree;
-* it reports the caption as ``UNKNOWN`` with ``recognition: NOT_PERFORMED``. No OCR runs here,
-  no threshold is guessed, no glyph is classified. An operator's stated caption stays the
+* it reports the native caption as ``UNKNOWN`` with ``recognition: NOT_PERFORMED``. No OCR runs
+  here, no threshold is guessed, no glyph is classified. An operator's stated caption stays the
   operator's statement and is never promoted to a native fact by this module.
+* when the capture is ``ok`` and its two frames are stable, it also carries
+  :class:`~udv_echo_process.acquire.caption_band.CaptionAttribution` in ``visual_caption``: a
+  **visual attribution** read from the crop by exact template match
+  (:mod:`udv_echo_process.acquire.caption_band`), never a native fact and never an action
+  authority. The ``caption`` field above stays ``UNKNOWN`` regardless — a picture is not what
+  the application states, and the two are deliberately different fields.
 
 So a successful report says: *this image is the popup at this target, the screen was still, and
-the numbers beside it were unchanged across the capture*. It does not say what the caption reads.
+the numbers beside it were unchanged across the capture*. What the caption line reads is a
+separate, weaker statement — ``visual_caption``, pixels matched against committed rasters — and
+never a substitute for what the application states, which is nothing.
 
 Evidence levels, in this repository's vocabulary (``docs/dop3000/device-verification.md``):
 
@@ -37,6 +45,7 @@ from __future__ import annotations
 import hashlib
 from typing import TYPE_CHECKING, Literal, NamedTuple
 
+from udv_echo_process.acquire.caption_band import CaptionAttribution
 from udv_echo_process.models.base import ValueModel
 
 if TYPE_CHECKING:  # the report type is read, never constructed here
@@ -69,10 +78,11 @@ UNKNOWN = "UNKNOWN"
 
 #: Carried on every report so a reader never has to open this file to know what was not done.
 CAPTION_EVIDENCE = (
-    "no recognition was performed: the caption is a painted image and this module has no "
-    "validated reader for it. An operator's stated caption is the operator's statement, not a "
-    "native fact, and is not promoted here; the caption stays UNKNOWN until a recognition path "
-    "is validated against the committed crops"
+    "no recognition was performed for this native caption field: the caption is a painted image "
+    "and the application states no text for it. An operator's stated caption is the operator's "
+    "statement, not a native fact, and is not promoted here. A validated pixel reader exists as a "
+    "separate field (``visual_caption``), which is a visual attribution with no native-fact and no "
+    "action-authority claim; this field stays UNKNOWN whatever that reader returns"
 )
 
 #: Where the crop's rectangle comes from — a structural fact of the same read, not a constant.
@@ -199,6 +209,10 @@ class CaptureEvidence(ValueModel):
     caption: Literal["UNKNOWN"] = UNKNOWN
     caption_evidence: str = CAPTION_EVIDENCE
     recognition: Literal["NOT_PERFORMED"] = "NOT_PERFORMED"
+    #: The painted caption line as a **visual attribution**, present only when this capture was
+    #: ``ok``, its two frames were stable, and both frames recognised the same exact result.
+    #: ``None`` means no recognition was invoked — never that the line was read as absent.
+    visual_caption: CaptionAttribution | None = None
     unknown_reasons: tuple[str, ...] = ()
     uncertainties: tuple[str, ...] = ()
     setup_verified: Literal[False] = False
@@ -479,6 +493,7 @@ def assemble(
     after_readable: bool | None = None,
     refusals: tuple[str, ...] = (),
     directory: str | None = None,
+    visual_caption: CaptionAttribution | None = None,
 ) -> CaptureEvidence:
     """One evidence record, with every failed check named and no caption invented.
 
@@ -534,11 +549,17 @@ def assemble(
         stable=stable,
         guards=guards,
         numeric=numeric,
+        visual_caption=visual_caption,
         unknown_reasons=tuple(reasons),
         uncertainties=(
             (
                 "a capture is evidence about the moment it was taken, at the rectangle this read "
                 "resolved; it establishes no mode, no tick and no installed configuration"
+            ),
+            (
+                "a visual caption, when present, is pixels matched against committed glyph "
+                "rasters: it is not what the application states, carries no action authority, "
+                "and is limited to the digits those rasters were learned from"
             ),
             (
                 "the ROI is the popup's whole rectangle: it is not glyph-aligned, so a later "
