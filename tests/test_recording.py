@@ -684,6 +684,54 @@ def test_select_channel_rejects_an_absent_channel():
         select_channel(bundle, ChannelKey(device_channel=7))
 
 
+def test_select_channel_requires_the_quantity_when_a_channel_carries_two():
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    with pytest.raises(ValueError, match="pass quantity="):
+        select_channel(bundle, ChannelKey(device_channel=4))
+
+
+def test_select_channel_returns_the_chosen_quantity_stream():
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    key = ChannelKey(device_channel=4)
+    assert (
+        select_channel(bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY).artifact
+        is velocity
+    )
+    assert (
+        select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+        is echo
+    )
+
+
+def test_select_channel_rejects_a_quantity_the_channel_does_not_carry():
+    bundle = _bundle((_artifact(4, descriptor=_VELOCITY),))
+    with pytest.raises(ValueError, match="echo_amplitude"):
+        select_channel(
+            bundle, ChannelKey(device_channel=4), quantity=SignalQuantity.ECHO_AMPLITUDE
+        )
+
+
+def test_replace_channel_targets_the_matching_quantity_stream():
+    """Replacing the echo stream must leave the velocity stream of that channel."""
+    velocity = _artifact(4, descriptor=_VELOCITY)
+    echo = _artifact(4, descriptor=_ECHO)
+    bundle = _bundle((velocity, echo))
+    replacement = _artifact(4, descriptor=_ECHO, n_rows=5)
+    graph = register_root_artifact(bundle.graph, replacement.artifact_id)
+    updated = replace_channel(bundle, ChannelBundle(artifact=replacement, graph=graph))
+    assert [s.artifact_id for s in updated.recording.streams] == [
+        velocity.artifact_id,
+        replacement.artifact_id,
+    ]
+    assert updated.recording.streams[0].descriptor.quantity is (
+        SignalQuantity.AXIAL_VELOCITY
+    )
+
+
 def test_select_channel_leaves_its_input_untouched():
     streams = tuple(_artifact(ch) for ch in (6, 7))
     bundle = _bundle(streams, mode=AcquisitionMode.SEQUENTIAL)
