@@ -798,6 +798,26 @@ operation, a multi-point campaign, physical signal quality, live timeout/failure
 post-save mode. Failure paths are tested offline; the command never stops or clears a timed-out
 recording. Root/child handle lifetime limitations remain those of the existing driver.
 
+### 12.8 Acceptance, 2026-10-21 — read-only Channels inspection
+
+With the operator-opened full Channels popup left visible, the public
+`acquire channels-read --json` command returned exit 0 and the measured eight-band settings
+signature. Bounded `WM_GETTEXT` queries read **repeat `1`**, **start channel `1`**,
+**apply-from `1`**, **profiles `50`**, and **seconds `2.01`** as raw field texts and parsed values.
+The existing `GetWindowText` snapshot alone does not retrieve those cross-process edit values;
+queries supply them before the same normalized tree is interpreted. No button press, hover,
+selection, commit, mode change, popup open or popup close was performed by the command.
+
+The numeric amount's channel remains **UNKNOWN** (its identity is painted in the group caption).
+The driver takes several internal resolves and then queries edit texts; this is a sequential
+inspection of one bound root, not an atomic snapshot. Root identity is checked around the text
+queries, but child-handle reuse and a concurrent operator edit remain existing limitations.
+All channel ticks and enable/rolling/display states remain **UNKNOWN**, and the report always
+states `setup_verified: false`. The successful read is not full configuration verification or
+permission to write settings. A prior closed-popup read returned exit 2 with the explicit absent
+surface. The raw live report remains generated local evidence, not a committed fixture; portable
+de-identified projected capture shapes cover the resolver offline.
+
 ---
 
 ## Live validation (simulator)

@@ -34,6 +34,7 @@ from pathlib import Path
 from udv_echo_process import run_all
 from udv_echo_process.acquire import (
     campaign,
+    channels_read,
     driver,
     live,
     record_multiplexed,
@@ -1331,6 +1332,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
     ``Disable multiplexer`` or menu, never retries, and leaves a recording that outlives the bound
     **running** — reported as ``still_running`` with nothing discarded.
 
+    ``channels-read`` is the read-only reading of the operator-opened ``Channels`` popup: one
+    window read, then the popup's stated amounts (repeat, start channel, apply-from, profiles,
+    seconds) as the exact text each widget states, with every tick, toggle and mode carried as
+    ``UNKNOWN`` because this application paints them and states them nowhere. It never opens or
+    closes the popup, presses nothing, and exits 0 on a successful *inspection* — which is not a
+    verified setup. A clipped multiplexer-on entry is reported as its own readable surface, with
+    no settings or tick state inferred. A popup that is absent, ambiguous, behind a dialog, of
+    another band order, or stating an amount as empty text is reported with refusals and exits 2.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1385,6 +1395,15 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_argument(status_parser)
     status_parser.add_argument("--json", action="store_true")
+
+    channels_read_parser = subcommands.add_parser(
+        "channels-read",
+        help=(
+            "read the operator-opened Channels popup, pressing nothing (a successful "
+            "inspection verifies no setup)"
+        ),
+    )
+    channels_read_parser.add_argument("--json", action="store_true")
 
     channel_parser = subcommands.add_parser(
         "channel", help="verify the measurement channel (writes it only if it differs)"
@@ -1665,6 +1684,17 @@ def acquire_main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "status":
             _acquire_report(live.status(args.channel, notes), as_json)
+        elif args.command == "channels-read":
+            # One read of the operator-opened popup and nothing else: no press, no hover, no
+            # commit, no popup opened or closed. The report is printed either way, because the
+            # refusals are the useful part of an unreadable screen; the exit code carries the
+            # verdict (0 a successful inspection, 2 unreadable) and never means "setup verified".
+            channel_report = channels_read.read_channels()
+            _acquire_report(channel_report, as_json)
+            if not channel_report.readable:
+                for refusal in channel_report.refusals:
+                    print(f"udv-acquire: {refusal}", file=sys.stderr)
+                code = 2
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
         elif args.command == "compile":
