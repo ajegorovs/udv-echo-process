@@ -10,6 +10,8 @@ application answers the press.
 
 from __future__ import annotations
 
+import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import ClassVar
 
@@ -30,6 +32,7 @@ from udv_echo_process.acquire.store_completed import (
     store_name_clause,
 )
 from udv_echo_process.acquire.udop import AcquisitionError
+from udv_echo_process.acquire.udop.store import StoreDirectoryVerification
 from udv_echo_process.acquire.ui.layout import MAIN_CLASS
 
 
@@ -103,6 +106,7 @@ class FakeStoreScreen:
         self.store_names.append(name)
 
     def assert_working_directory(self, directory: Path) -> str:
+        """The pre-typed surface, kept for callers that still ask only for the verified text."""
         self.directories.append(Path(directory))
         if self.rewrite_directory:
             self.warnings.append(
@@ -110,6 +114,26 @@ class FakeStoreScreen:
                 f"'{directory}'"
             )
         return str(directory)
+
+    def verify_working_directory(self, directory: Path) -> StoreDirectoryVerification:
+        """The Store dialog's ``Working directory``, as the typed report the live surface returns.
+
+        ``rewrite_directory`` makes the dialog *show* another folder, so the assertion has to write
+        the caller's: ``before`` is then the other folder and ``after`` the text read back. The
+        note the live surface writes alongside it is reproduced too, because the report must rest
+        on the typed value rather than on that prose.
+        """
+        self.directories.append(Path(directory))
+        target = str(directory)
+        if self.rewrite_directory:
+            self.warnings.append(
+                f"the Store dialog's Working directory was 'C:\\elsewhere'; wrote "
+                f"'{target}'"
+            )
+            return StoreDirectoryVerification(
+                before="C:\\elsewhere", after=target, changed=True
+            )
+        return StoreDirectoryVerification(before=target, after=target, changed=False)
 
     def commit_store(self) -> None:
         self.commits += 1
@@ -479,3 +503,260 @@ def test_collision_clause_compares_stems_case_folded(tmp_path: Path) -> None:
     (tmp_path / "Block.BDD").write_bytes(b"x")
     assert collision_clause("block", tmp_path) is not None
     assert collision_clause("other", tmp_path) is None
+
+
+# -------------------------------- the screen between the two checks, and the one warning
+
+
+class ScriptedScreen(FakeStoreScreen):
+    """The same window answering differently on each successive read: the screen moved.
+
+    Each script is consumed one read at a time and its **last** value repeats, so a script of
+    one value is a constant read and a script of two is "first check sees this, the second
+    check sees that". The workflow reads the caption, the overlay and the strip twice (before
+    the press and immediately before it), which is the window this class scripts.
+    """
+
+    def __init__(
+        self,
+        *,
+        captions: Sequence[str] = (),
+        overlays: Sequence[OverlayKind | None] = (),
+        states: Sequence[StripState] = (),
+        **kwargs,
+    ) -> None:
+        super().__init__(**kwargs)
+        self._captions = list(captions)
+        self._overlays = list(overlays)
+        self._states = list(states)
+        self.caption_reads = 0
+        self.overlay_reads = 0
+        self.strip_reads = 0
+
+    @staticmethod
+    def _read(script: list, fallback):
+        if not script:
+            return fallback()
+        return script.pop(0) if len(script) > 1 else script[0]
+
+    def window_caption(self) -> str:
+        self.caption_reads += 1
+        return self._read(self._captions, super().window_caption)
+
+    def peek_overlay(self) -> OverlayKind | None:
+        self.overlay_reads += 1
+        return self._read(self._overlays, super().peek_overlay)
+
+    def strip_state(self) -> StripState:
+        self.strip_reads += 1
+        return self._read(self._states, super().strip_state)
+
+
+def test_a_row_that_turns_three_button_between_the_checks_refuses_before_the_press(
+    tmp_path: Path,
+) -> None:
+    """The completed row read first, a three-button store row read second: nothing is pressed.
+
+    The second read is the one that authorizes the gesture, so a row that gains a role between
+    the checks makes a press a choice this command does not make.
+    """
+    screen = ScriptedScreen(
+        states=[
+            StripState(button_count=2, has_slider=True),
+            StripState(button_count=3, has_slider=True),
+        ]
+    )
+
+    with pytest.raises(AcquisitionError) as raised:
+        run(tmp_path, screen=screen)
+
+    assert "requires exactly 'Do store' and 'Clear and restart'" in str(raised.value)
+    # Both checks ran: the first read accepted the row, the second one refused it.
+    assert screen.strip_reads == 2
+    assert screen.presses == []
+    assert screen.store_names == []
+    assert screen.commits == 0
+    assert screen.waits == 0
+
+
+def test_a_caption_that_turns_to_the_simulator_refuses_before_the_press(
+    tmp_path: Path,
+) -> None:
+    """The instrument read first, the simulator read second: the store is never started."""
+    screen = ScriptedScreen(captions=["UDOP DOP3010.43", "UDOP Simul 1.0"])
+
+    with pytest.raises(AcquisitionError) as raised:
+        run(tmp_path, screen=screen)
+
+    assert "simulation" in str(raised.value)
+    assert screen.caption_reads == 2
+    assert screen.presses == []
+    assert screen.store_names == []
+    assert screen.commits == 0
+
+
+def test_an_overlay_that_appears_at_the_second_check_refuses_before_the_press(
+    tmp_path: Path,
+) -> None:
+    """No overlay at the first read, a Store dialog at the second: nothing is pressed or dismissed."""
+    screen = ScriptedScreen(overlays=[None, OverlayKind.STORE_DIALOG])
+
+    with pytest.raises(AcquisitionError) as raised:
+        run(tmp_path, screen=screen)
+
+    assert "overlay is already up" in str(raised.value)
+    assert screen.overlay_reads == 2
+    assert screen.presses == []
+    assert screen.store_names == []
+    assert screen.answers == 0
+    assert screen.commits == 0
+
+
+def test_one_warning_before_the_dialog_is_answered_once_then_committed_once(
+    tmp_path: Path,
+) -> None:
+    """One warning between the press and the Store dialog is answered once, and the store commits once."""
+    screen = ScriptedScreen(
+        overlays=[
+            None,
+            None,  # the two pre-press checks see no overlay
+            OverlayKind.WARNING,  # first read after the press
+            OverlayKind.STORE_DIALOG,  # and then the dialog the warning was hiding
+        ]
+    )
+
+    result, screen = run(tmp_path, screen=screen)
+
+    assert screen.presses == [StripControl.DO_STORE]
+    assert screen.answers == 1
+    # Two pre-press overlay reads, then the warning, then the dialog.
+    assert screen.overlay_reads == 4
+    assert screen.store_names == ["mpx12-50profiles-manual-01"]
+    assert screen.commits == 1
+    assert screen.waits == 1
+    assert result.store.dialog_warnings_answered == 1
+    assert result.store.commit_presses == 1
+    assert result.store.stored_name == "mpx12-50profiles-manual-01.BDD"
+    assert result.stored_path == tmp_path / "mpx12-50profiles-manual-01.BDD"
+
+
+def test_a_second_warning_before_the_dialog_refuses_with_no_further_press_or_commit(
+    tmp_path: Path,
+) -> None:
+    """A warning after the one answered warning refuses: one press, one answer, no commit.
+
+    Policy as written: the second warning is left up — the workflow answers warnings once and
+    does not dismiss, clear or retry around a second one, so nothing is pressed again and no
+    name is written or committed.
+    """
+    screen = ScriptedScreen(
+        overlays=[
+            None,
+            None,
+            OverlayKind.WARNING,
+            OverlayKind.WARNING,
+        ]
+    )
+
+    with pytest.raises(AcquisitionError) as raised:
+        run(tmp_path, screen=screen)
+
+    message = str(raised.value)
+    assert "second warning" in message
+    assert "does not keep answering" in message
+    assert screen.presses == [StripControl.DO_STORE]
+    assert screen.answers == 1
+    assert screen.store_names == []
+    assert screen.commits == 0
+    assert screen.waits == 0
+
+
+class RecordingClock:
+    """A stand-in for the module's ``time``: monotonic seconds that only ``sleep`` advances.
+
+    Time is held in integer microseconds so the deadline comparison is exact rather than at the
+    mercy of ``0.4 + 0.4 + …`` drift, which would otherwise buy one extra poll.
+    """
+
+    def __init__(self, start: float = 1000.0) -> None:
+        self._micros = round(start * 1_000_000)
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self._micros / 1_000_000
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self._micros += round(seconds * 1_000_000)
+
+
+def test_a_missing_store_dialog_is_bounded_by_the_clock_not_a_wall_wait(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """No dialog ever appears: the wait ends on the injected clock, with one press and no commit.
+
+    The module's polling seam is its own ``time``, so the deadline is exercised without any real
+    sleep: every poll advances the fake clock by exactly :data:`DIALOG_POLL_S` and the refusal is
+    the bounded one, not a short-circuit.
+    """
+    clock = RecordingClock()
+    monkeypatch.setattr(workflow, "time", clock)
+    screen = ScriptedScreen(overlays=[None])  # never a Store dialog, never a warning
+
+    wall_started = time.monotonic()
+    with pytest.raises(AcquisitionError) as raised:
+        run(tmp_path, screen=screen, dialog_timeout_s=2.0)
+    wall_elapsed = time.monotonic() - wall_started
+
+    assert "the Store dialog did not open within 2 s" in str(raised.value)
+    assert clock.sleeps == [workflow.DIALOG_POLL_S] * 5
+    assert clock.monotonic() - 1000.0 == pytest.approx(2.0)
+    # The bound was the clock's: the case never waited on the wall.
+    assert wall_elapsed < 1.0
+    assert screen.presses == [StripControl.DO_STORE]
+    assert screen.answers == 0
+    assert screen.store_names == []
+    assert screen.commits == 0
+    assert screen.waits == 0
+
+
+def test_a_rewritten_working_directory_is_reported_with_its_before_and_after(
+    tmp_path: Path,
+) -> None:
+    """The dialog showed another folder: the report carries both texts and says it wrote it."""
+    elsewhere = "C:\\elsewhere"
+    screen = FakeStoreScreen(rewrite_directory=True)
+
+    result, screen = run(tmp_path, screen=screen)
+
+    verification = result.store.directory_verification
+    assert verification is not None
+    assert verification.changed is True
+    assert verification.before == elsewhere
+    assert verification.after == str(tmp_path)
+    # The scalar report fields restate the typed value rather than a note's wording.
+    assert result.store.directory_rewritten is True
+    assert result.store.working_directory == verification.after
+    assert (
+        f"read {elsewhere!r} and wrote {verification.after!r}" in result.store.summary()
+    )
+    assert screen.directories == [tmp_path]
+    assert screen.commits == 1
+    assert result.store.commit_presses == 1
+
+
+def test_an_already_correct_working_directory_is_not_reported_as_rewritten(
+    tmp_path: Path,
+) -> None:
+    """The field already held the caller's folder: ``before`` and ``after`` agree, nothing written."""
+    screen = FakeStoreScreen()
+
+    result, _ = run(tmp_path, screen=screen)
+
+    verification = result.store.directory_verification
+    assert verification is not None
+    assert verification.changed is False
+    assert verification.before == verification.after == str(tmp_path)
+    assert result.store.directory_rewritten is False
+    assert result.store.working_directory == str(tmp_path)
+    assert "nothing was written" in result.store.summary()

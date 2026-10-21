@@ -17,6 +17,15 @@ transport is the facade's), and ``acquire/driver.py`` composes this piece into t
 (``udop/session.py`` is that facade's compatibility name). The poll cadence
 (:data:`...recording._POLL_S`) is the recording surface's, imported here rather than repeated — so
 a test that shortens the wait for the stored file patches **this** module's binding of it.
+
+**The ``Working directory`` is reported as a fact, not as a sentence.** The field decides where the
+point lands, so the read-compare-write-readback is this module's and its outcome is the typed
+:class:`StoreDirectoryVerification` (``before``, ``after``, ``changed``).
+:meth:`StoreSurface.verify_working_directory` returns it;
+:meth:`StoreSurface.assert_working_directory` remains the compatibility name for the verified text
+alone. A caller that needs to say whether the application was made to write the field reads the
+model, never the wording of a note — a note is prose this module is free to reword, and inferring a
+fact from its prefix is how the driver's behaviour became the only place the fact could be wrong.
 """
 
 from __future__ import annotations
@@ -33,6 +42,26 @@ from udv_echo_process.acquire.actuator import (
 from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.udop.recording import _POLL_S
 from udv_echo_process.acquire.ui.layout import same_directory
+from udv_echo_process.models.base import ValueModel
+
+
+class StoreDirectoryVerification(ValueModel):
+    """The Store dialog's ``Working directory`` before the assertion and after it.
+
+    ``before`` is the field's text as read, before anything is written. ``after`` is the text read
+    **back** after the write — or ``before`` itself when nothing was written because the field
+    already held the caller's directory. ``changed`` is the fact itself: the caller's directory was
+    written into the field because the dialog showed another one.
+
+    ``after`` is what :meth:`StoreSurface.assert_working_directory` has always returned, so the
+    model adds the two facts the string alone could not carry (what was shown, and whether the
+    application was made to change it) without changing the verified value any caller already
+    compares.
+    """
+
+    before: str
+    after: str
+    changed: bool
 
 
 class StoreSurface:
@@ -62,14 +91,19 @@ class StoreSurface:
             self._store_name_field(panel, kids)["hwnd"], name, panel["hwnd"]
         )
 
-    def assert_working_directory(self, directory: Path) -> str:
+    def verify_working_directory(self, directory: Path) -> StoreDirectoryVerification:
         """Assert the Store dialog's ``Working directory``, and set it when it differs.
 
         The field decides where the point lands, so it is never assumed: it is read,
         compared with ``directory`` (the path the caller will watch), written with the
         numeric/text commit recipe when it differs, and read **back** — because a write
         that did not commit leaves the application storing somewhere else while the
-        control paints the new value (docs/16 §12a, §12b). Returns the verified text.
+        control paints the new value (docs/16 §12a, §12b).
+
+        Returns the verification as a value: the text the field showed, the text it shows
+        now, and whether this call wrote it. The two facts a wanted-but-unwritten field
+        leaves behind are what a caller reports; a note's wording is prose, so nothing
+        here asks a consumer to read one.
 
         An unresolved mismatch raises :class:`AcquisitionError` **naming both paths**,
         which fails the point: watching a folder the application is not writing to
@@ -101,7 +135,7 @@ class StoreSurface:
         if not target.is_absolute():
             target = (Path.cwd() / target).resolve()
         if same_directory(shown, target):
-            return shown
+            return StoreDirectoryVerification(before=shown, after=shown, changed=False)
         self._set_text_commit(path_edit["hwnd"], str(target), panel["hwnd"])
         readback = self._get_text(path_edit["hwnd"])
         if not same_directory(readback, target):
@@ -114,7 +148,19 @@ class StoreSurface:
         self._note(
             f"the Store dialog's Working directory was {shown!r}; wrote {readback!r}"
         )
-        return readback
+        return StoreDirectoryVerification(before=shown, after=readback, changed=True)
+
+    def assert_working_directory(self, directory: Path) -> str:
+        """The verified ``Working directory`` text — the compatibility name for it.
+
+        Kept because the description of this surface, the recording cycle and every driver-shaped
+        double already ask for the string; it delegates to
+        :meth:`verify_working_directory` and returns that model's ``after``, so there is one
+        read-compare-write-readback and one place it can be wrong. A caller that needs to say
+        whether the field was rewritten asks the model instead of parsing this return value or a
+        note.
+        """
+        return self.verify_working_directory(directory).after
 
     def commit_store(self) -> None:
         """Press the Store dialog's rightmost bottom button (``Do store``)."""
@@ -160,7 +206,9 @@ class StoreSurface:
             time.sleep(_POLL_S)
         raise AcquisitionError("the Store dialog did not open after Do store")
 
-    def _store_edits(self, panel: dict, kids: Sequence[dict]) -> tuple[dict, dict | None]:
+    def _store_edits(
+        self, panel: dict, kids: Sequence[dict]
+    ) -> tuple[dict, dict | None]:
         """The Store dialog's ``(name edit, path edit)``, top to bottom.
 
         The path field is recognised by its **separator** (``:`` or ``\\``), never by

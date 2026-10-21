@@ -121,6 +121,7 @@ RECORDING_METHODS = (
 STORE_METHODS = (
     "_require_store_dialog",
     "set_store_name",
+    "verify_working_directory",
     "assert_working_directory",
     "commit_store",
     "wait_for_stored_file",
@@ -233,7 +234,9 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
 #: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
-#: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
+#: ``_answer_burst_rejection``, and ``verify_working_directory`` (``udop/store.py``), the typed
+#: working-directory readback that ``assert_working_directory`` now delegates to. The class's own
+#: name set at this tip is 103, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "bind_target",
@@ -243,6 +246,7 @@ CLASS_ADDITIONS = (
     "_row_reading_or_none",
     "_answer_burst_rejection",
     "_burst_refusal",
+    "verify_working_directory",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

@@ -241,10 +241,13 @@ Rules the target layout pins:
   (`udop/parameters.py`) is **new on the class**, split out of `_dialog_refusal` when that rule moved
   to `ui/dialog.py`. "0 removed, 0 added, 0 changed" was therefore true of neither side at this
   this tip; what is true, and what `tests/test_acquire_udop.py` now records and asserts, is the half that
-  matters — **no flat method name was lost** — with the class's own name set at **102**, `bfbbb10`'s
-  96 plus six named additions: `_screen_anchor_text`, and the five the burst transition added
+  matters — **no flat method name was lost** — with the class's own name set at **103**, `bfbbb10`'s
+  96 plus seven named additions: `_screen_anchor_text`, the five the burst transition added
   (`write_dialog_burst_length`, `_row_reading`, `_row_reading_or_none`, `_answer_burst_rejection`,
-  `_burst_refusal` — `docs/dop3000/burst-length-control-plan.md` §4.1).
+  `_burst_refusal` — `docs/dop3000/burst-length-control-plan.md` §4.1), and
+  `verify_working_directory` (`udop/store.py`), the typed `Working directory` readback
+  (`StoreDirectoryVerification`: `before`, `after`, `changed`) that `assert_working_directory` now
+  delegates to and returns `.after` from.
   The module namespace is where the earlier text was wrong twice, and it is corrected here.
   `len([n for n in vars(driver) if not n.startswith("__")])` is **185** at this tip (re-measured; the
   six names the burst contract re-exports through `driver` — `DIALOG_DEPENDENT_FIELDS`,

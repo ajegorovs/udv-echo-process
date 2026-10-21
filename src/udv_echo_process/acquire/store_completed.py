@@ -63,6 +63,7 @@ from udv_echo_process.acquire.actuator import (
 )
 from udv_echo_process.acquire.driver import Win32Actuator
 from udv_echo_process.acquire.udop import AcquisitionError
+from udv_echo_process.acquire.udop.store import StoreDirectoryVerification
 from udv_echo_process.acquire.ui.layout import MAIN_CLASS, process_mode_clause
 from udv_echo_process.acquire.win32.tree import visible_main_windows
 from udv_echo_process.models.base import ValueModel
@@ -166,14 +167,17 @@ class CompletedBlockDeclaration(ValueModel):
 class StoreAttempt(ValueModel):
     """What the one store attempt did, with the path behaviour stated rather than implied.
 
-    ``directory_rewritten`` says the driver wrote the caller's working directory because the
-    dialog showed another one; ``working_directory`` is the value read back after that write.
+    ``directory_verification`` is the driver's own report of the Store dialog's ``Working
+    directory``: the text it showed, the text it shows now, and whether this run wrote it.
+    ``working_directory`` is that report's read-back text, and ``directory_rewritten`` restates
+    ``directory_verification.changed`` for existing readers of the serialized report.
     """
 
     name: str
     directory: Path
     working_directory: str
     directory_rewritten: bool
+    directory_verification: StoreDirectoryVerification
     dialog_warnings_answered: int = Field(ge=0)
     commit_presses: int = Field(default=1, ge=1)
     waited_s: float = Field(ge=0)
@@ -188,15 +192,19 @@ class StoreAttempt(ValueModel):
             f"store: pressed 'Do store' on the strip once, wrote {self.name!r}, working "
             f"directory {self.working_directory!r}"
         )
-        if self.directory_rewritten:
+        verification = self.directory_verification
+        if verification.changed:
             clause += (
-                " (rewritten to the caller's directory: the field decides where the point "
-                "lands, so the app wrote it rather than refusing)"
+                f" (read {verification.before!r} and wrote {verification.after!r}: the field "
+                "decides where the point lands, so the app wrote it rather than refusing)"
             )
+        else:
+            clause += f" (the field already held {verification.after!r}, so nothing was written)"
         return (
             f"{clause}; committed once, {self.dialog_warnings_answered} dialog warning(s) "
             f"answered, new file seen after {self.waited_s:.1f} s; the new entry "
-            f"{self.stored_name!r} is the only one whose stem is the requested name"
+            f"{self.stored_name!r} was not in the directory before the commit and carries "
+            f"the requested stem {self.name!r}"
         )
 
 
@@ -402,6 +410,23 @@ def completed_strip_clauses(state: StripState) -> tuple[str, ...]:
     return ()
 
 
+def _verify_store_directory(live, directory: Path) -> StoreDirectoryVerification:
+    """Require the owner's structured readback before committing the store."""
+    verify = getattr(live, "verify_working_directory", None)
+    if not callable(verify):
+        raise AcquisitionError(
+            "the driver cannot report the Store dialog's Working directory: "
+            "verify_working_directory is required; a string-only assert_working_directory "
+            "cannot state whether the field changed, so nothing is committed"
+        )
+    verification = verify(directory)
+    if not isinstance(verification, StoreDirectoryVerification):
+        raise AcquisitionError(
+            "verify_working_directory returned no structured readback; nothing is committed"
+        )
+    return verification
+
+
 def _screen_check(
     actuator,
     target: WindowTarget,
@@ -577,12 +602,8 @@ def store_completed(
 
     live.set_store_name(name)
     notes_before = len(getattr(live, "warnings", ()))
-    verified_directory = live.assert_working_directory(target_dir)
+    verification = _verify_store_directory(live, target_dir)
     new_notes = tuple(getattr(live, "warnings", ())[notes_before:])
-    rewritten = any(
-        note.startswith("the Store dialog's Working directory was")
-        for note in new_notes
-    )
     live.commit_store()  # once
 
     path = Path(
@@ -599,8 +620,9 @@ def store_completed(
     attempt = StoreAttempt(
         name=name,
         directory=target_dir,
-        working_directory=str(verified_directory),
-        directory_rewritten=rewritten,
+        working_directory=verification.after,
+        directory_rewritten=verification.changed,
+        directory_verification=verification,
         dialog_warnings_answered=answered,
         commit_presses=1,
         waited_s=time.monotonic() - started,
