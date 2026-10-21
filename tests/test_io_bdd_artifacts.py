@@ -1003,3 +1003,106 @@ def test_a_quantity_absent_from_some_blocks_keeps_its_own_rows(tmp_path):
     # block-3 payload (90 counts): a shifted mapping would repeat one of them.
     assert echo.data.values[0, 0] == pytest.approx(200 * 2048 / 255)
     assert echo.data.values[1, 0] == pytest.approx(90 * 2048 / 255)
+
+
+# ── byte-level oracles on the real capture (F2) ──────────────────────────
+#
+# Every value below was derived from the committed file by a standalone ``struct``
+# walk that does not import this package, using the published conversions:
+# ``echo = counts * module_scale / 255`` (module_scale = 2048 on all four
+# channels) and the DOPpy velocity equation over op words 0 (emit), 5 (PRF
+# period µs), 15 (velo scale), 19 (sound speed), 20 (Doppler angle) with the
+# word-22 offset correction. The raw count is written beside each value so it can
+# be re-derived by hand from the bytes. Rows are sample 0 and sample 499 (the last
+# stored profile); gates 0, 1, 5, 20 and 41 cover the first gate, interior gates
+# and the last gate, so a shifted gate axis or a shifted row cannot pass.
+
+#: ``(channel, row) -> {gate: (raw int8 count, decoded mm/s)}``
+_VELOCITY_ORACLE: dict[tuple[int, int], dict[int, tuple[int, float]]] = {
+    (1, 0): {
+        0: (1, 0.6803),
+        1: (13, 8.8444),
+        5: (49, 33.3366),
+        20: (18, 12.2461),
+        41: (4, 2.7214),
+    },
+    (1, 499): {
+        0: (-1, -0.6803),
+        1: (-8, -5.4427),
+        5: (30, 20.4102),
+        20: (43, 29.2546),
+        41: (-14, -9.5247),
+    },
+    (2, 0): {0: (-41, -27.8939), 41: (4, 2.7214)},
+    (2, 499): {0: (-36, -24.4922), 41: (-19, -12.9264)},
+    (3, 0): {0: (3, 2.0410), 41: (-18, -12.2461)},
+    (3, 499): {0: (11, 7.4837), 41: (-13, -8.8444)},
+    (4, 0): {0: (0, 0.0), 41: (13, 8.8444)},
+    (4, 499): {0: (-117, -79.5997), 41: (14, 9.5247)},
+}
+
+#: ``(channel, row) -> {gate: (raw uint8 count, decoded module)}``
+_ECHO_ORACLE: dict[tuple[int, int], dict[int, tuple[int, float]]] = {
+    (1, 0): {
+        0: (255, 2048.0),
+        1: (7, 56.2196),
+        5: (105, 843.2941),
+        20: (23, 184.7216),
+        41: (3, 24.0941),
+    },
+    (1, 499): {
+        0: (255, 2048.0),
+        1: (10, 80.3137),
+        5: (127, 1019.9843),
+        20: (14, 112.4392),
+        41: (20, 160.6275),
+    },
+    (2, 0): {0: (101, 811.1686), 41: (6, 48.1882)},
+    (2, 499): {0: (95, 762.9804), 41: (10, 80.3137)},
+    (3, 0): {0: (255, 2048.0), 41: (3, 24.0941)},
+    (3, 499): {0: (255, 2048.0), 41: (0, 0.0)},
+    (4, 0): {0: (226, 1815.0902), 41: (14, 112.4392)},
+    (4, 499): {0: (231, 1855.2471), 41: (12, 96.3765)},
+}
+
+
+@pytest.mark.parametrize(
+    ("quantity", "oracle"),
+    [
+        (SignalQuantity.AXIAL_VELOCITY, _VELOCITY_ORACLE),
+        (SignalQuantity.ECHO_AMPLITUDE, _ECHO_ORACLE),
+    ],
+    ids=["velocity", "echo"],
+)
+def test_decoded_cells_match_the_byte_level_oracle(quantity, oracle):
+    """Exact decoded samples, not just shape/range/correlation (review finding F2)."""
+    bundle = read(DUAL_4MHZ)
+    for (channel, row), cells in oracle.items():
+        artifact = select_channel(
+            bundle, ChannelKey(device_channel=channel), quantity=quantity
+        ).artifact
+        for gate, (count, expected) in cells.items():
+            actual = float(artifact.data.values[row, gate])
+            assert actual == pytest.approx(expected, abs=5e-4), (
+                f"channel {channel} row {row} gate {gate}: raw count {count} "
+                f"decodes to {actual!r}, oracle says {expected!r}"
+            )
+
+
+def test_echo_first_gate_run_matches_the_reviewers_independent_extraction():
+    """The reviewer's seven counts for channel 1, sample 0, gates 0–6.
+
+    Independent extraction reported ``255, 7, 148, 121, 74, 105, 50`` raw counts
+    and ``2048.000, 56.220, 1188.643, 971.796, 594.322, 843.294, 401.569`` module
+    units; the reader must reproduce those cells exactly.
+    """
+    bundle = read(DUAL_4MHZ)
+    echo = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.ECHO_AMPLITUDE,
+    ).artifact
+    expected = [2048.000, 56.220, 1188.643, 971.796, 594.322, 843.294, 401.569]
+    assert [float(value) for value in echo.data.values[0, :7]] == pytest.approx(
+        expected, abs=5e-4
+    )
