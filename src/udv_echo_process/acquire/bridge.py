@@ -530,7 +530,13 @@ class BridgeActuator:
         previous_numeric = _as_number(previous)
         restored = None
         if previous_numeric is not None:
-            self._value_dispatch(self._value_request(role, previous_numeric, observed))
+            # The compensation is **not** another dispatch: measured 2026-10-22, a fresh attach cannot
+            # commit again even with identical addresses and state, while one attach can commit twice.
+            # So the repair goes through the GUI write — the reliable mechanism, and the one an operator
+            # would use by hand. A bridge write that needs repairing is a bridge write that already
+            # failed; asking the same route to undo it would repeat the failure in a way the read-back
+            # cannot distinguish from success.
+            self._inner.write_parameter(role, previous)
             restored = str(self._inner.read_parameter(role))
         if previous_numeric is not None and _same_numeric(restored, previous_numeric):
             entry["restored"] = True

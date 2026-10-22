@@ -670,28 +670,28 @@ class TestAGuardedNumericWrite:
         reads = [call for call in inner.calls if call[0] == "read_parameter"]
         assert len(reads) == 2  # one before the write, one after it
 
-    def test_a_mismatch_is_restored_through_the_same_setter_and_the_write_is_refused(
-        self, tmp_path
-    ):
-        bridge, dispatch, _inner = value_bridge(
+    def test_a_mismatch_is_repaired_through_the_gui_write_not_a_second_dispatch(self, tmp_path):
+        """One attach can commit twice; a fresh one cannot commit again, with identical addresses and
+        state (measured 2026-10-22). So the repair uses the reliable mechanism, not the failing one.
+        """
+        bridge, dispatch, inner = value_bridge(
             tmp_path, values={"emissions_per_profile": ["50"]}, apply=False
         )
 
         with pytest.raises(BridgeRefused) as caught:
             bridge.write_parameter("emissions_per_profile", "49")
 
-        assert (
-            caught.value.reason
-            == "bridge_write_rolled_back:emissions_per_profile:49.0->50"
-        )
-        assert [request.value for request in dispatch.requests] == [49.0, 50.0]
+        assert caught.value.reason == "bridge_write_rolled_back:emissions_per_profile:49.0->50"
+        # Exactly one dispatch — the write. The repair is the GUI's, and the record says so.
+        assert [request.value for request in dispatch.requests] == [49.0]
+        assert ("write_parameter", ("emissions_per_profile", "50"), {}) in inner.calls
         assert bridge.value_writes[-1]["restored"] is True
         assert bridge._poisoned is None
 
     def test_an_unverified_restore_poisons_the_actuator(self, tmp_path):
         # The field says 50 before the write, 51 afterwards, and 51 again after the restore: the
         # dispatch moved it somewhere nobody asked for and the restore did not bring it back.
-        bridge, dispatch, _inner = value_bridge(
+        bridge, dispatch, inner = value_bridge(
             tmp_path,
             values={"emissions_per_profile": ["50", "51"]},
             apply=False,
@@ -700,6 +700,7 @@ class TestAGuardedNumericWrite:
 
         with pytest.raises(BridgeRefused) as caught:
             bridge.write_parameter("emissions_per_profile", "49")
+        repairs = [call for call in inner.calls if call[0] == "write_parameter"]
 
         assert caught.value.reason.startswith(
             "bridge_write_unverified:emissions_per_profile:"
@@ -708,9 +709,9 @@ class TestAGuardedNumericWrite:
         with pytest.raises(BridgeRefused) as again:
             bridge.write_parameter("emissions_per_profile", "49")
         assert again.value.reason.startswith("bridge_writes_poisoned:")
-        assert (
-            len(dispatch.requests) == 2
-        )  # the write and the one restore, nothing after
+        # One dispatch (the write) and one GUI repair attempt, then nothing: the actuator is poisoned.
+        assert len(dispatch.requests) == 1
+        assert len(repairs) == 1
 
     def test_a_poisoned_actuator_does_not_dispatch_at_all(self, tmp_path):
         bridge, dispatch, _ = value_bridge(
