@@ -157,10 +157,48 @@ readable from that crop.
 
 | view | structural signature | buttons, left → right | evidence |
 |---|---|---|---|
-| recording | one top-row button, no slider | `Stop` | *live-reported* |
-| stopped, no data | fewer than three buttons | `Record` | *live-reported* |
+| recording | one top-row button, no slider | `Stop` | *live-reported*; **single-channel only** — in an MPX configuration the same structure's sole button was operator-reported as `Clear and restart`, so this binding does not carry over (below, B21) |
+| unbound short row | zero or two top-row buttons, **no** slider | none — `UNKNOWN`; no press is bound | current classifier contract; the earlier “fewer than three → Record” claim is not a supported binding |
 | stopped with data | three top-row buttons, **no** slider | `Pause` / `Record` / `Clear and restart` | UI-STRIP-01, three captions read at x10 |
-| store view | three top-row buttons **+** a `TSp_Sliding_Bar` child | `New acquisition` / `Do store` / `Clear and restart` / `Remove current block` | UI-STRIP-02 (grown, four captions read at x8-x10) |
+| store view | three top-row buttons **+** a `TSp_Sliding_Bar` child | `New acquisition` / `Do store` / `Clear and restart` | UI-STRIP-02's first three captions (read at x8-x10); the three-button store panel measured 413x123 after `Stop` |
+| store view, grown (a block held) | **four** top-row buttons **+** a `TSp_Sliding_Bar` child — the crop does **not** say the tree's row length in that state is four | `New acquisition` / `Do store` / `Clear and restart` / `Remove current block` | UI-STRIP-02 (grown, four captions read at x8-x10) |
+| store view, after a multiplexed run | **two** top-row buttons **+** a `TSp_Sliding_Bar` child, plus the block/channel combo pair | `Do store` / `Clear and restart` | live read-only tree capture 2026-10-20 (see below) |
+
+**The two-button store row is the one a multiplexed acquisition ends in, and it is bound.**
+A read-only control-tree capture taken 2026-10-20 on the instrument (`UDOP DOP3010.43`,
+multiplexer sequence probe) shows the strip panel built 269x123 with two visible top-row
+`TSp_Button` widgets (91 px and 138 px — close enough that width is no identity), the visible
+`TSp_Sliding_Bar`, and two `TComboBox` children for block and channel; two further buttons are
+painted behind the row with `visible: false` and are not part of it. The slider had already
+classified that structure `StripView.STORE`, so the view was reachable while
+`STRIP_BUTTON_ORDER` carried no row for its length — a `Do store` press out of exactly the state
+an MPX run ends in raised instead of committing the store. The row is now
+`(STORE, 2)` → `Do store` / `Clear and restart`, left to right. **Provenance, stated narrowly:**
+the structure is the capture's, and the two captions were read by hand off that same frame — no
+click was posted to this row to land the binding, so this table's claim is *which position means
+which role*, not that the instrument answers the press. The refusal path is unchanged: `New
+acquisition`, `Stop` and `Remove current block` are not in this row and asking for one refuses by
+name; the four-button **no-slider** row's status is B10's below and did not move.
+
+**The one-button row classifies structure, not role, and in MPX it is not `Stop`.** On 2026-10-21
+the operator reported that with rolling MPX **enabled and idle** — the ready row that enabling with
+roll-over on leaves, and the only state a manual `Record` can be pressed in (entry semantics:
+`udop-automation.md` §12.13) — a manual `Record` leaves a
+single-button row whose caption is `Clear and restart` — not `Stop`. That is an *operator report*,
+not a tree read: no capture of that state exists here, so the row's role in an MPX configuration
+stays unknown (ledger B21). It is also a different state from the captured two-button store row
+above — that capture follows natural MPX completion, this report is the row while the acquisition is
+still running — so neither observation stands in for the other. The single-channel `Stop` row and
+this reported row are structurally identical — one top-row button, no slider — so the classifier
+cannot tell `Stop` from `Clear and restart`, and a press by generic classification would clear the
+block instead of stopping it. `StripControl.STOP` therefore stays a **single-channel binding**; do
+not press a one-button row in an MPX configuration by generic classification. This is a role
+ambiguity, not a length problem: the length is already in the binding key, and the two-button store
+row above is separately bounded.
+
+The store half of that same MPX path was accepted live on 2026-10-21 — real manual recording,
+automated store, independent decode, and no positive post-save MPX-mode read; the scope statement
+is [`udop-automation.md`](udop-automation.md) §12.6.
 
 **The four-button, no-slider row is unresolved and is the highest-priority device item**
 (ledger B10). UI-STRIP-01's ready frame paints `Pause` / `Record` / `Clear and restart`;
@@ -267,7 +305,8 @@ assertion is not available yet.
 | B17 | the dialog's channel attribution can differ from the routed channel | facts attached to the wrong channel | compare the dialog channel to the routed channel before accepting dialog facts | **verified on the instrument 2026-09-19**: the attribution check is live in `ensure_channel` and the compile, and sitting D ran it with the run's configuration, the routed channel and the dialog's own channel all stating `1` |
 | B18 | multiple parameter frames appeared across assisted/manual/tour operations | session state drifts far from the declared frame | compile against a live snapshot immediately before the campaign | live-supported; **verified on the instrument 2026-09-19** (sitting D: the six-point campaign compiled against a live snapshot immediately before it — `declared_only: false`, `skipped_without_evidence: []` — and the stored files agree) |
 | B19 | the Store dialog (and other modal panels) clip the cursor | real-input recovery can fail | drive by messages and always close in a `finally`; state is unverified if the close fails | live-proven; **exercised on the instrument 2026-09-19** (sitting D: every gesture's log records the popup's clip and the driver's release of it, and the V8 pointer probe found the cursor free outside the window's own rect with the application still foreground) |
-| B20 | a popup cannot be safely dismissed programmatically | a recovery gesture wedges the application | abort and require an operator restart; never `WM_CLOSE`. `open_popup` means only that a non-layout button panel is up, not that it is the `Parameters` popup: the stranded-menu report uses the measured menu rectangle, and otherwise names only an unknown panel and presses nothing | live-proven |
+| B20 | a popup cannot be safely dismissed by a **message** | a recovery gesture wedges the application | abort and require an operator restart when no real-cursor dismissal was observed; never `WM_CLOSE`. The dismissal is a **bounded stepped real-cursor path** off the popup, owned by `ParametersSurface.dismiss_channels_popup` (`ui.menu.stepped_path` derives the positions; `_move_real_cursor_stepped` walks them) with a bounded ABSENT read and a typed UNKNOWN on failure. `recon/35` establishes the hover-open and an entry press consuming the popup, not a generic close; one live warp read its point back exactly while the popup stayed up, and **one live prototype** (`channels-stepped-path-live-01`: 13 positions of <= 40 px, two paths) then observed ABSENT on both. Accepted at that scope only — it supports path-versus-jump, not the OS mechanism, and it is not production-live until `channels_opener.py` runs end to end. `open_popup` means only that a non-layout button panel is up, not that it is the `Parameters` popup: the stranded-menu report uses the measured menu rectangle, and otherwise names only an unknown panel and presses nothing | live-proven for the message attempts; the stepped real-cursor dismissal has **one live prototype accepted at that scope** (two paths observed ABSENT) and is **not production-live** until the integrated opener runs |
+| B21 | in an MPX configuration the one-button active row's role is not `Stop`: the operator reported `Clear and restart` after `Record` from an enabled-idle rolling MPX row (2026-10-21; entry semantics `udop-automation.md` §12.13) | a generic one-button classification presses `Stop` and instead clears the block, losing the recording | `StripControl.STOP` stays a **single-channel** binding; no press from a one-button row in an MPX configuration until a tree read in that state fixes the role | operator-reported; no capture of that state; device-pending |
 
 ## 7. Priority before any real acquisition after the refactor
 

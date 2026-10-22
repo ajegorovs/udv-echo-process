@@ -73,12 +73,15 @@ __all__ = [
     "_ClipRect",
     "_CursorPoint",
     "_activate_window",
+    "_check_foreground",
     "_clip_rect",
     "_cursor_position",
     "_foreground_window",
     "_gui",
     "_hover_centre",
     "_move_real_cursor",
+    "_move_real_cursor_stepped",
+    "_owner_of",
     "_release_clip",
     "_require_foreground",
     "_restore_cursor",
@@ -189,6 +192,11 @@ def _user32():
     u32.GetClipCursor.restype = ctypes.c_int
     u32.ClipCursor.argtypes = (ctypes.c_void_p,)
     u32.ClipCursor.restype = ctypes.c_int
+    u32.GetWindowThreadProcessId.argtypes = (
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_ulong),
+    )
+    u32.GetWindowThreadProcessId.restype = ctypes.c_ulong
     return u32
 
 
@@ -365,6 +373,109 @@ def _move_real_cursor(
     )
 
 
+def _move_real_cursor_stepped(
+    plan,
+    *,
+    what: str,
+    why: str,
+    note: Callable[[str], None],
+    inside: Callable[[tuple[int, int, int, int], tuple[int, int]], bool],
+    clip: Callable[..., tuple[int, int, int, int] | None],
+    release: Callable[..., bool],
+    read_position: Callable[..., tuple[int, int]],
+    guard: Callable[[], None] = lambda: None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    checked_bound_s: float | None = None,
+    observe: Callable[[tuple[int, int]], bool] | None = None,
+    user32=_user32,
+) -> tuple[tuple[int, int], ...]:
+    """Walk a **derived** stepped path with consecutive real-cursor positions.
+
+    This is the reusable primitive behind the live prototype: the caller owns the plan's
+    geometry (:func:`~udv_echo_process.acquire.ui.menu.stepped_path`) and this function owns
+    the scheduling — one bare ``SetCursorPos`` per position, the plan's own interval between
+    them, and a read-back of every landing. It is deliberately **not** a change to
+    :func:`_move_real_cursor`: the single-warp move keeps its settle and its clip rules for
+    every existing caller, and the two gestures stay distinguishable.
+
+    Failure is closed. A plan that is not ``ok`` is refused before anything moves; a landing
+    that does not read back exactly stops the path at that step (a clip or another window took
+    the move) and raises the facade's own error, naming the step, the requested point, the
+    landing and any clip still up. Nothing is retried, no ``mouse_event`` nudge is sent, no
+    point beyond the plan is visited, and the cursor is left where the path left it.
+
+    ``guard`` runs before **every** move, so the caller can re-assert the original binding and
+    the foreground precondition per step without this layer knowing either concept. The guard
+    must be a *pure check*: this primitive never activates a window mid-path.
+
+    ``checked_bound_s`` is compared against ``clock()`` elapsed before every move. It is a checked
+    bound, not a hard OS deadline: a blocking ``SetCursorPos``/read-back/guard already in progress
+    cannot be interrupted, so exceeding it stops the path *before the next step* and raises,
+    naming the elapsed time, the planned interval budget and the steps completed.
+
+    ``observe`` is an optional **observer** called with each landed position after its read-back.
+    Returning true stops the path at that position and returns the positions landed so far; the
+    caller owns what was observed (a popup surface, a read failure) and this primitive owns only
+    the scheduling. It is never a second move and nothing beyond the plan is visited.
+    """
+    if not getattr(plan, "ok", False):
+        raise _acquisition_error()(
+            f"refusing to walk a path that was not derived: {getattr(plan, 'refusal', None) or 'no plan points'}"
+        )
+    points = tuple((int(x), int(y)) for x, y in plan.points)
+    if not points:
+        raise _acquisition_error()(
+            f"refusing to walk an empty path onto {what}: a stepped path carries at least one position"
+        )
+    u32 = user32()
+    clip_now = clip()
+    if clip_now is not None and any(not inside(clip_now, point) for point in points):
+        note(
+            f"the cursor is clipped to {clip_now} (this application clips it on its popups) and "
+            f"the stepped path to {what} leaves that rectangle; released the clip with "
+            "ClipCursor(NULL) so no step is clamped to the popup's edge"
+        )
+        release()
+    landed: list[tuple[int, int]] = []
+    started = clock()
+    for index, target in enumerate(points, start=1):
+        guard()
+        if checked_bound_s is not None:
+            elapsed = clock() - started
+            if elapsed > checked_bound_s:
+                raise _acquisition_error()(
+                    f"stopped before step {index} of {len(points)} of the real-cursor path onto "
+                    f"{what}: {elapsed:.3f} s elapsed against the {checked_bound_s:.3f} s checked "
+                    f"bound (planned interval budget {getattr(plan, 'total_s', 0.0):.3f} s over "
+                    f"{len(points)} position(s)); {len(landed)} step(s) were completed. No OS "
+                    "call is preemptible, so this is a checked bound rather than a hard "
+                    f"deadline — the path stops here, is not retried, and no remaining position "
+                    f"is visited — {why}"
+                )
+        u32.SetCursorPos(target[0], target[1])
+        actual = tuple(read_position())
+        if actual != target:
+            still_clipped = clip()
+            raise _acquisition_error()(
+                f"step {index} of {len(points)} of the real-cursor path onto {what} requested "
+                f"{target} and the cursor read back {actual}"
+                + (
+                    f": the cursor is clipped to {still_clipped}"
+                    if still_clipped is not None
+                    else ": no cursor clip is set, so a locked or unattended desktop refused the move"
+                )
+                + f" — {why}. The path stops here, is not retried, and no remaining position is "
+                "visited"
+            )
+        landed.append(actual)
+        if observe is not None and observe(actual):
+            return tuple(landed)
+        if index < len(points) and plan.interval_s > 0:
+            sleep(plan.interval_s)
+    return tuple(landed)
+
+
 def _foreground_window(*, user32=_user32) -> int:
     """The foreground window's handle — the menubar hover's **precondition**.
 
@@ -375,17 +486,29 @@ def _foreground_window(*, user32=_user32) -> int:
     return user32().GetForegroundWindow()
 
 
-def _thread_of(hwnd: int, *, user32=_user32) -> int:
-    """The thread that owns ``hwnd``.
+def _owner_of(hwnd: int, *, user32=_user32) -> tuple[int, int]:
+    """``(thread_id, process_id)`` of ``hwnd`` — ``(0, 0)`` when the handle is gone.
 
-    ``win32process.GetWindowThreadProcessId`` is ``pywin32``'s home for this call and
-    returns ``(threadId, processId)`` — **thread first**, despite the name — but the
-    driver reaches Windows through ``ctypes`` here, so bringing a window forward needs
-    no extra import and works wherever the message layer does.
+    ``GetWindowThreadProcessId`` **returns** the owning thread id and fills its one
+    out-parameter with the process id. Both are read here, because a target's identity is
+    the pair: a handle recycled by another process and a handle recycled within the same
+    process are different failures, and the second is only visible in the thread or the
+    class (see :class:`~udv_echo_process.acquire.actuator.WindowTarget`).
+
+    Both target binding and foreground activation consume this same parsed owner pair.
+    The API return value is the thread id; its output parameter is the process id.
     """
-    owner = ctypes.c_ulong()
-    user32().GetWindowThreadProcessId(ctypes.c_void_p(hwnd), ctypes.byref(owner))
-    return int(owner.value)
+    process = ctypes.c_ulong()
+    thread = user32().GetWindowThreadProcessId(
+        ctypes.c_void_p(hwnd), ctypes.byref(process)
+    )
+    return int(thread), int(process.value)
+
+
+def _thread_of(hwnd: int, *, user32=_user32) -> int:
+    """Return the owning thread id, not the process-id output parameter."""
+    thread_id, _process_id = _owner_of(hwnd, user32=user32)
+    return thread_id
 
 
 def _activate_window(hwnd: int, *, user32=_user32) -> None:
@@ -460,6 +583,31 @@ def _require_foreground(
         "hovering into a window that cannot answer. Bring the application to the front "
         "— and stop anything that steals it, such as a console window opened by the "
         "launcher — then re-run"
+    )
+
+
+def _check_foreground(
+    hwnd: int,
+    class_name: str,
+    *,
+    foreground: Callable[[], int],
+) -> None:
+    """Assert the application is already the foreground window, **without activating it**.
+
+    This is the per-step precondition for a walked path. :func:`_require_foreground` may call
+    ``SetForegroundWindow`` and wait up to :data:`_FOREGROUND_WAIT_S`; doing that between two
+    cursor positions would take the operator's focus mid-path and turn a bounded path into a
+    blocking one. A path therefore only *checks* the foreground window each step and refuses by
+    name if it changed — the activation belongs to the open/close decision, before any move.
+    """
+    front = foreground()
+    if front == hwnd:
+        return
+    raise _acquisition_error()(
+        f"the {class_name} window is no longer the foreground window, so the stepped cursor path "
+        f"cannot be continued: the foreground window is {front:#x}. This check never activates a "
+        "window mid-path — bring the application to the front before re-running; the path stops "
+        "here and is not retried"
     )
 
 

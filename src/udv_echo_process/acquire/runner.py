@@ -130,6 +130,7 @@ from udv_echo_process.acquire.plan import (
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
+from udv_echo_process.acquire.ui.strip import new_acquisition_refusal
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -886,7 +887,11 @@ class SweepRunner:
         recording is stored under *this* point's name, far off the signature. Every
         press is bracketed by polled waits, never by a sleep; an unreadable state or a
         strip that has not come back somewhere startable within :data:`RESET_TIMEOUT_S`
-        refuses the point rather than pressing blind.
+        refuses the point rather than pressing blind. A store row that binds no
+        ``New acquisition`` (the two-button row a multiplexed run ends in,
+        :func:`…ui.strip.new_acquisition_refusal`) is refused too: ``Clear and restart`` is
+        bound there, but it would discard a block nobody stored, so the point stops for the
+        operator instead of clearing it.
         """
         try:
             state = self._actuator.strip_state()
@@ -910,6 +915,15 @@ class SweepRunner:
                 f"the strip is in the {state.view.value!r} view, not a startable one "
                 f"({[v.value for v in STARTABLE_VIEWS]}): the point is refused"
             )
+        # The store row a multiplexed run ends in binds `Clear and restart` but no
+        # `New acquisition`, and the block it holds is unsaved: pressing the clear here would
+        # discard the operator's data as a side effect of starting the next point. The record
+        # cycle refuses the same row before its press, and this guard obeys the same clause
+        # rather than becoming the alternate discard path. STORE's three- and four-entry rows
+        # bind the role, so their reset is unchanged.
+        refusal = new_acquisition_refusal(state)
+        if refusal is not None:
+            return refusal
         try:
             self._actuator.press(StripControl.CLEAR_AND_RESTART)
         except Exception as exc:  # noqa: BLE001 - reported as a reason

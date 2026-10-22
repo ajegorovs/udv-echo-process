@@ -80,25 +80,52 @@ it, and it stays *device-pending*.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
-from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode
+from udv_echo_process.acquire.ui.model import Rect, ScreenObservation, UiNode
 
 __all__ = [
     "ANCHOR_ORDINAL",
     "ANCHOR_PREFIX",
+    "CHANNELS_MENU",
+    "DISMISSAL_CLEARANCE_PX",
+    "ENTRY_READS_PER_POSITION",
+    "ENTRY_READ_ALLOWANCE_S",
+    "ENTRY_STEP_PX",
+    "MAX_INTERVAL_S",
+    "MAX_PATH_SECONDS",
+    "MAX_STEPS",
+    "MAX_STEP_PX",
+    "MAX_STEP_WORK_S",
     "MEASURED_BAR",
     "MEASURED_BAR_LENGTHS",
     "MENU_ORDER",
+    "MIN_INTERVAL_S",
     "PARAMETERS_ENTRY",
     "PARAMETERS_MENU",
     "PARAMETERS_POPUP_LEFT",
     "PARAMETERS_POPUP_MIN_H",
+    "ApproachPark",
+    "EntryPlan",
+    "Obstacle",
+    "PathPlan",
     "anchor_button",
     "anchor_clause",
+    "approach_park",
+    "channels_anchor",
+    "channels_anchor_clause",
+    "dismissal_clause",
+    "dismissal_point",
     "entry_buttons",
+    "entry_checked_bound_s",
+    "entry_plan",
     "menubar_buttons",
     "observation_text",
+    "path_checked_bound_s",
+    "step_interval_s",
+    "stepped_path",
 ]
 
 #: The menu bar's buttons, left → right — the reference resolver's own vocabulary
@@ -280,6 +307,95 @@ def anchor_button(observation: ScreenObservation) -> UiNode | None:
     return bar[ANCHOR_ORDINAL] if len(bar) > ANCHOR_ORDINAL else None
 
 
+CHANNELS_MENU = "Channels"
+
+
+def channels_anchor_clause(observation: ScreenObservation) -> str | None:
+    """Why the measured ``Channels`` button cannot be proven on this tree; ``None`` when it can.
+
+    The same rule as :func:`anchor_clause`, applied to a different entry and held to the
+    **measured** bar alone (ten entries). ``MENU_ORDER``'s eleven names include ``UDV mode``,
+    which ``UI-WINDOW-01`` shows this build does not paint: an eleventh painted button means
+    the bar is not the one ``Channels`` was measured on, and taking the same ordinal would be
+    the index fallback this refusal exists to avoid. Every clause names what it read, and a
+    refusal happens before any cursor movement.
+    """
+    band = observation.menu.band
+    bar = menubar_buttons(observation)
+    if band is None:
+        return (
+            "the menubar band did not resolve, so the buttons' containing bar is unstated and "
+            "the measured bar's order cannot be shown; nothing is hovered"
+        )
+    if not bar:
+        return (
+            "the menubar band hosts no button on this tree, so there is no measured bar to "
+            f"read {CHANNELS_MENU!r} from; nothing is hovered"
+        )
+    if len(bar) != len(MEASURED_BAR):
+        return (
+            f"the menubar paints {len(bar)} button(s) where the measured bar (UI-WINDOW-01) "
+            f"paints {len(MEASURED_BAR)}; a bar of another length renames every later entry (an "
+            f"omitted or added entry shifts the rest), so {CHANNELS_MENU!r} at the measured "
+            "position cannot be proven and nothing is hovered"
+        )
+    lefts = [_left_of(node) for node in bar]
+    for node in bar:
+        if node.rect is None or node.rect.width <= 0 or node.rect.height <= 0:
+            return (
+                "a menubar button states no measurable rect, so the anchor's own hover point "
+                "does not exist on this projection and nothing is hovered"
+            )
+    if len(set(lefts)) != len(lefts) or any(left <= 0 for left in lefts):
+        return (
+            f"the menubar's buttons do not state distinct positive screen lefts ({lefts}), so "
+            f"two of them are not separable and which one is {CHANNELS_MENU!r} is ambiguous; "
+            "nothing is hovered"
+        )
+    bound = sorted(observation.menu.named, key=lambda pair: _left_of(pair[1]))
+    if bound:
+        names = [name for name, _node in bound]
+        if len(set(names)) != len(names):
+            return (
+                f"the tree binds more than one menubar button to the same name ({names}), so "
+                f"{CHANNELS_MENU!r} is ambiguous and nothing is hovered"
+            )
+        unknown = [name for name in names if name not in MEASURED_BAR]
+        if unknown:
+            return (
+                f"the tree binds {unknown}, which the measured bar does not paint "
+                f"({list(MEASURED_BAR)}); a caption this rule was not measured against is "
+                "UNKNOWN, not another entry, and nothing is hovered"
+            )
+        known = [name for name in MEASURED_BAR if name in set(names)]
+        if names != known:
+            return (
+                f"the menubar's bound entries {names} do not follow the measured bar's own "
+                f"left -> right order {list(MEASURED_BAR)}, so the binding is not this bar and "
+                f"{CHANNELS_MENU!r} cannot be located; nothing is hovered"
+            )
+        ordinal = MEASURED_BAR.index(CHANNELS_MENU)
+        anchor_node = observation.menu.node_for(CHANNELS_MENU)
+        if anchor_node is not None and anchor_node.hwnd != bar[ordinal].hwnd:
+            return (
+                f"the tree binds {CHANNELS_MENU!r} to a button that is not the measured bar's "
+                f"{ordinal + 1}th entry, so the binding contradicts the bar and nothing is "
+                "hovered"
+            )
+    return None
+
+
+def channels_anchor(observation: ScreenObservation) -> UiNode | None:
+    """The measured ``Channels`` button when proven, and ``None`` when it is not.
+
+    The one place that binding is resolved. A caller that gets ``None`` must read
+    :func:`channels_anchor_clause` and refuse by name rather than try an ordinal.
+    """
+    if channels_anchor_clause(observation) is not None:
+        return None
+    return menubar_buttons(observation)[MEASURED_BAR.index(CHANNELS_MENU)]
+
+
 def entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
     """The overlay's entries: every ``TSp_Button`` lying inside it, **screen order**.
 
@@ -294,6 +410,622 @@ def entry_buttons(overlay: dict, kids: Sequence[dict]) -> list[dict]:
     return sorted(
         (k for k in kids if k["cls"] == "TSp_Button" and _inside(overlay, k)),
         key=lambda k: (k["top"], k["left"]),
+    )
+
+
+#: The clearance a dismissal move keeps from the popup it is leaving and from the menubar whose
+#: hover owns it. It is a *gap*, never a position: the move is computed from the rectangles below.
+DISMISSAL_CLEARANCE_PX = 12
+
+
+def _bounds(client: Rect, screen: Rect) -> Rect | None:
+    """The pixels a dismissal move may occupy: ``client`` ∩ ``screen``, or ``None`` if empty."""
+    box = Rect(
+        left=max(client.left, screen.left),
+        top=max(client.top, screen.top),
+        right=min(client.right, screen.right),
+        bottom=min(client.bottom, screen.bottom),
+    )
+    return box if box.right > box.left and box.bottom > box.top else None
+
+
+def _clamp(value: int, low: int, high: int) -> int:
+    """``value`` brought into ``[low, high]`` — the bounds are already known to be non-empty."""
+    return max(low, min(value, high))
+
+
+def _clears(point: tuple[int, int], popup: Rect, band: Rect, bounds: Rect) -> bool:
+    """True when ``point`` is inside ``bounds`` and clear of the popup **and** the menubar.
+
+    Edge-inclusive, like the cursor-clip test: a point on the boundary is inside the bounds and
+    touching the clearance box is *not* clear of it. The gap is applied on both sides, so the move
+    is never a pixel that merely rounds outside the painted rectangle.
+    """
+    x, y = point
+    if not (bounds.left <= x < bounds.right and bounds.top <= y < bounds.bottom):
+        return False
+    for rect in (popup, band):
+        if (
+            rect.left - DISMISSAL_CLEARANCE_PX
+            <= x
+            <= rect.right + DISMISSAL_CLEARANCE_PX
+            and rect.top - DISMISSAL_CLEARANCE_PX
+            <= y
+            <= rect.bottom + DISMISSAL_CLEARANCE_PX
+        ):
+            return False
+    return True
+
+
+def _dismissal_candidates(popup: Rect, band: Rect, bounds: Rect):
+    """Points derived from the popup's own rect, in preference order: below, right, left, above.
+
+    Each is clamped into the client/screen intersection first, so a popup flush against an edge
+    still yields a reachable point instead of an off-screen one. The candidate is then held to
+    :func:`_clears`; nothing here is a literal position. A recorded literal goes stale with the
+    window, so the point is recomputed from this observation every time.
+    """
+    cx, cy = popup.centre
+    yield (
+        _clamp(cx, bounds.left, bounds.right - 1),
+        _clamp(
+            popup.bottom + DISMISSAL_CLEARANCE_PX + 1, bounds.top, bounds.bottom - 1
+        ),
+    )
+    yield (
+        _clamp(popup.right + DISMISSAL_CLEARANCE_PX + 1, bounds.left, bounds.right - 1),
+        _clamp(cy, bounds.top, bounds.bottom - 1),
+    )
+    yield (
+        _clamp(popup.left - DISMISSAL_CLEARANCE_PX - 1, bounds.left, bounds.right - 1),
+        _clamp(cy, bounds.top, bounds.bottom - 1),
+    )
+    yield (
+        _clamp(cx, bounds.left, bounds.right - 1),
+        _clamp(popup.top - DISMISSAL_CLEARANCE_PX - 1, bounds.top, bounds.bottom - 1),
+    )
+
+
+def dismissal_point(
+    *,
+    popup: Rect,
+    band: Rect,
+    client: Rect,
+    screen: Rect,
+) -> tuple[int, int] | None:
+    """A real-cursor point that dismisses the open popup, or ``None`` when none fits.
+
+    **What is measured, and what is only hypothesised.** Two audits of the archive's behavioural
+    probe (``recon/35_capture_probe.py``) agree that it establishes the *opening* gesture — a
+    hover on the menubar button, ``SetCursorPos`` then one relative move — and that a popup **entry
+    press consumes the popup** while performing that entry's action. It contains **no generic
+    close**, so it does not verify that moving the cursor off an arbitrary popup dismisses it. A
+    single move off the popup was then tried live (``channels-hover-lifecycle-live-01``): the point
+    was read back exactly and the popup stayed up, while the operator's own physical move closed
+    it. So the point below is *where a dismissal is aimed*, derived from the live rectangles. One
+    live prototype (``channels-stepped-path-live-01``) then walked :func:`stepped_path` to this point
+    (13 positions of <= 40 px) and observed ``ABSENT`` on both of its paths. That supports the
+    path-versus-jump difference for one geometry; it does not establish the OS mechanism, and only
+    an observed ``ABSENT`` read — never this point or a landed path — closes a popup.
+
+    The aiming rule itself is structural and does not depend on the hypothesis: the point is
+    **outside the popup and outside the menubar** (a point still on the bar keeps the hover) while
+    staying **inside the application's client area and the screen** (a point outside either is
+    clamped or refused, and looks like a move that did not take). A caller that reports this point
+    as a dismissal must still observe ``ABSENT``; the point alone proves nothing.
+
+    Nothing here is a constant position: the point is derived from the rectangles the live
+    observation states. A popup that leaves no such pixel — it covers the client, or the bands do —
+    is refused by :func:`dismissal_clause` rather than approximated.
+    """
+    bounds = _bounds(client, screen)
+    if bounds is None:
+        return None
+    return next(
+        (
+            point
+            for point in _dismissal_candidates(popup, band, bounds)
+            if _clears(point, popup, band, bounds)
+        ),
+        None,
+    )
+
+
+def dismissal_clause(
+    *,
+    popup: Rect,
+    band: Rect,
+    client: Rect,
+    screen: Rect,
+) -> str | None:
+    """Why no dismissal point exists on this geometry; ``None`` when one does.
+
+    The clause names every rectangle it read, because it is what a live session has to act on:
+    "nothing was moved" is not a diagnosis, while "the popup's clearance box and the menubar leave
+    no pixel inside the client and screen" is.
+    """
+    if (
+        dismissal_point(popup=popup, band=band, client=client, screen=screen)
+        is not None
+    ):
+        return None
+    bounds = _bounds(client, screen)
+    if bounds is None:
+        return (
+            "no point to move the cursor to for dismissing the popup: the client rectangle "
+            f"{client.as_tuple()} and the screen rectangle {screen.as_tuple()} do not overlap, "
+            "so there is nowhere inside the application that a real-cursor move could land; "
+            "nothing is moved"
+        )
+    return (
+        "no point to move the cursor to for dismissing the popup: the popup "
+        f"{popup.as_tuple()} and the menubar band {band.as_tuple()} leave no pixel inside the "
+        f"client ∩ screen bounds {bounds.as_tuple()} that is at least "
+        f"{DISMISSAL_CLEARANCE_PX} px clear of both, so the one gesture measured to dismiss this "
+        "popup (a real-cursor move off it) cannot be aimed anywhere; nothing is moved and the "
+        "operator has to close it"
+    )
+
+
+#: The resolution of a **stepped entry** into a menubar anchor. The measured entry run
+#: (``channels-stepped-entry-live-03``) walked the anchor's own column in 4 px positions and
+#: first entered the button at its fourth position; a single warp to the same point opened
+#: nothing. This is finer than :data:`MAX_STEP_PX` because the run is about *entering* a
+#: control, not crossing a screen.
+ENTRY_STEP_PX = 4
+
+#: What one entry position costs beside the production step work: exactly one caller popup read.
+ENTRY_READS_PER_POSITION = 1
+
+#: The bounded allowance for that read. The walker's checked bound adds it per position, so an
+#: elapsed time is never compared against the interval budget alone.
+ENTRY_READ_ALLOWANCE_S = 0.05
+
+
+@dataclass(frozen=True)
+class ApproachPark:
+    """A derived park below the menubar band, or the clause saying why none exists."""
+
+    point: tuple[int, int] | None
+    clause: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.point is not None and self.clause is None
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "point": list(self.point) if self.point is not None else None,
+            "clause": self.clause,
+        }
+
+
+def approach_park(
+    *,
+    anchor: Rect,
+    band: Rect,
+    client: Rect,
+    screen: Rect,
+) -> ApproachPark:
+    """The one point a stepped entry starts from: the anchor's column, below the whole band.
+
+    The entry gesture is a **column**, never a hover recipe: the pointer is parked one pixel
+    below the band's clearance box on the anchor's own centre column, then walked straight up
+    into the anchor with consecutive small ``SetCursorPos`` positions. Both coordinates are
+    derived from the observation — the anchor, the whole menubar band, the client rect and the
+    screen — and the park is never a literal.
+
+    The ``y`` is derived from the band, not the anchor: a point just below the anchor but still
+    inside the band would sit on the bar and could carry another entry's hover. The ``x`` is the
+    anchor's centre because the vertical run must not leave the anchor's column and enter a
+    neighbour. A geometry with no such pixel is refused by name, before anything moves.
+    """
+    bounds = _bounds(client, screen)
+    if bounds is None:
+        return ApproachPark(
+            point=None,
+            clause=(
+                "no approach park exists: the client rectangle "
+                f"{client.as_tuple()} and the screen rectangle {screen.as_tuple()} do not "
+                "overlap, so no real-cursor point could be shown to land on the application; "
+                "nothing is moved"
+            ),
+        )
+    x = _clamp(anchor.centre[0], bounds.left, bounds.right - 1)
+    wanted_y = band.bottom + DISMISSAL_CLEARANCE_PX + 1
+    y = _clamp(wanted_y, bounds.top, bounds.bottom - 1)
+    point = (x, y)
+    if not bounds.contains_point(point):
+        return ApproachPark(
+            point=None,
+            clause=(
+                f"no approach park exists: the derived point {point} lies outside the walkable "
+                f"bounds {bounds.as_tuple()} (client ∩ screen); nothing is moved"
+            ),
+        )
+    if y < wanted_y:
+        return ApproachPark(
+            point=None,
+            clause=(
+                "no approach park exists: the park has to sit at least "
+                f"{DISMISSAL_CLEARANCE_PX} px below the menubar band {band.as_tuple()} (y >= "
+                f"{wanted_y}), and the walkable bounds {bounds.as_tuple()} only reach y {y}, so "
+                "every candidate still lies on the bar or inside its clearance and could carry "
+                "another entry's hover; nothing is moved"
+            ),
+        )
+    if anchor.contains_point(point):
+        return ApproachPark(
+            point=None,
+            clause=(
+                f"no approach park exists: the derived point {point} lies inside the anchor "
+                f"{anchor.as_tuple()}, so it is not a park; nothing is moved"
+            ),
+        )
+    return ApproachPark(point=point)
+
+
+@dataclass(frozen=True)
+class EntryPlan:
+    """A derived park **and** entry path, or the reason they cannot be derived."""
+
+    plan: PathPlan | None
+    park: ApproachPark
+    refusal: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return (
+            self.refusal is None
+            and self.plan is not None
+            and getattr(self.plan, "ok", False)
+        )
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "park": self.park.as_dict(),
+            "plan": self.plan.as_dict() if self.plan is not None else None,
+            "refusal": self.refusal,
+        }
+
+
+def entry_plan(
+    *,
+    anchor: Rect,
+    band: Rect,
+    obstacles: Sequence[Obstacle] = (),
+    client: Rect,
+    screen: Rect,
+    step_px: int = ENTRY_STEP_PX,
+    max_seconds: float | None = None,
+) -> EntryPlan:
+    """Derive the approach park and the vertical path from it into the anchor's centre.
+
+    Verticality is checked on the **result**, not assumed from the inputs: every planned
+    position must keep the park's column and every step must be at most ``step_px`` px tall. A
+    planner that returned a diagonal is refused rather than walked, because a diagonal run could
+    leave the anchor's column and enter another entry's hover band. ``obstacles`` are the other
+    menubar buttons, so :func:`stepped_path` refuses a position inside one before anything moves.
+    """
+    if max_seconds is None:
+        max_seconds = MAX_PATH_SECONDS
+    park = approach_park(anchor=anchor, band=band, client=client, screen=screen)
+    if not park.ok:
+        return EntryPlan(plan=None, park=park, refusal=park.clause)
+    bounds = _bounds(client, screen)
+    assert bounds is not None  # approach_park already proved it
+    goal = anchor.centre
+    if not anchor.contains_point(goal):
+        return EntryPlan(
+            plan=None,
+            park=park,
+            refusal=(
+                f"the anchor's own centre {goal} is not inside its rect "
+                f"{anchor.as_tuple()}; nothing is moved"
+            ),
+        )
+    plan = stepped_path(
+        start=park.point,
+        goal=goal,
+        bounds=bounds,
+        obstacles=obstacles,
+        step_px=step_px,
+        max_seconds=max_seconds,
+    )
+    if not plan.ok:
+        return EntryPlan(plan=plan, park=park, refusal=plan.refusal)
+    column = park.point[0]
+    previous = park.point
+    for index, point in enumerate(plan.points, start=1):
+        if point[0] != column:
+            return EntryPlan(
+                plan=plan,
+                park=park,
+                refusal=(
+                    f"position {index} of {len(plan.points)} is {point}, which leaves the "
+                    f"park's column {column}: the entry run must stay on the anchor's own "
+                    "column so it cannot carry another menubar entry's hover; nothing is moved"
+                ),
+            )
+        if abs(point[1] - previous[1]) > step_px:
+            return EntryPlan(
+                plan=plan,
+                park=park,
+                refusal=(
+                    f"position {index} of {len(plan.points)} moves "
+                    f"{abs(point[1] - previous[1])} px vertically from {previous}, beyond the "
+                    f"{step_px} px step: a larger step is the warp this run exists to "
+                    "distinguish; nothing is moved"
+                ),
+            )
+        previous = point
+    return EntryPlan(plan=plan, park=park)
+
+
+def entry_checked_bound_s(steps: int, *, max_seconds: float | None = None) -> float:
+    """The entry walker's checked bound: the interval budget plus per-position work and reads.
+
+    Production work per position is one ``SetCursorPos``, one read-back and one guard
+    (:data:`MAX_STEP_WORK_S`) plus one caller popup read (:data:`ENTRY_READ_ALLOWANCE_S`). It is
+    a checked bound, not a deadline: the walker compares elapsed time against it before each
+    move and records the **actual** elapsed time beside the planned interval budget.
+    """
+    if max_seconds is None:
+        max_seconds = MAX_PATH_SECONDS
+    return round(
+        max(0, steps) * (MAX_STEP_WORK_S + ENTRY_READ_ALLOWANCE_S) + max_seconds, 4
+    )
+
+
+# ------------------------------------------------------------------ the bounded stepped path
+
+#: One ``SetCursorPos`` step never travels further than this. It is the resolution of the
+#: gesture: the live prototype (``channels-stepped-path-live-01``) walked 13 positions of
+#: <= 40 px and the popup was observed ``ABSENT`` at the end of each path, where one warp to
+#: the same point had not closed it. A bigger step is closer to that warp.
+MAX_STEP_PX = 40
+
+#: Hard position count for one path — a resource bound, derived from the 2 s budget below and a
+#: 20 ms floor interval; a geometry that needs more is refused rather than walked.
+MAX_STEPS = 100
+
+#: The planned **interval budget** for one path: the intervals between consecutive positions, derived
+#: by :func:`step_interval_s`. It is deliberately *not* a wall-clock deadline — each step's
+#: ``SetCursorPos``, read-back and guard are not preemptible, so the walker checks the elapsed time
+#: against :func:`path_checked_bound_s` before every move rather than pretending to preempt the OS.
+MAX_PATH_SECONDS = 2.0
+
+#: A bounded per-position allowance for the work a step does besides its interval (one
+#: ``SetCursorPos``, one read-back, one foreground check). It is what keeps the walker's checked
+#: bound an honest one: the bound is the interval budget plus this allowance per position.
+MAX_STEP_WORK_S = 0.05
+
+
+#: Interval between consecutive positions. The upper bound keeps the path visibly continuous;
+#: the lower bound keeps a 100-position path inside the budget.
+MAX_INTERVAL_S = 0.15
+MIN_INTERVAL_S = 0.02
+
+
+@dataclass(frozen=True)
+class Obstacle:
+    """One rectangle a path point must not land inside — a *different* menubar entry."""
+
+    name: str
+    rect: Rect
+
+
+@dataclass(frozen=True)
+class PathPlan:
+    """A derived stepped path, or the reason one cannot be derived.
+
+    ``points`` are the screen positions **after** ``start``, in order, ending exactly at ``goal``.
+    ``interval_s`` is the pause between them; ``total_s`` is the **planned interval budget**
+    (``len(points) * interval_s``), not an elapsed-time promise — the walker's checked bound adds
+    one :data:`MAX_STEP_WORK_S` per position and records what was actually elapsed. A plan with
+    ``refusal`` set was never walked.
+    """
+
+    start: tuple[int, int]
+    goal: tuple[int, int]
+    points: tuple[tuple[int, int], ...]
+    interval_s: float
+    distance_px: float
+    step_px: int
+    refusal: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.refusal is None and bool(self.points)
+
+    @property
+    def total_s(self) -> float:
+        return round(len(self.points) * self.interval_s, 4)
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "start": list(self.start),
+            "goal": list(self.goal),
+            "points": [list(point) for point in self.points],
+            "steps": len(self.points),
+            "distance_px": round(self.distance_px, 2),
+            "step_px": self.step_px,
+            "interval_s": round(self.interval_s, 4),
+            "total_s": self.total_s,
+            "refusal": self.refusal,
+        }
+
+
+def step_interval_s(steps: int, *, max_seconds: float = MAX_PATH_SECONDS) -> float:
+    """The interval derived for ``steps`` positions inside ``max_seconds`` — or ``0.0`` if impossible.
+
+    The budget is shared equally: each position gets ``max_seconds / steps`` and that whole share
+    is the interval, capped at :data:`MAX_INTERVAL_S`. ``0.0`` means the share is below
+    :data:`MIN_INTERVAL_S`, i.e. this many steps cannot be walked inside the bound at a rate that
+    is still a path rather than a warp — the caller refuses instead of enlarging the step.
+    """
+    if steps <= 0:
+        return 0.0
+    share = max_seconds / steps
+    interval = min(MAX_INTERVAL_S, share)
+    return interval if interval >= MIN_INTERVAL_S else 0.0
+
+
+def path_checked_bound_s(steps: int, *, max_seconds: float = MAX_PATH_SECONDS) -> float:
+    """The walker's checked bound for ``steps`` positions: the interval budget plus per-step work.
+
+    This is the value :func:`…win32.cursor._move_real_cursor_stepped` compares elapsed time
+    against **before each move**. It is a checked bound, not a hard deadline: a blocking OS call
+    already in progress cannot be interrupted, so the walker can only refuse to start the next
+    step once the bound is exceeded — and it records the actual elapsed time beside the planned
+    interval budget.
+    """
+    return round(max(0, steps) * MAX_STEP_WORK_S + max_seconds, 4)
+
+
+def stepped_path(
+    *,
+    start: tuple[int, int],
+    goal: tuple[int, int],
+    bounds: Rect,
+    obstacles: Sequence[Obstacle] = (),
+    step_px: int = MAX_STEP_PX,
+    max_seconds: float = MAX_PATH_SECONDS,
+) -> PathPlan:
+    """The bounded stepped path from ``start`` to ``goal``, or a refusal naming why not.
+
+    Pure: no window, no cursor, no clock. The rules, in order:
+
+    - ``step_px`` must be a positive integer no larger than :data:`MAX_STEP_PX`;
+    - ``bounds`` must be non-empty and must contain both ends;
+    - the number of positions is ``ceil(distance / step_px)``, at least one, at most
+      :data:`MAX_STEPS`; each is the linear interpolation and the last is ``goal`` exactly;
+    - an intermediate position inside an :class:`Obstacle` is refused; index 0 is the **start**,
+      where the pointer already is;
+    - the interval is :func:`step_interval_s`; ``0.0`` means the path cannot fit the budget.
+
+    Clearance of the goal from the popup and the menubar is not re-derived here: the caller
+    passes :func:`dismissal_point`'s own answer, which is the owning rule for it.
+    """
+    if not isinstance(step_px, int) or step_px <= 0 or step_px > MAX_STEP_PX:
+        return PathPlan(
+            start=start,
+            goal=goal,
+            points=(),
+            interval_s=0.0,
+            distance_px=0.0,
+            step_px=step_px,
+            refusal=(
+                f"the requested step of {step_px!r} px is not an integer in 1..{MAX_STEP_PX}: this "
+                f"path exists to walk *consecutive small* positions, so a step larger than "
+                f"{MAX_STEP_PX} px is refused rather than walked"
+            ),
+        )
+    if bounds.right <= bounds.left or bounds.bottom <= bounds.top:
+        return PathPlan(
+            start=start,
+            goal=goal,
+            points=(),
+            interval_s=0.0,
+            distance_px=0.0,
+            step_px=step_px,
+            refusal=(
+                f"the walkable bounds {bounds.as_tuple()} are empty, so no position on a path "
+                "could be shown to lie on the application's screen and client area; nothing is "
+                "moved"
+            ),
+        )
+    for label, point in (("start", start), ("goal", goal)):
+        if not bounds.contains_point(point):
+            return PathPlan(
+                start=start,
+                goal=goal,
+                points=(),
+                interval_s=0.0,
+                distance_px=0.0,
+                step_px=step_px,
+                refusal=(
+                    f"the path's {label} {point} lies outside the walkable bounds "
+                    f"{bounds.as_tuple()} (client ∩ screen), so the OS would clamp a step there "
+                    "and the result would be read as a dismissal that did not work; nothing is "
+                    "moved"
+                ),
+            )
+
+    dx, dy = goal[0] - start[0], goal[1] - start[1]
+    distance = math.hypot(dx, dy)
+    steps = max(1, math.ceil(distance / step_px))
+    if steps > MAX_STEPS:
+        return PathPlan(
+            start=start,
+            goal=goal,
+            points=(),
+            interval_s=0.0,
+            distance_px=distance,
+            step_px=step_px,
+            refusal=(
+                f"the path from {start} to {goal} is {distance:.1f} px and needs {steps} "
+                f"positions at <= {step_px} px, beyond the {MAX_STEPS}-position bound; a bigger "
+                "step would stop being the gesture under test, so nothing is moved"
+            ),
+        )
+    interval = step_interval_s(steps, max_seconds=max_seconds)
+    if interval == 0.0:
+        return PathPlan(
+            start=start,
+            goal=goal,
+            points=(),
+            interval_s=0.0,
+            distance_px=distance,
+            step_px=step_px,
+            refusal=(
+                f"{steps} positions cannot be spaced inside the {max_seconds:.1f} s path bound at "
+                f">= {MIN_INTERVAL_S:.2f} s apart (a share of "
+                f"{max_seconds / steps:.4f} s each); a faster path is a warp again, so nothing is "
+                "moved"
+            ),
+        )
+
+    points: list[tuple[int, int]] = []
+    for index in range(1, steps + 1):
+        if index == steps:
+            points.append((int(goal[0]), int(goal[1])))
+            continue
+        points.append(
+            (
+                round(start[0] + dx * index / steps),
+                round(start[1] + dy * index / steps),
+            )
+        )
+
+    for index, point in enumerate(points, start=1):
+        for obstacle in obstacles:
+            if obstacle.rect.contains_point(point):
+                return PathPlan(
+                    start=start,
+                    goal=goal,
+                    points=(),
+                    interval_s=interval,
+                    distance_px=distance,
+                    step_px=step_px,
+                    refusal=(
+                        f"position {index} of {steps} on the path from {start} to {goal} is "
+                        f"{point}, inside the menubar entry {obstacle.name!r} at "
+                        f"{obstacle.rect.as_tuple()}: stepping through another entry can open "
+                        "that entry's menu, so this path is refused before anything is moved"
+                    ),
+                )
+
+    return PathPlan(
+        start=start,
+        goal=goal,
+        points=tuple(points),
+        interval_s=interval,
+        distance_px=distance,
+        step_px=step_px,
     )
 
 

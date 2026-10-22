@@ -214,8 +214,8 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
    the status-bar `Profile` counter restarts **per block** (1948 → 420), not
    cumulatively.
 3. **Wait the point's duration `T`.** Seconds define the point (§8).
-4. **`Stop`** — the panel grows to the store view (413x123) and a
-   `TSp_Sliding_Bar` child appears.
+4. **`Stop`** — the panel grows to the store view (413x123 here; `269x123` in
+   the two-button row of §5) and a `TSp_Sliding_Bar` child appears.
 5. **`Do store`** on the strip opens the **Store dialog**. It is not a top-level
    window — it is a **child panel** (e.g. `(676,391) 584x330`), which is why an
    `EnumWindows` check reports "nothing happened":
@@ -256,10 +256,21 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
     The `.BDD` op-parameter block (words 0–95) *is* the sweep log; the status-bar
     `Profile` counter is not trustworthy for pacing.
 
+**The `Stop` gesture above is the single-channel recipe, and MPX does not inherit it.** During a
+multiplexed acquisition there is no `Stop`: `Clear and restart` and the Channels menu's
+disable entry are the only operator routes out (§12.13). A manual `Record` in an MPX idle row does
+not raise `Stop` either, and what that idle row *is* depends on the roll-over toggle at enable time
+(§12.13): roll-over **on** leaves `Pause` / `Record` / `Clear and restart`; roll-over **off**
+auto-arms and records on enable. No tree read of the active MPX row exists, so the MPX stop gesture
+is unresolved (ledger B21) and this chain's step 4 must not be posted there (§5). What *was*
+verified for MPX is the store half — step 5 onward — and it was verified with the recording already
+completed by the operator or by `record-multiplexed` (§§12.6–12.7).
+
 **Strip buttons outside the record cycle:**
 
 - `New acquisition` — dismisses the store prompt and returns to the recording
-  view; it can raise a data-loss warning.
+  view; it can raise a data-loss warning. It is **absent** from the two-button
+  store row a multiplexed run ends in (§5), where asking for it is a refusal.
 - `Remove current block` — deletes the selected block, guarded by
   `WARNING — All data contained in the current block removed from memory`, whose
   `[Cancel]` is the left of its button pair.
@@ -268,29 +279,112 @@ a rejection, not a crash, and it is answered like every other overlay (§6).
   two buttons for **~3–4 s** while the buffer is rebuilt, so the loop must
   **poll until the `Record` button is present again** before pressing `Record`.
   Pressed from the *store* view it produced no visible change here, so its effect
-  is view-dependent: press it in the no-slider view, then poll.
+  is view-dependent: press it in the no-slider view, then poll. In the two-button
+  store row it is the **right-hand** button, and no press on that row has been
+  measured — only the position/role binding is (§5).
 
 ---
 
 ## 5. The strip's view states — recognise structurally, press by order
 
 The strip is a **draggable floating panel**, and its own rectangle changes with
-the view (`352x40` → `98x40` → `413x123`). Locate it **structurally** (the parent
-of the recording widgets), never by remembered coordinates, and re-resolve after
-every press.
+the view (`352x40` → `98x40` → `413x123`, and `269x123` for the two-button store
+row measured on 2026-10-20). Locate it **structurally** (the parent of the
+recording widgets), never by remembered coordinates, and re-resolve after every
+press.
 
 | view | how to recognise it | buttons, left → right |
 |---|---|---|
-| recording | 1 top-row button, no slider | `[Stop]` |
-| stopped, no data | fewer than 3 buttons | `[Record]` |
+| recording | 1 top-row button, no slider | `[Stop]` — *single-channel only; in an MPX configuration the same structure was operator-reported as `Clear and restart`, so this row binds nothing there (below)* |
+| stopped, no data | fewer than 3 top-row buttons, no slider | `[Record]` — *live-reported; only the 1-button row is bound, so 0 or 2 buttons classify `unknown` and nothing is pressed* |
 | **stopped with data** | 3 top-row buttons, **no** `TSp_Sliding_Bar` child | `[Pause] [Record] [Clear and restart]` |
-| **store view** (after `Stop`) | 3 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart] [Remove current block]` |
+| **store view** (after `Stop`) | 3 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart]` |
+| store view, four buttons | 4 top-row buttons **+** a `TSp_Sliding_Bar` child | `[New acquisition] [Do store] [Clear and restart] [Remove current block]` |
+| **store view, after a multiplexed run** | **2** top-row buttons **+** a `TSp_Sliding_Bar` child, plus the block/channel `TComboBox` pair | `[Do store] [Clear and restart]` |
+| **store view, after a repeated multiplexed run** | **3** top-row buttons **+** a `TSp_Sliding_Bar` child on a `477x123` panel, painted widths `91 / 138 / 198`, plus the block/channel `TComboBox` pair | `[Do store] [Clear and restart] [Remove current sequence]` — *accepted only when that exact measured geometry selects `StripRowVariant.REPEATED_MPX_COMPLETION`; a three-button row without it stays the legacy row above and is refused* |
+| stopped with data, four buttons | 4 top-row buttons, **no** slider | **nothing — the roles are unresolved**, and the row is refused (below) |
+
+**The row's length is part of the binding, not a detail of it.** `Do store` is
+slot 0 in the two-button row and in the repeated-run row below, and slot 1 in both
+legacy longer store rows, so a press
+keyed on a fixed position — or on a width — lands on `New acquisition` or on a
+neighbour. The count is taken from the **visible** top-row buttons only.
+
+**The two-button store row is where a multiplexed run ends** *(measured
+2026-10-20)*. A read-only control-tree capture on the instrument (`UDOP
+DOP3010.43`, multiplexer sequence probe) shows the strip panel built `269x123`
+holding two visible top-row `TSp_Button` widgets (91 px and 138 px wide — again
+too close to tell apart by width), the visible `TSp_Sliding_Bar`, and two
+`TComboBox` children for block and channel; two further buttons are painted
+*behind* the row at the same height with `visible: false` and are not part of it.
+The slider had already classified that structure as the store view, so the view
+was reachable while this table carried no row for its length — a `Do store` press
+out of exactly the state an MPX run ends in **raised instead of committing the
+store**. The two roles are `Do store` (left) then `Clear and restart` (right),
+and their provenance is narrow: they were **read by hand off that captured frame,
+not landed by a press** — the capture fixes which position means which role, and
+says nothing about how the instrument answers it. `New acquisition` and
+`Remove current block` are absent from this row by measurement, not by choice;
+asking for either here is a refusal.
+
+**A repeated multiplexed run was measured to end in a three-button store row**
+*(2026-10-21, read-only tree capture of the same instant as
+`outputs/live/top-level-windows-full-a.png`)*. The panel is `477x123` with three
+painted `TSp_Button` widths of 91, 138 and 198 px, the visible slider and the
+block/channel `TComboBox` pair; the frame paints `Do store` / `Clear and restart` /
+`Remove current sequence` across them, and the tree's button text is empty. It is
+recorded as its own variant, `StripRowVariant.REPEATED_MPX_COMPLETION`, selected
+by **exact** match on that measured signature — panel size and all three widths.
+`Remove current sequence` is its own role and not `Remove current block`: the two
+captions were never compared on one screen, and no command presses either.
+
+**What the store paths accept is then exactly two measured rows, each on its own
+evidence.** `store-completed` and `record-multiplexed` share one predicate
+(`store_completed.is_completed_row`) over `_COMPLETED_ROWS`: the two-button row
+above and the repeated-run three-button row above. Neither is accepted by its
+length or by an inferred caption: the three-button row is accepted only when its
+measured geometry selected `REPEATED_MPX_COMPLETION`, so the legacy
+`New acquisition` / `Do store` / `Clear and restart` store row — `Do store` in slot
+1 — and any unmeasured three-button row are refused by name with nothing pressed,
+as are every four-button row, a non-store view and a missing slider. `Do store` is
+slot 0 in both accepted rows, which is the only fact the press depends on.
+
+**The one-button row means `Stop` on a single channel and is unresolved in MPX.** With rolling MPX
+enabled and roll-over **on** (the ready row), the operator reported on 2026-10-21 that a manual
+`Record` leaves a sole `Clear and restart` button — not `Stop` — and the operator's route out of an
+active MPX acquisition is `Clear and restart` or the Channels menu's disable entry, never `Stop`
+(§12.13). That is an *operator report* plus a §12.7 one-button active-row observation, not a role
+read, so the role in that state is unknown (`acquisition-ui-model.md` ledger B21). This is not the captured two-button
+store row above — that capture is the naturally completed MPX store view, while this report is the row during an
+active acquisition, so the two observations are separate. Because the two readings are
+structurally identical — one top-row button, no slider — the classifier cannot separate them, and
+this table's `[Stop]` must not be applied to an MPX configuration: pressing `STOP` there would
+clear the block. The `STOP` binding stays **single-channel**; for MPX the only rows this document
+binds from evidence are the two completed store rows above (two-button, and the repeated-run
+three-button row by its measured signature), and the 1-button MPX state has no binding of its
+own, so nothing may be posted from it by generic classification.
+
+**The four-button, no-slider row presses nothing.** `UI-STRIP-01`
+(`ui-crops/run-controls.png`) paints `Pause` / `Record` / `Clear and restart`
+for the *three*-button row, while `UI-STRIP-02`
+(`ui-crops/overlay-record-extra-block.png`, the grown state) paints
+`New acquisition` / `Do store` / `Clear and restart` / `Remove current block`
+for this one: the third slot is demonstrably the same button in both frames, the
+first two are not. No tree of that state exists, so the row has **no binding at
+all** — it classifies as its own ambiguous view (`StripView.AMBIGUOUS` in
+`acquire/actuator.py`), `strip_controls` / `press_index` refuse it by name, and a
+press is refused *before* anything is posted. `device-verification.md` V4 is
+where a live tree settles it (ledger B10).
 
 - **Identify buttons by their ORDER in the view, never by width.** 134 px vs
-  138 px was the difference that once produced a data-loss warning.
+  138 px was the difference that once produced a data-loss warning, and the
+  two-button row's 91 vs 138 is no better.
 - The strip's child list is **not** the three buttons you can see — it is up to
-  ten windows, including state-specific buttons, the store slider, two combos
-  and two never-painted buttons below the panel's rect.
+  ten windows, including state-specific buttons, the store slider, two combos,
+  and buttons the panel never paints. The row is counted from the **visible**
+  children: the 2026-10-20 capture carries two buttons behind the row at the
+  same height with `visible: false`, and counting them would make that row four
+  wide (an earlier store view carried two below the panel's rect instead).
 - The buttons are real, enabled, visible `TSp_Button` child windows
   (`IsWindowEnabled` true, nothing covering them — `WindowFromPoint` at each
   centre returns the button), so an unreachable-looking control is a *recipe*
@@ -341,6 +435,22 @@ every press.
   instead of `Operating parameters` and raised a modal panel. Keep
   `Default parameters` off the critical path. Never `WM_CLOSE` an open popup —
   that wedges the menu loop until restart. `ESC` does nothing on these panels.
+  The dismissal is a **bounded stepped path** of the **real** cursor off the popup,
+  not one warp: `ui.menu.stepped_path` derives every position from the actual
+  cursor position to a point outside the popup and off the menubar, inside the
+  client and screen (<= 40 px per step, <= 100 positions, a 2 s *interval budget*,
+  never through another menubar entry), and `_move_real_cursor_stepped` walks it with one
+  `SetCursorPos` per step and a read-back of each landing. The 2 s is not a hard OS deadline:
+  the walker checks elapsed time before every move against that budget plus a bounded
+  per-position work allowance (`MENU.MAX_STEP_WORK_S`), records the actual elapsed time beside
+  the planned interval sum, and never activates a window mid-path (each step only *checks* the
+  foreground, through the existing accessor). Only a bounded ABSENT
+  read closes it. **One live prototype** (`channels-stepped-path-live-01`, one
+  build and geometry) observed ABSENT on both of its stepped paths where a single
+  warp to the same point had stayed up — that supports the path-versus-jump
+  difference, does not establish the OS mechanism, and is not production-live
+  until the integrated opener has run. Posted messages do not dismiss it, and the
+  saved cursor position is not restored while the popup is up.
 - **Presence is not visibility: the `Parameters` overlay is pre-created and
   hidden.** The panel is in the control tree from startup with a caption-less
   `TSp_Panel` rect of `(169, 55, 401, 250)` and `IsWindowVisible == False`, and the
@@ -574,6 +684,11 @@ from `word 10 + word 19` alone.
 6. **The external-trigger / `Auto record` path is unexercised.** It remains the
    better design — it takes the strip out of the critical path entirely, and one
    arming can produce several files — but only the rig can exercise it.
+7. **The earlier 25-requested / 50-decoded profile gap remains unexplained.** On
+   2026-10-20 the operator stated a 25-profile request, but the saved block decoded
+   to 50 profiles per channel. The separate 2026-10-21 run requested **50** and
+   decoded to **50** (§12.6); it does not reproduce or explain the earlier mismatch.
+   No conversion factor or multiplicity rule is inferred.
 
 ---
 
@@ -647,6 +762,974 @@ whole chain can be re-run cheaply. **Production points will be 10–20 s.** Noth
 in the driver may depend on the short duration: a point stays a duration in
 seconds (§8), the cap assertion stays `T ≤ cap × period`, and the period stays
 whatever the instrument reports for that configuration.
+
+### 12.6 Acceptance, 2026-10-21 — the MPX store path, scoped
+
+One live acceptance covered the **store half** of the chain on the instrument, and only that half.
+It is a record of one run, not a general MPX result, and it changes no rule in §§1–11 or the staging
+in §12.1:
+
+- **The recording was the operator's, in manual mode.** Rolling MPX was *enabled and idle* — the
+  enabled row the operator left it in. Which entry path produced it (roll-over on: enable leaves the
+  ready row; roll-over off: enable auto-arms) was not recorded, and the toggle state at that enable
+  is unmeasured (§12.13). Nothing here establishes the armed or rolling recording path.
+- **The store was automated.** The recording had ended naturally in the two-button `Do store` /
+  `Clear and restart` store row. A store-only probe — it starts no recording — pressed `Do store` on
+  the strip **once**, then the Store dialog's own `Do store` **once**. One press each, and the
+  application raised **no** warning.
+- **Stored artifact:** `mpx12-50profiles-manual-01.BDD`, **41,526 B**, SHA-256
+  `f9124cd24f886a923bb31f2fcc7ba51056de5743d9487ea8022d6bbde90379f0` (it was written under the
+  repository's generated-output tree, not committed). It is a local output and **not** a fixture:
+  the name and digest record what was written, they do not make the bytes available from this
+  repository.
+- **The decode is independent of the store path**, taken with the public `uv run udv-inspect`:
+  sequential channels **1** and **2**, axial velocity, **50 profiles × 80 gates each**, 1.98 s.
+  `WordFacts`: gates 80, resolution 0.74 mm, PRF 600 µs, emissions 50, sound speed 1480 m/s,
+  burst 4.
+- **The post-save screen was clean, but its mode was not read.** The same root screen came back
+  with a three-button ready row, no slider, no overlay, and no layout-shape reason reported. **No
+  positive post-save MPX-mode read exists**, so nothing here says a store disarms, clears or
+  preserves the MPX configuration — that question stays open.
+- **One number is unexplained.** A request of 25 profiles and a decode of 50 per channel are still
+  unreconciled — the stored file's own name records `50profiles`. No factor is inferred from one
+  file; it stays unexplained (§11) and must not be normalised into a multiplier.
+
+**Accepted:** real manual recording → automated store → commit once → independent decode of both
+channels. **Not accepted:** the MPX stop gesture, armed/rolling recording, the 25→50 profile
+relationship, and any post-save MPX-mode state.
+
+The historical live run used a **store-only probe**, not the subsequently integrated command.
+The package now exposes `udv-acquire store-completed NAME --channel 1 2 --profiles 50
+--stated-by operator --store-dir DIR --json` (or the same verb through
+`python -m udv_echo_process.cli acquire`). It requires an existing directory and a measured
+completed multiplexer store row — the two-button row, or the repeated-run three-button row whose
+geometry selects `REPEATED_MPX_COMPLETION` (the legacy `New acquisition`-first three-button row, an
+unmeasured three-button row and every four-button row are refused) — refuses collisions, and issues
+no Record, Stop or Clear. Channels/profiles
+are attributed **operator declarations**, not independently decoded facts in the command's report.
+It may rewrite the Store dialog's remembered directory to the explicitly selected one.
+**Package-command acceptance, 2026-10-21:** after a second operator-recorded block completed
+naturally, the supported CLI stored `mpx12-50profiles-cli-01.BDD` with exit 0, one commit,
+zero warnings, and no working-directory rewrite. The file is **41,526 B**, SHA-256
+`3a980cd7adbe3efdc5037ec117f7cdc35911fed9d3823f09abc141df7dc3cc6e`.
+Independent `udv-inspect` and per-channel `acquire decode` reads established sequential acquisition,
+channels 1 and 2, axial velocity, **50 profiles × 80 gates each**, approximately 1.98 s per channel,
+and the same decoded configuration as the earlier probe run. These are decoded observations,
+not merely the CLI's operator declaration. The post-store read returned Ready, no overlay and
+no layout error. The command also refused a preceding Ready-state attempt with exit 2 and no
+requested file created. This accepts the real CLI store path, not automated recording or a
+post-save multiplexer-mode claim. Both recordings remain generated local outputs, not fixtures.
+
+### 12.7 Acceptance, 2026-10-21 — automated MPX Record to store
+
+After the operator freshly confirmed rolling multiplexing active for channels 1 and 2,
+50 acquisition profiles each, `acquire record-multiplexed` completed one real instrument run
+with exit 0. The pre-read showed Ready (three buttons, no slider), no popup/dialog, and the
+instrument caption. The hidden parameter sidebar produced a full-layout warning; this strip-only
+workflow performed no sidebar writes and did not relax that gate.
+
+The workflow sent **one Record**, observed the one-button/no-slider active row without pressing
+it, waited for natural completion into **Store / two buttons / slider**, then sent one Do store
+and committed once on the original binding. No Stop, Clear, Disable, channel selection or parameter
+write was requested. No warning was answered and the structured directory readback reported
+unchanged before/after text. The post-read showed the same root handle, instrument caption, Ready,
+no overlay and no layout error. Post-save multiplexing mode was not positively read.
+
+Artifact: `mpx12-50profiles-auto-01.BDD`, **41,526 B**, SHA-256
+`475785c06dee0bfaa6d1d983c6e967e0c5d5bd4f83d02f119f636f06eb4e2b25`.
+Independent `udv-inspect` and per-channel `acquire decode` reads established sequential acquisition,
+exactly channels 1 and 2, axial velocity, **50 profiles × 80 gates each**, approximately 1.98 s
+per channel, resolution 0.74 mm, PRF period 600 µs, emissions/profile 50, sound speed 1480 m/s
+and burst length 4. The declaration matches these decoded counts; no 25→50 mapping is inferred.
+The file and raw logs remain generated local evidence, not committed fixtures.
+
+Two boundaries belong to the command rather than to this one run. **The enable flag is a
+declaration.** `--mpx-enabled` is required and is taken as the caller's statement that the
+multiplexer is enabled; nothing in this workflow reads the mode back (no passive MPX
+discriminator exists, and no Disable is pressed), so the flag is never reported as a post-run
+fact and the mode-unknown obligation is carried on every stored run. **The post-store check
+reports stored blocks, not visits.** The file's own block/sequence numbers partition the stored
+rows, and that partition is compared with a repeated declaration; the word is a block/sequence
+number, never a visit identity, so `partition-consistent` means the stored blocks split the rows
+as declared, not that M visits ran (see `docs/mpx-artifact-verification.md`).
+
+The completion row accepted by the press is not limited to the two-button row this run ended in:
+`record-multiplexed` and `store-completed` share one predicate that accepts the two-button row and
+the repeated-run three-button row **only** when its measured `477x123` geometry selects
+`REPEATED_MPX_COMPLETION`. The repeated-run row is accepted from a read-only capture; no live run
+of `record-multiplexed` has yet ended in it, and the legacy `New acquisition`-first three-button
+row stays refused.
+
+**Accepted scope:** one operator-configured finite MPX Record → natural completion → store cycle.
+**Not established:** repeatability, automated mode enable/configuration, armed/external-trigger
+operation, a multi-point campaign, physical signal quality, live timeout/failure cleanup, or
+post-save mode. Failure paths are tested offline; the command never stops or clears a timed-out
+recording. Root/child handle lifetime limitations remain those of the existing driver.
+
+### 12.8 Acceptance, 2026-10-21 — read-only Channels inspection
+
+With the operator-opened full Channels popup left visible, the public
+`acquire channels-read --json` command returned exit 0 and the measured eight-band settings
+signature. Bounded `WM_GETTEXT` queries read **repeat `1`**, **start channel `1`**,
+**apply-from `1`**, **profiles `50`**, and **seconds `2.01`** as raw field texts and parsed values.
+The existing `GetWindowText` snapshot alone does not retrieve those cross-process edit values;
+queries supply them before the same normalized tree is interpreted. No button press, hover,
+selection, commit, mode change, popup open or popup close was performed by the command.
+
+The numeric amount's channel remains **UNKNOWN** (its identity is painted in the group caption).
+The driver takes several internal resolves and then queries edit texts; this is a sequential
+inspection of one bound root, not an atomic snapshot. Root identity is checked around the text
+queries, but child-handle reuse and a concurrent operator edit remain existing limitations.
+All channel ticks and enable/rolling/display states remain **UNKNOWN**, and the report always
+states `setup_verified: false`. The successful read is not full configuration verification or
+permission to write settings. A prior closed-popup read returned exit 2 with the explicit absent
+surface. The raw live report remains generated local evidence, not a committed fixture; portable
+de-identified projected capture shapes cover the resolver offline.
+
+### 12.9 Acceptance, 2026-10-21 — supervised `Repeat` round trip, and the reporting defect it found
+
+One instrument, one operator, the full Channels popup left open by the operator; every popup
+close and reopen between steps was the operator's. `acquire channels-repeat` did the writes only.
+Two invocations, at most one commit each:
+
+| step | command | popup stated before | committed | post-write reading (same open popup) |
+|---|---|---|---|---|
+| 1 | `channels-repeat` | repeat `1` | `2` | `2`, stage `written` |
+| 2 | `channels-repeat` (restore) | repeat `2` | `1` | `1`, stage `written` |
+
+- **Acceptance is the reopened read.** After the forward write the operator closed and reopened
+  the popup, which stated repeat **2**; after the restore, a second reopen stated **1**. Each
+  command's own post-write read came from the still-open popup and therefore reported
+  `persisted: "unknown"` — correctly, because an open surface is not an acceptance read.
+- **Nothing else moved.** `start channel 1`, `apply-from 1`, `profiles 50`, `seconds 2.01` read
+  the same before and after both writes; the only changed fact was the repeat field.
+- **The multiplexer-off state was the operator's declaration** (`--mpx-disabled`), not a passive
+  mode read, and the popup's ticks stay unread.
+- **Not exercised:** an application restart, anything downstream of the setting (acquisition
+  behaviour), more than two writes in one trial, or a value that already equalled the target —
+  the equal-value no-write path is covered offline only.
+
+**The defect this run exposed, and its correction.** The restore invocation was given
+`--expect 2 --value 1`. The command had one numeric argument for two different facts, so it
+recorded `baseline: expect` and `restore_to: expect`: the 2→1 record at the time demanded
+"restore repeat == 2", the value the run had *just left*, and its stated obligation contradicted
+the field it had just set back to `1`. The trial's real origin (`1`) existed only in the earlier
+record. The pre-fix records are preserved verbatim as history; the current shape is:
+
+- `--expect` is **this invocation's** precondition and nothing else;
+- `--baseline` is the trial's **original** value — declare it on every invocation of one trial.
+  `restore_to` is that value, and the record names its source (`declared-trial-baseline` or
+  `this-invocation`), never an alias of `expect`;
+- a write whose target equals the declared baseline records `restores_baseline: true` and renders
+  its obligation as "returned to the trial baseline, so no further restoration is owed";
+- with no `--baseline` the record carries `baseline: null` and names only the command's own
+  starting value as the possible undo, rather than calling it the baseline;
+- a raised commit, a closed popup and a field that did not take the value keep the same declared
+  target and never claim a restoration; `restored_baseline` is true only when the post-write read
+  states the baseline. Those outcomes no longer ask the operator to *confirm* the committed value
+  (the reading just contradicted it): they ask them to reopen the popup, read the repeat as it
+  actually states, and then restore the trial baseline.
+- **one record per invocation, not a ledger.** Each run claims its own `--trial-record` file
+  exclusively, so this sitting's forward write and its restore are two records; every invocation
+  of one trial declares the same original `--baseline`, and reconciliation is reading the trial's
+  records in order (the newest names what is still owed). A second invocation with the same path
+  refuses rather than appending or overwriting.
+- `written_at`/`completed_at` are timezone-aware ISO 8601 wall-clock stamps, matching the other
+  persisted manifests; a monotonic counter value would not be a timestamp once read from disk.
+- a record update that fails leaves the file at phase `obligation` and the result reports
+  `trial_record_phase: "obligation"` with the failure under `restoration_owed`, so a run never
+  claims its outcome reached disk when it did not.
+
+The run's own outputs (the two structured records, the baseline and reopened reads, and the two
+dispatch logs, all named `repeat-*20261021.*`) are generated local evidence and are not committed
+fixtures. The offline suite in `tests/test_acquire_channels_repeat.py` holds the argument
+separation, both write directions, the undeclared-baseline record, the unknown-failure
+instructions, the failed-record-update phase and the timestamp shape.
+
+### 12.10 Acceptance, 2026-10-21 — capture evidence for the Channels popup (`--capture-dir`)
+
+One public invocation on the same operator-opened full Channels popup:
+`acquire channels-read --capture-dir DIR --json` returned **exit 0** with `readable: true`,
+`surface: settings_popup`, the measured eight-band signature, and repeat `1` / start channel `1` /
+apply-from `1` / profiles `50` / seconds `2.01`. Its additive `capture` record stated
+`status: "ok"`, `stable: true`, `directory: …/capture-001`, `frames:` the two saved
+`channels-roi-frame-{1,2}.png` crops of the popup's own rect, and `unknown_reasons: []`; all five
+amounts bracketed consistently — same text, value, edit handle and owning widget before and after
+the frames. The caption is **`UNKNOWN`** with `recognition: NOT_PERFORMED`: nothing in this path
+reads glyphs, so the record says *this is that popup, the screen was still, these numbers did not
+move* and never what the caption says. `setup_verified` stays `false`; an operator's stated
+caption is not promoted to a native fact.
+
+**3 and 2 are different failures.** **3** is a capture that could not be attributed: the
+structural read succeeded but a frame was blank or one colour, the two frames differed, a guard
+failed (target handle/rect, foreground, not-minimised, same popup handle and rect across the
+capture) or an amount moved — the reasons are printed to stderr and the frames stay on disk as
+evidence. **2** remains an unreadable structural report (measured by the same command with the
+popup closed: exit 2, `surface: absent`, no image taken). A capture failure is therefore never
+reported as a bad reading, and a bad reading is never reported as a capture failure.
+
+**Not established:** alignment between cropped screen coordinates and pixels under display
+scaling (the default backend reads the virtual-screen origin/size from `win32api` and refuses a
+frame whose bitmap size disagrees, but 100 % scaling is the only case measured as 1:1); atomic
+sample stability (two frames of the same ROI — a screen that changed and changed back between the
+grabs is indistinguishable from a still one); and any action authority (no press, commit, mode
+change, popup open or close). The report and the two PNGs are generated local evidence, not
+committed fixtures; `tests/test_acquire_channels_capture.py` covers the workflow, both exit
+codes and the guards offline against an injected image backend.
+
+---
+
+### 12.11 Supervised `Profiles` writer (`channels-profiles`)
+
+**Status: OFFLINE VERIFIED, AND LIVE ACCEPTED FOR ONE SCOPE** — one operator-declared channel
+(channel 1), `50 → 51 → 50`, with the popup closed and reopened before each acceptance read.
+Everything below that is offline is established by the source and by
+`tests/test_acquire_channels_profiles.py` (67 focused tests pass across it and
+`tests/test_acquire_channels_repeat.py`; `ruff check src tests` clean) against injected surfaces.
+The live scope is narrow on purpose: **one channel, one temporary count, one restoration, three
+reads**. It does not accept the writer generally — the operator's channel stays a declaration, and
+another channel, the coupled `seconds` on the real application, an application restart and any
+downstream acquisition effect remain unestablished (see the live block below). The `Repeat`
+acceptance in §12.9 and the capture acceptance in §12.10 do **not** transfer: a different field, a
+different coupled amount, and a different obligation.
+
+Exact interface, from `uv run udv-acquire channels-profiles --help` (and the same command through
+`./tools/live/dispatch.sh -m udv_echo_process.cli acquire channels-profiles`):
+
+```
+--expect N              the profiles count the popup must state before any write (required)
+--value M               the profiles count to commit, once (required)
+--operator-channel C    the operator's declaration of which channel the amounts belong to (required)
+--baseline B            the trial's original profiles count (optional; omitted = none stated)
+--mpx-disabled          the operator's declaration that the multiplexer is disabled (required)
+--trial-record PATH     a path claimed exclusively; a directory gets channels-profiles-trial.json
+--json                  machine-readable report
+```
+
+- **The operator's channel is a declaration, never a proof.** The group box's channel lives in a
+  painted caption (`For the current channel (channel N)`) and the control tree states nothing for
+  it, so `per_channel.channel` stays `UNKNOWN`. `--operator-channel` is recorded verbatim, is
+  checked only against the channel numbers the popup itself paints (a number it does not offer is
+  refused with zero writes), and can never become `channel_verified` — that field is
+  `Literal[False]` by construction. The module reads no picture, so nothing here attributes the
+  amounts to a channel.
+- **`seconds` is coupled, not preserved.** Changing the profile count makes the application
+  recompute the neighbouring `… during seconds` amount, so it is **not** part of the verdict:
+  it is reported before and after, and the fresh post-write amount must be valid and strictly
+  positive, otherwise the stage is `write_unverified`. `repeat`, `start_channel` and `apply_from`
+  are the preserved facts; a movement there is reported (`written_other_facts_changed`) and is not
+  exit-0 evidence.
+- **`--baseline` is the trial's original count and is never defaulted from `--expect`.** This is
+  the defect §12.9 fixed for the repeat writer, carried over by construction: a restore run
+  (`--expect 8 --value 7 --baseline 7`) records `restores_baseline: true` instead of owing an undo
+  of itself. Each invocation claims its own record file exclusively (no ledger, no overwrite), so a
+  forward write and its restore are two records, both naming the same original baseline and
+  reconciled by reading them in order.
+- **Only the operator's reopened popup can close the obligation.** The post-write read comes from
+  the still-open popup, so `persisted` is `unknown` on every write and `obligation_open` stays
+  `true`. The command never opens, closes, presses, records, retries or repairs; the acceptance read
+  and any restoration are the operator's, by hand, after a close-and-reopen.
+- **Zero-write refusals** (raised `AcquisitionError`, nothing committed): not exactly one visible
+  instrument window; caption/overlay/stopped-row clauses at the binding; absent, clipped, dialog-
+  covered or unreadable popup; a profiles text that is not an integer count; a missing owning value
+  button; a channel argument the popup does not paint; a count that differs from `--expect`; an
+  invalid pre-write `seconds`. The caption/overlay/row/window clauses are then asked **again on a
+  fresh enumeration immediately before the commit**, so a recording or modal that appeared between
+  the reads refuses rather than being written through.
+
+**Autonomy blocker, stated precisely.** There is **no verified automatic non-mutating route to
+reopen the Channels popup and take the acceptance (and restoration) read**; that missing
+verification — not a claim that no such route can exist — is what keeps this workflow supervised.
+Two things must not be overclaimed in either direction: the operator has repeatedly closed and
+reopened this popup by hand with success, so manual reopening is a working step rather than an
+obstacle; and the capture path now yields the popup's own cropped frames (§12.10), so a caption
+*image* exists, but visual caption recognition is **evidence only** — `recognition: NOT_PERFORMED`,
+the caption stays `UNKNOWN`, and nothing in this repository reads glyphs to decide which channel or
+which state is on screen. Closing the gap would need a measured, non-mutating reopen/read-back
+route and a validated reader for those captions; neither has been established. No autonomy
+predicate, gate service or "go" framework is introduced for this, and no staleness threshold is
+invented: the observed limits are the ones the code and its tests state (one supervised binding, a
+popup closed and reopened between reads indistinguishable from the one read, child handles not
+identities after the tree changes, `setup_verified: false`).
+
+**Live acceptance, 2026-10-21 — channel 1, `profiles 50 → 51 → 50`.** Two supervised invocations of
+`acquire channels-profiles` on the operator-opened popup, one record each, with the popup closed and
+reopened between every read; the operator declared channel 1, and a separate visual-caption reading
+corroborated it for this trial only (`channel_verified` stays `false`, by construction). Facts, from
+the two records and the three reads:
+
+- **baseline** `50` profiles / `2.01` s (reopened read), `repeat 2`;
+- **forward write** committed `51`; `restore_to 50`, `restore_to_source: declared-trial-baseline`;
+  the reopened read stated `51` / `2.05` s — the coupled `seconds` moved, as the coupled-amount
+  rule above predicts;
+- **restoration write** (a second invocation of the same command, `--expect 51 --value 50
+  --baseline 50`) committed `50` and recorded `restores_baseline: true`, so no further restoration
+  is owed; the reopened read stated `50` / `2.01` s and `repeat 2` — the trial's original readable
+  state is back;
+- `persisted` stayed `unknown` and `obligation_open` stayed `true` on both records: closing it was
+  the operator's reopened read, quoted in the acceptance record
+  (`profiles-channel1-roundtrip-acceptance.json`, local generated evidence, not a committed
+  fixture), which is what states `restoration_owed: false`.
+
+**What this acceptance does and does not establish.** It establishes the writer's live forward and
+restore path for **one operator-declared channel and one pair of counts**, including the coupled
+`seconds` recomputation and retention across a popup close-and-reopen. It establishes nothing
+globally: the channel is still a declaration (never a native readback), no second channel was
+written, no application restart was tried, and no acquisition was run against the changed count, so
+no downstream effect is claimed. The popup was reopened by the operator — the automation route that
+would remove that step remains unverified (§12.11, "Autonomy blocker").
+
+**Not established:** a persisted value the command can read itself; `seconds` on a channel other
+than 1; the coupled amount beyond the two observed values (`2.01` / `2.05`); behaviour when the
+popup is reopened between the write and the post-write read (the live trial closed and reopened
+*before* each read, which is the operator's step, not the command's); more than one forward write in
+one trial; an application restart; or any downstream acquisition effect of the changed count.
+Generated reports from an offline run are test evidence, not fixtures.
+
+---
+
+### 12.12 Live acceptance, 2026-10-21 — supervised channel selection `1 → 2 → 1`
+
+`acquire channels-select` was run twice against the real instrument, one press per invocation, on
+one bound window and one popup that stayed open throughout (`popup_hwnd` and `row_hwnd` identical in
+both records; the cell handle is the ordinal's own). Arms: `--expect-channel 1 --channel 2` then
+`--expect-channel 2 --channel 1`, both with `--restore-channel 1 --expect-start-channel 1
+--mpx-disabled` and their own record.
+
+- **Both invocations:** `stage: pressed`, `presses: 1`, `press: attempted`, `posted: unknown`,
+  `selection: UNKNOWN`, `native_proof: false`, `press_error` empty, `post_error` empty.
+- **The readable facts did not move:** before and after each press `repeat 2`, `start_channel 1`,
+  `apply_from 1`, `profiles 50`, `seconds 2.01`; `facts_moved: []`, `facts_unreadable: []`.
+  **`50` profiles and `2.01` s with `repeat 2` are preserved by the selection**, which is the
+  whole reason the trial was run — a channel switch here is not a profile or repeat change.
+- **Exit `1` on both, and that is the expected result.** Only the settled `no_op` exits `0`; an
+  attempted press is a gesture whose selection and delivery are unknown, so a zero would read as a
+  result. A caller must treat `1` with `stage: pressed` as *done, unproven*, not as a failure.
+- **Caption corroboration, no native proof.** After each press a `channels-read --capture-dir`
+  captured the popup's own crops, and the tick was read **visually** from them: `1` at baseline,
+  `2` after the forward press, `1` after the restore. The reader's own answer stayed
+  `per_channel.channel: UNKNOWN` in all three reads, so this is a post-hoc visual observation and
+  not a measured state. Note the provenance precisely: the two trial records carry
+  `visual_corroboration: ""`, so the corroboration lives in the separate acceptance record
+  (`select-channel-roundtrip-acceptance.json`), **not** in the command's records. Nothing here
+  reads glyphs, and no evidence of a checked radio exists in the control tree.
+- **The restoration was the automation's own second invocation** — the command was never restricted
+  to hands. Two reporting defects the trial exposed were corrected in the same change, with no new
+  authority: the owed line used to instruct "select channel 1 again on the top radio row **by
+  hand**", which misdescribed a gesture a further supervised invocation takes (and did take, 40 s
+  later), so it now names the gesture and its two possible takers; and `press_evidence` used to read
+  "one **posted** held press" while `posted` is `unknown` on every path, so it now states the
+  attempt, the recipe, and that delivery is unknown. **The two accepted records were not edited**:
+  they are the evidence of what the command said at the time and keep the old wording, so a reader
+  comparing them with today's output should expect that difference, and only new records carry the
+  corrected wording.
+- **Not established:** that a tick survives a popup close-and-reopen or an application restart (the
+  popup stayed open); channel `10`, or any channel outside the measured press set; where the lower
+  `Use channels` tick row's cells would land (never a target); behaviour with a recording or the
+  multiplexer enabled (the mode was the operator's declaration only); what a raised press leaves
+  selected; and any downstream acquisition effect of the newly selected channel. The switched-to
+  channel's own per-channel amounts were **not** read as a change, because they did not move here —
+  a trial where they do move would be reported as `facts_moved`, not as an error.
+
+Generated logs, records and captures for §12.11 and §12.12
+(`profiles-channel1-*`, `select-channel*`, `select-live-baseline*`) are local evidence under a
+git-ignored scratch directory and are not committed fixtures.
+
+### 12.13 MPX mode entry and exit, 2026-10-21 — operator semantics, read-only evidence
+
+One disabled → enabled → disabled round trip, **every mode gesture the operator's**; automation
+only read the tree and captured popup crops. This subsection is the single home for MPX mode-entry
+semantics; the skill and the surface model point here rather than restating it.
+
+| state | what the surface shows | provenance |
+|---|---|---|
+| disabled | Channels popup unclipped (full settings surface); the mode toggle's painted caption is `Enable multiplexer` | visual caption on the measured build; the toggle's state is not in the tree (ledger B15) |
+| **enable with `Roll over the channels` ON** | three-button ready row — `Pause` / `Record` / `Clear and restart`, no slider: *enabled and idle*, awaiting a manual `Record` | captured operator trial (entry capture + crops); strip structure from the tree, captions painted |
+| `Record` from that row | one-button, no-slider active row; **no `Stop`** | operator report; the same one-button active row was observed in §12.7; the role stays unbound (B21) |
+| **enable with `Roll over the channels` OFF** | the acquisition **arms and records on enable** and runs on its own to the Save/Reset store row (`Do store` / `Clear and restart`) | **operator report only** — not exercised, not captured, not automation-measured; no evidence of the transition exists |
+| active acquisition, any entry path | `Clear and restart` and the Channels menu's disable entry are the only routes out; nothing in the strip is a `Stop` | operator report + §12.7/§12.13 reads |
+| exit while enabled | Channels popup clipped to a single entry, painted caption `Desable multiplexer` (**exact spelling, sic**) | capture + operator attribution |
+
+**Paired restoration evidence (same sitting).** After the operator re-disabled multiplexing, the
+captured state was: painted caption back to `Enable multiplexer`, roll-over mark a red cross (the
+trial's recorded roll-over-off state; the mark is a visual reading, not a tree fact), channel `1`,
+profiles `50`, seconds `2.01`, repeat `2`. Restoration owed: **none**. The
+automation pressed no mode control, issued no `Record`, and performed no restoration gesture of
+its own — the captures are read-only.
+
+**What this does not establish.** The captions are painted pixels read visually, not native state:
+no `IsWindowEnabled`-style or checkbox fact for enable, roll-over or the tick strips exists in the
+tree, and an empty widget text is not an "off". The `profiles`/`seconds` pair is attributed to
+channel `1` only by the group's painted caption. The whole table is one build
+(`UDOP DOP3010.43`), one window geometry and one sitting, so it is **not** a universal geometry or
+caption law; a different build, scale or layout must be re-measured, not inferred. Nothing here
+covers relay behaviour, post-save mode, repeat>1 multi-block behaviour, or a `Stop` binding for MPX.
+
+Evidence: `.hermes/scratch/multiplexer-development/mode-entry-roundtrip-acceptance.json` with
+`mode-disabled-baseline.log`, `mode-enabled-entry-capture.log`, `mode-enabled-entry-crop-a.png`,
+`mode-enabled-entry-crop-b.png` and `mode-disabled-restored.log` — git-ignored local evidence, not
+committed fixtures; the JSON states its own limits, including "not native checked state" and "no
+automated mode press recipe was exercised".
+
+**Supervised two-run continuation, 2026-10-22.** Two separate `record-multiplexed`
+invocations stored `mpx12-50profiles-continuation-20261022-run1.BDD` and
+`mpx12-50profiles-continuation-20261022-run2.BDD`. Each reported one Record, one Store
+commit, and `consistent` / `partition-consistent`: channels 1/2 each held 100 profiles
+in stored partitions 50+50, with 42 gates. Channel 1 decoded as echo amplitude; channel 2
+as axial velocity, so this is not a like-quantity signal comparison. The Store directory
+was unchanged. After **each** save, a separately operator-opened Channels popup had a
+stable paired capture reading `VISUAL_DISABLED` + `OFF_PROVEN`; repeats remained 2 and
+the visually attributed channel-1 amount remained 50 / 2.01 s. The operator set rolling
+ON and re-enabled MPX between runs; fresh rolling-ON evidence preceded each enable.
+The operator also reported that pressing Enable itself closes Channels. These are
+observations of this supervised sequence, not proof that Store alone resets either
+setting, an unattended continuation recipe, or a universal post-save law. Ready did not
+license another Record. No Stop, Clear, Disable, or third run was issued. Final captured
+mode/rolling matched the initial disabled/OFF state; Channels was left open for the
+operator. Local, uncommitted evidence lives under
+`.hermes/scratch/multiplexer-development/` in `two-run-*.log` and their capture directories;
+the original recordings remain under `outputs/live/store/`. This extends the historical
+round trip above without changing its verification scope.
+
+**Guarded enable command (`acquire enable-multiplexed`), 2026-10-22 — offline contract, live
+once.** One
+command now exists for the entry row: it binds exactly one window, requires a **fresh
+same-invocation** two-frame capture of the full settings popup whose conjunction reads
+`VISUAL_DISABLED` + `ON_PROVEN` with `live-bracketed` / `capture-digest-verified` evidence (a
+retained `mpx-mode-read` pair or a bare `enable_precondition` boolean is not a precondition), and
+presses the `Enable multiplexer` toggle **once** with the held press recipe. Rolling
+`OFF_PROVEN` is refused with zero presses and no cleanup, because that path auto-arms and records.
+The target is resolved by the reader's 8-band signature and toggle-role provenance, and the
+action boundary re-resolves the binding, popup, signature and exact toggle handle before posting.
+It never presses `Record`, `Disable`, `Stop`, `Clear` and never retries.
+
+**Post-press readback contract (2026-10-22).** After its one press the command reads the
+screen again. Only when that read resolves the clipped one-entry popup does it take a **fresh**
+post-press capture pair under its own run directory and hold it to the explicit
+`entry_no_numeric` contract: two still 158x43 frames of the measured entry shape, the exact
+`Desable multiplexer` template match on both, re-derived pair digests, and before/after guards
+naming the original bound window and the licensed popup panel. Only that conjunction reports
+`post_mode: VISUAL_ENABLED` and lets the CLI exit `0`. If no clipped entry is visible (the popup is
+closed, full, or a different surface) the mode stays `UNKNOWN` **explicitly** — it is not inferred
+from the press, a ready strip or any other surface — and nothing is retried. The clipped entry
+structurally carries no rollover row, so `post_rolling` stays `UNKNOWN`.
+
+The settings capture's contract is unchanged: `settings_numeric` still requires all five amounts
+bracketed consistently. The entry shape is a separate, explicit `capture_kind`; it neither
+loosens that check nor reuses a retained directory.
+
+**Guarded disable command (`acquire disable-multiplexed`), 2026-10-22 — offline contract, live
+once.** The
+clipped popup's one entry is now reachable from the CLI. It binds exactly one window, takes a
+**fresh same-invocation** 158x43 `entry_no_numeric` pair, and requires the reader's own
+`Disable multiplexer` attribution with `live-bracketed` / `capture-digest-verified` evidence,
+plus a structural target: the popup is the measured clipped size and exactly one **direct**
+`TSp_Button` owns the entry label band. Caption order, an ordinal, a stored handle and the Enable
+toggle's coordinates are not identity. `entry_no_numeric` is **mandatory** for every entry pair:
+a `settings_numeric` capture can never licence this press, and the two contracts are never
+interchanged.
+
+Both pairs are the reader's own exclusive `capture-NNN` runs **under this invocation's
+`--capture-dir` root**: a pair claimed outside that root, or the decision's run reused as the
+licence, is refused with zero presses. The licensing pair must also resolve the **same popup
+handle** the decision capture bound, and its two digests must be its own frames. At the press the
+popup and entry rectangles are read **then**, from the same win32 enumeration owner the resolver
+uses — the licensing read's rects are not taken as an assertion — and the entry's live
+popup-relative rect must equal the licensed one, so a moved, resized or repainted row refuses
+with nothing posted and zero presses recorded.
+
+The durable obligation is claimed (`O_EXCL` + `fsync`) before that second licensing capture at
+the action boundary, and only the fresh binding is pressed once. The pre-press record says
+`phase: obligation`, `action: pending`, `obligation_open: true`, `press: not_attempted`, and
+`press_state_as_of` states that `not_attempted` is **as of that write** — a press may follow and
+is not reflected there. If the post-press rewrite fails, that pre-press record is what remains on
+disk; it is never rewritten as a success and must not be read as "no press happened". The CLI
+then exits `1`.
+
+After the press the module re-reads the screen and takes a **fresh settings** pair only when the
+operator's full popup is visible; only a `settings_numeric` pair whose guards name the original
+window and whose exact `Enable multiplexer` line reads `VISUAL_DISABLED` reports
+`post_mode: VISUAL_DISABLED`. The CLI exits `0` only for that fresh pair with two re-derived
+digests, one attempted press and **no** press, post or trial-record error — a raised press or a
+boundary refusal can never be reported as a verified post. Any other surface, an absent capture
+or a supplied-but-unproved capture leaves the post mode `UNKNOWN` and exits `1`.
+
+**What `ready` means here.** The strip's three-button ready row is the only store fact the command
+reads: it states that the strip reports no recording and no held/stored data. Data the strip does
+**not** report — an invisible historical store, a block scrolled out of view, a recording started
+elsewhere — may still exist and is not inspected. The command takes no destructive action: it
+never presses `Enable`, `Record`, `Stop` or `Clear`, never opens the popup and never retries.
+**Offline coverage:** the source test uses authentic entry/settings fixtures and a Win32 double;
+the live exercises are the round trip below.
+
+**Live round trip, 2026-10-22 — one press in each direction.** Both guarded commands were
+exercised once on the instrument, each in its own invocation, from a popup the operator had
+already opened. A pre-run `channels-read` resolved a fresh `settings_popup` pair
+(`VISUAL_DISABLED`, roll-over `ON_PROVEN`) and exited `0` (`mode-roundtrip2-ready.log`); an
+earlier preflight read in the same sitting had refused with exit `3` because the instrument was
+not the foreground window and the screen grab itself failed, and nothing was pressed.
+
+- `acquire enable-multiplexed`, one attempt: one held press on the `Enable multiplexer` toggle,
+  `posted: unknown`, then its own fresh `entry_no_numeric` post pair reported
+  `post_mode: VISUAL_ENABLED`; CLI exit `0` (`enable-live-02.json`, `enable-live-02.log`). That is
+  the automatic entry post readback's first live exercise.
+- `acquire disable-multiplexed`, one attempt, from the resulting enabled-idle surface: a fresh
+  same-invocation `entry_no_numeric` pair licensed the clipped `Desable multiplexer` entry, one
+  held press followed (`posted: unknown`), and its own fresh `settings_numeric` post pair read the
+  full popup as `VISUAL_DISABLED`; CLI exit `0` (`disable-live-01.json`, `disable-live-01.log`).
+  That is the automatic settings readback's first live exercise.
+- The operator's own restore gesture followed (`rolling_restored_by: operator`), and a read-only
+  `channels-read` exited `0` (`mode-roundtrip2-restored.log`) reading `VISUAL_DISABLED`, roll-over
+  `OFF_PROVEN` (red cross), start channel `1`, repeat `2`, profiles `50`, seconds `2.01`. The
+  acceptance record (`mode-roundtrip2-acceptance.json`) states one attempt per direction,
+  reconciles the two run records, and reports `restoration_owed: false`; its status string calls
+  the result `both_transitions_verified_and_baseline_restored`, and the baseline qualifier holds
+  for the mode only.
+
+An earlier enable-only attempt in the same sitting took no post capture under the build of that
+run and therefore exited `1`; it is the reason the round trip above was run again, and its
+operator-observed clipped entry is not counted as a second transition.
+
+**What the round trip does not establish.** Every mode, roll-over and caption fact above is a
+**visual attribution from pixels**, not a native checked-state fact (`native_fact: false`), and
+the tree still states nothing for the toggle or the marks. Roll-over is **not** preserved end to
+end: it read `ON_PROVEN` before the enable, the clipped entry structurally carries no roll-over
+row (`post_rolling: UNKNOWN`), and the restored read is `OFF_PROVEN` — the evidence does not say
+whether a command press or the operator's restore changed it, so the returned mark is
+measured-but-unattributed rather than restored to its pre-run value. Only an **idle** disable was
+exercised, not interruption of an active acquisition; neither command took a `Record`, `Clear`,
+`Stop`, retry, store or cleanup action, and none occurred in the sitting. No physical
+relay-quiescence measurement was made, so the relay warning stands: enabling may start channel
+cycling without a `Record` having been pressed.
+
+**The open/read/close/reopen/close chain is integrated; one live prototype backs its dismissal and
+the full chain still awaits a live run.** The mode-mark reads carry `requires_operator_popup: true`
+and treat the popup's own presence as the operator's action, so both commands still needed the
+Channels popup opened before the run and closed after the restore read. The source now owns the
+whole chain — `ParametersSurface.open_channels_popup` (adopting an already-open popup, otherwise one
+measured hover), `channels_opener.py`'s five-amount comparison (all five amounts, including
+`profiles` and `seconds`, through `channels_capture.numeric_slots`), and `dismiss_channels_popup` walking
+a bounded stepped path (`ui.menu.stepped_path` + `_move_real_cursor_stepped`) before its bounded
+ABSENT read — and the opener closes the reopened popup at the end. **One live prototype**
+(`channels-stepped-path-live-01`: 13 positions of <= 40 px, two paths, both observed ABSENT) supports
+the dismissal path, but the integrated chain has **not** been run live end to end: its offline
+regressions now cover the report being written before the gesture, a typed UNKNOWN open keeping the
+`ChannelsOpen` record with `gesture_attempted: true`, an unexpected exception landing as
+`phase: failed` (never a success-shaped prior state), and a five-amount baseline that states an
+unreadable slot as uncompared rather than equal. The clipped
+multiplexer-on entry is not on its path. A **fully unattended full cycle** — open popup, enable, read back, disable, read
+back, dismiss — is therefore not established, and there is no basis for an unattended batch of
+enable/disable transitions; a batch would additionally lack active-acquisition disable, popup
+timing and relay-settling coverage. All of this is one build (`UDOP DOP3010.43`), one geometry and
+one sitting, so it is not a universal geometry or caption law.
+
+Evidence: `.hermes/scratch/multiplexer-development/mode-roundtrip2-acceptance.json` with
+`mode-roundtrip2-preflight.log` (refused, exit `3`), `mode-roundtrip2-ready.log`,
+`enable-live-02.json` + `enable-live-02.log`, `disable-live-01.json` + `disable-live-01.log`, and
+`mode-roundtrip2-restored.log`; the earlier enable-only attempt is preserved in
+`enable-live-01-acceptance.json`. All are git-ignored local evidence, not committed fixtures. The
+run records themselves keep `posted: unknown`, `obligation_open: true` and their own stated
+limits; the exit `0` claims only the automatic post readback conjunctions above.
+
+**Label-band correction (pre-live), 2026-10-22.** The `ENABLE_MULTIPLEXER` raster was learned from
+the full popup's first ink band, rows 14–26 — which is the separate `Use only channel` control's
+caption, not the Enable line (true letter bounds rows 48–60, `(29,48,138,61)`). The template is a
+semantic false mode proof in that state: a popup with the Enable row absent, repainted or swapped
+for `Desable multiplexer` still matched and read `VISUAL_DISABLED`, which the guarded enable would
+have accepted. The raster has been relearned from the committed authentic disabled-rolling-ON/OFF
+frames at the Enable band and the generator, constants and bind now carry per-surface bands with no
+first-band default. The fixtures were not modified; the retained captures and their digests are
+untouched. See `docs/dop3000/mpx-mode-read.md` §"Label provenance".
+
+### 12.14 Managed Channels inspection, 2026-10-22 — one live end-to-end acceptance
+
+`acquire channels-inspect --capture-dir DIR [--settle S] [--report PATH] [--json]` is the
+unattended counterpart of the operator-opened `channels-read`: it owns the lifecycle around the
+same read and capture. One measured `Channels` hover opens the popup, the capture read runs
+(`CaptureEvidence`, unchanged rules), and one bounded stepped real-cursor path closes it. It
+presses no popup entry, presses no strip button, enables nothing, records nothing and writes no
+parameter; no other menu or popup is dismissed.
+
+The reusable workflow is `acquire/channels_inspect.py::inspect_channels` — one application
+function behind the CLI, composing `ParametersSurface.open_channels_popup`,
+`dismiss_channels_popup` and `channels_read.read_channels`. The CLI only binds the one visible
+`TMain_Scr` window and renders its report.
+
+Order of the preconditions, all before any gesture: real input allowed, the run's **original**
+bound target verified, and the strip's own view read through `strip_state()`. `recording` refuses;
+a strip view that cannot be read reports `mode: "unknown"` (`mode_source: "unread"`) and refuses —
+it is never reported as `ready`, and nothing is retried past a bounded poll.
+
+Ownership is explicit. The workflow closes a popup it opened; an already-open popup is **not**
+adopted by the command (`adopt_open=False`), and the library's `adopt_open=True` leaves the
+operator's popup open unless `close_adopted=True` is also passed. The report keeps the read and
+its capture beside the close result, so a capture that failed or a close that was not observed
+`ABSENT` is stated as exactly that. Exit codes: `0` read + attributable capture + observed close,
+`2` no readable popup, `3` refused before any gesture, `5` capture not attributable or close
+unconfirmed.
+
+**Live end-to-end acceptance (one invocation, measured build and geometry).** The public
+command exited 0 after opening from ABSENT without operator hover, retaining two stable,
+nonblank capture frames with agreeing numeric brackets, and observing ABSENT after its
+13-position stepped close (recorded elapsed 1.8084 s, checked bound 2.65 s). The visual
+reading was channel 1, 50 profiles / 2.01 s, repeat 2, start/apply-from 1,
+`VISUAL_DISABLED` + `OFF_PROVEN`; those are capture-time observations, not authority for a
+later mode press. No entry/strip press, parameter write, mode change or recording occurred.
+Local uncommitted evidence: `.hermes/scratch/multiplexer-development/managed-inspect-live-01.log`,
+`managed-inspect-live-01-report.json` and `managed-inspect-live-01/capture-001/` beneath that
+same directory. This does not establish other builds, geometry, active recording or enabled
+clipped-popup behavior. The exit `0` claim remains limited to the conjunction above.
+Real input is required, so this is a foreground command in the interactive session:
+an available application, no operator hover, and no operator cleanup expected only when
+the report says the close was observed `ABSENT`. The report's `mode: "ready"` comes from
+the strip and is not a multiplexer-mode fact; use the separately attributed visual evidence.
+
+### 12.15 Guarded rolling setter (`acquire set-rollover`), 2026-10-22 — one live round trip
+
+**Live acceptance:** one supervised OFF→ON→OFF round trip completed with MPX disabled.
+Each public setter invocation exited 0, attempted exactly one rolling-control press,
+retained decision/final/post capture pairs, proved its requested post-state visually,
+and closed its owned popup with observed ABSENT. A separate `channels-inspect` after
+restoration again captured `VISUAL_DISABLED` + `OFF_PROVEN` and closed successfully.
+All five numeric facts matched the initial captured values (repeat 2, start/apply-from 1,
+profiles 50, seconds 2.01). No Enable, Record, Stop, Clear or Disable was pressed.
+Both trial records were read back at phase `after`; the restoring invocation reported
+no restoration owed. The forward record remains historical evidence that restoration
+was owed then, not a record to rewrite retroactively. Local uncommitted evidence is
+`.hermes/scratch/multiplexer-development/rolling-trial-{on,off}-01.json`, the matching
+logs/capture directories, and `rolling-restored-inspect-01.json`. This establishes one
+round trip on the measured build/geometry, not unattended acquisition or other layouts.
+
+
+`acquire set-rollover --requested on|off --expect on|off --baseline on|off --capture-dir DIR
+--trial-record PATH [--adopt-open] [--close-adopted] [--settle S] [--max-boundary-seconds S]
+[--json]` sets the **`Roll over the channels`** toggle — the rolling fact, not the mode entry.
+It is a separate command from `enable-multiplexed`/`disable-multiplexed`; nothing here presses
+`Enable multiplexer`, `Record`, `Stop`, `Clear` or `Disable`.
+
+The reusable workflow is `acquire/set_rollover.py::acquire_set_rollover`. It composes the
+managed lifecycle §12.14 already owns: the pre-read must be `ABSENT` (an already-open popup is
+refused unless `--adopt-open`; an adopted popup stays open unless `--close-adopted`), one measured
+`Channels` hover opens the popup, and the popup this command opened is closed in a `finally`.
+The command therefore starts closed and needs no operator hover.
+
+`--requested`, `--expect` and `--baseline` are literal `on`/`off` values checked before any
+gesture; the baseline in the record is the caller's string, never the state a capture happened to
+show. `requested == expect` is a **NOOP**: zero presses, no obligation, no trial record, and the
+owned close still runs; it still states the restoration a declared baseline is owed, because that
+obligation follows the declaration and not the press (a NOOP has nowhere to write it down). A real
+write follows the §12.13 ordering: a fresh full-settings
+**decision** capture proving `VISUAL_DISABLED` and the rollover mark for `--expect`
+(`live-bracketed`, `capture-digest-verified`, `EXACT_TEMPLATE_MATCH`, agreeing guards and
+foreground `true`), then the durable **pending** obligation (`O_EXCL` + `fsync`), then a **fresh
+final licensing** capture at the action boundary that re-resolves the window set, binding, popup
+and the toggle's handle **and popup-relative rect**, then **one** held press only when the request
+differs, then a fresh post capture, then the owned close, then the record rewrite.
+
+The two rects stay two facts: the decision capture's rect is recorded as `decision_toggle_rect`
+and the boundary's re-resolved rect as `boundary_toggle_rect` (the one the press is licensed
+with). Neither is written over the other, so a moved row is visible in the record instead of
+erasing the geometry the obligation was taken on.
+
+**The close is a contract.** A popup this command opened must be observed `ABSENT`, and so must
+an adopted popup the caller asked to close with `--close-adopted`; only the library's own adopt
+rule exempts one, and then the result says so. The verdict is typed
+(`set_rollover.PopupClosure`, built from `ChannelsOpen.adopted`/`outcome` — never from "a handle
+came back"), and the CLI exits `1` on `owned_left_open`/`adopted_unclosed` whatever the post
+verdict says. A NOOP or a verified press that cannot prove its close is therefore not a success.
+
+`--settle` must be a finite, non-negative number of seconds and `--max-boundary-seconds` a finite,
+strictly positive one; both are validated before the first read, hover, claim or press (a `NaN`
+cap compares false against every elapsed time and would silently license the boundary, and a
+non-finite settle was previously clamped to `max(0.0, …)`). `--max-boundary-seconds 0` or a
+negative value is a refusal, not an instant cap.
+
+The target is semantically narrow, never `press_mode_toggle`: `ui.channels.bind_rollover_toggle`
+requires exactly one toggle carrying the `Roll over the channels` caption with the reader's
+provenance and owning the measured row band `mode_marks.ROLLOVER_ROW_BAND` — the mark box
+`(215, 77, 228, 92)` plus the painted caption `(236, 81, 363, 91)`, measured identically on both
+committed genuine `disabled-rolling-on`/`-off` pairs. The band is checked to be disjoint from the
+`Enable multiplexer` line `(29, 48, 138, 61)` and the `Use only channel` row `(30, 14, 131, 27)`.
+`RecordingSurface.press_rollover_toggle` re-runs that whole rule live against the same binding
+immediately before posting and refuses any moved handle, rect or popup.
+
+Distinctions the report keeps: a refusal **after** the hover reports zero **presses** but
+`hover_attempted: true`, so it never claims no gesture was made; `posted` stays `unknown` after a
+press; a raised press is `press_raised`, not "nothing happened"; if the record rewrite after the
+press fails, the pending record remains with `press: not_attempted` **as of that write** and must
+not be read as no action. `boundary_seconds` is a monotonic diagnostic; only a caller-supplied
+`--max-boundary-seconds` is an enforced limit, never an invented cap. The result nests the
+reader's own `CaptureEvidence` as `decision`/`final`/`post` instead of copying its fields per
+stage. `--requested` equal to `--baseline` owes no restoration; otherwise restoration is a
+**separate invocation** with the declared baseline, never an automatic second press in the same
+run.
+
+**Acceptance status: one live round trip, offline coverage for the rest.**
+`tests/test_acquire_set_rollover.py` covers the one press,
+the pending record before the press, the wrong/duplicate/oversized target, retained evidence, an
+unproven foreground, adopt refusal, a recording started at the boundary (refused record, zero
+presses), an absent post surface, a raised press, a failed rewrite, the NOOP, the literal
+vocabulary, the baseline restore rule (including the NOOP that owes it without pressing), the
+adopt policy and both owned/adopted close verdicts, non-finite and negative timing bounds refused
+before any gesture, the decision-versus-boundary rect split in the durable record, and both CLI
+exit paths (a verified post with an unproven close exits `1`).
+
+On the instrument, one supervised OFF→ON→OFF round trip was completed with MPX disabled
+(the acceptance above): each invocation made exactly one rolling press, retained its three
+capture pairs, proved its requested post state visually and closed its popup `ABSENT`, and a
+separate `channels-inspect` after restoration again proved `VISUAL_DISABLED` + `OFF_PROVEN`.
+What that one round trip does **not** establish: unattended or repeated cycling, any other
+build, layout or geometry, and live exercise of the refusal, adopt, NOOP, raised-press and
+failed-rewrite paths, which remain offline-only. Restoration is still an operator decision
+per invocation; nothing here restores automatically.
+
+---
+
+### 12.16 Composition `acquire mpx-run`, 2026-10-22 — single runs and one supervised two-item batch accepted live
+
+**Finite-batch live acceptance (one supervised invocation).** Two explicitly named items
+completed automatically in caller order on one original target binding, without operator
+menu/setup actions between items. Both durable parent records were read back as `phase:
+after`, `stage: complete`, `owed: []`; both artifacts were independently rechecked after
+the batch as `consistent` / `partition-consistent`, each with channels 1/2 at 100 profiles,
+stored partitions 50+50 and 42 gates. Final captured mode was `VISUAL_DISABLED`, rolling
+`OFF_PROVEN`, popup closed. File stems: `mpx12-50profiles-batch-20261022-01a` and `01b`;
+SHA-256 respectively `f023a48b38abb8f22a5e039aec766d2e9b80af07011ea7dd86158f164aec349a`
+and `0f28e8288fb87c37a6083de1893752de1a7d3bf5af0e6679ffd3e30a48162c62`.
+Local, uncommitted evidence: `.hermes/scratch/multiplexer-development/mpx-batch-live-01.log`,
+`mpx-batch-live-01{a,b}-parent.json` and `mpx-batch-live-01/` capture/child-record tree.
+This extends the offline coverage below: it does not establish unattended reliability,
+larger batches, live cancellation/failure recovery or other builds/layouts.
+
+
+**Status: implemented; two supervised single runs and one supervised two-item `--also`
+batch accepted live (separate invocations, two items per batch). Other batch sizes, live
+cancellation and live failure recovery remain verified offline only.**
+One command composes the four owners that already exist, and adds no gesture, no registry and no
+resume. A single invocation is still one bounded run; the finite `--also` batch documented below
+is only a bounded loop over that same run, one item at a time:
+
+| Stage | Owner | What it owns here |
+|---|---|---|
+| baseline | `inspect_channels` | the disabled screen, read with capture evidence, closed |
+| rollover | `acquire_set_rollover` | rolling ON, pressed only when the fresh baseline capture reads `OFF_PROVEN` |
+| enable | `acquire_enable_multiplexed` | the owned Enable press from a popup the parent opened |
+| record | `record_multiplexed` | one `Record`, the application's completion, one store, the artifact check |
+| post-save | `inspect_channels` | the final mode and rolling state, and the baseline decision |
+
+Rules the composition enforces, all exercised offline in `tests/test_acquire_mpx_run.py`:
+
+- **one binding.** The parent enumerates the window once, binds it once and verifies it; every
+  child receives that record through the new `bound_target` seam and may only call
+  `verify_bound_target`. A child never binds again, and a changed enumerated handle is refused
+  before anything is verified or pressed (`acquire/binding.py`).
+- **preflight before gestures.** Store name, store directory, capture root, the parent record path,
+  the declaration and every bound are checked first. Each invocation claims its own
+  empty `mpx-run-NNN` capture root under the caller's directory (`mkdir(exist_ok=False)`), so an
+  earlier run's frames are never reused or mixed with this one's evidence. The inspection presses
+  nothing; an already-open popup is refused, never adopted.
+- **records owned per run.** The caller's parent record path must not exist, and the three child
+  records are named *after* the run root is claimed and live inside it
+  (`<capture root>/mpx-run-NNN/records/{rollover,enable,restore}-trial.json`). Two runs sharing
+  one parent directory — the normal case, since `--record` sits beside the capture root —
+  therefore never name the same child file, and the earlier run's obligations stay
+  byte-identical. Naming them beside the parent record made a *second* run refuse on the first
+  run's `rollover-trial.json`; `tests/test_acquire_mpx_run.py` now locks that collision out.
+- **a pending record, exclusively claimed**, before the first rolling child, listing the child
+  paths and stating that no action count is claimed. It is rewritten once at the end; a failed
+  rewrite reports `record_unwritten`, never success, and the pending file stays on disk.
+- **the production-reachable enabled pair only.** The Enable child states `VISUAL_ENABLED` only
+  from its fresh clipped `multiplexer_on_entry` pair; a post surface of `absent` states no mode
+  and stops before `Record`. An impossible `absent` + `VISUAL_ENABLED` pair is not exercised or
+  accepted.
+- **one owned clipped dismissal.** After the positive clipped pair, the parent re-reads the bound
+  channels, requires the clipped surface, calls the existing `dismiss_channels_popup` (guarded
+  stepped path) exactly once, and requires an observed `ABSENT`; it then re-reads the bound
+  channels immediately before `Record` and requires `ABSENT` again. A refused, raised or
+  `UNKNOWN` dismissal, or a fresh read that is not `ABSENT`, stops with no `Record`. Its
+  integration point is precisely the interval between the post-enable clipped capture and the
+  fresh close before `Record`. The dismissal is accepted live **once**, in the composed run
+  below, and once on its own through the clipped-entry probe
+  (`tools/live/probes/mpx_enable_close_acceptance.py`, run
+  `enabled-clipped-acceptance-03`: `phase: complete`, `stage: absent`, `owed: []`, exit 0). One
+  accepted run is not a repeat.
+- **one Record.** A record that did not store, or stored an artifact that is not consistent,
+  stops the run with the file preserved — no Stop, Clear, store retry or second Record.
+- **the baseline is a fresh fact.** Post-save `VISUAL_DISABLED` + `OFF_PROVEN` completes;
+  `VISUAL_DISABLED` + rolling ON restores rolling through `set_rollover` (optional, and proved by
+  that child's fresh read). A post-save rolling `UNKNOWN` is an explicit owed stop: no restore
+  child is called and no `ON_PROVEN` is claimed. An enabled or unknown mode is owed, with no
+  `Disable` press.
+- **strict post-save licensing and retained artifacts.** The post-save capture must be this run's
+  live-bracketed, digest-verified, agreed pair with both guards on the original handle and the
+  same popup panel, under this run's own capture root. Retained, torn or wrong-handle captures
+  never complete. Every stop after a consistent store retains `artifact_consistent: true` and the
+  stored path, including post-save unknown and restore-failure paths.
+- **a compact durable record.** The final JSON stores child stages, the positive `post_mode`, the
+  `post_save_mode` and the dismissal's outcome/surface/point/steps as small facts and directory
+  references; the children's full reports stay in the in-memory result rather than being copied
+  into the durable payload.
+- **CLI failure honesty.** A refusal before a gesture exits 2; an unexpected exception after the
+  baseline inspection is reported as a failure (exit 1) with the parent record named as the
+  obligation, never as a traceback success and never as "nothing ran".
+- **child obligations stay nested history.** The Enable child's `restoration_owed` remains in its
+  own report; the parent's `owed` is derived from this run's fresh proofs, so a verified restore
+  resolves it instead of adding a clause permanently.
+
+**Live acceptance, 2026-10-22 — one supervised composed run (n = 1).** The committed CLI ran
+`acquire mpx-run mpx12-50profiles-composed-20261022-01 --channel 1 2 --profiles-per-visit 50
+--repeats 2 --stated-by operator --completion-timeout 60` and exited `0` with
+`stage: complete`, `parent_record_phase: final` and `owed: []`:
+
+| stage | measured by the run |
+|---|---|
+| baseline inspection | `closed`, strip `ready`, capture `VISUAL_DISABLED` + `OFF_PROVEN` |
+| rollover | one press, its own post read `ON_PROVEN`, popup closure `owned_closed` |
+| enable | one press, post surface `multiplexer_on_entry`, post mode `VISUAL_ENABLED` |
+| clipped dismissal | `absent`, `multiplexer_on_entry` → `absent`, point (605, 111), 2 steps, 0.15 s |
+| record | `stored` once: no Stop, no Clear, no second `Record` |
+| stored file | `mpx12-50profiles-composed-20261022-01.BDD`, **43,674 B**, SHA-256 `760d9912957f4002b464aacd11b4ec240ab433f56f94e2f5d535cabb1ad09f3a` |
+| artifact verdict | consistent: channels 1 and 2, **100 profiles each** (50 × 2 repeats), 42 gates, no non-finite values |
+| post-save | `closed`, capture `VISUAL_DISABLED` + `OFF_PROVEN`, so no restore press was needed |
+
+The stored file decoded as `acquisition_mode: sequential`, reported as decoded and never as a
+declaration match — the enable bit is set, and channel order or roll-over is not inferred from
+it. The run's log and parent record live under `.hermes/scratch/multiplexer-development/`
+(git-ignored working artifacts, not repository evidence).
+
+**Second supervised invocation, 2026-10-22 — same command, revised record ownership (n = 2).**
+A second run of the committed CLI (`...-02`, the same declaration: channels 1 and 2, 50 profiles
+per visit, 2 repeats, `--stated-by operator`, completion timeout 60 s) exited `0` with
+`phase: after`, `stage: complete`, `owed: []` and child stages `inspection: closed`,
+`rollover: pressed`, `enable: pressed`, `record: stored`, `post_save: closed`, `restore: ""`
+(no restore child, because the post-save read was already the baseline). It stored
+`mpx12-50profiles-composed-20261022-02.BDD`, **43,674 B**, SHA-256
+`9dd1c074…35cde068`, artifact `consistent`, `VISUAL_ENABLED` before the save and
+`VISUAL_DISABLED` + `OFF_PROVEN` after; that digest is the one the run's own log records for the
+artifact, and it was re-hashed on disk. The two runs are **separate invocations of one build**, not
+a repeat of the same evidence: distinct store artifacts (43,674 B / `9dd1c074…` against
+43,674 B / `760d9912…`), distinct capture roots and distinct child records.
+
+What the second run established that the first could not: the first wrote its
+`rollover-trial.json` and `enable-trial.json` beside the parent record, so a second run in the
+same directory would have refused on the first run's files. Under the per-run ownership this
+commit implements, run 02's child records live inside its own `mpx-run-NNN/records/` directory
+(rollover 811 B, enable 4,569 B) while run 01's pair beside the parent record (810 B, 4,569 B)
+kept their pre-run mtimes; the differing rollover bytes are the evidence that the two runs wrote
+their own records rather than one file twice. No before-hash of run 01's files was taken, so
+"byte-identical" is **not** claimed — only that they were untouched by run 02's write paths,
+which a separate run-root claim enforces (`mkdir(exist_ok=False)`).
+
+**Not established.** Two accepted composed runs, each of one build and one layout, and neither a
+repeat of the other's evidence — no run of a second instrument build, no unattended or
+back-to-back composition, and no live exercise of the refusal paths
+(an already-open popup, a mode disagreement, rolling already ON, a dismissal that raises or does
+not observe `ABSENT`, a store that does not complete, an inconsistent artifact, an unreadable
+post-save state, a failed final rewrite, a failed baseline restore). Those remain
+simulated-provider coverage in `tests/test_acquire_mpx_run.py`. The child stages' own live
+acceptance is §12.6–§12.15.
+
+**Finite batch `--also`: implemented and verified offline; supervised live acceptance pending.**
+The repeatable `--also NAME=RECORD` turns one `acquire mpx-run` invocation into a finite batch of
+explicitly ordered items. It is a thin loop over `run_mpx_once` (`acquire/mpx_batch.py`): no
+gesture is copied, no second implementation of a stage exists, and there is **no resume ledger,
+journal or retry**. It constructs the same real GUI-driving owners as the single run; it adds no
+arm flag, capability lock or second command. Without `--also` the single-run path above is
+byte-for-byte the same behaviour.
+
+- **Grammar.** The positional name plus `--record` are the first item; each `--also` appends one
+  more in the order given. Exactly one separator: the **first** `=` splits the literal store name
+  from the literal parent-record path, so a path may contain `=` and a *name* containing `=` is
+  not expressible through this flag. A token without `=`, or with an empty side, is refused with
+  exit 2; nothing is trimmed, case-folded or otherwise repaired.
+- **Preflight before the one binding.** Every name is judged by the store owner's own
+  `store_preflight` (safe stem, listable directory, case-folded collision); names must be
+  distinct case-folded. Record paths are compared as **identities**, not strings: a caller
+  component Windows would silently rewrite (trailing dot or space, reserved device stem, a
+  forbidden character) is refused with the exact input and never stripped or repaired; records
+  are distinct by the existing parent directory's volume/file identity plus the case-folded file
+  name, so hard links, short names and `..` aliases cannot hide a shared record. A record under
+  the capture root is refused (it would collide with the root or a `mpx-run-NNN` claim). A
+  record placed directly in the artifact store is refused when its **exact stem** is one of the
+  batch's store names, because the store owner attributes a new entry by that stem; a distinct
+  sidecar outside the store is the documented contract and no stem is reinterpreted. Every
+  record must not exist (`trial_record_file`, the owner's path rule); the capture root must
+  exist, be a directory, and its free `mpx-run-NNN` slots — the owner's own `CAPTURE_RUN_LIMIT`
+  (1000), counted by the exact names its claim loop tries, never by a glob, and read with a real
+  `stat` so an unreadable root is UNKNOWN rather than empty — must cover the item count. The
+  shared declaration, the literal `off` baseline (an unrecognised literal is an
+  `AcquisitionError`, not a leaked `ValueError`), the strict bool restore flag and every finite
+  bound are validated in the same step. There is no arbitrary item cap: the bound is the
+  explicit item sequence plus the capture owner's own limit. All refusals are raised together,
+  before any window is bound, any record claimed or any popup opened.
+- **One binding for the whole batch.** The batch enumerates once, binds once through
+  `bind_once`, and hands that record to every `run_mpx_once`, which verifies it and never binds.
+  Each run must report the **same full `WindowTarget`** — not just the same `hwnd`.
+- **A strict gate before each next item and after the last, never a stage-only success.** The
+  completed run must state `complete`, no owed clause, a restored `off` baseline,
+  `VISUAL_DISABLED` sourced from `post_save_capture` (or the `pre_restore_capture` an accepted
+  restore child's own read bounds), rolling `OFF_PROVEN`, a post-save popup observed closed, and
+  its own, its rollover/enable/record/restore children's and its record's `bound_target` equal to
+  the batch binding in full. It must also have a **final durable parent record** that the gate
+  reads back from disk through the owner's `MpxFinalRecord` contract and compares field by field
+  with the in-memory result: phase `after` (the documented mapping from memory's `final`),
+  command `mpx-run`, name, store directory, declaration, original full binding, capture root,
+  stored path, artifact-consistent flag and the baseline fields. A pending, missing, unreadable,
+  differently-phased or malformed record is a gate refusal before any next item. A stored path
+  must be a file now, and the gate re-runs `verify_mpx_artifact` against the same declaration and
+  requires a consistent verdict **and** the digest that run reported — a run's old result is
+  never trusted across the boundary. The same gate runs after the **final** item, so `COMPLETE`
+  means every item's boundary was proved, including the last; a failing clause stops the batch
+  with no further item started, claimed or pressed.
+- **Interruption is an explicit result, not a retry.** A `KeyboardInterrupt` (a cancelled run)
+  stops the loop and the batch returns `INTERRUPTED`, preserving the completed runs' summaries:
+  raised inside a run, that run cannot promise cleanup or a durable partial, so its outcome is
+  reported `UNKNOWN` and its parent-record path is named as possibly pending; raised between
+  runs (during any gate) no next item is started and no record is claimed. `SystemExit` is not
+  cancellation and is allowed to propagate. No result is fabricated for the interrupted item
+  and no second `Record` is pressed.
+- **A compact report.** `--json` prints the batch result: per item its record path, capture
+  root, stage, stored path, gate verdict and digest, post-save mode/rolling state, closed flag,
+  baseline and owed clauses — references and key facts only. The children's full nested reports
+  are not duplicated into the batch payload; they remain on disk in each run's own records.
+- **Exit codes.** A preflight or grammar refusal before the binding exits 2; a stopped (failed
+  run or failed gate) or interrupted batch exits 1 with the stopping clause and what is owed.
+
+**Live acceptance, and what it does not establish.** One supervised two-item batch has run on the
+instrument (2026-10-22, `mpx-batch-live-01`): both items stored and verified, both durable records
+read back at `phase: after` with nothing owed, final state `VISUAL_DISABLED` + `OFF_PROVEN` and the
+popup closed. Offline coverage is `tests/test_acquire_mpx_batch.py`, which calls the **production**
+`run_mpx_once` with the owners' seams scripted and the real `verify_mpx_artifact` on a real `.BDD`
+fixture. **Not established:** unattended or back-to-back cycling, batches other than two items, live
+cancellation, live failure recovery, and — recorded specifically against §12.13 — the three
+preconditions that section named before any batch could be justified: disable during active
+acquisition, popup/gesture timing, and relay settling between blocks. The two live items were run
+without measuring those, so this is an accepted risk of the sitting, not a cleared precondition.
+
+```bash
+uv run udv-acquire acquire mpx-run RUN-NAME \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-run/run-record.json --store-dir outputs/live/store
+
+# The next run in the same directory: a new --record name. The same capture root gets the next
+# run root (mpx-run-002), and its child records live under that root's records/ directory.
+uv run udv-acquire acquire mpx-run RUN-NAME-02 \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-run/run-record-02.json --store-dir outputs/live/store
+
+# A finite batch in one invocation (verified offline; supervised live acceptance pending): the
+# positional name/--record pair is the first item, then each --also in order. One binding, one
+# gate before each next item and after the last, one distinct record per item; records live
+# outside the capture root and the store directory, and the first '=' separates name from path.
+uv run udv-acquire acquire mpx-run BATCH-ITEM-01 \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-batch/01.json --store-dir outputs/live/store \
+  --also "BATCH-ITEM-02=outputs/live/mpx-batch/02.json" \
+  --also "BATCH-ITEM-03=outputs/live/mpx-batch/03.json"
+```
 
 ---
 

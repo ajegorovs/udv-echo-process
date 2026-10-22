@@ -9,8 +9,13 @@ reading the resolver took.
 
 - the strip's **row geometry** (:func:`strip_row`, which is ``driver._strip_row`` moved verbatim)
   and the **slider mark** that decides the view (:func:`has_slider`) — the panel is draggable and
-  morphs (``98x40`` → ``352x40`` → ``413x123``), so its buttons are identified by their order in
-  the current row, never by a width (134 vs 138 px is too close) and never by a caption;
+  morphs (``98x40`` → ``352x40`` → ``413x123``, and ``269x123`` for the two-button store row a
+  multiplexed run ends in, measured 2026-10-20), so its buttons are identified by their order in
+  the current row, never by a width (134 vs 138 px is too close) and never by a caption. Those
+  sizes are the shapes that have been **measured**, not an enumeration of the shapes the panel
+  may take: no code ranges over them and nothing here bounds how far a live rect may drift
+  outside them, so a size not in this list is unmeasured rather than evidence of a different
+  surface;
 - the **state** one resolved strip is in (:func:`strip_state_of`) and the refusal a press out of
   that state gets (:func:`press_refusal`);
 - the shape gate's strip clauses (:func:`strip_clauses`), so the gate asks this module what the row
@@ -58,6 +63,8 @@ from udv_echo_process.acquire.actuator import (
     STARTABLE_VIEWS,
     STRIP_BUTTON_ORDER,
     StripControl,
+    StripRowSignature,
+    StripRowVariant,
     StripState,
     StripView,
     classify_strip_view,
@@ -74,11 +81,13 @@ __all__ = [
     "StripView",
     "classify_strip_view",
     "has_slider",
+    "new_acquisition_refusal",
     "press_index",
     "press_refusal",
     "strip_clauses",
     "strip_controls",
     "strip_row",
+    "strip_row_signature",
     "strip_state_of",
 ]
 
@@ -104,6 +113,40 @@ def strip_row(panel: dict, kids: Sequence[dict]) -> list[dict]:
     )
 
 
+def strip_row_signature(panel: dict, kids: Sequence[dict]) -> StripRowSignature | None:
+    """The measured structure of this panel's top row, or ``None`` when it is not one reading.
+
+    The signature is **evidence for a row variant** (:data:`…actuator.MEASURED_ROW_VARIANTS`),
+    never an address: the buttons are still pressed by position. It is built only from what the
+    resolving boundary actually read:
+
+    - the panel's own width and height, as its rect states them;
+    - the widths of the **painted** top-row buttons, left → right.
+
+    A child that states ``visible: false`` is not part of the row and is left out — the live
+    resolver never returns one (:func:`…win32.tree._visible_children` enumerates visible
+    descendants only), so a capture that does carry the hidden siblings and a live read of the
+    same row both produce the same signature. The hidden siblings' widths are therefore
+    **provenance in the capture note, never a live discriminator**: they cannot be read at this
+    boundary, and a signature field that is permanently unreadable would be a claim, not a
+    measurement.
+
+    ``None`` means *this row was not measured*: no panel size, no painted button, or a missing
+    width. Nothing is guessed from a count — that is the whole point, since the count is what
+    two rows share.
+    """
+    width, height = panel.get("w"), panel.get("h")
+    if not isinstance(width, int) or not isinstance(height, int):
+        return None
+    painted = [k for k in strip_row(panel, kids) if k.get("visible", True) is not False]
+    widths = tuple(int(k["w"]) for k in painted if isinstance(k.get("w"), int))
+    if not widths or len(widths) != len(painted):
+        return None
+    return StripRowSignature(
+        panel_width=width, panel_height=height, visible_widths=widths
+    )
+
+
 def has_slider(kids: Sequence[Mapping]) -> bool:
     """True when the panel owns a ``TSp_Sliding_Bar`` child — the store view's own mark.
 
@@ -115,14 +158,26 @@ def has_slider(kids: Sequence[Mapping]) -> bool:
 
 
 def strip_state_of(
-    button_count: int, has_slider: bool, slider_max: int | None = None
+    button_count: int,
+    has_slider: bool,
+    slider_max: int | None = None,
+    row_signature: StripRowSignature | None = None,
 ) -> StripState:
     """The strip state implied by a structure just resolved — the reading, not a choice.
 
     ``slider_max`` (the selected block's profile count) is deliberately defaulted to ``None``:
     the reference never read the slider's range, and guessing is worse than saying nothing.
+
+    ``row_signature`` is the measured top row (:func:`strip_row_signature`) when the caller
+    resolved one. It is optional because a hand-built state has measured nothing, and an
+    unmeasured row must stay unmeasured rather than borrow the shape of the last one read.
     """
-    return StripState(button_count=button_count, has_slider=has_slider, slider_max=slider_max)
+    return StripState(
+        button_count=button_count,
+        has_slider=has_slider,
+        slider_max=slider_max,
+        row_signature=row_signature,
+    )
 
 
 def press_refusal(state: StripState) -> str | None:
@@ -148,6 +203,48 @@ def press_refusal(state: StripState) -> str | None:
         "to settle it — so the row is ambiguous, it has no executable binding, and a live tree "
         "capture has to resolve it before anything is pressed from it "
         "(docs/dop3000/device-verification.md V4)"
+    )
+
+
+def new_acquisition_refusal(state: StripState) -> str | None:
+    """Why this store view may **not** be left by pressing ``New acquisition``, or ``None``.
+
+    A store view holds a block that was never stored, and the gesture every recovery path uses to
+    get back to the ready view without committing it is ``New acquisition``. That gesture is a
+    *binding*, so whether it exists is asked of the binding's owner — :data:`…actuator.
+    STRIP_BUTTON_ORDER`, through :attr:`…actuator.StripState.controls` — and never of a button
+    count: the three- and four-entry store rows bind it (``UI-STRIP-02``'s captions are the
+    four's), and the two-entry row a multiplexed (MPX) acquisition ends in does not
+    (``tests/test_acquire_multiplexer_strip.py``, the 2026-10-20 capture).
+
+    On a row that binds no ``New acquisition`` the block is the operator's unsaved data, so there
+    is no gesture here that leaves the view: storing it would commit a block under a name this
+    driver invented, and ``Clear and restart`` would discard it. Neither is substituted, and
+    nothing is pressed — the clause names the row it read and hands the decision back.
+
+    ``None`` means *a press is bound here*, never "nothing was checked": a non-store view is left
+    to :func:`press_refusal` and :func:`…actuator.press_index`, which own the other two refusals.
+    """
+    if state.view is not StripView.STORE:
+        return None
+    if StripControl.NEW_ACQUISITION in state.controls:
+        return None
+    bound = [control.value for control in state.controls]
+    variant = state.row_variant
+    row = (
+        "the repeated multiplexed (MPX) completion row"
+        if variant is StripRowVariant.REPEATED_MPX_COMPLETION
+        else "the row a multiplexed (MPX) acquisition ends in"
+    )
+    named = f" ({variant.value!r})" if variant is not None else ""
+    return (
+        "the strip is holding an unsaved block: the store view is up with "
+        f"{state.button_count} button(s) bound as {bound}{named}, and that row binds no "
+        f"'New acquisition' — it is {row}, where the "
+        "button is absent by measurement. Nothing is pressed, and nothing is stored, cleared or "
+        "discarded from here, because each of those acts on the operator's unsaved data: store "
+        "the block with 'Do store' or discard it with 'Clear and restart' on the instrument, "
+        "then re-run"
     )
 
 

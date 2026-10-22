@@ -15,6 +15,28 @@
   text anywhere while re-reading the same controls through
   `WM_GETTEXT` (`SendMessage`) returned all of them. Read text through the same message the driver
   uses, and only then believe that a widget carries no caption.
+- **A menubar popup opens on a stepped *entry* into the button, and one warp to the same point
+  opens nothing.** The old hover recipe (`SetCursorPos` onto the anchor centre plus one relative
+  `mouse_event` nudge) is a *move*, so re-hovering a button the pointer already sits on does
+  nothing: `SetCursorPos` to the same pixel produces no enter, the nudge stays inside the same
+  control, and the bounded poll reports `ABSENT` on a gesture that was never made. The measured
+  fix is not a conditional park before that hover — it is one geometry-derived **column**
+  (`channels-stepped-entry-live-03`, 2026-10-22): park on the anchor's own centre column one
+  pixel below the whole menubar band's clearance (measured `(561, 68)`), then walk 4 px
+  `SetCursorPos` positions straight up into the anchor. The measured run first entered the button
+  at step 4 (`(561, 52)`) and opened the popup; a single warp to the same point had not. Read the
+  caller's popup after every landing and stop at the **first** non-`ABSENT` read; refuse an
+  unintended surface without retrying; a full path with no flip is `UNKNOWN`, never a failed
+  gesture. Keep the plan's interval budget, the per-position read allowance and the **actual**
+  elapsed time separate — the checked bound is not a wall-clock promise.
+- **A claim written into a report before the gesture is not evidence of it.** A probe that
+  pre-writes "the multiplexer is enabled and idle, the baseline restore is owed" into its durable
+  report will read that clause back after a *preflight refusal* that pressed nothing — the
+  `enabled-clipped-acceptance-01` report claimed an enabled instrument on a zero-press run. Derive
+  the claim from what the run actually observed (zero presses → `UNKNOWN`, nothing owed; a gesture
+  that may have started without a proven read → a *pending conditional* obligation; only the run's
+  own fresh capture → the concrete obligation), and state the unknown as unknown. Historical
+  reports are evidence: fix the producer, never rewrite the old output.
 - **A value can live one level inside the wrapper drawn for it, and "it stated nothing" is not the
   same as "the read failed".** Some toolkits build a dialog as a row-per-value grid of wrapper
   buttons and put each value in the control *inside* its wrapper — the `Operating parameters`

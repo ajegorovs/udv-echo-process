@@ -32,7 +32,25 @@ import sys
 from pathlib import Path
 
 from udv_echo_process import run_all
-from udv_echo_process.acquire import campaign, driver, live, run_plan
+from udv_echo_process.acquire import (
+    campaign,
+    channels_profiles,
+    channels_read,
+    channels_repeat,
+    channels_select,
+    disable_multiplexed,
+    driver,
+    enable_multiplexed,
+    live,
+    mode_marks,
+    mpx_artifact,
+    mpx_batch,
+    mpx_run,
+    record_multiplexed,
+    run_plan,
+    set_rollover,
+    store_completed,
+)
 from udv_echo_process.acquire.actuator import ProcessMode
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
@@ -689,6 +707,25 @@ def prf_ladder_main(argv: list[str] | None = None) -> None:
     raise SystemExit(0)
 
 
+def _print_artifact_clauses(report) -> None:
+    """Print every clause that did not come out consistent, one line each (human output)."""
+    if report is None:
+        return
+    for clause in report.clauses:
+        if clause.status is not mpx_artifact.MpxVerdict.CONSISTENT:
+            print(f"  {clause.status.value}: {clause.subject}: {clause.detail}")
+
+
+def _artifact_exit_code(report) -> int:
+    """The artifact check's own exit code, shared by every command that prints one."""
+    return {
+        mpx_artifact.MpxVerdict.CONSISTENT: 0,
+        mpx_artifact.MpxVerdict.CONTRADICTED: 1,
+        mpx_artifact.MpxVerdict.UNVERIFIABLE: 3,
+        mpx_artifact.MpxVerdict.UNREADABLE: 4,
+    }[report.verdict]
+
+
 def _acquire_report(value: object, as_json: bool) -> None:
     """Print a report: JSON for a machine, one ``field: value`` line each for a person."""
     if hasattr(value, "model_dump"):
@@ -1311,6 +1348,65 @@ def acquire_main(argv: list[str] | None = None) -> None:
     spent. Only ``campaign`` records: it compiles, then runs the points through the same live
     actuator the other subcommands use.
 
+    ``store-completed`` records nothing either: it is the store-only verb for a multiplexed block
+    the operator already recorded by hand and the application already finished. It declares the
+    block's channels and per-channel profile count as the operator's own statement (never a
+    reading, never derived), verifies exactly one instrument window, the instrument caption, no
+    overlay and the measured two-button ``Do store`` / ``Clear and restart`` row, refuses a store
+    name or directory it could not attribute a file to, then presses ``Do store`` **once** and
+    commits once. It never presses ``Record``, ``Stop``, ``Clear and restart``, opens the
+    ``Channels`` menu or writes a parameter, and it retries nothing.
+
+    ``record-multiplexed`` is the one live verb that both records and stores a multiplexed block:
+    the operator declares the enabled multiplexer, its channels and its per-channel profile count
+    (never read off the screen — the mode has no passive discriminator), names a completion bound
+    in seconds, and the command verifies one instrument window, the caption, no overlay and the
+    three-button ready row, proves the output name/directory/collision, presses ``Record``
+    **once**, polls the strip for the application's own two-button completion, and stores through
+    the same store-only path on the same binding. It presses no ``Stop``, ``Clear and restart``,
+    ``Disable multiplexer`` or menu, never retries, and leaves a recording that outlives the bound
+    **running** — reported as ``still_running`` with nothing discarded.
+
+    ``channels-read`` is the read-only reading of the operator-opened ``Channels`` popup: one
+    window read, then the popup's stated amounts (repeat, start channel, apply-from, profiles,
+    seconds) as the exact text each widget states, with every tick, toggle and mode carried as
+    ``UNKNOWN`` because this application paints them and states them nowhere. It never opens or
+    closes the popup, presses nothing, and exits 0 on a successful *inspection* — which is not a
+    verified setup. A clipped multiplexer-on entry is reported as its own readable surface, with
+    no settings or tick state inferred. A popup that is absent, ambiguous, behind a dialog, of
+    another band order, or stating an amount as empty text is reported with refusals and exits 2.
+
+    ``--capture-dir`` adds **capture evidence** to that read and nothing more: two whole-screen
+    frames are taken around a second inspection of the same popup, the popup's own rect (from
+    the structural report, never a constant) is cropped and saved as PNG, and the pair is held
+    to before/after target, foreground, non-minimised and popup-rect guards plus a numeric
+    bracketing of every amount. A capture that cannot be attributed, that is blank, that differs
+    between the two frames, or whose numbers moved is reported ``status: UNKNOWN`` with its
+    reasons and exits 3. No OCR runs: the native ``caption`` stays ``UNKNOWN`` and an
+    operator's stated caption is never promoted to a native fact. When the capture is ``ok`` and
+    its two frames are stable, ``capture.visual_caption`` additionally carries the painted caption
+    line as a **visual attribution** by exact template match — a separate field with
+    ``native_fact`` and ``action_authority`` both false, restricted to photographed channels
+    ``1``, ``2`` and ``10``; it never fills ``caption``, ``per_channel.channel`` or an
+    amount, and it is never taken from what the caller declared. Without the flag the report is
+    unchanged.
+
+    ``channels-profiles`` is the second supervised single-field write: the group box's
+    per-channel ``Acquire … Profiles`` amount, set from a declared ``--expect`` to a declared
+    ``--value`` **once**. The group's channel is caption-only and the tree states nothing, so the
+    operator declares it with a required ``--operator-channel``; that declaration is checked
+    against the channels the popup paints, is recorded as a declaration, and is never a verified
+    channel. It requires one bound instrument window, the instrument caption, no overlay, the
+    stopped row and the full readable settings popup, re-resolves the exact profiles edit and its
+    owner immediately before one commit, and refuses with zero writes on any mismatch. The
+    coupled ``seconds`` amount is reported before and after and must be valid and positive
+    afterwards — the application recomputes it when the count changes, so it is not required to
+    stay put; ``repeat``/``start``/``apply-from`` must, and a movement is reported. The trial
+    obligation is claimed on disk before the commit, ``--baseline`` is the trial's original count
+    (never this invocation's ``--expect``), and only the operator's fresh read from a reopened
+    popup closes it. It never presses anything, records nothing and retries nothing; a failure
+    that cannot be written to the record exits 1.
+
     ``run-plan`` is the level above ``campaign``: a **pass** of jobs with an order (the first
     sparse mixer pass, one JSON file and nine job definitions under
     ``examples/sparse-mixer-first-pass/``). Its ``--check`` and ``--sheet`` are static — they plan
@@ -1318,9 +1414,20 @@ def acquire_main(argv: list[str] | None = None) -> None:
     operator reads the run-wide values from (the run transitions each job's burst itself at the
     boundary; the emissions per profile is the one the operator sets by hand) — and ``--status``
     reads the pass's own record to say which job is next. ``--next`` is the only action that
-    records: it hands the next job's definition to the campaign path unchanged, with its own log,
-    and folds the result into the pass's record. The one thing it adds is the cross-job order,
-    which no single definition can carry.
+     records: it hands the next job's definition to the campaign path unchanged, with its own log,
+     and folds the result into the pass's record. The one thing it adds is the cross-job order,
+     which no single definition can carry.
+
+     ``mpx-run`` is the composed multiplexed run: one binding, a pending parent record, the four
+     existing owners once each, and no retry. Its repeatable ``--also NAME=RECORD`` turns the same
+     invocation into a **finite batch** of explicitly ordered items under that one binding — the
+     shared declaration for every item, one distinct parent record per item, every name and path
+     proved before the first claim, and a strict gate (complete, the durable final record read
+     back through the owner's contract, restored baseline, disabled post-save mode, closed popup,
+     the same full target identity on every child, and a freshly re-verified artifact digest)
+     after every item including the last. Without ``--also`` the single run is unchanged. One
+     supervised two-item batch has run live; unattended cycling, larger batches and live
+     cancellation/failure recovery remain unverified. It keeps no resume ledger.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -1366,6 +1473,382 @@ def acquire_main(argv: list[str] | None = None) -> None:
     channel_argument(status_parser)
     status_parser.add_argument("--json", action="store_true")
 
+    channels_read_parser = subcommands.add_parser(
+        "channels-read",
+        help=(
+            "read the operator-opened Channels popup, pressing nothing (a successful "
+            "inspection verifies no setup)"
+        ),
+    )
+    channels_read_parser.add_argument("--json", action="store_true")
+    channels_read_parser.add_argument(
+        "--capture-dir",
+        default=None,
+        help=(
+            "also save lossless PNG crops of the popup's own rect from two guarded frames "
+            "into this directory, with before/after target, foreground, non-minimised and "
+            "numeric guards; the native caption stays UNKNOWN, and a separate visual "
+            "attribution is reported only from a still capture whose two frames read the "
+            "same exact result"
+        ),
+    )
+
+    channels_inspect_parser = subcommands.add_parser(
+        "channels-inspect",
+        help=(
+            "open, read (with capture evidence) and close the Channels popup with no operator "
+            "gesture: one geometry-derived stepped entry into the proven anchor and one bounded "
+            "stepped real-cursor path, pressing no entry, enabling nothing and writing no "
+            "parameter"
+        ),
+    )
+    channels_inspect_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "the directory the run's own capture-NNN evidence directory is claimed under: two "
+            "guarded lossless frames of the popup's rect, its numeric bracketing, and the same "
+            "unknown-caption rules as channels-read"
+        ),
+    )
+    channels_inspect_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="poll bound after each gesture (s); nothing is retried past it",
+    )
+    channels_inspect_parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="also write this run's JSON report here",
+    )
+    channels_inspect_parser.add_argument("--json", action="store_true")
+
+    mpx_mode_parser = subcommands.add_parser(
+        "mpx-mode-read",
+        help=(
+            "read a retained MPX mode capture, pressing nothing: the mode entry line and the "
+            "rollover mark as a visual attribution"
+        ),
+    )
+    mpx_mode_parser.add_argument(
+        "--capture-dir",
+        default=None,
+        help=(
+            "a retained capture directory holding channels-roi-frame-1.png and -2.png; either "
+            "measured shape is read (the full settings popup, 393x426, or the clipped "
+            "one-entry popup, 158x43). The clipped shape states the mode and no rolling state "
+            "and needs no numeric settings bracketing"
+        ),
+    )
+    mpx_mode_parser.add_argument("--json", action="store_true")
+
+    enable_mpx_parser = subcommands.add_parser(
+        "enable-multiplexed",
+        help=(
+            "press the operator-opened Channels popup's Enable multiplexer toggle once and only "
+            "with rolling proven ON. A decision capture comes first; the durable trial record is "
+            "then claimed, and a final licensing capture is taken at the action boundary "
+            "immediately before the press (the mode itself stays unknown after it, so reopen "
+            "Channels to read it). Keep hands off the instrument for the whole command"
+        ),
+    )
+    enable_mpx_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame capture is claimed: a mode press needs a capture taken "
+            "in this same invocation whose conjunction and capture-time digests verify"
+        ),
+    )
+    enable_mpx_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "enable-multiplexed-trial.json inside it); it records the old rolling evidence, the "
+            "target control and the owed restoration before the press, and is never overwritten"
+        ),
+    )
+    enable_mpx_parser.add_argument("--json", action="store_true")
+
+    disable_mpx_parser = subcommands.add_parser(
+        "disable-multiplexed",
+        help=(
+            "press the operator-opened clipped Channels popup's Disable multiplexer entry once, "
+            "only from a fresh verified enabled entry capture. A decision capture comes first; "
+            "the durable trial record is then claimed, and a final licensing capture is taken at "
+            "the action boundary immediately before the press. Exit 0 only when a fresh post-press "
+            "settings capture proves VISUAL_DISABLED with no press, post or record error; keep "
+            "hands off the instrument for the whole command"
+        ),
+    )
+    disable_mpx_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame captures are claimed: the clipped entry pair before the "
+            "press and, when the operator has the full settings popup open, the post-press pair"
+        ),
+    )
+    disable_mpx_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "disable-multiplexed-trial.json inside it); it records the licensed entry, the press "
+            "attempt and every fact that could not be established, and is never overwritten"
+        ),
+    )
+    disable_mpx_parser.add_argument("--json", action="store_true")
+
+    set_rollover_parser = subcommands.add_parser(
+        "set-rollover",
+        help=(
+            "open Channels, set Roll over the channels ON or OFF once, read it back and close. "
+            "Starts from ABSENT and refuses an already-open popup unless --adopt-open. The "
+            "decision capture, a durable pending obligation, a fresh licensing capture at the "
+            "action boundary, one press only when requested differs from --expect, a post "
+            "capture and an owned close are each separate facts"
+        ),
+    )
+    for flag, text in (
+        ("--requested", "the rolling state to establish"),
+        ("--expect", "the rolling state the decision capture must prove first"),
+        (
+            "--baseline",
+            (
+                "the trial's declared original rolling state; literal, never inferred, and "
+                "restored only by a separate invocation"
+            ),
+        ),
+    ):
+        set_rollover_parser.add_argument(
+            flag,
+            required=True,
+            choices=[state.value for state in set_rollover.Rolling],
+            help=text,
+        )
+    set_rollover_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame full-settings captures are claimed: the decision pair, "
+            "the final licensing pair at the boundary, and the post-press pair"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively for a real write (an existing directory "
+            "gets set-rollover-trial.json inside it); never written for a no-op, and never "
+            "overwritten"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--adopt-open",
+        action="store_true",
+        help=(
+            "accept an already-open readable Channels popup instead of refusing it; it is left "
+            "open unless --close-adopted is also passed"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--close-adopted",
+        action="store_true",
+        help="close a popup adopted with --adopt-open (ignored when this command opened it)",
+    )
+    set_rollover_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="poll bound for the open and the close (s); nothing is retried past it",
+    )
+    set_rollover_parser.add_argument(
+        "--max-boundary-seconds",
+        type=float,
+        default=None,
+        help=(
+            "optional caller limit on the elapsed licensing boundary; no cap is applied when "
+            "omitted"
+        ),
+    )
+    set_rollover_parser.add_argument("--json", action="store_true")
+
+    channels_repeat_parser = subcommands.add_parser(
+        "channels-repeat",
+        help=(
+            "set the Channels popup's Repeat from a declared value to another, once "
+            "(persistence is unproven: the dialog must be reopened)"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--expect",
+        type=int,
+        required=True,
+        help="the repeat the popup must state before any write",
+    )
+    channels_repeat_parser.add_argument(
+        "--value", type=int, required=True, help="the repeat to commit, once"
+    )
+    channels_repeat_parser.add_argument(
+        "--baseline",
+        type=int,
+        default=None,
+        help=(
+            "the trial's original repeat, which restoration owes; declare it on every "
+            "invocation of one trial so a restore run does not record its own starting value "
+            "as the baseline (omitted: the record states no baseline and names only this "
+            "invocation's own starting value)"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_repeat_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-repeat-trial.json inside it): one record per invocation, so a forward "
+            "write and its restore are two records, each naming the same original --baseline; "
+            "reconcile by reading them in order. An existing record is never overwritten"
+        ),
+    )
+    channels_repeat_parser.add_argument("--json", action="store_true")
+
+    channels_profiles_parser = subcommands.add_parser(
+        "channels-profiles",
+        help=(
+            "set the Channels popup's per-channel Profiles from a declared count to another, "
+            "once (the operator declares the channel; persistence is unproven)"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--expect",
+        type=int,
+        required=True,
+        help="the profiles count the popup must state before any write",
+    )
+    channels_profiles_parser.add_argument(
+        "--value", type=int, required=True, help="the profiles count to commit, once"
+    )
+    channels_profiles_parser.add_argument(
+        "--operator-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of which channel the per-channel amounts belong to; "
+            "the popup's caption is painted and the tree states nothing, so this is never a "
+            "verified channel"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--baseline",
+        type=int,
+        default=None,
+        help=(
+            "the trial's original profiles count, which restoration owes; declare it on every "
+            "invocation of one trial so a restore run does not record its own starting count "
+            "as the baseline (omitted: the record states no baseline)"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_profiles_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-profiles-trial.json inside it): one record per invocation, so a forward "
+            "write and its restore are two records, each naming the same original --baseline; "
+            "reconcile by reading them in order. An existing record is never overwritten"
+        ),
+    )
+    channels_profiles_parser.add_argument("--json", action="store_true")
+
+    channels_select_parser = subcommands.add_parser(
+        "channels-select",
+        help=(
+            "press the Channels popup's top radio row once to select one channel "
+            "(the selection itself stays unknown: the cells paint their tick)"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--expect-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of the channel the popup is on now (1..10); it is a "
+            "declaration, never a measured state, and it never stands in for "
+            "--restore-channel"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--channel",
+        type=int,
+        required=True,
+        help="the top-row channel cell to press, once (supported: 1, 2, 10)",
+    )
+    channels_select_parser.add_argument(
+        "--expect-start-channel",
+        type=int,
+        required=True,
+        help=(
+            "the operator's declaration of the popup's start-channel field; it is checked "
+            "against the field's own text before anything is pressed"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--restore-channel",
+        type=int,
+        required=True,
+        help=(
+            "the trial's original channel, declared explicitly on every invocation (1..10); it "
+            "is never defaulted from --expect-channel, because that would record a restoration "
+            "nobody declared and a restore run would owe an undo of itself"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--visual-corroboration",
+        default="",
+        help=(
+            "an operator/capture observation taken after the press, recorded separately; it is "
+            "post-hoc corroboration and never the command's own proof of a selection"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--mpx-disabled",
+        action="store_true",
+        help=(
+            "the operator's declaration that the multiplexer is disabled; required, because "
+            "the repository has no passive read of that mode"
+        ),
+    )
+    channels_select_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively (an existing directory gets "
+            "channels-select-trial.json inside it): one record per invocation, claimed after "
+            "the fresh preflight and before the press. An existing record is never overwritten"
+        ),
+    )
+    channels_select_parser.add_argument("--json", action="store_true")
+
     channel_parser = subcommands.add_parser(
         "channel", help="verify the measurement channel (writes it only if it differs)"
     )
@@ -1394,6 +1877,340 @@ def acquire_main(argv: list[str] | None = None) -> None:
     expect_mode_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
+
+    store_completed_parser = subcommands.add_parser(
+        "store-completed",
+        help=(
+            "store a multiplexed block the application has already completed (one 'Do store' "
+            "and nothing else)"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "name", help="store file-name stem (collisions refused)"
+    )
+    store_completed_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels of the completed block, as the operator states them",
+    )
+    store_completed_parser.add_argument(
+        "--profiles",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel in the completed block "
+            "(legacy basis; exclusive with --channel-profiles/--repeats)"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
+    )
+    store_completed_parser.add_argument(
+        "--stated-by",
+        required=True,
+        help="who declares the completed block's channels/profiles",
+    )
+    store_completed_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    store_completed_parser.add_argument("--store-dir", default=None)
+    store_completed_parser.add_argument("--json", action="store_true")
+
+    mpx_check_parser = subcommands.add_parser(
+        "mpx-check",
+        help=(
+            "verify one stored multiplexed .BDD against the operator's completed-block "
+            "declaration (offline: no window, no instrument, nothing written)"
+        ),
+    )
+    mpx_check_parser.add_argument("file", help="the stored .BDD file to verify")
+    mpx_check_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels of the completed block, as the operator states them",
+    )
+    mpx_check_parser.add_argument(
+        "--profiles",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel across the stored block "
+            "(legacy basis; exclusive with --profiles-per-visit/--repeats)"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated profile count for ONE visit; requires --repeats, and the "
+            "expected total is their product (exclusive with --profiles)"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
+        ),
+    )
+    mpx_check_parser.add_argument(
+        "--stated-by",
+        default="cli",
+        help="who states the channels/profiles (default: cli)",
+    )
+    mpx_check_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    mpx_check_parser.add_argument("--json", action="store_true")
+
+    record_multiplexed_parser = subcommands.add_parser(
+        "record-multiplexed",
+        help=(
+            "one 'Record' on an operator-enabled multiplexer, the application's own completion, "
+            "one store, then a check of the stored file against the same declaration (never Stop)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "name", help="store file-name stem (collisions refused before the press)"
+    )
+    # DEVIATION from `store-completed`'s spelling by necessity, not by taste: this command records,
+    # so it takes the same declaration *before* the block exists. `--channel` / `--profiles` /
+    # `--stated-by` / `--statement` are the same flags with the same meaning, and `--mpx-enabled`
+    # is the mode declaration §24.4 has no passive read for — required, so it can never be implied.
+    record_multiplexed_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels the multiplexer is configured for, as the operator states them",
+    )
+    record_multiplexed_parser.add_argument(
+        "--profiles",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated TOTAL profiles per channel across the stored block "
+            "(legacy basis; exclusive with --profiles-per-visit/--repeats)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated profile count for ONE visit; requires --repeats, and the "
+            "expected total is their product (exclusive with --profiles)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help=(
+            "the operator's stated repeat count; pairs with --profiles-per-visit (one count "
+            "for every channel) or --channel-profiles (a count per channel). The repeat "
+            "count itself is never verified: the decoder decodes no visit/block count"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help=(
+            "each channel's stated profile count for ONE visit, as CHANNEL=COUNT pairs "
+            "(e.g. 1=50 2=75); requires --repeats, and each channel's expected total is "
+            "that channel's own count x --repeats (exclusive with "
+            "--profiles/--profiles-per-visit)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--stated-by",
+        required=True,
+        help="who declares the multiplexer's mode and channel set",
+    )
+    record_multiplexed_parser.add_argument(
+        "--mpx-enabled",
+        action="store_true",
+        required=True,
+        help=(
+            "the operator's own statement that the multiplexer is enabled and its channels "
+            "configured (there is no passive read of the mode)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--completion-timeout",
+        type=float,
+        required=True,
+        help=(
+            "the caller's bound, in seconds, on the wait for the application's own completion "
+            "(not a dwell, and never derived from --profiles)"
+        ),
+    )
+    record_multiplexed_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    record_multiplexed_parser.add_argument("--store-dir", default=None)
+    record_multiplexed_parser.add_argument("--json", action="store_true")
+
+    mpx_run_parser = subcommands.add_parser(
+        "mpx-run",
+        help=(
+            "one bounded multiplexed run: inspect the disabled screen, roll over ON when needed, "
+            "enable the multiplexer, record once, store and verify, then restore the baseline. "
+            "Repeatable --also NAME=RECORD runs a finite batch of such runs under one binding"
+        ),
+    )
+    mpx_run_parser.add_argument(
+        "name",
+        help="store file-name stem (collisions refused before the first gesture)",
+    )
+    mpx_run_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels the multiplexer is configured for, as the operator states them",
+    )
+    mpx_run_parser.add_argument(
+        "--profiles",
+        type=int,
+        default=None,
+        help="the operator's stated TOTAL profiles per channel (legacy basis)",
+    )
+    mpx_run_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help="the operator's stated profile count for ONE visit; requires --repeats",
+    )
+    mpx_run_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help="the operator's stated repeat count (never verified: no visit count is decoded)",
+    )
+    mpx_run_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help="each channel's stated count for ONE visit, as CHANNEL=COUNT pairs",
+    )
+    mpx_run_parser.add_argument(
+        "--stated-by",
+        required=True,
+        help="who states the channel set and its profile counts",
+    )
+    mpx_run_parser.add_argument(
+        "--completion-timeout",
+        type=float,
+        required=True,
+        help="the caller's finite bound, in seconds, on the application's own completion",
+    )
+    mpx_run_parser.add_argument(
+        "--capture-root",
+        required=True,
+        help="an existing directory every child capture run is claimed under",
+    )
+    mpx_run_parser.add_argument(
+        "--record",
+        required=True,
+        help=(
+            "the parent obligation record (a file, or a directory that gets mpx-run-record.json "
+            "inside it); claimed exclusively and never overwritten — a batch passes one distinct "
+            "--record per run, since the file name is the caller's per-run identifier"
+        ),
+    )
+    mpx_run_parser.add_argument(
+        "--baseline",
+        default="off",
+        choices=[state.value for state in set_rollover.Rolling],
+        help="the operator's declared baseline; this composition runs only from 'off'",
+    )
+    mpx_run_parser.add_argument(
+        "--no-restore-baseline",
+        dest="restore_baseline",
+        action="store_false",
+        help="leave rolling ON after the store and owe the restore instead of performing it",
+    )
+    mpx_run_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="the popup settle bound handed to each child (seconds, default 3)",
+    )
+    mpx_run_parser.add_argument(
+        "--boundary-seconds",
+        type=float,
+        default=None,
+        help="optional finite upper bound on each child's press boundary, for diagnosis only",
+    )
+    mpx_run_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    mpx_run_parser.add_argument(
+        "--also",
+        action="append",
+        default=None,
+        metavar="NAME=RECORD",
+        help=(
+            "adds one more bounded run to this invocation, in the order given: the literal "
+            "store name, one '=', then the literal parent-record path (the first '=' separates, "
+            "so a name containing '=' is not expressible here and no token is repaired). With "
+            "--also this command runs a finite batch under one binding, gated before each next "
+            "run; without it the single run below is unchanged"
+        ),
+    )
+    mpx_run_parser.add_argument("--store-dir", default=None)
+    mpx_run_parser.add_argument("--json", action="store_true")
 
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
@@ -1557,6 +2374,400 @@ def acquire_main(argv: list[str] | None = None) -> None:
     try:
         if args.command == "status":
             _acquire_report(live.status(args.channel, notes), as_json)
+        elif args.command == "channels-read":
+            # One read of the operator-opened popup and nothing else: no press, no hover, no
+            # commit, no popup opened or closed. The report is printed either way, because the
+            # refusals are the useful part of an unreadable screen; the exit code carries the
+            # verdict (0 a successful inspection, 2 unreadable, 3 a capture that could not be
+            # attributed) and never means "setup verified".
+            channel_report = channels_read.read_channels(capture_dir=args.capture_dir)
+            _acquire_report(channel_report, as_json)
+            if not channel_report.readable:
+                for refusal in channel_report.refusals:
+                    print(f"udv-acquire: {refusal}", file=sys.stderr)
+                code = 2
+            elif channel_report.capture is not None:
+                # The capture is opt-in, so its verdict is its own: an inspection that succeeded
+                # beside a capture that could not be attributed exits 3 rather than 0. The native
+                # caption is still UNKNOWN: a visual attribution, when the capture supports one,
+                # is its own field and never a fact.
+                if channel_report.capture.status != "ok":
+                    for reason in channel_report.capture.unknown_reasons:
+                        print(f"udv-acquire: capture: {reason}", file=sys.stderr)
+                    code = 3
+        elif args.command == "channels-inspect":
+            # The managed lifecycle: one geometry-derived stepped entry opens the popup (or an already-open one is
+            # refused — this command never adopts an operator's popup), the read carries the same
+            # capture evidence channels-read produces, and one bounded stepped path closes it. No
+            # entry is pressed, nothing is enabled, recorded or written, and no other popup is
+            # dismissed. Exit codes: 0 read + capture ok + an observed close; 2 no readable popup;
+            # 3 refused before any gesture; 5 capture not attributable or the close unconfirmed.
+            from udv_echo_process.acquire import channels_inspect as inspected
+            from udv_echo_process.acquire.ui.layout import MAIN_CLASS
+            from udv_echo_process.acquire.win32.tree import visible_main_windows
+
+            windows = visible_main_windows(MAIN_CLASS)
+            if len(windows) != 1:
+                channel_report = inspected.ChannelInspection(
+                    outcome=inspected.InspectionOutcome.REFUSED,
+                    mode="unobserved",
+                    mode_source="refused-before-read",
+                    refused=(
+                        f"{len(windows)} visible {MAIN_CLASS} windows: channels-inspect "
+                        "requires exactly one and binds nothing"
+                    ),
+                    refused_stage="binding",
+                )
+            else:
+                managed = driver.Win32Actuator(allow_real_input=True)
+                channel_report = inspected.inspect_channels(
+                    actuator=managed,
+                    target=managed.bind_target(windows[0]),
+                    capture_dir=args.capture_dir,
+                    allow_real_input=True,
+                    settle_s=args.settle,
+                )
+            _acquire_report(channel_report, as_json)
+            if args.report is not None:
+                report_path = Path(args.report)
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(
+                    json.dumps(channel_report.model_dump(mode="json"), indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            if channel_report.outcome is inspected.InspectionOutcome.REFUSED:
+                print(f"udv-acquire: {channel_report.refused}", file=sys.stderr)
+                code = 3
+            elif channel_report.read is None or not channel_report.read.readable:
+                if channel_report.refused:
+                    print(f"udv-acquire: {channel_report.refused}", file=sys.stderr)
+                code = 2
+            elif (
+                channel_report.capture is None or channel_report.capture.status != "ok"
+            ):
+                reasons = (
+                    ()
+                    if channel_report.capture is None
+                    else channel_report.capture.unknown_reasons
+                )
+                for reason in reasons:
+                    print(f"udv-acquire: capture: {reason}", file=sys.stderr)
+                code = 5
+            elif channel_report.outcome is not inspected.InspectionOutcome.CLOSED:
+                print(
+                    "udv-acquire: the Channels popup close was not observed ABSENT: "
+                    f"{channel_report.closed.clause if channel_report.closed else 'no close was taken'}",
+                    file=sys.stderr,
+                )
+                code = 5
+        elif args.command == "mpx-mode-read":
+            # A retained-evidence read: no window is bound, no gesture exists on this path, and
+            # nothing is captured. The record states ``acquisition_context="retained"``,
+            # ``freshness="not_established"`` and ``integrity="decoded-pair-only"``; its mode
+            # entry label and rollover mark stay a visual attribution (``native_fact`` and
+            # ``action_authority`` are always false) and ``enable_precondition`` is always
+            # false — the retained pair is history, not a licence to press anything. An unknown
+            # mode is exit 2.
+            if not args.capture_dir:
+                print(
+                    "udv-acquire: mpx-mode-read needs --capture-dir: this command reads a "
+                    "retained two-frame capture and takes no screen grab of its own",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                mode_report = mode_marks.attribute_capture(args.capture_dir)
+                _acquire_report(mode_report, as_json)
+                if mode_report.mode == "UNKNOWN":
+                    for reason in mode_report.unknown_reasons:
+                        print(f"udv-acquire: mode: {reason}", file=sys.stderr)
+                    code = 2
+        elif args.command == "channels-repeat":
+            repeat_result = channels_repeat.acquire_repeat(
+                expect=args.expect,
+                value=args.value,
+                baseline=args.baseline,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(repeat_result, as_json)
+            # A preserved fact that moved is the operator's business, not a detail of the JSON
+            # dump: name each one on stderr, because it is the reason the run is unsettled and
+            # a reader of the one-line summary has to see which fact moved.
+            for change in repeat_result.other_changes:
+                print(f"udv-acquire: other fact moved: {change}", file=sys.stderr)
+            for unreadable in repeat_result.other_facts_unreadable:
+                print(
+                    f"udv-acquire: other fact unreadable: {unreadable}", file=sys.stderr
+                )
+            settled = (
+                channels_repeat.RepeatWriteStage.UNCHANGED,
+                channels_repeat.RepeatWriteStage.WRITTEN,
+            )
+            # A settled stage says only that the write itself landed and was read back. An
+            # outcome that could not be written to the trial record leaves the file at
+            # ``obligation``: the write may have landed and the next run reads the pre-write
+            # obligation, so the command did not finish and must not exit 0 merely because the
+            # field read the new value. The failure and the restoration still owed are named.
+            if repeat_result.stage not in settled or repeat_result.trial_record_error:
+                for owed in repeat_result.restoration_owed:
+                    print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+                code = 1
+        elif args.command == "channels-profiles":
+            profiles_result = channels_profiles.acquire_profiles(
+                expect=args.expect,
+                value=args.value,
+                operator_channel=args.operator_channel,
+                baseline=args.baseline,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(profiles_result, as_json)
+            # The preserved facts are the verdict's whole subject: ``seconds`` may legitimately
+            # move, so when a run is unsettled the one thing the operator must see is *which*
+            # fact moved (or could no longer be read) — on stderr, beside the owed lines.
+            for change in profiles_result.other_changes:
+                print(f"udv-acquire: other fact moved: {change}", file=sys.stderr)
+            for unreadable in profiles_result.other_facts_unreadable:
+                print(
+                    f"udv-acquire: other fact unreadable: {unreadable}", file=sys.stderr
+                )
+            # ``seconds`` legitimately moves when the count changes, so it is not part of the
+            # verdict; a preserved fact that moved is, and so is a failure that never reached
+            # the trial record. Either one leaves the run unfinished.
+            profiles_settled = (
+                channels_profiles.ProfilesWriteStage.UNCHANGED,
+                channels_profiles.ProfilesWriteStage.WRITTEN,
+                channels_profiles.ProfilesWriteStage.WRITTEN_SECONDS_RECOMPUTED,
+            )
+            if (
+                profiles_result.stage not in profiles_settled
+                or profiles_result.trial_record_error
+            ):
+                for owed in profiles_result.restoration_owed:
+                    print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+                code = 1
+        elif args.command == "channels-select":
+            select_result = channels_select.acquire_select_channel(
+                expect_channel=args.expect_channel,
+                channel=args.channel,
+                expect_start_channel=args.expect_start_channel,
+                restore_channel=args.restore_channel,
+                visual_corroboration=args.visual_corroboration,
+                mpx_disabled=args.mpx_disabled,
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(select_result, as_json)
+            # The press is a gesture, so this command never reports a selection, a post or a
+            # success. What it can report is the attempt, what moved, what could not be read and
+            # what the operator still owes — and an unknown selection is a non-zero exit, because
+            # a script that ignored it would be treating a gesture as a result.
+            for change in select_result.facts_moved:
+                print(f"udv-acquire: fact moved: {change}", file=sys.stderr)
+            for unreadable in select_result.facts_unreadable:
+                print(f"udv-acquire: fact unreadable: {unreadable}", file=sys.stderr)
+            if select_result.press_error:
+                print(
+                    f"udv-acquire: {select_result.press_error}",
+                    file=sys.stderr,
+                )
+            if select_result.post_error:
+                print(f"udv-acquire: {select_result.post_error}", file=sys.stderr)
+            print(
+                "udv-acquire: selection unknown — the radio cells paint their tick, and "
+                f"posted is {select_result.posted}; corroborating the tick needs a separate "
+                "visual observation, and any restoration still owed is simply another "
+                "selection of the declared original",
+                file=sys.stderr,
+            )
+            for owed in select_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            # Exit 1 for an attempted press: the selection, the post and the outcome are all
+            # unknown, so a zero here would read as a result. Only the settled no-op is 0.
+            if select_result.stage is not channels_select.SelectStage.NO_OP:
+                code = 1
+            if select_result.trial_record_error:
+                code = 1
+        elif args.command == "enable-multiplexed":
+            enable_result = enable_multiplexed.acquire_enable_multiplexed(
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                notes=notes,
+            )
+            _acquire_report(enable_result, as_json)
+            for observed in enable_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if enable_result.press_error:
+                print(f"udv-acquire: {enable_result.press_error}", file=sys.stderr)
+            if enable_result.post_error:
+                print(f"udv-acquire: {enable_result.post_error}", file=sys.stderr)
+            for owed in enable_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            # Zero only on a fresh, verified post-press entry pair on the original binding with
+            # two re-derived digests and no error anywhere in this invocation.
+            post_digests = enable_result.post_frame_digests
+            verified_post = (
+                enable_result.post_mode == "VISUAL_ENABLED"
+                and post_digests is not None
+                and len(post_digests) == 2
+                and all(len(digest) == 64 for digest in post_digests)
+                and not enable_result.post_error
+                and not enable_result.press_error
+            )
+            if not verified_post:
+                print(
+                    "udv-acquire: no fresh verified enabled entry after the press: a pressed "
+                    "toggle is a gesture, not a mode. Reopen Channels to read the mode (or use "
+                    "Disable when asked); nothing was retried",
+                    file=sys.stderr,
+                )
+                code = 1
+            if enable_result.trial_record_error:
+                code = 1
+        elif args.command == "disable-multiplexed":
+            disable_result = disable_multiplexed.acquire_disable_multiplexed(
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                # The production live helpers: the same reader for the clipped entry pair and
+                # for the post-press settings pair. It is the only capture that attributes the
+                # entry shape, and the module refuses a report it did not take in this run.
+                capture_entry=channels_read.read_channels,
+                capture_settings=channels_read.read_channels,
+                notes=notes,
+            )
+            _acquire_report(disable_result, as_json)
+            for observed in disable_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if disable_result.press_error:
+                print(f"udv-acquire: {disable_result.press_error}", file=sys.stderr)
+            if disable_result.post_error:
+                print(f"udv-acquire: {disable_result.post_error}", file=sys.stderr)
+            for owed in disable_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            # Zero only on a fresh, verified post-press settings pair on the original binding
+            # with two re-derived digests and no press, post or record error. A raised press
+            # can never be reported as a verified post.
+            post_digests = disable_result.post_frame_digests
+            verified_post = (
+                disable_result.post_mode == "VISUAL_DISABLED"
+                and post_digests is not None
+                and len(post_digests) == 2
+                and all(len(digest) == 64 for digest in post_digests)
+                and not disable_result.post_error
+                and not disable_result.press_error
+                # A boundary refusal posted nothing: a true disabled readback does not make the
+                # requested press have happened, so it is not this invocation's success.
+                and disable_result.presses == 1
+                and disable_result.press == "attempted"
+            )
+            if not verified_post:
+                print(
+                    "udv-acquire: no fresh verified disabled settings entry after the press: a "
+                    "pressed entry is a gesture, not a mode. Reopen Channels by hand to read the "
+                    "mode; nothing was retried",
+                    file=sys.stderr,
+                )
+                code = 1
+            if disable_result.trial_record_error:
+                print(
+                    "udv-acquire: the post-press record could not be written: the last durable "
+                    f"statement is the pre-press obligation at {disable_result.trial_record} "
+                    "(action pending, obligation open, press not_attempted as of that write). It "
+                    "does not say the press did not happen — keep it and settle the obligation "
+                    "by hand",
+                    file=sys.stderr,
+                )
+                code = 1
+        elif args.command == "set-rollover":
+            rollover_result = set_rollover.acquire_set_rollover(
+                requested=args.requested,
+                expect=args.expect,
+                baseline=args.baseline,
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                adopt_open=args.adopt_open,
+                close_adopted=args.close_adopted,
+                settle_s=args.settle,
+                max_boundary_seconds=args.max_boundary_seconds,
+                notes=notes,
+            )
+            _acquire_report(rollover_result, as_json)
+            for observed in rollover_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if rollover_result.press_error:
+                print(f"udv-acquire: {rollover_result.press_error}", file=sys.stderr)
+            if rollover_result.post_error:
+                print(f"udv-acquire: {rollover_result.post_error}", file=sys.stderr)
+            for owed in rollover_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            if rollover_result.trial_record_error:
+                print(
+                    "udv-acquire: the record could not be rewritten after the action: the last "
+                    f"durable statement is at {rollover_result.trial_record} and its press field "
+                    "is only 'as of that write'. It does not say nothing was pressed",
+                    file=sys.stderr,
+                )
+                code = 1
+            closure = rollover_result.popup_closure
+            close_settled = closure is None or closure.settled
+            if not close_settled:
+                print(
+                    "udv-acquire: the Channels popup was not observed ABSENT "
+                    f"(closure {closure.value!r}): a popup this invocation owed closed is still "
+                    "there or unproven, and nothing was retried",
+                    file=sys.stderr,
+                )
+                code = 1
+            if rollover_result.stage is set_rollover.SetRolloverStage.NOOP:
+                # A no-op wrote no obligation and pressed nothing. It is still only settled when
+                # the popup this command opened was observed closed (or an adopted popup was left
+                # open by the library's own adopt policy).
+                if rollover_result.presses != 0:
+                    code = 1
+            elif close_settled:
+                # Only here can the post verdict settle anything: an invocation whose close is
+                # unproven is already reported and is never upgraded by a good post pair.
+                # One press, one fresh post pair that proves the requested state and the original
+                # popup, two re-derived digests, and no error anywhere in this invocation.
+                post = rollover_result.post
+                post_digests = (
+                    None
+                    if post is None
+                    else (
+                        ()
+                        if post.visual_mode_mark is None
+                        else post.visual_mode_mark.frame_digests
+                    )
+                )
+                wanted_proof = (
+                    "ON_PROVEN"
+                    if rollover_result.requested is set_rollover.Rolling.ON
+                    else "OFF_PROVEN"
+                )
+                verified = (
+                    rollover_result.presses == 1
+                    and rollover_result.press == "attempted"
+                    and rollover_result.post_rolling == wanted_proof
+                    and post is not None
+                    and post.status == "ok"
+                    and post_digests is not None
+                    and len(post_digests) == 2
+                    and all(len(digest) == 64 for digest in post_digests)
+                    and not rollover_result.press_error
+                    and not rollover_result.post_error
+                    and rollover_result.trial_record_phase == "after"
+                )
+                if not verified:
+                    print(
+                        "udv-acquire: no fresh verified post-press rolling state: a pressed "
+                        "toggle is a gesture, not a setting. The durable record states what was "
+                        "attempted and what stays unknown; nothing was retried",
+                        file=sys.stderr,
+                    )
+                    code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
         elif args.command == "compile":
@@ -1607,6 +2818,332 @@ def acquire_main(argv: list[str] | None = None) -> None:
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
+        elif args.command == "store-completed":
+            # The declaration is judged by the shared rule first, so a malformed mapping is
+            # one refusal line (exit 2) with nothing pressed — never pydantic's multi-line
+            # dump and never a device action.
+            try:
+                store_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                store_refusals = (str(exc),)
+            else:
+                store_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=store_channel_profiles,
+                )
+            if store_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(store_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                declaration = store_completed.CompletedBlockDeclaration(
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    channel_profiles=store_channel_profiles,
+                    sequence_repeats=args.repeats,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                result = store_completed.store_completed(
+                    args.name,
+                    _acquire_store_directory(args.store_dir),
+                    declaration=declaration,
+                    notes=notes,
+                )
+                if as_json:
+                    _acquire_report(result, True)
+                else:
+                    print(result.summary())
+        elif args.command == "mpx-check":
+            # The declaration is the contract: build (and so judge) it before the file is read
+            # or decoded, so an invalid statement — including an ambiguous total/per-visit
+            # combination — produces no decode, no claim and one concise refusal line rather
+            # than pydantic's multi-line validation dump.
+            try:
+                mpx_check_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                mpx_check_refusals = (str(exc),)
+            else:
+                mpx_check_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_check_channel_profiles,
+                )
+            if mpx_check_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(mpx_check_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                mpx_check_declaration = store_completed.CompletedBlockDeclaration(
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_check_channel_profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                artifact_report = mpx_artifact.verify_mpx_artifact(
+                    Path(args.file), mpx_check_declaration
+                )
+                if as_json:
+                    _acquire_report(artifact_report, True)
+                else:
+                    print(artifact_report.summary())
+                    _print_artifact_clauses(artifact_report)
+                code = _artifact_exit_code(artifact_report)
+        elif args.command == "record-multiplexed":
+            try:
+                mpx_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                mpx_refusals = (str(exc),)
+            else:
+                mpx_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_channel_profiles,
+                )
+            if mpx_refusals:
+                # One line, exit 2, before any window is read.
+                print(
+                    f"udv-acquire: refused: {'; '.join(mpx_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                mpx_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
+                    multiplexer_enabled=args.mpx_enabled,
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=mpx_channel_profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                mpx_result = record_multiplexed.record_multiplexed(
+                    args.name,
+                    _acquire_store_directory(args.store_dir),
+                    declaration=mpx_declaration,
+                    completion_timeout_s=args.completion_timeout,
+                    notes=notes,
+                )
+                if as_json:
+                    _acquire_report(mpx_result, True)
+                else:
+                    print(mpx_result.summary())
+                    _print_artifact_clauses(mpx_result.artifact_verification)
+                if not mpx_result.stored:
+                    # A recording that started and did not end in a store is a result, not a
+                    # refusal: the instrument may still be recording, so the reason and what it
+                    # still owes are on stderr and the exit says the command did not finish.
+                    print(
+                        f"udv-acquire: {mpx_result.stage.value}: {mpx_result.reason}",
+                        file=sys.stderr,
+                    )
+                    code = 1
+                elif mpx_result.artifact_verification is None:
+                    # The store succeeded; only its post-store check failed. Exit 3 is the
+                    # "unverifiable" code: the file is stored, but nothing is claimed about it.
+                    print(
+                        f"udv-acquire: stored {mpx_result.stored_path} but artifact "
+                        f"verification failed ({mpx_result.artifact_verification_error}); the "
+                        "file was stored once and is neither rewritten nor re-stored",
+                        file=sys.stderr,
+                    )
+                    code = 3
+                else:
+                    code = _artifact_exit_code(mpx_result.artifact_verification)
+                    if code:
+                        print(
+                            f"udv-acquire: stored {mpx_result.stored_path} but artifact "
+                            f"verification is "
+                            f"{mpx_result.artifact_verification.verdict.value}; the file was "
+                            "stored once and is neither rewritten nor re-stored",
+                            file=sys.stderr,
+                        )
+        elif args.command == "mpx-run":
+            # One composed run: the parent validates every caller input and every path before a
+            # gesture, claims its record exclusively, then calls the existing children once each
+            # on one bound target. Post-gesture outcomes are reports (exit 1), never tracebacks;
+            # a refusal before any gesture reaches the shared handler below and exits 2.
+            try:
+                run_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                run_refusals = (str(exc),)
+            else:
+                run_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=run_channel_profiles,
+                )
+            if run_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(run_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                run_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
+                    multiplexer_enabled=True,
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=run_channel_profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                try:
+                    batch_items = mpx_batch.parse_also(args.also) if args.also else ()
+                except ValueError as exc:
+                    # A malformed --also token is a usage refusal, stated once with exit 2 by
+                    # the shared handler; no name, path or token is repaired.
+                    raise driver.AcquisitionError(str(exc)) from exc
+                if batch_items:
+                    # A finite batch under one binding: the same declaration for every item, one
+                    # distinct --record per item, and a strict gate before each next run. The
+                    # report is compact references and key facts, never the nested full reports.
+                    try:
+                        batch_result = mpx_batch.run_mpx_batch(
+                            items=(
+                                mpx_batch.MpxBatchItem(
+                                    name=args.name, record=Path(args.record)
+                                ),
+                            )
+                            + batch_items,
+                            declaration=run_declaration,
+                            store_dir=_acquire_store_directory(args.store_dir),
+                            capture_root=args.capture_root,
+                            completion_timeout_s=args.completion_timeout,
+                            baseline=args.baseline,
+                            restore_baseline=args.restore_baseline,
+                            settle_s=args.settle,
+                            boundary_seconds=args.boundary_seconds,
+                            notes=notes,
+                        )
+                    except driver.AcquisitionError:
+                        # Refusals are raised only before the batch's one binding; the shared
+                        # handler states them with exit 2.
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - an unexpected failure is never a success
+                        print(
+                            "udv-acquire: mpx-batch raised unexpectedly after its pre-gesture "
+                            f"checks passed: {type(exc).__name__}: {exc}. The completed items' "
+                            "parent records are the obligations; nothing is retried and this is "
+                            "not a success",
+                            file=sys.stderr,
+                        )
+                        for note in notes:
+                            print(f"note: {note}", file=note_stream)
+                        code = 1
+                    else:
+                        if as_json:
+                            _acquire_report(batch_result, True)
+                        else:
+                            print(batch_result.summary())
+                            for batch_run in batch_result.runs:
+                                print(f"  {batch_run.summary()}")
+                        if not batch_result.complete:
+                            print(
+                                f"udv-acquire: {batch_result.stage.value}"
+                                f" ({batch_result.stopped_kind}): {batch_result.reason}",
+                                file=sys.stderr,
+                            )
+                            for clause in batch_result.owed:
+                                print(
+                                    f"udv-acquire: still owed: {clause}",
+                                    file=sys.stderr,
+                                )
+                            code = 1
+                else:
+                    try:
+                        run_result = mpx_run.run_mpx_once(
+                            name=args.name,
+                            store_dir=_acquire_store_directory(args.store_dir),
+                            capture_root=args.capture_root,
+                            record=args.record,
+                            declaration=run_declaration,
+                            completion_timeout_s=args.completion_timeout,
+                            baseline=args.baseline,
+                            restore_baseline=args.restore_baseline,
+                            settle_s=args.settle,
+                            boundary_seconds=args.boundary_seconds,
+                            notes=notes,
+                        )
+                    except driver.AcquisitionError:
+                        # Refusals are raised only before the first gesture; the shared handler
+                        # states them with exit 2.
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - an unexpected failure is never a success
+                        print(
+                            "udv-acquire: mpx-run raised unexpectedly after its pre-gesture checks "
+                            f"passed: {type(exc).__name__}: {exc}. The parent record (when one was "
+                            "claimed) is the obligation; nothing is retried and this is not a "
+                            "success",
+                            file=sys.stderr,
+                        )
+                        for note in notes:
+                            print(f"note: {note}", file=note_stream)
+                        code = 1
+                    else:
+                        if as_json:
+                            _acquire_report(run_result, True)
+                        else:
+                            print(run_result.summary())
+                            for label, child in (
+                                ("inspection", run_result.inspection),
+                                ("rollover", run_result.rollover),
+                                ("enable", run_result.enable),
+                                ("record", run_result.record),
+                                ("post_save", run_result.post_save),
+                                ("restore", run_result.restore),
+                            ):
+                                if child is not None and hasattr(child, "summary"):
+                                    print(f"  {label}: {child.summary()}")
+                        if not run_result.complete:
+                            print(
+                                f"udv-acquire: {run_result.stage.value}: {run_result.reason}",
+                                file=sys.stderr,
+                            )
+                            for clause in run_result.owed:
+                                print(
+                                    f"udv-acquire: still owed: {clause}",
+                                    file=sys.stderr,
+                                )
+                            code = 1
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(

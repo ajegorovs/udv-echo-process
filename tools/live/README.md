@@ -82,15 +82,34 @@ what the ported probe scripts could not be — they reached into the driver's pr
 
 | command | what it does | writes to the app? |
 |---|---|---|
+| `acquire channels-read --json` | reads an operator-opened Channels popup without opening, closing or clicking anything; numeric texts are queried, painted tick/toggle states remain UNKNOWN | no |
+| `acquire channels-read --capture-dir DIR --json` | the same read **plus capture evidence**: two whole-screen frames around a re-read, the popup's own rect (from that report, never a constant) cropped out of each as lossless PNG into a freshly claimed `capture-NNN/` directory, with before/after target, foreground, non-minimised and popup-rect guards and a bracketing of all five amounts. The caption stays `UNKNOWN` — no OCR runs, so the picture is evidence, not a reading | no |
+| `acquire channels-repeat --expect N --value M --baseline B --mpx-disabled --trial-record PATH` | one guarded write of the operator-opened popup's `Repeat`: requires the popup to state `--expect`, commits `--value` once, and claims its own trial record first; persistence stays `unknown` until the popup is reopened. One record per invocation — a forward write and its restore are two records, each passing the **same original** `--baseline`, reconciled by reading them in order | only the one `Repeat` field |
+| `acquire channels-profiles --expect N --value M --operator-channel C --baseline B --mpx-disabled --trial-record PATH` | the second guarded single-field write: the operator-opened popup's per-channel `Acquire … Profiles`. Requires the popup to state `--expect`, commits `--value` once, claims its own trial record first, and reports the coupled `seconds` amount before/after — the application recomputes it, so a movement is expected and the fresh amount must be valid and positive. `--operator-channel` is a **declaration** (the caption is painted; the tree states nothing) checked only against the channels the popup paints — never a verified channel. `--baseline` is the trial's **original** count, and restoration plus the closing read are the **operator's reopened popup**. Persistence stays `unknown`. **Offline verified only — no live acceptance.** | only the one `Profiles` field |
+| `acquire enable-multiplexed --capture-dir DIR --trial-record PATH` | one guarded press on the operator-opened popup's `Enable multiplexer` toggle, licensed by a fresh same-invocation two-frame settings capture proving `VISUAL_DISABLED` + rolling `ON_PROVEN`; after the press it reads the surface and, only when the clipped one-entry popup is visible, takes a fresh 158x43 `entry_no_numeric` pair whose exact `Desable multiplexer` match is the only thing that reports `post_mode: VISUAL_ENABLED` (and exit `0`). Never retries, never presses `Record`/`Disable`/`Stop`/`Clear` | only the one mode toggle |
+| `acquire disable-multiplexed --capture-dir DIR --trial-record PATH` | one guarded press on the operator-opened **clipped** popup's `Disable multiplexer` entry, licensed by a fresh same-invocation two-frame 158x43 `entry_no_numeric` pair whose exact `Desable multiplexer` match and structural binding (popup size, one direct `TSp_Button` owning the measured entry band) prove `VISUAL_ENABLED`; the durable obligation is claimed first and re-bound immediately before the press. After it, only a fresh operator-visible settings pair proving `VISUAL_DISABLED` with its own two digests reports a post mode — and exit `0` requires no press, post or record error. Never retries and never presses `Record`/`Enable`/`Stop`/`Clear`. **Offline verified only — no live acceptance.** | only the one clipped entry |
 | `acquire status` | read-only inventory: window class/rect/maximised, screen, panels, visible control count, strip view, overlay, `layout_note`, cursor, foreground | no |
 | `acquire channel <n>` | opens `Parameters → Operating parameters`, reads the channel, writes it only if it differs, and reports the channel's mode (manual/assisted) with the panel counts | only if the channel differs |
 | `acquire preflight [--seconds N]` | the operator's sequence with nothing stored: clear-and-restart if needed → record → hold → stop → `Do store` → read the Store dialog (name, working directory, children) → cancel with its **left** button | no store; presses the strip |
+| `acquire store-completed NAME --channel 1 2 --profiles 50 --stated-by operator --store-dir DIR` | stores an already naturally completed multiplexed block; one strip `Do store` and one dialog commit, no Record/Stop/Clear | stores one file; may rewrite the remembered Store directory |
+| `acquire record-multiplexed NAME --channel 1 2 --profiles 50 --stated-by operator --mpx-enabled --completion-timeout 120 --store-dir DIR` | one Record, bounded wait for natural completion, then store on the original binding; requires freshly operator-configured multiplexing | records and stores one file; never Stop/Clear; timeout leaves acquisition untouched |
 | `acquire point <name> --seconds N` | one whole point: reset, channel, record `N` seconds, stop, name the file, store, read it back and decode it | stores one file |
 | `acquire sweep --seconds N --rungs 1,2` | the runner's own path for a multi-point sweep: `plan_sweep` → write → read back → record → store → decode → verify → one JSONL entry per point | stores files |
 | `acquire plan --definition FILE` | loads and validates a campaign definition and prints its points, with a note wherever the window outruns what the block will keep | no |
 | `acquire campaign --definition FILE [--resume]` | runs a definition point by point through the runner — one JSONL entry per point, a job manifest beside the log, and `--resume` skipping what the log already holds | stores files |
 | `acquire report --log FILE` | reads a finished job (log + manifest) and prints each point's status and the summary | no |
 | `acquire decode <file> --channel N` | a stored file's own operation words, off the instrument: the file is the authority | no |
+
+`record-multiplexed` passed **one live Record-to-store acceptance on 2026-10-21**:
+channels 1 and 2, declared and independently decoded at 50 profiles each (80 gates, axial velocity),
+with natural completion and no Stop/Clear press. This is one configuration, not an unattended
+campaign or failure-path acceptance; see `docs/dop3000/udop-automation.md` §12.7. Enable and configure
+multiplexing manually, leave the strip ready, and supply a fresh explicit mode declaration before
+running it. Do not press Record yourself for this command: it sends that press once. The wait
+never presses the lone active-MPX button (operator-reported as Clear and restart), and a timeout
+leaves the acquisition untouched for the operator. Mode and configured profiles are declarations;
+decode the stored file independently before claiming they were recorded. A successful store does
+not prove that multiplexing remains enabled afterward.
 
 The campaign is the near-term goal written down: one channel, one 10-15 s window, a slot of
 parameter permutations. `examples/campaign-single-channel.json` is a working one — 12 s points
@@ -103,6 +122,16 @@ nothing to do.
 `UDV_STORE_DIR` (the cycle **asserts** the Store dialog against it, so a wrong value refuses the
 point rather than scattering files). `--json` prints a machine-readable report — notes then go
 to stderr, so stdout stays parseable — and the exit codes are 0 ok, 1 a refused point, 2 usage.
+
+`channels-read` splits its two failures on purpose. **Exit 2** is a structural report that could
+not be read (no popup, wrong band order, amount stated as empty text); **exit 3** is a
+`--capture-dir` capture that could not be attributed — a blank or one-colour crop, two frames
+that differ, a failed target/foreground/minimised/same-popup guard, or an amount that moved
+across the frames. The capture's reasons go to stderr, its frames stay on disk as evidence, and
+its `status` is `UNKNOWN`, so a still-readable popup never turns a bad picture into exit 0 and a
+bad read never hides a bad picture. Nothing in either path reads glyphs: the caption is
+`UNKNOWN`/`NOT_PERFORMED`, and a caption an operator states stays their statement. Each run
+claims a fresh `capture-NNN/` directory, so a re-run never overwrites the earlier frames.
 
 ### What is still a probe
 

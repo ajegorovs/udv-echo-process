@@ -145,8 +145,12 @@ _RECORDING_E128 = Replacement(
 _VIEW_FULL_RECORD = Replacement(
     "if view == VIEW_PRIMARY", "if view == VIEW_FULL_RECORD"
 )
+#: The gate control's declared default is the middle supported gate when the reader has no
+#: remembered gate of their own; driving the declared default to `0` is how this capture
+#: selects the shallowest supported gate (the control's own on-change memory is empty in a
+#: fresh export, so the declared default is what the export renders).
 _GATE_SHALLOWEST = Replacement(
-    "value=list(_options)[len(_options) // 2],", "value=list(_options)[0],"
+    "_default = len(_labels) // 2", "_default = 0"
 )
 _DETREND_MEAN_LINEAR = Replacement(
     "if kind == Detrending.MEAN", "if kind == Detrending.MEAN_AND_LINEAR"

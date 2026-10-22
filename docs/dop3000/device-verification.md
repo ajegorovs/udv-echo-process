@@ -144,6 +144,25 @@ state. The contradiction to resolve is between the two committed crops — UI-ST
 **Pass after mapping:** the role map is backed by a tree read **plus** the pixels **plus** a
 safe observed transition.
 
+**What V4 does not cover: the repeated-MPX completion row's geometry.** One further
+three-button slider-bearing row is already bound, and it is *not* this item's four-button
+question: the row a **repeated** multiplexed run was measured to end in on 2026-10-21 (read-only
+tree capture of the same instant as `outputs/live/top-level-windows-full-a.png`, panel `477x123`,
+painted top-row button widths `91 / 138 / 198`, the two `visible: false` siblings of `79 / 85 px`
+recorded as capture provenance only because the live resolver never reads them). It is selected
+**only** by exact equality on that signature (`StripRowVariant.REPEATED_MPX_COMPLETION`) and it
+does not settle any caption question: its roles (`Do store` / `Clear and restart` / `Remove
+current sequence`) are read off that one frame, the tree's button text is empty, and **no press
+was posted** to land them. Two things follow, and neither may be overclaimed. Geometry is not a
+universal identity — any panel size, width set or button count outside that measurement is
+*unmeasured* and stays on the legacy count-keyed row (and is refused where it would have to
+press), so "the strip has a slider and three buttons" proves nothing by itself. And this note
+does not widen the 2026-10-20 two-button `269x123` row's own provenance, nor does it make V4's
+four-button state safe: that row remains ambiguous and unbound until a tree read, the pixels and
+a safe observed transition agree. What V4 can still add for this variant is the *transition*
+half — that a `Do store` press out of exactly this geometry commits the block and leaves a
+startable view — which no session has yet observed.
+
 ## V5 — fixed-fact compile, and a declaration-only mismatch
 
 1. Restore the intended frame.

@@ -70,8 +70,9 @@ authoritative documents for this instrument, and this skill **points at them ins
 them**: architecture, layering and invariants —
 `docs/dop3000/acquisition-architecture.md`; surfaces, widgets, bindings and the blind-spot ledger
 B01..B20 — `docs/dop3000/acquisition-ui-model.md`; the refactor's device verification procedure —
-`docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine and store
-chain — `docs/dop3000/udop-automation.md`; the state of the work —
+`docs/dop3000/device-verification.md`; the write recipes, write order, strip state machine, store
+chain **and the observed MPX mode entry/exit semantics (§12.13 there — do not restate them here)** —
+`docs/dop3000/udop-automation.md`; the state of the work —
 `docs/dop3000/handoff-dop3010-acquisition.md`; painted captions and values, with the crop ids the
 quotes carry — `docs/dop3000/ui-element-index.md`; the completed pass, the current structural-size
 and measured-period laws, and the planner that now computes the whole period law —
@@ -164,26 +165,54 @@ a click (posted *or* injected) sent after that moment *closes* the menu
 it just opened, which is why every click-based attempt failed and why the one menu that did open did
 so with the operator's cursor already over the button. Once open, its **entries take ordinary posted
 clicks**, which performs the action *and* consumes the popup: that is the whole recipe for menu-driven
-setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
-button again, clicking the plot, and `ESC` (posted or real) and a posted `WM_CANCELMODE` all leave it on
-screen (measured: the posted `WM_CANCELMODE` leaves it up too), and opening a different menu merely
-replaces it. **Escape closes nothing here, and a hover-opened popup cannot be dismissed
-programmatically: the only clean exit is a *press*, which selects an entry and closes the popup.** So
-menus are the one place that should not be in a per-point loop. **If a popup is open when a run
-resumes, stop and raise the failure; do not try to close it.** **A gesture that opens a popup owns its
-cleanup in a `finally`.** A probe that dies between the hover and the cursor restore — an exception
-anywhere in the read it was doing — leaves that popup on the desktop with nothing able to close it
-programmatically, and every run afterwards refuses with "a menu popup is already open"; the operator has
-to clear it by hand. Restore in a `finally`, then **re-read the popup state on the failing exit** and
+setup, with no cursor hijack. What the archive's behavioural probe (`recon/35`) actually establishes
+is the **opening** gesture and that an **entry press consumes the popup** — it carries no generic
+close, so a move-off dismissal is a *candidate*, not a recovered measurement. A posted click
+outside, a click on the menubar button again, a click on the plot, `ESC` (posted or real) and a
+posted `WM_CANCELMODE` all leave it on screen, and opening a different menu merely replaces it;
+one deliberate warp off the popup has also been tried live and still read `settings_popup` while
+the operator's physical move closed it. **One live prototype then settled the path-versus-jump
+difference for this geometry:** a bounded stepped path (13 positions of <= 40 px from the anchor to
+the derived off-point) was followed by an observed `ABSENT` on each of two paths, with the reopen
+readable between them. That is one build, one geometry and one sitting; it supports the
+path-versus-jump difference and does **not** establish the OS mechanism, and it is not
+production-live until the integrated opener has been run end to end.
+
+The **entry** has since been measured the same way (`channels-stepped-entry-live-03`, 2026-10-22):
+a popup in an `ABSENT` baseline is opened by one geometry-derived column — a park on the anchor's
+own centre column one pixel below the menubar band's clearance, then 4 px `SetCursorPos`
+positions up into the anchor, with the caller's read after every landing and a stop at the first
+non-`ABSENT`. The measured run first entered the button at step 4 `(561, 52)`; one warp to the
+same point opened nothing, and no `mouse_event` is posted. That entry is
+`ui.menu.approach_park` + `ui.menu.entry_plan` walked by
+`open_channels_popup` through `_move_real_cursor_stepped`; it is not a conditional park before a
+hover.
+
+The point has to be outside the popup **and** off the menubar, inside the client and the screen;
+derive it from the live rectangles (`ui.menu.dismissal_point`), never from a recorded literal. The
+close is a **bounded stepped path**: `ui.menu.stepped_path` derives every position from the actual
+cursor position (<= 40 px each, inside the client ∩ screen, never through another menubar entry) and
+`_move_real_cursor_stepped` walks it with a `SetCursorPos` per step and a read-back of each landing,
+then `dismiss_channels_popup` polls for ABSENT — no second path, no widened step, no restore of the
+operator's saved position while the popup is up (a restore can land back on it), and no posted
+message. **Escape closes nothing here.** A hover-opened popup is therefore *not* stranded by
+design: the real-cursor move is the one attempt a run makes, and `WM_CLOSE` remains the thing that
+must never be sent — it wedges the modal loop. **If a popup is open when a run resumes and that move
+does not produce an observed ABSENT, stop and raise the failure.** **A gesture that opens a popup owns its
+cleanup in a `finally`.** A probe that dies between the hover and its dismissal move — an exception
+anywhere in the read it was doing — leaves that popup on the desktop; the operator's hint is the
+same bounded stepped path off it (`dismiss_channels_popup`), not a message, and not a single warp. Restore the cursor in a
+`finally` (that restore itself moves the pointer off the popup, which may dismiss it — do not rely
+on it unless the popup is re-read), then **re-read the popup state on the failing exit** and
 report that the application is unverified plus the operator/restart remedy; an attempted entry press and
 a restored cursor are not proof that the popup was consumed, and this diagnostic must never replace the
 original failure if its own read errors. When a probe has to leave the application as it found it, say
 what it found and what it left in its own output: a state the operator has to fix by hand must never be
 discovered by them. **The policy for one that has already stranded the application is the
 operator's restart:** abort the run, mark the application's state unverified, and require the operator —
-no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
-it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
-failed; plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
+no automatic restart, no speculative menu press, no silent continuation — when the real-cursor move
+has not produced an observed ABSENT (posted `ESC`, a posted click and `WM_CANCELMODE` all leave it up;
+plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
 still inside its modal menu loop, and from then on *no* menu opens by any means — posted clicks,
 real clicks, real `ESC`, a click outside, `Alt` — until the app is restarted; the rest of the app
 keeps working, so a liveness check will not catch it. Dialog panels are different: they own a
@@ -235,6 +264,127 @@ burst's floor is rejected with a modal warning), so a point's declaration must c
 accepted*, read back — and when the coupled field was itself the value under study, refusing the point is
 correct, because an approximate substitute silently changes what was measured. Write the determining knob
 first, and re-read the whole group before the irreversible step.
+
+**2f. Use the repository's writer for a supervised one-field settings trial; it owns the record.**
+`acquire channels-repeat --expect N --value M --baseline B --mpx-disabled --trial-record PATH`
+writes only the operator-opened Channels popup's `Repeat` and requires the popup to already state
+`--expect`, so re-read before declaring it. `--expect` is that invocation's precondition;
+`--baseline` is the trial's **original** value and belongs on every invocation of the trial —
+passing the current value there makes a restore run owe an undo of itself. Each invocation claims
+its **own** record file exclusively (never a shared ledger, never overwritten), so a forward write
+and its restore are two records; reconcile by reading them in order. The command never opens or
+closes the popup and never presses Record/Stop/Clear; its post-write read is the still-open popup,
+so `persisted: "unknown"` is correct and the acceptance read is the operator's close-and-reopen
+(after which the value must be read afresh, not remembered from the open field). A result whose
+record update failed reports `trial_record_phase: "obligation"` — the file still holds the
+pre-write obligation, and that is what the next run reads. Logs from sequential dispatches share a
+slug and overwrite each other, so copy each aside before the next run.
+
+**2g. Take the popup's picture as evidence, and never let it become a reading.**
+`acquire channels-read --capture-dir DIR` is the packaged capture: it crops the popup's **own**
+rect — the one the structural report resolved, never a constant box — out of two whole-screen
+frames into `DIR/capture-NNN/`, holding both frames to target handle/rect, foreground,
+not-minimised and same-popup-handle guards and bracketing all five amounts across the capture.
+The native caption stays `UNKNOWN` with `recognition: NOT_PERFORMED`. A separate
+`capture.visual_caption` may recognize photographed channels 1, 2 or 10 by exact templates;
+it is visual evidence, never native text or write authority. Keep operator declarations separate.
+See `docs/dop3000/painted-caption-recognition.md`.
+Two exit codes, two different failures: **2** is an unreadable structural report, **3**
+is a capture that could not be attributed (blank/one-colour crop, frames differ, a guard failed,
+a number moved) — the frames stay on disk with their reasons on stderr. Re-running claims a fresh
+`capture-NNN/`, so earlier frames survive; do not "clean up" a directory before a second attempt.
+What a `status: ok` capture still does not establish: pixel alignment under display scaling
+(refused when the grab's bitmap size disagrees with the reported virtual screen, 1:1 only at
+100 %), atomic stillness (two frames cannot distinguish a screen that changed and changed back),
+or any authority to press anything.
+
+**2h. The sibling writer — `Profiles` — is live accepted for one scope only, and its channel is a
+declaration.** `acquire channels-profiles --expect N --value M --operator-channel C --baseline B
+--mpx-disabled --trial-record PATH` writes the same popup's per-channel `Acquire … Profiles` exactly
+once. **Live acceptance covers one narrow scope** — channel 1 (operator-declared), `50 → 51 → 50`,
+popup closed and reopened before each read (`docs/dop3000/udop-automation.md` §12.11). Do not
+generalise it: no second channel, no application restart, no downstream acquisition effect, and
+never quote the declared channel as measured. Do not borrow §12.9's `Repeat` acceptance either. The
+flags that differ from `channels-repeat` are the ones that carry the limits:
+
+- `--operator-channel` is a **declaration, not a proof**. The group's channel is painted in a
+  caption (`For the current channel (channel N)`) and the tree states nothing, so the read leaves
+  `per_channel.channel` `UNKNOWN`; the argument is checked only against the numbers the popup
+  paints and `channel_verified` is `Literal[False]`. Never quote a declared channel as measured.
+- `seconds` is **recomputed by the application** when the count changes, so it is not a preserved
+  fact: it is reported before/after, the fresh amount must be valid and positive, and a movement is
+  expected rather than a refusal. `repeat`, `start_channel`, `apply_from` are the preserved facts.
+- `--baseline B` is the trial's **original** count, on every invocation; it is never defaulted from
+  `--expect`, so a restore run does not owe an undo of itself. One exclusive record per invocation,
+  both records naming the same baseline.
+- **Only the operator's reopened popup closes the obligation.** The command never opens or closes
+  the popup, presses, records, retries or repairs; `persisted: "unknown"` and
+  `obligation_open: true` are the correct outcome of a write. The restore *write* is a second
+  invocation of the same command (the accepted trial's was), but the **closing read** is the
+  operator's close-and-reopen; no record text should claim the restore needs a hand.
+
+**2i. `channels-select` presses the top radio row once, and can never report a selection.**
+`acquire channels-select --expect-channel C --channel D --expect-start-channel S --restore-channel R
+--mpx-disabled --trial-record PATH [--visual-corroboration TEXT]` presses **one** cell of the
+popup's top radio row (`Use only channel`, the reader's `use_only_channel` strip) and nothing else.
+Limits that matter when reading a result:
+
+- **The press goes through one target-bound helper, never a handle facade.**
+  `RecordingSurface.press_channel_cell(target=…, popup_hwnd=…, row_hwnd=…, cell_hwnd=…,
+  ordinal=…)` re-establishes, live and immediately before posting: the caller's binding is this
+  surface's and still resolves to that window, the popup is a panel and a direct child of the
+  bound window, the row is a panel and a direct child of the popup, the cell is a `TSp_Button`
+  child of that row, and the row's own cells (`ui.channels.strip_cells`, the single owner of the
+  strip's geometry and left → right ordinal) put it at `ordinal`. Any disagreement raises with
+  nothing posted. There is no `press(handle)` entry point and none should be added: a bare handle
+  is arbitrary press authority.
+- The row is separated from the lower `Use channels` tick row by the reader's attribution; the
+  **reader** owns completeness, band and geometry, ordering, duplicate/overlapping rects, repeated
+  handles inside a row, and a handle shared between the two rows. A strip that fails any of those
+  is not a strip, so the surface reads as `changed_structure` and the command refuses with zero
+  presses. Do not re-derive those clauses in a consumer.
+- **`--expect-channel` is a declaration, not a measurement**: the ticked radio is painted glyph and
+  every cell answers `""`. `--expect-channel`, `--expect-start-channel` and `--restore-channel` are
+  strict integers in **1..10** (declaring a state is not pressing it); only `--channel` is limited
+  to the measured press set. `--restore-channel` is **required and explicit** — the trial's
+  original is never defaulted from `--expect-channel`, because that would record a restoration
+  nobody declared. `--expect-start-channel` *is* checkable, because the start-channel combo states
+  text; a mismatch, or text that is not an integer in 1..10, refuses.
+- `selection: "UNKNOWN"`, `native_proof: false`, `posted: "unknown"`, `persisted: "unknown"` are
+  the correct outcome of a press. **Attempted is not posted**: an exception from the press
+  primitive yields `stage: "press_raised"`, `press: "attempted"`, `posted: "unknown"` and a
+  non-zero exit — never `pressed`, never a retry. `--visual-corroboration` is recorded as a
+  **post-hoc observation only** on every path; it never becomes the command's evidence and the
+  attribution type that carries a caption states `action_authority: Literal[False]`.
+- The exclusive record is claimed **after** the fresh preflight and the final bound-target check,
+  and **before** the press: it carries the full bound target, the popup/row/cell handles and the
+  ordinal, and the readable facts before and after (with `facts_unreadable`). A pre-action refusal
+  therefore leaves no record at all — no obligation exists for a gesture that was never pending.
+- Facts that move after the press (the new channel's own `profiles`/`seconds`) are reported as
+  `facts_moved`, never as an error and never repaired. One press, no retry, no cleanup; a failed
+  record update reports `trial_record_phase: "obligation"` and exits non-zero.
+- Exit codes: `no_op` (the declaration already names the target) is **0**; an attempted press, a
+  raised press, an unknown selection and a record error are **1**. There is no success exit,
+  because a gesture is not a selection. An accepted live `1 -> 2 -> 1` trial exited **1 on both
+  invocations** (`docs/dop3000/udop-automation.md` §12.12): `1` with `stage: pressed` means *done,
+  unproven*, and a caller that needs a zero is asking for a result the command cannot produce.
+- **The owed restoration is a gesture, not an executor.** The acceptance trial's restore was a
+  second supervised invocation of this same command, and it worked; the owed text therefore names
+  the press to take, never "by hand". Likewise `press_evidence` names the attempted held press and
+  its recipe while `posted` stays `unknown` — no field claims a delivered message.
+- Only channels **1, 2 and 10** are accepted as the **press target** until a measured ordinal →
+  painted-label mapping exists for the rest; that mapping, not a wider `SELECTABLE_CHANNELS`, is
+  what unblocks the others.
+
+**Why it stays supervised (state this precisely).** There is no *verified* automatic non-mutating
+route to reopen the popup and take the acceptance/restoration read. That missing verification — not
+a claim that such a route is impossible — is the blocker. Do not repeat the older framing that
+reopening must mutate or exit the process: the operator has repeatedly closed and reopened this
+popup by hand with success, and §12.10's capture now yields the popup's own frames, but visual
+caption recognition is **evidence only** (the separate `capture.visual_caption` field does not
+supply write authority). Do not answer this with a new autonomy predicate, a gate/"go" service or a
+threshold: the limits are one supervised binding, a reopened popup indistinguishable from the one
+read, child handles not identities after the tree changes, and `setup_verified: false`.
 
 **3. Verify with a coupled observable, never with an echo.** Reading back the field you just
 wrote only proves the text buffer changed. Pick a value the app *recomputes from* that

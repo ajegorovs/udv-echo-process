@@ -62,12 +62,30 @@ Acquisition topology (plan §6.7, §14). The reader sets ``AcquisitionMode`` fro
   manual documents it only as a *block/sequence* number, never as a round or
   visit identity, and the plan forbids deriving round/visit from block order or
   from that word. Measured for the record: on ``data/4-sensor-velocity/
-  200RPM.BDD`` the block word spans ``1..100`` (matching op word 53, "Nb blocks
+  ``200RPM.BDD`` the block word spans ``1..100`` (matching op word 53, "Nb blocks
   in multiplexer mode") with four contiguous profiles per channel per block
   (matching op word 51, "Nb profiles in block in multiplexer mode"), while on
   ``data/echo/200.BDD`` it is the constant ``1`` across 4181 blocks. **Missing
-  format fact** (for a later phase): no field encodes round or visit identity,
-  so those three index arrays stay ``None`` under the explicit-only rule.
+  format fact**: no field encodes round or visit identity, so those three index
+  arrays stay ``None`` under the explicit-only rule.
+
+  What the reader *does* own is the raw **profile-container account**: :func:`read_with_containers`
+  returns the same bundle plus a :class:`ProfileContainerEvidence` listing every
+  measurement container's 0-based source ordinal, its stored vendor
+  block/sequence word (``None`` when its own footer cannot yield one) and the
+  profile rows of each quantity it holds, beside the **configured** op words
+  51/53. That evidence lives beside the bundle, not inside it: §6.6/§6.7 pin the
+  five-field artifact/recording models, and a per-row container id on
+  ``AcquisitionIndex`` would move every content-derived artifact id and
+  misdescribe a block/sequence number as a row index. It supports a stored
+  container partition comparison; it is not a visit law. The evidence is
+  **opt-in**: :func:`read` builds no evidence model, so a caller that only wants
+  the bundle pays nothing and cannot fail on evidence-model strictness.
+
+  The vendor words are reported as stored only. Op 53 ("Nb blocks in
+  multiplexer mode") and op 51 ("Nb profiles in block in multiplexer mode") are
+  *configured* counts, and the footer word is a block/sequence number: none of
+  them is proof that a physical acquisition, round or visit happened.
 
 The content SHA-256 is computed in bounded chunks and no absolute path is
 stored anywhere in the returned models (``SourceAsset.file_name`` is a
@@ -119,6 +137,7 @@ from pathlib import Path
 from typing import cast
 
 import numpy as np
+from pydantic import Field
 
 from udv_echo_process.models import (
     AcquisitionIndex,
@@ -134,6 +153,7 @@ from udv_echo_process.models import (
     observed_signal,
     source_artifact,
 )
+from udv_echo_process.models.base import ValueModel
 from udv_echo_process.models.identity import recording_id_for
 from udv_echo_process.models.io import SourceFormat, SourceSpec
 from udv_echo_process.models.recording import Recording
@@ -200,6 +220,14 @@ _OP_PARAM = {
     # ``Apply skip profile``) and published as the stored integer; the manual's
     # table does not carry it.
     "skipped_profiles": (84, "i"),
+    # Manual rows 51 and 53, per channel: "Nb profiles in block in multiplexer
+    # mode" and "Nb blocks in multiplexer mode". These are **configured**
+    # values, kept in the container evidence as configuration only: they are
+    # never compared with, or substituted for, the profile containers the file
+    # actually stores (see ``ProfileContainerEvidence``). They are not part of
+    # ``ChannelConfig``, so they cannot move any content-derived artifact id.
+    "profiles_in_block_mux": (51, "i"),
+    "blocks_in_mux": (53, "i"),
 }
 
 #: Op word 29 "acquisition rate": a packed 4-byte form, byte 0 is a byte *index*
@@ -240,6 +268,119 @@ _PROFILE_FMT = {0: "b", 1: "B", 2: "b", 25: "h"}
 #: order the profiles happen to appear in.
 _SIGNAL_PROFILES = ("velo", "echo")
 _MEAS_TYPE_BY_PROFILE = {"velo": MeasType.VELOCITY, "echo": MeasType.ECHO}
+
+#: Quantity key published for each signal profile in the container evidence (the
+#: same string the ``MpxStreamReport`` uses, taken from the shared descriptor).
+#: Derived from :data:`_MEAS_TYPE_BY_PROFILE`, so the profile → quantity relation
+#: keeps a single owner instead of a second parallel table.
+_QUANTITY_BY_PROFILE = {
+    name: _DESCRIPTOR_BY_MEAS_TYPE[meas_type].quantity.value
+    for name, meas_type in _MEAS_TYPE_BY_PROFILE.items()
+}
+
+#: Bytes of the fixed measurement-container footer this reader parses. The
+#: vendor block/sequence word sits at ``meas_end - 8`` (``uint16``, manual §10.7
+#: points E–K); the channel at ``meas_end - 3`` and the timestamp at
+#: ``meas_end - 12``.
+_FOOTER_BYTES = 12
+
+#: One source container's facts, collected during the walk only when evidence is
+#: requested: ``(channel, source_ordinal, stored_sequence, rows_by_quantity,
+#: has_depth_axis, note)``. A plain tuple keeps the opt-in path allocation-light.
+_ContainerFact = tuple[int, int, int | None, tuple[tuple[str, int], ...], bool, str]
+
+
+class ProfileContainerCount(ValueModel):
+    """How many profile rows one stored container holds **for one quantity**.
+
+    Keyed by quantity on purpose: a container that carries two payload kinds
+    keeps two separate counts, and no count is summed across kinds. ``profiles``
+    is a decoded row count, never a configured value.
+    """
+
+    quantity: str
+    profiles: int = Field(ge=0)
+
+
+class SourceProfileContainer(ValueModel):
+    """One profile container as stored: its raw identity and its profile counts.
+
+    ``source_ordinal`` is the container's 0-based position in the file's
+    container chain (the source ordinal, not a renumbering of the decoded rows).
+    ``stored_sequence`` is the raw ``uint16`` vendor block/sequence word at
+    ``meas_end - 8`` kept exactly as stored — the manual documents it only as a
+    **block/sequence number**, not as a round or visit identity and not as proof
+    that a physical acquisition happened, so no visit law is derived from it
+    here.
+
+    The word is ``None`` when the container's own footer cannot supply it (a
+    container shorter than the 12-byte footer, or a stored value of ``0``), and
+    ``note`` then says why. A container whose identity is unknown still keeps its
+    decoded profile counts: unresolved identity is reported as unknown, never as
+    absent or as a boundary. ``channel`` keeps the raw word, including the
+    invalid ``0``, so a malformed file is described instead of rejected.
+    """
+
+    channel: int = Field(ge=0)
+    source_ordinal: int = Field(ge=0)
+    stored_sequence: int | None = None
+    has_depth_axis: bool = False
+    profiles: tuple[ProfileContainerCount, ...] = ()
+    note: str = ""
+
+
+class ConfiguredContainerSetting(ValueModel):
+    """The **configured** multiplexer container settings of one channel (op 51/53).
+
+    Configuration, not observation: ``containers_in_mode`` is op word 53 ("Nb
+    blocks in multiplexer mode") and ``profiles_per_container`` is op word 51
+    ("Nb profiles in block in multiplexer mode") — the vendor's own block words,
+    reported as the parameters state them. Neither is ever reported as the
+    number of profile containers the file stores, and neither is used as a
+    divisor or a substitute for a stored count. Both are ``None`` when the word
+    is absent or non-positive.
+    """
+
+    channel: int = Field(gt=0)
+    profiles_per_container: int | None = None
+    containers_in_mode: int | None = None
+
+
+class ProfileContainerEvidence(ValueModel):
+    """Decoder-owned per-container evidence for one ``.BDD`` file.
+
+    This is the reader's own account of the profile containers it walked, kept
+    **beside** the ``ArtifactBundle`` rather than inside it: the pinned five-field
+    ``ChannelArtifact``/``Recording`` models (plan §6.6/§6.7) cannot carry it, and
+    adding a per-row id to ``AcquisitionIndex`` would both change every
+    content-derived artifact id and misdescribe a block/sequence word as a row
+    index. Nothing here changes a row id, a timestamp or a decoded value.
+
+    Built only by :func:`read_with_containers`, from the same walk that produced
+    the bundle. Evidence is factual only: it records which container each profile
+    row came from and how many rows of each quantity that container held; it does
+    not claim that a container is a visit, a round or a repeat, and it does not
+    merge containers that reuse a block/sequence word.
+    """
+
+    file_sha256: str
+    byte_size: int = Field(ge=0)
+    containers_consumed: int = Field(ge=0)
+    trailing_bytes: int = Field(ge=0)
+    containers: tuple[SourceProfileContainer, ...] = ()
+    configured: tuple[ConfiguredContainerSetting, ...] = ()
+
+    def channel_containers(self, channel: int) -> tuple[SourceProfileContainer, ...]:
+        """Every stored container of ``channel``, in source order."""
+        return tuple(c for c in self.containers if c.channel == channel)
+
+    def configured_for(self, channel: int) -> ConfiguredContainerSetting | None:
+        """The channel's configured container settings, or ``None`` when not read."""
+        for setting in self.configured:
+            if setting.channel == channel:
+                return setting
+        return None
+
 
 _EMIT_POWER = {0: "low", 1: "medium", 2: "high"}
 _SENSITIVITY = {20: "very low", 12: "low", 8: "medium", 4: "high", 2: "very high"}
@@ -605,6 +746,37 @@ def read(path: Path) -> ArtifactBundle:
             gate axes disagree with the decoded values, or no channel data was
             decoded.
     """
+    return _walk_bdd(path, collect_containers=False)[0]
+
+
+def read_with_containers(path: Path) -> tuple[ArtifactBundle, ProfileContainerEvidence]:
+    """Read one ``.BDD`` file and its :class:`ProfileContainerEvidence` in one walk.
+
+    The bundle is byte-for-byte the one :func:`read` returns — same rows, same
+    content-derived ids, same timestamps — because both functions share this
+    walk. The evidence is decoded from the same buffer in the same pass, so a
+    caller comparing a declaration with stored containers cannot see evidence
+    from different bytes than the values it reports.
+
+    Args:
+        path: the ``.BDD`` file to read.
+
+    Returns:
+        ``(bundle, evidence)``: the validated artifact bundle and the reader's
+        own per-container account of the same bytes.
+
+    Raises:
+        ValueError: as :func:`read`.
+    """
+    bundle, evidence = _walk_bdd(path, collect_containers=True)
+    assert evidence is not None  # requested above
+    return bundle, evidence
+
+
+def _walk_bdd(
+    path: Path, *, collect_containers: bool
+) -> tuple[ArtifactBundle, ProfileContainerEvidence | None]:
+    """Walk the file once, building the bundle and (opt-in) the container evidence."""
     raw = path.read_bytes()
     if not sniff_bdd(raw):
         raise ValueError(f"not a DOP3000 .BDD file: {path.name}")
@@ -629,8 +801,11 @@ def read(path: Path) -> ArtifactBundle:
     )
     recording_id = recording_id_for(asset_id)
 
-    # ── walk the measurement block chain ──────────────────────────────
+    # ── walk the measurement container chain ──────────────────────────
     acc: dict[int, _Acc] = {}
+    # Evidence is collected only when requested: a plain read allocates no
+    # per-container record and parses no footer word beyond the rows it needs.
+    facts: list[_ContainerFact] | None = [] if collect_containers else None
     meas_start = _MEAS_BASE_OFFSET
     eof = len(raw)
 
@@ -644,9 +819,42 @@ def read(path: Path) -> ArtifactBundle:
         ts_raw = buf.at(meas_end - 12, "I")
         a = acc.setdefault(channel, _Acc(channel))
 
+        if facts is not None:
+            # The container's own vendor word, kept only when its footer lies
+            # inside this container. A short container or a stored 0 leaves the
+            # number unknown; the decoded counts below are still kept, because
+            # unresolved identity is not an absent container.
+            notes: list[str] = []
+            if meas_len >= _FOOTER_BYTES:
+                stored_sequence: int | None = buf.at(meas_end - 8, "H") or None
+                if stored_sequence is None:
+                    notes.append(
+                        "the stored block/sequence word is 0 on this container; "
+                        "its block identity is unknown"
+                    )
+            else:
+                stored_sequence = None
+                notes.append(
+                    f"the measurement container is {meas_len} bytes, shorter "
+                    f"than its {_FOOTER_BYTES}-byte footer; its block identity "
+                    "is unknown"
+                )
+            if channel == 0:
+                notes.append(
+                    "the channel word is 0, which is not a valid channel; these "
+                    "rows are attributed to no declared channel"
+                )
+        else:
+            stored_sequence = None
+
         # walk nested profile sub-blocks
         prof_start = meas_start + 2
+        # Profiles this container carried, in the order they appeared, plus
+        # whether it stored the depth pseudo-profile: the depth flag feeds the
+        # container evidence, ``present`` feeds both the evidence counts and the
+        # channel's single clock.
         present: list[str] = []
+        saw_depth = False
         while True:
             plen = buf.at(prof_start, "H")
             if plen == 0:
@@ -657,6 +865,7 @@ def read(path: Path) -> ArtifactBundle:
             name = _PROFILE_NAME.get(ptype)
             if name == "depth":
                 a.depth = np.frombuffer(payload, dtype=np.int16).astype(float) / 10.0
+                saw_depth = True
             elif name in _SIGNAL_PROFILES:
                 dtype = np.uint8 if ptype == 1 else np.int8
                 arr = np.frombuffer(payload, dtype=dtype).astype(float)
@@ -667,6 +876,25 @@ def read(path: Path) -> ArtifactBundle:
                 a.series[name].append(decoded)
                 present.append(name)
             prof_start += plen + 3
+
+        if facts is not None:
+            # The container evidence is derived from the same ``present`` list the
+            # clock uses, so a container's reported profile counts and the rows
+            # appended for it cannot drift apart.
+            facts.append(
+                (
+                    int(channel),
+                    len(facts),
+                    stored_sequence,
+                    tuple(
+                        (_QUANTITY_BY_PROFILE[name], present.count(name))
+                        for name in _SIGNAL_PROFILES
+                        if name in present
+                    ),
+                    saw_depth,
+                    "; ".join(notes),
+                )
+            )
 
         # A depth-only block is not a measurement timestep (matches DOPpy
         # `_scanFile`), so it contributes no clock reading. A signal block records
@@ -752,4 +980,48 @@ def read(path: Path) -> ArtifactBundle:
     graph = ArtifactGraph()
     for stream in recording.streams:
         graph = register_root_artifact(graph, stream.artifact_id)
-    return ArtifactBundle(recording=recording, graph=graph)
+    bundle = ArtifactBundle(recording=recording, graph=graph)
+    if facts is None:
+        return bundle, None
+    evidence = ProfileContainerEvidence(
+        file_sha256=content_sha256,
+        byte_size=len(raw),
+        containers_consumed=len(facts),
+        trailing_bytes=eof - meas_start,
+        containers=tuple(
+            SourceProfileContainer(
+                channel=channel,
+                source_ordinal=source_ordinal,
+                stored_sequence=stored_sequence,
+                has_depth_axis=has_depth_axis,
+                profiles=tuple(
+                    ProfileContainerCount(quantity=quantity, profiles=profiles)
+                    for quantity, profiles in rows
+                ),
+                note=note,
+            )
+            for (
+                channel,
+                source_ordinal,
+                stored_sequence,
+                rows,
+                has_depth_axis,
+                note,
+            ) in facts
+        ),
+        configured=tuple(
+            ConfiguredContainerSetting(
+                channel=ch,
+                profiles_per_container=(
+                    int(cast(int, op[ch]["profiles_in_block_mux"])) or None
+                ),
+                containers_in_mode=(int(cast(int, op[ch]["blocks_in_mux"])) or None),
+            )
+            for ch in sorted(acc)
+            # The op table holds the ten device channels; a raw 0 (or any other
+            # out-of-table word) has no configured setting to report and is kept in
+            # ``containers`` as an unknown-channel container instead.
+            if 1 <= ch <= 10
+        ),
+    )
+    return bundle, evidence

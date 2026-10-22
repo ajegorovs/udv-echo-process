@@ -140,7 +140,8 @@ and the app had to be quit, leaving a windowless leftover process behind — see
  | **hover** the menubar button (`SetCursorPos` alone, no click) | **opens the menu** — the popup appears on mouse-over |
  | a click (posted or injected) on that button once a popup is open | **closes** it; a click on its own never opens one, which is why every click-based attempt failed |
  | **`WM_CLOSE` to the popup panel** | closes it visually and **wedges the app**: afterwards no menu opens by any of the above, nor real `ESC`, a real click outside, or `Alt`. Restart only. |
- | hover the button again, move the cursor away, or click the plot | does **not** dismiss an open popup |
+ | **walk a bounded stepped path of the real cursor off the popup** (`SetCursorPos` per position, read back per step) | **one live prototype accepted at its scope** — a single warp read its point back exactly and the popup stayed up (`channels-hover-lifecycle-live-01`); a 13-step path of <= 40 px was then observed ABSENT on both of two paths (`channels-stepped-path-live-01`, one build/geometry). Supports path-versus-jump; does **not** establish the OS mechanism and is not production-live until `channels_opener.py` runs end to end. `recon/35` establishes the hover-open and an entry press consuming the popup, not a generic close. The path must stay outside the popup *and* off the menubar, inside the client/screen |
+ | hover the button again, click the button again, or click the plot | does **not** dismiss an open popup |
  | open a *different* menu | replaces the open popup — but consuming it costs that menu's own action, so it is not a free dismissal |
 
  **Mechanism:** the popup window is destroyed while the app is still inside its modal menu loop, so
@@ -152,10 +153,17 @@ and the app had to be quit, leaving a windowless leftover process behind — see
 
  1. **No menu navigation in an unattended run.** Per-point changes go to sidebar fields by message,
   or to a config file the app recalls. Menus belong to setup.
- 2. **If a popup is open when a run resumes, stop and raise.** A detector, never a cleaner — there is
-  no safe programmatic dismissal. One toolkit-version-dependent exception the operator may know about:
-  in older builds a stuck hover element closed when the same button was **re-hovered**, so try a single
-  re-hover before declaring the run blocked, and record whether it worked.
+ 2. **If a popup is open when a run resumes, stop and raise.** A detector, with one bounded attempt:
+   walking a **bounded stepped path** of the **real** cursor off the popup (outside its rect and off
+   the menubar, derived from the live rectangles, <= 40 px per step, on a 2 s *interval budget*
+   checked before each move — not a hard deadline, and never a mid-path foreground activation) is
+   the dismissal, and only an
+   observed ABSENT read closes it — a `GetCursorPos` read-back proves a landing, not the close.
+   Posted clicks, `ESC` and `WM_CANCELMODE` do not dismiss it, so there is no message-based cleaner;
+   `dismiss_channels_popup` is the single stepped-path owner and stops with a typed UNKNOWN rather
+   than walking a second path. In older builds a stuck
+   hover element also closed when the same button was **re-hovered**, so one re-hover is worth
+   trying only after the move has been observed to leave the popup ABSENT — record whether it worked.
  3. **Detect it with the layout fingerprint** (§4 of `control-id-mapping.md`, the control-count
   check). A popup adds a short panel that hangs under the menubar and *directly owns buttons of the
   expected class*; require all of those properties, because each one alone also matches a permanent

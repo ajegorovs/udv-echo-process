@@ -55,6 +55,7 @@ __all__ = [
     "DIALOG_DEPENDENT_FIELDS",
     "DIALOG_FIELD_ORDER",
     "DIALOG_ONLY_PARAMETERS",
+    "MEASURED_ROW_VARIANTS",
     "NUMERIC_WRITE_RECIPE",
     "OVERLAY_ANSWERS",
     "PARAMETER_WRITE_ORDER",
@@ -64,6 +65,7 @@ __all__ = [
     "STARTABLE_VIEWS",
     "STORE_TIMEOUT_S",
     "STRIP_BUTTON_ORDER",
+    "STRIP_VARIANT_BUTTON_ORDER",
     "VIEW_TIMEOUT_S",
     "Actuator",
     "BurstState",
@@ -77,11 +79,15 @@ __all__ = [
     "ParamRole",
     "ProcessMode",
     "StripControl",
+    "StripRowSignature",
+    "StripRowVariant",
     "StripState",
     "StripView",
+    "WindowTarget",
     "WriteState",
     "classify_strip_view",
     "dialog_row",
+    "measured_row_variant",
     "ordered_writes",
     "overlay_answer",
     "press_index",
@@ -132,6 +138,28 @@ class ParamRole(str, Enum):
     VELOCITY_SCALE_FACTOR = "velocity_scale_factor"
     EMISSIONS_PER_PROFILE = "emissions_per_profile"
     DOPPLER_ANGLE = "doppler_angle_deg"
+
+
+class WindowTarget(ValueModel):
+    """The window one actuator was told to drive, and the identity it had when told.
+
+    A handle is an action reference; the owning thread and process, the class and (at the
+    moment of every resolve) visibility are the evidence that it still refers to the window
+    the caller chose. Callers can retain the returned record beside their operation
+    evidence; existing job logs do not automatically include this complete identity.
+
+    **What this is not.** It cannot prove *durable* identity: Windows may recycle a handle
+    inside the same process, to another window of the same class with the same owning thread,
+    and the reads this driver makes cannot tell that window from the one recorded here.
+    Identity is checked whenever the root window is resolved, not before every child
+    message. Child handles retain the existing tree's lifetime limitations. A caller that
+    needs stronger identity must observe the application's own state, not this record.
+    """
+
+    hwnd: int
+    thread_id: int
+    process_id: int
+    class_name: str
 
 
 #: The order the **job boundary** performs its parameter transitions in, when a job commands more
@@ -363,6 +391,13 @@ class StripControl(str, Enum):
     CLEAR_AND_RESTART = "clear_and_restart"
     NEW_ACQUISITION = "new_acquisition"
     REMOVE_CURRENT_BLOCK = "remove_current_block"
+    #: ``Remove current sequence`` — measured caption of the third button of the repeated
+    #: multiplexer completion row (2026-10-21 capture, ``StripRowVariant.
+    #: REPEATED_MPX_COMPLETION``). Deliberately its own role and **not**
+    #: :attr:`REMOVE_CURRENT_BLOCK`: the two captions were never compared on one screen, so
+    #: nothing states they name the same action. It is non-actionable by *capability* — no
+    #: command in this driver presses it and no guard substitutes it — not by a new invariant.
+    REMOVE_CURRENT_SEQUENCE = "remove_current_sequence"
     #: A position of a row whose roles are unresolved: never a press target (ledger B10).
     UNRESOLVED = "unresolved"
 
@@ -408,7 +443,10 @@ class StripView(str, Enum):
     #: Stopped with data, no slider: the three-button ``Pause`` / ``Record`` /
     #: ``Clear and restart`` row (``UI-STRIP-01``).
     READY = "ready"
-    #: After ``Stop``: three top-row buttons **and** a ``TSp_Sliding_Bar`` child.
+    #: After ``Stop``: a ``TSp_Sliding_Bar`` child, and **two, three or four** top-row
+    #: buttons — the slider, never the count, decides the view. Every length that carries a
+    #: binding here is a :data:`STRIP_BUTTON_ORDER` row for this view (``2``, ``3``, ``4``);
+    #: the measured multiplexed run ends in the two-button one (``269x123``, 2026-10-20).
     STORE = "store"
     #: The four-button, no-slider row: **no executable binding** (ledger B10, critical and
     #: device-pending). ``UI-STRIP-01`` (``ui-crops/run-controls.png``) paints ``Pause`` /
@@ -426,6 +464,90 @@ class StripView(str, Enum):
     UNKNOWN = "unknown"
 
 
+class StripRowVariant(str, Enum):
+    """A measured **variant** of a strip row that shares its ``(view, button_count)`` key.
+
+    A view and a length are not a role map: two different rows can read
+    ``STORE`` with three visible buttons, and only measurement says which captions they
+    carry. So the variants live beside :data:`STRIP_BUTTON_ORDER` rather than inside it —
+    the count-keyed table keeps its entries untouched, and a variant is selected only when
+    the resolved row's **measured signature** matches one of
+    :data:`MEASURED_ROW_VARIANTS` exactly.
+
+    ``LEGACY_STORE3`` is the entry :data:`STRIP_BUTTON_ORDER` already carries for
+    ``(STORE, 3)`` — the non-MPX three-button store panel (413x123, crop-derived, ``New
+    acquisition`` / ``Do store`` / ``Clear and restart``). It is named here so a caller can
+    state which row it means, never so a caller can choose one by hand.
+    """
+
+    #: The non-MPX three-button store row, as :data:`STRIP_BUTTON_ORDER` binds it.
+    LEGACY_STORE3 = "legacy-store3"
+    #: The row a **repeated** multiplexed run was measured to end in: ``Do store`` /
+    #: ``Clear and restart`` / ``Remove current sequence`` on a 477x123 panel.
+    REPEATED_MPX_COMPLETION = "repeated-mpx-completion"
+
+
+class StripRowSignature(ValueModel):
+    """The **measured** structure of one strip top row — the row variant's evidence.
+
+    Kept as the rectangle the resolver read, not as an identity: the panel's size and the
+    widths of its painted top-row buttons, left → right. Widths are recorded because they are
+    what was measured, **not** because a width identifies a button — the row is still
+    addressed by position, and a signature only ever selects which *captioned* row this is.
+
+    Only facts this boundary can actually read are here. The hidden siblings painted behind
+    the repeated-MPX row are visible in a full control-tree probe but **not** in the live
+    resolver's child set (:func:`…win32.tree._visible_children` enumerates visible descendants
+    only), so they are capture provenance and not a field: a discriminator that cannot be read
+    where the decision is made is not a discriminator.
+
+    A signature is matched **exactly** (:func:`measured_row_variant`). Geometry is not a
+    universal identity: a size or width set that was never measured is unknown, and unknown
+    means the legacy binding, never a guess.
+    """
+
+    panel_width: int = Field(ge=0)
+    panel_height: int = Field(ge=0)
+    visible_widths: tuple[int, ...]
+
+
+#: Measured strip-row signatures and the variant each one is. **Exact match only** — a
+#: signature close to an entry is not that entry (:func:`measured_row_variant`).
+#:
+#: ``(477, 123, (91, 138, 198))`` — ``REPEATED_MPX_COMPLETION``, from the 2026-10-21 read-only
+#: capture of a repeated multiplexed run's completed block (``UDOP DOP3010.43``,
+#: ``outputs/live/top-level-windows-full-a.png`` with the control tree of the same instant,
+#: ``.hermes/scratch/multiplexer-development/repeat2-completion-capture.log``): a 477x123
+#: ``TSp_Panel`` holding three painted ``TSp_Button`` widgets 91, 138 and 198 px wide, the
+#: visible ``TSp_Sliding_Bar`` and the two block/channel combos. The frame paints ``Do store`` /
+#: ``Clear and restart`` / ``Remove current sequence`` across those three; the tree's button text
+#: is empty. The same probe shows two further ``TSp_Button`` (79 and 85 px) at the same height
+#: with ``visible: false`` — recorded here as provenance, deliberately not part of the key.
+#:
+#: The non-MPX 413x123 three-button store row is **not** in this table: its signature was never
+#: measured on this host (no live tree of it exists in the repository), so it stays the legacy
+#: entry and cannot be confused with the row above by geometry.
+MEASURED_ROW_VARIANTS: dict[StripRowSignature, StripRowVariant] = {
+    StripRowSignature(
+        panel_width=477,
+        panel_height=123,
+        visible_widths=(91, 138, 198),
+    ): StripRowVariant.REPEATED_MPX_COMPLETION,
+}
+
+
+def measured_row_variant(signature: StripRowSignature | None) -> StripRowVariant | None:
+    """The variant this measured signature **is**, or ``None`` when it was never measured.
+
+    Exact equality on every field, because a partial match is not a measurement: a panel of
+    another size, a button that came or went, or a hidden inventory that changed all mean
+    *this* row's roles are unknown. ``None`` is a refusal to name a row, never a default.
+    """
+    if signature is None:
+        return None
+    return MEASURED_ROW_VARIANTS.get(signature)
+
+
 #: The top-row button order per ``(view, button_count)``, left → right.
 #: The identity of a button is its **position in the view**, never its width.
 #: ``record_and_store`` may only start from a verified ``READY`` view: starting
@@ -441,11 +563,35 @@ class StripView(str, Enum):
 #: ``UI-STRIP-02``'s grown frame paints ``New acquisition`` / ``Do store`` / ``Clear and restart``
 #: / ``Remove current block``, whose first two positions are **not** those two buttons. A row
 #: that has no binding is a refusal, never a default.
+#:
+#: **``(STORE, 2)`` is the row a multiplexed acquisition ends in** — measured from a
+#: read-only control-tree capture taken 2026-10-20 on the instrument
+#: (``UDOP DOP3010.43``, multiplexer sequence probe): the strip panel built 269x123 holds
+#: two visible top-row ``TSp_Button`` widgets (91 px and 138 px wide — again too close to
+#: tell apart by width), the visible ``TSp_Sliding_Bar``, and the block/channel combo pair;
+#: two further buttons are painted behind the row with ``visible: false`` and are not part
+#: of it. The slider therefore already classified the view :attr:`StripView.STORE` — the
+#: view was reachable while this table carried no row for its length, so a
+#: ``press(DO_STORE)`` out of exactly the state an MPX run ends in raised instead of
+#: committing the store.
+#:
+#: The two roles are ``Do store`` (left) then ``Clear and restart`` (right), as the
+#: operator read them off that captured frame by hand. That is a **caption inspection and
+#: not an automated press**: no click was posted to this row to land the binding, so the
+#: row states which position means which role, and nothing about how the instrument
+#: answers it (``tests/test_acquire_multiplexer_strip.py`` pins the binding against the
+#: captured structure; ``docs/dop3000/acquisition-ui-model.md`` §3.5 carries the note).
+#: ``New acquisition`` and ``Remove current block`` are absent from this row by
+#: measurement, not by choice — asking for either here is a refusal.
 STRIP_BUTTON_ORDER: dict[tuple[StripView, int], tuple[StripControl, ...]] = {
     (StripView.RECORDING, 1): (StripControl.STOP,),
     (StripView.READY, 3): (
         StripControl.PAUSE,
         StripControl.RECORD,
+        StripControl.CLEAR_AND_RESTART,
+    ),
+    (StripView.STORE, 2): (
+        StripControl.DO_STORE,
         StripControl.CLEAR_AND_RESTART,
     ),
     (StripView.STORE, 3): (
@@ -460,6 +606,27 @@ STRIP_BUTTON_ORDER: dict[tuple[StripView, int], tuple[StripControl, ...]] = {
         StripControl.REMOVE_CURRENT_BLOCK,
     ),
 }
+
+#: Role maps for rows that share a ``(view, button_count)`` key with
+#: :data:`STRIP_BUTTON_ORDER`. Selected **only** by an exact measured signature
+#: (:data:`MEASURED_ROW_VARIANTS`), never by a caller's preference and never by a count.
+#:
+#: ``(STORE, 3, REPEATED_MPX_COMPLETION)`` — the row a repeated multiplexed run was measured
+#: to end in (2026-10-21): ``Do store`` / ``Clear and restart`` / ``Remove current sequence``.
+#: It is a *different row* from the ``(STORE, 3)`` entry above, which keeps its legacy roles
+#: unchanged, and the only consequence of naming it is that ``DO_STORE`` resolves to index 0
+#: here and index 1 there. ``Remove current sequence`` is bound because it is what the third
+#: button paints; no command presses it, so its presence cannot discard anything.
+STRIP_VARIANT_BUTTON_ORDER: dict[
+    tuple[StripView, int, StripRowVariant], tuple[StripControl, ...]
+] = {
+    (StripView.STORE, 3, StripRowVariant.REPEATED_MPX_COMPLETION): (
+        StripControl.DO_STORE,
+        StripControl.CLEAR_AND_RESTART,
+        StripControl.REMOVE_CURRENT_SEQUENCE,
+    ),
+}
+
 
 #: Views a point cycle may start from. ``RECORDING`` is never a legal start: a
 #: running recording keeps its data and the next ``Do store`` writes it (docs/16
@@ -496,31 +663,64 @@ def classify_strip_view(button_count: int, has_slider: bool) -> StripView:
     return StripView.UNKNOWN
 
 
-def strip_controls(view: StripView, button_count: int) -> tuple[StripControl, ...]:
-    """The top-row controls of a view, left → right."""
+def strip_controls(
+    view: StripView,
+    button_count: int,
+    variant: StripRowVariant | None = None,
+) -> tuple[StripControl, ...]:
+    """The top-row controls of a view, left → right.
+
+    ``variant`` selects a measured variant row (:data:`STRIP_VARIANT_BUTTON_ORDER`) of the
+    same key. ``None`` — a row whose signature was not measured, or matched nothing — answers
+    the legacy :data:`STRIP_BUTTON_ORDER` entry, so an unknown row never gains roles it was
+    not measured to have.
+
+    A **named** variant that this key has no measured row for is a refusal, never a fallback:
+    ``None`` means *nothing was measured* and the count-keyed entry is the only reading, while
+    a variant was named from a measurement of one specific row — answering the legacy entry
+    for it would hand back roles that belong to a different row of the same length, which is
+    the confusion the variants exist to prevent.
+    """
+    if variant is not None:
+        try:
+            return STRIP_VARIANT_BUTTON_ORDER[(view, button_count, variant)]
+        except KeyError:
+            raise ValueError(
+                f"no measured button row for view {view.value!r} with "
+                f"{button_count} button(s) as {variant.value!r}: a named variant is the "
+                "measurement of one row and never a fallback to the count-keyed legacy "
+                "entry; the view must be re-resolved, not guessed"
+            ) from None
     try:
         return STRIP_BUTTON_ORDER[(view, button_count)]
     except KeyError:
         raise ValueError(
             f"no known button row for view {view.value!r} with "
-            f"{button_count} button(s); the view must be re-resolved, not guessed"
+            f"{button_count} button(s)"
+            "; the view must be re-resolved, not guessed"
         ) from None
 
 
-def press_index(view: StripView, control: StripControl, button_count: int) -> int:
+def press_index(
+    view: StripView,
+    control: StripControl,
+    button_count: int,
+    variant: StripRowVariant | None = None,
+) -> int:
     """Left→right index of ``control`` in ``view`` — the binding of a press.
 
     The implementation resolves the strip panel structurally, sorts the top row
     by ``left`` and presses the widget at this index. This is the whole reason
     button widths must not be used as identity.
     """
-    row = strip_controls(view, button_count)
+    row = strip_controls(view, button_count, variant)
     try:
         return row.index(control)
     except ValueError:
         raise ValueError(
             f"no {control.value!r} in the {view.value!r} view "
             f"({[c.value for c in row]})"
+            + (f" as {variant.value!r}" if variant is not None else "")
         ) from None
 
 
@@ -883,11 +1083,32 @@ class StripState(ValueModel):
     #: The store slider's maximum: the *selected block's* profile count, i.e. a
     #: free "how much is there to store" readout (docs/16 §3, §7).
     slider_max: int | None = Field(default=None, ge=0)
+    #: The row's **measured** structure, when the resolver read it: the panel rect and the
+    #: widths of the visible and hidden buttons of its top row. ``None`` when the caller only
+    #: stated a count and a slider (a hand-built state), which is *unmeasured*, not neutral.
+    #: Only used to name a row variant (:attr:`row_variant`) — never to address a button.
+    row_signature: StripRowSignature | None = None
 
     @property
     def view(self) -> StripView:
         """The view this structure implies."""
         return classify_strip_view(self.button_count, self.has_slider)
+
+    @property
+    def row_variant(self) -> StripRowVariant | None:
+        """The measured variant of this row, or ``None`` when it is unmeasured/unknown.
+
+        A signature that matches a measured variant names it **only if that variant is a row
+        of this very key** (:data:`STRIP_VARIANT_BUTTON_ORDER`); otherwise it is ``None``,
+        and the legacy binding applies. Derived, never stored, so a state cannot claim a
+        variant its own count contradicts.
+        """
+        variant = measured_row_variant(self.row_signature)
+        if variant is None:
+            return None
+        if (self.view, self.button_count, variant) not in STRIP_VARIANT_BUTTON_ORDER:
+            return None
+        return variant
 
     @property
     def controls(self) -> tuple[StripControl, ...]:
@@ -901,7 +1122,7 @@ class StripState(ValueModel):
         :func:`press_index`, and it refuses.
         """
         try:
-            return strip_controls(self.view, self.button_count)
+            return strip_controls(self.view, self.button_count, self.row_variant)
         except ValueError:
             if self.view is StripView.AMBIGUOUS:
                 return (StripControl.UNRESOLVED,) * self.button_count
@@ -914,7 +1135,7 @@ class StripState(ValueModel):
 
     def index_of(self, control: StripControl) -> int:
         """Left→right index of ``control`` in this state's row."""
-        return press_index(self.view, control, self.button_count)
+        return press_index(self.view, control, self.button_count, self.row_variant)
 
 
 @runtime_checkable

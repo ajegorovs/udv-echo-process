@@ -16,8 +16,8 @@ this module pins is the *composition* the move produced and the boundary it draw
   through ``sys.modules`` surgery. ``udop/session.py`` is the *compatibility name* of that facade:
   a documented re-export, so ``driver.Win32Actuator is session.Win32Actuator`` and every name the
   facade publishes resolves from both.
-* the class's own 97 names are ``bfbbb10``'s recorded 96-name surface plus the one documented
-  addition (``FLAT_CLASS_SURFACE`` / ``CLASS_ADDITIONS``), so a method that leaves the class fails
+* the class's own 100 names are ``bfbbb10``'s recorded 96-name surface plus the documented
+  additions (``FLAT_CLASS_SURFACE`` / ``CLASS_ADDITIONS``), so a method that leaves the class fails
   here by name — the four lists alone cannot see that, being closed over themselves.
 * every name ``driver.__all__`` publishes resolves from ``driver`` and from the compatibility name,
   and the re-exported names are the *same objects* their surface defines. The flat module's whole
@@ -70,6 +70,8 @@ from udv_echo_process.acquire.win32 import _acquisition_error
 #: ``Win32Actuator`` and is defined in exactly one of these modules.
 PARAMETERS_METHODS = (
     "_open_parameters_dialog",
+    "open_channels_popup",
+    "dismiss_channels_popup",
     "_assert_assisted_unchanged",
     "_close_parameters_dialog",
     "ensure_channel",
@@ -107,6 +109,10 @@ RECORDING_METHODS = (
     "strip_state",
     "wait_for_view",
     "press",
+    "press_channel_cell",
+    "press_mode_toggle",
+    "press_rollover_toggle",
+    "_press_bound_toggle",
     "answer_overlay",
     "hold_recording",
     "wait_for_view_guarded",
@@ -121,6 +127,7 @@ RECORDING_METHODS = (
 STORE_METHODS = (
     "_require_store_dialog",
     "set_store_name",
+    "verify_working_directory",
     "assert_working_directory",
     "commit_store",
     "wait_for_stored_file",
@@ -144,16 +151,21 @@ FACADE_METHODS = (
     "_combo_select",
     "_click_hold",
     "_clip_rect",
+    "_screen_rect",
     "_release_clip",
     "_cursor_position",
     "_restore_cursor",
     "_move_real_cursor",
+    "_move_real_cursor_stepped",
     "_foreground_window",
     "_thread_of",
     "_activate_window",
+    "_check_foreground",
     "_require_foreground",
     "_hover_centre",
     "_main_hwnd",
+    "bind_target",
+    "verify_bound_target",
     "_children_of",
     "_param_rows",
     "_resolve",
@@ -198,30 +210,102 @@ SURFACES = {
 #: set is the baseline that makes such a removal fail by name.
 FLAT_CLASS_SURFACE = frozenset(
     {
-        "__init__", "_note", "_send", "_get_text",
-        "_control_id", "_set_text_commit", "_combo_select", "_click_hold",
-        "_clip_rect", "_release_clip", "_cursor_position", "_restore_cursor",
-        "_move_real_cursor", "_foreground_window", "_thread_of", "_activate_window",
-        "_require_foreground", "_hover_centre", "_main_hwnd", "_children_of",
-        "_param_rows", "_resolve", "_has_slider", "_state_of",
-        "_find_overlay", "_peek_overlay", "_require_store_dialog", "_dialog_button",
-        "channel", "_combo_index", "_combo_items", "_channel_combo",
-        "_channel_readback", "_channel_matches", "_close_any_dialog", "_panel_map",
-        "_poll_parameters_overlay", "_is_visible", "_hidden_panels", "_dialog_panels",
-        "_poll_dialog", "_panel_observation", "_pressed_state", "_observe_entry_attempt",
-        "_require_visible_popup", "_press_entry", "_close_wrong_dialog", "_open_parameters_dialog",
-        "_assert_assisted_unchanged", "_close_parameters_dialog", "ensure_channel", "window_caption",
-        "screen_fingerprint", "read_dialog_parameters", "_descendants_of", "_poll_dialog_fields",
-        "_text_at", "_dialog_channel_text", "_dialog_refusal", "instrument_snapshot",
-        "_process_mode_fact", "_require_same_channel", "_channel_fact", "_column_fact",
-        "hold_recording", "wait_for_view_guarded", "peek_overlay", "preflight",
-        "layout_note", "process_mode_note", "read_parameter", "_assisted_mode_clause",
-        "write_parameter", "apply_point", "select_combo", "strip_state",
-        "wait_for_view", "press", "answer_overlay", "set_store_name",
-        "assert_working_directory", "commit_store", "wait_for_stored_file", "record_and_store",
-        "try_record_and_store", "_as_role", "_settle_press", "_wait_for_view_guarded",
-        "_hold_recording", "_await_store_dialog", "_store_edits", "_store_name_field",
-        "_names_in", "_poll_new_file", "_store_until_file", "_recover",
+        "__init__",
+        "_note",
+        "_send",
+        "_get_text",
+        "_control_id",
+        "_set_text_commit",
+        "_combo_select",
+        "_click_hold",
+        "_clip_rect",
+        "_release_clip",
+        "_cursor_position",
+        "_restore_cursor",
+        "_move_real_cursor",
+        "_foreground_window",
+        "_thread_of",
+        "_activate_window",
+        "_require_foreground",
+        "_hover_centre",
+        "_main_hwnd",
+        "_children_of",
+        "_param_rows",
+        "_resolve",
+        "_has_slider",
+        "_state_of",
+        "_find_overlay",
+        "_peek_overlay",
+        "_require_store_dialog",
+        "_dialog_button",
+        "channel",
+        "_combo_index",
+        "_combo_items",
+        "_channel_combo",
+        "_channel_readback",
+        "_channel_matches",
+        "_close_any_dialog",
+        "_panel_map",
+        "_poll_parameters_overlay",
+        "_is_visible",
+        "_hidden_panels",
+        "_dialog_panels",
+        "_poll_dialog",
+        "_panel_observation",
+        "_pressed_state",
+        "_observe_entry_attempt",
+        "_require_visible_popup",
+        "_press_entry",
+        "_close_wrong_dialog",
+        "_open_parameters_dialog",
+        "_assert_assisted_unchanged",
+        "_close_parameters_dialog",
+        "ensure_channel",
+        "window_caption",
+        "screen_fingerprint",
+        "read_dialog_parameters",
+        "_descendants_of",
+        "_poll_dialog_fields",
+        "_text_at",
+        "_dialog_channel_text",
+        "_dialog_refusal",
+        "instrument_snapshot",
+        "_process_mode_fact",
+        "_require_same_channel",
+        "_channel_fact",
+        "_column_fact",
+        "hold_recording",
+        "wait_for_view_guarded",
+        "peek_overlay",
+        "preflight",
+        "layout_note",
+        "process_mode_note",
+        "read_parameter",
+        "_assisted_mode_clause",
+        "write_parameter",
+        "apply_point",
+        "select_combo",
+        "strip_state",
+        "wait_for_view",
+        "press",
+        "answer_overlay",
+        "set_store_name",
+        "assert_working_directory",
+        "commit_store",
+        "wait_for_stored_file",
+        "record_and_store",
+        "try_record_and_store",
+        "_as_role",
+        "_settle_press",
+        "_wait_for_view_guarded",
+        "_hold_recording",
+        "_await_store_dialog",
+        "_store_edits",
+        "_store_name_field",
+        "_names_in",
+        "_poll_new_file",
+        "_store_until_file",
+        "_recover",
     }
 )
 
@@ -232,15 +316,36 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
 #: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
-#: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
+#: ``_answer_burst_rejection``, ``verify_working_directory`` (``udop/store.py``), the typed
+#: working-directory readback that ``assert_working_directory`` now delegates to, and
+#: ``press_channel_cell`` (``udop/recording.py``), the held press on one cell of the ``Channels``
+#: popup's top radio row that the channel selection needs — the same ``_click_hold`` recipe
+#: ``press`` gives the strip row, but **target-bound**: the binding, the popup and the cell class
+#: are re-checked live at the action boundary, and the row's *identity* comes from a bounded
+#: re-read through the reader (the panel the reader attributes to ``use_only_channel``, at that
+#: cell's ordinal) rather than from ancestry or a ten-cell count, which the lower ``Use channels``
+#: tick row also satisfies. So no caller ever gets a press-any-handle facade. The class's own name
+#: set at this tip is 110, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
+    "bind_target",
+    "verify_bound_target",
+    "dismiss_channels_popup",
+    "open_channels_popup",
+    "_move_real_cursor_stepped",
+    "_check_foreground",
+    "_screen_rect",
     "_screen_anchor_text",
     "write_dialog_burst_length",
     "_row_reading",
     "_row_reading_or_none",
     "_answer_burst_rejection",
     "_burst_refusal",
+    "verify_working_directory",
+    "press_channel_cell",
+    "press_mode_toggle",
+    "press_rollover_toggle",
+    "_press_bound_toggle",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow
@@ -371,7 +476,11 @@ def knob_readers(path: Path, knobs: Collection[str]) -> set[str]:
         if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             continue
         for inner in ast.walk(node):
-            if isinstance(inner, ast.Name) and isinstance(inner.ctx, ast.Load) and inner.id in knobs:
+            if (
+                isinstance(inner, ast.Name)
+                and isinstance(inner.ctx, ast.Load)
+                and inner.id in knobs
+            ):
                 read.add(inner.id)
     return read
 
@@ -392,7 +501,9 @@ def test_the_actuator_is_the_facade_over_the_three_surfaces() -> None:
     claimed: dict[str, str] = {}
     for module, names in SURFACES.items():
         for name in names:
-            assert name not in claimed, f"{name} claimed by {claimed.get(name)} and {module.__name__}"
+            assert name not in claimed, (
+                f"{name} claimed by {claimed.get(name)} and {module.__name__}"
+            )
             claimed[name] = module.__name__
     # ...and every one of them is on the class and defined in the module it was cut into.
     for module, names in SURFACES.items():
@@ -428,7 +539,11 @@ def test_the_class_surface_is_the_flat_one_plus_the_one_named_addition() -> None
 
 def test_the_surface_pieces_carry_no_state_of_their_own() -> None:
     """The facade owns ``__init__`` and everything it sets; the pieces are method sets."""
-    for surface in (parameters.ParametersSurface, recording.RecordingSurface, store.StoreSurface):
+    for surface in (
+        parameters.ParametersSurface,
+        recording.RecordingSurface,
+        store.StoreSurface,
+    ):
         assert "__init__" not in vars(surface)
         non_dunder = {
             name: value
@@ -490,7 +605,9 @@ def test_every_workflow_knob_is_the_owning_surface_s_own_object() -> None:
     """
     for name, owner in WORKFLOW_KNOBS.items():
         assert getattr(driver, name) is getattr(owner, name), f"{name} is a copy"
-        assert getattr(session, name) is getattr(owner, name), f"session.{name} is a copy"
+        assert getattr(session, name) is getattr(owner, name), (
+            f"session.{name} is a copy"
+        )
 
 
 def test_a_knob_binding_is_a_copy_so_only_the_module_that_reads_it_is_a_patch_target(
@@ -507,17 +624,25 @@ def test_a_knob_binding_is_a_copy_so_only_the_module_that_reads_it_is_a_patch_ta
     ``tests/test_acquire_driver.py`` / ``tests/test_acquire_dialog.py`` are where it has to be
     shortened (``docs/dop3000/acquisition-architecture.md`` §5).
     """
-    assert set(KNOB_HOLDERS) == set(KNOB_READERS) == {name for name, _ in WORKFLOW_KNOBS.items()}
+    assert (
+        set(KNOB_HOLDERS)
+        == set(KNOB_READERS)
+        == {name for name, _ in WORKFLOW_KNOBS.items()}
+    )
     for name, owner in WORKFLOW_KNOBS.items():
         value = getattr(owner, name)
         holders = KNOB_HOLDERS[name]
         readers = KNOB_READERS[name]
         # The module WORKFLOW_KNOBS names is a holder; a holder that reads nothing (the facade and
         # its compatibility name) is a re-export, not a patch target.
-        assert owner.__name__.rpartition(".")[2] in holders, f"{name}: the definition holds no binding"
+        assert owner.__name__.rpartition(".")[2] in holders, (
+            f"{name}: the definition holds no binding"
+        )
         assert set(holders) >= set(readers), f"{name}: a reader that holds no binding"
         for holder in holders:
-            assert getattr(KNOB_MODULES[holder], name) is value, f"{holder}.{name} is a copy"
+            assert getattr(KNOB_MODULES[holder], name) is value, (
+                f"{holder}.{name} is a copy"
+            )
         # `from X import v` copies the reference: rebinding the definition moves the definition.
         marker = object()
         monkeypatch.setattr(owner, name, marker)
@@ -575,7 +700,9 @@ DROPPED_FROM_THE_FLAT_NAMESPACE = {
 }
 
 
-def test_every_name_the_facade_publishes_resolves_and_the_dropped_six_are_named() -> None:
+def test_every_name_the_facade_publishes_resolves_and_the_dropped_six_are_named() -> (
+    None
+):
     """The facade's promise is its published surface, not the flat module's whole namespace.
 
     ``__all__`` says only what is there, and everything it says resolves to the surface's own object;
@@ -586,8 +713,12 @@ def test_every_name_the_facade_publishes_resolves_and_the_dropped_six_are_named(
     for name in driver.__all__:
         assert hasattr(driver, name), f"{name} is in __all__ but does not resolve"
     for name in DROPPED_FROM_THE_FLAT_NAMESPACE:
-        assert not hasattr(driver, name), f"driver.{name} resolves again — update the table"
-        assert name not in driver.__all__, f"{name} is published again — update the table"
+        assert not hasattr(driver, name), (
+            f"driver.{name} resolves again — update the table"
+        )
+        assert name not in driver.__all__, (
+            f"{name} is published again — update the table"
+        )
     for module_name, names in RE_EXPORTED.items():
         module = __import__(module_name, fromlist=["__all__"])
         for name in names:
@@ -602,7 +733,8 @@ def test_the_class_satisfies_the_protocol_it_always_did() -> None:
     missing = [
         name
         for name in dir(Actuator)
-        if not name.startswith("_") and not callable(getattr(driver.Win32Actuator, name, None))
+        if not name.startswith("_")
+        and not callable(getattr(driver.Win32Actuator, name, None))
     ]
     assert missing == []
     assert isinstance(driver.Win32Actuator(channel=1), Actuator)
@@ -662,7 +794,9 @@ def test_the_package_imports_do_not_reach_the_platform_at_import_time() -> None:
     """No module here imports ``win32gui``/``win32con``/``pywinauto`` — not even lazily."""
     for path in package_files():
         for name in sorted(imported_modules(path)):
-            assert not name.startswith(("win32gui", "win32con", "pywinauto")), f"{path.name}: {name}"
+            assert not name.startswith(("win32gui", "win32con", "pywinauto")), (
+                f"{path.name}: {name}"
+            )
 
 
 def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
@@ -675,8 +809,12 @@ def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
 
     edges: dict[str, set[str]] = {}
     for path in package_files():
-        module = f"{udop.__name__}.{path.stem}" if path.stem != "__init__" else udop.__name__
-        edges[module] = {name for name in layer_imports(path) if name.startswith(udop.__name__)}
+        module = (
+            f"{udop.__name__}.{path.stem}" if path.stem != "__init__" else udop.__name__
+        )
+        edges[module] = {
+            name for name in layer_imports(path) if name.startswith(udop.__name__)
+        }
     # The facade is at the root of that graph and outside the package: walk its AST too, or the
     # direction these assertions are about would be asserted of a node nobody collected. Its only
     # edge back is ``udop/session.py``'s — the compatibility name — and that edge is collected
@@ -689,7 +827,9 @@ def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
     pending = dict(edges)
     resolved: set[str] = set()
     while pending:
-        ready = {m for m, targets in pending.items() if targets <= resolved | {udop.__name__}}
+        ready = {
+            m for m, targets in pending.items() if targets <= resolved | {udop.__name__}
+        }
         assert ready, f"import cycle among {sorted(pending)}"
         for module in ready:
             resolved.add(module)
@@ -708,9 +848,17 @@ def test_the_package_graph_is_a_dag_and_the_facade_is_its_root() -> None:
     assert edges[f"{udop.__name__}.session"] == {driver.__name__}
     assert edges[udop.__name__] == set()
     for surface in surfaces:
-        assert driver.__name__ not in edges[surface], f"{surface} imports the facade back"
-    assert edges[f"{udop.__name__}.parameters"] <= {udop.__name__, f"{udop.__name__}.recording"}
-    assert edges[f"{udop.__name__}.store"] <= {udop.__name__, f"{udop.__name__}.recording"}
+        assert driver.__name__ not in edges[surface], (
+            f"{surface} imports the facade back"
+        )
+    assert edges[f"{udop.__name__}.parameters"] <= {
+        udop.__name__,
+        f"{udop.__name__}.recording",
+    }
+    assert edges[f"{udop.__name__}.store"] <= {
+        udop.__name__,
+        f"{udop.__name__}.recording",
+    }
     assert edges[f"{udop.__name__}.recording"] <= {udop.__name__}
 
 
@@ -729,7 +877,9 @@ def test_the_package_exports_its_one_failure_class() -> None:
         (session, "session.py"),
     ],
 )
-def test_each_module_is_where_the_layer_says_it_is(module: object, filename: str) -> None:
+def test_each_module_is_where_the_layer_says_it_is(
+    module: object, filename: str
+) -> None:
     """The files the status table names exist and are imported (not text-polished copies)."""
     assert Path(module.__file__).name == filename  # type: ignore[attr-defined]
     assert Path(module.__file__).parent == Path(udop.__file__).parent  # type: ignore[attr-defined]

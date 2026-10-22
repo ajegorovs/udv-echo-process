@@ -2,7 +2,7 @@
 
 **Generated — do not edit by hand.** Plan [`sa2-3-notebook-preview-plan.md`](sa2-3-notebook-preview-plan.md) §N and merge-gate item 4 require the executed notebook pass to be committed at a reviewable path outside the frozen `reports/` tree. This document is that captured execution report: every value in it was read out of a real `marimo export html --no-include-code` run of the committed notebook. No value is transcribed, paraphrased or invented.
 
-- **Notebook under test:** `notebooks/signal_explorer.py` · sha256 `e6c5c862222b59300720ca47ffcde3d0b23d2a45f8e2ca0867e0715618d8d4d4`
+- **Notebook under test:** `notebooks/signal_explorer.py` · sha256 `0ac62b690a239da9b5120c5c4097095b42a3cdf6444e51307f1db335c98c2fa5`
 - **Generator:** `tools/notebook_evidence/sa23_export_evidence.py`
 - **Write:** `.venv/Scripts/python.exe tools/notebook_evidence/sa23_export_evidence.py`
 - **Verify:** `.venv/Scripts/python.exe tools/notebook_evidence/sa23_export_evidence.py --check` (exit 1 the moment this file and a fresh run disagree)
@@ -93,7 +93,7 @@ The substitutions the generator asserts before applying them. A variant with no 
   - ×1 `value=next(iter(_options)),` → `value=next(label for label in _options if label.startswith("e128")),`
   - ×1 `if view == VIEW_PRIMARY` → `if view == VIEW_FULL_RECORD`
 - **`changed-gate`**
-  - ×1 `value=list(_options)[len(_options) // 2],` → `value=list(_options)[0],`
+  - ×1 `_default = len(_labels) // 2` → `_default = 0`
 - **`changed-detrending`**
   - ×1 `if kind == Detrending.MEAN` → `if kind == Detrending.MEAN_AND_LINEAR`
 
