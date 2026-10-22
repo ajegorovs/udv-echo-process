@@ -557,7 +557,9 @@ values, report what was accepted, and restore every field it touched.
   job log), add a thin public wrapper for every private a command needs
   (`hold_recording`, `wait_for_view_guarded`, `peek_overlay`), and give a whole sequence one
   composed method whose destructive step is replaced by the safe one (`preflight`: record, stop,
-  read the store dialog, **cancel** it). Three rules make the seam testable, and each was forced by
+  read the store dialog, **cancel** it) — which is why `preflight` is **not** a status read: it
+  spends a two-second recording and discards the block. For the screen use `acquire status`; for
+  the parameter column, read it and write nothing. Three rules make the seam testable, and each was forced by
   a fake that could not be driven otherwise: it reads through the **public primitive** the double
   already answers rather than the internal helper beside it (`strip_state()`, not
   `_state_of(roles)` — the same read, and only one of the two a double can produce); it uses the
