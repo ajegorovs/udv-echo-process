@@ -57,6 +57,7 @@ from udv_echo_process.models.base import ValueModel
 __all__ = [
     "CAPTION_SOURCE",
     "ENABLE_CAPTION",
+    "ROLLOVER_CAPTION",
     "STATES_EVIDENCE",
     "USE_CHANNELS",
     "USE_ONLY_CHANNEL",
@@ -321,6 +322,10 @@ class ChannelsRead(ValueModel):
 #: The caption the Enable row carries, and the only role this module's bind helper will bind.
 ENABLE_CAPTION = "Enable multiplexer"
 
+#: The caption the **Roll over the channels** row carries. It is a separate control from
+#: ``Enable multiplexer``: pressing one is never the other.
+ROLLOVER_CAPTION = "Roll over the channels"
+
 
 def _contains(rect: tuple[int, int, int, int], band: tuple[int, int, int, int]) -> bool:
     """True when ``band`` lies inside ``rect`` — both popup-relative, edge-inclusive."""
@@ -441,6 +446,94 @@ def bind_enable_toggle(report: ChannelsRead) -> ModeToggle:
             "that row is the Roll over the channels control, not the Enable line — nothing was "
             "pressed"
         )
+    return target
+
+
+def bind_rollover_toggle(report: ChannelsRead) -> ModeToggle:
+    """The one toggle that **owns** the ``Roll over the channels`` row, or a refusal.
+
+    The rule is the same two independent halves :func:`bind_enable_toggle` uses, with this row's
+    own measured geometry — never the Enable band and never a caption sequence alone:
+
+    * the reader attributes exactly one toggle at the measured caption
+      (:data:`ROLLOVER_CAPTION`) with the reader's own caption provenance;
+    * that toggle's **popup-relative** rect must contain :data:`…mode_marks.ROLLOVER_ROW_BAND`,
+      the measured row from the mark's top edge to the caption's bottom (rows 77-91, left 215,
+      right 362), measured identically on both committed genuine rolling-ON/OFF pairs.
+
+    Because that band carries the rollover mark, a control that owns the row also owns the mark;
+    the checks below keep it clear of the ``Use only channel`` caption and the ``Enable
+    multiplexer`` line, so a permuted tree cannot hand a caller the mode-entry toggle. Exactly
+    one toggle may own the band; there is no ordinal fallback.
+    """
+    if report.surface is not ChannelsSurface.SETTINGS_POPUP or report.popup is None:
+        raise AcquisitionError(
+            "the operator-opened Channels popup is not the full settings surface: a rollover "
+            "toggle is bound only inside that popup — nothing was pressed"
+        )
+    if report.popup.rect is None:
+        raise AcquisitionError(
+            "the popup's own rectangle did not resolve, so no toggle can be held to the "
+            "measured Roll over the channels row band: nothing was pressed"
+        )
+    if not report.readable or report.refusals:
+        raise AcquisitionError(
+            "the settings popup did not read cleanly "
+            f"({'; '.join(report.refusals) or 'readable is False'}): nothing was pressed"
+        )
+    if tuple(report.signature) != SETTINGS_SIGNATURE:
+        raise AcquisitionError(
+            f"the popup's bands read {report.signature!r} where the measured 8-band settings "
+            f"signature is {SETTINGS_SIGNATURE!r}: the rollover toggle has no established role "
+            "on this surface, so nothing was pressed"
+        )
+    captions = tuple(toggle.attribution.caption for toggle in report.toggles)
+    if captions != TOGGLE_CAPTIONS:
+        raise AcquisitionError(
+            f"the popup's toggles read {captions!r} where the measured roles are "
+            f"{TOGGLE_CAPTIONS!r}: the rollover role is not attributable, so nothing was pressed"
+        )
+    band = mode_marks.ROLLOVER_ROW_BAND
+    owning = tuple(
+        toggle
+        for toggle in report.toggles
+        if toggle.hwnd is not None
+        and toggle.rect is not None
+        and _contains(toggle.rect, band)
+    )
+    if len(owning) != 1:
+        raise AcquisitionError(
+            f"{len(owning)} toggle(s) own a rect in the measured Roll over the channels row "
+            f"band {band!r} (rects {[toggle.rect for toggle in report.toggles]!r}) where exactly "
+            "one TSp_Button may: caption order alone does not say which control the row belongs "
+            "to, so nothing was pressed"
+        )
+    target = owning[0]
+    if (
+        target.attribution.caption != ROLLOVER_CAPTION
+        or target.attribution.provenance != CAPTION_SOURCE
+    ):
+        raise AcquisitionError(
+            f"the toggle that owns the measured rollover row reads "
+            f"{target.attribution.caption!r} with provenance "
+            f"{target.attribution.provenance!r}: the band and the caption disagree, so nothing "
+            "was pressed"
+        )
+    if not _contains(target.rect, mode_marks.ROLLOVER_BAND):
+        raise AcquisitionError(
+            f"the rollover toggle's rect {target.rect!r} does not own the measured mark "
+            f"band {mode_marks.ROLLOVER_BAND!r}: that control is not this row — nothing was "
+            "pressed"
+        )
+    for other, name in (
+        (mode_marks.ENABLE_LABEL_BAND, "Enable line"),
+        (mode_marks.USE_ONLY_CHANNEL_BAND, "Use only channel line"),
+    ):
+        if _intersects(target.rect, other):
+            raise AcquisitionError(
+                f"the rollover toggle's rect {target.rect!r} reaches into the measured {name} "
+                f"{other!r}: a different row's control was bound — nothing was pressed"
+            )
     return target
 
 

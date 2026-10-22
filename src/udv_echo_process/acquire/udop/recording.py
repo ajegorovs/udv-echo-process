@@ -54,6 +54,7 @@ from udv_echo_process.acquire.ui.channels import (
     USE_ONLY_CHANNEL,
     ChannelsSurface,
     bind_enable_toggle,
+    bind_rollover_toggle,
     read_bound_channels,
 )
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
@@ -417,21 +418,64 @@ class RecordingSurface:
     ) -> None:
         """Press the ``Enable multiplexer`` toggle of the full settings popup, held — and nothing else.
 
-        Like :meth:`press_channel_cell`, this is a narrow target-bound entry point rather than a
-        generic ``press(handle)``: it re-establishes the chain live at the action boundary.
+        A narrow target-bound entry point rather than a generic ``press(handle)``: see
+        :meth:`_press_bound_toggle`, which re-establishes the whole chain live at the action
+        boundary through :func:`…ui.channels.bind_enable_toggle`. A changed popup, signature,
+        role, handle or rect refuses with nothing posted.
+        """
+        RecordingSurface._press_bound_toggle(
+            self,
+            target=target,
+            popup_hwnd=popup_hwnd,
+            toggle_hwnd=toggle_hwnd,
+            toggle_rect=toggle_rect,
+            binder=bind_enable_toggle,
+            caption="Enable multiplexer",
+        )
+
+    def press_rollover_toggle(
+        self,
+        *,
+        target: WindowTarget,
+        popup_hwnd: int,
+        toggle_hwnd: int,
+        toggle_rect: tuple[int, int, int, int] | None = None,
+    ) -> None:
+        """Press the ``Roll over the channels`` toggle of the full settings popup, held.
+
+        The separate control from ``Enable multiplexer``: the action boundary re-runs
+        :func:`…ui.channels.bind_rollover_toggle` — the measured Roll over the channels row band
+        (mark and caption), disjoint from the Enable and ``Use only channel`` rows — and refuses
+        unless the same handle **and** the same popup-relative rect are re-resolved. There is no
+        generic press entry point and this method never presses the mode-entry toggle.
+        """
+        RecordingSurface._press_bound_toggle(
+            self,
+            target=target,
+            popup_hwnd=popup_hwnd,
+            toggle_hwnd=toggle_hwnd,
+            toggle_rect=toggle_rect,
+            binder=bind_rollover_toggle,
+            caption="Roll over the channels",
+        )
+
+    def _press_bound_toggle(
+        self,
+        *,
+        target: WindowTarget,
+        popup_hwnd: int,
+        toggle_hwnd: int,
+        toggle_rect: tuple[int, int, int, int] | None,
+        binder,
+        caption: str,
+    ) -> None:
+        """The shared narrow press behind the two named popup toggles, with nothing else posted.
+
         ``popup_hwnd`` must be a panel child of the bound window; ``toggle_hwnd`` must be a
         ``TSp_Button`` child of that popup; and one bounded re-read on this same binding must
-        resolve the measured 8-band settings signature and, through
-        :func:`…ui.channels.bind_enable_toggle`, **exactly one** toggle that both carries the
-        ``Enable multiplexer`` attribution and owns the measured Enable row band — its
-        popup-relative rect contains that band and never the rollover mark band — with that
-        toggle's handle being ``toggle_hwnd``.
-
-        ``toggle_rect`` is the rectangle the caller decided on, popup-relative. When it is given
-        the boundary requires the live re-read to place the same control at **exactly** that
-        rect: a control that moved by a pixel between the licensing capture and this message is
-        not the control that was licensed, even when its handle and caption still agree. A changed
-        popup, signature, role, handle or rect refuses with nothing posted.
+        resolve the measured 8-band settings signature and exactly one toggle that both carries
+        the caller's caption attribution and owns its measured row band, with that toggle's
+        handle being ``toggle_hwnd``.
         """
         if self._target is None or self._target != target:
             raise AcquisitionError(
@@ -483,18 +527,18 @@ class RecordingSurface:
                 f"({'; '.join(report.refusals) or 'readable is False'}): nothing was posted"
             )
         try:
-            bound_toggle = bind_enable_toggle(report)
+            bound_toggle = binder(report)
         except AcquisitionError as exc:
             raise AcquisitionError(f"{exc} — nothing was posted") from exc
         if bound_toggle.hwnd is None or int(bound_toggle.hwnd) != int(toggle_hwnd):
             raise AcquisitionError(
                 f"hwnd {toggle_hwnd} is not the one toggle the reader binds to "
-                f"Enable multiplexer (measured {bound_toggle.hwnd!r}): "
+                f"{caption!r} (measured {bound_toggle.hwnd!r}): "
                 "the control moved, so nothing was posted"
             )
         if toggle_rect is not None and bound_toggle.rect != tuple(toggle_rect):
             raise AcquisitionError(
-                f"the Enable toggle reads at rect {bound_toggle.rect!r} where the licensed "
+                f"the {caption!r} toggle reads at rect {bound_toggle.rect!r} where the licensed "
                 f"target was {tuple(toggle_rect)!r}: the control moved between the capture and "
                 "the press, so nothing was posted"
             )

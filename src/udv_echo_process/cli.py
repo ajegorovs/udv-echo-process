@@ -46,6 +46,7 @@ from udv_echo_process.acquire import (
     mpx_artifact,
     record_multiplexed,
     run_plan,
+    set_rollover,
     store_completed,
 )
 from udv_echo_process.acquire.actuator import ProcessMode
@@ -1582,6 +1583,80 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     disable_mpx_parser.add_argument("--json", action="store_true")
 
+    set_rollover_parser = subcommands.add_parser(
+        "set-rollover",
+        help=(
+            "open Channels, set Roll over the channels ON or OFF once, read it back and close. "
+            "Starts from ABSENT and refuses an already-open popup unless --adopt-open. The "
+            "decision capture, a durable pending obligation, a fresh licensing capture at the "
+            "action boundary, one press only when requested differs from --expect, a post "
+            "capture and an owned close are each separate facts"
+        ),
+    )
+    for flag, text in (
+        ("--requested", "the rolling state to establish"),
+        ("--expect", "the rolling state the decision capture must prove first"),
+        (
+            "--baseline",
+            (
+                "the trial's declared original rolling state; literal, never inferred, and "
+                "restored only by a separate invocation"
+            ),
+        ),
+    ):
+        set_rollover_parser.add_argument(
+            flag,
+            required=True,
+            choices=[state.value for state in set_rollover.Rolling],
+            help=text,
+        )
+    set_rollover_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "where the fresh two-frame full-settings captures are claimed: the decision pair, "
+            "the final licensing pair at the boundary, and the post-press pair"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--trial-record",
+        required=True,
+        help=(
+            "a path this invocation claims exclusively for a real write (an existing directory "
+            "gets set-rollover-trial.json inside it); never written for a no-op, and never "
+            "overwritten"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--adopt-open",
+        action="store_true",
+        help=(
+            "accept an already-open readable Channels popup instead of refusing it; it is left "
+            "open unless --close-adopted is also passed"
+        ),
+    )
+    set_rollover_parser.add_argument(
+        "--close-adopted",
+        action="store_true",
+        help="close a popup adopted with --adopt-open (ignored when this command opened it)",
+    )
+    set_rollover_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="poll bound for the open and the close (s); nothing is retried past it",
+    )
+    set_rollover_parser.add_argument(
+        "--max-boundary-seconds",
+        type=float,
+        default=None,
+        help=(
+            "optional caller limit on the elapsed licensing boundary; no cap is applied when "
+            "omitted"
+        ),
+    )
+    set_rollover_parser.add_argument("--json", action="store_true")
+
     channels_repeat_parser = subcommands.add_parser(
         "channels-repeat",
         help=(
@@ -2472,6 +2547,93 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     file=sys.stderr,
                 )
                 code = 1
+        elif args.command == "set-rollover":
+            rollover_result = set_rollover.acquire_set_rollover(
+                requested=args.requested,
+                expect=args.expect,
+                baseline=args.baseline,
+                capture_dir=Path(args.capture_dir),
+                trial_record=Path(args.trial_record),
+                adopt_open=args.adopt_open,
+                close_adopted=args.close_adopted,
+                settle_s=args.settle,
+                max_boundary_seconds=args.max_boundary_seconds,
+                notes=notes,
+            )
+            _acquire_report(rollover_result, as_json)
+            for observed in rollover_result.observed:
+                print(f"udv-acquire: {observed}", file=sys.stderr)
+            if rollover_result.press_error:
+                print(f"udv-acquire: {rollover_result.press_error}", file=sys.stderr)
+            if rollover_result.post_error:
+                print(f"udv-acquire: {rollover_result.post_error}", file=sys.stderr)
+            for owed in rollover_result.restoration_owed:
+                print(f"udv-acquire: owed: {owed}", file=sys.stderr)
+            if rollover_result.trial_record_error:
+                print(
+                    "udv-acquire: the record could not be rewritten after the action: the last "
+                    f"durable statement is at {rollover_result.trial_record} and its press field "
+                    "is only 'as of that write'. It does not say nothing was pressed",
+                    file=sys.stderr,
+                )
+                code = 1
+            closure = rollover_result.popup_closure
+            close_settled = closure is None or closure.settled
+            if not close_settled:
+                print(
+                    "udv-acquire: the Channels popup was not observed ABSENT "
+                    f"(closure {closure.value!r}): a popup this invocation owed closed is still "
+                    "there or unproven, and nothing was retried",
+                    file=sys.stderr,
+                )
+                code = 1
+            if rollover_result.stage is set_rollover.SetRolloverStage.NOOP:
+                # A no-op wrote no obligation and pressed nothing. It is still only settled when
+                # the popup this command opened was observed closed (or an adopted popup was left
+                # open by the library's own adopt policy).
+                if rollover_result.presses != 0:
+                    code = 1
+            elif close_settled:
+                # Only here can the post verdict settle anything: an invocation whose close is
+                # unproven is already reported and is never upgraded by a good post pair.
+                # One press, one fresh post pair that proves the requested state and the original
+                # popup, two re-derived digests, and no error anywhere in this invocation.
+                post = rollover_result.post
+                post_digests = (
+                    None
+                    if post is None
+                    else (
+                        ()
+                        if post.visual_mode_mark is None
+                        else post.visual_mode_mark.frame_digests
+                    )
+                )
+                wanted_proof = (
+                    "ON_PROVEN"
+                    if rollover_result.requested is set_rollover.Rolling.ON
+                    else "OFF_PROVEN"
+                )
+                verified = (
+                    rollover_result.presses == 1
+                    and rollover_result.press == "attempted"
+                    and rollover_result.post_rolling == wanted_proof
+                    and post is not None
+                    and post.status == "ok"
+                    and post_digests is not None
+                    and len(post_digests) == 2
+                    and all(len(digest) == 64 for digest in post_digests)
+                    and not rollover_result.press_error
+                    and not rollover_result.post_error
+                    and rollover_result.trial_record_phase == "after"
+                )
+                if not verified:
+                    print(
+                        "udv-acquire: no fresh verified post-press rolling state: a pressed "
+                        "toggle is a gesture, not a setting. The durable record states what was "
+                        "attempted and what stays unknown; nothing was retried",
+                        file=sys.stderr,
+                    )
+                    code = 1
         elif args.command == "plan":
             code = _campaign_plan(args, as_json)
         elif args.command == "compile":

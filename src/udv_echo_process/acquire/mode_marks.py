@@ -86,7 +86,9 @@ __all__ = [
     "PAIR_FILES",
     "ROLLOVER_BAND",
     "ROLLOVER_INK",
+    "ROLLOVER_LABEL_BAND",
     "ROLLOVER_RECT",
+    "ROLLOVER_ROW_BAND",
     "SETTINGS_FULL",
     "SETTINGS_SIZE",
     "SIGNATURE",
@@ -144,6 +146,17 @@ LABEL_BANDS = {
     MULTIPLEXER_ON_ENTRY: ENTRY_LABEL_BAND,
 }
 
+#: The **Roll over the channels** row's painted caption bounds, popup-relative: rows 81-90, left
+#: 236, right 362 (exclusive 363). Measured identically on both committed genuine settings pairs
+#: (``tests/data/mpx-mode/disabled-rolling-on`` and ``-off``, which differ only in the mark ink).
+#: The caption is painted to the right of the row's own mark, unlike the Enable line, so this is
+#: a separate measured band and never a re-use of the Enable geometry.
+ROLLOVER_LABEL_BAND = (236, 81, 363, 91)
+#: The whole measured **Roll over the channels** row: its mark box and its caption, from the mark's
+#: top edge (77) to the caption's bottom (91). A toggle rect is held to this band, so a control
+#: that merely carries the caption text without owning the mark is not that row.
+ROLLOVER_ROW_BAND = (215, 77, 363, 92)
+
 #: The rollover row's mark band, as the band no Enable target rect may contain.
 ROLLOVER_BAND = ROLLOVER_RECT
 
@@ -189,6 +202,29 @@ def _check_measured_bands() -> None:
         raise ValueError(
             f"the Enable label band {ENABLE_LABEL_BAND!r} overlaps the rollover mark "
             f"{ROLLOVER_BAND!r}: the rollover row would be read as the Enable line"
+        )
+    if not _bands_overlap(ROLLOVER_ROW_BAND, ROLLOVER_BAND) or not _bands_overlap(
+        ROLLOVER_ROW_BAND, ROLLOVER_LABEL_BAND
+    ):
+        raise ValueError(
+            f"the measured rollover row {ROLLOVER_ROW_BAND!r} does not cover both its mark "
+            f"{ROLLOVER_BAND!r} and its caption {ROLLOVER_LABEL_BAND!r}"
+        )
+    for other, name in (
+        (ENABLE_LABEL_BAND, "Enable label"),
+        (USE_ONLY_CHANNEL_BAND, "Use only channel row"),
+    ):
+        if _bands_overlap(ROLLOVER_ROW_BAND, other):
+            raise ValueError(
+                f"the Roll over the channels row {ROLLOVER_ROW_BAND!r} overlaps the {name} "
+                f"{other!r}: one row would stand for another"
+            )
+    width, height = SETTINGS_SIZE
+    left, top, right, bottom = ROLLOVER_ROW_BAND
+    if not (0 <= left < right <= width and 0 <= top < bottom <= height):
+        raise ValueError(
+            f"the measured rollover row {ROLLOVER_ROW_BAND!r} is not inside the "
+            f"{width}x{height} settings popup"
         )
 
 

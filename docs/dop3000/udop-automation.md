@@ -1384,6 +1384,105 @@ an available application, no operator hover, and no operator cleanup expected on
 the report says the close was observed `ABSENT`. The report's `mode: "ready"` comes from
 the strip and is not a multiplexer-mode fact; use the separately attributed visual evidence.
 
+### 12.15 Guarded rolling setter (`acquire set-rollover`), 2026-10-22 — one live round trip
+
+**Live acceptance:** one supervised OFF→ON→OFF round trip completed with MPX disabled.
+Each public setter invocation exited 0, attempted exactly one rolling-control press,
+retained decision/final/post capture pairs, proved its requested post-state visually,
+and closed its owned popup with observed ABSENT. A separate `channels-inspect` after
+restoration again captured `VISUAL_DISABLED` + `OFF_PROVEN` and closed successfully.
+All five numeric facts matched the initial captured values (repeat 2, start/apply-from 1,
+profiles 50, seconds 2.01). No Enable, Record, Stop, Clear or Disable was pressed.
+Both trial records were read back at phase `after`; the restoring invocation reported
+no restoration owed. The forward record remains historical evidence that restoration
+was owed then, not a record to rewrite retroactively. Local uncommitted evidence is
+`.hermes/scratch/multiplexer-development/rolling-trial-{on,off}-01.json`, the matching
+logs/capture directories, and `rolling-restored-inspect-01.json`. This establishes one
+round trip on the measured build/geometry, not unattended acquisition or other layouts.
+
+
+`acquire set-rollover --requested on|off --expect on|off --baseline on|off --capture-dir DIR
+--trial-record PATH [--adopt-open] [--close-adopted] [--settle S] [--max-boundary-seconds S]
+[--json]` sets the **`Roll over the channels`** toggle — the rolling fact, not the mode entry.
+It is a separate command from `enable-multiplexed`/`disable-multiplexed`; nothing here presses
+`Enable multiplexer`, `Record`, `Stop`, `Clear` or `Disable`.
+
+The reusable workflow is `acquire/set_rollover.py::acquire_set_rollover`. It composes the
+managed lifecycle §12.14 already owns: the pre-read must be `ABSENT` (an already-open popup is
+refused unless `--adopt-open`; an adopted popup stays open unless `--close-adopted`), one measured
+`Channels` hover opens the popup, and the popup this command opened is closed in a `finally`.
+The command therefore starts closed and needs no operator hover.
+
+`--requested`, `--expect` and `--baseline` are literal `on`/`off` values checked before any
+gesture; the baseline in the record is the caller's string, never the state a capture happened to
+show. `requested == expect` is a **NOOP**: zero presses, no obligation, no trial record, and the
+owned close still runs; it still states the restoration a declared baseline is owed, because that
+obligation follows the declaration and not the press (a NOOP has nowhere to write it down). A real
+write follows the §12.13 ordering: a fresh full-settings
+**decision** capture proving `VISUAL_DISABLED` and the rollover mark for `--expect`
+(`live-bracketed`, `capture-digest-verified`, `EXACT_TEMPLATE_MATCH`, agreeing guards and
+foreground `true`), then the durable **pending** obligation (`O_EXCL` + `fsync`), then a **fresh
+final licensing** capture at the action boundary that re-resolves the window set, binding, popup
+and the toggle's handle **and popup-relative rect**, then **one** held press only when the request
+differs, then a fresh post capture, then the owned close, then the record rewrite.
+
+The two rects stay two facts: the decision capture's rect is recorded as `decision_toggle_rect`
+and the boundary's re-resolved rect as `boundary_toggle_rect` (the one the press is licensed
+with). Neither is written over the other, so a moved row is visible in the record instead of
+erasing the geometry the obligation was taken on.
+
+**The close is a contract.** A popup this command opened must be observed `ABSENT`, and so must
+an adopted popup the caller asked to close with `--close-adopted`; only the library's own adopt
+rule exempts one, and then the result says so. The verdict is typed
+(`set_rollover.PopupClosure`, built from `ChannelsOpen.adopted`/`outcome` — never from "a handle
+came back"), and the CLI exits `1` on `owned_left_open`/`adopted_unclosed` whatever the post
+verdict says. A NOOP or a verified press that cannot prove its close is therefore not a success.
+
+`--settle` must be a finite, non-negative number of seconds and `--max-boundary-seconds` a finite,
+strictly positive one; both are validated before the first read, hover, claim or press (a `NaN`
+cap compares false against every elapsed time and would silently license the boundary, and a
+non-finite settle was previously clamped to `max(0.0, …)`). `--max-boundary-seconds 0` or a
+negative value is a refusal, not an instant cap.
+
+The target is semantically narrow, never `press_mode_toggle`: `ui.channels.bind_rollover_toggle`
+requires exactly one toggle carrying the `Roll over the channels` caption with the reader's
+provenance and owning the measured row band `mode_marks.ROLLOVER_ROW_BAND` — the mark box
+`(215, 77, 228, 92)` plus the painted caption `(236, 81, 363, 91)`, measured identically on both
+committed genuine `disabled-rolling-on`/`-off` pairs. The band is checked to be disjoint from the
+`Enable multiplexer` line `(29, 48, 138, 61)` and the `Use only channel` row `(30, 14, 131, 27)`.
+`RecordingSurface.press_rollover_toggle` re-runs that whole rule live against the same binding
+immediately before posting and refuses any moved handle, rect or popup.
+
+Distinctions the report keeps: a refusal **after** the hover reports zero **presses** but
+`hover_attempted: true`, so it never claims no gesture was made; `posted` stays `unknown` after a
+press; a raised press is `press_raised`, not "nothing happened"; if the record rewrite after the
+press fails, the pending record remains with `press: not_attempted` **as of that write** and must
+not be read as no action. `boundary_seconds` is a monotonic diagnostic; only a caller-supplied
+`--max-boundary-seconds` is an enforced limit, never an invented cap. The result nests the
+reader's own `CaptureEvidence` as `decision`/`final`/`post` instead of copying its fields per
+stage. `--requested` equal to `--baseline` owes no restoration; otherwise restoration is a
+**separate invocation** with the declared baseline, never an automatic second press in the same
+run.
+
+**Acceptance status: one live round trip, offline coverage for the rest.**
+`tests/test_acquire_set_rollover.py` covers the one press,
+the pending record before the press, the wrong/duplicate/oversized target, retained evidence, an
+unproven foreground, adopt refusal, a recording started at the boundary (refused record, zero
+presses), an absent post surface, a raised press, a failed rewrite, the NOOP, the literal
+vocabulary, the baseline restore rule (including the NOOP that owes it without pressing), the
+adopt policy and both owned/adopted close verdicts, non-finite and negative timing bounds refused
+before any gesture, the decision-versus-boundary rect split in the durable record, and both CLI
+exit paths (a verified post with an unproven close exits `1`).
+
+On the instrument, one supervised OFF→ON→OFF round trip was completed with MPX disabled
+(the acceptance above): each invocation made exactly one rolling press, retained its three
+capture pairs, proved its requested post state visually and closed its popup `ABSENT`, and a
+separate `channels-inspect` after restoration again proved `VISUAL_DISABLED` + `OFF_PROVEN`.
+What that one round trip does **not** establish: unattended or repeated cycling, any other
+build, layout or geometry, and live exercise of the refusal, adopt, NOOP, raised-press and
+failed-rewrite paths, which remain offline-only. Restoration is still an operator decision
+per invocation; nothing here restores automatically.
+
 ---
 
 ## Live validation (simulator)
