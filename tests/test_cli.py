@@ -19,6 +19,7 @@ DATA = Path("data")
 ECHO_ADD = DATA / "echo" / "200.ADD"
 ECHO_BDD = DATA / "echo" / "200.BDD"
 VEL_BDD = DATA / "4-sensor-velocity" / "200RPM.BDD"
+DUAL_BDD = DATA / "dual-profile-mux" / "4MHz.BDD"
 MISNAMED_BDD = DATA / "echo-4-sensors-2x2" / "20260723_143754.jpg"
 IMAGE = DATA / "echo-4-sensors-2x2" / "300RPM.png"
 
@@ -46,6 +47,25 @@ def test_inspect_multichannel_bdd(capsys):
     assert "Acquisition mode: sequential" in out
     for channel in (6, 7, 8, 9):
         assert f"Channel {channel}  (axial_velocity, mm/s):" in out
+
+
+def test_inspect_dual_profile_bdd_lists_both_quantities(capsys):
+    """A two-plot capture inspects as both a velocity and an echo stream."""
+    inspect_main([str(DUAL_BDD)])
+    out = capsys.readouterr().out
+    assert "acquisition mode: sequential" in out.lower()
+    for channel in (1, 2, 3, 4):
+        assert f"Channel {channel}  (axial_velocity, mm/s):" in out
+        assert f"Channel {channel}  (echo_amplitude, module):" in out
+    # The velocity scale belongs to the Doppler measurement, not to echo.
+    velocity_blocks = out.count("(axial_velocity, mm/s):")
+    assert out.count("Max velocity:") == velocity_blocks
+    echo_blocks = out.split("(echo_amplitude, module):")
+    assert len(echo_blocks) == 5  # four echo streams, split on their headers
+    for block in echo_blocks[1:]:
+        # Everything up to the next channel header belongs to this echo stream.
+        body = block.split("Channel ")[0]
+        assert "Max velocity:" not in body
 
 
 def test_inspect_misnamed_valid_bdd(capsys):

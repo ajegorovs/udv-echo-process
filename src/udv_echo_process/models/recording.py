@@ -53,6 +53,20 @@ def _duplicates(values: Sequence[Hashable]) -> list[tuple[int, int, Hashable]]:
     return found
 
 
+def _stream_key(stream: ChannelArtifact) -> tuple[int, str]:
+    """Return the ``(device_channel, quantity)`` key that identifies a stream.
+
+    A DOP recording may store one profile per measured quantity in the same
+    measurement block (a "two plots" display stores velocity *and* echo), so a
+    channel alone does not identify a stream: the pair does (see the §6.7
+    amendment in ``docs/signal-model-rework-plan.md``).
+    """
+    return (
+        stream.acquisition.channel.device_channel,
+        stream.descriptor.quantity.value,
+    )
+
+
 class Recording(ArrayModel):
     """One recorded acquisition: its source, mode and channel streams (§6.7).
 
@@ -61,9 +75,11 @@ class Recording(ArrayModel):
     - ``streams`` is non-empty;
     - every stream's ``AcquisitionRef.recording_id`` equals ``recording_id`` and
       every ``source_asset_id`` equals ``source_asset.asset_id``;
-    - channel keys and artifact ids are unique;
+    - ``(channel, quantity)`` pairs are unique — one stream per channel *and*
+      measured quantity, so a dual-quantity block legitimately carries two
+      streams on one channel — and artifact ids are unique;
     - a supplied ``acquisition_order`` is a duplicate-free exact permutation of
-      the stream channel keys;
+      the stream channel keys, i.e. of the *channels*, not of the streams;
     - within each stream, decoded ``(round_id, visit_id)`` pairs are unique
       among matched rows (``>= 0``); unmatched rows keep the ``-1`` sentinel and
       are never renumbered.
@@ -116,13 +132,13 @@ class Recording(ArrayModel):
                 )
 
     def _check_stream_uniqueness(self) -> None:
-        channels = [
-            stream.acquisition.channel.device_channel for stream in self.streams
-        ]
-        for first, second, channel in _duplicates(channels):
+        keys = [_stream_key(stream) for stream in self.streams]
+        for first, second, (channel, quantity) in _duplicates(keys):
             raise ValueError(
-                f"stream channel keys must be unique; channel {channel} appears "
-                f"at indexes {first} and {second}"
+                f"stream channel keys must be unique per quantity; channel "
+                f"{channel} appears twice for quantity {quantity!r} at indexes "
+                f"{first} and {second} (a recording carries at most one stream "
+                f"per (channel, quantity))"
             )
         artifact_ids = [stream.artifact_id for stream in self.streams]
         for first, second, artifact_id in _duplicates(artifact_ids):
@@ -141,8 +157,10 @@ class Recording(ArrayModel):
                 f"acquisition_order must be duplicate-free; channel {channel} "
                 f"appears at indexes {first} and {second}"
             )
+        # The order describes channels, so a channel that carries two streams
+        # (one per measured quantity) contributes its key once.
         stream_channels = sorted(
-            stream.acquisition.channel.device_channel for stream in self.streams
+            {stream.acquisition.channel.device_channel for stream in self.streams}
         )
         if sorted(ordered_channels) != stream_channels:
             raise ValueError(

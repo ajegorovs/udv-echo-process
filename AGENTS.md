@@ -102,7 +102,12 @@ Sandbox note: if `uv`/matplotlib fail with read-only cache errors, set
   (`parse_comma_decimal()`); auto-detected as single/multi-sensor,
   echo/velocity, raw/stat. `.BDD` is the binary twin and **is** parsed:
   `io/dop/bdd.py` returns an `ArtifactBundle` with content-SHA-256 source
-  identity, a decoded `AcquisitionMode`, and all-observed support. Discovery in
+  identity, a decoded `AcquisitionMode`, and all-observed support. A block that
+  stores **two quantities** — the instrument's two-plot velocity+echo display
+  writes one profile of each into the same block — yields **two streams on one
+  channel**, so a stream is identified by `(channel, quantity)` and
+  `select_channel`/`replace_channel` take the quantity (plan §6.7 amendment).
+  Discovery in
   `viz.py` is `.ADD`-only and magic-checked, while the reader sniffs *bytes*, not
   extensions — so `data/echo-4-sensors-2x2/20260723_143754.jpg` (a genuine
   4-channel echo BDD with the wrong extension) loads correctly and is not
@@ -201,9 +206,11 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   path is `uv sync --extra marimo --extra dev`, then configure the harness to
   execute `.venv/bin/marimo-inspect --transport stdio`. Read
   `README.md` §Optional live marimo co-work first; use the provider's README
-  for harness-specific setup. Do not use `uv run` as the long-lived MCP command.
+  for harness-specific setup. On Windows use
+  `.venv/Scripts/marimo-inspect.exe --transport stdio` instead of `.venv/bin/`.
+  Do not use `uv run` as the long-lived MCP command.
 - **No editable install for normal work.** This project pins provider tag
-  `v0.3.0`, which includes `TraceScrubber`; `notebooks/channel_preview.py`
+  `v0.3.3`, which includes `TraceScrubber`; `notebooks/channel_preview.py`
   therefore works from the normal `marimo` extra. A local editable provider
   override is only for testing unreleased `marimo-inspect` changes, is
   temporary, and must never be committed here.
@@ -222,9 +229,9 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   `ArtifactBundle`, `select_channel` → `ChannelBundle`, discriminated specs,
   bundle-closed `filter`/`resample`). All computation stays in `src/`; cells are
   thin widget wrappers.
-  `notebooks/channel_preview_sidebar.py` — the same notebook with the
-  recording → channel selection moved into a `mo.sidebar` cascade (every other
-  cell identical; both files are kept side by side).
+  `notebooks/channel_preview_sidebar.py` — the artifact-path sidebar variant. The
+  twins have diverged; the selected four-sensor notebook-review plan owns the
+  inventory and leading-notebook decision. Do not assume cell-for-cell identity.
 - **Session-materialization gotcha:** a bare `--headless` launch discovers
   nothing until a client connects — open the printed URL in a browser or do the
   `/sse` handshake (`docs/marimo-integration-log.md` §S14; provider repo
@@ -239,13 +246,36 @@ is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, 
   mode — both execute. Mechanism: provider
   `docs/agent-onboarding-demo-mcp.md` §Prerequisites and
   `reference://marimo-inspect/fallbacks-and-limits` §A session is not a run.
-- **MCP workflow authority:** after the server is connected, list and read its
-  packaged resources before live mutation. The normal loop is
-  `list_active_notebooks` → `get_cell_map` → read required cells → mutate/run
-  → `get_variables` / `get_cell_outputs` / `get_errors` →
-  `marimo check`. `set_ui_value` values are widget-specific; verify every
-  update by reading state back. Pass `server_url` (and `session_id` when
-  targeting) explicitly when harness session binding does not persist.
+- **MCP workflow authority and entry gate:** before notebook authoring or live
+  mutation, call the connected provider's `list_resources`, then `read_resource`
+  for `workflow://marimo-inspect/co-work-loop`,
+  `workflow://marimo-inspect/live-safety`, and
+  `reference://marimo-inspect/fallbacks-and-limits`. Re-read after context loss
+  if their contents are no longer available. These versioned provider resources
+  own the editing procedure; personal skills must not duplicate or override it.
+  If resources or required tools are unavailable, report the blocker before
+  substituting a workflow. Binding is not ownership; confirm the intended file.
+- **Authoring contract (owner-selected 2026-10-16):** for a new notebook, write
+  only a minimal scaffold on disk, launch/open it, then discover/bind the
+  browser-held session. For an existing notebook, attach to its intended live
+  session. Develop through MCP cell creation/editing, execution and read-back;
+  do not externally patch the served notebook or use server/kernel restarts as
+  file synchronization. Preserve the kernel during ordinary notebook edits.
+  Kernel-level recovery and other exceptional fallbacks follow the provider
+  resources; name the concrete blocker and obtain approval before abandoning
+  this contract. Static checks and exports supplement live verification; they
+  do not prove continuous co-work or kernel continuity.
+- **Learning without workflow drift:** marimo-specific lessons belong as
+  proposed corrections/evidence in the provider's resources or tests, not in a
+  competing personal skill. A workaround is provisional evidence, not standing
+  policy. Tooling smoke tests may use disposable notebooks; that restriction
+  does not prohibit authorized MCP edits to the notebook being developed.
+- **Retired upstream pairing skills:** `marimo-pair` and `retro-marimo-pair`
+  were removed from this consumer repository on owner direction (2026-10-16).
+  Do not reinstall them as authoring prerequisites. The provider's distributed
+  workflow resources own the MCP loop and any justified script escape hatch;
+  upstream comparison material belongs in provider development, outside this
+  consumer's skill discovery.
 - **Viz:** every plot function saves to a `Path` by default; pass
   `return_fig=True` to get the open `matplotlib` figure(s) back instead
   (needed for in-notebook display). In marimo 0.24.0 use
@@ -435,14 +465,18 @@ algorithms, and experimental-setup-specific algorithms.
 
 ## Docs & agendas
 
-- `docs/agenda.md` — current action-oriented backlog, active decisions and
-  acceptance blockers. Fold superseded/resolved detail into its authority
-  document and `docs/agenda-history.md`; do not turn the live agenda into a
-  session transcript.
+- `docs/agenda.md` — the single work-discovery entry: selected-plan links, unselected findings,
+  area-level position and backlog pointers. Plans own execution checkpoints. `PLANS.md` is only a
+  compatibility pointer; task plans remain tracked in `docs/plans/`. Fold superseded detail into
+  its authority document; do not turn the agenda into a session transcript.
+- `README.md` § Purpose — the repository's scientific goal, its ongoing efforts, its
+  deliberate non-goals, and the four efforts (processing software, instrument automation,
+  acquired measurements, scientific interpretation) that do **not** share a completion
+  state.
 - `docs/agenda-history.md` — compact historical index and superseded-concept
   map; Git retains the verbatim pre-consolidation session record.
-- `docs/hardening-plan.md` — the prioritized fix/"harden" list (what needs
-  fixing now to tie loose ends). Read before structural changes.
+- `docs/hardening-plan.md` — historical hardening evidence and pointers to the owning
+  backlog/design records; not a second current action list.
 - `docs/marimo-integration-plan.md` + `docs/marimo-integration-log.md` — the
   consumer-side marimo + `marimo-inspect` integration plan and its
   evidence log (append-only).
@@ -472,6 +506,78 @@ algorithms, and experimental-setup-specific algorithms.
   implementation slice. Read it before re-proposing that review, before
   extending the sweep parameters, and before splitting `acquire/driver.py`.
 - `references/wolfram/README.md` — Wolfram notebooks + porting map.
+
+## Planning a task (records-first)
+
+A fresh session must be able to answer *what work is selected, in what state, and what happens next* from the
+repository alone. That is the failure this convention exists for: sessions restarted without their predecessor's
+context either did not know a task was open, or reconstructed a fraction of it.
+
+**Read in this order:** this file → `docs/agenda.md` § Selected work / Unselected findings → the selected plan.
+This is the owner-selected **P1 trial**, not a generally validated method. `PLANS.md` is a pointer, not another ledger.
+If the agenda is absent or conflicting, report the gap and reconcile records; do not select a plan by filename or age.
+**No selected effort is not the same as no unresolved work.**
+
+- **A plan is required** for multi-session work, a consequential operation, or work with more than one verification
+  milestone. A small bounded edit needs neither a plan nor ceremony.
+- **One plan per bounded effort**, tracked at `docs/plans/<slug>.md`, written from `docs/plans/TEMPLATE.md`. Its field
+  set is **destination** (purpose, observable outcome and acceptance criteria, non-goals, authorization boundaries,
+  baseline) → **current checkpoint** (established / not established / revision and live target / working state and
+  recovery) → **remaining work** (selected next with its stopping condition, blocked, unselected findings, deferred) →
+  **decisions and evidence** → **next session** (objective, first action, stopping condition). The checkpoint is
+  maintained in place; history belongs to linked evidence and version control, not to a diary in the plan.
+- **Method authority:** the owner-designated shared source is the estate knowledge base's
+  `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md`. Read it through the configured share-access procedure
+  when designing the method. Authority is separate from maturity: P1 is selected for trial; P2–P6 remain proposals.
+  Skills operationalize that source; these instructions bind it to this repository. Reconcile conflicts with safety
+  constraints and explicit owner decisions; neither recency nor a draft label settles authority. If the shared source
+  is unavailable, name that limitation; do not invent a replacement policy or claim its latest version was checked.
+- **States:** draft, ready for review, authorized, in progress, blocked, complete, superseded, cancelled. The plan
+  header and its selected entry in `docs/agenda.md` must agree, and an empty scope may simply say no task is selected.
+- **Selection is not permission.** Record the owner's actual grant in the plan's authorization field and stop before
+  exceeding it. Never select work by newest filename, an open checkbox, or an older plan's recommendation; and when a
+  direction is selected without an implementation slice, say *ready for review* and name the next decision instead of
+  inventing a feature to fill the plan.
+- **Keep implemented, verified, accepted and deployed separate**, and write a checkpoint that can be checked:
+  established behaviour, its limits, and a concrete continuation point — "made progress" is not a checkpoint.
+- **At every pause** update the selected plan's checkpoint, align its agenda entry, and record the next objective and
+  stopping condition, marked agreed or proposed — a proposal is not a grant. A completed implementation checklist is
+  not a closed effort: close only what the evidence and the authority support, and give every remaining finding a
+  durable disposition (selected, blocked, deferred, rejected, out of scope).
+- **So that nothing is kept twice:** the plan holds the working state; `docs/agenda.md`'s current-progress rows stay
+  short and point at the plan; durable semantics, contracts and reusable findings belong in their own document under
+  `docs/`, never only inside a plan; machine bindings belong in the machine-local hand-off, never in a tracked plan;
+  and a **temporary transfer note** can never be the only home of unresolved work — it links the maintained records.
+  Never a credential in any of them.
+
+## Reporting intent and progress (binding)
+
+Progress that a later reader — human or agent — cannot reconstruct from the commits must be
+written where it lives: the current-progress record in `docs/agenda.md`, or the PR that
+carries the change. State the **intent** (the research question or capability the work
+serves), the **position**, and the **evidence** — the three things a commit message cannot
+carry on its own.
+
+- **When meaningful work changes state, update the existing row** in `docs/agenda.md`
+  § Current progress **in the same change that moves it**. Do not start a new report or
+  hand-off per session, and do not restate one status in the README, the agenda and a
+  hand-off at once.
+- **Name the state**, because they are different claims: *accepted* (landed and verified,
+  with the evidence named), *proposed / conditional* (an agreed direction, or a trigger not
+  yet reached — not current work), *superseded* (replaced by something named; do not re-open
+  without new evidence). "Done" is not a state.
+- **A meaningful PR says why, what and how it was checked**: the question or capability it
+  serves, what changed, its evidence (tests, instrument checks, published artifacts, live UI
+  checks), and its limits. Never report a scientific effort complete because its
+  implementation merged — merged code is not a measured effect.
+- **Record decisions that would otherwise live only in conversation** — "we are pursuing this
+  now", "this is a possible extension, not current work", "this direction is accepted
+  although it is not merged" — as a dated sentence in the current record or a comment on the
+  issue/PR. No decision-document ceremony, and no turning a suggestion into a commitment.
+- **Avoid:** a new report per session; duplicating one status across README/agenda/hand-offs;
+  a dashboard id or payload in the repository; percent-complete estimates without a
+  measurement; treating every TODO or open issue as the current priority; rewriting
+  historical evidence so it agrees with today's summary.
 
 ## Privacy — do not overexpose
 

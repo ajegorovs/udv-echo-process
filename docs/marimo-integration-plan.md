@@ -146,11 +146,12 @@ marimo-inspect = { git = "https://github.com/ajegorovs/marimo-mcp-cowork", tag =
   placeholder `marimo.example.toml` with no real endpoint/key.
 - Keep the repo **sibling** to `marimo-inspect`, never nested (uv workspace
   hijack would rewrite the provider's lockfile).
-- **Agent skills (part of the "same structure and rules" the sibling ships):**
-  `uvx deno -A npm:skills add marimo-team/marimo-pair`, then commit `.agents/`
-  and `skills-lock.json` so the marimo-pair / retro-marimo-pair skills match.
-  `uv add --extra dev pytest` stays the test command; no ruff configured here
-  yet (sibling excludes `notebooks/` from ruff — N/A until we add one).
+- **Historical agent-skill setup (superseded 2026-10-16):** Phase 1 installed
+  `marimo-pair` and `retro-marimo-pair` from `marimo-team/marimo-pair`. Both
+  were later retired from consumer discovery on owner direction because the
+  maintained MCP provider resources replace their agent-facing procedure.
+  Do not repeat that installation; see integration-log O43. The historical
+  Phase 1 result below records what was installed then, not today's prerequisites.
 
 **Phase 1 result (ran 2026-09-07, commit `8e07ec2`): PASS.** Dependencies
 pinned (`marimo[recommended]>=0.24.0,<0.25` + `marimo-inspect` @ git tag

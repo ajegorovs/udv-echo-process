@@ -28,6 +28,15 @@ the DOP3000-3010 manual reference):
   index 1 — the manual's "bit 2: UDV MD mode"), word 51 ("Nb profiles in block
   in multiplexer mode", row 51) = ``4``, word 53 ("Nb blocks in multiplexer
   mode", row 53) = ``100``.
+* ``data/dual-profile-mux/4MHz.BDD`` — 4-channel multiplexed capture recorded
+  with the instrument's **two-plot** display, so every signal block carries one
+  profile of *each* quantity: type 0 velocity (``int8``) and type 1 echo
+  (``uint8``), same 42 gates, same footer timestamp. Channels ``1,2,3,4``, 500
+  signal blocks per channel, so the reader emits **eight** streams — four
+  channels × two quantities — and ``(channel, quantity)`` is the stream identity
+  (plan §6.7 amendment). Word 51 = ``50`` and word 53 = ``10``: each channel is
+  measured in ten 50-profile multiplexer visits (71.4 ms apart) separated by a
+  10.83 s hole while the multiplexer serves the other three channels.
 * The per-profile footer (manual ``10-storing-and-reading-measures.md`` §10.7,
   points E–K) carries the timestamp (E, 4 bytes at ``meas_end-12``) and the
   block number (F, 2 bytes at ``meas_end-8``) and the multiplexer channel (J,
@@ -75,11 +84,13 @@ from udv_echo_process.provenance import ArtifactBundle, ChannelBundle, select_ch
 DATA = Path("data")
 ECHO = DATA / "echo"
 VEL = DATA / "4-sensor-velocity"
+DUAL = DATA / "dual-profile-mux"
 
 ECHO_200 = ECHO / "200.BDD"
 ECHO_650 = ECHO / "650.BDD"
 FOUR_SENSOR = VEL / "200RPM.BDD"
 FOUR_SENSOR_V2 = VEL / "200RPM_v2.BDD"
+DUAL_4MHZ = DUAL / "4MHz.BDD"
 
 _OBSERVED = int(SupportKind.OBSERVED)
 
@@ -692,7 +703,425 @@ def test_every_discovered_fixture_round_trips_to_a_closed_bundle():
         assert bundle.recording.acquisition_mode in set(AcquisitionMode)
         for stream in bundle.recording.streams:
             assert (
-                select_channel(bundle, stream.acquisition.channel).graph is bundle.graph
+                select_channel(
+                    bundle,
+                    stream.acquisition.channel,
+                    quantity=stream.descriptor.quantity,
+                ).graph
+                is bundle.graph
             )
         seen_modes.add(bundle.recording.acquisition_mode)
     assert {AcquisitionMode.UNKNOWN, AcquisitionMode.SEQUENTIAL} <= seen_modes
+
+
+# ── a two-plot (velocity + echo) capture: two streams on one channel ─────
+
+
+def test_dual_profile_file_yields_one_stream_per_channel_and_quantity():
+    """Every block of ``4MHz.BDD`` stores a velocity *and* an echo profile.
+
+    Measured structure: 2004 measurement blocks, 1 depth-only block per channel
+    and 500 signal blocks per channel, each signal block carrying profile type 0
+    (velocity, ``int8``) and type 1 (echo, ``uint8``) over the same 42-gate axis.
+    The reader must surface both, not the velocity profile alone.
+    """
+    bundle = read(DUAL_4MHZ)
+    pairs = [
+        (
+            stream.acquisition.channel.device_channel,
+            stream.descriptor.quantity.value,
+        )
+        for stream in bundle.recording.streams
+    ]
+    assert pairs == [
+        (channel, quantity)
+        for channel in (1, 2, 3, 4)
+        for quantity in ("axial_velocity", "echo_amplitude")
+    ]
+    assert len({stream.artifact_id for stream in bundle.recording.streams}) == 8
+    assert set(bundle.graph.root_artifacts) == {
+        stream.artifact_id for stream in bundle.recording.streams
+    }
+    assert bundle.recording.acquisition_mode is AcquisitionMode.SEQUENTIAL
+
+
+@pytest.mark.parametrize("channel", [1, 2, 3, 4])
+def test_dual_profile_streams_share_the_timestamp_and_gate_axis(channel):
+    """The two profiles of a block carry the block's own timestamp.
+
+    Sharing one timestamp per block is what makes the velocity and echo rows of a
+    channel simultaneously aligned; a reader that stamped them separately would
+    make the pair look like two interleaved acquisitions.
+    """
+    bundle = read(DUAL_4MHZ)
+    key = ChannelKey(device_channel=channel)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    assert np.array_equal(velocity.data.time_s, echo.data.time_s)
+    assert np.array_equal(velocity.data.gate_depths_mm, echo.data.gate_depths_mm)
+    # Both quantities carry the same source-row identity for the same block.
+    assert np.array_equal(
+        velocity.data.acquisition.sample_id, echo.data.acquisition.sample_id
+    )
+    assert np.array_equal(
+        velocity.data.acquisition.sample_id, np.arange(500, dtype=np.int64)
+    )
+    assert velocity.config.pulse_repetition_freq_hz == (
+        echo.config.pulse_repetition_freq_hz
+    )
+    assert velocity.data.values.shape == echo.data.values.shape == (500, 42)
+
+
+def test_dual_profile_echo_is_decoded_on_the_module_scale():
+    """Echo stores raw ``uint8`` counts reflected into the module scale (2048)."""
+    bundle = read(DUAL_4MHZ)
+    echo = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.ECHO_AMPLITUDE,
+    ).artifact
+    values = echo.data.values
+    assert echo.descriptor.unit == "module"
+    assert np.isfinite(values).all()
+    assert values.min() >= 0.0
+    assert values.max() == 2048.0  # the module scale clips at full count
+    assert echo.config.module_scale == 2048
+
+
+def test_dual_profile_quantities_are_not_a_rescaling_of_each_other():
+    """A weak guard against one quantity being a rescaled copy of the other.
+
+    Byte-level oracles are the real check (see
+    ``test_decoded_cells_match_the_byte_level_oracle``); this only rejects the
+    specific failure where the same payload is emitted twice under two units. Low
+    correlation is *not* evidence of statistical independence.
+    """
+    bundle = read(DUAL_4MHZ)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    correlation = float(
+        np.corrcoef(velocity.data.values.ravel(), echo.data.values.ravel())[0, 1]
+    )
+    assert abs(correlation) < 0.5
+
+
+def test_dual_profile_channel_needs_a_quantity_to_select():
+    """``select_channel`` refuses to guess between the two physical quantities."""
+    bundle = read(DUAL_4MHZ)
+    with pytest.raises(ValueError, match="pass quantity="):
+        select_channel(bundle, ChannelKey(device_channel=2))
+
+
+def test_dual_profile_mux_visits_are_measured_from_the_timestamps():
+    """Each channel's 500 samples arrive in ten 50-profile multiplexer visits.
+
+    Op word 51 ("Nb profiles in block in multiplexer mode") = 50 and word 53
+    ("Nb blocks") = 10 for this capture, and the per-channel timeline shows
+    exactly that: 50 samples at ~71.4 ms spacing, then a ~10.8 s hole while the
+    multiplexer serves the other three channels.
+    """
+    bundle = read(DUAL_4MHZ)
+    stream = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.AXIAL_VELOCITY,
+    ).artifact
+    deltas = np.diff(stream.data.time_s)
+    gaps = np.flatnonzero(deltas > 1.0)
+    assert gaps.tolist() == [49, 99, 149, 199, 249, 299, 349, 399, 449]
+    assert np.allclose(deltas[gaps], 10.83, atol=0.06)
+    within_visit = np.delete(deltas, gaps)
+    assert within_visit.min() > 0.071
+    assert within_visit.max() < 0.072
+
+
+# ── crafted blocks: clock, profile order, absent quantities (F1) ─────────
+
+
+def _real_depth_payload(channel: int) -> bytes:
+    """Return the real depth-only block's payload for ``channel``.
+
+    The op-parameter table and gate depths in a crafted file come from the real
+    capture (its first 31,268 bytes are reused verbatim), so the reader's
+    calculated gate vector matches the stored pseudo-profile exactly and no depth
+    arithmetic is re-derived in the test.
+    """
+    raw = DUAL_4MHZ.read_bytes()
+    start = 31268
+    while start + 4 <= len(raw):
+        length = struct.unpack_from("<H", raw, start)[0]
+        end = start + length
+        if length == 0 or end > len(raw):
+            break
+        if raw[end - 3] == channel:
+            types: list[int] = []
+            payloads: list[bytes] = []
+            cursor = start + 2
+            while True:
+                plen = struct.unpack_from("<H", raw, cursor)[0]
+                if plen == 0:
+                    break
+                types.append(raw[cursor + 2])
+                payloads.append(raw[cursor + 3 : cursor + 3 + plen])
+                cursor += plen + 3
+            if set(types) == {25}:
+                return payloads[0]
+        start = end
+    raise AssertionError(f"no depth-only block for channel {channel}")
+
+
+def _crafted_bdd(
+    tmp_path: Path,
+    blocks: list[tuple[int, int, list[tuple[int, bytes]]]],
+    *,
+    name: str = "crafted.BDD",
+) -> Path:
+    """Write a ``.BDD`` from the real header/op-params plus the given blocks.
+
+    ``blocks`` is ``(channel, raw timestamp, [(profile type, payload), ...])``.
+    The footer is laid out exactly as the reader documents it: 2 bytes, the
+    ``uint32`` timestamp, the ``uint16`` block number, 3 bytes, the channel byte,
+    2 bytes — i.e. ``channel`` at ``meas_end - 3`` and the timestamp at
+    ``meas_end - 12``.
+    """
+    raw = DUAL_4MHZ.read_bytes()
+    out = bytearray(raw[:31268])
+    for block_number, (channel, timestamp, profiles) in enumerate(blocks, start=1):
+        body = bytearray()
+        for profile_type, payload in profiles:
+            body += struct.pack("<H", len(payload)) + bytes([profile_type]) + payload
+        footer = (
+            b"\x00\x00"
+            + struct.pack("<I", timestamp)
+            + struct.pack("<H", block_number)
+            + b"\x00\x00\x00"
+            + bytes([channel])
+            + b"\x00\x00"
+        )
+        out += struct.pack("<H", 2 + len(body) + len(footer)) + body + footer
+    path = tmp_path / name
+    path.write_bytes(bytes(out))
+    return path
+
+
+_VELO_GATES = bytes([7]) * 42
+_ECHO_GATES = bytes([200]) * 42
+_ECHO_GATES_ALT = bytes([90]) * 42
+
+
+def test_rollover_keeps_a_missing_quantity_on_the_same_clock(tmp_path):
+    """F1: the clock is unwrapped once per channel, not once per quantity.
+
+    Channel 1 has a velocity-only block *before* the 32-bit timestamp rollover and
+    two dual blocks after it. Unwrapping each quantity separately would leave echo
+    (which never sees a backward step) four days below velocity for the very same
+    block; one channel clock keeps them together.
+    """
+    near_wrap = 2**32 - 100
+    path = _crafted_bdd(
+        tmp_path,
+        [
+            (1, near_wrap, [(25, _real_depth_payload(1)), (0, _VELO_GATES)]),
+            (1, 100, [(0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 300, [(0, _VELO_GATES), (1, _ECHO_GATES)]),
+        ],
+    )
+    bundle = read(path)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+
+    assert velocity.data.time_s.shape[0] == 3
+    assert echo.data.time_s.shape[0] == 2
+    # The two post-rollover blocks are shared: same absolute seconds, cell for cell.
+    assert np.array_equal(echo.data.time_s, velocity.data.time_s[1:])
+    # One overflow period (~4.97 days) would be the divergence a per-quantity
+    # unwrap produces; the shared clock leaves only the true 20 ms gap.
+    assert echo.data.time_s[0] - velocity.data.time_s[0] < 1.0
+    assert velocity.data.time_s[1] - velocity.data.time_s[0] < 1.0
+
+
+def test_profile_order_inside_a_block_does_not_change_the_decode(tmp_path):
+    """Echo-then-velocity must decode identically to velocity-then-echo."""
+    forward = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 500, [(0, _VELO_GATES), (1, _ECHO_GATES_ALT)]),
+        ],
+        name="forward.BDD",
+    )
+    reversed_ = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (1, _ECHO_GATES), (0, _VELO_GATES)]),
+            (1, 500, [(1, _ECHO_GATES_ALT), (0, _VELO_GATES)]),
+        ],
+        name="reversed.BDD",
+    )
+    key = ChannelKey(device_channel=1)
+    decoded = {}
+    for label, path in (("forward", forward), ("reversed", reversed_)):
+        bundle = read(path)
+        decoded[label] = {
+            quantity: select_channel(bundle, key, quantity=quantity).artifact
+            for quantity in (
+                SignalQuantity.AXIAL_VELOCITY,
+                SignalQuantity.ECHO_AMPLITUDE,
+            )
+        }
+    for quantity in decoded["forward"]:
+        left = decoded["forward"][quantity]
+        right = decoded["reversed"][quantity]
+        assert np.array_equal(left.data.values, right.data.values)
+        assert np.array_equal(left.data.time_s, right.data.time_s)
+    # and the two quantities are distinguishable, so the comparison is not vacuous
+    assert not np.array_equal(
+        decoded["forward"][SignalQuantity.AXIAL_VELOCITY].data.values,
+        decoded["forward"][SignalQuantity.ECHO_AMPLITUDE].data.values,
+    )
+
+
+def test_a_quantity_absent_from_some_blocks_keeps_its_own_rows(tmp_path):
+    """A missing echo profile leaves a hole in echo's rows, never a row shift."""
+    path = _crafted_bdd(
+        tmp_path,
+        [
+            (1, 0, [(25, _real_depth_payload(1)), (0, _VELO_GATES), (1, _ECHO_GATES)]),
+            (1, 500, [(0, _VELO_GATES)]),  # echo truly absent from this block
+            (1, 900, [(0, _VELO_GATES), (1, _ECHO_GATES_ALT)]),
+        ],
+    )
+    bundle = read(path)
+    key = ChannelKey(device_channel=1)
+    velocity = select_channel(
+        bundle, key, quantity=SignalQuantity.AXIAL_VELOCITY
+    ).artifact
+    echo = select_channel(bundle, key, quantity=SignalQuantity.ECHO_AMPLITUDE).artifact
+    assert velocity.data.time_s.shape[0] == 3
+    assert echo.data.time_s.shape[0] == 2
+    assert np.array_equal(echo.data.time_s, velocity.data.time_s[[0, 2]])
+    # sample_id is the source acquisition row, so a skipped block leaves a gap in
+    # echo's ids instead of renumbering them; both quantities agree on the block
+    # they share (review F4).
+    assert velocity.data.acquisition.sample_id.tolist() == [0, 1, 2]
+    assert echo.data.acquisition.sample_id.tolist() == [0, 2]
+    assert (
+        echo.data.acquisition.sample_id[1]
+        == velocity.data.acquisition.sample_id[2]
+        == 2
+    )
+    # The first echo row is the block-1 payload (200 counts) and the second is the
+    # block-3 payload (90 counts): a shifted mapping would repeat one of them.
+    assert echo.data.values[0, 0] == pytest.approx(200 * 2048 / 255)
+    assert echo.data.values[1, 0] == pytest.approx(90 * 2048 / 255)
+
+
+# ── byte-level oracles on the real capture (F2) ──────────────────────────
+#
+# Every value below was derived from the committed file by a standalone ``struct``
+# walk that does not import this package, using the published conversions:
+# ``echo = counts * module_scale / 255`` (module_scale = 2048 on all four
+# channels) and the DOPpy velocity equation over op words 0 (emit), 5 (PRF
+# period µs), 15 (velo scale), 19 (sound speed), 20 (Doppler angle) with the
+# word-22 offset correction. The raw count is written beside each value so it can
+# be re-derived by hand from the bytes. Rows are sample 0 and sample 499 (the last
+# stored profile); gates 0, 1, 5, 20 and 41 cover the first gate, interior gates
+# and the last gate, so a shifted gate axis or a shifted row cannot pass.
+
+#: ``(channel, row) -> {gate: (raw int8 count, decoded mm/s)}``
+_VELOCITY_ORACLE: dict[tuple[int, int], dict[int, tuple[int, float]]] = {
+    (1, 0): {
+        0: (1, 0.6803),
+        1: (13, 8.8444),
+        5: (49, 33.3366),
+        20: (18, 12.2461),
+        41: (4, 2.7214),
+    },
+    (1, 499): {
+        0: (-1, -0.6803),
+        1: (-8, -5.4427),
+        5: (30, 20.4102),
+        20: (43, 29.2546),
+        41: (-14, -9.5247),
+    },
+    (2, 0): {0: (-41, -27.8939), 41: (4, 2.7214)},
+    (2, 499): {0: (-36, -24.4922), 41: (-19, -12.9264)},
+    (3, 0): {0: (3, 2.0410), 41: (-18, -12.2461)},
+    (3, 499): {0: (11, 7.4837), 41: (-13, -8.8444)},
+    (4, 0): {0: (0, 0.0), 41: (13, 8.8444)},
+    (4, 499): {0: (-117, -79.5997), 41: (14, 9.5247)},
+}
+
+#: ``(channel, row) -> {gate: (raw uint8 count, decoded module)}``
+_ECHO_ORACLE: dict[tuple[int, int], dict[int, tuple[int, float]]] = {
+    (1, 0): {
+        0: (255, 2048.0),
+        1: (7, 56.2196),
+        5: (105, 843.2941),
+        20: (23, 184.7216),
+        41: (3, 24.0941),
+    },
+    (1, 499): {
+        0: (255, 2048.0),
+        1: (10, 80.3137),
+        5: (127, 1019.9843),
+        20: (14, 112.4392),
+        41: (20, 160.6275),
+    },
+    (2, 0): {0: (101, 811.1686), 41: (6, 48.1882)},
+    (2, 499): {0: (95, 762.9804), 41: (10, 80.3137)},
+    (3, 0): {0: (255, 2048.0), 41: (3, 24.0941)},
+    (3, 499): {0: (255, 2048.0), 41: (0, 0.0)},
+    (4, 0): {0: (226, 1815.0902), 41: (14, 112.4392)},
+    (4, 499): {0: (231, 1855.2471), 41: (12, 96.3765)},
+}
+
+
+@pytest.mark.parametrize(
+    ("quantity", "oracle"),
+    [
+        (SignalQuantity.AXIAL_VELOCITY, _VELOCITY_ORACLE),
+        (SignalQuantity.ECHO_AMPLITUDE, _ECHO_ORACLE),
+    ],
+    ids=["velocity", "echo"],
+)
+def test_decoded_cells_match_the_byte_level_oracle(quantity, oracle):
+    """Exact decoded samples, not just shape/range/correlation (review finding F2)."""
+    bundle = read(DUAL_4MHZ)
+    for (channel, row), cells in oracle.items():
+        artifact = select_channel(
+            bundle, ChannelKey(device_channel=channel), quantity=quantity
+        ).artifact
+        for gate, (count, expected) in cells.items():
+            actual = float(artifact.data.values[row, gate])
+            assert actual == pytest.approx(expected, abs=5e-4), (
+                f"channel {channel} row {row} gate {gate}: raw count {count} "
+                f"decodes to {actual!r}, oracle says {expected!r}"
+            )
+
+
+def test_echo_first_gate_run_matches_the_reviewers_independent_extraction():
+    """The reviewer's seven counts for channel 1, sample 0, gates 0–6.
+
+    Independent extraction reported ``255, 7, 148, 121, 74, 105, 50`` raw counts
+    and ``2048.000, 56.220, 1188.643, 971.796, 594.322, 843.294, 401.569`` module
+    units; the reader must reproduce those cells exactly.
+    """
+    bundle = read(DUAL_4MHZ)
+    echo = select_channel(
+        bundle,
+        ChannelKey(device_channel=1),
+        quantity=SignalQuantity.ECHO_AMPLITUDE,
+    ).artifact
+    expected = [2048.000, 56.220, 1188.643, 971.796, 594.322, 843.294, 401.569]
+    assert [float(value) for value in echo.data.values[0, :7]] == pytest.approx(
+        expected, abs=5e-4
+    )
