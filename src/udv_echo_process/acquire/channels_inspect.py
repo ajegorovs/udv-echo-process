@@ -4,7 +4,7 @@ This is the reusable **application workflow** behind ``acquire channels-inspect`
 the owners that already exist and invents no gesture of its own:
 
 * the popup lifecycle — :meth:`…udop.parameters.ParametersSurface.open_channels_popup` (one
-  measured hover on the proven anchor, or an adopted popup) and
+  geometry-derived stepped entry into the proven anchor, or an adopted popup) and
   :meth:`…dismiss_channels_popup` (one bounded stepped real-cursor path);
 * the reading — :func:`udv_echo_process.acquire.channels_read.read_channels`, including its
   opt-in :class:`~udv_echo_process.acquire.channels_capture.CaptureEvidence`;
@@ -153,7 +153,7 @@ def inspect_channels(
 ) -> ChannelInspection:
     """Open (or adopt), read with capture evidence, then close — in that order, once each.
 
-    ``allow_real_input`` is required because the opener's one gesture is a real-cursor hover;
+    ``allow_real_input`` is required because the opener's one gesture is a real-cursor stepped entry;
     passing ``False`` refuses here by name instead of reaching the driver. ``adopt_open`` accepts
     an already-readable popup without a hover, and ``close_adopted`` is what lets this workflow
     close it — an adopted popup is the operator's unless the caller says otherwise.
@@ -260,7 +260,7 @@ def inspect_channels(
                 mode=mode,
                 mode_source=mode_source,
                 refused=(
-                    "the measured Channels hover produced no readable popup: "
+                    "the measured Channels stepped entry produced no readable popup: "
                     f"{opened.clause or opened.surface}"
                 ),
                 refused_stage="open",

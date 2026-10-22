@@ -909,7 +909,14 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         )
 
     def _move_real_cursor_stepped(
-        self, plan, *, what: str, why: str, guard=None, checked_bound_s=None
+        self,
+        plan,
+        *,
+        what: str,
+        why: str,
+        guard=None,
+        checked_bound_s=None,
+        observe=None,
     ) -> tuple[tuple[int, int], ...]:
         """Walk a **derived** stepped cursor path, one ``SetCursorPos`` per position.
 
@@ -934,6 +941,7 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             read_position=self._cursor_position,
             guard=guard or (lambda: None),
             checked_bound_s=checked_bound_s,
+            observe=observe,
             user32=_user32,
         )
 

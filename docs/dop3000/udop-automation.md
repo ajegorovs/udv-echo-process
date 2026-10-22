@@ -1485,6 +1485,149 @@ per invocation; nothing here restores automatically.
 
 ---
 
+### 12.16 Composition `acquire mpx-run`, 2026-10-22 — implemented, two live runs accepted
+
+**Status: implemented; two supervised composed runs accepted live (n = 2, separate invocations),
+the rest offline-only.**
+One command composes the four owners that already exist, and adds no gesture, no registry, no
+resume and no loop:
+
+| Stage | Owner | What it owns here |
+|---|---|---|
+| baseline | `inspect_channels` | the disabled screen, read with capture evidence, closed |
+| rollover | `acquire_set_rollover` | rolling ON, pressed only when the fresh baseline capture reads `OFF_PROVEN` |
+| enable | `acquire_enable_multiplexed` | the owned Enable press from a popup the parent opened |
+| record | `record_multiplexed` | one `Record`, the application's completion, one store, the artifact check |
+| post-save | `inspect_channels` | the final mode and rolling state, and the baseline decision |
+
+Rules the composition enforces, all exercised offline in `tests/test_acquire_mpx_run.py`:
+
+- **one binding.** The parent enumerates the window once, binds it once and verifies it; every
+  child receives that record through the new `bound_target` seam and may only call
+  `verify_bound_target`. A child never binds again, and a changed enumerated handle is refused
+  before anything is verified or pressed (`acquire/binding.py`).
+- **preflight before gestures.** Store name, store directory, capture root, the parent record path,
+  the declaration and every bound are checked first. Each invocation claims its own
+  empty `mpx-run-NNN` capture root under the caller's directory (`mkdir(exist_ok=False)`), so an
+  earlier run's frames are never reused or mixed with this one's evidence. The inspection presses
+  nothing; an already-open popup is refused, never adopted.
+- **records owned per run.** The caller's parent record path must not exist, and the three child
+  records are named *after* the run root is claimed and live inside it
+  (`<capture root>/mpx-run-NNN/records/{rollover,enable,restore}-trial.json`). Two runs sharing
+  one parent directory — the normal case, since `--record` sits beside the capture root —
+  therefore never name the same child file, and the earlier run's obligations stay
+  byte-identical. Naming them beside the parent record made a *second* run refuse on the first
+  run's `rollover-trial.json`; `tests/test_acquire_mpx_run.py` now locks that collision out.
+- **a pending record, exclusively claimed**, before the first rolling child, listing the child
+  paths and stating that no action count is claimed. It is rewritten once at the end; a failed
+  rewrite reports `record_unwritten`, never success, and the pending file stays on disk.
+- **the production-reachable enabled pair only.** The Enable child states `VISUAL_ENABLED` only
+  from its fresh clipped `multiplexer_on_entry` pair; a post surface of `absent` states no mode
+  and stops before `Record`. An impossible `absent` + `VISUAL_ENABLED` pair is not exercised or
+  accepted.
+- **one owned clipped dismissal.** After the positive clipped pair, the parent re-reads the bound
+  channels, requires the clipped surface, calls the existing `dismiss_channels_popup` (guarded
+  stepped path) exactly once, and requires an observed `ABSENT`; it then re-reads the bound
+  channels immediately before `Record` and requires `ABSENT` again. A refused, raised or
+  `UNKNOWN` dismissal, or a fresh read that is not `ABSENT`, stops with no `Record`. Its
+  integration point is precisely the interval between the post-enable clipped capture and the
+  fresh close before `Record`. The dismissal is accepted live **once**, in the composed run
+  below, and once on its own through the clipped-entry probe
+  (`tools/live/probes/mpx_enable_close_acceptance.py`, run
+  `enabled-clipped-acceptance-03`: `phase: complete`, `stage: absent`, `owed: []`, exit 0). One
+  accepted run is not a repeat.
+- **one Record.** A record that did not store, or stored an artifact that is not consistent,
+  stops the run with the file preserved — no Stop, Clear, store retry or second Record.
+- **the baseline is a fresh fact.** Post-save `VISUAL_DISABLED` + `OFF_PROVEN` completes;
+  `VISUAL_DISABLED` + rolling ON restores rolling through `set_rollover` (optional, and proved by
+  that child's fresh read). A post-save rolling `UNKNOWN` is an explicit owed stop: no restore
+  child is called and no `ON_PROVEN` is claimed. An enabled or unknown mode is owed, with no
+  `Disable` press.
+- **strict post-save licensing and retained artifacts.** The post-save capture must be this run's
+  live-bracketed, digest-verified, agreed pair with both guards on the original handle and the
+  same popup panel, under this run's own capture root. Retained, torn or wrong-handle captures
+  never complete. Every stop after a consistent store retains `artifact_consistent: true` and the
+  stored path, including post-save unknown and restore-failure paths.
+- **a compact durable record.** The final JSON stores child stages, the positive `post_mode`, the
+  `post_save_mode` and the dismissal's outcome/surface/point/steps as small facts and directory
+  references; the children's full reports stay in the in-memory result rather than being copied
+  into the durable payload.
+- **CLI failure honesty.** A refusal before a gesture exits 2; an unexpected exception after the
+  baseline inspection is reported as a failure (exit 1) with the parent record named as the
+  obligation, never as a traceback success and never as "nothing ran".
+- **child obligations stay nested history.** The Enable child's `restoration_owed` remains in its
+  own report; the parent's `owed` is derived from this run's fresh proofs, so a verified restore
+  resolves it instead of adding a clause permanently.
+
+**Live acceptance, 2026-10-22 — one supervised composed run (n = 1).** The committed CLI ran
+`acquire mpx-run mpx12-50profiles-composed-20261022-01 --channel 1 2 --profiles-per-visit 50
+--repeats 2 --stated-by operator --completion-timeout 60` and exited `0` with
+`stage: complete`, `parent_record_phase: final` and `owed: []`:
+
+| stage | measured by the run |
+|---|---|
+| baseline inspection | `closed`, strip `ready`, capture `VISUAL_DISABLED` + `OFF_PROVEN` |
+| rollover | one press, its own post read `ON_PROVEN`, popup closure `owned_closed` |
+| enable | one press, post surface `multiplexer_on_entry`, post mode `VISUAL_ENABLED` |
+| clipped dismissal | `absent`, `multiplexer_on_entry` → `absent`, point (605, 111), 2 steps, 0.15 s |
+| record | `stored` once: no Stop, no Clear, no second `Record` |
+| stored file | `mpx12-50profiles-composed-20261022-01.BDD`, **43,674 B**, SHA-256 `760d9912957f4002b464aacd11b4ec240ab433f56f94e2f5d535cabb1ad09f3a` |
+| artifact verdict | consistent: channels 1 and 2, **100 profiles each** (50 × 2 repeats), 42 gates, no non-finite values |
+| post-save | `closed`, capture `VISUAL_DISABLED` + `OFF_PROVEN`, so no restore press was needed |
+
+The stored file decoded as `acquisition_mode: sequential`, reported as decoded and never as a
+declaration match — the enable bit is set, and channel order or roll-over is not inferred from
+it. The run's log and parent record live under `.hermes/scratch/multiplexer-development/`
+(git-ignored working artifacts, not repository evidence).
+
+**Second supervised invocation, 2026-10-22 — same command, revised record ownership (n = 2).**
+A second run of the committed CLI (`...-02`, the same declaration: channels 1 and 2, 50 profiles
+per visit, 2 repeats, `--stated-by operator`, completion timeout 60 s) exited `0` with
+`phase: after`, `stage: complete`, `owed: []` and child stages `inspection: closed`,
+`rollover: pressed`, `enable: pressed`, `record: stored`, `post_save: closed`, `restore: ""`
+(no restore child, because the post-save read was already the baseline). It stored
+`mpx12-50profiles-composed-20261022-02.BDD`, **43,674 B**, SHA-256
+`9dd1c074…35cde068`, artifact `consistent`, `VISUAL_ENABLED` before the save and
+`VISUAL_DISABLED` + `OFF_PROVEN` after; that digest is the one the run's own log records for the
+artifact, and it was re-hashed on disk. The two runs are **separate invocations of one build**, not
+a repeat of the same evidence: distinct store artifacts (43,674 B / `9dd1c074…` against
+43,674 B / `760d9912…`), distinct capture roots and distinct child records.
+
+What the second run established that the first could not: the first wrote its
+`rollover-trial.json` and `enable-trial.json` beside the parent record, so a second run in the
+same directory would have refused on the first run's files. Under the per-run ownership this
+commit implements, run 02's child records live inside its own `mpx-run-NNN/records/` directory
+(rollover 811 B, enable 4,569 B) while run 01's pair beside the parent record (810 B, 4,569 B)
+kept their pre-run mtimes; the differing rollover bytes are the evidence that the two runs wrote
+their own records rather than one file twice. No before-hash of run 01's files was taken, so
+"byte-identical" is **not** claimed — only that they were untouched by run 02's write paths,
+which a separate run-root claim enforces (`mkdir(exist_ok=False)`).
+
+**Not established.** Two accepted composed runs, each of one build and one layout, and neither a
+repeat of the other's evidence — no run of a second instrument build, no unattended or
+back-to-back composition, and no live exercise of the refusal paths
+(an already-open popup, a mode disagreement, rolling already ON, a dismissal that raises or does
+not observe `ABSENT`, a store that does not complete, an inconsistent artifact, an unreadable
+post-save state, a failed final rewrite, a failed baseline restore). Those remain
+simulated-provider coverage in `tests/test_acquire_mpx_run.py`. The child stages' own live
+acceptance is §12.6–§12.15.
+
+```bash
+uv run udv-acquire acquire mpx-run RUN-NAME \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-run/run-record.json --store-dir outputs/live/store
+
+# The next run in the same directory: a new --record name. The same capture root gets the next
+# run root (mpx-run-002), and its child records live under that root's records/ directory.
+uv run udv-acquire acquire mpx-run RUN-NAME-02 \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-run/run-record-02.json --store-dir outputs/live/store
+```
+
+---
+
 ## Live validation (simulator)
 
 Three points were executed by the committed driver (`Win32Actuator`) on the

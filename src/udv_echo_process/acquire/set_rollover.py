@@ -81,6 +81,7 @@ from typing import Literal
 
 from udv_echo_process.acquire import mode_marks
 from udv_echo_process.acquire.actuator import WindowTarget
+from udv_echo_process.acquire.binding import resolve_bound_target
 from udv_echo_process.acquire.channels_capture import CaptureEvidence
 from udv_echo_process.acquire.channels_read import read_channels
 from udv_echo_process.acquire.channels_repeat import (
@@ -578,6 +579,7 @@ def acquire_set_rollover(
     baseline: str | Rolling,
     capture_dir: Path | str,
     trial_record: Path | str,
+    bound_target: WindowTarget | None = None,
     actuator=None,
     enumerate_windows: Callable[[], Sequence[int]] | None = None,
     class_name: str = MAIN_CLASS,
@@ -633,7 +635,9 @@ def acquire_set_rollover(
             f"{len(windows)} visible {class_name} window(s) are up {list(windows)}: exactly one "
             "instrument must be running, and this command does not choose between copies"
         )
-    target = live.bind_target(int(windows[0]))
+    target = resolve_bound_target(
+        live, windows, bound_target=bound_target, class_name=class_name
+    )
     clauses, _state = screen_clauses(
         live, target, windows, class_name=class_name, strip=_strip_not_recording
     )
@@ -672,7 +676,7 @@ def acquire_set_rollover(
         )
         if opened.outcome is not PopupOutcome.OPEN:
             raise AcquisitionError(
-                "the measured Channels hover produced no readable popup: "
+                "the measured Channels stepped entry produced no readable popup: "
                 f"{opened.clause or opened.surface}"
             )
 

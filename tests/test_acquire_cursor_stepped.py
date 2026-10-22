@@ -41,7 +41,7 @@ class _User32:
         raise AssertionError("the stepped path must not send a relative move nudge")
 
 
-def _walk(plan, fake: _User32, *, guard=None, notes=None):
+def _walk(plan, fake: _User32, *, guard=None, notes=None, observe=None):
     return cursor._move_real_cursor_stepped(
         plan,
         what="the off-popup point",
@@ -53,6 +53,7 @@ def _walk(plan, fake: _User32, *, guard=None, notes=None):
         read_position=lambda: fake.position,
         guard=guard or (lambda: None),
         sleep=lambda _seconds: None,
+        observe=observe,
         user32=lambda: fake,
     )
 
@@ -66,6 +67,23 @@ def test_a_stepped_path_issues_every_position_in_order_and_no_nudge():
     assert fake.calls == [tuple(point) for point in plan.points]
     assert landed == tuple(plan.points)
     assert len(fake.calls) == len(plan.points) > 1
+
+
+def test_the_observer_stops_the_path_at_its_first_true_without_a_later_move():
+    plan = stepped_path(start=(560, 32), goal=(300, 400), bounds=BOUNDS)
+    fake = _User32()
+    seen: list[tuple[int, int]] = []
+
+    def observe(point):
+        seen.append(point)
+        return len(seen) == 2
+
+    landed = _walk(plan, fake, observe=observe)
+
+    assert seen == [tuple(point) for point in plan.points[:2]]
+    assert fake.calls == [tuple(point) for point in plan.points[:2]]
+    assert landed == tuple(plan.points[:2])
+    assert len(fake.calls) < len(plan.points)  # nothing past the stop is visited
 
 
 def test_the_per_step_guard_runs_before_every_move():

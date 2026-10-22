@@ -76,6 +76,7 @@ from udv_echo_process.acquire.actuator import (
     StripView,
     WindowTarget,
 )
+from udv_echo_process.acquire.binding import resolve_bound_target
 from udv_echo_process.acquire.driver import Win32Actuator
 from udv_echo_process.acquire.mpx_artifact import (
     MpxArtifactReport,
@@ -443,6 +444,7 @@ def record_multiplexed(
     declaration: MultiplexedRecordingDeclaration,
     completion_timeout_s: float,
     channel: int | None = None,
+    bound_target: WindowTarget | None = None,
     store_timeout_s: float = STORE_TIMEOUT_S,
     dialog_timeout_s: float = 10.0,
     poll_s: float = POLL_S,
@@ -520,7 +522,9 @@ def record_multiplexed(
             f"{len(windows)} visible {class_name} window(s) are up {list(windows)}: exactly one "
             "application must be running, and this command does not choose between copies"
         )
-    target = live.bind_target(int(windows[0]))
+    target = resolve_bound_target(
+        live, windows, bound_target=bound_target, class_name=class_name
+    )
     clauses, _state = screen_clauses(
         live, target, windows, class_name=class_name, strip=ready_row_clauses
     )

@@ -91,6 +91,9 @@ __all__ = [
     "ANCHOR_PREFIX",
     "CHANNELS_MENU",
     "DISMISSAL_CLEARANCE_PX",
+    "ENTRY_READS_PER_POSITION",
+    "ENTRY_READ_ALLOWANCE_S",
+    "ENTRY_STEP_PX",
     "MAX_INTERVAL_S",
     "MAX_PATH_SECONDS",
     "MAX_STEPS",
@@ -104,15 +107,20 @@ __all__ = [
     "PARAMETERS_MENU",
     "PARAMETERS_POPUP_LEFT",
     "PARAMETERS_POPUP_MIN_H",
+    "ApproachPark",
+    "EntryPlan",
     "Obstacle",
     "PathPlan",
     "anchor_button",
     "anchor_clause",
+    "approach_park",
     "channels_anchor",
     "channels_anchor_clause",
     "dismissal_clause",
     "dismissal_point",
     "entry_buttons",
+    "entry_checked_bound_s",
+    "entry_plan",
     "menubar_buttons",
     "observation_text",
     "path_checked_bound_s",
@@ -556,6 +564,218 @@ def dismissal_clause(
         f"{DISMISSAL_CLEARANCE_PX} px clear of both, so the one gesture measured to dismiss this "
         "popup (a real-cursor move off it) cannot be aimed anywhere; nothing is moved and the "
         "operator has to close it"
+    )
+
+
+#: The resolution of a **stepped entry** into a menubar anchor. The measured entry run
+#: (``channels-stepped-entry-live-03``) walked the anchor's own column in 4 px positions and
+#: first entered the button at its fourth position; a single warp to the same point opened
+#: nothing. This is finer than :data:`MAX_STEP_PX` because the run is about *entering* a
+#: control, not crossing a screen.
+ENTRY_STEP_PX = 4
+
+#: What one entry position costs beside the production step work: exactly one caller popup read.
+ENTRY_READS_PER_POSITION = 1
+
+#: The bounded allowance for that read. The walker's checked bound adds it per position, so an
+#: elapsed time is never compared against the interval budget alone.
+ENTRY_READ_ALLOWANCE_S = 0.05
+
+
+@dataclass(frozen=True)
+class ApproachPark:
+    """A derived park below the menubar band, or the clause saying why none exists."""
+
+    point: tuple[int, int] | None
+    clause: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.point is not None and self.clause is None
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "point": list(self.point) if self.point is not None else None,
+            "clause": self.clause,
+        }
+
+
+def approach_park(
+    *,
+    anchor: Rect,
+    band: Rect,
+    client: Rect,
+    screen: Rect,
+) -> ApproachPark:
+    """The one point a stepped entry starts from: the anchor's column, below the whole band.
+
+    The entry gesture is a **column**, never a hover recipe: the pointer is parked one pixel
+    below the band's clearance box on the anchor's own centre column, then walked straight up
+    into the anchor with consecutive small ``SetCursorPos`` positions. Both coordinates are
+    derived from the observation — the anchor, the whole menubar band, the client rect and the
+    screen — and the park is never a literal.
+
+    The ``y`` is derived from the band, not the anchor: a point just below the anchor but still
+    inside the band would sit on the bar and could carry another entry's hover. The ``x`` is the
+    anchor's centre because the vertical run must not leave the anchor's column and enter a
+    neighbour. A geometry with no such pixel is refused by name, before anything moves.
+    """
+    bounds = _bounds(client, screen)
+    if bounds is None:
+        return ApproachPark(
+            point=None,
+            clause=(
+                "no approach park exists: the client rectangle "
+                f"{client.as_tuple()} and the screen rectangle {screen.as_tuple()} do not "
+                "overlap, so no real-cursor point could be shown to land on the application; "
+                "nothing is moved"
+            ),
+        )
+    x = _clamp(anchor.centre[0], bounds.left, bounds.right - 1)
+    wanted_y = band.bottom + DISMISSAL_CLEARANCE_PX + 1
+    y = _clamp(wanted_y, bounds.top, bounds.bottom - 1)
+    point = (x, y)
+    if not bounds.contains_point(point):
+        return ApproachPark(
+            point=None,
+            clause=(
+                f"no approach park exists: the derived point {point} lies outside the walkable "
+                f"bounds {bounds.as_tuple()} (client ∩ screen); nothing is moved"
+            ),
+        )
+    if y < wanted_y:
+        return ApproachPark(
+            point=None,
+            clause=(
+                "no approach park exists: the park has to sit at least "
+                f"{DISMISSAL_CLEARANCE_PX} px below the menubar band {band.as_tuple()} (y >= "
+                f"{wanted_y}), and the walkable bounds {bounds.as_tuple()} only reach y {y}, so "
+                "every candidate still lies on the bar or inside its clearance and could carry "
+                "another entry's hover; nothing is moved"
+            ),
+        )
+    if anchor.contains_point(point):
+        return ApproachPark(
+            point=None,
+            clause=(
+                f"no approach park exists: the derived point {point} lies inside the anchor "
+                f"{anchor.as_tuple()}, so it is not a park; nothing is moved"
+            ),
+        )
+    return ApproachPark(point=point)
+
+
+@dataclass(frozen=True)
+class EntryPlan:
+    """A derived park **and** entry path, or the reason they cannot be derived."""
+
+    plan: PathPlan | None
+    park: ApproachPark
+    refusal: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return (
+            self.refusal is None
+            and self.plan is not None
+            and getattr(self.plan, "ok", False)
+        )
+
+    def as_dict(self) -> dict:
+        return {
+            "ok": self.ok,
+            "park": self.park.as_dict(),
+            "plan": self.plan.as_dict() if self.plan is not None else None,
+            "refusal": self.refusal,
+        }
+
+
+def entry_plan(
+    *,
+    anchor: Rect,
+    band: Rect,
+    obstacles: Sequence[Obstacle] = (),
+    client: Rect,
+    screen: Rect,
+    step_px: int = ENTRY_STEP_PX,
+    max_seconds: float | None = None,
+) -> EntryPlan:
+    """Derive the approach park and the vertical path from it into the anchor's centre.
+
+    Verticality is checked on the **result**, not assumed from the inputs: every planned
+    position must keep the park's column and every step must be at most ``step_px`` px tall. A
+    planner that returned a diagonal is refused rather than walked, because a diagonal run could
+    leave the anchor's column and enter another entry's hover band. ``obstacles`` are the other
+    menubar buttons, so :func:`stepped_path` refuses a position inside one before anything moves.
+    """
+    if max_seconds is None:
+        max_seconds = MAX_PATH_SECONDS
+    park = approach_park(anchor=anchor, band=band, client=client, screen=screen)
+    if not park.ok:
+        return EntryPlan(plan=None, park=park, refusal=park.clause)
+    bounds = _bounds(client, screen)
+    assert bounds is not None  # approach_park already proved it
+    goal = anchor.centre
+    if not anchor.contains_point(goal):
+        return EntryPlan(
+            plan=None,
+            park=park,
+            refusal=(
+                f"the anchor's own centre {goal} is not inside its rect "
+                f"{anchor.as_tuple()}; nothing is moved"
+            ),
+        )
+    plan = stepped_path(
+        start=park.point,
+        goal=goal,
+        bounds=bounds,
+        obstacles=obstacles,
+        step_px=step_px,
+        max_seconds=max_seconds,
+    )
+    if not plan.ok:
+        return EntryPlan(plan=plan, park=park, refusal=plan.refusal)
+    column = park.point[0]
+    previous = park.point
+    for index, point in enumerate(plan.points, start=1):
+        if point[0] != column:
+            return EntryPlan(
+                plan=plan,
+                park=park,
+                refusal=(
+                    f"position {index} of {len(plan.points)} is {point}, which leaves the "
+                    f"park's column {column}: the entry run must stay on the anchor's own "
+                    "column so it cannot carry another menubar entry's hover; nothing is moved"
+                ),
+            )
+        if abs(point[1] - previous[1]) > step_px:
+            return EntryPlan(
+                plan=plan,
+                park=park,
+                refusal=(
+                    f"position {index} of {len(plan.points)} moves "
+                    f"{abs(point[1] - previous[1])} px vertically from {previous}, beyond the "
+                    f"{step_px} px step: a larger step is the warp this run exists to "
+                    "distinguish; nothing is moved"
+                ),
+            )
+        previous = point
+    return EntryPlan(plan=plan, park=park)
+
+
+def entry_checked_bound_s(steps: int, *, max_seconds: float | None = None) -> float:
+    """The entry walker's checked bound: the interval budget plus per-position work and reads.
+
+    Production work per position is one ``SetCursorPos``, one read-back and one guard
+    (:data:`MAX_STEP_WORK_S`) plus one caller popup read (:data:`ENTRY_READ_ALLOWANCE_S`). It is
+    a checked bound, not a deadline: the walker compares elapsed time against it before each
+    move and records the **actual** elapsed time beside the planned interval budget.
+    """
+    if max_seconds is None:
+        max_seconds = MAX_PATH_SECONDS
+    return round(
+        max(0, steps) * (MAX_STEP_WORK_S + ENTRY_READ_ALLOWANCE_S) + max_seconds, 4
     )
 
 

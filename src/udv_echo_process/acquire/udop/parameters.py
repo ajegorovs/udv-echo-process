@@ -72,6 +72,9 @@ from udv_echo_process.acquire.ui.layout import (
     panel_mode,
 )
 from udv_echo_process.acquire.ui.menu import (
+    ENTRY_READ_ALLOWANCE_S,
+    ENTRY_READS_PER_POSITION,
+    ENTRY_STEP_PX,
     MAX_PATH_SECONDS,
     MAX_STEP_PX,
     MEASURED_BAR,
@@ -81,6 +84,8 @@ from udv_echo_process.acquire.ui.menu import (
     anchor_clause,
     channels_anchor,
     channels_anchor_clause,
+    entry_checked_bound_s,
+    entry_plan,
     menubar_buttons,
     path_checked_bound_s,
     stepped_path,
@@ -244,13 +249,21 @@ class PopupOutcome(str, Enum):
 
 
 class ChannelsOpen(ValueModel):
-    """The evidence of one ``Channels`` popup open: an adopted popup, a hover that opened one
-    and was read back, or the typed ``UNKNOWN`` of a bounded poll that saw neither.
+    """The evidence of one ``Channels`` popup open: an adopted popup, a stepped entry that
+    entered one and was read back, or the typed ``UNKNOWN`` of a bounded poll that saw neither.
 
     ``adopted`` is true only when the caller's own reading was already the readable popup, so a
-    probe can start from an open screen without a second hover and without an operator baseline.
-    ``point`` is the measured anchor's hovered screen point (``None`` when adopted). ``clause``
-    is set on ``UNKNOWN`` and names what the poll last saw; nothing is retried.
+    probe can start from an open screen without a second gesture and without an operator
+    baseline. ``point`` is the entry position whose landing produced the readable popup (the
+    last landed position when the whole plan was walked). ``clause`` is set on ``UNKNOWN`` and
+    names what the poll last saw; nothing is retried.
+
+    ``initial_cursor`` is the pointer's position read **before** this attempt moved anything,
+    and ``pre_move`` records the one move onto the derived approach park. ``entry`` is the
+    geometry and walk evidence: the derived park and plan, every landed position, the surface
+    read after each one, the position of the first flip, the plan's interval budget, the
+    checked bound that includes this attempt's own reads, and the **actual** elapsed time. It is
+    written from reads this attempt took, never inferred from the gesture.
     """
 
     outcome: PopupOutcome
@@ -261,6 +274,9 @@ class ChannelsOpen(ValueModel):
     reads: int = 0
     clause: str | None = None
     anchor: dict | None = None
+    initial_cursor: tuple[int, int] | None = None
+    pre_move: dict | None = None
+    entry: dict | None = None
 
 
 class ChannelsDismissal(ValueModel):
@@ -513,22 +529,41 @@ class ParametersSurface:
         timeout_s: float = 3.0,
         adopt_open: bool = True,
     ) -> ChannelsOpen:
-        """Open the ``Channels`` popup with **one** real-cursor hover on its measured anchor.
+        """Open the ``Channels`` popup with **one geometry-derived stepped entry**.
 
-        The anchor is :func:`…ui.menu.channels_anchor`'s binding and nothing else: the bar must
-        be the measured ten-entry one, every bound name must agree with it, and the entry must
-        state a measurable rect. When that cannot be shown the method refuses by name *before*
-        any cursor movement — never an ordinal fallback.
+        The entry is a column, never a hover recipe. The anchor is
+        :func:`…ui.menu.channels_anchor`'s binding and nothing else: the bar must be the measured
+        ten-entry one, every bound name must agree with it, and the entry must state a measurable
+        rect. When that cannot be shown the method refuses by name *before* any cursor movement —
+        never an ordinal fallback.
 
-        The popup is confirmed by the caller's own ``read_channels`` inside a bounded poll; the
-        answer is ``OPEN`` only when a read states a **readable** full settings surface or the
-        multiplexer-on clip, and ``UNKNOWN`` (with the last surface named) otherwise. Nothing is
-        retried. ``adopt_open`` accepts an already-readable popup as-is, so a probe can start
-        from an open screen without a hover and without an operator-supplied baseline.
+        The pointer is then taken to :func:`…ui.menu.approach_park`'s point — the anchor's own
+        centre column, one pixel below the whole menubar band's clearance — with one guarded
+        move, and the path from there into the anchor's centre is walked with the production
+        :func:`…ui.menu.stepped_path` planner and :meth:`_move_real_cursor_stepped` scheduler
+        (``ENTRY_STEP_PX`` per position, a read-back of every landing, the original binding and
+        the foreground window re-checked per step without activating anything). The entry is
+        taken **whenever the pre-open reading is ``ABSENT``**, whether or not the pointer already
+        lies on the anchor: the measured run entered the button on its fourth 4 px position and a
+        single warp to the same point opened nothing, so there is no conditional admission step
+        and no relative pointer nudge on this path.
 
-        **No restore.** The cursor is left on the anchor because the popup opens on hover, and
-        the dismissal that follows walks off that actual position. Restoring a saved position
-        while the popup is up would be a move onto the menubar or the popup.
+        The caller's own read is taken after the park and after every landed position. The walk
+        stops at the **first** position whose read is not ``ABSENT`` and never continues into the
+        band; a read that is not the Channels popup refuses by name (an unintended menu is not
+        "opened" and nothing is retried). A readable popup is ``OPEN``; a popup that has not
+        filled yet gets the bounded ``timeout_s`` poll in place, with no further movement.
+        ``adopt_open`` accepts an already-readable popup as-is, so a probe can start from an open
+        screen without a gesture.
+
+        **No restore.** The cursor is left on the entry's last position: restoring a saved
+        position while the popup is up would be a move onto the menubar or the popup.
+
+        ``ChannelsOpen`` carries this attempt's own evidence: the initial pointer, the park, the
+        derived plan, every landed position, the surface after each read, the first flip, the
+        plan's interval budget, the checked bound that includes the entry's own reads, and the
+        **actual** elapsed time. A refusal that happens after geometry was derived leaves the
+        same partial record on ``last_channels_entry`` before it raises.
         """
         from udv_echo_process.acquire.ui.channels import ChannelsSurface
 
@@ -551,7 +586,7 @@ class ParametersSurface:
             raise AcquisitionError(
                 "refusing to open: the popup reading is "
                 f"{first.surface.value!r}, neither 'absent' nor a readable Channels popup, so "
-                "there is nothing to open and nothing is hovered"
+                "there is nothing to open and nothing is stepped"
             )
         roles = self._resolve()
         if roles.get("window") != target.hwnd:
@@ -568,14 +603,63 @@ class ParametersSurface:
                 "no measured 'Channels' button in the menubar"
                 + (f": {clause}" if clause else "")
             )
-        point = self._hover_centre(
-            anchor.hwnd,
-            what="the measured 'Channels' menubar button",
-            why=(
-                "the Channels popup opens on a real-cursor hover of that measured anchor, and "
-                "nothing is posted to it"
-            ),
+        band = observation.menu.band
+        if band is None or band.rect is None:
+            raise AcquisitionError(
+                "refusing to open: the menubar band did not resolve with a rect on this tree, "
+                "so the bar the approach park must stay clear of is unstated; nothing is moved"
+            )
+        client = Rect(
+            left=observation.origin[0],
+            top=observation.origin[1],
+            right=observation.origin[0] + observation.client[0],
+            bottom=observation.origin[1] + observation.client[1],
         )
+        screen = self._screen_rect()
+        obstacles: list[Obstacle] = []
+        for index, node in enumerate(menubar_buttons(observation)):
+            if node.rect is None or node.hwnd == anchor.hwnd:
+                continue
+            name = (
+                MEASURED_BAR[index]
+                if index < len(MEASURED_BAR)
+                else f"menubar entry {index + 1}"
+            )
+            obstacles.append(Obstacle(name=name, rect=node.rect))
+        initial = self._cursor_position()
+        entry = entry_plan(
+            anchor=anchor.rect,
+            band=band.rect,
+            obstacles=obstacles,
+            client=client,
+            screen=screen,
+            step_px=ENTRY_STEP_PX,
+            max_seconds=MAX_PATH_SECONDS,
+        )
+        plan = entry.plan
+        steps = len(plan.points) if plan is not None else 0
+        entry_report: dict = {
+            "ok": entry.ok,
+            "park": entry.park.as_dict(),
+            "plan": plan.as_dict() if plan is not None else None,
+            "refusal": entry.refusal,
+            "initial_cursor": list(initial),
+            "positions_requested": steps,
+            "positions_landed": [],
+            "reads": 0,
+            "surfaces": [],
+            "first_flip": None,
+            "step_px": ENTRY_STEP_PX,
+            "reads_per_position": ENTRY_READS_PER_POSITION,
+            "read_allowance_s": ENTRY_READ_ALLOWANCE_S,
+            "interval_s": None if plan is None else round(plan.interval_s, 4),
+            "path_s": None if plan is None else plan.total_s,
+            "checked_bound_s": entry_checked_bound_s(
+                steps, max_seconds=MAX_PATH_SECONDS
+            ),
+            "elapsed_s": None,
+        }
+        self.last_channels_entry = entry_report
         anchor_report = {
             "name": "Channels",
             "ordinal": MEASURED_BAR.index("Channels"),
@@ -588,20 +672,142 @@ class ParametersSurface:
                 f"({anchor.rect.as_tuple()}); the bar's length and every bound name agree"
             ),
         }
-        deadline = time.monotonic() + max(0.0, timeout_s)
-        reads = 0
-        reading = first
-        while True:
+        if not entry.ok or plan is None:
+            raise AcquisitionError(
+                "refusing to open: the bounded stepped entry cannot be derived, and a larger "
+                f"step or a diagonal path is not substituted: {entry.refusal or 'no plan'}"
+            )
+        park = entry.park.point
+        assert park is not None
+        try:
+            self.verify_bound_target(target)
+            self._check_foreground(target.hwnd)
+            landed_park = self._move_real_cursor(
+                park,
+                what="the derived approach park below the measured 'Channels' anchor",
+                why=(
+                    "the entry is a vertical run into the anchor along its own centre column; "
+                    "this park is its start, and it is derived from the anchor, the menubar "
+                    "band, the client and the screen"
+                ),
+            )
+        except Exception as exc:
+            entry_report["error"] = f"{type(exc).__name__}: {exc}"
+            raise AcquisitionError(
+                "refusing to open: the one guarded move onto the derived approach park "
+                f"{park} did not land; the entry path is not started and nothing is retried: "
+                f"{exc}"
+            ) from exc
+        if tuple(landed_park) != tuple(park):
+            entry_report["error"] = (
+                f"the approach park {park} landed at {tuple(landed_park)}"
+            )
+            raise AcquisitionError(
+                f"refusing to open: the approach park {park} landed at {tuple(landed_park)}; "
+                "the entry path is not started and nothing is retried"
+            )
+        park_reading = read()
+        entry_report["reads"] += 1
+        entry_report["park"]["read_back"] = list(landed_park)
+        entry_report["park"]["confirmed_surface"] = park_reading.surface.value
+        pre_move = {
+            "from": list(initial),
+            "to": list(park),
+            "confirmed_surface": park_reading.surface.value,
+            "anchor_rect": anchor.rect.as_tuple(),
+            "band_rect": band.rect.as_tuple(),
+            "client_rect": client.as_tuple(),
+            "screen_rect": screen.as_tuple(),
+            "moves": 1,
+        }
+        entry_report["pre_move"] = pre_move
+        if park_reading.surface is not ChannelsSurface.ABSENT:
+            entry_report["error"] = (
+                f"the approach park read {park_reading.surface.value!r}"
+            )
+            raise AcquisitionError(
+                "refusing to enter: the derived approach park at "
+                f"{tuple(park)} (from {tuple(initial)}) produced "
+                f"{park_reading.surface.value!r}, not 'absent', so the pointer may be carrying "
+                "another menu or panel; nothing is stepped and nothing is retried"
+            )
+
+        flip: dict | None = None
+        reading = park_reading
+
+        def observe(point: tuple[int, int]) -> bool:
+            nonlocal flip, reading
             reading = read()
-            reads += 1
+            entry_report["reads"] += 1
+            entry_report["positions_landed"].append(list(point))
+            entry_report["surfaces"].append(reading.surface.value)
+            if reading.surface is ChannelsSurface.ABSENT:
+                return False
+            flip = {
+                "step": len(entry_report["positions_landed"]),
+                "of": steps,
+                "point": list(point),
+                "surface": reading.surface.value,
+            }
+            entry_report["first_flip"] = flip
+            return True
+
+        started = time.monotonic()
+        try:
+            landed = self._move_real_cursor_stepped(
+                plan,
+                what="the measured 'Channels' anchor, along the anchor's own column",
+                why=(
+                    "the Channels popup opens when the pointer *enters* the measured anchor; a "
+                    "bounded vertical stepped entry is the gesture this attempt makes, presses "
+                    "nothing and posts no message"
+                ),
+                guard=lambda: (
+                    self.verify_bound_target(target),
+                    self._check_foreground(target.hwnd),
+                ),
+                checked_bound_s=entry_report["checked_bound_s"],
+                observe=observe,
+            )
+        except Exception as exc:
+            entry_report["elapsed_s"] = round(time.monotonic() - started, 4)
+            entry_report["error"] = f"{type(exc).__name__}: {exc}"
+            raise AcquisitionError(
+                "the stepped entry stopped after "
+                f"{len(entry_report['positions_landed'])} of {steps} position(s) "
+                f"(surfaces {entry_report['surfaces']}, first flip "
+                f"{entry_report['first_flip']}); it is not retried: {exc}"
+            ) from exc
+        entry_report["elapsed_s"] = round(time.monotonic() - started, 4)
+        entry_report["positions_walked"] = len(landed)
+        point = (
+            tuple(entry_report["positions_landed"][-1])
+            if entry_report["positions_landed"]
+            else tuple(park)
+        )
+        if flip is not None and reading.surface not in accepted:
+            entry_report["error"] = (
+                f"an unintended surface {reading.surface.value!r} at step {flip['step']}"
+            )
+            raise AcquisitionError(
+                "refusing to open: the stepped entry produced "
+                f"{reading.surface.value!r} at {tuple(point)} (step {flip['step']} of "
+                f"{flip['of']}), not the Channels popup; another surface was entered and "
+                "nothing is retried — read the screen before re-running"
+            )
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        while True:
             if reading.surface in accepted and reading.readable:
                 return ChannelsOpen(
                     outcome=PopupOutcome.OPEN,
                     surface=reading.surface.value,
                     readable=True,
                     point=tuple(point),
-                    reads=reads,
+                    reads=entry_report["reads"],
                     anchor=anchor_report,
+                    initial_cursor=tuple(initial),
+                    pre_move=pre_move,
+                    entry=entry_report,
                 )
             if time.monotonic() >= deadline:
                 return ChannelsOpen(
@@ -609,16 +815,30 @@ class ParametersSurface:
                     surface=reading.surface.value,
                     readable=bool(reading.readable),
                     point=tuple(point),
-                    reads=reads,
+                    reads=entry_report["reads"],
                     anchor=anchor_report,
+                    initial_cursor=tuple(initial),
+                    pre_move=pre_move,
+                    entry=entry_report,
                     clause=(
-                        f"the hover on the measured 'Channels' anchor at {point} produced "
-                        f"{reading.surface.value!r} after {reads} read(s) within {timeout_s:.1f} s, "
-                        "not a readable Channels popup. This is UNKNOWN, not a failed gesture: "
-                        "nothing is retried and the screen has to be read before re-running"
+                        "the stepped entry from the pointer's starting position "
+                        f"{tuple(initial)} through the park {tuple(park)} landed "
+                        f"{len(entry_report['positions_landed'])} of {steps} position(s) "
+                        f"(surfaces {entry_report['surfaces']}, first flip "
+                        f"{entry_report['first_flip']}) and produced "
+                        f"{reading.surface.value!r} after {entry_report['reads']} read(s) "
+                        f"within {timeout_s:.1f} s, not a readable Channels popup. The plan's "
+                        f"interval budget is {entry_report['path_s']} s and the checked bound "
+                        f"{entry_report['checked_bound_s']} s included this attempt's own "
+                        f"reads; actual elapsed was {entry_report['elapsed_s']} s. This is "
+                        "UNKNOWN, not a failed gesture: nothing is retried and the screen has "
+                        "to be read before re-running"
                     ),
                 )
             time.sleep(_MENU_POLL_S)
+            reading = read()
+            entry_report["reads"] += 1
+            entry_report["surfaces"].append(reading.surface.value)
 
     def dismiss_channels_popup(
         self,

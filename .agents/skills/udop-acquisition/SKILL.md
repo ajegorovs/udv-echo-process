@@ -177,6 +177,17 @@ the derived off-point) was followed by an observed `ABSENT` on each of two paths
 readable between them. That is one build, one geometry and one sitting; it supports the
 path-versus-jump difference and does **not** establish the OS mechanism, and it is not
 production-live until the integrated opener has been run end to end.
+
+The **entry** has since been measured the same way (`channels-stepped-entry-live-03`, 2026-10-22):
+a popup in an `ABSENT` baseline is opened by one geometry-derived column — a park on the anchor's
+own centre column one pixel below the menubar band's clearance, then 4 px `SetCursorPos`
+positions up into the anchor, with the caller's read after every landing and a stop at the first
+non-`ABSENT`. The measured run first entered the button at step 4 `(561, 52)`; one warp to the
+same point opened nothing, and no `mouse_event` is posted. That entry is
+`ui.menu.approach_park` + `ui.menu.entry_plan` walked by
+`open_channels_popup` through `_move_real_cursor_stepped`; it is not a conditional park before a
+hover.
+
 The point has to be outside the popup **and** off the menubar, inside the client and the screen;
 derive it from the live rectangles (`ui.menu.dismissal_point`), never from a recorded literal. The
 close is a **bounded stepped path**: `ui.menu.stepped_path` derives every position from the actual

@@ -325,7 +325,7 @@ FLAT_CLASS_SURFACE = frozenset(
 #: re-read through the reader (the panel the reader attributes to ``use_only_channel``, at that
 #: cell's ordinal) rather than from ancestry or a ten-cell count, which the lower ``Use channels``
 #: tick row also satisfies. So no caller ever gets a press-any-handle facade. The class's own name
-#: set at this tip is 109, not 96
+#: set at this tip is 110, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "bind_target",

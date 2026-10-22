@@ -387,6 +387,7 @@ def _move_real_cursor_stepped(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     checked_bound_s: float | None = None,
+    observe: Callable[[tuple[int, int]], bool] | None = None,
     user32=_user32,
 ) -> tuple[tuple[int, int], ...]:
     """Walk a **derived** stepped path with consecutive real-cursor positions.
@@ -412,6 +413,11 @@ def _move_real_cursor_stepped(
     bound, not a hard OS deadline: a blocking ``SetCursorPos``/read-back/guard already in progress
     cannot be interrupted, so exceeding it stops the path *before the next step* and raises,
     naming the elapsed time, the planned interval budget and the steps completed.
+
+    ``observe`` is an optional **observer** called with each landed position after its read-back.
+    Returning true stops the path at that position and returns the positions landed so far; the
+    caller owns what was observed (a popup surface, a read failure) and this primitive owns only
+    the scheduling. It is never a second move and nothing beyond the plan is visited.
     """
     if not getattr(plan, "ok", False):
         raise _acquisition_error()(
@@ -463,6 +469,8 @@ def _move_real_cursor_stepped(
                 "visited"
             )
         landed.append(actual)
+        if observe is not None and observe(actual):
+            return tuple(landed)
         if index < len(points) and plan.interval_s > 0:
             sleep(plan.interval_s)
     return tuple(landed)

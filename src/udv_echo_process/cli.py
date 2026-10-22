@@ -44,6 +44,7 @@ from udv_echo_process.acquire import (
     live,
     mode_marks,
     mpx_artifact,
+    mpx_run,
     record_multiplexed,
     run_plan,
     set_rollover,
@@ -1478,8 +1479,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "channels-inspect",
         help=(
             "open, read (with capture evidence) and close the Channels popup with no operator "
-            "gesture: one measured hover on the proven anchor and one bounded stepped real-cursor "
-            "path, pressing no entry, enabling nothing and writing no parameter"
+            "gesture: one geometry-derived stepped entry into the proven anchor and one bounded "
+            "stepped real-cursor path, pressing no entry, enabling nothing and writing no "
+            "parameter"
         ),
     )
     channels_inspect_parser.add_argument(
@@ -2078,6 +2080,105 @@ def acquire_main(argv: list[str] | None = None) -> None:
     record_multiplexed_parser.add_argument("--store-dir", default=None)
     record_multiplexed_parser.add_argument("--json", action="store_true")
 
+    mpx_run_parser = subcommands.add_parser(
+        "mpx-run",
+        help=(
+            "one bounded multiplexed run: inspect the disabled screen, roll over ON when needed, "
+            "enable the multiplexer, record once, store and verify, then restore the baseline"
+        ),
+    )
+    mpx_run_parser.add_argument(
+        "name",
+        help="store file-name stem (collisions refused before the first gesture)",
+    )
+    mpx_run_parser.add_argument(
+        "--channel",
+        type=int,
+        nargs="+",
+        required=True,
+        help="the channels the multiplexer is configured for, as the operator states them",
+    )
+    mpx_run_parser.add_argument(
+        "--profiles",
+        type=int,
+        default=None,
+        help="the operator's stated TOTAL profiles per channel (legacy basis)",
+    )
+    mpx_run_parser.add_argument(
+        "--profiles-per-visit",
+        type=int,
+        default=None,
+        help="the operator's stated profile count for ONE visit; requires --repeats",
+    )
+    mpx_run_parser.add_argument(
+        "--repeats",
+        type=int,
+        default=None,
+        help="the operator's stated repeat count (never verified: no visit count is decoded)",
+    )
+    mpx_run_parser.add_argument(
+        "--channel-profiles",
+        nargs="+",
+        default=None,
+        metavar="CHANNEL=COUNT",
+        help="each channel's stated count for ONE visit, as CHANNEL=COUNT pairs",
+    )
+    mpx_run_parser.add_argument(
+        "--stated-by",
+        required=True,
+        help="who states the channel set and its profile counts",
+    )
+    mpx_run_parser.add_argument(
+        "--completion-timeout",
+        type=float,
+        required=True,
+        help="the caller's finite bound, in seconds, on the application's own completion",
+    )
+    mpx_run_parser.add_argument(
+        "--capture-root",
+        required=True,
+        help="an existing directory every child capture run is claimed under",
+    )
+    mpx_run_parser.add_argument(
+        "--record",
+        required=True,
+        help=(
+            "the parent obligation record (a file, or a directory that gets mpx-run-record.json "
+            "inside it); claimed exclusively and never overwritten"
+        ),
+    )
+    mpx_run_parser.add_argument(
+        "--baseline",
+        default="off",
+        choices=[state.value for state in set_rollover.Rolling],
+        help="the operator's declared baseline; this composition runs only from 'off'",
+    )
+    mpx_run_parser.add_argument(
+        "--no-restore-baseline",
+        dest="restore_baseline",
+        action="store_false",
+        help="leave rolling ON after the store and owe the restore instead of performing it",
+    )
+    mpx_run_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="the popup settle bound handed to each child (seconds, default 3)",
+    )
+    mpx_run_parser.add_argument(
+        "--boundary-seconds",
+        type=float,
+        default=None,
+        help="optional finite upper bound on each child's press boundary, for diagnosis only",
+    )
+    mpx_run_parser.add_argument(
+        "--statement",
+        default="",
+        help="the operator's own words, kept raw for the report",
+    )
+    mpx_run_parser.add_argument("--store-dir", default=None)
+    mpx_run_parser.add_argument("--json", action="store_true")
+
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
     )
@@ -2262,7 +2363,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                         print(f"udv-acquire: capture: {reason}", file=sys.stderr)
                     code = 3
         elif args.command == "channels-inspect":
-            # The managed lifecycle: one measured hover opens the popup (or an already-open one is
+            # The managed lifecycle: one geometry-derived stepped entry opens the popup (or an already-open one is
             # refused — this command never adopts an operator's popup), the read carries the same
             # capture evidence channels-read produces, and one bounded stepped path closes it. No
             # entry is pressed, nothing is enabled, recorded or written, and no other popup is
@@ -2853,6 +2954,96 @@ def acquire_main(argv: list[str] | None = None) -> None:
                             "stored once and is neither rewritten nor re-stored",
                             file=sys.stderr,
                         )
+        elif args.command == "mpx-run":
+            # One composed run: the parent validates every caller input and every path before a
+            # gesture, claims its record exclusively, then calls the existing children once each
+            # on one bound target. Post-gesture outcomes are reports (exit 1), never tracebacks;
+            # a refusal before any gesture reaches the shared handler below and exits 2.
+            try:
+                run_channel_profiles = (
+                    store_completed.parse_channel_profiles(args.channel_profiles)
+                    if args.channel_profiles is not None
+                    else None
+                )
+            except ValueError as exc:
+                run_refusals = (str(exc),)
+            else:
+                run_refusals = store_completed.block_declaration_clauses(
+                    tuple(args.channel),
+                    args.profiles,
+                    args.stated_by,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=run_channel_profiles,
+                )
+            if run_refusals:
+                print(
+                    f"udv-acquire: refused: {'; '.join(run_refusals)}",
+                    file=sys.stderr,
+                )
+                code = 2
+            else:
+                run_declaration = record_multiplexed.MultiplexedRecordingDeclaration(
+                    multiplexer_enabled=True,
+                    channels=tuple(args.channel),
+                    profiles_per_channel=args.profiles,
+                    profiles_per_visit=args.profiles_per_visit,
+                    sequence_repeats=args.repeats,
+                    channel_profiles=run_channel_profiles,
+                    stated_by=args.stated_by,
+                    statement=args.statement,
+                )
+                try:
+                    run_result = mpx_run.run_mpx_once(
+                        name=args.name,
+                        store_dir=_acquire_store_directory(args.store_dir),
+                        capture_root=args.capture_root,
+                        record=args.record,
+                        declaration=run_declaration,
+                        completion_timeout_s=args.completion_timeout,
+                        baseline=args.baseline,
+                        restore_baseline=args.restore_baseline,
+                        settle_s=args.settle,
+                        boundary_seconds=args.boundary_seconds,
+                        notes=notes,
+                    )
+                except driver.AcquisitionError:
+                    # Refusals are raised only before the first gesture; the shared handler
+                    # states them with exit 2.
+                    raise
+                except Exception as exc:  # noqa: BLE001 - a post-inspection failure is a report
+                    print(
+                        "udv-acquire: mpx-run raised after its baseline inspection: "
+                        f"{type(exc).__name__}: {exc}. The parent record is the obligation; no "
+                        "later gesture is retried and this is not a success",
+                        file=sys.stderr,
+                    )
+                    for note in notes:
+                        print(f"note: {note}", file=note_stream)
+                    code = 1
+                else:
+                    if as_json:
+                        _acquire_report(run_result, True)
+                    else:
+                        print(run_result.summary())
+                        for label, child in (
+                            ("inspection", run_result.inspection),
+                            ("rollover", run_result.rollover),
+                            ("enable", run_result.enable),
+                            ("record", run_result.record),
+                            ("post_save", run_result.post_save),
+                            ("restore", run_result.restore),
+                        ):
+                            if child is not None and hasattr(child, "summary"):
+                                print(f"  {label}: {child.summary()}")
+                    if not run_result.complete:
+                        print(
+                            f"udv-acquire: {run_result.stage.value}: {run_result.reason}",
+                            file=sys.stderr,
+                        )
+                        for clause in run_result.owed:
+                            print(f"udv-acquire: still owed: {clause}", file=sys.stderr)
+                        code = 1
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(
