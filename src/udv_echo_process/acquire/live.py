@@ -44,6 +44,7 @@ from udv_echo_process.acquire.verify import WordFacts, read_words
 
 __all__ = [
     "BRIDGE_RUNNER_ENV",
+    "actuator_for",
     "bridge_actuator",
     "bridge_dispatch",
     "decode",
@@ -105,6 +106,34 @@ def bridge_dispatch(runner_path: str | Path | None = None) -> BridgeDispatch | N
     spec.loader.exec_module(module)
     dispatch = getattr(module, "dispatch", None)
     return dispatch if callable(dispatch) else None
+
+
+def actuator_for(
+    route: str = "ui",
+    channel: int | None = None,
+    notes: list[str] | None = None,
+    *,
+    table_path: str | Path | None = None,
+    runner_path: str | Path | None = None,
+    target_digest: str | None = None,
+) -> Win32Actuator | BridgeActuator:
+    """The actuator a command should use: ``ui`` (the default) or ``bridge``.
+
+    One function so ``point``/``sweep`` and the CLI cannot disagree about what a route means, and an
+    unknown route is an error rather than a silent fall back to the GUI — a run that asked for the
+    bridge and silently got the UI route would record data the caller did not ask for.
+    """
+    if route == "ui":
+        return live_actuator(channel, notes)
+    if route == "bridge":
+        return bridge_actuator(
+            channel,
+            notes,
+            table_path=table_path,
+            runner_path=runner_path,
+            target_digest=target_digest,
+        )
+    raise ValueError(f"unknown route {route!r}: expected 'ui' or 'bridge'")
 
 
 def bridge_actuator(
@@ -210,6 +239,10 @@ def point(
     notes: list[str] | None = None,
     *,
     expected_mode: ProcessMode,
+    route: str = "ui",
+    table_path: str | Path | None = None,
+    runner_path: str | Path | None = None,
+    target_digest: str | None = None,
 ) -> tuple[bool, Path | str]:
     """One stored point: ``(True, path)`` or ``(False, reason)``.
 
@@ -221,9 +254,14 @@ def point(
     record path, and the process it was measured against is declared by the caller — never taken
     from whatever happens to be running. The caption is checked against it before the first press.
     """
-    return live_actuator(channel, notes).try_record_and_store(
-        name, seconds, store_dir, expected_mode=expected_mode
-    )
+    return actuator_for(
+        route,
+        channel,
+        notes,
+        table_path=table_path,
+        runner_path=runner_path,
+        target_digest=target_digest,
+    ).try_record_and_store(name, seconds, store_dir, expected_mode=expected_mode)
 
 
 def sweep(
@@ -236,6 +274,10 @@ def sweep(
     name_prefix: str = "sweep",
     log_path: Path | None = None,
     notes: list[str] | None = None,
+    route: str = "ui",
+    table_path: str | Path | None = None,
+    runner_path: str | Path | None = None,
+    target_digest: str | None = None,
     **measurement: float,
 ) -> tuple[PointOutcome, ...]:
     """A multi-point sweep through :class:`SweepRunner`, one JSONL entry per point.
@@ -251,7 +293,14 @@ def sweep(
     front is not the one the sweep was measured against.
     """
     values = {**DEFAULT_MEASUREMENT, **measurement}
-    actuator = live_actuator(channel, notes)
+    actuator = actuator_for(
+        route,
+        channel,
+        notes,
+        table_path=table_path,
+        runner_path=runner_path,
+        target_digest=target_digest,
+    )
     settings = RecordSettings(capture_dir=str(store_dir), name_prefix=name_prefix)
     runner = SweepRunner(
         actuator,

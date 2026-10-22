@@ -1336,6 +1336,32 @@ def acquire_main(argv: list[str] | None = None) -> None:
             help="measurement channel (default: the UDV_CHANNEL setting)",
         )
 
+    def route_arguments(target: argparse.ArgumentParser) -> None:
+        """``--route`` and where a bridge route finds its two machine-local halves.
+
+        The route defaults to ``ui`` so nothing changes for an existing caller, and it is a choice
+        rather than an inference: a run that asked for the bridge and silently got the GUI route would
+        record data the caller did not ask for.  The two paths are optional here and required by the
+        route itself — the actuator refuses by name when they are missing, which is the same refusal a
+        programmatic caller gets.
+        """
+        target.add_argument(
+            "--route",
+            choices=("ui", "bridge"),
+            default="ui",
+            help="which actuator performs the record/store cycle (default: ui)",
+        )
+        target.add_argument(
+            "--bridge-table",
+            default=None,
+            help="machine-local bridge operation table (default: UDV_BRIDGE_TABLE, else the table under LOCALAPPDATA)",
+        )
+        target.add_argument(
+            "--bridge-runner",
+            default=None,
+            help="machine-local bridge dispatch module (default: UDV_BRIDGE_RUNNER)",
+        )
+
     def expect_mode_argument(target: argparse.ArgumentParser) -> None:
         """``--expect-mode``: the process one of the **record** paths declares.
 
@@ -1394,6 +1420,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     expect_mode_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
+    route_arguments(point_parser)
 
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
@@ -1406,6 +1433,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     expect_mode_argument(sweep_parser)
     sweep_parser.add_argument("--store-dir", default=None)
     sweep_parser.add_argument("--name-prefix", default="sweep")
+    route_arguments(sweep_parser)
     sweep_parser.add_argument(
         "--log", default=None, help="JSONL log (default: <store-dir>/sweep.jsonl)"
     )
@@ -1604,6 +1632,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 args.channel,
                 notes,
                 expected_mode=ProcessMode(args.expect_mode),
+                route=args.route,
+                table_path=args.bridge_table,
+                runner_path=args.bridge_runner,
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
@@ -1618,6 +1649,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 name_prefix=args.name_prefix,
                 log_path=Path(args.log) if args.log else directory / "sweep.jsonl",
                 notes=notes,
+                route=args.route,
+                table_path=args.bridge_table,
+                runner_path=args.bridge_runner,
                 sound_speed_ms=args.sound_speed,
                 first_gate_mm=args.first_gate,
                 target_depth_mm=args.depth,
