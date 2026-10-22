@@ -40,6 +40,7 @@ from test_acquire_runner import (
     TINY_SIZE,
     FakeActuator,
     ScriptedVerifier,
+    WedgingActuator,
     definition_for,
     expected_snapshot,
     index_of,
@@ -50,7 +51,7 @@ from test_acquire_runner import (
 )
 
 from udv_echo_process.acquire import campaign, driver, live
-from udv_echo_process.acquire.actuator import ChannelMode, ProcessMode
+from udv_echo_process.acquire.actuator import ChannelMode, ParamRole, ProcessMode
 from udv_echo_process.acquire.config import ParameterSet, RecordSettings
 from udv_echo_process.acquire.log import (
     PointStatus,
@@ -2074,3 +2075,50 @@ def test_a_job_that_requests_emissions_hand_raises_it_to_the_stored_file_check(
     handed.clear()
     run_job(inherited)
     assert handed == [()]
+
+
+# ------------------------------------- 12. an abort is a stop, and the campaign puts the baseline back
+
+
+def test_an_aborted_run_restores_the_per_point_parameters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The gap the first multi-point run exposed, closed where it belongs.
+
+    An abort is a stop, not a rollback: the point that failed had already written its resolution and
+    gate count, and the runner reports where it left the instrument rather than writing on its own
+    failure path. The campaign owns the job's baseline, so the campaign restores it - once, in the
+    documented order, and with the result on the manifest.
+    """
+    job = campaign_job(tmp_path, monkeypatch)
+    before = {
+        role: job.fake.read_parameter(role) for role in (ParamRole.RESOLUTION, ParamRole.GATES)
+    }
+    # The strip wedges after the first healthy point, so point 1 runs and point 2 aborts.
+    wedged = WedgingActuator(job.directory, healthy=1)
+
+    manifest = campaign.run_campaign(
+        job.definition,
+        wedged,
+        store_dir=job.directory,
+        log_path=job.log_path,
+        expected_mode=ProcessMode.INSTRUMENT,
+    )
+
+    assert manifest.aborted is True
+    assert manifest.baseline_restore is not None, manifest.summary
+    assert manifest.baseline_restore.startswith("restored"), manifest.baseline_restore
+    writes = [call for call in wedged.calls if call[0] == "write_parameter"]
+    # The last two writes are the restore, resolution first - the application recomputes the gate
+    # count from the resolution, so the reverse order would restore a gate count it then overrides.
+    assert writes[-2][1:] == ("resolution_mm", before[ParamRole.RESOLUTION])
+    assert writes[-1][1:] == ("gates", before[ParamRole.GATES])
+
+
+def test_a_run_that_never_aborts_owes_no_restore(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = campaign_job(tmp_path, monkeypatch)
+    manifest = run_job(job)
+    assert manifest.aborted is False
+    assert manifest.baseline_restore is None
