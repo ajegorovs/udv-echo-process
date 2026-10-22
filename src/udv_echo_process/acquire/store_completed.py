@@ -76,6 +76,7 @@ from udv_echo_process.models.base import ValueModel
 
 __all__ = [
     "DIALOG_POLL_S",
+    "RESERVED_FILE_STEMS",
     "CompletedBlockDeclaration",
     "CompletedStoreResult",
     "ProfileCountBasis",
@@ -107,7 +108,7 @@ _DECIMAL = re.compile(r"[1-9][0-9]*")
 _NAME_FORBIDDEN = '\\/:*?"<>|'
 
 #: Windows device names a file may not be called — ``NUL`` is a sink, not a file to wait for.
-_RESERVED_NAMES = frozenset(
+RESERVED_FILE_STEMS = frozenset(
     {"con", "prn", "aux", "nul"}
     | {f"com{i}" for i in range(1, 10)}
     | {f"lpt{i}" for i in range(1, 10)}
@@ -697,7 +698,7 @@ def store_name_clause(name: str) -> str | None:
             "stores as 'auto-cycle-1.BDD'), so a suffixed name cannot be attributed to the file "
             "it produces"
         )
-    if name.casefold() in _RESERVED_NAMES:
+    if name.casefold() in RESERVED_FILE_STEMS:
         return (
             f"the store name {name!r} is a reserved Windows device name, not a file this "
             "command could wait for"

@@ -44,6 +44,7 @@ from udv_echo_process.acquire import (
     live,
     mode_marks,
     mpx_artifact,
+    mpx_batch,
     mpx_run,
     record_multiplexed,
     run_plan,
@@ -1407,9 +1408,20 @@ def acquire_main(argv: list[str] | None = None) -> None:
     operator reads the run-wide values from (the run transitions each job's burst itself at the
     boundary; the emissions per profile is the one the operator sets by hand) — and ``--status``
     reads the pass's own record to say which job is next. ``--next`` is the only action that
-    records: it hands the next job's definition to the campaign path unchanged, with its own log,
-    and folds the result into the pass's record. The one thing it adds is the cross-job order,
-    which no single definition can carry.
+     records: it hands the next job's definition to the campaign path unchanged, with its own log,
+     and folds the result into the pass's record. The one thing it adds is the cross-job order,
+     which no single definition can carry.
+
+     ``mpx-run`` is the composed multiplexed run: one binding, a pending parent record, the four
+     existing owners once each, and no retry. Its repeatable ``--also NAME=RECORD`` turns the same
+     invocation into a **finite batch** of explicitly ordered items under that one binding — the
+     shared declaration for every item, one distinct parent record per item, every name and path
+     proved before the first claim, and a strict gate (complete, the durable final record read
+     back through the owner's contract, restored baseline, disabled post-save mode, closed popup,
+     the same full target identity on every child, and a freshly re-verified artifact digest)
+     after every item including the last. Without ``--also`` the single run is unchanged. One
+     supervised two-item batch has run live; unattended cycling, larger batches and live
+     cancellation/failure recovery remain unverified. It keeps no resume ledger.
     """
     parser = argparse.ArgumentParser(
         prog="udv-acquire",
@@ -2084,7 +2096,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "mpx-run",
         help=(
             "one bounded multiplexed run: inspect the disabled screen, roll over ON when needed, "
-            "enable the multiplexer, record once, store and verify, then restore the baseline"
+            "enable the multiplexer, record once, store and verify, then restore the baseline. "
+            "Repeatable --also NAME=RECORD runs a finite batch of such runs under one binding"
         ),
     )
     mpx_run_parser.add_argument(
@@ -2144,7 +2157,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
         required=True,
         help=(
             "the parent obligation record (a file, or a directory that gets mpx-run-record.json "
-            "inside it); claimed exclusively and never overwritten"
+            "inside it); claimed exclusively and never overwritten — a batch passes one distinct "
+            "--record per run, since the file name is the caller's per-run identifier"
         ),
     )
     mpx_run_parser.add_argument(
@@ -2175,6 +2189,19 @@ def acquire_main(argv: list[str] | None = None) -> None:
         "--statement",
         default="",
         help="the operator's own words, kept raw for the report",
+    )
+    mpx_run_parser.add_argument(
+        "--also",
+        action="append",
+        default=None,
+        metavar="NAME=RECORD",
+        help=(
+            "adds one more bounded run to this invocation, in the order given: the literal "
+            "store name, one '=', then the literal parent-record path (the first '=' separates, "
+            "so a name containing '=' is not expressible here and no token is repaired). With "
+            "--also this command runs a finite batch under one binding, gated before each next "
+            "run; without it the single run below is unchanged"
+        ),
     )
     mpx_run_parser.add_argument("--store-dir", default=None)
     mpx_run_parser.add_argument("--json", action="store_true")
@@ -2994,56 +3021,123 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     statement=args.statement,
                 )
                 try:
-                    run_result = mpx_run.run_mpx_once(
-                        name=args.name,
-                        store_dir=_acquire_store_directory(args.store_dir),
-                        capture_root=args.capture_root,
-                        record=args.record,
-                        declaration=run_declaration,
-                        completion_timeout_s=args.completion_timeout,
-                        baseline=args.baseline,
-                        restore_baseline=args.restore_baseline,
-                        settle_s=args.settle,
-                        boundary_seconds=args.boundary_seconds,
-                        notes=notes,
-                    )
-                except driver.AcquisitionError:
-                    # Refusals are raised only before the first gesture; the shared handler
-                    # states them with exit 2.
-                    raise
-                except Exception as exc:  # noqa: BLE001 - a post-inspection failure is a report
-                    print(
-                        "udv-acquire: mpx-run raised after its baseline inspection: "
-                        f"{type(exc).__name__}: {exc}. The parent record is the obligation; no "
-                        "later gesture is retried and this is not a success",
-                        file=sys.stderr,
-                    )
-                    for note in notes:
-                        print(f"note: {note}", file=note_stream)
-                    code = 1
-                else:
-                    if as_json:
-                        _acquire_report(run_result, True)
-                    else:
-                        print(run_result.summary())
-                        for label, child in (
-                            ("inspection", run_result.inspection),
-                            ("rollover", run_result.rollover),
-                            ("enable", run_result.enable),
-                            ("record", run_result.record),
-                            ("post_save", run_result.post_save),
-                            ("restore", run_result.restore),
-                        ):
-                            if child is not None and hasattr(child, "summary"):
-                                print(f"  {label}: {child.summary()}")
-                    if not run_result.complete:
+                    batch_items = mpx_batch.parse_also(args.also) if args.also else ()
+                except ValueError as exc:
+                    # A malformed --also token is a usage refusal, stated once with exit 2 by
+                    # the shared handler; no name, path or token is repaired.
+                    raise driver.AcquisitionError(str(exc)) from exc
+                if batch_items:
+                    # A finite batch under one binding: the same declaration for every item, one
+                    # distinct --record per item, and a strict gate before each next run. The
+                    # report is compact references and key facts, never the nested full reports.
+                    try:
+                        batch_result = mpx_batch.run_mpx_batch(
+                            items=(
+                                mpx_batch.MpxBatchItem(
+                                    name=args.name, record=Path(args.record)
+                                ),
+                            )
+                            + batch_items,
+                            declaration=run_declaration,
+                            store_dir=_acquire_store_directory(args.store_dir),
+                            capture_root=args.capture_root,
+                            completion_timeout_s=args.completion_timeout,
+                            baseline=args.baseline,
+                            restore_baseline=args.restore_baseline,
+                            settle_s=args.settle,
+                            boundary_seconds=args.boundary_seconds,
+                            notes=notes,
+                        )
+                    except driver.AcquisitionError:
+                        # Refusals are raised only before the batch's one binding; the shared
+                        # handler states them with exit 2.
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - an unexpected failure is never a success
                         print(
-                            f"udv-acquire: {run_result.stage.value}: {run_result.reason}",
+                            "udv-acquire: mpx-batch raised unexpectedly after its pre-gesture "
+                            f"checks passed: {type(exc).__name__}: {exc}. The completed items' "
+                            "parent records are the obligations; nothing is retried and this is "
+                            "not a success",
                             file=sys.stderr,
                         )
-                        for clause in run_result.owed:
-                            print(f"udv-acquire: still owed: {clause}", file=sys.stderr)
+                        for note in notes:
+                            print(f"note: {note}", file=note_stream)
                         code = 1
+                    else:
+                        if as_json:
+                            _acquire_report(batch_result, True)
+                        else:
+                            print(batch_result.summary())
+                            for batch_run in batch_result.runs:
+                                print(f"  {batch_run.summary()}")
+                        if not batch_result.complete:
+                            print(
+                                f"udv-acquire: {batch_result.stage.value}"
+                                f" ({batch_result.stopped_kind}): {batch_result.reason}",
+                                file=sys.stderr,
+                            )
+                            for clause in batch_result.owed:
+                                print(
+                                    f"udv-acquire: still owed: {clause}",
+                                    file=sys.stderr,
+                                )
+                            code = 1
+                else:
+                    try:
+                        run_result = mpx_run.run_mpx_once(
+                            name=args.name,
+                            store_dir=_acquire_store_directory(args.store_dir),
+                            capture_root=args.capture_root,
+                            record=args.record,
+                            declaration=run_declaration,
+                            completion_timeout_s=args.completion_timeout,
+                            baseline=args.baseline,
+                            restore_baseline=args.restore_baseline,
+                            settle_s=args.settle,
+                            boundary_seconds=args.boundary_seconds,
+                            notes=notes,
+                        )
+                    except driver.AcquisitionError:
+                        # Refusals are raised only before the first gesture; the shared handler
+                        # states them with exit 2.
+                        raise
+                    except Exception as exc:  # noqa: BLE001 - an unexpected failure is never a success
+                        print(
+                            "udv-acquire: mpx-run raised unexpectedly after its pre-gesture checks "
+                            f"passed: {type(exc).__name__}: {exc}. The parent record (when one was "
+                            "claimed) is the obligation; nothing is retried and this is not a "
+                            "success",
+                            file=sys.stderr,
+                        )
+                        for note in notes:
+                            print(f"note: {note}", file=note_stream)
+                        code = 1
+                    else:
+                        if as_json:
+                            _acquire_report(run_result, True)
+                        else:
+                            print(run_result.summary())
+                            for label, child in (
+                                ("inspection", run_result.inspection),
+                                ("rollover", run_result.rollover),
+                                ("enable", run_result.enable),
+                                ("record", run_result.record),
+                                ("post_save", run_result.post_save),
+                                ("restore", run_result.restore),
+                            ):
+                                if child is not None and hasattr(child, "summary"):
+                                    print(f"  {label}: {child.summary()}")
+                        if not run_result.complete:
+                            print(
+                                f"udv-acquire: {run_result.stage.value}: {run_result.reason}",
+                                file=sys.stderr,
+                            )
+                            for clause in run_result.owed:
+                                print(
+                                    f"udv-acquire: still owed: {clause}",
+                                    file=sys.stderr,
+                                )
+                            code = 1
         elif args.command == "sweep":
             directory = _acquire_store_directory(args.store_dir)
             outcomes = live.sweep(

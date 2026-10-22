@@ -1485,12 +1485,29 @@ per invocation; nothing here restores automatically.
 
 ---
 
-### 12.16 Composition `acquire mpx-run`, 2026-10-22 — implemented, two live runs accepted
+### 12.16 Composition `acquire mpx-run`, 2026-10-22 — single runs and one supervised two-item batch accepted live
 
-**Status: implemented; two supervised composed runs accepted live (n = 2, separate invocations),
-the rest offline-only.**
-One command composes the four owners that already exist, and adds no gesture, no registry, no
-resume and no loop:
+**Finite-batch live acceptance (one supervised invocation).** Two explicitly named items
+completed automatically in caller order on one original target binding, without operator
+menu/setup actions between items. Both durable parent records were read back as `phase:
+after`, `stage: complete`, `owed: []`; both artifacts were independently rechecked after
+the batch as `consistent` / `partition-consistent`, each with channels 1/2 at 100 profiles,
+stored partitions 50+50 and 42 gates. Final captured mode was `VISUAL_DISABLED`, rolling
+`OFF_PROVEN`, popup closed. File stems: `mpx12-50profiles-batch-20261022-01a` and `01b`;
+SHA-256 respectively `f023a48b38abb8f22a5e039aec766d2e9b80af07011ea7dd86158f164aec349a`
+and `0f28e8288fb87c37a6083de1893752de1a7d3bf5af0e6679ffd3e30a48162c62`.
+Local, uncommitted evidence: `.hermes/scratch/multiplexer-development/mpx-batch-live-01.log`,
+`mpx-batch-live-01{a,b}-parent.json` and `mpx-batch-live-01/` capture/child-record tree.
+This extends the offline coverage below: it does not establish unattended reliability,
+larger batches, live cancellation/failure recovery or other builds/layouts.
+
+
+**Status: implemented; two supervised single runs and one supervised two-item `--also`
+batch accepted live (separate invocations, two items per batch). Other batch sizes, live
+cancellation and live failure recovery remain verified offline only.**
+One command composes the four owners that already exist, and adds no gesture, no registry and no
+resume. A single invocation is still one bounded run; the finite `--also` batch documented below
+is only a bounded loop over that same run, one item at a time:
 
 | Stage | Owner | What it owns here |
 |---|---|---|
@@ -1612,6 +1629,83 @@ post-save state, a failed final rewrite, a failed baseline restore). Those remai
 simulated-provider coverage in `tests/test_acquire_mpx_run.py`. The child stages' own live
 acceptance is §12.6–§12.15.
 
+**Finite batch `--also`: implemented and verified offline; supervised live acceptance pending.**
+The repeatable `--also NAME=RECORD` turns one `acquire mpx-run` invocation into a finite batch of
+explicitly ordered items. It is a thin loop over `run_mpx_once` (`acquire/mpx_batch.py`): no
+gesture is copied, no second implementation of a stage exists, and there is **no resume ledger,
+journal or retry**. It constructs the same real GUI-driving owners as the single run; it adds no
+arm flag, capability lock or second command. Without `--also` the single-run path above is
+byte-for-byte the same behaviour.
+
+- **Grammar.** The positional name plus `--record` are the first item; each `--also` appends one
+  more in the order given. Exactly one separator: the **first** `=` splits the literal store name
+  from the literal parent-record path, so a path may contain `=` and a *name* containing `=` is
+  not expressible through this flag. A token without `=`, or with an empty side, is refused with
+  exit 2; nothing is trimmed, case-folded or otherwise repaired.
+- **Preflight before the one binding.** Every name is judged by the store owner's own
+  `store_preflight` (safe stem, listable directory, case-folded collision); names must be
+  distinct case-folded. Record paths are compared as **identities**, not strings: a caller
+  component Windows would silently rewrite (trailing dot or space, reserved device stem, a
+  forbidden character) is refused with the exact input and never stripped or repaired; records
+  are distinct by the existing parent directory's volume/file identity plus the case-folded file
+  name, so hard links, short names and `..` aliases cannot hide a shared record. A record under
+  the capture root is refused (it would collide with the root or a `mpx-run-NNN` claim). A
+  record placed directly in the artifact store is refused when its **exact stem** is one of the
+  batch's store names, because the store owner attributes a new entry by that stem; a distinct
+  sidecar outside the store is the documented contract and no stem is reinterpreted. Every
+  record must not exist (`trial_record_file`, the owner's path rule); the capture root must
+  exist, be a directory, and its free `mpx-run-NNN` slots — the owner's own `CAPTURE_RUN_LIMIT`
+  (1000), counted by the exact names its claim loop tries, never by a glob, and read with a real
+  `stat` so an unreadable root is UNKNOWN rather than empty — must cover the item count. The
+  shared declaration, the literal `off` baseline (an unrecognised literal is an
+  `AcquisitionError`, not a leaked `ValueError`), the strict bool restore flag and every finite
+  bound are validated in the same step. There is no arbitrary item cap: the bound is the
+  explicit item sequence plus the capture owner's own limit. All refusals are raised together,
+  before any window is bound, any record claimed or any popup opened.
+- **One binding for the whole batch.** The batch enumerates once, binds once through
+  `bind_once`, and hands that record to every `run_mpx_once`, which verifies it and never binds.
+  Each run must report the **same full `WindowTarget`** — not just the same `hwnd`.
+- **A strict gate before each next item and after the last, never a stage-only success.** The
+  completed run must state `complete`, no owed clause, a restored `off` baseline,
+  `VISUAL_DISABLED` sourced from `post_save_capture` (or the `pre_restore_capture` an accepted
+  restore child's own read bounds), rolling `OFF_PROVEN`, a post-save popup observed closed, and
+  its own, its rollover/enable/record/restore children's and its record's `bound_target` equal to
+  the batch binding in full. It must also have a **final durable parent record** that the gate
+  reads back from disk through the owner's `MpxFinalRecord` contract and compares field by field
+  with the in-memory result: phase `after` (the documented mapping from memory's `final`),
+  command `mpx-run`, name, store directory, declaration, original full binding, capture root,
+  stored path, artifact-consistent flag and the baseline fields. A pending, missing, unreadable,
+  differently-phased or malformed record is a gate refusal before any next item. A stored path
+  must be a file now, and the gate re-runs `verify_mpx_artifact` against the same declaration and
+  requires a consistent verdict **and** the digest that run reported — a run's old result is
+  never trusted across the boundary. The same gate runs after the **final** item, so `COMPLETE`
+  means every item's boundary was proved, including the last; a failing clause stops the batch
+  with no further item started, claimed or pressed.
+- **Interruption is an explicit result, not a retry.** A `KeyboardInterrupt` (a cancelled run)
+  stops the loop and the batch returns `INTERRUPTED`, preserving the completed runs' summaries:
+  raised inside a run, that run cannot promise cleanup or a durable partial, so its outcome is
+  reported `UNKNOWN` and its parent-record path is named as possibly pending; raised between
+  runs (during any gate) no next item is started and no record is claimed. `SystemExit` is not
+  cancellation and is allowed to propagate. No result is fabricated for the interrupted item
+  and no second `Record` is pressed.
+- **A compact report.** `--json` prints the batch result: per item its record path, capture
+  root, stage, stored path, gate verdict and digest, post-save mode/rolling state, closed flag,
+  baseline and owed clauses — references and key facts only. The children's full nested reports
+  are not duplicated into the batch payload; they remain on disk in each run's own records.
+- **Exit codes.** A preflight or grammar refusal before the binding exits 2; a stopped (failed
+  run or failed gate) or interrupted batch exits 1 with the stopping clause and what is owed.
+
+**Live acceptance, and what it does not establish.** One supervised two-item batch has run on the
+instrument (2026-10-22, `mpx-batch-live-01`): both items stored and verified, both durable records
+read back at `phase: after` with nothing owed, final state `VISUAL_DISABLED` + `OFF_PROVEN` and the
+popup closed. Offline coverage is `tests/test_acquire_mpx_batch.py`, which calls the **production**
+`run_mpx_once` with the owners' seams scripted and the real `verify_mpx_artifact` on a real `.BDD`
+fixture. **Not established:** unattended or back-to-back cycling, batches other than two items, live
+cancellation, live failure recovery, and — recorded specifically against §12.13 — the three
+preconditions that section named before any batch could be justified: disable during active
+acquisition, popup/gesture timing, and relay settling between blocks. The two live items were run
+without measuring those, so this is an accepted risk of the sitting, not a cleared precondition.
+
 ```bash
 uv run udv-acquire acquire mpx-run RUN-NAME \
   --channel 1 2 --profiles 50 --stated-by operator \
@@ -1624,6 +1718,17 @@ uv run udv-acquire acquire mpx-run RUN-NAME-02 \
   --channel 1 2 --profiles 50 --stated-by operator \
   --completion-timeout 120 --capture-root outputs/live/mpx-run \
   --record outputs/live/mpx-run/run-record-02.json --store-dir outputs/live/store
+
+# A finite batch in one invocation (verified offline; supervised live acceptance pending): the
+# positional name/--record pair is the first item, then each --also in order. One binding, one
+# gate before each next item and after the last, one distinct record per item; records live
+# outside the capture root and the store directory, and the first '=' separates name from path.
+uv run udv-acquire acquire mpx-run BATCH-ITEM-01 \
+  --channel 1 2 --profiles 50 --stated-by operator \
+  --completion-timeout 120 --capture-root outputs/live/mpx-run \
+  --record outputs/live/mpx-batch/01.json --store-dir outputs/live/store \
+  --also "BATCH-ITEM-02=outputs/live/mpx-batch/02.json" \
+  --also "BATCH-ITEM-03=outputs/live/mpx-batch/03.json"
 ```
 
 ---

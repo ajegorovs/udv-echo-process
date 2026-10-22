@@ -56,6 +56,7 @@ from udv_echo_process.acquire.udop.parameters import (
     PopupOutcome,
 )
 from udv_echo_process.acquire.ui.channels import ChannelsRead, ChannelsSurface
+from udv_echo_process.cli import acquire_main
 
 # ---------------------------------------------------------------------------------------------
 # fixtures the composition can be handed like the real owners
@@ -78,6 +79,7 @@ def capture(
     integrity: str = "capture-digest-verified",
     agreed: bool = True,
     recognition: str = "EXACT_TEMPLATE_MATCH",
+    surface: str = "SETTINGS_FULL",
 ) -> CaptureEvidence:
     guard = WindowGuard(label="UDOP", hwnd=hwnd, popup_hwnd=popup_hwnd)
     return CaptureEvidence(
@@ -87,7 +89,7 @@ def capture(
         guards=GuardComparison(before=guard, after=guard.model_copy(), consistent=True),
         numeric=NumericBracketing(consistent=True),
         visual_mode_mark=ModeMarkAttribution(
-            surface="SETTINGS_FULL",
+            surface=surface,
             label="ENABLE_MULTIPLEXER",
             mode=mode,
             mark="GREEN_CHECK" if mode == "VISUAL_ENABLED" else "RED_CROSS",
@@ -129,8 +131,17 @@ def inspection(
 
 
 def rollover_result(
-    *, post_rolling: str = "ON_PROVEN", settled: bool = True
+    *,
+    post_rolling: str = "ON_PROVEN",
+    settled: bool = True,
+    popup_closure: PopupClosure | None = None,
 ) -> SetRolloverResult:
+    """A child report; ``popup_closure=None`` states *no* closure, which is not "settled"."""
+    closure = (
+        popup_closure
+        if popup_closure is not None
+        else (PopupClosure.OWNED_CLOSED if settled else PopupClosure.OWNED_LEFT_OPEN)
+    )
     return SetRolloverResult(
         stage=SetRolloverStage.PRESSED,
         requested=Rolling.ON,
@@ -138,9 +149,7 @@ def rollover_result(
         baseline=Rolling.OFF,
         bound_target=target(),
         post_rolling=post_rolling,
-        popup_closure=(
-            PopupClosure.OWNED_CLOSED if settled else PopupClosure.OWNED_LEFT_OPEN
-        ),
+        popup_closure=closure,
         presses=1,
         press="attempted",
     )
@@ -284,6 +293,8 @@ class Harness:
         self.close_outcome = DismissalOutcome.ABSENT
         self.close_error: BaseException | None = None
         self.close_calls = 0
+        #: Overrides for the parent's own clipped-entry pair (retained/torn/wrong-hwnd cases).
+        self.clipped_capture: dict[str, object] = {}
         self.inspect_error: BaseException | None = None
         self.child_record_paths: dict[str, Path] = {}
         self.current_record = self.record
@@ -316,9 +327,21 @@ class Harness:
 
     def read_popup(self, *args: object, **kwargs: object) -> SimpleNamespace:
         surface = self.reads.pop(0) if self.reads else "absent"
-        return SimpleNamespace(
+        read = SimpleNamespace(
             surface=ChannelsSurface(surface), readable=surface != "absent"
         )
+        directory = kwargs.get("capture_dir")
+        if directory is not None:
+            # The parent's own clipped pair: a fresh live-bracketed pair on the original
+            # binding, in the directory the parent named for it.
+            read.capture = capture(
+                "ON_PROVEN",
+                "VISUAL_ENABLED",
+                directory=str(Path(str(directory)) / "capture-001"),
+                surface="MULTIPLEXER_ON_ENTRY",
+                **self.clipped_capture,
+            )
+        return read
 
     def close_popup(self, **kwargs: object) -> ChannelsDismissal:
         self.calls.append("dismiss")
@@ -452,6 +475,29 @@ def test_one_binding_is_verified_and_never_rebound(tmp_path: Path) -> None:
     assert len(h.seen_bound) == 3
     assert all(item == h.actuator.bound_hwnd for item in [b.hwnd for b in h.seen_bound])
     assert all(b is result.bound_target for b in h.seen_bound)
+
+
+def test_a_handed_bound_target_is_verified_and_never_bound(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    handed = target(4242)
+    result = h.run(bound_target=handed)
+
+    assert result.stage is MpxRunStage.COMPLETE
+    assert [c[0] for c in h.actuator.calls] == ["verify_bound_target"]
+    assert result.bound_target == handed
+    assert all(item == handed for item in h.seen_bound)
+
+
+def test_a_handed_bound_target_that_is_not_the_enumerated_window_is_refused(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path)
+    with pytest.raises(AcquisitionError) as caught:
+        h.run(bound_target=target(7777))
+
+    assert "target changed" in str(caught.value)
+    assert h.actuator.calls == []
+    assert h.calls == []
 
 
 def test_children_still_bind_when_no_record_is_handed_over() -> None:
@@ -952,3 +998,239 @@ def test_a_shared_child_record_path_is_a_refusal_and_never_an_overwrite(
 
     assert "refusing to overwrite" in str(caught.value)
     assert shared.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------------------------
+# the caller's flag is a bool, and the parent's own pairs license its own decisions
+# ---------------------------------------------------------------------------------------------
+
+
+def test_a_non_bool_restore_flag_is_refused_before_any_gesture(tmp_path: Path) -> None:
+    """``"no"`` is truthy; Pydantic would report it as ``False`` while the run restored."""
+    h = Harness(tmp_path)
+    with pytest.raises(AcquisitionError) as caught:
+        h.run(restore_baseline="no")
+    assert "restore_baseline must be a bool" in str(caught.value)
+    assert "nothing was inspected or pressed" in str(caught.value)
+    assert h.calls == []
+    assert not h.record.exists()
+    assert list(h.captures.iterdir()) == []
+
+
+@pytest.mark.parametrize(
+    "capture_overrides",
+    [
+        {
+            "context": "retained",
+            "freshness": "not_established",
+            "integrity": "decoded-pair-only",
+        },
+        {"agreed": False},
+        {"hwnd": 7777},
+    ],
+    ids=["retained", "torn", "wrong-hwnd"],
+)
+def test_the_baseline_mode_never_rests_on_a_pair_this_run_does_not_own(
+    tmp_path: Path, capture_overrides: dict[str, object]
+) -> None:
+    h = Harness(tmp_path)
+    h.baseline = inspection(**capture_overrides)
+    result = h.run()
+
+    assert result.stage is MpxRunStage.INSPECTION_REFUSED
+    assert h.calls == ["inspect:baseline"]
+    assert not h.record.exists()
+    assert "licensed pair" in result.reason
+
+
+@pytest.mark.parametrize(
+    "capture_overrides",
+    [
+        {
+            "context": "retained",
+            "freshness": "not_established",
+            "integrity": "decoded-pair-only",
+        },
+        {"agreed": False},
+        {"hwnd": 7777},
+    ],
+    ids=["retained", "torn", "wrong-hwnd"],
+)
+def test_the_parent_never_dismisses_the_clipped_entry_on_another_pairs_word(
+    tmp_path: Path, capture_overrides: dict[str, object]
+) -> None:
+    """The Enable child's literals are its own; the parent's fresh pair must license the press."""
+    h = Harness(tmp_path)
+    h.clipped_capture = dict(capture_overrides)
+    result = h.run()
+
+    assert result.stage is MpxRunStage.POPUP_LEFT_OPEN
+    assert h.close_calls == 0
+    assert h.record_calls == 0
+    assert "licensed pair" in result.reason
+
+
+def test_a_child_that_states_no_popup_closure_prevents_enable_and_record(
+    tmp_path: Path,
+) -> None:
+    """``None`` is *unknown*, not settled: the run must not continue on it."""
+    h = Harness(tmp_path)
+    h.rollovers = [
+        rollover_result(post_rolling="ON_PROVEN").model_copy(
+            update={"popup_closure": None}
+        )
+    ]
+    result = h.run()
+
+    assert result.stage is MpxRunStage.ROLLOVER_FAILED
+    assert h.calls == ["inspect:baseline", "rollover:on"]
+    assert h.record_calls == 0
+    assert "closure None" in result.reason
+
+
+def test_the_durable_record_states_each_rolling_fact_with_its_source(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path)
+    result = h.run()
+
+    assert result.stage is MpxRunStage.COMPLETE
+    durable = json.loads(h.record.read_text("utf-8"))
+    assert durable["rolling_before"] == "OFF_PROVEN"
+    assert durable["rolling_before_source"] == "baseline_capture"
+    assert durable["rolling_at_enable"] == "ON_PROVEN"
+    assert durable["rolling_at_enable_source"] == "rollover_child_post_read"
+    assert durable["rolling_after"] == "OFF_PROVEN"
+    assert durable["rolling_after_source"] == "post_save_capture"
+    assert durable["baseline_restored"] is True
+    assert durable["baseline_restored_source"] == "post_save_capture"
+    assert durable["post_mode"] == "VISUAL_ENABLED"
+    assert durable["post_mode_source"] == "parent_clipped_capture"
+
+
+def test_a_post_save_that_could_not_be_read_preserves_the_prior_facts(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path)
+    h.inspect_error = RuntimeError("capture backend down")
+    result = h.run()
+
+    assert result.stage is MpxRunStage.POST_SAVE_UNKNOWN
+    durable = json.loads(h.record.read_text("utf-8"))
+    # The prior observed fact is preserved with its own source, and nothing is restored.
+    assert durable["rolling_after"] == "ON_PROVEN"
+    assert durable["rolling_after_source"] == "rollover_child_post_read"
+    assert durable["baseline_restored"] is False
+    assert durable["baseline_restored_source"] == ""
+    assert durable["rolling_at_enable_source"] == "rollover_child_post_read"
+
+
+def test_the_restore_childs_own_read_is_the_stated_after_fact(tmp_path: Path) -> None:
+    h = Harness(tmp_path)
+    h.post_save = inspection(mode="VISUAL_DISABLED", rolling="ON_PROVEN")
+    h.rollovers = [rollover_result(), rollover_result(post_rolling="OFF_PROVEN")]
+    result = h.run()
+
+    assert result.stage is MpxRunStage.COMPLETE
+    durable = json.loads(h.record.read_text("utf-8"))
+    assert durable["rolling_after"] == "OFF_PROVEN"
+    assert durable["rolling_after_source"] == "restore_child_post_read"
+    assert durable["baseline_restored"] is True
+    assert durable["baseline_restored_source"] == "restore_child_post_read"
+    # No third inspection is taken, and the record says so rather than implying a fresh mode.
+    assert durable["post_save_mode_source"] == "pre_restore_capture"
+    assert "inspect:post" in h.calls and h.calls.count("inspect:post") == 1
+
+
+def test_a_restore_that_is_not_proved_never_claims_the_baseline_was_restored(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path)
+    h.post_save = inspection(mode="VISUAL_DISABLED", rolling="ON_PROVEN")
+    h.rollovers = [rollover_result(), rollover_result(post_rolling="UNKNOWN")]
+    result = h.run()
+
+    assert result.stage is MpxRunStage.RESTORATION_FAILED
+    durable = json.loads(h.record.read_text("utf-8"))
+    assert durable["baseline_restored"] is False
+    assert durable["rolling_after"] == "UNKNOWN"
+    assert durable["rolling_after_source"] == "restore_child_post_read"
+
+
+def test_an_unknown_enable_read_never_invents_a_current_rolling_state(
+    tmp_path: Path,
+) -> None:
+    h = Harness(tmp_path)
+    h.baseline = inspection(rolling="ON_PROVEN")
+    h.enable_result = enable_result().model_copy(
+        update={"post_rolling": "UNKNOWN", "post_capture_kind": "clipped_entry"}
+    )
+    h.post_save = inspection(mode="VISUAL_DISABLED", rolling="OFF_PROVEN")
+    result = h.run()
+
+    assert result.stage is MpxRunStage.COMPLETE
+    # The known fact is the *baseline capture's*, not a fresh claim about the Enable moment.
+    assert result.rolling_at_enable == "ON_PROVEN"
+    assert result.rolling_at_enable_source == "baseline_capture"
+    assert any("states no rollover mark" in note for note in result.notes)
+
+
+def test_a_capture_root_that_cannot_be_created_is_a_pre_gesture_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    h = Harness(tmp_path)
+
+    def deny(*args: object, **kwargs: object) -> None:
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(Path, "mkdir", deny)
+    with pytest.raises(AcquisitionError) as caught:
+        h.run()
+
+    message = str(caught.value)
+    assert "PermissionError" in message
+    assert "nothing was inspected or pressed" in message
+    assert h.calls == []
+    assert not h.record.exists()
+
+
+def test_the_cli_reports_a_denied_capture_directory_as_a_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    store = tmp_path / "store"
+    store.mkdir()
+    captures = tmp_path / "captures"
+    captures.mkdir()
+
+    def deny(*args: object, **kwargs: object) -> None:
+        raise PermissionError(13, "Access is denied")
+
+    monkeypatch.setattr(Path, "mkdir", deny)
+    with pytest.raises(SystemExit) as caught:
+        acquire_main(
+            [
+                "mpx-run",
+                "run",
+                "--channel",
+                "1",
+                "2",
+                "--profiles",
+                "10",
+                "--stated-by",
+                "operator",
+                "--completion-timeout",
+                "30",
+                "--capture-root",
+                str(captures),
+                "--record",
+                str(tmp_path / "parent.json"),
+                "--store-dir",
+                str(store),
+            ]
+        )
+
+    assert caught.value.code == 2
+    err = capsys.readouterr().err
+    assert "could not be claimed" in err
+    assert "nothing was inspected or pressed" in err
+    assert "after its baseline inspection" not in err
