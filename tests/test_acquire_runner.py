@@ -1603,6 +1603,12 @@ def test_a_point_that_will_not_come_back_startable_stops_the_run(
     note = getattr(runner_module, "ABORT_NOTE", None)
     assert note and note in (outcomes[-1].reason or ""), outcomes[-1].reason
 
+    # An abort is a stop, not a rollback: the reason says where the instrument was left, read and not
+    # written, because the parameters a point wrote are still in force when the circuit breaker opens.
+    reason = outcomes[-1].reason or ""
+    assert "left at" in reason, reason
+    assert "resolution_mm=" in reason and "gates=" in reason, reason
+
     # Points 3 and 4 were never attempted: no window applied, no store cycle, no
     # third name, no second file.
     assert fake.applied_count == 1, fake.calls

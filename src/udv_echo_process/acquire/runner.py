@@ -1029,6 +1029,22 @@ class SweepRunner:
                 f"({type(exc).__name__}: {exc})"
             )
 
+    def _left_at(self) -> str | None:
+        """What the two parameters this runner writes now state, for an abort's reason.
+
+        A point writes the resolution and the gate count, and an abort does **not** put them back: the
+        circuit breaker is a stop, not a rollback.  So the reason says where the instrument was left —
+        read, never written, because writing on the failure path is the one moment state cannot be
+        verified.  A reading that fails is reported as such and never replaces the failure it describes.
+        """
+        try:
+            return ", ".join(
+                f"{role.value}={self._actuator.read_parameter(role)}"
+                for role in (ParamRole.RESOLUTION, ParamRole.GATES)
+            )
+        except Exception as exc:  # noqa: BLE001 — the reason must survive a broken reading
+            return f"unreadable ({type(exc).__name__}: {exc})"
+
     def _fail(
         self,
         attempt: _Attempt,
@@ -1045,7 +1061,12 @@ class SweepRunner:
         flag, because the reason is the only part of an abort that the log keeps.
         """
         attempt.status = status or PointStatus.FAILED
-        attempt.reason = f"{reason}; {ABORT_NOTE}" if abort else reason
+        if abort:
+            left = self._left_at()
+            note = ABORT_NOTE if not left else f"{ABORT_NOTE}; left at {left}"
+            attempt.reason = f"{reason}; {note}"
+        else:
+            attempt.reason = reason
         attempt.aborted = abort
         return attempt
 
