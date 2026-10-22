@@ -107,12 +107,19 @@ acquire: plan/definition → (Windows-only driver) → stored .BDD + JSONL job l
   messages, so a gesture, a geometry or a painted caption can only be *verified*
   on a machine that runs that application. Everything else about it — planning,
   the cycle, verification, the log — runs and is tested anywhere.
-- `acquire channels-read --capture-dir DIR` is the one picture-taking command in
-  the package: it crops the operator-opened `Channels` popup's own rect out of two
-  guarded frames into `DIR/capture-NNN/` as lossless PNG, brackets every numeric
-  amount across the capture, and reports the caption as `UNKNOWN` because no
-  recognition runs. A capture that cannot be attributed exits 3, an unreadable
-  popup exits 2, and neither is evidence about mode, ticks or setup.
+- `acquire channels-read --capture-dir DIR` takes pictures of an **operator-opened**
+  popup: it crops the `Channels` popup's own rect out of two guarded frames into
+  `DIR/capture-NNN/` as lossless PNG, brackets every numeric amount across the
+  capture, and reports the caption as `UNKNOWN` because no recognition runs. A
+  capture that cannot be attributed exits 3, an unreadable popup exits 2, and
+  neither is evidence about mode, ticks or setup.
+- `acquire channels-inspect --capture-dir DIR` runs the same capture around a
+  popup it manages itself: one measured `Channels` hover to open (refusing an
+  already-open popup rather than adopting it), the capture read, then one bounded
+  stepped real-cursor path to close. It presses no entry, enables nothing and
+  writes no parameter; `0` requires an observed close, and the read/capture and
+  the close are separate fields of one report. It needs real input and a
+  foreground window, so it is a foreground, attended-session command.
 - `acquire mpx-check FILE.BDD --channel … --profiles …` is the offline artifact
   check: it compares the exact decoded channel set and the stored profile count per
   channel with the operator's completed-block declaration, reports typed

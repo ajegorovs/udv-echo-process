@@ -165,26 +165,43 @@ a click (posted *or* injected) sent after that moment *closes* the menu
 it just opened, which is why every click-based attempt failed and why the one menu that did open did
 so with the operator's cursor already over the button. Once open, its **entries take ordinary posted
 clicks**, which performs the action *and* consumes the popup: that is the whole recipe for menu-driven
-setup, with no cursor hijack. Nothing else dismisses a popup — moving the cursor away, clicking the
-button again, clicking the plot, and `ESC` (posted or real) and a posted `WM_CANCELMODE` all leave it on
-screen (measured: the posted `WM_CANCELMODE` leaves it up too), and opening a different menu merely
-replaces it. **Escape closes nothing here, and a hover-opened popup cannot be dismissed
-programmatically: the only clean exit is a *press*, which selects an entry and closes the popup.** So
-menus are the one place that should not be in a per-point loop. **If a popup is open when a run
-resumes, stop and raise the failure; do not try to close it.** **A gesture that opens a popup owns its
-cleanup in a `finally`.** A probe that dies between the hover and the cursor restore — an exception
-anywhere in the read it was doing — leaves that popup on the desktop with nothing able to close it
-programmatically, and every run afterwards refuses with "a menu popup is already open"; the operator has
-to clear it by hand. Restore in a `finally`, then **re-read the popup state on the failing exit** and
+setup, with no cursor hijack. What the archive's behavioural probe (`recon/35`) actually establishes
+is the **opening** gesture and that an **entry press consumes the popup** — it carries no generic
+close, so a move-off dismissal is a *candidate*, not a recovered measurement. A posted click
+outside, a click on the menubar button again, a click on the plot, `ESC` (posted or real) and a
+posted `WM_CANCELMODE` all leave it on screen, and opening a different menu merely replaces it;
+one deliberate warp off the popup has also been tried live and still read `settings_popup` while
+the operator's physical move closed it. **One live prototype then settled the path-versus-jump
+difference for this geometry:** a bounded stepped path (13 positions of <= 40 px from the anchor to
+the derived off-point) was followed by an observed `ABSENT` on each of two paths, with the reopen
+readable between them. That is one build, one geometry and one sitting; it supports the
+path-versus-jump difference and does **not** establish the OS mechanism, and it is not
+production-live until the integrated opener has been run end to end.
+The point has to be outside the popup **and** off the menubar, inside the client and the screen;
+derive it from the live rectangles (`ui.menu.dismissal_point`), never from a recorded literal. The
+close is a **bounded stepped path**: `ui.menu.stepped_path` derives every position from the actual
+cursor position (<= 40 px each, inside the client ∩ screen, never through another menubar entry) and
+`_move_real_cursor_stepped` walks it with a `SetCursorPos` per step and a read-back of each landing,
+then `dismiss_channels_popup` polls for ABSENT — no second path, no widened step, no restore of the
+operator's saved position while the popup is up (a restore can land back on it), and no posted
+message. **Escape closes nothing here.** A hover-opened popup is therefore *not* stranded by
+design: the real-cursor move is the one attempt a run makes, and `WM_CLOSE` remains the thing that
+must never be sent — it wedges the modal loop. **If a popup is open when a run resumes and that move
+does not produce an observed ABSENT, stop and raise the failure.** **A gesture that opens a popup owns its
+cleanup in a `finally`.** A probe that dies between the hover and its dismissal move — an exception
+anywhere in the read it was doing — leaves that popup on the desktop; the operator's hint is the
+same bounded stepped path off it (`dismiss_channels_popup`), not a message, and not a single warp. Restore the cursor in a
+`finally` (that restore itself moves the pointer off the popup, which may dismiss it — do not rely
+on it unless the popup is re-read), then **re-read the popup state on the failing exit** and
 report that the application is unverified plus the operator/restart remedy; an attempted entry press and
 a restored cursor are not proof that the popup was consumed, and this diagnostic must never replace the
 original failure if its own read errors. When a probe has to leave the application as it found it, say
 what it found and what it left in its own output: a state the operator has to fix by hand must never be
 discovered by them. **The policy for one that has already stranded the application is the
 operator's restart:** abort the run, mark the application's state unverified, and require the operator —
-no automatic restart, no speculative menu press, no silent continuation — because nothing in Win32 closes
-it (measured: `ESC`, moving the cursor off, moving past the last entry and a posted `WM_CANCELMODE` all
-failed; plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
+no automatic restart, no speculative menu press, no silent continuation — when the real-cursor move
+has not produced an observed ABSENT (posted `ESC`, a posted click and `WM_CANCELMODE` all leave it up;
+plan §9.3). `WM_CLOSE` to a popup panel destroys the popup window while the app is
 still inside its modal menu loop, and from then on *no* menu opens by any means — posted clicks,
 real clicks, real `ESC`, a click outside, `Alt` — until the app is restarted; the rest of the app
 keeps working, so a liveness check will not catch it. Dialog panels are different: they own a

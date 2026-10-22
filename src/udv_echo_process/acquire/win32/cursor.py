@@ -73,12 +73,14 @@ __all__ = [
     "_ClipRect",
     "_CursorPoint",
     "_activate_window",
+    "_check_foreground",
     "_clip_rect",
     "_cursor_position",
     "_foreground_window",
     "_gui",
     "_hover_centre",
     "_move_real_cursor",
+    "_move_real_cursor_stepped",
     "_owner_of",
     "_release_clip",
     "_require_foreground",
@@ -371,6 +373,101 @@ def _move_real_cursor(
     )
 
 
+def _move_real_cursor_stepped(
+    plan,
+    *,
+    what: str,
+    why: str,
+    note: Callable[[str], None],
+    inside: Callable[[tuple[int, int, int, int], tuple[int, int]], bool],
+    clip: Callable[..., tuple[int, int, int, int] | None],
+    release: Callable[..., bool],
+    read_position: Callable[..., tuple[int, int]],
+    guard: Callable[[], None] = lambda: None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    checked_bound_s: float | None = None,
+    user32=_user32,
+) -> tuple[tuple[int, int], ...]:
+    """Walk a **derived** stepped path with consecutive real-cursor positions.
+
+    This is the reusable primitive behind the live prototype: the caller owns the plan's
+    geometry (:func:`~udv_echo_process.acquire.ui.menu.stepped_path`) and this function owns
+    the scheduling — one bare ``SetCursorPos`` per position, the plan's own interval between
+    them, and a read-back of every landing. It is deliberately **not** a change to
+    :func:`_move_real_cursor`: the single-warp move keeps its settle and its clip rules for
+    every existing caller, and the two gestures stay distinguishable.
+
+    Failure is closed. A plan that is not ``ok`` is refused before anything moves; a landing
+    that does not read back exactly stops the path at that step (a clip or another window took
+    the move) and raises the facade's own error, naming the step, the requested point, the
+    landing and any clip still up. Nothing is retried, no ``mouse_event`` nudge is sent, no
+    point beyond the plan is visited, and the cursor is left where the path left it.
+
+    ``guard`` runs before **every** move, so the caller can re-assert the original binding and
+    the foreground precondition per step without this layer knowing either concept. The guard
+    must be a *pure check*: this primitive never activates a window mid-path.
+
+    ``checked_bound_s`` is compared against ``clock()`` elapsed before every move. It is a checked
+    bound, not a hard OS deadline: a blocking ``SetCursorPos``/read-back/guard already in progress
+    cannot be interrupted, so exceeding it stops the path *before the next step* and raises,
+    naming the elapsed time, the planned interval budget and the steps completed.
+    """
+    if not getattr(plan, "ok", False):
+        raise _acquisition_error()(
+            f"refusing to walk a path that was not derived: {getattr(plan, 'refusal', None) or 'no plan points'}"
+        )
+    points = tuple((int(x), int(y)) for x, y in plan.points)
+    if not points:
+        raise _acquisition_error()(
+            f"refusing to walk an empty path onto {what}: a stepped path carries at least one position"
+        )
+    u32 = user32()
+    clip_now = clip()
+    if clip_now is not None and any(not inside(clip_now, point) for point in points):
+        note(
+            f"the cursor is clipped to {clip_now} (this application clips it on its popups) and "
+            f"the stepped path to {what} leaves that rectangle; released the clip with "
+            "ClipCursor(NULL) so no step is clamped to the popup's edge"
+        )
+        release()
+    landed: list[tuple[int, int]] = []
+    started = clock()
+    for index, target in enumerate(points, start=1):
+        guard()
+        if checked_bound_s is not None:
+            elapsed = clock() - started
+            if elapsed > checked_bound_s:
+                raise _acquisition_error()(
+                    f"stopped before step {index} of {len(points)} of the real-cursor path onto "
+                    f"{what}: {elapsed:.3f} s elapsed against the {checked_bound_s:.3f} s checked "
+                    f"bound (planned interval budget {getattr(plan, 'total_s', 0.0):.3f} s over "
+                    f"{len(points)} position(s)); {len(landed)} step(s) were completed. No OS "
+                    "call is preemptible, so this is a checked bound rather than a hard "
+                    f"deadline — the path stops here, is not retried, and no remaining position "
+                    f"is visited — {why}"
+                )
+        u32.SetCursorPos(target[0], target[1])
+        actual = tuple(read_position())
+        if actual != target:
+            still_clipped = clip()
+            raise _acquisition_error()(
+                f"step {index} of {len(points)} of the real-cursor path onto {what} requested "
+                f"{target} and the cursor read back {actual}"
+                + (
+                    f": the cursor is clipped to {still_clipped}"
+                    if still_clipped is not None
+                    else ": no cursor clip is set, so a locked or unattended desktop refused the move"
+                )
+                + f" — {why}. The path stops here, is not retried, and no remaining position is "
+                "visited"
+            )
+        landed.append(actual)
+        if index < len(points) and plan.interval_s > 0:
+            sleep(plan.interval_s)
+    return tuple(landed)
+
+
 def _foreground_window(*, user32=_user32) -> int:
     """The foreground window's handle — the menubar hover's **precondition**.
 
@@ -478,6 +575,31 @@ def _require_foreground(
         "hovering into a window that cannot answer. Bring the application to the front "
         "— and stop anything that steals it, such as a console window opened by the "
         "launcher — then re-run"
+    )
+
+
+def _check_foreground(
+    hwnd: int,
+    class_name: str,
+    *,
+    foreground: Callable[[], int],
+) -> None:
+    """Assert the application is already the foreground window, **without activating it**.
+
+    This is the per-step precondition for a walked path. :func:`_require_foreground` may call
+    ``SetForegroundWindow`` and wait up to :data:`_FOREGROUND_WAIT_S`; doing that between two
+    cursor positions would take the operator's focus mid-path and turn a bounded path into a
+    blocking one. A path therefore only *checks* the foreground window each step and refuses by
+    name if it changed — the activation belongs to the open/close decision, before any move.
+    """
+    front = foreground()
+    if front == hwnd:
+        return
+    raise _acquisition_error()(
+        f"the {class_name} window is no longer the foreground window, so the stepped cursor path "
+        f"cannot be continued: the foreground window is {front:#x}. This check never activates a "
+        "window mid-path — bring the application to the front before re-running; the path stops "
+        "here and is not retried"
     )
 
 

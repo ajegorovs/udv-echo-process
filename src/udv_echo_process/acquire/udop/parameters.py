@@ -32,6 +32,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable, Mapping, Sequence
+from enum import Enum
+from typing import TYPE_CHECKING
 
 from udv_echo_process.acquire.actuator import (
     DIALOG_FIELD_ORDER,
@@ -70,9 +72,18 @@ from udv_echo_process.acquire.ui.layout import (
     panel_mode,
 )
 from udv_echo_process.acquire.ui.menu import (
+    MAX_PATH_SECONDS,
+    MAX_STEP_PX,
+    MEASURED_BAR,
     PARAMETERS_ENTRY,
     PARAMETERS_MENU,
+    Obstacle,
     anchor_clause,
+    channels_anchor,
+    channels_anchor_clause,
+    menubar_buttons,
+    path_checked_bound_s,
+    stepped_path,
 )
 from udv_echo_process.acquire.ui.menu import (
     PARAMETERS_POPUP_LEFT as _OVERLAY_LEFT,
@@ -80,8 +91,23 @@ from udv_echo_process.acquire.ui.menu import (
 from udv_echo_process.acquire.ui.menu import (
     PARAMETERS_POPUP_MIN_H as _OVERLAY_MIN_H,
 )
+from udv_echo_process.acquire.ui.menu import (
+    _bounds as _menu_bounds,
+)
+from udv_echo_process.acquire.ui.menu import (
+    dismissal_clause as _dismissal_clause,
+)
+from udv_echo_process.acquire.ui.menu import (
+    dismissal_point as _dismissal_point,
+)
 from udv_echo_process.acquire.ui.menu import entry_buttons as _entry_buttons
 from udv_echo_process.acquire.ui.menu import observation_text as _observation_text
+from udv_echo_process.acquire.ui.model import Rect
+from udv_echo_process.models.base import ValueModel
+
+if TYPE_CHECKING:
+    from udv_echo_process.acquire.actuator import WindowTarget
+    from udv_echo_process.acquire.ui.channels import ChannelsRead
 
 # --------------------------------------------------------------- the dialog's own timings
 
@@ -165,7 +191,9 @@ def _descendants(roles: Mapping, root: int) -> list[dict]:
     return out
 
 
-def parameters_overlay(panels: Mapping[int, dict], visible: Callable[[int], bool]) -> dict | None:
+def parameters_overlay(
+    panels: Mapping[int, dict], visible: Callable[[int], bool]
+) -> dict | None:
     """The ``Parameters`` popup a panel map states, by the reference's own recorded rectangle.
 
     ``recon/41_burst_sampling_volume.py`` read the live popup at ``left == 169`` with ``h > 120``,
@@ -192,6 +220,70 @@ def parameters_overlay(panels: Mapping[int, dict], visible: Callable[[int], bool
         key=lambda panel: panel["top"],
     )
     return found[0] if found else None
+
+
+class DismissalOutcome(str, Enum):
+    """What one dismissal move established — never a claim that the popup is gone.
+
+    ``ABSENT`` is the only outcome a caller may act on (the one probe re-hover is licensed by it).
+    ``UNKNOWN`` is the typed answer for a read that still reports a popup, or for a poll that ran
+    out: a visibility flag that keeps saying "visible" is *unconfirmed*, never retried, and never
+    reported as a dismissal that worked.
+    """
+
+    ABSENT = "absent"
+    UNKNOWN = "unknown"
+
+
+class PopupOutcome(str, Enum):
+    """What one popup lifecycle step established — never a claim beyond what was observed."""
+
+    OPEN = "open"
+    ABSENT = "absent"
+    UNKNOWN = "unknown"
+
+
+class ChannelsOpen(ValueModel):
+    """The evidence of one ``Channels`` popup open: an adopted popup, a hover that opened one
+    and was read back, or the typed ``UNKNOWN`` of a bounded poll that saw neither.
+
+    ``adopted`` is true only when the caller's own reading was already the readable popup, so a
+    probe can start from an open screen without a second hover and without an operator baseline.
+    ``point`` is the measured anchor's hovered screen point (``None`` when adopted). ``clause``
+    is set on ``UNKNOWN`` and names what the poll last saw; nothing is retried.
+    """
+
+    outcome: PopupOutcome
+    surface: str
+    readable: bool
+    adopted: bool = False
+    point: tuple[int, int] | None = None
+    reads: int = 0
+    clause: str | None = None
+    anchor: dict | None = None
+
+
+class ChannelsDismissal(ValueModel):
+    """The evidence of one real-cursor dismissal attempt, and nothing it did not establish.
+
+    ``point`` is the geometry-derived screen point the cursor was moved to; ``reads`` counts the
+    reads the bounded poll took after the move. ``cursor_restored`` is ``False`` by construction:
+    restoring the saved position while the popup is up is itself a move that can land back on the
+    popup or the menubar, so this primitive deliberately leaves the cursor at the dismissal point.
+    """
+
+    outcome: DismissalOutcome
+    point: tuple[int, int] | None
+    surface_before: str
+    surface_after: str
+    reads: int = 0
+    clause: str | None = None
+    cursor_restored: bool = False
+    steps: int = 0
+    interval_s: float = 0.0
+    path_s: float = 0.0
+    elapsed_s: float = 0.0
+    checked_bound_s: float | None = None
 
 
 class ParametersSurface:
@@ -386,18 +478,24 @@ class ParametersSurface:
                 # written from the key alone would name a stranded menu — and hand the operator a
                 # restart — for a warning they clear with ``Continue``. When that panel is not up,
                 # the panel that is gets named for what it is: not this menu.
-                overlay = parameters_overlay(self._panel_map(still_up), self._is_visible)
+                overlay = parameters_overlay(
+                    self._panel_map(still_up), self._is_visible
+                )
                 if overlay is not None:
                     rect = tuple(overlay["rect"])
                     self._note(
                         f"a {PARAMETERS_MENU!r} popup is still open at {rect[:2]} "
-                        f"(rect {rect}): the attempt failed with it up, and putting the operator's "
-                        "cursor back does not dismiss it — this driver never WM_CLOSEs a popup "
-                        "(that wedges the application's modal menu loop until it is restarted, "
-                        "after which no menu opens by any means) and presses nothing into an open "
-                        "menu to recover, so the application's state is unverified. An operator "
-                        "has to clear the popup, or the application has to be restarted, before "
-                        "this point is retried"
+                        f"(rect {rect}): the attempt failed with it up, and the cursor restore "
+                        "above moved the operator's pointer off the popup, which is the gesture "
+                        "this driver aims at a dismissal (the archive's recon/35 establishes the "
+                        "hover-opened popup and an entry press consuming it, not a generic close) "
+                        "— but this read still reports it, so that dismissal is UNCONFIRMED. This "
+                        "driver "
+                        "never WM_CLOSEs a popup (that wedges the application's modal menu loop "
+                        "until it is restarted, after which no menu opens by any means) and "
+                        "presses nothing into an open menu to recover, so the application's "
+                        "state is unverified. An operator has to clear the popup, or the "
+                        "application has to be restarted, before this point is retried"
                     )
                 else:
                     self._note(
@@ -406,6 +504,323 @@ class ParametersSurface:
                         "so this driver names no other surface and presses nothing into one — "
                         "read the screen before retrying"
                     )
+
+    def open_channels_popup(
+        self,
+        *,
+        target: WindowTarget,
+        read: Callable[[], ChannelsRead],
+        timeout_s: float = 3.0,
+        adopt_open: bool = True,
+    ) -> ChannelsOpen:
+        """Open the ``Channels`` popup with **one** real-cursor hover on its measured anchor.
+
+        The anchor is :func:`…ui.menu.channels_anchor`'s binding and nothing else: the bar must
+        be the measured ten-entry one, every bound name must agree with it, and the entry must
+        state a measurable rect. When that cannot be shown the method refuses by name *before*
+        any cursor movement — never an ordinal fallback.
+
+        The popup is confirmed by the caller's own ``read_channels`` inside a bounded poll; the
+        answer is ``OPEN`` only when a read states a **readable** full settings surface or the
+        multiplexer-on clip, and ``UNKNOWN`` (with the last surface named) otherwise. Nothing is
+        retried. ``adopt_open`` accepts an already-readable popup as-is, so a probe can start
+        from an open screen without a hover and without an operator-supplied baseline.
+
+        **No restore.** The cursor is left on the anchor because the popup opens on hover, and
+        the dismissal that follows walks off that actual position. Restoring a saved position
+        while the popup is up would be a move onto the menubar or the popup.
+        """
+        from udv_echo_process.acquire.ui.channels import ChannelsSurface
+
+        accepted = (
+            ChannelsSurface.SETTINGS_POPUP,
+            ChannelsSurface.MULTIPLEXER_ON_ENTRY,
+        )
+        self.verify_bound_target(target)
+        self._require_foreground(target.hwnd)
+        first = read()
+        if adopt_open and first.surface in accepted and first.readable:
+            return ChannelsOpen(
+                outcome=PopupOutcome.OPEN,
+                surface=first.surface.value,
+                readable=True,
+                adopted=True,
+                reads=1,
+            )
+        if first.surface is not ChannelsSurface.ABSENT:
+            raise AcquisitionError(
+                "refusing to open: the popup reading is "
+                f"{first.surface.value!r}, neither 'absent' nor a readable Channels popup, so "
+                "there is nothing to open and nothing is hovered"
+            )
+        roles = self._resolve()
+        if roles.get("window") != target.hwnd:
+            raise AcquisitionError(
+                "refusing to open: the resolved root "
+                f"{roles.get('window')!r} is not the run's bound target {target.hwnd!r}, so a "
+                "cursor move would be taken against a different window and nothing is moved"
+            )
+        observation = observation_of(roles)
+        clause = channels_anchor_clause(observation)
+        anchor = None if clause is not None else channels_anchor(observation)
+        if clause is not None or anchor is None:
+            raise AcquisitionError(
+                "no measured 'Channels' button in the menubar"
+                + (f": {clause}" if clause else "")
+            )
+        point = self._hover_centre(
+            anchor.hwnd,
+            what="the measured 'Channels' menubar button",
+            why=(
+                "the Channels popup opens on a real-cursor hover of that measured anchor, and "
+                "nothing is posted to it"
+            ),
+        )
+        anchor_report = {
+            "name": "Channels",
+            "ordinal": MEASURED_BAR.index("Channels"),
+            "hwnd": anchor.hwnd,
+            "rect": anchor.rect.as_tuple(),
+            "evidence": (
+                "'Channels' is entry "
+                f"{MEASURED_BAR.index('Channels') + 1} of the measured {len(MEASURED_BAR)}-entry "
+                f"bar (UI-WINDOW-01), at screen left {anchor.rect.left} "
+                f"({anchor.rect.as_tuple()}); the bar's length and every bound name agree"
+            ),
+        }
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        reads = 0
+        reading = first
+        while True:
+            reading = read()
+            reads += 1
+            if reading.surface in accepted and reading.readable:
+                return ChannelsOpen(
+                    outcome=PopupOutcome.OPEN,
+                    surface=reading.surface.value,
+                    readable=True,
+                    point=tuple(point),
+                    reads=reads,
+                    anchor=anchor_report,
+                )
+            if time.monotonic() >= deadline:
+                return ChannelsOpen(
+                    outcome=PopupOutcome.UNKNOWN,
+                    surface=reading.surface.value,
+                    readable=bool(reading.readable),
+                    point=tuple(point),
+                    reads=reads,
+                    anchor=anchor_report,
+                    clause=(
+                        f"the hover on the measured 'Channels' anchor at {point} produced "
+                        f"{reading.surface.value!r} after {reads} read(s) within {timeout_s:.1f} s, "
+                        "not a readable Channels popup. This is UNKNOWN, not a failed gesture: "
+                        "nothing is retried and the screen has to be read before re-running"
+                    ),
+                )
+            time.sleep(_MENU_POLL_S)
+
+    def dismiss_channels_popup(
+        self,
+        *,
+        target: WindowTarget,
+        read: Callable[[], ChannelsRead],
+        timeout_s: float = 3.0,
+    ) -> ChannelsDismissal:
+        """Dismiss an already-open ``Channels`` popup with **one bounded stepped path** off it.
+
+        **The evidence, stated as it stands.** Two audits of the archive's behavioural probe
+        (``recon/35_capture_probe.py``) agree that the popup **opens on a hover** and an **entry
+        press consumes it**; neither establishes a generic close. One live prototype
+        (``channels-stepped-path-live-01``) then walked 13 positions of <= 40 px from the anchor
+        to the derived off-point and observed ``ABSENT`` at the end of each of two paths, where an
+        earlier single warp to the same point had stayed up. That supports the path-versus-jump
+        difference for this geometry; it does not establish the OS mechanism and it is not
+        production-live until the integrated opener is run. So this method reports ``ABSENT``
+        only on an observed ``ABSENT`` read and ``UNKNOWN`` otherwise.
+
+        **The point is geometry, never a literal.** :func:`…ui.menu.dismissal_point` derives it from
+        the live popup panel, the menubar band, the bound window's client rect and the virtual
+        screen: outside the popup and the bar, inside both bounds. A screen with no such pixel is
+        refused with the rectangles named, before anything moves.
+
+        **Guards, in order:** the run's original binding is verified (never rebound); the bound root
+        must be the foreground window (an inactive window does not answer hover either); and the
+        caller's reading must be an attributable ``Channels`` popup — the full settings surface or
+        the multiplexer-on clipped entry — so a warning, a dialog or an already-absent screen is
+        never "dismissed". The client rect comes from the same resolve the read used, and the popup
+        rect from the reading's own action reference.
+
+        **A stepped path, and no restore.** :func:`…ui.menu.stepped_path` derives the positions
+        from the **actual** cursor position to the owning off-point (<= :data:`…ui.menu.MAX_STEP_PX`
+        each, <= :data:`…ui.menu.MAX_STEPS`, inside the client ∩ screen, never through another
+        menubar entry) and :meth:`_move_real_cursor_stepped` walks them: one bare
+        ``SetCursorPos`` per position with the plan's interval, a read-back of every landing, and
+        the production clip release first. A plan that is refused is a refusal, not a widened
+        step. This method does **not** save and restore the operator's cursor: while the popup is
+        up, restoring the saved point can put the pointer back on the popup or the menubar and
+        keep or reopen the hover. The cursor is left at the path's last point.
+
+        **Bounded poll, no retry, no message.** The post-path reads are the caller's own
+        ``read_channels``; when they never report ``ABSENT`` within ``timeout_s`` the answer is the
+        typed :attr:`DismissalOutcome.UNKNOWN` with the last surface named. There is **no second
+        path** and no widened step. Nothing posts a click, ``WM_CLOSE`` or ``ESC``, nothing presses
+        an entry, and the binding and foreground window are re-asserted before every step.
+        """
+        from udv_echo_process.acquire.ui.channels import ChannelsSurface
+
+        accepted = (
+            ChannelsSurface.SETTINGS_POPUP,
+            ChannelsSurface.MULTIPLEXER_ON_ENTRY,
+        )
+        self.verify_bound_target(target)
+        self._require_foreground(target.hwnd)
+        reading = read()
+        surface_before = reading.surface
+        if surface_before not in accepted:
+            raise AcquisitionError(
+                "refusing to dismiss: the popup reading is "
+                f"{surface_before.value!r}, not the full 'settings_popup' or the clipped "
+                "'multiplexer_on_entry' surface, so there is no Channels popup to move off and "
+                "nothing is moved"
+            )
+        popup = reading.popup
+        if popup is None or popup.rect is None:
+            raise AcquisitionError(
+                "refusing to dismiss: the popup reading states no popup panel rect, so the "
+                "rectangle a dismissal move must leave is unstated and nothing is moved"
+            )
+        roles = self._resolve()
+        if roles.get("window") != target.hwnd:
+            raise AcquisitionError(
+                "refusing to dismiss: the resolved root "
+                f"{roles.get('window')!r} is not the run's bound target {target.hwnd!r}, so a "
+                "cursor move would be taken against a different window and nothing is moved"
+            )
+        observation = observation_of(roles)
+        band = observation.menu.band
+        if band is None or band.rect is None:
+            raise AcquisitionError(
+                "refusing to dismiss: the menubar band did not resolve with a rect on this tree, "
+                "so the bar whose hover owns the popup cannot be excluded from the move and "
+                "nothing is moved"
+            )
+        client = Rect(
+            left=observation.origin[0],
+            top=observation.origin[1],
+            right=observation.origin[0] + observation.client[0],
+            bottom=observation.origin[1] + observation.client[1],
+        )
+        screen = self._screen_rect()
+        bounds = _menu_bounds(client, screen)
+        if bounds is None:
+            raise AcquisitionError(
+                _dismissal_clause(
+                    popup=popup.rect, band=band.rect, client=client, screen=screen
+                )
+                or "no point to move the cursor to for dismissing the popup; nothing is moved"
+            )
+        point = _dismissal_point(
+            popup=popup.rect, band=band.rect, client=client, screen=screen
+        )
+        if point is None:
+            raise AcquisitionError(
+                _dismissal_clause(
+                    popup=popup.rect, band=band.rect, client=client, screen=screen
+                )
+                or "no point to move the cursor to for dismissing the popup; nothing is moved"
+            )
+        clause = channels_anchor_clause(observation)
+        anchor = None if clause is not None else channels_anchor(observation)
+        if clause is not None or anchor is None:
+            raise AcquisitionError(
+                "refusing to dismiss: the measured 'Channels' anchor that owns this popup cannot "
+                "be proven, so the other menubar entries a path must avoid cannot be named"
+                + (f": {clause}" if clause else "")
+            )
+        obstacles: list[Obstacle] = []
+        for index, node in enumerate(menubar_buttons(observation)):
+            if node.rect is None or node.hwnd == anchor.hwnd:
+                continue
+            name = (
+                MEASURED_BAR[index]
+                if index < len(MEASURED_BAR)
+                else f"menubar entry {index + 1}"
+            )
+            obstacles.append(Obstacle(name=name, rect=node.rect))
+        plan = stepped_path(
+            start=self._cursor_position(),
+            goal=point,
+            bounds=bounds,
+            obstacles=obstacles,
+            step_px=MAX_STEP_PX,
+            max_seconds=MAX_PATH_SECONDS,
+        )
+        if not plan.ok:
+            raise AcquisitionError(
+                "refusing to dismiss: the bounded stepped path cannot be derived, and a larger "
+                f"step or a second path is not substituted: {plan.refusal}"
+            )
+        self.last_dismissal_point = point
+        checked_bound = path_checked_bound_s(
+            len(plan.points), max_seconds=MAX_PATH_SECONDS
+        )
+        walked_at = time.monotonic()
+        self._move_real_cursor_stepped(
+            plan,
+            what="the point off the Channels popup",
+            why=(
+                "a bounded stepped real-cursor path off the popup is the one candidate dismissal "
+                "this method tests; the close itself is only claimed on an observed ABSENT read"
+            ),
+            guard=lambda: (
+                self.verify_bound_target(target),
+                self._check_foreground(target.hwnd),
+            ),
+            checked_bound_s=checked_bound,
+        )
+        elapsed = time.monotonic() - walked_at
+        deadline = time.monotonic() + max(0.0, timeout_s)
+        reads = 0
+        after = reading
+        while True:
+            after = read()
+            reads += 1
+            if after.surface is ChannelsSurface.ABSENT:
+                return ChannelsDismissal(
+                    outcome=DismissalOutcome.ABSENT,
+                    point=point,
+                    surface_before=surface_before.value,
+                    surface_after=after.surface.value,
+                    reads=reads,
+                    steps=len(plan.points),
+                    interval_s=plan.interval_s,
+                    path_s=plan.total_s,
+                    elapsed_s=round(elapsed, 4),
+                    checked_bound_s=checked_bound,
+                )
+            if time.monotonic() >= deadline:
+                return ChannelsDismissal(
+                    outcome=DismissalOutcome.UNKNOWN,
+                    point=point,
+                    surface_before=surface_before.value,
+                    surface_after=after.surface.value,
+                    reads=reads,
+                    steps=len(plan.points),
+                    interval_s=plan.interval_s,
+                    path_s=plan.total_s,
+                    elapsed_s=round(elapsed, 4),
+                    checked_bound_s=checked_bound,
+                    clause=(
+                        "the popup reading still reports "
+                        f"{after.surface.value!r} after one bounded stepped path of "
+                        f"{len(plan.points)} position(s) ending at {point} and {reads} read(s) "
+                        f"within {timeout_s:.1f} s. This is UNKNOWN, not a dismissal: no second "
+                        "path is walked, no message is posted and no entry is pressed — read the "
+                        "screen before retrying"
+                    ),
+                )
+            time.sleep(_MENU_POLL_S)
 
     def _assert_assisted_unchanged(self, sidebar_before: bool) -> None:
         """Refuse when this interaction switched the assisted mode **on** by itself.
@@ -610,13 +1025,17 @@ class ParametersSurface:
         try:
             panel = self._open_parameters_dialog()
         except AcquisitionError as exc:
-            self._note(f"the {PARAMETERS_ENTRY!r} dialog could not be opened for a read: {exc}")
+            self._note(
+                f"the {PARAMETERS_ENTRY!r} dialog could not be opened for a read: {exc}"
+            )
             return DialogParameters(
                 reason=f"the {PARAMETERS_ENTRY!r} dialog could not be opened: {exc}"
             )
         try:
             fields = self._poll_dialog_fields(panel)
-            channel = self._dialog_channel_text(self._descendants_of(panel["hwnd"]), fields)
+            channel = self._dialog_channel_text(
+                self._descendants_of(panel["hwnd"]), fields
+            )
             refusal = self._dialog_refusal(fields, channel)
             if refusal:
                 return DialogParameters(channel=channel, reason=refusal)
@@ -723,14 +1142,18 @@ class ParametersSurface:
         panel = self._open_parameters_dialog()
         try:
             fields = self._poll_dialog_fields(panel)
-            channel = self._dialog_channel_text(self._descendants_of(panel["hwnd"]), fields)
+            channel = self._dialog_channel_text(
+                self._descendants_of(panel["hwnd"]), fields
+            )
             refusal = self._dialog_refusal(fields, channel)
             if refusal:
                 return self._burst_refusal(requested, refusal, channel=channel)
             # Only the *stated channel* is compared: the dialog's own fields are not part of that
             # comparison, and handing them over would invite a caller to read something else out of
             # a refusal rule that is about one fact.
-            mismatch = channel_mismatch(routed_channel, DialogParameters(channel=channel))
+            mismatch = channel_mismatch(
+                routed_channel, DialogParameters(channel=channel)
+            )
             if mismatch:
                 return self._burst_refusal(requested, mismatch, channel=channel)
             mode = panel_mode(panel, self._children_of(panel["hwnd"], self._resolve()))
@@ -771,7 +1194,9 @@ class ParametersSurface:
 
             # ---------------------------------------------------------------- the write
             parent = self._resolve()["parent_of"].get(int(burst_field["hwnd"]))
-            self._combo_select(int(burst_field["hwnd"]), index, 0 if parent is None else parent)
+            self._combo_select(
+                int(burst_field["hwnd"]), index, 0 if parent is None else parent
+            )
             self._note(
                 f"burst {requested} selected in the {PARAMETERS_ENTRY!r} dialog (entry {index} "
                 f"of {list(before_burst.items)})"
@@ -792,7 +1217,9 @@ class ParametersSurface:
                 panel = replacement
                 fields = self._poll_dialog_fields(panel)
                 burst_field = field_at(fields, *dialog_row(DialogField.BURST_LENGTH))
-                dependent_field = field_at(fields, *dialog_row(DialogField.SAMPLING_VOLUME))
+                dependent_field = field_at(
+                    fields, *dialog_row(DialogField.SAMPLING_VOLUME)
+                )
                 if burst_field is None:
                     return self._burst_refusal(
                         requested,
@@ -812,7 +1239,9 @@ class ParametersSurface:
             while True:
                 after_burst = self._row_reading(burst_field)
                 after_volume = (
-                    None if dependent_field is None else self._row_reading(dependent_field)
+                    None
+                    if dependent_field is None
+                    else self._row_reading(dependent_field)
                 )
                 if after_burst.text.strip() == str(requested):
                     break
@@ -923,8 +1352,12 @@ class ParametersSurface:
                     f"burst {requested} was accepted, but the re-opened dialog mode changed "
                     f"from {mode!r} to {kept_mode!r} — the instrument's state is unverified"
                 )
-            kept_burst = self._row_reading_or_none(kept_fields, DialogField.BURST_LENGTH)
-            kept_volume = self._row_reading_or_none(kept_fields, DialogField.SAMPLING_VOLUME)
+            kept_burst = self._row_reading_or_none(
+                kept_fields, DialogField.BURST_LENGTH
+            )
+            kept_volume = self._row_reading_or_none(
+                kept_fields, DialogField.SAMPLING_VOLUME
+            )
         finally:
             self._close_any_dialog()
         accepted = (
@@ -1100,7 +1533,9 @@ class ParametersSurface:
         """
         deadline = time.monotonic() + DIALOG_FILL_TIMEOUT_S
         while True:
-            fields = dialog_value_fields(self._descendants_of(panel["hwnd"]), self._get_text)
+            fields = dialog_value_fields(
+                self._descendants_of(panel["hwnd"]), self._get_text
+            )
             if any(row["value"] for row in fields) or time.monotonic() >= deadline:
                 return fields
             time.sleep(_POLL_S)
@@ -1113,7 +1548,9 @@ class ParametersSurface:
         """
         return text_at(fields, column, row, self._get_text)
 
-    def _dialog_channel_text(self, kids: Sequence[Mapping], fields: Sequence[Mapping]) -> str:
+    def _dialog_channel_text(
+        self, kids: Sequence[Mapping], fields: Sequence[Mapping]
+    ) -> str:
         """The channel the dialog is showing, read from its header combo.
 
         The header is the combo that is **not** a table row (measured: it sits at the dialog's top,
@@ -1197,9 +1634,9 @@ class ParametersSurface:
             # Keyed and accumulated per panel: a press made on one panel says nothing about
             # another, and a panel pressed on in an earlier attempt and again later is still
             # reported as pressed — "was pressed and did not go away" is true of it either way.
-            pressed_on[panel["hwnd"]] = (
-                self._close_parameters_dialog(panel) or pressed_on.get(panel["hwnd"], False)
-            )
+            pressed_on[panel["hwnd"]] = self._close_parameters_dialog(
+                panel
+            ) or pressed_on.get(panel["hwnd"], False)
         # **Whether the dialog is gone is asked of the screen, never assumed from the presses.**
         # ``_close_parameters_dialog`` notes a band it cannot resolve instead of raising (a failed
         # cleanup must never mask the failure it is cleaning up after), so two attempts that both
@@ -1528,7 +1965,13 @@ class ParametersSurface:
             self._click_hold(entry["hwnd"])
         except AcquisitionError:
             self._observe_entry_attempt(
-                entry, overlay, before, gesture, None, gesture_failed=True, pressed=pressed
+                entry,
+                overlay,
+                before,
+                gesture,
+                None,
+                gesture_failed=True,
+                pressed=pressed,
             )
             raise
         panel = self._poll_dialog(_ENTRY_DIALOG_TIMEOUT_S)
@@ -1587,7 +2030,9 @@ class ParametersSurface:
         self._click_hold(target["hwnd"], hold_ms)
         return target
 
-    def _channel_combo(self, panel: dict, roles: Mapping | None = None) -> tuple[dict, int]:
+    def _channel_combo(
+        self, panel: dict, roles: Mapping | None = None
+    ) -> tuple[dict, int]:
         """The channel combo inside ``panel``: ``(combo, its parent's hwnd)``.
 
         Identity is the **item list**: a ``TComboBox`` inside this dialog whose items are

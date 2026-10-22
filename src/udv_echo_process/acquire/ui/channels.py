@@ -73,6 +73,7 @@ __all__ = [
     "read_bound_channels",
     "resolve_channels",
     "strip_cells",
+    "surface_left_open",
 ]
 
 #: The only state a caption-less custom button can have here.
@@ -169,6 +170,35 @@ class ChannelsSurface(str, Enum):
     AMBIGUOUS = "ambiguous"
     WRONG_SURFACE = "wrong_surface"
     CHANGED_STRUCTURE = "changed_structure"
+
+
+#: The two surfaces that are an attributable ``Channels`` popup — the full settings surface and
+#: the multiplexer-on one-entry clip.
+READABLE_SURFACES = (
+    ChannelsSurface.SETTINGS_POPUP,
+    ChannelsSurface.MULTIPLEXER_ON_ENTRY,
+)
+
+
+def surface_left_open(surface: ChannelsSurface | str | None) -> bool | None:
+    """Whether a popup is up after a failure — ``True``/``False`` only from a stated surface.
+
+    The one classification shared by the opener and the managed inspection. An unparsed,
+    unstated or non-popup surface is ``None`` (UNKNOWN), never ``False``: absence is a fact only
+    when the reader states ``ABSENT``.
+    """
+    if surface is None:
+        return None
+    if not isinstance(surface, ChannelsSurface):
+        try:
+            surface = ChannelsSurface(surface)
+        except ValueError:
+            return None
+    if surface in READABLE_SURFACES:
+        return True
+    if surface is ChannelsSurface.ABSENT:
+        return False
+    return None
 
 
 class Attribution(ValueModel):

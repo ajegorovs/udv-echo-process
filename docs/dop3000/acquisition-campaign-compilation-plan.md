@@ -608,6 +608,16 @@ live; the refusal is the campaign's.
 Measured (W1, §14): Escape closes nothing in this application, a cursor move does not dismiss a
 hover-opened popup, and a posted `WM_CANCELMODE` does not either; the only clean exit is a press.
 
+> **Annotated 2026-10-22 (historical plan, not rewritten):** the "cursor move does not dismiss"
+> half is **not** superseded but narrowed. `recon/35` establishes the hover-open and that an
+> **entry press consumes** the popup; it carries no generic close. A **real**-cursor move off the
+> popup — outside its rect and off the menubar, inside the client/screen — is now walked as a
+> **bounded stepped path** (`ui/menu.py::stepped_path` + `_move_real_cursor_stepped`), owned by
+> `ParametersSurface.dismiss_channels_popup`, which reports ABSENT only on an observed read. One
+> live warp read its point back exactly while the popup stayed up; **one live prototype** then
+> observed ABSENT on both of its stepped paths (13 positions of <= 40 px, one build/geometry). That
+> is accepted at that scope and is not production-live until `channels_opener.py` runs end to end.
+
 - **Commissioning and testing** (the live acceptance sequence below): abort the test, **never press
   an unknown popup entry** (the second entry selects the assisted mode), restart the application,
   verify the configuration, restart the sequence. Documented operator recovery, not a program.
@@ -972,10 +982,16 @@ was handed the reading, and only one carries the three facts.
   this slice). A driver that leaves a dialog or a popup open therefore *traps the operator* — there
   is no key they can press. That is why the reader closes the dialog in a `finally` and why the
   probe restores the cursor in one.
-- **A hover-opened popup cannot be dismissed programmatically.** Moving the cursor off the menubar
-  does not close it; moving it past the last entry does not; a posted `WM_CANCELMODE` does not. The
-  only clean exit is the *press* the driver already makes (which selects an entry and closes the
-  popup), and a gesture that hovered and then failed strands the application until it is restarted.
+- **A hover-opened popup cannot be dismissed *by a message*.** Moving the cursor off the menubar
+  posts nothing, moving past the last entry posts nothing, and a posted `WM_CANCELMODE` posts
+  nothing. The dismissal is annotated in §9.3: a **bounded stepped path** of the **real** cursor
+  off the popup, whose close is only claimed on an observed ABSENT (`recon/35` establishes the
+  hover-open and an entry press consuming the popup, not a generic close; one warp returned
+  UNKNOWN, one live stepped prototype observed ABSENT at one build/geometry and is not yet
+  production-live). Absent an observed
+  ABSENT after that move, the only clean exit was
+  the *press* the driver already makes (which selects an entry and closes the popup), and a gesture
+  that hovered and then failed strands the application until it is restarted.
   This is a real gap in the driver's failure path and is recorded here rather than worked around: a
   probe run during this slice did exactly that to the operator's desktop, and the recovery was a
   restart.

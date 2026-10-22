@@ -1473,6 +1473,37 @@ def acquire_main(argv: list[str] | None = None) -> None:
         ),
     )
 
+    channels_inspect_parser = subcommands.add_parser(
+        "channels-inspect",
+        help=(
+            "open, read (with capture evidence) and close the Channels popup with no operator "
+            "gesture: one measured hover on the proven anchor and one bounded stepped real-cursor "
+            "path, pressing no entry, enabling nothing and writing no parameter"
+        ),
+    )
+    channels_inspect_parser.add_argument(
+        "--capture-dir",
+        required=True,
+        help=(
+            "the directory the run's own capture-NNN evidence directory is claimed under: two "
+            "guarded lossless frames of the popup's rect, its numeric bracketing, and the same "
+            "unknown-caption rules as channels-read"
+        ),
+    )
+    channels_inspect_parser.add_argument(
+        "--settle",
+        type=float,
+        default=3.0,
+        help="poll bound after each gesture (s); nothing is retried past it",
+    )
+    channels_inspect_parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="also write this run's JSON report here",
+    )
+    channels_inspect_parser.add_argument("--json", action="store_true")
+
     mpx_mode_parser = subcommands.add_parser(
         "mpx-mode-read",
         help=(
@@ -2155,6 +2186,71 @@ def acquire_main(argv: list[str] | None = None) -> None:
                     for reason in channel_report.capture.unknown_reasons:
                         print(f"udv-acquire: capture: {reason}", file=sys.stderr)
                     code = 3
+        elif args.command == "channels-inspect":
+            # The managed lifecycle: one measured hover opens the popup (or an already-open one is
+            # refused — this command never adopts an operator's popup), the read carries the same
+            # capture evidence channels-read produces, and one bounded stepped path closes it. No
+            # entry is pressed, nothing is enabled, recorded or written, and no other popup is
+            # dismissed. Exit codes: 0 read + capture ok + an observed close; 2 no readable popup;
+            # 3 refused before any gesture; 5 capture not attributable or the close unconfirmed.
+            from udv_echo_process.acquire import channels_inspect as inspected
+            from udv_echo_process.acquire.ui.layout import MAIN_CLASS
+            from udv_echo_process.acquire.win32.tree import visible_main_windows
+
+            windows = visible_main_windows(MAIN_CLASS)
+            if len(windows) != 1:
+                channel_report = inspected.ChannelInspection(
+                    outcome=inspected.InspectionOutcome.REFUSED,
+                    mode="unobserved",
+                    mode_source="refused-before-read",
+                    refused=(
+                        f"{len(windows)} visible {MAIN_CLASS} windows: channels-inspect "
+                        "requires exactly one and binds nothing"
+                    ),
+                    refused_stage="binding",
+                )
+            else:
+                managed = driver.Win32Actuator(allow_real_input=True)
+                channel_report = inspected.inspect_channels(
+                    actuator=managed,
+                    target=managed.bind_target(windows[0]),
+                    capture_dir=args.capture_dir,
+                    allow_real_input=True,
+                    settle_s=args.settle,
+                )
+            _acquire_report(channel_report, as_json)
+            if args.report is not None:
+                report_path = Path(args.report)
+                report_path.parent.mkdir(parents=True, exist_ok=True)
+                report_path.write_text(
+                    json.dumps(channel_report.model_dump(mode="json"), indent=2) + "\n",
+                    encoding="utf-8",
+                )
+            if channel_report.outcome is inspected.InspectionOutcome.REFUSED:
+                print(f"udv-acquire: {channel_report.refused}", file=sys.stderr)
+                code = 3
+            elif channel_report.read is None or not channel_report.read.readable:
+                if channel_report.refused:
+                    print(f"udv-acquire: {channel_report.refused}", file=sys.stderr)
+                code = 2
+            elif (
+                channel_report.capture is None or channel_report.capture.status != "ok"
+            ):
+                reasons = (
+                    ()
+                    if channel_report.capture is None
+                    else channel_report.capture.unknown_reasons
+                )
+                for reason in reasons:
+                    print(f"udv-acquire: capture: {reason}", file=sys.stderr)
+                code = 5
+            elif channel_report.outcome is not inspected.InspectionOutcome.CLOSED:
+                print(
+                    "udv-acquire: the Channels popup close was not observed ABSENT: "
+                    f"{channel_report.closed.clause if channel_report.closed else 'no close was taken'}",
+                    file=sys.stderr,
+                )
+                code = 5
         elif args.command == "mpx-mode-read":
             # A retained-evidence read: no window is bound, no gesture exists on this path, and
             # nothing is captured. The record states ``acquisition_context="retained"``,

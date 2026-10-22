@@ -435,6 +435,22 @@ where a live tree settles it (ledger B10).
   instead of `Operating parameters` and raised a modal panel. Keep
   `Default parameters` off the critical path. Never `WM_CLOSE` an open popup —
   that wedges the menu loop until restart. `ESC` does nothing on these panels.
+  The dismissal is a **bounded stepped path** of the **real** cursor off the popup,
+  not one warp: `ui.menu.stepped_path` derives every position from the actual
+  cursor position to a point outside the popup and off the menubar, inside the
+  client and screen (<= 40 px per step, <= 100 positions, a 2 s *interval budget*,
+  never through another menubar entry), and `_move_real_cursor_stepped` walks it with one
+  `SetCursorPos` per step and a read-back of each landing. The 2 s is not a hard OS deadline:
+  the walker checks elapsed time before every move against that budget plus a bounded
+  per-position work allowance (`MENU.MAX_STEP_WORK_S`), records the actual elapsed time beside
+  the planned interval sum, and never activates a window mid-path (each step only *checks* the
+  foreground, through the existing accessor). Only a bounded ABSENT
+  read closes it. **One live prototype** (`channels-stepped-path-live-01`, one
+  build and geometry) observed ABSENT on both of its stepped paths where a single
+  warp to the same point had stayed up — that supports the path-versus-jump
+  difference, does not establish the OS mechanism, and is not production-live
+  until the integrated opener has run. Posted messages do not dismiss it, and the
+  saved cursor position is not restored while the popup is up.
 - **Presence is not visibility: the `Parameters` overlay is pre-created and
   hidden.** The panel is in the control tree from startup with a caption-less
   `TSp_Panel` rect of `(169, 55, 401, 250)` and `IsWindowVisible == False`, and the
@@ -1155,7 +1171,28 @@ Evidence: `.hermes/scratch/multiplexer-development/mode-entry-roundtrip-acceptan
 committed fixtures; the JSON states its own limits, including "not native checked state" and "no
 automated mode press recipe was exercised".
 
-**Guarded enable command (`acquire enable-multiplexed`), 2026-10-22 — offline only.** One
+**Supervised two-run continuation, 2026-10-22.** Two separate `record-multiplexed`
+invocations stored `mpx12-50profiles-continuation-20261022-run1.BDD` and
+`mpx12-50profiles-continuation-20261022-run2.BDD`. Each reported one Record, one Store
+commit, and `consistent` / `partition-consistent`: channels 1/2 each held 100 profiles
+in stored partitions 50+50, with 42 gates. Channel 1 decoded as echo amplitude; channel 2
+as axial velocity, so this is not a like-quantity signal comparison. The Store directory
+was unchanged. After **each** save, a separately operator-opened Channels popup had a
+stable paired capture reading `VISUAL_DISABLED` + `OFF_PROVEN`; repeats remained 2 and
+the visually attributed channel-1 amount remained 50 / 2.01 s. The operator set rolling
+ON and re-enabled MPX between runs; fresh rolling-ON evidence preceded each enable.
+The operator also reported that pressing Enable itself closes Channels. These are
+observations of this supervised sequence, not proof that Store alone resets either
+setting, an unattended continuation recipe, or a universal post-save law. Ready did not
+license another Record. No Stop, Clear, Disable, or third run was issued. Final captured
+mode/rolling matched the initial disabled/OFF state; Channels was left open for the
+operator. Local, uncommitted evidence lives under
+`.hermes/scratch/multiplexer-development/` in `two-run-*.log` and their capture directories;
+the original recordings remain under `outputs/live/store/`. This extends the historical
+round trip above without changing its verification scope.
+
+**Guarded enable command (`acquire enable-multiplexed`), 2026-10-22 — offline contract, live
+once.** One
 command now exists for the entry row: it binds exactly one window, requires a **fresh
 same-invocation** two-frame capture of the full settings popup whose conjunction reads
 `VISUAL_DISABLED` + `ON_PROVEN` with `live-bracketed` / `capture-digest-verified` evidence (a
@@ -1166,7 +1203,7 @@ The target is resolved by the reader's 8-band signature and toggle-role provenan
 action boundary re-resolves the binding, popup, signature and exact toggle handle before posting.
 It never presses `Record`, `Disable`, `Stop`, `Clear` and never retries.
 
-**Post-press readback (offline verified, 2026-10-22).** After its one press the command reads the
+**Post-press readback contract (2026-10-22).** After its one press the command reads the
 screen again. Only when that read resolves the clipped one-entry popup does it take a **fresh**
 post-press capture pair under its own run directory and hold it to the explicit
 `entry_no_numeric` contract: two still 158x43 frames of the measured entry shape, the exact
@@ -1181,7 +1218,8 @@ The settings capture's contract is unchanged: `settings_numeric` still requires 
 bracketed consistently. The entry shape is a separate, explicit `capture_kind`; it neither
 loosens that check nor reuses a retained directory.
 
-**Guarded disable command (`acquire disable-multiplexed`), 2026-10-22 — offline only.** The
+**Guarded disable command (`acquire disable-multiplexed`), 2026-10-22 — offline contract, live
+once.** The
 clipped popup's one entry is now reachable from the CLI. It binds exactly one window, takes a
 **fresh same-invocation** 158x43 `entry_no_numeric` pair, and requires the reader's own
 `Disable multiplexer` attribution with `live-bracketed` / `capture-digest-verified` evidence,
@@ -1221,22 +1259,77 @@ reads: it states that the strip reports no recording and no held/stored data. Da
 **not** report — an invisible historical store, a block scrolled out of view, a recording started
 elsewhere — may still exist and is not inspected. The command takes no destructive action: it
 never presses `Enable`, `Record`, `Stop` or `Clear`, never opens the popup and never retries.
-**No live acceptance:** the press and its readback have not been exercised on the instrument; the
-source test uses authentic entry/settings fixtures and a Win32 double.
+**Offline coverage:** the source test uses authentic entry/settings fixtures and a Win32 double;
+the live exercises are the round trip below.
 
-The new enable post-press readback above is likewise **offline verified only**; neither command's
-post-press readback has been exercised live.
+**Live round trip, 2026-10-22 — one press in each direction.** Both guarded commands were
+exercised once on the instrument, each in its own invocation, from a popup the operator had
+already opened. A pre-run `channels-read` resolved a fresh `settings_popup` pair
+(`VISUAL_DISABLED`, roll-over `ON_PROVEN`) and exited `0` (`mode-roundtrip2-ready.log`); an
+earlier preflight read in the same sitting had refused with exit `3` because the instrument was
+not the foreground window and the screen grab itself failed, and nothing was pressed.
 
-**Live press observed once, 2026-10-22.** The guarded enable was exercised once on the instrument
-from a verified `VISUAL_DISABLED` + `ON_PROVEN` full popup: one press, `posted: unknown`. Under
-the build of that run the command took no post capture and therefore exited `1`; the operator's
-separate read-only top-level capture of the clipped popup (158x43) then showed its painted caption
-`Desable multiplexer` on two stable frames, and the operator restored the previous state
-(`VISUAL_DISABLED`, rolling off) with their own gestures. That is an observed visual
-corroboration, not a native checked state, and **no physical relay behaviour was measured** — the
-relay warning stands. The automatic post readback above has **not** yet been exercised live.
-Source: `.hermes/scratch/multiplexer-development/enable-live-01-acceptance.json` and its
-`enable-live-01*.log` / entry PNGs (git-ignored local evidence).
+- `acquire enable-multiplexed`, one attempt: one held press on the `Enable multiplexer` toggle,
+  `posted: unknown`, then its own fresh `entry_no_numeric` post pair reported
+  `post_mode: VISUAL_ENABLED`; CLI exit `0` (`enable-live-02.json`, `enable-live-02.log`). That is
+  the automatic entry post readback's first live exercise.
+- `acquire disable-multiplexed`, one attempt, from the resulting enabled-idle surface: a fresh
+  same-invocation `entry_no_numeric` pair licensed the clipped `Desable multiplexer` entry, one
+  held press followed (`posted: unknown`), and its own fresh `settings_numeric` post pair read the
+  full popup as `VISUAL_DISABLED`; CLI exit `0` (`disable-live-01.json`, `disable-live-01.log`).
+  That is the automatic settings readback's first live exercise.
+- The operator's own restore gesture followed (`rolling_restored_by: operator`), and a read-only
+  `channels-read` exited `0` (`mode-roundtrip2-restored.log`) reading `VISUAL_DISABLED`, roll-over
+  `OFF_PROVEN` (red cross), start channel `1`, repeat `2`, profiles `50`, seconds `2.01`. The
+  acceptance record (`mode-roundtrip2-acceptance.json`) states one attempt per direction,
+  reconciles the two run records, and reports `restoration_owed: false`; its status string calls
+  the result `both_transitions_verified_and_baseline_restored`, and the baseline qualifier holds
+  for the mode only.
+
+An earlier enable-only attempt in the same sitting took no post capture under the build of that
+run and therefore exited `1`; it is the reason the round trip above was run again, and its
+operator-observed clipped entry is not counted as a second transition.
+
+**What the round trip does not establish.** Every mode, roll-over and caption fact above is a
+**visual attribution from pixels**, not a native checked-state fact (`native_fact: false`), and
+the tree still states nothing for the toggle or the marks. Roll-over is **not** preserved end to
+end: it read `ON_PROVEN` before the enable, the clipped entry structurally carries no roll-over
+row (`post_rolling: UNKNOWN`), and the restored read is `OFF_PROVEN` — the evidence does not say
+whether a command press or the operator's restore changed it, so the returned mark is
+measured-but-unattributed rather than restored to its pre-run value. Only an **idle** disable was
+exercised, not interruption of an active acquisition; neither command took a `Record`, `Clear`,
+`Stop`, retry, store or cleanup action, and none occurred in the sitting. No physical
+relay-quiescence measurement was made, so the relay warning stands: enabling may start channel
+cycling without a `Record` having been pressed.
+
+**The open/read/close/reopen/close chain is integrated; one live prototype backs its dismissal and
+the full chain still awaits a live run.** The mode-mark reads carry `requires_operator_popup: true`
+and treat the popup's own presence as the operator's action, so both commands still needed the
+Channels popup opened before the run and closed after the restore read. The source now owns the
+whole chain — `ParametersSurface.open_channels_popup` (adopting an already-open popup, otherwise one
+measured hover), `channels_opener.py`'s five-amount comparison (all five amounts, including
+`profiles` and `seconds`, through `channels_capture.numeric_slots`), and `dismiss_channels_popup` walking
+a bounded stepped path (`ui.menu.stepped_path` + `_move_real_cursor_stepped`) before its bounded
+ABSENT read — and the opener closes the reopened popup at the end. **One live prototype**
+(`channels-stepped-path-live-01`: 13 positions of <= 40 px, two paths, both observed ABSENT) supports
+the dismissal path, but the integrated chain has **not** been run live end to end: its offline
+regressions now cover the report being written before the gesture, a typed UNKNOWN open keeping the
+`ChannelsOpen` record with `gesture_attempted: true`, an unexpected exception landing as
+`phase: failed` (never a success-shaped prior state), and a five-amount baseline that states an
+unreadable slot as uncompared rather than equal. The clipped
+multiplexer-on entry is not on its path. A **fully unattended full cycle** — open popup, enable, read back, disable, read
+back, dismiss — is therefore not established, and there is no basis for an unattended batch of
+enable/disable transitions; a batch would additionally lack active-acquisition disable, popup
+timing and relay-settling coverage. All of this is one build (`UDOP DOP3010.43`), one geometry and
+one sitting, so it is not a universal geometry or caption law.
+
+Evidence: `.hermes/scratch/multiplexer-development/mode-roundtrip2-acceptance.json` with
+`mode-roundtrip2-preflight.log` (refused, exit `3`), `mode-roundtrip2-ready.log`,
+`enable-live-02.json` + `enable-live-02.log`, `disable-live-01.json` + `disable-live-01.log`, and
+`mode-roundtrip2-restored.log`; the earlier enable-only attempt is preserved in
+`enable-live-01-acceptance.json`. All are git-ignored local evidence, not committed fixtures. The
+run records themselves keep `posted: unknown`, `obligation_open: true` and their own stated
+limits; the exit `0` claims only the automatic post readback conjunctions above.
 
 **Label-band correction (pre-live), 2026-10-22.** The `ENABLE_MULTIPLEXER` raster was learned from
 the full popup's first ink band, rows 14–26 — which is the separate `Use only channel` control's
@@ -1247,6 +1340,49 @@ have accepted. The raster has been relearned from the committed authentic disabl
 frames at the Enable band and the generator, constants and bind now carry per-surface bands with no
 first-band default. The fixtures were not modified; the retained captures and their digests are
 untouched. See `docs/dop3000/mpx-mode-read.md` §"Label provenance".
+
+### 12.14 Managed Channels inspection, 2026-10-22 — one live end-to-end acceptance
+
+`acquire channels-inspect --capture-dir DIR [--settle S] [--report PATH] [--json]` is the
+unattended counterpart of the operator-opened `channels-read`: it owns the lifecycle around the
+same read and capture. One measured `Channels` hover opens the popup, the capture read runs
+(`CaptureEvidence`, unchanged rules), and one bounded stepped real-cursor path closes it. It
+presses no popup entry, presses no strip button, enables nothing, records nothing and writes no
+parameter; no other menu or popup is dismissed.
+
+The reusable workflow is `acquire/channels_inspect.py::inspect_channels` — one application
+function behind the CLI, composing `ParametersSurface.open_channels_popup`,
+`dismiss_channels_popup` and `channels_read.read_channels`. The CLI only binds the one visible
+`TMain_Scr` window and renders its report.
+
+Order of the preconditions, all before any gesture: real input allowed, the run's **original**
+bound target verified, and the strip's own view read through `strip_state()`. `recording` refuses;
+a strip view that cannot be read reports `mode: "unknown"` (`mode_source: "unread"`) and refuses —
+it is never reported as `ready`, and nothing is retried past a bounded poll.
+
+Ownership is explicit. The workflow closes a popup it opened; an already-open popup is **not**
+adopted by the command (`adopt_open=False`), and the library's `adopt_open=True` leaves the
+operator's popup open unless `close_adopted=True` is also passed. The report keeps the read and
+its capture beside the close result, so a capture that failed or a close that was not observed
+`ABSENT` is stated as exactly that. Exit codes: `0` read + attributable capture + observed close,
+`2` no readable popup, `3` refused before any gesture, `5` capture not attributable or close
+unconfirmed.
+
+**Live end-to-end acceptance (one invocation, measured build and geometry).** The public
+command exited 0 after opening from ABSENT without operator hover, retaining two stable,
+nonblank capture frames with agreeing numeric brackets, and observing ABSENT after its
+13-position stepped close (recorded elapsed 1.8084 s, checked bound 2.65 s). The visual
+reading was channel 1, 50 profiles / 2.01 s, repeat 2, start/apply-from 1,
+`VISUAL_DISABLED` + `OFF_PROVEN`; those are capture-time observations, not authority for a
+later mode press. No entry/strip press, parameter write, mode change or recording occurred.
+Local uncommitted evidence: `.hermes/scratch/multiplexer-development/managed-inspect-live-01.log`,
+`managed-inspect-live-01-report.json` and `managed-inspect-live-01/capture-001/` beneath that
+same directory. This does not establish other builds, geometry, active recording or enabled
+clipped-popup behavior. The exit `0` claim remains limited to the conjunction above.
+Real input is required, so this is a foreground command in the interactive session:
+an available application, no operator hover, and no operator cleanup expected only when
+the report says the close was observed `ABSENT`. The report's `mode: "ready"` comes from
+the strip and is not a multiplexer-mode fact; use the separately attributed visual evidence.
 
 ---
 

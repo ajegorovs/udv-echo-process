@@ -369,6 +369,7 @@ from udv_echo_process.acquire.win32.cursor import (
     _HOVER_SETTLE_S,
     MOUSEEVENTF_MOVE,
     _activate_window,
+    _check_foreground,
     _clip_rect,
     _ClipRect,
     _cursor_position,
@@ -377,6 +378,7 @@ from udv_echo_process.acquire.win32.cursor import (
     _gui,
     _hover_centre,
     _move_real_cursor,
+    _move_real_cursor_stepped,
     _owner_of,
     _release_clip,
     _require_foreground,
@@ -521,6 +523,7 @@ __all__ = [
     "_CursorPoint",
     "_activate_window",
     "_bottom_row",
+    "_check_foreground",
     "_children_of",
     "_click_hold",
     "_client_bottom",
@@ -548,6 +551,7 @@ __all__ = [
     "_is_visible",
     "_main_hwnd",
     "_move_real_cursor",
+    "_move_real_cursor_stepped",
     "_observation_text",
     "_point_in_rect",
     "_post",
@@ -633,7 +637,6 @@ COMBO_ORDER: tuple[str, ...] = ("Sensitivity", "Emitting power")
 # and are still the names a caller or a test replaces when it scripts the window layer.
 
 
-
 # ``_send`` and ``_post`` were defined here: the bounded ``SendMessageTimeoutW`` and
 # the posted-message pair every gesture in this file is built from. They are
 # ``acquire/win32/messages.py``'s as of Patch 3, imported at the top of this file under
@@ -641,13 +644,11 @@ COMBO_ORDER: tuple[str, ...] = ("Sensitivity", "Emitting power")
 # still the name a caller or a test replaces to watch what is posted.
 
 
-
 # ``_visible_children``, ``_is_visible`` and ``_hidden_panels`` were defined here: the
 # enumeration with a real area, the single visibility question and the walk that
 # *names* what the filter left out (a pre-created panel is evidence, never a target).
 # They are ``acquire/win32/tree.py``'s as of Patch 3, imported at the top of this file
 # under these same names.
-
 
 
 # ``dialog_value_fields``, ``_dialog_only_reason``, ``_dialog_fact``, ``_strip_row`` and
@@ -730,6 +731,10 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         self.last_press_screen: tuple[int, int] | None = None
         #: The screen point the last real-cursor hover used (diagnostics only).
         self.last_hover_screen: tuple[int, int] | None = None
+        #: The screen point the last real-cursor dismissal move used (diagnostics only). No
+        #: saved position is kept for it: restoring the operator's cursor while the popup is up
+        #: is a move back onto the popup or the bar, which is the dismissal being undone.
+        self.last_dismissal_point: tuple[int, int] | None = None
         #: What the application actually did on the last popup-entry press: the gesture
         #: used, whether the overlay was **visible**, whether the popup closed, any panel
         #: that was not up before (its rect and its top-level child classes) and the dialog
@@ -746,7 +751,6 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             self._target = _validate_target(
                 target, class_name=self._class_name, gui=_gui, owner=_owner_of
             )
-
 
     # ------------------------------------------------------------------ plumbing
 
@@ -821,6 +825,26 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         """
         return _clip_rect(user32=_user32)
 
+    def _screen_rect(self) -> Rect:
+        """The virtual screen's rectangle, in screen coordinates — read, never assumed.
+
+        The dismissal move has to land inside the screen *and* inside the bound window's client
+        area, and both are live geometry: a multi-monitor desktop has a non-zero virtual origin,
+        so the primary monitor's ``(0, 0, w, h)`` is not the screen. The four metrics are the same
+        pair ``channels_read`` reads for a capture (``GetSystemMetrics`` 76–79); an unreadable or
+        empty rectangle is refused rather than replaced by a guessed desktop.
+        """
+        u32 = _user32()
+        left, top = int(u32.GetSystemMetrics(76)), int(u32.GetSystemMetrics(77))
+        width, height = int(u32.GetSystemMetrics(78)), int(u32.GetSystemMetrics(79))
+        if width <= 0 or height <= 0:
+            raise AcquisitionError(
+                "the virtual screen bounds could not be read (GetSystemMetrics 76-79 answered "
+                f"origin {(left, top)} and size {(width, height)}), so a real-cursor dismissal "
+                "move has no screen to land inside; nothing is moved"
+            )
+        return Rect(left=left, top=top, right=left + width, bottom=top + height)
+
     def _release_clip(self) -> bool:
         """``ClipCursor(NULL)``: drop the application's own confinement of the cursor.
 
@@ -884,6 +908,35 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             user32=_user32,
         )
 
+    def _move_real_cursor_stepped(
+        self, plan, *, what: str, why: str, guard=None, checked_bound_s=None
+    ) -> tuple[tuple[int, int], ...]:
+        """Walk a **derived** stepped cursor path, one ``SetCursorPos`` per position.
+
+        The scheduling is :func:`~udv_echo_process.acquire.win32.cursor._move_real_cursor_stepped`.
+        That primitive is separate from :meth:`_move_real_cursor` on purpose: the single-warp
+        move keeps its settle and clip rules for every existing caller, while this one honours a
+        plan's own interval and read-back per step. ``guard`` is the caller's per-step
+        precondition (the original binding and the foreground window); it must only *check*,
+        never activate, because a focus change between positions is not a step of this gesture.
+        ``checked_bound_s`` is that primitive's checked elapsed bound (interval budget plus a
+        per-position allowance), never a claim of a hard OS deadline. The cursor is left at the
+        last position.
+        """
+        return _move_real_cursor_stepped(
+            plan,
+            what=what,
+            why=why,
+            note=self._note,
+            inside=_point_in_rect,
+            clip=self._clip_rect,
+            release=self._release_clip,
+            read_position=self._cursor_position,
+            guard=guard or (lambda: None),
+            checked_bound_s=checked_bound_s,
+            user32=_user32,
+        )
+
     def _foreground_window(self) -> int:
         """The foreground window's handle — the menubar hover's **precondition**.
 
@@ -892,6 +945,15 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         tree (measured live 2026-09-17: `recon/53`).
         """
         return _foreground_window(user32=_user32)
+
+    def _check_foreground(self, hwnd: int, class_name: str = "application") -> None:
+        """Assert ``hwnd`` is already foreground, **without activating anything**.
+
+        The stepped path's per-step guard. :meth:`_require_foreground` brings the window forward
+        and may wait up to its own poll bound; that belongs before a gesture, never between two
+        cursor positions.
+        """
+        _check_foreground(hwnd, class_name, foreground=self._foreground_window)
 
     @staticmethod
     def _thread_of(hwnd: int) -> int:
@@ -936,7 +998,9 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             gui=_gui,
         )
 
-    def _hover_centre(self, hwnd: int) -> tuple[int, int]:
+    def _hover_centre(
+        self, hwnd: int, *, what: str | None = None, why: str | None = None
+    ) -> tuple[int, int]:
         """Hover ``hwnd`` with the **real** cursor; return the screen point hovered.
 
         The menubar is the one control in this application that posted messages cannot
@@ -955,8 +1019,8 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         """
         point = _hover_centre(
             hwnd,
-            what=f"the {PARAMETERS_MENU!r} button",
-            why="this menubar answers nothing else, so nothing is posted to it",
+            what=what or f"the {PARAMETERS_MENU!r} button",
+            why=why or "this menubar answers nothing else, so nothing is posted to it",
             move=self._move_real_cursor,
             gui=_gui,
             user32=_user32,
@@ -1194,7 +1258,11 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         # not a dialog" is what bound the cursor info box in the block-held and intermediate reads
         # and the 392x132 guard in both warning reads, and "the panel with the most buttons" is
         # what lets an open menu, a dialog or an overlay's own band win the vote.
-        strips = [p for p in panels if identities[p["hwnd"]] is PanelIdentity.MEASUREMENT_STRIP]
+        strips = [
+            p
+            for p in panels
+            if identities[p["hwnd"]] is PanelIdentity.MEASUREMENT_STRIP
+        ]
         # Among panels that *are* strips the resolver keeps its own tie-break — the one hosting
         # the most of its own buttons — so a screen offering two strip-shaped panels resolves
         # exactly as it did before this classification existed: the identity says which panels are
@@ -1253,11 +1321,7 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             # is how a live run concluded "nothing to close" while a dialog sat on the screen
             # (measured 2026-09-17, `recon/54`). The real column is 190 px wide, so it never
             # fails the dialog test itself.
-            (
-                p
-                for p in candidates
-                if not _is_dialog_panel(p, children_of(p["hwnd"]))
-            ),
+            (p for p in candidates if not _is_dialog_panel(p, children_of(p["hwnd"]))),
             key=lambda p: p["h"],
             default=None,
         )
@@ -1387,7 +1451,9 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         roles = self._resolve()
         hwnd = self._main_hwnd()
         win32gui, _ = _gui()  # loaded here, like every other win32 use in this module
-        user32 = ctypes.windll.user32  # this build of pywin32 has no IsZoomed/GetSystemMetrics
+        user32 = (
+            ctypes.windll.user32
+        )  # this build of pywin32 has no IsZoomed/GetSystemMetrics
         left, top, right, bottom = win32gui.GetWindowRect(hwnd)
         try:
             cursor: tuple[int, int] | None = self._cursor_position()
@@ -1509,13 +1575,15 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
                 else InstrumentFact(value=mode.value, source=FactSource.READ)
             ),
             prf_us=self._column_fact(roles, ParamRole.PRF),
-            emissions_per_profile=self._column_fact(roles, ParamRole.EMISSIONS_PER_PROFILE),
+            emissions_per_profile=self._column_fact(
+                roles, ParamRole.EMISSIONS_PER_PROFILE
+            ),
             burst_length=_dialog_fact(dialog_parameters, DialogField.BURST_LENGTH),
             sound_speed_ms=_dialog_fact(dialog_parameters, DialogField.SOUND_SPEED_MS),
             first_gate_mm=_dialog_fact(dialog_parameters, DialogField.FIRST_GATE_MM),
             max_profiles_per_block=unreadable(
-                "the block cap is an application Preference (\"Do not keep in a block more "
-                "profiles than\"), not a measurement parameter, and nothing in this driver "
+                'the block cap is an application Preference ("Do not keep in a block more '
+                'profiles than"), not a measurement parameter, and nothing in this driver '
                 "reads the Preference surface"
             ),
         )
