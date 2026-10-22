@@ -62,6 +62,16 @@ from udv_echo_process.acquire.actuator import (
     process_mode,
     strip_controls,
 )
+from udv_echo_process.acquire.bridge import (
+    BridgeActuator,
+    BridgeDispatch,
+    BridgeDispatchSlot,
+    BridgeRefused,
+    BridgeRequest,
+    BridgeTable,
+    BridgeUnavailable,
+    load_table,
+)
 from udv_echo_process.acquire.config import (
     CHANNEL_ENV_VAR,
     DEFAULT_CHANNEL,
@@ -150,6 +160,13 @@ __all__ = [
     "VIEW_TIMEOUT_S",
     "AcquisitionLimits",
     "Actuator",
+    "BridgeActuator",
+    "BridgeDispatch",
+    "BridgeDispatchSlot",
+    "BridgeRefused",
+    "BridgeRequest",
+    "BridgeTable",
+    "BridgeUnavailable",
     "BurstState",
     "BurstWriteResult",
     "ChannelMode",
@@ -196,6 +213,7 @@ __all__ = [
     "gate_drift",
     "gates_for_depth",
     "identity_digest",
+    "load_table",
     "max_usable_depth_mm",
     "migrate_legacy_burst_history",
     "nearest_rung_index",

@@ -20,6 +20,8 @@ writes the channel only when the dialog is not already on it (the driver's own r
 
 from __future__ import annotations
 
+import importlib.util
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -29,13 +31,21 @@ from udv_echo_process.acquire.actuator import (
     ProcessMode,
     ScreenFingerprint,
 )
-from udv_echo_process.acquire.config import RecordSettings
+from udv_echo_process.acquire.bridge import BridgeActuator, BridgeDispatch
+from udv_echo_process.acquire.config import (
+    BRIDGE_RUNNER_ENV_VAR,
+    RecordSettings,
+    bridge_path_from_environment,
+)
 from udv_echo_process.acquire.driver import Win32Actuator
 from udv_echo_process.acquire.plan import SweepDefinition
 from udv_echo_process.acquire.runner import PointOutcome, SweepRunner
 from udv_echo_process.acquire.verify import WordFacts, read_words
 
 __all__ = [
+    "BRIDGE_RUNNER_ENV",
+    "bridge_actuator",
+    "bridge_dispatch",
     "decode",
     "live_actuator",
     "point",
@@ -60,14 +70,73 @@ DEFAULT_MEASUREMENT = {
 }
 
 
-def live_actuator(channel: int | None = None, notes: list[str] | None = None) -> Win32Actuator:
+def live_actuator(
+    channel: int | None = None, notes: list[str] | None = None
+) -> Win32Actuator:
     """A driver bound to ``channel`` (``None`` takes the ``UDV_CHANNEL`` setting)."""
     return Win32Actuator(
         channel=channel, note_sink=None if notes is None else notes.append
     )
 
 
-def status(channel: int | None = None, notes: list[str] | None = None) -> ScreenFingerprint:
+#: Re-exported for callers that set it; the variable itself is declared in ``config``, which is the
+#: one module allowed to read the environment.
+BRIDGE_RUNNER_ENV = BRIDGE_RUNNER_ENV_VAR
+
+
+def bridge_dispatch(runner_path: str | Path | None = None) -> BridgeDispatch | None:
+    """The machine-local dispatch, loaded by path — or ``None`` when the host has none configured.
+
+    ``None`` is a refusal the caller can see (:meth:`BridgeActuator.unavailable`), never a silent
+    fallback: a host without the module gets ``bridge_runner_not_configured`` from the actuator
+    rather than a cycle that starts and cannot finish.
+    """
+    configured = runner_path or bridge_path_from_environment(BRIDGE_RUNNER_ENV_VAR)
+    if not configured:
+        return None
+    location = Path(configured)
+    if not location.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("udv_bridge_runner", location)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["udv_bridge_runner"] = module
+    spec.loader.exec_module(module)
+    dispatch = getattr(module, "dispatch", None)
+    return dispatch if callable(dispatch) else None
+
+
+def bridge_actuator(
+    channel: int | None = None,
+    notes: list[str] | None = None,
+    *,
+    table_path: str | Path | None = None,
+    runner_path: str | Path | None = None,
+    target_digest: str | None = None,
+) -> BridgeActuator:
+    """The same screen, with the record/store cycle on the bridge route — **opt-in**.
+
+    The GUI actuator is still the inner one, so every parameter write, strip read and overlay answer
+    is unchanged; only the cycle at a point's end takes the other path. ``route="ui"`` remains the
+    default everywhere, and a host without the table or the dispatch module refuses by name instead
+    of recording something it cannot verify.
+    """
+    inner = Win32Actuator(
+        channel=channel, note_sink=None if notes is None else notes.append
+    )
+    return BridgeActuator(
+        inner,
+        dispatch=bridge_dispatch(runner_path),
+        table_path=table_path,
+        target_digest=target_digest,
+        channel=channel,
+    )
+
+
+def status(
+    channel: int | None = None, notes: list[str] | None = None
+) -> ScreenFingerprint:
     """Read the screen: layout fingerprint, strip view, process mode, cursor. Presses nothing.
 
     A **diagnostic**, and it therefore refuses nothing (plan §24.4): the mode is *reported* —
@@ -100,7 +169,9 @@ def preflight(
     notes: list[str] | None = None,
 ) -> PreflightReport:
     """One whole cycle with nothing stored: record, stop, read the Store dialog, cancel it."""
-    return live_actuator(channel, notes).preflight(seconds, expect_directory=expect_directory)
+    return live_actuator(channel, notes).preflight(
+        seconds, expect_directory=expect_directory
+    )
 
 
 def set_burst_length(

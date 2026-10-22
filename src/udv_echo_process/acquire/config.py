@@ -42,12 +42,15 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Mapping
+from pathlib import Path
 
 from pydantic import Field, field_validator, model_validator
 
 from udv_echo_process.models.base import ValueModel
 
 __all__ = [
+    "BRIDGE_RUNNER_ENV_VAR",
+    "BRIDGE_TABLE_ENV_VAR",
     "CHANNEL_ENV_VAR",
     "DEFAULT_CHANNEL",
     "DEFAULT_MAX_PROFILES_PER_BLOCK",
@@ -59,8 +62,48 @@ __all__ = [
     "ParameterSet",
     "ProfileTiming",
     "RecordSettings",
+    "bridge_path_from_environment",
+    "bridge_table_default_path",
     "channel_from_environment",
 ]
+
+#: The environment variable naming the machine-local bridge operation table (handler addresses,
+#: command codes, the accepted build digest).  The facts are vendor-derived, so the file lives
+#: outside the repository and this variable is how a host points at its own copy.
+BRIDGE_TABLE_ENV_VAR = "UDV_BRIDGE_TABLE"
+
+#: The environment variable naming the machine-local module that performs a bridge dispatch.
+BRIDGE_RUNNER_ENV_VAR = "UDV_BRIDGE_RUNNER"
+
+
+def bridge_path_from_environment(
+    variable: str, environ: Mapping[str, str] | None = None
+) -> Path | None:
+    """The path named by ``variable``, or ``None`` when it is unset or blank.
+
+    The same rule as :func:`channel_from_environment` and for the same reason: a whitespace-only
+    value is *unset*, not a path named " ". Nothing is defaulted here — a caller that needs a
+    fallback asks for it by name (:func:`bridge_table_default_path`).
+    """
+    source = os.environ if environ is None else environ
+    raw = source.get(variable)
+    if raw is None or not str(raw).strip():
+        return None
+    return Path(str(raw).strip())
+
+
+def bridge_table_default_path(environ: Mapping[str, str] | None = None) -> Path | None:
+    """Where a bridge table is expected when the caller named none, or ``None`` when unknown.
+
+    ``%LOCALAPPDATA%`` on Windows, and nothing on a host that has no equivalent — a checkout must
+    never be the place vendor facts are looked for.
+    """
+    source = os.environ if environ is None else environ
+    local = source.get("LOCALAPPDATA")
+    if not local or not str(local).strip():
+        return None
+    return Path(str(local).strip()) / "udv-bridge" / "operations.json"
+
 
 #: The environment variable that retargets the measurement channel. Setting it
 #: and nothing else moves a run to another channel: no code edit, no second
