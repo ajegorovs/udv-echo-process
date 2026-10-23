@@ -78,6 +78,15 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**Menu rows work by calling the handler — and the earlier "needs its Sender" reading was wrong (2026-10-23).** The
+disassembly settled what trial could not: the Display rows' handlers take `Self` and `Sender`, store both at `[ebp-4]` and
+`[ebp-8]`, and never read them again; the body is a bitwise operation on the display-flags slot, a `Leave_Current_Menu`
+call and a redraw request. So neither object was ever required. My earlier "the handler executes and changes nothing, so
+it needs its Sender" was an inference from an effect, not from evidence — the real reason was that the request cleared a
+bit that was already clear, which is a no-op by construction. Measured after the correction: the horizontal row took
+`display_flags` 0 → 2 and the vertical row 2 → 0, in one attach, no objects, no input, restored to the start. The
+generalisable rule, now recorded: read a handler's body for `[ebp-4]`/`[ebp-8]` before deciding it needs an object.
+
 **A row's control is located, and the three obvious ways to act on it are measured and do not act (2026-10-23).** The
 form holds the row's control at field offset `0x45c` (32-bit pointer — reading eight bytes there picks up the neighbouring
 field, which is why the attachment now reads the narrow value and validates the class). With that, the three act-paths
@@ -146,7 +155,7 @@ capability. `absent` = no message-route implementation exists.
 | 7 | Accept / cancel a dialog | click | **blocked** | dialog buttons are pressed; whether their handlers can be called with a `Sender` is the same unknown as row 10 |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
-| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | three act-paths measured, none acts. (a) Handler with the observed `Self`+`Sender`: executes, no state change. (b) `TSp_Button.Change_State` with the captured control: executes, no state change. (c) Two-step — the control suite's state setter, then the handler — faults at `0xffffffff`, so that setter takes an argument the call does not supply. The operator's own click does act, so the row's own path exists; what is unknown is the setter's contract, which needs disassembly, not another probe |
+| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **works** | calling the row's handler directly moves the application's own flag: the horizontal-grids row took `display_flags` 0 → 2 and the vertical-grids row 2 → 0, in one attach, with no objects, no input and no cursor. The handler's body does not read `Self` or `Sender` at all — it stores them and ignores them, then acts on the flags slot, closes the menu and requests a redraw. Rows whose handler *does* read those registers are untested |
 | 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
 | 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | the routine call reaches the strip's `store` state, so only the naming step remains — and that is a dialog (row 7) |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
@@ -156,13 +165,13 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Read the control suite's state setter, rather than probe it.** Trial is exhausted: the two-step faults because the
-setter wants an argument that plain register stubs do not supply. Its contract is a disassembly question — the routine at
-the state-setter address, its calling convention and what it does with each register. That is the same static route that
-identified the overlay routines, and it either yields the missing argument or shows the row's path goes elsewhere.
+**The store step, which is now the only thing between the message route and a full cycle.** Rows work, record and stop
+work; what remains for an unattended recording is the naming dialog that the store step ends in, and whether a dialog
+button's handler reads its `Sender` (the same question this round answered for rows, and answered the same way it should
+be answered — by reading the handler, not by guessing).
 
-**Not next: further trial on the rows.** Three act-paths were measured; a fourth guess costs an attach each time and has
-already taught nothing new.
+**Also open, and cheap:** which rows read their registers. The rule is now mechanical — read the handler's body — so the
+register's remaining `blocked` rows can be classified without another probe.
 
 **Closed: the owning object (`Self`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
 that belongs to some object the dispatcher does not know. Form methods work because the form is identified; the strip's
@@ -192,6 +201,9 @@ an empty output file.
 - **2026-10-23 — coverage is not the question.** Focus, occlusion and minimisation were measured and withdrawn as
   explanations: an inactive window ignores input regardless of coverage, a minimised one paints nothing, and real input
   cannot be injected here at all. The message route's limits are about objects and routines, not about focus.
+- **2026-10-23 — disassembly beat trial, again.** Three act-paths were tried on a row before its handler was read; the
+  read showed the objects were irrelevant and the test was malformed. For a handler whose effect is invisible, read the
+  code before designing the probe: an attach costs twenty seconds, and three of them taught less than one decompile.
 - **2026-10-23 — which bit is which.** `display_flags` bit 1 is the **vertical** grids, established by the operator
   clicking that row and watching the value go 2 → 0. Earlier work in this effort called it horizontal; that reading was
   wrong, and any note that relies on it should be corrected rather than inherited.
