@@ -681,3 +681,14 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   (`FindWindowW("TMain_Scr")` then `GetWindowThreadProcessId`) and call the application alive only when
   `GetExitCodeProcess` returns `STILL_ACTIVE`. A probe that lies about liveness is worse than no probe,
   because the caller stops looking.
+- **A Delphi `TComboBox` answers `CB_SETCURSEL` + `CBN_SELCHANGE`, and a dropdown is *selected*, never
+  opened.** Its window class is not the Win32 `ComboBox`, which made every `CB_*` read look inapplicable — but
+  the write works, on the column's Sensitivity (`very high`, `high`, `medium`, `low`, `very low`), Emitting
+  power (`Low`, `Medium`, `High`) and the TGC dialog's Mode (`Uniform`, `Slope`, `Auto`, `Custom`). Opening the
+  list is a different matter and remains pointer-only: posted and synchronous presses, `F4`, `Alt+Down` and a
+  teleport-click all failed on the TGC combo with the application foreground, and the same messages posted from
+  another process do not change a column combo at all. So: find the widget's handle, enumerate its vocabulary by
+  stepping the index and reading the text back until it repeats, then select the index whose text is wanted and
+  read it back again after a settle — one write in the 2026-10-23 sitting reported the new value immediately and
+  a different one minutes later. Stepping indices paints drop-list windows beside a dialog that survive until it
+  closes; a census of painted surfaces sees them, so guard on it rather than pressing through.
