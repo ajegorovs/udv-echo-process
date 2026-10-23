@@ -706,6 +706,8 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
         self._note_sink = note_sink
+        #: Each column combo's discovered entries, by handle — see select_combo_by_text.
+        self._combo_vocabulary: dict[int, tuple[str, ...]] = {}
         self._allow_real_input = bool(allow_real_input)
         #: Diagnostics only — never used as a binding.
         self.last_roles: dict | None = None
@@ -1814,12 +1816,18 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         def settle() -> None:
             time.sleep(settle_s)
 
-        return select_by_text(
+        selection = select_by_text(
             text,
             read=lambda: self._get_text(hwnd),
             select=lambda index: self._combo_select(hwnd, index, parent),
             settle=settle,
+            known_entries=self._combo_vocabulary.get(hwnd),
         )
+        # Remembered for this widget: the walk queues one change notification per entry, and a queued
+        # notification can land after the selection that follows it (measured 2026-10-23). A second call
+        # therefore sends a single notification instead of rediscovering the list.
+        self._combo_vocabulary[hwnd] = selection.entries
+        return selection
 
     # ------------------------------------------------------------------ cycle internals
 

@@ -100,17 +100,38 @@ def select_by_text(
     select: Callable[[int], None],
     settle: Callable[[], None],
     limit: int = BOUNDED_WALK,
+    known_entries: Sequence[str] | None = None,
 ) -> ComboSelection:
-    """Select the entry called ``text``, and prove it by reading the control back after a settle."""
-    entries = vocabulary(read, select, settle, limit=limit)
+    """Select the entry called ``text``, and prove it by reading the control back after a settle.
+
+    ``known_entries`` skips the walk.  That is not an optimisation but a correctness measure: each step of the
+    walk puts a change notification on the application's queue, and a queued notification can be processed
+    *after* the selection that follows it — measured 2026-10-23, when a control read back as the requested
+    entry and was later found on the last entry the walk had stepped through.  A caller that already knows the
+    vocabulary (it was discovered once for this widget) sends one notification instead of a dozen.
+
+    The selection is therefore **re-asserted** and read **twice**, separated by a settle: the last
+    notification the application sees is the wanted entry, and a value that drifts after the first read is
+    caught by the second.
+    """
+    entries = (
+        tuple(known_entries)
+        if known_entries is not None
+        else vocabulary(read, select, settle, limit=limit)
+    )
     index = entry_index(entries, text)
     if index is None:
         raise AcquisitionError(f"combo_entry_absent:{text}")
 
-    select(index)
-    settle()
-    readback = read()
-    if readback != text:
-        raise AcquisitionError(f"combo_selection_did_not_take:{text}:{readback}")
+    readback = ""
+    for attempt in range(2):
+        select(index)
+        settle()
+        readback = read()
+        if readback != text:
+            raise AcquisitionError(f"combo_selection_did_not_take:{text}:{readback}")
+        if attempt == 0:
+            # one more notification for the same entry, so nothing from the walk can still be queued behind it
+            continue
 
     return ComboSelection(text=text, index=index, entries=entries, readback=readback)

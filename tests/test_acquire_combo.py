@@ -153,3 +153,71 @@ class TestSelecting:
 
         with pytest.raises(AcquisitionError):
             select_by_text("High", read=read, select=combo.select, settle=combo.settle)
+
+
+class TestAQueuedNotificationCannotOutliveTheSelection:
+    """Each walked step queues a change notification; the last thing the app sees must be the wanted entry."""
+
+    def test_the_selection_is_sent_twice_so_the_walk_cannot_trail_it(self):
+        combo = Combo(["very high", "high", "medium", "low", "very low"], current="very high")
+        select_by_text("high", read=combo.read, select=combo.select, settle=combo.settle)
+        # the walk visited 0..4, then the wanted entry twice
+        assert combo.selects[-2:] == [1, 1]
+        assert combo.text == "high"
+
+    def test_the_value_is_read_twice(self):
+        combo = Combo(["Low", "Medium", "High"], current="Low")
+        reads: list[str] = []
+
+        def read() -> str:
+            value = combo.read()
+            reads.append(value)
+            return value
+
+        select_by_text("Medium", read=read, select=combo.select, settle=combo.settle)
+        assert reads[-2:] == ["Medium", "Medium"], "the second read is what catches a value that drifts"
+
+    def test_known_entries_skip_the_walk(self):
+        combo = Combo(["Low", "Medium", "High"], current="Low")
+        selection = select_by_text(
+            "High",
+            read=combo.read,
+            select=combo.select,
+            settle=combo.settle,
+            known_entries=("Low", "Medium", "High"),
+        )
+        assert selection.index == 2
+        # one entry per select: the wanted index, twice — no discovery steps at all
+        assert combo.selects == [2, 2], "a known vocabulary sends one notification, not a walk"
+
+    def test_known_entries_that_lack_the_value_are_still_refused(self):
+        combo = Combo(["Low", "Medium", "High"], current="Low")
+        with pytest.raises(AcquisitionError) as caught:
+            select_by_text(
+                "Very high",
+                read=combo.read,
+                select=combo.select,
+                settle=combo.settle,
+                known_entries=("Low", "Medium", "High"),
+            )
+        assert str(caught.value) == "combo_entry_absent:Very high"
+
+    def test_a_widget_that_drifts_between_the_two_reads_is_refused(self):
+        entries = ["Low", "Medium", "High"]
+        state = {"index": 0, "reads": 0}
+
+        def select(index: int) -> None:
+            state["index"] = min(index, len(entries) - 1)
+
+        def read() -> str:
+            state["reads"] += 1
+            # the first read of the selection is right; the confirmatory one reports another entry, which is
+            # the shape of the measured drift (the widget reads back as asked and the app lands elsewhere)
+            if state["reads"] >= 2:
+                return entries[-1]
+            return entries[state["index"]]
+
+        with pytest.raises(AcquisitionError) as caught:
+            select_by_text("Low", read=read, select=select, settle=lambda: None,
+                           known_entries=("Low", "Medium", "High"))
+        assert str(caught.value).startswith("combo_selection_did_not_take:Low:")
