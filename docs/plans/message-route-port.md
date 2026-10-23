@@ -78,6 +78,15 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A complete acquisition cycle ran with the application covered (2026-10-23).** The whole cycle — record, stop, store,
+name, commit — with another window in front, checked at every stage: three sample points under the screen's centre returned
+the covering window's class and never the application's, and the application never held the foreground, before recording,
+during it, with the store dialog up, and after the commit. The dialog was raised, its name field was filled by a window
+message, its `Accept` took one posted press, and the block landed: `covered-cycle-01.BDD`, 2713 profiles × 96 gates, every
+gate supported, finite values, resolution 0.6167 mm. So the cycle does not need the application in front, and the store
+dialog becomes active enough to receive its press without it — which was the one thing the earlier foreground runs could
+not settle.
+
 **A complete acquisition cycle ran from the message route (2026-10-23).** Record, stop, store, name and commit, in one
 run: the three strip routines were called with the primed form object (their bodies read the form's control fields and
 write the application's own command codes — 28 for record/stop, 29 for store — so no input is involved in starting or
@@ -174,11 +183,11 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Whether a cycle can run while the application is covered.** Every step of the cycle is now message-level except the
-dialog's `Accept`, which is a press — and a press lands because a modal dialog is the active window. That raises the one
-question this round cannot answer from the register: when the store dialog is raised by an application that is *not* in
-front, does the dialog become active (and so receive the press), or does the press go nowhere as it does on the covered
-form's controls? The experiment is the cycle repeated with another window in front, ending in the same artifact check.
+**A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
+step is the same cycle repeated across a series of points with a parameter change between them — which is where the
+numeric-write path (row 8) and the sweep's store-naming have to hold up, and where a failure costs a stored file rather
+than a display toggle. Before that, one small contract worth pinning: the store dialog always opens with the *last* name in
+its field, so a caller that writes the name must do so before every commit and must never rely on the field being empty.
 
 **Also open, and cheap:** which rows read their registers. The rule is now mechanical — read the handler's body — so the
 register's remaining `blocked` rows can be classified without another probe.
