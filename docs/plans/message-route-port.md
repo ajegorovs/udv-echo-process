@@ -78,6 +78,20 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**The campaign path ran end to end, and it exposed a defect in a guard, not in a file (2026-10-23).** `live.sweep` over
+rungs 5 and 6, driving the composed cycle with the application covered: two points recorded and stored
+(`camp-k5-…`, `camp-k6-…`), the JSONL log holding one entry per point, and four dialog clips released. Both artifacts are
+sound — 513 profiles × 96 gates at 0.6167 mm and 602 × 80 at 0.74 mm, last gate ≈71.8 mm on both — but the runner returned
+`PointStatus.INVALID` for both, because its size signature predicted **99 profiles** where the recording achieved **513**.
+
+The arithmetic is exact and it exonerates the files: `31 268 + (19 + 2×96) + 513 × (19 + 96) = 90 474`, which is
+byte-for-byte the stored size, while the same equation at 99 profiles gives 42 864 — the number the guard compared against,
+a 2.11× ratio just past its 2× band. So the container/block model is right and the **profile-count prediction is wrong by
+about five times for this configuration**; a genuine block is being called contaminated. That is a calibration defect in a
+safety check, and it deserves a measured fix rather than a widened band: the prediction should come from the rate the
+application actually achieves, or the decode should be the verdict with the size as an advisory. Until it is fixed, a
+campaign through `SweepRunner` cannot report its own points as valid, even when they are.
+
 **The cycle is package code now, not a runner that presses (2026-10-23).** `acquire/cycle.py` composes record → stop → store
 → name → commit from the application's own routines and one press on the dialog's commit, and carries the refusals a
 sweep depends on when nobody is watching: a stored name is refused before recording, an undispatched routine stops the
@@ -223,11 +237,14 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**A campaign through the composed cycle.** The per-point cycle is package code and the runner can drive it; what has not
-been exercised is a multi-point plan through `SweepRunner` with resume and permutation, which is the last composition step
-and the first thing that would run unattended for a long time. The register's remaining `absent` rows (channel selection,
-file pick, unexpected prompts) are separate capabilities, and channel selection — which restarts the measurement loop — is
-the one with a recorded hazard behind it.
+**The size signature's profile prediction.** A campaign cannot report its own points as valid while the guard mispredicts
+the achieved profile count by ~5× (99 predicted, 513 achieved, at 96 gates and this prf/emissions/burst). The measurement
+to make first is the achieved rate as a function of the instrument's own settings, because a prediction derived from the
+rate is a guard and a widened band is only a smaller lie. Second: decide whether the decode should be the verdict and the
+size an advisory — the register's own principle says the artifact is the acceptance.
+
+**Then:** resume and permutation across a longer plan, and the `absent` capabilities (channel selection, file pick,
+unexpected prompts), of which channel selection carries a recorded hazard — it restarts the measurement loop.
 
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
