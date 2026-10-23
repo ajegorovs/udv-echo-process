@@ -51,7 +51,12 @@ class Decoder(Protocol):
 
 
 class SpanMeter(Protocol):
-    """How long the stored block actually recorded, from the block's own timestamps.
+    """How much time the stored block spans, from the block's own timestamps.
+
+    **It is not the recording window.** Measured 2026-10-24: a store issued after a 4 s recording wrote 397.17 s of
+    profiles, because the application stores the buffer it has been filling, not the interval between our record and stop.
+    The earlier ~20 s blocks were 20 s of buffer, not 20 s of window. So a span is reported for the record and is not used
+    to judge the recording; the artifact's structure and its own geometry are what can be judged.
 
     A cycle cannot know this from its own clock: the stop is a separate attachment, and the recording keeps writing until
     the application processes it. Measured: a 4 s request produced a 20.657 s block, because each routine call costs an
@@ -113,7 +118,7 @@ class RoutineCycle:
         dialog: StoreDialog,
         decode: Decoder | None = None,
         measure_span: SpanMeter | None = None,
-        max_overhead_s: float = 20.0,
+        max_span_s: float | None = None,
         stop_settle_s: float = 1.5,
         store_settle_s: float = 1.5,
         store_timeout_s: float = 30.0,
@@ -125,11 +130,10 @@ class RoutineCycle:
         self._dialog = dialog
         self._decode = decode or _default_decoder
         self._measure_span = measure_span or _default_span
-        #: How much longer than the requested window a recording may run.  This is an *overhead allowance*, not a
-        #: tolerance on the request: each routine call costs an attachment (measured ~8 s each), so a point's block is
-        #: duration + overhead by construction.  Twenty seconds covers the two calls with room, and a block from a
-        #: different point - which would be hundreds of seconds out - is still refused.
-        self._max_overhead_s = float(max_overhead_s)
+        #: An optional ceiling on the reported span, off by default.  It exists because callers can need one (a buffer that
+        #: has been filling for hours is worth noticing), but it is *not* a window check: the span is the buffer's age, so
+        #: refusing on it would refuse perfectly good points whose buffer happened to be older.
+        self._max_span_s = None if max_span_s is None else float(max_span_s)
         self._stop_settle_s = stop_settle_s
         self._store_settle_s = store_settle_s
         self._store_timeout_s = store_timeout_s
@@ -204,11 +208,10 @@ class RoutineCycle:
             report.reason = f"store_span_unmeasurable:{type(exc).__name__}"
             return False, report.reason
         report.recorded_span_s = span
-        limit = float(duration_s) + self._max_overhead_s
-        if span > limit:
-            # A block that recorded far longer than asked is not this point's data by the caller's own definition;
-            # measured cause: each routine call costs an attachment, so the stop lands seconds after the window ends.
-            report.reason = f"recorded_span_over_limit:{span:.2f}s>{limit:.2f}s"
+        if self._max_span_s is not None and span > self._max_span_s:
+            # Only when a caller explicitly asks for a ceiling.  The span is the buffer's age, not the window, so this is a
+            # "the application was not in the state this run expected" check, not a duration check.
+            report.reason = f"recorded_span_over_limit:{span:.2f}s>{self._max_span_s:.2f}s"
             return False, report.reason
 
         report.stored = True
