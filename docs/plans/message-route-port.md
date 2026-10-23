@@ -78,6 +78,16 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A row's control is located, and the three obvious ways to act on it are measured and do not act (2026-10-23).** The
+form holds the row's control at field offset `0x45c` (32-bit pointer — reading eight bytes there picks up the neighbouring
+field, which is why the attachment now reads the narrow value and validates the class). With that, the three act-paths
+were tried in the order a click performs them and all three failed differently: the handler executes and does nothing, the
+control's `Change_State` executes and does nothing, and the two-step (state setter then handler) faults at `0xffffffff`,
+which says the setter expects an argument the call never gives it. The operator's own click remains the only thing that
+moves the flag, so the row's path exists but is not yet described. What is described is the *boundary*: the objects, the
+field offset, and the setter's address — enough for a disassembly pass to say what the setter wants, and not enough for
+another probe to find out by trial.
+
 **A row's object is captured by observation, and it is not enough on its own (2026-10-23).** Window→object is refused by
 the application outright: the attachment's own resolver reports `no TSp_Button object on hwnd …` after trying a property
 atom, `GWLP_USERDATA`, and the small negative offsets. So the row's object was captured the other way — a read-only hook
@@ -136,7 +146,7 @@ capability. `absent` = no message-route implementation exists.
 | 7 | Accept / cancel a dialog | click | **blocked** | dialog buttons are pressed; whether their handlers can be called with a `Sender` is the same unknown as row 10 |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
-| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | with the row's own object captured from a real press and supplied as `Sender` (plus the form as `Self`), the handler executes — `ok`, `executed`, no errors — and the state does not change. The application's own click *does* change it, so the row acts through its control's toggle path (state byte + notify), not through the handler alone; the attachment has a `toggle` kind for that and needs the control's state offset |
+| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | three act-paths measured, none acts. (a) Handler with the observed `Self`+`Sender`: executes, no state change. (b) `TSp_Button.Change_State` with the captured control: executes, no state change. (c) Two-step — the control suite's state setter, then the handler — faults at `0xffffffff`, so that setter takes an argument the call does not supply. The operator's own click does act, so the row's own path exists; what is unknown is the setter's contract, which needs disassembly, not another probe |
 | 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
 | 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | the routine call reaches the strip's `store` state, so only the naming step remains — and that is a dialog (row 7) |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
@@ -146,12 +156,13 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**A row's control toggle, not its handler.** The row's objects are known; what is missing is the *path* the application
-takes when a row is clicked: a control toggle that sets a state byte and calls the notify routine, for which the
-attachment already has a `toggle` kind. The next measurement is that offset — find where the control keeps its state byte
-for one row, toggle it through the notify routine, and read the application's own flag either side. If that acts, rows and
-dialog buttons (row 7) follow the same shape; if it does not, row 10 is blocked by design with three measurements behind
-it.
+**Read the control suite's state setter, rather than probe it.** Trial is exhausted: the two-step faults because the
+setter wants an argument that plain register stubs do not supply. Its contract is a disassembly question — the routine at
+the state-setter address, its calling convention and what it does with each register. That is the same static route that
+identified the overlay routines, and it either yields the missing argument or shows the row's path goes elsewhere.
+
+**Not next: further trial on the rows.** Three act-paths were measured; a fourth guess costs an attach each time and has
+already taught nothing new.
 
 **Closed: the owning object (`Self`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
 that belongs to some object the dispatcher does not know. Form methods work because the form is identified; the strip's
