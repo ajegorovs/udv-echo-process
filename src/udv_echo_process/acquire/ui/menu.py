@@ -81,6 +81,7 @@ it, and it stays *device-pending*.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Protocol, runtime_checkable
 
 from udv_echo_process.acquire.ui.model import ScreenObservation, UiNode
 
@@ -329,3 +330,23 @@ def observation_text(observation: Mapping | None) -> str:
         f"{'visible' if observation['overlay_visible'] else 'NOT visible'}, and "
         f"{appeared}"
     )
+
+
+@runtime_checkable
+class OverlayOpener(Protocol):
+    """Something that can bring a menubar overlay up without a pointer.
+
+    The application's menubar ignores posted messages and opens on a real hover, which is why the driver has
+    always needed the operator's cursor for one step.  A dispatcher bound inside the process can ask the
+    application to show the overlay instead (:class:`~udv_echo_process.acquire.bridge.BridgeMenu` is one), and
+    then the hover — and the foreground guard, the cursor save and the clip handling that go with it — are
+    unnecessary.
+
+    The protocol is structural on purpose: this module owns the *rule* that an overlay may be opened without
+    the pointer, and the machine-local dispatch owns the addresses that do it.  Nothing here may name an
+    address, and nothing outside needs to import the bridge to satisfy it.
+    """
+
+    def open_menu(self, menu: str | int) -> object: ...
+
+    def close_menu(self) -> object: ...

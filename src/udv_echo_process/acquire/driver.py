@@ -322,6 +322,7 @@ from udv_echo_process.acquire.ui.menu import (
     MENU_ORDER,
     PARAMETERS_ENTRY,
     PARAMETERS_MENU,
+    OverlayOpener,
     _inside,
     anchor_button,
     anchor_clause,
@@ -683,6 +684,7 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         channel: int | None = None,
         note_sink: Callable[[str], None] | None = None,
         allow_real_input: bool = True,
+        menu: OverlayOpener | None = None,
     ) -> None:
         """``channel`` is the measurement channel — the one knob.
 
@@ -705,6 +707,10 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         self._channel_setting = (
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
+        #: A dispatcher that can show a menubar overlay without a pointer (``bridge.BridgeMenu``). When it is
+        #: bound, the menubar step stops needing the operator's cursor — the one capability the driver never
+        #: had unattended — and ``allow_real_input=False`` stops refusing that step.
+        self._menu = menu
         self._note_sink = note_sink
         #: Each column combo's discovered entries, by handle — see select_combo_by_text.
         self._combo_vocabulary: dict[int, tuple[str, ...]] = {}

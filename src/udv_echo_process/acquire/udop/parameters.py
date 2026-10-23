@@ -31,6 +31,10 @@ the facade's re-exported copy of the value.
 from __future__ import annotations
 
 import time
+
+#: How long the overlay is given to appear after the dispatcher asked for it. Short on purpose: the routine
+#: returns once the panel is shown, and the poll that follows has its own timeout.
+_DISPATCHED_OVERLAY_SETTLE_S = 0.6
 from collections.abc import Callable, Mapping, Sequence
 
 from udv_echo_process.acquire.actuator import (
@@ -258,7 +262,7 @@ class ParametersSurface:
         ``allow_real_input=False`` refuses this step by name instead — never falling
         back to the posted press, which is known not to open this menu.
         """
-        if not self._allow_real_input:
+        if self._menu is None and not self._allow_real_input:
             raise AcquisitionError(
                 f"the {PARAMETERS_MENU!r} menu cannot be opened without real input: this "
                 "application's menubar ignores posted messages, so its button is hovered "
@@ -305,8 +309,14 @@ class ParametersSurface:
         # ignores a hover while it is inactive, so a window in front turns the one gesture
         # that opens this menu into a no-op that reads like a broken gesture (measured
         # live 2026-09-17: a console window in front, no popup, nothing pressed).
-        self._require_foreground(roles["window"])
-        saved = self._cursor_position()
+        # The foreground guard, the cursor's saved position and the clip handling exist for the *hover*:
+        # an inactive window ignores one, and a clipped cursor makes the restore lie. A dispatcher needs
+        # none of them, so they are not taken — an unattended host never moves the pointer at all.
+        if self._menu is None:
+            self._require_foreground(roles["window"])
+            saved = self._cursor_position()
+        else:
+            saved = None
         sidebar_before = bool(roles.get("params"))
         try:
             # The snapshot is taken *before* this hover, so "visible after, not before" is
@@ -314,7 +324,13 @@ class ParametersSurface:
             # hidden is not in the set, and one the app reuses without hiding it falls back
             # to the recorded rect below.
             before = self._panel_map()
-            self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
+            if self._menu is None:
+                self._hover_centre(menu["hwnd"])  # the popup opens on this real hover
+            else:
+                # The application's own routine shows the overlay (``BridgeMenu.open_menu``): measured
+                # 2026-10-23, all eleven overlays open this way with no pointer involved.
+                self._menu.open_menu(PARAMETERS_MENU)
+                time.sleep(_DISPATCHED_OVERLAY_SETTLE_S)
             overlay = self._poll_parameters_overlay(before)
             entries = _entry_buttons(overlay, self._resolve()["raw"])
             if not entries:
@@ -355,9 +371,10 @@ class ParametersSurface:
             self._assert_assisted_unchanged(sidebar_before)
             return panel
         finally:
-            # The menu has been used (or the attempt is over, hover or press): the
-            # operator's cursor goes back, so no path leaves it parked on the menubar.
-            self._restore_cursor(saved)
+            # The menu has been used (or the attempt is over, hover or press): the operator's cursor goes
+            # back, so no path leaves it parked on the menubar. With a dispatcher there was no move.
+            if saved is not None:
+                self._restore_cursor(saved)
             # And a popup this attempt left up is reported, never "closed". Nothing this
             # driver sends dismisses a hover-opened popup: the cursor restore above does not, and
             # neither does ``ESC``, a click outside or a posted ``WM_CANCELMODE`` (plan §9.3) —
