@@ -45,12 +45,23 @@ class Dialog:
 class Factory:
     """Build a cycle whose stores land in a temporary directory, with no instrument involved."""
 
-    def __init__(self, directory, *, fail_on: int | None = None, dialog: Dialog | None = None, decode=None):
+    def __init__(
+        self,
+        directory,
+        *,
+        fail_on: int | None = None,
+        dialog: Dialog | None = None,
+        decode=None,
+        span=None,
+        max_overshoot: float = 2.0,
+    ):
         self.directory = directory
         self.caller = Caller(fail_on=fail_on)
         self.dialog = dialog or Dialog()
         self.dialog.directory = directory
         self.decode = decode or (lambda path: 1)
+        self.span = span or (lambda path: 0.0)
+        self.max_overshoot = max_overshoot
         self.sleeps: list[float] = []
 
     def __call__(self) -> RoutineCycle:
@@ -59,6 +70,8 @@ class Factory:
             routines=ROUTINES,
             dialog=self.dialog,
             decode=self.decode,
+            measure_span=self.span,
+            max_overshoot=self.max_overshoot,
             sleep=self.sleeps.append,
             poll_s=0.0,
             store_timeout_s=0.0,
@@ -173,3 +186,37 @@ class TestTheBridgePrefersTheCycle:
         )
         assert ok is False
         assert "unavailable" in str(reason) or "bridge" in str(reason)
+
+
+class TestTheRecordingWindow:
+    """A block that recorded far longer than asked is refused, and the span is reported.
+
+    Measured cause: record and stop are two separate attachments, so a requested 4 s window produced a 20.7 s block. The
+    span is read from the block's own timestamps, which is the only source that knows.
+    """
+
+    def test_the_span_is_reported(self, tmp_path):
+        factory = Factory(tmp_path, span=lambda path: 4.2)
+        ok, _ = factory().try_record_and_store("point-10", 4.0, tmp_path)
+        assert ok is True
+
+    def test_a_recording_that_ran_five_times_too_long_is_refused(self, tmp_path):
+        factory = Factory(tmp_path, span=lambda path: 20.7)
+        ok, reason = factory().try_record_and_store("point-11", 4.0, tmp_path)
+        assert ok is False
+        assert reason.startswith("recorded_span_over_limit")
+
+    def test_the_limit_is_the_requested_window_times_the_tolerance(self, tmp_path):
+        factory = Factory(tmp_path, span=lambda path: 8.5, max_overshoot=2.0)
+        ok, reason = factory().try_record_and_store("point-12", 4.0, tmp_path)
+        assert ok is False
+        assert "8.50s>8.00s" in reason
+
+    def test_an_unmeasurable_span_is_a_refusal_not_a_pass(self, tmp_path):
+        def explode(path):
+            raise ValueError("no timestamps")
+
+        factory = Factory(tmp_path, span=explode)
+        ok, reason = factory().try_record_and_store("point-13", 1.0, tmp_path)
+        assert ok is False
+        assert reason.startswith("store_span_unmeasurable")

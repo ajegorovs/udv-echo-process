@@ -50,6 +50,17 @@ class Decoder(Protocol):
     def __call__(self, path: Path) -> int: ...
 
 
+class SpanMeter(Protocol):
+    """How long the stored block actually recorded, from the block's own timestamps.
+
+    A cycle cannot know this from its own clock: the stop is a separate attachment, and the recording keeps writing until
+    the application processes it. Measured: a 4 s request produced a 20.7 s block, because each call costs an attachment.
+    So the duration is read from the artifact, which is the only honest source.
+    """
+
+    def __call__(self, path: Path) -> float: ...
+
+
 @dataclass
 class CycleReport:
     """What the cycle did, so a caller can report evidence rather than an inference."""
@@ -62,6 +73,14 @@ class CycleReport:
     stored: bool = False
     streams: int = 0
     reason: str | None = None
+
+
+def _default_span(path: Path) -> float:
+    """The block's own elapsed time, from its first to its last profile."""
+    from udv_echo_process.io.dop import bdd
+
+    times = bdd.read(path).recording.streams[0].data.time_s
+    return float(times[-1] - times[0]) if len(times) > 1 else 0.0
 
 
 def _default_decoder(path: Path) -> int:
@@ -87,6 +106,8 @@ class RoutineCycle:
         routines: CycleRoutines,
         dialog: StoreDialog,
         decode: Decoder | None = None,
+        measure_span: SpanMeter | None = None,
+        max_overshoot: float = 2.0,
         stop_settle_s: float = 1.5,
         store_settle_s: float = 1.5,
         store_timeout_s: float = 30.0,
@@ -97,6 +118,10 @@ class RoutineCycle:
         self._routines = routines
         self._dialog = dialog
         self._decode = decode or _default_decoder
+        self._measure_span = measure_span or _default_span
+        #: How far past the requested window a recording may run before it is refused.  Two is generous on purpose:
+        #: the value is meant to catch a cycle that recorded during the wrong window, not to police a second.
+        self._max_overshoot = float(max_overshoot)
         self._stop_settle_s = stop_settle_s
         self._store_settle_s = store_settle_s
         self._store_timeout_s = store_timeout_s
@@ -163,6 +188,19 @@ class RoutineCycle:
         report.streams = streams
         if streams < 1:
             report.reason = "store_decoded_no_streams"
+            return False, report.reason
+
+        try:
+            span = float(self._measure_span(target))
+        except Exception as exc:  # noqa: BLE001 - an unmeasurable span is a refusal, not a pass
+            report.reason = f"store_span_unmeasurable:{type(exc).__name__}"
+            return False, report.reason
+        report.recorded_span_s = span
+        limit = float(duration_s) * self._max_overshoot
+        if span > limit:
+            # A block that recorded far longer than asked is not this point's data by the caller's own definition;
+            # measured cause: each routine call costs an attachment, so the stop lands seconds after the window ends.
+            report.reason = f"recorded_span_over_limit:{span:.2f}s>{limit:.2f}s"
             return False, report.reason
 
         report.stored = True
