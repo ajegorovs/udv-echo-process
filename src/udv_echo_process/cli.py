@@ -1328,6 +1328,17 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
+    def numeric_writes_argument(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--bridge-numeric-writes",
+            action="store_true",
+            help=(
+                "write a point's parameters through the bridge's own setter instead of the GUI dialogs "
+                "(bridge route only; the value is read back, a mismatch is restored, and an unverifiable "
+                "restore poisons the actuator for the rest of the run)"
+            ),
+        )
+
     def channel_argument(target: argparse.ArgumentParser) -> None:
         target.add_argument(
             "--channel",
@@ -1435,6 +1446,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     point_parser.add_argument("--seconds", type=float, required=True)
     channel_argument(point_parser)
     expect_mode_argument(point_parser)
+    numeric_writes_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
     route_arguments(point_parser)
@@ -1448,6 +1460,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_argument(sweep_parser)
     expect_mode_argument(sweep_parser)
+    numeric_writes_argument(sweep_parser)
     sweep_parser.add_argument("--store-dir", default=None)
     sweep_parser.add_argument("--name-prefix", default="sweep")
     route_arguments(sweep_parser)
@@ -1671,6 +1684,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 route=args.route,
                 table_path=args.bridge_table,
                 runner_path=args.bridge_runner,
+                numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
@@ -1688,6 +1702,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 route=args.route,
                 table_path=args.bridge_table,
                 runner_path=args.bridge_runner,
+                numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
                 sound_speed_ms=args.sound_speed,
                 first_gate_mm=args.first_gate,
                 target_depth_mm=args.depth,

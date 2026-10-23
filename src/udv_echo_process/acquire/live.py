@@ -31,7 +31,13 @@ from udv_echo_process.acquire.actuator import (
     ProcessMode,
     ScreenFingerprint,
 )
-from udv_echo_process.acquire.bridge import BridgeActuator, BridgeDispatch
+from udv_echo_process.acquire.bridge import (
+    BridgeActuator,
+    BridgeDispatch,
+    BridgeMenu,
+    BridgeUnavailable,
+    load_table,
+)
 from udv_echo_process.acquire.column import COLUMN_COMBOS, ColumnChange, ColumnReport
 from udv_echo_process.acquire.config import (
     BRIDGE_RUNNER_ENV_VAR,
@@ -110,6 +116,24 @@ def bridge_dispatch(runner_path: str | Path | None = None) -> BridgeDispatch | N
     return dispatch if callable(dispatch) else None
 
 
+def _menu_opener(table_path: str | Path | None, dispatch: object | None):
+    """A `BridgeMenu` for the table the run is using, or ``None`` when that table carries no menu block.
+
+    ``None`` is a refusal the driver already understands (it hovers instead), never a silent substitute: a host
+    whose table has no measured menu routines keeps the old step rather than pretending to a capability it has
+    not got.
+    """
+    if dispatch is None:
+        return None
+    try:
+        table = load_table(table_path)
+    except BridgeUnavailable:
+        return None
+    if table.menu is None:
+        return None
+    return BridgeMenu(table, dispatch)
+
+
 def actuator_for(
     route: str = "ui",
     channel: int | None = None,
@@ -118,6 +142,7 @@ def actuator_for(
     table_path: str | Path | None = None,
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
+    numeric_writes: bool = False,
 ) -> Win32Actuator | BridgeActuator:
     """The actuator a command should use: ``ui`` (the default) or ``bridge``.
 
@@ -134,6 +159,7 @@ def actuator_for(
             table_path=table_path,
             runner_path=runner_path,
             target_digest=target_digest,
+            numeric_writes=numeric_writes,
         )
     raise ValueError(f"unknown route {route!r}: expected 'ui' or 'bridge'")
 
@@ -145,6 +171,7 @@ def bridge_actuator(
     table_path: str | Path | None = None,
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
+    numeric_writes: bool = False,
 ) -> BridgeActuator:
     """The same screen, with the record/store cycle on the bridge route — **opt-in**.
 
@@ -152,16 +179,31 @@ def bridge_actuator(
     is unchanged; only the cycle at a point's end takes the other path. ``route="ui"`` remains the
     default everywhere, and a host without the table or the dispatch module refuses by name instead
     of recording something it cannot verify.
+
+    ``numeric_writes`` asks the wrapper to write parameters through the bridge's own setter instead of the
+    GUI's dialogs. It is off by default and it is the *policy*, not the mechanism: the value is read before and
+    after, a mismatch is restored through the GUI write, and an unverifiable restore poisons the actuator for
+    the rest of the run. Measured 2026-10-22, a second value commit in a fresh attachment was not honoured —
+    which is why this stays opt-in and why the read-back, not the dispatch's report, decides.
     """
+    dispatch = bridge_dispatch(runner_path)
     inner = Win32Actuator(
-        channel=channel, note_sink=None if notes is None else notes.append
+        channel=channel,
+        note_sink=None if notes is None else notes.append,
+        # The menubar is the one step that used to need the operator's cursor, and this route already carries
+        # the dispatch that removes the need: bind it, so a channel verification (which opens the Parameters
+        # dialog) no longer requires the application to be the foreground window with a hand on the mouse.
+        # `press` stays None on purpose — the driver presses an entry with its own posted press, which needs no
+        # cursor either, so only the overlay's opening has to come from the dispatcher.
+        menu=_menu_opener(table_path, dispatch),
     )
     return BridgeActuator(
         inner,
-        dispatch=bridge_dispatch(runner_path),
+        dispatch=dispatch,
         table_path=table_path,
         target_digest=target_digest,
         channel=channel,
+        numeric_writes=numeric_writes,
     )
 
 
@@ -313,6 +355,7 @@ def point(
     table_path: str | Path | None = None,
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
+    numeric_writes: bool = False,
 ) -> tuple[bool, Path | str]:
     """One stored point: ``(True, path)`` or ``(False, reason)``.
 
@@ -331,6 +374,7 @@ def point(
         table_path=table_path,
         runner_path=runner_path,
         target_digest=target_digest,
+        numeric_writes=numeric_writes,
     ).try_record_and_store(name, seconds, store_dir, expected_mode=expected_mode)
 
 
@@ -348,6 +392,7 @@ def sweep(
     table_path: str | Path | None = None,
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
+    numeric_writes: bool = False,
     **measurement: float,
 ) -> tuple[PointOutcome, ...]:
     """A multi-point sweep through :class:`SweepRunner`, one JSONL entry per point.
@@ -370,6 +415,7 @@ def sweep(
         table_path=table_path,
         runner_path=runner_path,
         target_digest=target_digest,
+        numeric_writes=numeric_writes,
     )
     settings = RecordSettings(capture_dir=str(store_dir), name_prefix=name_prefix)
     runner = SweepRunner(
