@@ -78,6 +78,15 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A complete acquisition cycle ran from the message route (2026-10-23).** Record, stop, store, name and commit, in one
+run: the three strip routines were called with the primed form object (their bodies read the form's control fields and
+write the application's own command codes — 28 for record/stop, 29 for store — so no input is involved in starting or
+stopping), the store raised its dialog, the file name was set by `WM_SETTEXT`, and the dialog's `Accept` took one posted
+held press. Acceptance is the artifact: the stored block decodes to 4677 profiles × 96 gates with every gate supported and
+the resolution the instrument was set to. Two facts worth keeping: a store dialog's `Accept` is a `TSp_Button` that does
+take a posted press — a modal dialog is the active window — and the file name is a plain `TEdit`, so naming needs no input
+at all.
+
 **Menu rows work by calling the handler — and the earlier "needs its Sender" reading was wrong (2026-10-23).** The
 disassembly settled what trial could not: the Display rows' handlers take `Self` and `Sender`, store both at `[ebp-4]` and
 `[ebp-8]`, and never read them again; the body is a bitwise operation on the display-flags slot, a `Leave_Current_Menu`
@@ -152,23 +161,24 @@ capability. `absent` = no message-route implementation exists.
 | 4 | Read a dialog's fields | reading the dialog by eye | **works** | dialog opened by dispatch, fields read by message |
 | 5 | Select `Sensitivity` / `Emitting power` by text | click, then keyboard arrows | **works** | `select_by_text` + read-back after a settle; drift regression covered by a test |
 | 6 | Select the TGC mode | Tools → Define TGC → mode list → Accept, by hand | **partial** | mode **selection** is message-level; the dialog's `Accept` is still a press |
-| 7 | Accept / cancel a dialog | click | **blocked** | dialog buttons are pressed; whether their handlers can be called with a `Sender` is the same unknown as row 10 |
+| 7 | Accept / cancel a dialog | click | **works** | a posted held press on the dialog's own button acts. Measured on the store dialog: `Accept` closed it and the file was written. A modal dialog is the active window, which is why the press lands there when it does not on the form's controls |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
 | 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **works** | calling the row's handler directly moves the application's own flag: the horizontal-grids row took `display_flags` 0 → 2 and the vertical-grids row 2 → 0, in one attach, with no objects, no input and no cursor. The handler's body does not read `Self` or `Sender` at all — it stores them and ignores them, then acts on the flags slot, closes the menu and requests a redraw. Rows whose handler *does* read those registers are untested |
 | 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
-| 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | the routine call reaches the strip's `store` state, so only the naming step remains — and that is a dialog (row 7) |
+| 12 | Store a recorded block | press the strip, name it in a dialog | **works** | the store routine raises the dialog; the file name is set by a window message (`vel-vhigh-03` → `cycle-by-routine-01`) and the commit is one posted press on `Accept`. The stored block decodes: 4677 profiles × 96 gates, every gate supported, resolution 0.6167 mm |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
-| 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **partial** | the composition and verification are already message-level; the cycle is row 11–12 |
+| 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **partial** | the composition, verification and now the cycle itself are message-level (rows 11–12); what remains is pointing the campaign layer at it instead of at the runner that presses |
 
 ### Selected next
 
-**The store step, which is now the only thing between the message route and a full cycle.** Rows work, record and stop
-work; what remains for an unattended recording is the naming dialog that the store step ends in, and whether a dialog
-button's handler reads its `Sender` (the same question this round answered for rows, and answered the same way it should
-be answered — by reading the handler, not by guessing).
+**Whether a cycle can run while the application is covered.** Every step of the cycle is now message-level except the
+dialog's `Accept`, which is a press — and a press lands because a modal dialog is the active window. That raises the one
+question this round cannot answer from the register: when the store dialog is raised by an application that is *not* in
+front, does the dialog become active (and so receive the press), or does the press go nowhere as it does on the covered
+form's controls? The experiment is the cycle repeated with another window in front, ending in the same artifact check.
 
 **Also open, and cheap:** which rows read their registers. The rule is now mechanical — read the handler's body — so the
 register's remaining `blocked` rows can be classified without another probe.
