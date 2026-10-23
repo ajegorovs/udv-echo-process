@@ -78,6 +78,17 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**The cycle is package code now, not a runner that presses (2026-10-23).** `acquire/cycle.py` composes record → stop → store
+→ name → commit from the application's own routines and one press on the dialog's commit, and carries the refusals a
+sweep depends on when nobody is watching: a stored name is refused before recording, an undispatched routine stops the
+cycle naming its stage, a commit that writes no file fails, and a block counts only when it decodes to a stream. The
+caller, dialog and decoder are injected, so all of it is tested without an instrument (10 tests), and `BridgeActuator`
+prefers a supplied cycle to any host dispatch — the sweep runner and its evidence rules are untouched.
+
+Proven live with the application covered: two points, `0.617` then `0.740`, each written by message and stored through the
+composed cycle, each returning its artifact path from the package rather than from a host report, and decoding to 0.6167 /
+0.74 mm with last gates at 71.83 / 83.55 mm. The pointer guard released both dialogs' clips and restored the cursor.
+
 **A two-point sweep ran, and its blocks prove the measurement changed (2026-10-23).** Resolution was written between
 points — `0.617` then `0.740`, each read back from the sidebar before recording — and both points stored. The acceptance
 is the decode, not the read-back: `sweep-01` decodes to 0.6167 mm with a last gate at 71.83 mm, `sweep-02` to 0.74 mm with
@@ -208,14 +219,15 @@ capability. `absent` = no message-route implementation exists.
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
 | 17 | Keep the operator's pointer usable while a popup is open | nothing — the operator lived with it | **works** | the application confines the cursor to its dialog's rect (`ClipCursor`), which is desktop-wide. A guard releases it and restores the cursor: measured on the store dialog, one clip seen at exactly the dialog's rect, one release that took effect, the application did not re-apply it, and the cursor returned to where the operator left it |
-| 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **partial** | the composition, verification and now the cycle itself are message-level (rows 11–12); what remains is pointing the campaign layer at it instead of at the runner that presses |
+| 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **works** | `RoutineCycle` composes record/stop/store/name/commit in the package, with the refusals a run needs (taken name, undispatched routine, no file, undecodable block), and `BridgeActuator` prefers it to any host dispatch. Measured live, covered: two points at differing resolutions, both returning their artifact from the package and decoding to the geometry each asked for |
 
 ### Selected next
 
-**Wiring the sweep, rather than proving one.** Two points and a resolution change are established; what has not been done is
-the package's own sweep path (rungs, permutation, resume) driving this cycle instead of the runner that presses. That is
-composition work on code that already works, and the register's remaining `absent` rows (channel selection, file pick) are
-the only capabilities no route has yet.
+**A campaign through the composed cycle.** The per-point cycle is package code and the runner can drive it; what has not
+been exercised is a multi-point plan through `SweepRunner` with resume and permutation, which is the last composition step
+and the first thing that would run unattended for a long time. The register's remaining `absent` rows (channel selection,
+file pick, unexpected prompts) are separate capabilities, and channel selection — which restarts the measurement loop — is
+the one with a recorded hazard behind it.
 
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
