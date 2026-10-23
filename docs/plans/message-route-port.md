@@ -261,6 +261,18 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
+**The size verdict is a decision for the owner, not a patch (2026-10-24).** Making the decode the verdict and the size an
+advisory was tried and reverted: it failed five pinned tests, and two of them matter — a `leftover` and a `truncated`
+fixture that *decode cleanly* and were caught by size alone. So the change is not a tidy-up of a mislabelled check; it
+removes the only thing standing between a stale block and a point reported `OK`, and the buffer finding cuts both ways (size
+follows buffer age, so it cannot be trusted to catch staleness either).
+
+The decision therefore needs three things settled before any code moves: whether a leftover block that matches every word
+of the request should be accepted (the words include gates, resolution, prf, emissions and channel); whether the timing
+certificate already in the record is a better staleness signal than size; and what a caller should see when the only
+disagreement is the buffer's age — today it is `INVALID` with a ratio in the reason, which reads as a data fault and is
+not one. Nothing in this plan changes that rule until that is answered.
+
 **The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
 two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
 (`pending_command` 28 → 29), the dialog raised and committed, the block written — and its file spans **397.17 s** for a 4 s
