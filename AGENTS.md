@@ -175,6 +175,20 @@ the short form that has to survive a session that reads nothing else.
   clipped `SetCursorPos` is clamped *silently*: read the clip, release it with
   `ClipCursor(NULL)` when the target lies outside, and name the clip rather than blaming a
   locked desktop.
+- **Two routes, and the register says which one can do a thing.** The **UI route** emulates an
+  operator (hover, press, dialog typing); the **message route** reads window state and calls the
+  application's own routines in-process. The message route is what we build on; the UI route is
+  kept and is not being retired (owner decision 2026-10-23). Before driving the instrument, read
+  the port register in [`docs/plans/message-route-port.md`](docs/plans/message-route-port.md) — it
+  lists every action with one status: `works` with no input, `partial`, `blocked` (with the blocker
+  named as a capability), or `absent`. Never raise a status without the acceptance evidence named in
+  its row, and never count a step that presses or hovers as message-route capability.
+- **What the message route's limits are not.** They are not focus, occlusion or window size. An
+  inactive window ignores input whatever covers it, a minimised one paints nothing, and real input
+  injection (`SendInput`) is discarded in this environment while `SetCursorPos` still teleports the
+  pointer. So the limits that matter are the objects the dispatcher does not know: a row handler needs
+  its `Sender`, a strip routine needs its owning object, and a call without them either changes
+  nothing or faults.
 
 Anything that touches the screen must run in the **interactive session** (the agent shell
 is session 0 and sees no GUI): `./tools/live/dispatch.sh <bare-probe-name>.py`, log in

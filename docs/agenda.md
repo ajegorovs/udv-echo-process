@@ -14,7 +14,13 @@ trial of the shared work-organization guide, not a generally validated method.
 
 | Effort | Lifecycle state |
 |---|---|
+| [Message-route port](plans/message-route-port.md) | in progress |
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+
+**Message-route port (owner-selected 2026-10-23).** Which actions still borrow input emulation from the message route, and
+what each one is blocked on. The register in that plan is the single place to look before driving the instrument: it says
+per action whether the message route can do it, whether it is half-done, or whether it is blocked — and the old UI route
+stays in place as the fallback (owner decision: it is not being retired).
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
