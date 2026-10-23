@@ -76,6 +76,7 @@ from udv_echo_process.acquire.bridge import (
     MenuCall,
     MenuEvidence,
     MenuPressEvidence,
+    MenuRowEffect,
     load_table,
 )
 from udv_echo_process.acquire.config import (
@@ -193,6 +194,7 @@ __all__ = [
     "MenuCall",
     "MenuEvidence",
     "MenuPressEvidence",
+    "MenuRowEffect",
     "MutationDependent",
     "OverlayKind",
     "ParamRole",

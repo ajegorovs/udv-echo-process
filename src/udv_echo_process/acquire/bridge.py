@@ -29,8 +29,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -136,6 +137,33 @@ class BridgeSetter(BaseModel):
     maximum: float | None = None
 
 
+class MenuRowEffect(str, Enum):
+    """What pressing a row is known to do — the classification a caller consents to.
+
+    The categories exist because one measured press of ``preferences.assisted_mode`` rewrote five
+    acquisition parameters (PRF 600 -> 303, gates 42 -> 735, resolution 2.220 -> 0.123, velocity factor
+    1.00 -> 0.50, emissions 50 -> 150).  "Assisted mode" reads like a UI mode and is in fact a preset
+    switch, which is exactly the kind of row an unattended sweep must not press by accident.
+    """
+
+    #: Paints something (grids, cursors, axis choice).  Safe: no setting and no data changes.
+    DISPLAY = "display"
+    #: Enables or disables a processing step; the sweep may legitimately want either state.
+    FILTER = "filter"
+    #: Changes a mode the acquisition depends on, with no preset applied.
+    MODE = "mode"
+    #: Applies a whole configuration, like ``assisted_mode`` above.  Needs explicit consent.
+    PRESET = "preset"
+    #: Opens a dialog that must then be answered and closed.  Needs explicit consent.
+    DIALOG = "dialog"
+    #: Not classified yet.  A press is refused as unavailable rather than guessed at.
+    UNKNOWN = "unknown"
+
+
+#: Effects a caller may press without asking for permission first.
+UNGUARDED_EFFECTS = (MenuRowEffect.DISPLAY, MenuRowEffect.FILTER)
+
+
 class BridgeMenuRow(BaseModel):
     """One pressable row: which overlay it lives in, and where it sits inside that overlay.
 
@@ -148,6 +176,10 @@ class BridgeMenuRow(BaseModel):
     menu: str = Field(min_length=1, description="the overlay's name in the table's order")
     offset: tuple[int, int] = Field(description="pixels from the overlay's top-left to the row")
     component: str | None = Field(default=None, description="the form component, for the record")
+    effect: MenuRowEffect = Field(
+        default=MenuRowEffect.UNKNOWN,
+        description="what pressing it does; only DISPLAY and FILTER are unguarded",
+    )
 
 
 class BridgeMenuRoutines(BaseModel):
@@ -837,11 +869,15 @@ class BridgeMenu:
             raise BridgeUnavailable(f"bridge_menu_row:{entry}")
         return self._table.rows[entry]
 
-    def press(self, entry: str, *, hold_ms: int = 180) -> MenuPressEvidence:
+    def press(self, entry: str, *, allow: Collection[str] = (), hold_ms: int = 180) -> MenuPressEvidence:
         """Press the row called ``entry``, which must belong to the overlay that is open.
 
         The menu check is not pedantry: pressing a position in the *wrong* overlay would press whatever
         happens to sit there, and the whole point of a name is that it cannot drift into another menu.
+
+        ``allow`` names effects the caller consents to (``"preset"``, ``"dialog"``, ``"mode"``).  Display
+        and filter rows need no consent; anything unclassified is refused as unavailable, because a row
+        nobody has looked at is not a row a sweep should press.
         """
         row = self.row(entry)
         index = self.routines.index_of(row.menu)
@@ -849,6 +885,11 @@ class BridgeMenu:
             raise BridgeRefused("bridge_menu_not_open")
         if self._open != index:
             raise BridgeRefused(f"bridge_menu_row_other_menu:{row.menu}")
+        if row.effect is MenuRowEffect.UNKNOWN:
+            raise BridgeUnavailable(f"bridge_menu_row_effect_unknown:{entry}")
+        permitted = {effect.value if isinstance(effect, MenuRowEffect) else str(effect) for effect in allow}
+        if row.effect not in UNGUARDED_EFFECTS and row.effect.value not in permitted:
+            raise BridgeRefused(f"bridge_menu_row_effect:{entry}:{row.effect.value}")
         return self.press_row(row.offset, hold_ms=hold_ms)
 
     def press_row(self, offset: tuple[int, int], *, hold_ms: int = 180) -> MenuPressEvidence:

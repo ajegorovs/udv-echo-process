@@ -27,8 +27,17 @@ ORDER = ("File", "Preferences", "Parameters", "Compute", "Display", "Filters", "
 
 
 ROWS = {
-    "filters.moving_average": {"menu": "Filters", "offset": [14, 40], "component": "Btn_MoveAver"},
-    "display.vertical_grids": {"menu": "Display", "offset": [10, 5], "component": "Btn_Vert_grids"},
+    "filters.moving_average": {
+        "menu": "Filters", "offset": [14, 40], "component": "Btn_MoveAver", "effect": "filter",
+    },
+    "display.vertical_grids": {
+        "menu": "Display", "offset": [10, 5], "component": "Btn_Vert_grids", "effect": "display",
+    },
+    "preferences.assisted_mode": {
+        "menu": "Preferences", "offset": [17, 18], "component": "Btn_Assisted_Mode", "effect": "preset",
+    },
+    "preferences.record_options": {"menu": "Preferences", "offset": [16, 50], "effect": "dialog"},
+    "preferences.unclassified": {"menu": "Preferences", "offset": [16, 87]},
 }
 
 
@@ -309,6 +318,68 @@ class TestPressingByName:
             menu=menu_block(), rows={"filters.moving_average": {"menu": "Filters", "offset": [14, 40], "x": 1}}
         )
         path.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setenv("UDV_BRIDGE_TABLE", str(path))
+        with pytest.raises(BridgeUnavailable) as caught:
+            load_table()
+        assert "bridge_table_invalid" in caught.value.reason
+
+
+class TestWhatAPressIsAllowedToDo:
+    """One measured press of `assisted_mode` rewrote five acquisition parameters, so the row says so."""
+
+    def test_a_display_row_needs_no_consent(self):
+        bridge = menu()
+        bridge.open_menu("Display")
+        bridge.press("display.vertical_grids")  # does not raise
+
+    def test_a_filter_row_needs_no_consent(self):
+        bridge = menu()
+        bridge.open_menu("Filters")
+        bridge.press("filters.moving_average")
+
+    def test_a_preset_row_is_refused_until_it_is_allowed(self):
+        press = Press()
+        bridge = menu(press=press)
+        bridge.open_menu("Preferences")
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.press("preferences.assisted_mode")
+        assert str(caught.value).endswith(":preset")
+        assert press.offsets == []
+
+    def test_a_preset_row_is_pressed_when_allowed(self):
+        press = Press()
+        bridge = menu(press=press)
+        bridge.open_menu("Preferences")
+        bridge.press("preferences.assisted_mode", allow=("preset",))
+        assert press.offsets == [(17, 18)]
+
+    def test_a_dialog_row_needs_consent_too(self):
+        bridge = menu()
+        bridge.open_menu("Preferences")
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.press("preferences.record_options")
+        assert str(caught.value).endswith(":dialog")
+
+    def test_an_unclassified_row_is_unavailable_not_pressed(self):
+        bridge = menu()
+        bridge.open_menu("Preferences")
+        with pytest.raises(BridgeUnavailable) as caught:
+            bridge.press("preferences.unclassified", allow=("preset", "dialog", "mode"))
+        assert caught.value.reason == "bridge_menu_row_effect_unknown:preferences.unclassified"
+
+    def test_the_effect_is_named_by_value_in_the_refusal(self):
+        # A (str, Enum) member formats as its qualified name on this interpreter, so the message must
+        # interpolate the value or a reader is told `MenuRowEffect.PRESET`.
+        bridge = menu()
+        bridge.open_menu("Preferences")
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.press("preferences.assisted_mode")
+        assert "MenuRowEffect" not in str(caught.value)
+
+    def test_an_unknown_effect_in_the_table_is_refused(self, tmp_path, monkeypatch):
+        path = tmp_path / "operations.json"
+        rows = {"x.y": {"menu": "Filters", "offset": [1, 2], "effect": "sideways"}}
+        path.write_text(json.dumps(table_dict(menu=menu_block(), rows=rows)), encoding="utf-8")
         monkeypatch.setenv("UDV_BRIDGE_TABLE", str(path))
         with pytest.raises(BridgeUnavailable) as caught:
             load_table()
