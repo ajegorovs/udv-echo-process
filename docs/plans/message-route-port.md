@@ -78,6 +78,15 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A three-point series ran, with a parameter changed between points and the guard held throughout (2026-10-23).** Points
+at `high`, `medium`, `high` sensitivity, each selected by text with a read-back that matched, then record, stop, store,
+name and commit. All three stored blocks exist and decode (538, 536 and 535 profiles × 96 gates; finite; every gate
+supported; resolution 0.6167 mm). The pointer guard ran for the whole series rather than around one dialog: three clips
+detected, three released, all the same rectangle, and the cursor returned to where it was found. Coverage held at every
+sample — the application never came forward — and the cadence was about 67 seconds per point. The store dialog opened with
+the previous point's name in its field each time, which is the contract the plan pinned: the name is written before every
+commit and never assumed empty.
+
 **The pointer can be kept usable, and here is why it mattered (2026-10-23).** With a real operator working in a covered
 window, the store dialog confined the mouse to its own rectangle — a desktop-wide clip set by an application that was not
 even in front, so the pointer was trapped inside a dialog nobody could see. Measured: the clip was exactly the dialog's
@@ -192,9 +201,11 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**A cycle at scale — with the pointer guard in place for the whole run, not just the store step.** The guard is currently
-scoped to the popup's lifetime, which is where the clip exists; a series of points should confirm that no other popup in
-the cycle traps the pointer and that a clip raised between points is caught.
+**A parameter that changes the measurement, not just a preference.** The series changed sensitivity — a proven message-level
+control, but not a parameter that moves the gates or the resolution. The next step is a series varying `resolution_mm` or
+`gates`, which is register row 8 (numeric writes, `partial`): one transition was proven once and not repeatably, and the
+mismatch repair is still a UI write. That row is what stands between a series and a *sweep*, and it is the last substantive
+blocker in the register.
 
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
