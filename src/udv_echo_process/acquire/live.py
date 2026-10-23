@@ -143,6 +143,7 @@ def actuator_for(
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
     numeric_writes: bool = False,
+    cycle: object | None = None,
 ) -> Win32Actuator | BridgeActuator:
     """The actuator a command should use: ``ui`` (the default) or ``bridge``.
 
@@ -160,6 +161,7 @@ def actuator_for(
             runner_path=runner_path,
             target_digest=target_digest,
             numeric_writes=numeric_writes,
+            cycle=cycle,
         )
     raise ValueError(f"unknown route {route!r}: expected 'ui' or 'bridge'")
 
@@ -172,6 +174,7 @@ def bridge_actuator(
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
     numeric_writes: bool = False,
+    cycle: object | None = None,
 ) -> BridgeActuator:
     """The same screen, with the record/store cycle on the bridge route — **opt-in**.
 
@@ -204,6 +207,7 @@ def bridge_actuator(
         target_digest=target_digest,
         channel=channel,
         numeric_writes=numeric_writes,
+        cycle=cycle,
     )
 
 
@@ -356,6 +360,7 @@ def point(
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
     numeric_writes: bool = False,
+    cycle: object | None = None,
 ) -> tuple[bool, Path | str]:
     """One stored point: ``(True, path)`` or ``(False, reason)``.
 
@@ -375,6 +380,7 @@ def point(
         runner_path=runner_path,
         target_digest=target_digest,
         numeric_writes=numeric_writes,
+        cycle=cycle,
     ).try_record_and_store(name, seconds, store_dir, expected_mode=expected_mode)
 
 
@@ -393,6 +399,7 @@ def sweep(
     runner_path: str | Path | None = None,
     target_digest: str | None = None,
     numeric_writes: bool = False,
+    cycle: object | None = None,
     **measurement: float,
 ) -> tuple[PointOutcome, ...]:
     """A multi-point sweep through :class:`SweepRunner`, one JSONL entry per point.
@@ -416,6 +423,7 @@ def sweep(
         runner_path=runner_path,
         target_digest=target_digest,
         numeric_writes=numeric_writes,
+        cycle=cycle,
     )
     settings = RecordSettings(capture_dir=str(store_dir), name_prefix=name_prefix)
     runner = SweepRunner(
