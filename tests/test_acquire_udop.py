@@ -179,6 +179,7 @@ FACADE_METHODS = (
     "write_parameter",
     "apply_point",
     "select_combo",
+    "select_combo_by_text",
     "_as_role",
 )
 SURFACES = {
@@ -232,7 +233,7 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
 #: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
-#: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
+#: ``_answer_burst_rejection``. The class's own name set at this tip is 103, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "_screen_anchor_text",
@@ -241,6 +242,9 @@ CLASS_ADDITIONS = (
     "_row_reading_or_none",
     "_answer_burst_rejection",
     "_burst_refusal",
+    # the dropdown entry selected by its text: the walk that discovers a combo's vocabulary and the
+    # read-back that proves it, over the same ``_combo_select`` its sibling ``select_combo`` uses
+    "select_combo_by_text",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

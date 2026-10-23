@@ -265,6 +265,7 @@ from udv_echo_process.acquire.udop.store import StoreSurface
 # tests that were written against the flat module — ``docs/dop3000/acquisition-architecture.md``
 # §5's *compatibility first* rule. The move changed no caller, and the gesture bodies further
 # down this file are byte-identical to the ones the live sessions proved.
+from udv_echo_process.acquire.ui.combo import ComboSelection, select_by_text
 from udv_echo_process.acquire.ui.dialog import (
     _DIALOG_INPUT_CLASSES,
     _DIALOG_MIN_CHILDREN,
@@ -1790,6 +1791,35 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             raise AcquisitionError(f"no {name!r} combo in the parameter column")
         win32gui, _ = _gui()
         self._combo_select(combo["hwnd"], index, win32gui.GetParent(combo["hwnd"]))
+
+    def select_combo_by_text(self, name: str, text: str, *, settle_s: float = 0.35) -> ComboSelection:
+        """Select a column combo's entry by its **text**, and prove it by reading the widget back.
+
+        The entry is never chosen by counting steps: the vocabulary is discovered by stepping the control
+        until it clamps, and the wanted name is matched against what each step reported.  That is the rule the
+        burst writing already follows, applied to a list nobody can read up front — these Delphi combos answer
+        ``CB_SETCURSEL`` but no ``CB_GETCOUNT``, and every route that tried to open the list failed while the
+        widget itself stayed selectable.
+
+        ``settle_s`` is not decoration: one measured write reported its new value immediately and a different
+        one minutes later, so the read-back happens after a settle and a mismatch raises rather than passing.
+        """
+        combo = self._resolve()["combos"].get(name)
+        if combo is None:
+            raise AcquisitionError(f"no {name!r} combo in the parameter column")
+        hwnd = combo["hwnd"]
+        win32gui, _ = _gui()
+        parent = win32gui.GetParent(hwnd)
+
+        def settle() -> None:
+            time.sleep(settle_s)
+
+        return select_by_text(
+            text,
+            read=lambda: self._get_text(hwnd),
+            select=lambda index: self._combo_select(hwnd, index, parent),
+            settle=settle,
+        )
 
     # ------------------------------------------------------------------ cycle internals
 
