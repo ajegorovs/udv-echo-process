@@ -78,6 +78,14 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**The pointer can be kept usable, and here is why it mattered (2026-10-23).** With a real operator working in a covered
+window, the store dialog confined the mouse to its own rectangle — a desktop-wide clip set by an application that was not
+even in front, so the pointer was trapped inside a dialog nobody could see. Measured: the clip was exactly the dialog's
+rect, `ClipCursor(NULL)` from the non-foreground probe released it, the application did not re-apply it, and the modal had
+also re-centred the cursor (423,0 → 968,556), which the guard puts back. A covered cycle then ran with the guard around the
+store step: one clip detected, one release, cursor restored, and the block stored — so the two things an operator notices
+are both handled, and both are now package code (`acquire/ui/pointer.py`) rather than probe scaffolding.
+
 **A complete acquisition cycle ran with the application covered (2026-10-23).** The whole cycle — record, stop, store,
 name, commit — with another window in front, checked at every stage: three sample points under the screen's centre returned
 the covering window's class and never the application's, and the application never held the foreground, before recording,
@@ -179,9 +187,14 @@ capability. `absent` = no message-route implementation exists.
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
+| 17 | Keep the operator's pointer usable while a popup is open | nothing — the operator lived with it | **works** | the application confines the cursor to its dialog's rect (`ClipCursor`), which is desktop-wide. A guard releases it and restores the cursor: measured on the store dialog, one clip seen at exactly the dialog's rect, one release that took effect, the application did not re-apply it, and the cursor returned to where the operator left it |
 | 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **partial** | the composition, verification and now the cycle itself are message-level (rows 11–12); what remains is pointing the campaign layer at it instead of at the runner that presses |
 
 ### Selected next
+
+**A cycle at scale — with the pointer guard in place for the whole run, not just the store step.** The guard is currently
+scoped to the popup's lifetime, which is where the clip exists; a series of points should confirm that no other popup in
+the cycle traps the pointer and that a clip raised between points is caught.
 
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
