@@ -15,6 +15,7 @@ trial of the shared work-organization guide, not a generally validated method.
 | Effort | Lifecycle state |
 |---|---|
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+| [Multiplexed/rolling acquisition](plans/multiplexed-rolling-acquisition.md) | ready for review |
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
@@ -50,6 +51,20 @@ Capture is not selection. Existing detailed backlog sections below remain their 
   Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
 - **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
   decide a separately scoped wording repair rather than changing the scientific contract during P1.
+- **Crop-index check fails on `master` (measured 2026-10-19):** `uv run --extra acquire python tools/ui/crop_index.py`
+  exits non-zero with two problems — it reports `index rows: 50   crops on disk: 50` while the document's own prose
+  says 45 crops (`AGENTS.md` says 45 in two places), and `UI-STRIP-04: index says 458x133, overlay-pause.png is
+  376x133`. Every cited row still describes a file that exists; the totals and that one stated size are stale. A
+  bounded wording/size repair, not started, and not a reason to distrust a crop that is cited by id.
+- **Strip evidence ahead of its ledger and its code:** `UI-STRIP-03` and `UI-STRIP-04` — committed instrument
+  captures of 2026-09-19, with `UI-STRIP-03`'s four captions (`Pause`/`Record`/`Do store`/`Clear and restart`) each
+  bound to a handle read in one process — show the strip's row **relabelling** (`Pause`↔`Resume`, `Clear and
+  restart`↔`Clear all`) and carrying `Do store` in the row itself. `dop3000/acquisition-ui-model.md` §3.5 still names
+  only `UI-STRIP-01/02`, its ledger row B10 still reads *CRITICAL device-pending*, `dop3000/device-verification.md`
+  still lists V4 as pending, and `acquire/ui/strip.py` still classifies a four-button no-slider row as `AMBIGUOUS`
+  and refuses it. Decide the disposition — whether that evidence settles B10/V4, and only then whether the code's
+  refusal changes — before any gesture is bound to that row. Captured by the multiplexed-acquisition
+  [plan](plans/multiplexed-rolling-acquisition.md) § *Not established*; not selected.
 
 ## Current progress — 2026-10-16
 
@@ -66,6 +81,7 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 | Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | None selected; bounded synthesis requires separate selection. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
 | Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
+| Multiplexed/rolling acquisition (DOP3010) | **Mapped and evidenced; nothing implemented** (owner-directed 2026-10-19). Beyond the mapping: the `Channels` surface's controls are bound, its painted state read, and the first **multiplexed recording** is committed with its decode — `data/multiplexed-first-look/` shows the per-channel sizes reaching op word 51 as `5`/`7`/`1`, word 53 = 1, the mux bit set on all three, and the block word as `0x01000000 \| roll index` with `profiles = word 51 × word 53 + 1`. Criterion 6 is met; no writer exists, no tick was pressed by the driver. | Decide the offline slice (typed mode model, the multiplexed per-point refusal, the reader read-back helper). A status verb must choose between a capture and the hidden-panel read, since opening the popup costs the operator a click. | [Plan](plans/multiplexed-rolling-acquisition.md) and the [data note](multiplexed-first-look/README.md) own the evidence; the note records one disagreement (ch 2 stores 7 profiles where 0.2 s was intended) to re-read per channel. |
 | `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
@@ -317,7 +333,15 @@ or abort plus "state unverified" for an unattended campaign — no automatic
 recovery, no speculative press. Full statement: campaign plan §9.1–§9.3 and
 [`dop3000/acquisition-closeout-plan.md`](dop3000/acquisition-closeout-plan.md).
 
-### The one re-opening so far: burst length, as a verified transition
+**Multiplexed / rolling acquisition — mapped, nothing implemented (owner-directed 2026-10-19).** Its evidence is the
+class the constraint above allows: the four-sensor joint analysis cannot establish an essential acquisition condition
+from what it has — a channel-time identity — because the stored files carry only a block/sequence word and the reader
+deliberately refuses to derive round/visit identity from it. The capability is inventoried surface by surface, with
+its device-pending list, in [`plans/multiplexed-rolling-acquisition.md`](plans/multiplexed-rolling-acquisition.md).
+Nothing is implemented, no writer has landed, no campaign is selected, and the architecture is **not** hereby declared
+open for growth: the plan's first slice is offline-only and its two live criteria wait on an operator session.
+
+### Re-opening 1 (landed): burst length, as a verified transition
 
 **Its evidence is the sparse pass's own procedure:** burst length is not a sidebar
 parameter, so every job that recorded at a different burst needed an **operator

@@ -31,6 +31,14 @@ directory. No clone path, machine name or user appears anywhere. The interpreter
 project's own venv when it exists, falling back to the running one.
 - **The scheduled task is created once per machine** and is the only machine-specific value
   (an absolute interpreter path). Document the creation command next to the dispatcher.
+- **The interpreter must be one the scheduler can launch — test it, do not assume the venv works.**
+  Measured 2026-10-19: a venv built on the agent host's own bundled Python (a `...\hermes\tools\python-*`
+  base) starts normally from a shell but, launched as the task action, produces **no log at all** —
+  the task reports *Running*, the `pythonw` process idles with no child and 0.05 s of CPU, and the
+  dispatcher's poll just times out. The same probe under a venv built on the system interpreter
+  (`...\AppData\Local\Python\pythoncore-*`) ran in 6 s. When a dispatch yields no log, check the
+  task's `/tr` path *and* which Python the venv is based on (`pyvenv.cfg`'s `home`), then recreate the
+  venv on the system interpreter (`uv venv --clear --python <system python>` + `uv sync`).
 - **The task names one *tree*, so a second checkout must not dispatch through it.** The registered
   command runs `<tree>\tools\live\task_run.py`, which reads its target and its arguments from *its own*
   tree's `outputs/live/` and writes its log there: from a linked worktree, `dispatch.sh` silently runs

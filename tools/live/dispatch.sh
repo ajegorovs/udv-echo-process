@@ -43,6 +43,25 @@ if ! schtasks /query /tn "$TASK" >/dev/null 2>&1; then
   echo "no scheduled task '$TASK' on this machine — create it with the command in tools/live/README.md"
   exit 2
 fi
+
+# The task's action names **one tree**. A task registered for a different checkout runs that tree's
+# task_run.py, which reads *its own* outputs/live/ — so this dispatch would leave this tree's target
+# file unread and run whatever the other tree last held, in front of the instrument. That is not
+# hypothetical: a worktree dispatch once pressed the primary checkout's strip button because the
+# primary's task still held an `acquire preflight` target. Refuse before writing anything.
+task_args="$(schtasks /query /tn "$TASK" /xml 2>/dev/null | sed -n 's:.*<Arguments>\(.*\)</Arguments>.*:\1:p' | tr '\\' '/' | tr '[:upper:]' '[:lower:]')"
+repo_norm="$(cygpath -m "$REPO" 2>/dev/null || printf '%s' "$REPO" | sed 's:^/\([A-Za-z]\)/:\1/:')"
+repo_norm="$(printf '%s' "$repo_norm" | tr '\\' '/' | tr '[:upper:]' '[:lower:]')"
+case "$task_args" in
+  *"$repo_norm/tools/live/task_run.py"*) ;;
+  *)
+    echo "task '$TASK' runs another tree's task_run.py: $task_args"
+    echo "this checkout is $REPO — register a task for it and select it with LIVE_TASK_NAME,"
+    echo "or the dispatch would run that tree's code against that tree's stale target (README)."
+    exit 2
+    ;;
+esac
+
 schtasks /run /tn "$TASK" >/dev/null 2>&1 || { echo "could not start the task '$TASK'"; exit 2; }
 
 limit="${PROBE_TIMEOUT_S:-600}"
