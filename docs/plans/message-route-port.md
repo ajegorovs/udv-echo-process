@@ -78,7 +78,16 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
-**The owning object: two routes tried and closed (2026-10-23).** The binding captured for an earlier instance cannot be
+**The owning object is now resolved, and priming needs no input (2026-10-23).** Two routes are closed and one works.
+The discovery observes the application's own call, so it needs the application to act: instead of a human pressing
+something, the message route changes a parameter itself (select a combo entry by text, then put it back), the application
+calls its setter, and the discovery reads the widget's owner. Measured on the live instance: the run reported
+`complete: true` with seven observations and one owning object, class `TMain_Scr`. Supplying that object to the strip's
+record routine then executed it — `ok`, `executed`, no errors — and the strip's own state moved from `recording` to
+`store`. So **priming is a step a probe performs**: attach the discovery, change one value and restore it, keep the
+object, and every later call in that instance needs no input. A restart invalidates it, and a stale object must refuse.
+
+**Two routes tried and closed (2026-10-23).** The binding captured for an earlier instance cannot be
 reused: reading the process's memory shows its form pointer is not even mapped in the running instance, so a recorded
 object pointer is stale by construction and must refuse rather than be trusted. Nor can the object be found by its class
 signature alone: scanning the process's committed readable memory (371 MB, 477 regions) for the recorded VMT pointer
@@ -87,6 +96,11 @@ identify a live form in this instance. What is *not* in doubt is the module: rou
 resolve and execute in this instance, so code is stable while objects are not. That leaves observation — capturing the
 object the application itself uses when it calls one of these routines — as the only route with a mechanism behind it,
 and it needs the instrumentation step that currently fails (see *Relevant revision*).
+
+**Instrumented steps need a node a probe can execute.** The agent shell's bundled tool directories are ACL-closed to a
+dispatched probe (`Access denied`), so a probe's `node` lookup finds nothing and the instrumentation spawn fails with a
+file-not-found that reproduces nowhere from a shell. A copy of the executable inside the repository's scratch works for
+both sides and is what the priming step uses.
 
 **Relevant revision / artifacts / live target.** This branch (`feat/application-backed-bridge`), and the machine-local
 binding table that carries routine addresses and the menu row map; those stay machine-local and are never committed.
@@ -114,9 +128,9 @@ capability. `absent` = no message-route implementation exists.
 | 7 | Accept / cancel a dialog | click | **blocked** | dialog buttons are pressed; whether their handlers can be called with a `Sender` is the same unknown as row 10 |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
-| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | the handler executes and changes nothing: it needs its `Sender` object |
-| 11 | Start / stop a recording | press the strip | **blocked** | the routine faults without the owning object (`Self`) |
-| 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | same as 11, and the naming step is a dialog (row 7) |
+| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | the handler executes and changes nothing: it needs its `Sender` object. The attachment can resolve a *row* object for an `entry` argument, and that route is untested |
+| 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
+| 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | the routine call reaches the strip's `store` state, so only the naming step remains — and that is a dialog (row 7) |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
@@ -124,16 +138,21 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Resolve the owning object (`Self`/`Sender`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
+**Give a menu row its `Sender`.** With record/stop resolved, the largest remaining block is row 10: a row handler needs
+the object it was pressed from, not its owner. The attachment already resolves a row object when a call's argument is
+`entry` (it enumerates the open overlay's entry buttons and validates the class before use), so the next measurement is
+one call with that argument and the state read back either side. If it acts, rows and dialog buttons (row 7) become
+message-route work; if it does not, the register records row 10 as blocked by design.
+
+**Closed: the owning object (`Self`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
 that belongs to some object the dispatcher does not know. Form methods work because the form is identified; the strip's
 and the rows' owners are not. The measurement that settles it is capturing the object pointer the application itself
 uses when it calls one of these routines, for the *current* application instance — a binding captured for an earlier
 instance is stale and must refuse rather than be reused.
 
-**Stopping condition.** Either a strip `record`/`stop` and a row toggle both execute with `allow_real_input=False`, or the
-two are shown to be unreachable without the application calling them first — in which case the register's rows 10–12 are
-recorded as blocked-by-design, with that measurement as evidence, and the message route's force is what it reads and what
-it can select.
+**Stopping condition.** Either a row toggle executes with `allow_real_input=False`, or it is shown to need an object the
+message route cannot obtain — in which case row 10 is recorded as blocked by design and the store's naming dialog (row 12)
+is what remains between the message route and an unattended recording.
 
 **Before starting, read the two closed routes** in *Current checkpoint*: a recorded object pointer is stale by
 construction, and the class signature does not find a live instance. Do not re-run either scan. The instrumentation step
