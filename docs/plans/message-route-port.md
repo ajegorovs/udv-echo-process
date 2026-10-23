@@ -78,6 +78,21 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**The false verdicts were a recording window nobody had measured (2026-10-23).** The size guard's rate model is correct —
+`profile_period_s(50, 600)` is 0.0406 s and the stored blocks' mean profile interval is 40.34 ms — and its arithmetic for the
+*requested* window is correct too: 4 s predicts 99 profiles. What was wrong was the premise that the recording lasted the
+requested window. It did not: the block spans **20.657 s** (513 profiles at 40.34 ms), because record and stop are two
+separate attachments and the recording keeps writing until the second one lands. So a sound 21 s file was compared against a
+4 s expectation and called contaminated at 2.11x.
+
+Two facts follow. The guard was right to fire on the numbers it was given — the input was the lie, not the check. And a
+requested 4 s point costs about 21 s of data, which matters for a sweep's duration budget as much as for its verdict.
+
+`RoutineCycle` now reads the span from the block's own timestamps, reports it, and refuses a block that ran past twice the
+requested window; an unmeasurable span is a refusal rather than a pass. That turns the silent wrong verdict into an
+explicit one, and it deliberately makes the current live behaviour fail: with attachment overhead inside the window, a 4 s
+request is refused as a 20 s recording.
+
 **The campaign path ran end to end, and it exposed a defect in a guard, not in a file (2026-10-23).** `live.sweep` over
 rungs 5 and 6, driving the composed cycle with the application covered: two points recorded and stored
 (`camp-k5-…`, `camp-k6-…`), the JSONL log holding one entry per point, and four dialog clips released. Both artifacts are
@@ -237,11 +252,12 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**The size signature's profile prediction.** A campaign cannot report its own points as valid while the guard mispredicts
-the achieved profile count by ~5× (99 predicted, 513 achieved, at 96 gates and this prf/emissions/burst). The measurement
-to make first is the achieved rate as a function of the instrument's own settings, because a prediction derived from the
-rate is a guard and a widened band is only a smaller lie. Second: decide whether the decode should be the verdict and the
-size an advisory — the register's own principle says the artifact is the acceptance.
+**Record and stop inside one attachment.** This is the real fix for the window, and it is a caller-level change: two
+attachments cost ~8 s each, which is where the 5× overshoot comes from. One attachment that issues the record, waits the
+requested window, and issues the stop would make the block's span equal the duration asked for — and would take the point
+from ~65 s to a few seconds. The open question is whether the application keeps recording while its UI thread is inside our
+stub, which is exactly what the first experiment must show; if it does not, the fallback is to declare the overhead and
+request `duration − overhead` per point, which is honest but crude.
 
 **Then:** resume and permutation across a longer plan, and the `absent` capabilities (channel selection, file pick,
 unexpected prompts), of which channel selection carries a recorded hazard — it restarts the measurement loop.
