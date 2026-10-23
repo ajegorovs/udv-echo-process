@@ -674,3 +674,10 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   path it reports rather than assuming a plan's portable relative default.
   command — it is read at the machine, in Preferences → Record settings, and it must name a directory
   that exists. Both are preconditions of a sitting, and a pass on one says nothing about the other.
+- **A health probe must discover the pid, never remember it.** `health_check.py` carried a literal pid, so
+  after the application was restarted it reported `process_alive: false` for an application that was up and
+  answering — `main_hwnd` and `strip_view` were both read from the live instance. The process it asked
+  about really was gone; it just was not the one on screen. Take the pid from the main window
+  (`FindWindowW("TMain_Scr")` then `GetWindowThreadProcessId`) and call the application alive only when
+  `GetExitCodeProcess` returns `STILL_ACTIVE`. A probe that lies about liveness is worse than no probe,
+  because the caller stops looking.

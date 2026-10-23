@@ -384,3 +384,147 @@ class TestWhatAPressIsAllowedToDo:
         with pytest.raises(BridgeUnavailable) as caught:
             load_table()
         assert "bridge_table_invalid" in caught.value.reason
+
+
+class Census:
+    """A scriptable census: the surfaces it reports, and what it reports after the next call."""
+
+    def __init__(self, surfaces=(), then=None) -> None:
+        self.surfaces = list(surfaces)
+        self.then = then
+        self.calls = 0
+
+    def __call__(self):
+        self.calls += 1
+        # `then` is the state the *open* leaves behind; later reads return whatever the test set, so a
+        # press can be given a screen of its own.
+        if self.calls == 2 and self.then is not None:
+            self.surfaces = list(self.then)
+        return {"surfaces": list(self.surfaces)}
+
+
+def guarded(press=None, census=None, rows=None) -> BridgeMenu:
+    table = BridgeTable.model_validate(table_dict(menu=menu_block(), rows=ROWS if rows is None else rows))
+    return BridgeMenu(table, Dispatch(), press or Press(), census)
+
+
+class TestTheScreenGuard:
+    """What a press did is only knowable from the screen; these pin what the class does with it."""
+
+    def test_opening_on_a_dirty_screen_is_refused(self):
+        census = Census(["TSp_Panel:406,55,658,215"])
+        bridge = guarded(census=census)
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.open_menu("Filters")
+        assert str(caught.value).startswith("bridge_menu_surface_already_painted:")
+        assert bridge.open_index is None
+
+    def test_opening_records_what_it_painted(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(census=census)
+        evidence = bridge.open_menu("Filters")
+        assert evidence.painted is True
+        assert evidence.surfaces == ("TSp_Panel:406,55,658,215",)
+
+    def test_closing_that_leaves_the_panel_painted_is_refused(self):
+        # The stuck overlay: `leave` returns a clean report and the panel is still there.
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(census=census)
+        bridge.open_menu("Filters")
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.close_menu()
+        assert str(caught.value).startswith("bridge_menu_still_painted:")
+        assert bridge.open_index == 6, "a menu that did not close is still open"
+
+    def test_closing_that_clears_the_screen_is_accepted(self):
+        census = Census([], then=[])
+        bridge = guarded(census=census)
+        bridge.open_menu("Filters")
+        evidence = bridge.close_menu()
+        assert evidence.painted is False
+        assert bridge.open_index is None
+
+    def test_a_press_that_raises_a_prompt_is_refused(self):
+        # Measured: the assisted-mode row raises a Warning that decides whether the change is kept.
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(press=Press({"pressed": True, "handle": 4242}), census=census)
+        bridge.open_menu("Filters")
+        census.surfaces = ["TSp_Panel:406,55,658,215", "#32770:772,505,1164,637"]
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.press_row((14, 40))
+        assert str(caught.value).startswith("bridge_menu_press_raised_surface:")
+
+    def test_a_declared_prompt_is_accepted(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(press=Press({"pressed": True, "handle": 4242}), census=census)
+        bridge.open_menu("Filters")
+        census.surfaces = ["TSp_Panel:406,55,658,215", "TSp_Panel:391,160,841,280"]
+        evidence = bridge.press_row((14, 40), allow=("dialog",))
+        assert evidence.handle == 4242
+
+    def test_a_press_whose_handler_closes_the_panel_is_fine(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(press=Press({"pressed": True, "handle": 4242}), census=census)
+        bridge.open_menu("Filters")
+        census.surfaces = []  # the handler called Leave itself
+        assert bridge.press_row((14, 40)).handle == 4242
+
+    def test_the_named_press_forwards_the_allowance(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(press=Press({"pressed": True, "handle": 4242}), census=census)
+        bridge.open_menu("Preferences")
+        census.surfaces = ["TSp_Panel:526,55,919,481", "TSp_Panel:537,336,909,471"]
+        with pytest.raises(BridgeRefused):
+            bridge.press("preferences.record_options")
+        evidence = bridge.press("preferences.record_options", allow=("dialog",))
+        assert evidence.offset == (16, 50)
+
+    def test_without_a_census_nothing_is_guarded(self):
+        # Documented default: enumerating surfaces is the host's business, and a host that supplies none
+        # gets no guard rather than a silent success it did not measure.
+        bridge = menu()
+        bridge.open_menu("Filters")
+        bridge.close_menu()
+        assert bridge.open_index is None
+
+    def test_a_census_that_returns_nonsense_is_a_refusal(self):
+        bridge = BridgeMenu(
+            BridgeTable.model_validate(table_dict(menu=menu_block(), rows=ROWS)),
+            Dispatch(),
+            Press(),
+            lambda: "TSp_Panel",
+        )
+        with pytest.raises(BridgeUnavailable) as caught:
+            bridge.open_menu("Filters")
+        assert caught.value.reason == "bridge_menu_census_report_invalid"
+
+
+class TestReopeningTheMenuItAlreadyHas:
+    def test_reopening_the_same_menu_is_a_no_op(self):
+        # Measured: `Apply moving average filter` toggles its state and leaves the dropdown painted.
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        dispatch = Dispatch()
+        bridge = BridgeMenu(
+            BridgeTable.model_validate(table_dict(menu=menu_block(), rows=ROWS)), dispatch, Press(), census
+        )
+        bridge.open_menu("Filters")
+        calls_after_open = len(dispatch.calls)
+        again = bridge.open_menu("Filters")
+        assert again.raw == {"already_open": True}
+        assert len(dispatch.calls) == calls_after_open, "no second enter was dispatched"
+        assert bridge.open_index == 6
+
+    def test_a_foreign_surface_is_still_refused(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(census=census)
+        bridge.open_menu("Filters")
+        census.surfaces = ["TSp_Panel:406,55,658,215", "TSp_Panel:526,55,919,481"]
+        with pytest.raises(BridgeRefused):
+            bridge.open_menu("Filters")
+
+    def test_reopening_a_different_menu_over_a_painted_one_is_refused(self):
+        census = Census([], then=["TSp_Panel:406,55,658,215"])
+        bridge = guarded(census=census)
+        bridge.open_menu("Filters")
+        with pytest.raises(BridgeRefused):
+            bridge.open_menu("Display")

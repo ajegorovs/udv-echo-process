@@ -30,7 +30,7 @@ import hashlib
 import json
 import math
 from collections.abc import Collection, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -774,6 +774,23 @@ class MenuPress(Protocol):
     def __call__(self, offset: tuple[int, int]) -> Mapping[str, Any]: ...
 
 
+@runtime_checkable
+class MenuCensus(Protocol):
+    """What is painted *over* the main window right now — overlays and dialogs, never fixed chrome.
+
+    The application's failure modes are visible here and nowhere else.  A dropdown left behind by a hover
+    stays painted and refuses to close; a press can raise a `Warning` or a `Fatal error` that waits for an
+    answer; and a press whose handler closes its own overlay leaves nothing behind.  A mapping is enough:
+    ``{"surfaces": ["TSp_Panel:391,160,841,280", ...]}``, one stable identifier per painted surface.
+
+    Fixed chrome — the parameter column, the strip — must not be reported, or every check below would
+    refuse everything.  Supplying a census is optional only because enumerating surfaces is the host's
+    business; without one this class cannot tell you what a press did.
+    """
+
+    def __call__(self) -> Mapping[str, Any]: ...
+
+
 @dataclass(frozen=True)
 class MenuEvidence:
     """What a menu routine call is allowed to mean."""
@@ -783,6 +800,7 @@ class MenuEvidence:
     painted: bool | None
     reason: str | None
     raw: Mapping[str, Any]
+    surfaces: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -827,11 +845,14 @@ class BridgeMenu:
         table: BridgeTable,
         dispatch: MenuDispatch,
         press: MenuPress | None = None,
+        census: MenuCensus | None = None,
     ) -> None:
         self._table = table
         self._dispatch = dispatch
         self._press = press
+        self._census = census
         self._open: int | None = None
+        self._surfaces: frozenset[str] = frozenset()
 
     @property
     def routines(self) -> BridgeMenuRoutines:
@@ -849,18 +870,55 @@ class BridgeMenu:
         return self.routines.index_of(menu)
 
     def open_menu(self, menu: str | int) -> MenuEvidence:
-        """Show an overlay: ``enter`` with the resolved index."""
+        """Show an overlay: ``enter`` with the resolved index.
+
+        With a census, an already-painted surface is a refusal (``bridge_menu_surface_already_painted``):
+        opening a menu on top of a leftover overlay is how an unattended run presses a row in a panel it did
+        not open, and the application has no way back from that state on its own.
+        """
         routines = self.routines
         index = routines.index_of(menu)
+        before = self._surfaces_now()
+        if before:
+            if self._open == index and before == self._surfaces:
+                # The menu this instance opened is still painted — measured on the instrument, a row's
+                # handler does not always close its overlay.  Re-opening the same menu is a no-op, not a
+                # hazard: the panel is the one whose rows we are addressing.
+                return MenuEvidence(
+                    action="enter",
+                    index=index,
+                    painted=True,
+                    reason=None,
+                    raw={"already_open": True},
+                    surfaces=tuple(sorted(before)),
+                )
+            raise BridgeRefused(f"bridge_menu_surface_already_painted:{min(before)}")
         evidence = self._call("enter", routines.enter, index)
         self._open = index
+        self._surfaces = self._surfaces_now()
+        if self._census is not None:
+            evidence = replace(
+                evidence, painted=bool(self._surfaces), surfaces=tuple(sorted(self._surfaces))
+            )
         return evidence
 
     def close_menu(self) -> MenuEvidence:
-        """Hide the overlay the application considers current."""
+        """Hide the overlay the application considers current.
+
+        With a census, a surface still painted afterwards is a refusal
+        (``bridge_menu_still_painted``) and the menu stays recorded as open.  Measured on the instrument: an
+        overlay left behind by a hover in the application's stuck state is *not* closed by ``leave``, and a
+        caller that believed it had closed would go on to press into the wrong panel.
+        """
         routines = self.routines
         evidence = self._call("leave", routines.leave, None)
+        after = self._surfaces_now()
+        if after:
+            raise BridgeRefused(f"bridge_menu_still_painted:{min(after)}")
         self._open = None
+        self._surfaces = frozenset()
+        if self._census is not None:
+            evidence = replace(evidence, painted=False, surfaces=())
         return evidence
 
     def row(self, entry: str) -> BridgeMenuRow:
@@ -890,9 +948,15 @@ class BridgeMenu:
         permitted = {effect.value if isinstance(effect, MenuRowEffect) else str(effect) for effect in allow}
         if row.effect not in UNGUARDED_EFFECTS and row.effect.value not in permitted:
             raise BridgeRefused(f"bridge_menu_row_effect:{entry}:{row.effect.value}")
-        return self.press_row(row.offset, hold_ms=hold_ms)
+        return self.press_row(row.offset, hold_ms=hold_ms, allow=allow)
 
-    def press_row(self, offset: tuple[int, int], *, hold_ms: int = 180) -> MenuPressEvidence:
+    def press_row(
+        self,
+        offset: tuple[int, int],
+        *,
+        hold_ms: int = 180,
+        allow: Collection[str] = (),
+    ) -> MenuPressEvidence:
         """Press the row at ``offset`` inside the open overlay.
 
         ``hold_ms`` is carried for the mechanism's sake only; the press itself is posted and must be a
@@ -911,9 +975,28 @@ class BridgeMenu:
         handle = report.get("handle", report.get("hwnd"))
         if handle is None:
             raise BridgeUnavailable("bridge_menu_press_handle_missing")
+        raised = self._surfaces_now() - self._surfaces
+        permitted = {effect.value if isinstance(effect, MenuRowEffect) else str(effect) for effect in allow}
+        if raised and "dialog" not in permitted:
+            # A press that raised something has not finished: the application is waiting on an answer.
+            # The caller either declared that it expects this (``allow`` carries "dialog") or the step is
+            # refused while the panel is left as it is, for a human or a policy to settle.
+            raise BridgeRefused(f"bridge_menu_press_raised_surface:{min(raised)}")
         return MenuPressEvidence(
             offset=(int(offset[0]), int(offset[1])), handle=int(handle), raw=dict(report)
         )
+
+    def _surfaces_now(self) -> frozenset[str]:
+        """The painted surfaces, as identifiers; empty when no census was supplied."""
+        if self._census is None:
+            return frozenset()
+        report = self._census()
+        if not isinstance(report, Mapping):
+            raise BridgeUnavailable("bridge_menu_census_report_invalid")
+        surfaces = report.get("surfaces", ())
+        if isinstance(surfaces, str):
+            raise BridgeUnavailable("bridge_menu_census_report_invalid")
+        return frozenset(str(surface) for surface in surfaces)
 
     def _call(self, action: str, address: int, index: int | None) -> MenuEvidence:
         call = MenuCall(
