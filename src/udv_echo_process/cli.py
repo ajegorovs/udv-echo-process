@@ -1397,6 +1397,23 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_parser.add_argument("number", type=int)
 
+    column_parser = subcommands.add_parser(
+        "column",
+        help="set the parameter column's dropdowns by value text, and read each one back",
+    )
+    column_parser.add_argument(
+        "--sensitivity",
+        default=None,
+        help="Sensitivity entry by its exact text, e.g. 'high'",
+    )
+    column_parser.add_argument(
+        "--emitting-power",
+        default=None,
+        help="Emitting power entry by its exact text, e.g. 'High'",
+    )
+    channel_argument(column_parser)
+    column_parser.add_argument("--json", action="store_true")
+
     burst_parser = subcommands.add_parser(
         "burst-length",
         help="make the application record at a burst length, and verify it from its dialog",
@@ -1599,6 +1616,25 @@ def acquire_main(argv: list[str] | None = None) -> None:
             verified, fingerprint = live.select_channel(args.number, notes)
             print(f"verified channel: {verified}")
             _acquire_report(fingerprint, as_json)
+        elif args.command == "column":
+            result = live.set_column(
+                sensitivity=args.sensitivity,
+                emitting_power=args.emitting_power,
+                channel=args.channel,
+                notes=notes,
+            )
+            if not as_json:
+                # With --json the report is the only thing on stdout; the per-change lines are for a
+                # reader at the terminal and the model carries the same facts.
+                for change in result.changes:
+                    print(
+                        f"{change.combo}: {change.before!r} -> {change.readback!r} "
+                        f"(entry {change.index + 1} of {len(change.entries)})"
+                    )
+            if not result.verified:
+                print("refused: a dropdown did not read back as requested", file=sys.stderr)
+                code = 1
+            _acquire_report(result, as_json)
         elif args.command == "burst-length":
             result = live.set_burst_length(args.value, args.channel, notes)
             if result.verified:

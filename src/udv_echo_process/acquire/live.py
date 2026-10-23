@@ -32,6 +32,7 @@ from udv_echo_process.acquire.actuator import (
     ScreenFingerprint,
 )
 from udv_echo_process.acquire.bridge import BridgeActuator, BridgeDispatch
+from udv_echo_process.acquire.column import COLUMN_COMBOS, ColumnChange, ColumnReport
 from udv_echo_process.acquire.config import (
     BRIDGE_RUNNER_ENV_VAR,
     RecordSettings,
@@ -40,6 +41,7 @@ from udv_echo_process.acquire.config import (
 from udv_echo_process.acquire.driver import Win32Actuator
 from udv_echo_process.acquire.plan import SweepDefinition
 from udv_echo_process.acquire.runner import PointOutcome, SweepRunner
+from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.verify import WordFacts, read_words
 
 __all__ = [
@@ -229,6 +231,74 @@ def set_burst_length(
     actuator = live_actuator(channel, notes)
     routed = actuator.ensure_channel()
     return actuator.write_dialog_burst_length(requested, routed_channel=routed)
+
+
+def set_column(
+    *,
+    sensitivity: str | None = None,
+    emitting_power: str | None = None,
+    channel: int | None = None,
+    notes: list[str] | None = None,
+) -> ColumnReport:
+    """Set the parameter column's dropdowns **by value text**, and read each one back.
+
+    Not a ``ParamRole`` write: these two are chosen from a list, not typed, and the selection is the app's
+    own (``CB_SETCURSEL`` + ``CBN_SELCHANGE`` — the pair the burst transaction already trusts).  The entry is
+    found by stepping the widget until the list clamps and matching the text exactly
+    (:func:`~udv_echo_process.acquire.ui.combo.select_by_text`), never by counting steps: a build whose list
+    is one entry longer must not move the value.
+
+    **A TGC mode change is not part of this call.** It is a dialog workflow, and — measured 2026-10-23 —
+    accepting a TGC change resets the receiver settings below it in the column, so a caller that wants both
+    sets the TGC mode first and then these; a value set here is not evidence about itself once that happens.
+
+    A refusal (an entry the list does not hold, or a selection the widget did not take) raises, with the
+    widget's own words: there is no "probably set" outcome.
+    """
+    wanted: dict[str, str] = {}
+    if sensitivity is not None:
+        wanted["Sensitivity"] = sensitivity
+    if emitting_power is not None:
+        wanted["Emitting power"] = emitting_power
+    if not wanted:
+        raise AcquisitionError("nothing to set: pass a sensitivity and/or an emitting power")
+
+    actuator = live_actuator(channel, notes)
+    combos = actuator._resolve()["combos"]
+    changes: list[ColumnChange] = []
+    for name in COLUMN_COMBOS:
+        if name not in wanted:
+            continue
+        combo = combos.get(name)
+        if combo is None:
+            raise AcquisitionError(f"no {name!r} combo in the parameter column")
+        before = actuator._get_text(combo["hwnd"])
+        selection = actuator.select_combo_by_text(name, wanted[name])
+        changes.append(
+            ColumnChange(
+                combo=name,
+                requested=wanted[name],
+                before=before,
+                readback=selection.readback,
+                index=selection.index,
+                entries=selection.entries,
+                changed=selection.readback != before,
+            )
+        )
+
+    report = ColumnReport(
+        channel=None if channel is None else int(channel),
+        changes=tuple(changes),
+        verified=all(change.readback == change.requested for change in changes),
+    )
+    if notes is not None:
+        for change in changes:
+            notes.append(
+                f"{change.combo}: {change.before!r} -> {change.readback!r} "
+                # one-based, like the line the command prints: an index a human reads off the UI
+                f"(entry {change.index + 1} of {len(change.entries)})"
+            )
+    return report
 
 
 def point(
