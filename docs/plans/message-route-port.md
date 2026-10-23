@@ -78,6 +78,17 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A two-point sweep ran, and its blocks prove the measurement changed (2026-10-23).** Resolution was written between
+points — `0.617` then `0.740`, each read back from the sidebar before recording — and both points stored. The acceptance
+is the decode, not the read-back: `sweep-01` decodes to 0.6167 mm with a last gate at 71.83 mm, `sweep-02` to 0.74 mm with
+a last gate at 83.55 mm, same gate count and same first gate. So a parameter that moves the measurement can be changed
+between points by message, and the change reaches the stored data. The pointer guard released two clips and restored the
+cursor; the parameter was put back to `0.617` afterwards and read back.
+
+Worth recording as a correction: this row had been carried as "commits once, not repeatably" on the strength of the
+bridge's setter dispatch. The message recipe commits as often as asked — four times in one attachment, four more in a
+second — so the limitation was the mechanism's, not the application's, and the register's status was too pessimistic.
+
 **A three-point series ran, with a parameter changed between points and the guard held throughout (2026-10-23).** Points
 at `high`, `medium`, `high` sensitivity, each selected by text with a read-back that matched, then record, stop, store,
 name and commit. All three stored blocks exist and decode (538, 536 and 535 profiles × 96 gates; finite; every gate
@@ -188,7 +199,7 @@ capability. `absent` = no message-route implementation exists.
 | 5 | Select `Sensitivity` / `Emitting power` by text | click, then keyboard arrows | **works** | `select_by_text` + read-back after a settle; drift regression covered by a test |
 | 6 | Select the TGC mode | Tools → Define TGC → mode list → Accept, by hand | **partial** | mode **selection** is message-level; the dialog's `Accept` is still a press |
 | 7 | Accept / cancel a dialog | click | **works** | a posted held press on the dialog's own button acts. Measured on the store dialog: `Accept` closed it and the file was written. A modal dialog is the active window, which is why the press lands there when it does not on the form's controls |
-| 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
+| 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **works** | `write_parameter` is the measured message recipe — `WM_SETTEXT`, a synthetic `EN_CHANGE`, then the Return key event — with no press and no cursor. Measured with the application covered: four commits in one attachment and four more from a second, independent one, every value read back from the sidebar. The earlier doubt belonged to the bridge's *setter dispatch*, a different mechanism, and is withdrawn for this path |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
 | 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **works** | calling the row's handler directly moves the application's own flag: the horizontal-grids row took `display_flags` 0 → 2 and the vertical-grids row 2 → 0, in one attach, with no objects, no input and no cursor. The handler's body does not read `Self` or `Sender` at all — it stores them and ignores them, then acts on the flags slot, closes the menu and requests a redraw. Rows whose handler *does* read those registers are untested |
 | 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
@@ -201,11 +212,10 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**A parameter that changes the measurement, not just a preference.** The series changed sensitivity — a proven message-level
-control, but not a parameter that moves the gates or the resolution. The next step is a series varying `resolution_mm` or
-`gates`, which is register row 8 (numeric writes, `partial`): one transition was proven once and not repeatably, and the
-mismatch repair is still a UI write. That row is what stands between a series and a *sweep*, and it is the last substantive
-blocker in the register.
+**Wiring the sweep, rather than proving one.** Two points and a resolution change are established; what has not been done is
+the package's own sweep path (rungs, permutation, resume) driving this cycle instead of the runner that presses. That is
+composition work on code that already works, and the register's remaining `absent` rows (channel selection, file pick) are
+the only capabilities no route has yet.
 
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
