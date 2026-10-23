@@ -136,6 +136,43 @@ class BridgeSetter(BaseModel):
     maximum: float | None = None
 
 
+class BridgeMenuRoutines(BaseModel):
+    """The two routines that show and hide a menu overlay, and this build's menu order.
+
+    ``enter`` takes the menu index in EAX (Delphi's ``register`` convention) and ``leave`` takes nothing;
+    both are measured addresses.  ``order`` names the indices, because a menu number whose meaning lives
+    only in the table is not something a caller can be expected to get right — measured on the instrument,
+    the order is ``File, Preferences, Parameters, Compute, Display, Filters, Cursors, Tools, Help, Mpx,
+    UDV_MD`` for indices 1..11.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    enter: int = Field(ge=0, description="address of the routine that shows overlay #index")
+    leave: int = Field(ge=0, description="address of the routine that hides the current overlay")
+    order: tuple[str, ...] = Field(
+        default=(), description="menu names in index order; index = position + 1"
+    )
+    count: int | None = Field(default=None, ge=1, description="indices the build accepts")
+
+    @property
+    def indices(self) -> dict[str, int]:
+        return {name: position + 1 for position, name in enumerate(self.order)}
+
+    def index_of(self, menu: str | int) -> int:
+        """The index for a menu, by name or by number, or a refusal that names the request."""
+        limit = self.count if self.count is not None else (len(self.order) or None)
+        if isinstance(menu, int) and not isinstance(menu, bool):
+            index = menu
+        else:
+            index = self.indices.get(str(menu), 0)
+            if not index:
+                raise BridgeUnavailable(f"bridge_menu_index:{menu}")
+        if index < 1 or (limit is not None and index > limit):
+            raise BridgeUnavailable(f"bridge_menu_index:{menu}")
+        return index
+
+
 class BridgeTable(BaseModel):
     """The machine-local facts this route needs, validated as a whole.
 
@@ -155,6 +192,10 @@ class BridgeTable(BaseModel):
     #: Per-parameter setters, by role name (``emissions_per_profile`` …).  Empty for a table that only
     #: carries the command operations, which is what a record-only host needs.
     setters: dict[str, BridgeSetter] = Field(default_factory=dict)
+    #: The menu overlay routines, when the build's addresses are known.  Optional: a table that only
+    #: carries the record/store cycle stays valid, and a caller that asks for a menu gets
+    #: ``bridge_menu_missing`` rather than an invented address.
+    menu: BridgeMenuRoutines | None = None
 
     def operation(self, name: str) -> BridgeOperation:
         try:
@@ -634,4 +675,187 @@ class BridgeActuator:
         if not ok:
             raise BridgeRefused(str(evidence))
         assert isinstance(evidence, Path)
+        return evidence
+
+
+@dataclass(frozen=True)
+class MenuCall:
+    """One call asked of the machine-local menu dispatch.
+
+    ``action`` is ``enter`` or ``leave`` so the dispatch can report what it did, and ``index`` is present
+    only for ``enter``.  ``routines_digest`` pins the two addresses the call was derived from, so a report
+    cannot be credited against a different pair.
+    """
+
+    action: str
+    address: int
+    index: int | None
+    routines_digest: str
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "action": self.action,
+            "address": self.address,
+            "index": self.index,
+            "routines_digest": self.routines_digest,
+        }
+
+
+@runtime_checkable
+class MenuDispatch(Protocol):
+    """The machine-local execution of one menu routine call.
+
+    Implementations live outside this repository (they call into a patched process).  The report is read
+    for ``ok``, an optional ``overlay_painted`` and a ``reason``; anything else is ignored rather than
+    trusted.
+    """
+
+    def __call__(self, call: MenuCall) -> Mapping[str, Any]: ...
+
+
+@runtime_checkable
+class MenuPress(Protocol):
+    """The machine-local press of one row inside an open overlay.
+
+    A press is *not* a dispatch: it is a window message to the row's own handle, which is what makes the
+    control toggle its state and fire the handler that derives from it.  The report must name the handle it
+    pressed, so a caller can tell a press that happened from one that merely returned.
+    """
+
+    def __call__(self, offset: tuple[int, int]) -> Mapping[str, Any]: ...
+
+
+@dataclass(frozen=True)
+class MenuEvidence:
+    """What a menu routine call is allowed to mean."""
+
+    action: str
+    index: int | None
+    painted: bool | None
+    reason: str | None
+    raw: Mapping[str, Any]
+
+
+@dataclass(frozen=True)
+class MenuPressEvidence:
+    """What a row press is allowed to mean: which handle was pressed, and where it was."""
+
+    offset: tuple[int, int]
+    handle: int
+    raw: Mapping[str, Any]
+
+
+def _routines_digest(routines: BridgeMenuRoutines) -> str:
+    payload = json.dumps(routines.model_dump(mode="json"), sort_keys=True).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+class BridgeMenu:
+    """Open, press and close a menu overlay through the application's own routines.
+
+    The three steps are the ones measured on the instrument: ``@Panels@Enter_Menu(index)`` shows an
+    overlay with no pointer involved, a posted press on the row's own handle performs the click (the
+    control toggles its state, repaints and fires the form's handler), and
+    ``@Panels@Leave_Current_Menu()`` hides it again.
+
+    What this class refuses, and why each refusal exists:
+
+    - **a press while nothing is open** (``bridge_menu_not_open``): the press needs a row that exists; a
+      press into a closed overlay would land on whatever is under it;
+    - **a press without a press mechanism** (``bridge_menu_press_unavailable``): a host that supplies only
+      the dispatch cannot press, and saying so is better than dispatching a handler that reads a state
+      nobody set — measured on the instrument, that quietly does nothing;
+    - **a table without the routines** (``bridge_menu_missing``) and an unknown menu
+      (``bridge_menu_index:<request>``): the index meanings live in the table, never in this module.
+
+    Note on closing: ``leave`` acts on the application's notion of the *current* menu, which ``enter``
+    sets.  An overlay left behind by a hover in the app's stuck state is not closed by it — that is a
+    property of the application, not of this class, and it is why ``open_menu`` records what it opened.
+    """
+
+    def __init__(
+        self,
+        table: BridgeTable,
+        dispatch: MenuDispatch,
+        press: MenuPress | None = None,
+    ) -> None:
+        self._table = table
+        self._dispatch = dispatch
+        self._press = press
+        self._open: int | None = None
+
+    @property
+    def routines(self) -> BridgeMenuRoutines:
+        if self._table.menu is None:
+            raise BridgeUnavailable("bridge_menu_missing")
+        return self._table.menu
+
+    @property
+    def open_index(self) -> int | None:
+        """The overlay this instance opened and has not closed, or ``None``."""
+        return self._open
+
+    def index_of(self, menu: str | int) -> int:
+        """Resolve a menu name or number against the table's order."""
+        return self.routines.index_of(menu)
+
+    def open_menu(self, menu: str | int) -> MenuEvidence:
+        """Show an overlay: ``enter`` with the resolved index."""
+        routines = self.routines
+        index = routines.index_of(menu)
+        evidence = self._call("enter", routines.enter, index)
+        self._open = index
+        return evidence
+
+    def close_menu(self) -> MenuEvidence:
+        """Hide the overlay the application considers current."""
+        routines = self.routines
+        evidence = self._call("leave", routines.leave, None)
+        self._open = None
+        return evidence
+
+    def press_row(self, offset: tuple[int, int], *, hold_ms: int = 180) -> MenuPressEvidence:
+        """Press the row at ``offset`` inside the open overlay.
+
+        ``hold_ms`` is carried for the mechanism's sake only; the press itself is posted and must be a
+        held press, not an instant down/up, or the control does not register it.
+        """
+        if self._open is None:
+            raise BridgeRefused("bridge_menu_not_open")
+        if self._press is None:
+            raise BridgeUnavailable("bridge_menu_press_unavailable")
+        report = self._press((int(offset[0]), int(offset[1])))
+        if not isinstance(report, Mapping):
+            raise BridgeUnavailable("bridge_menu_press_report_invalid")
+        reason = report.get("reason") or report.get("error")
+        if report.get("pressed") is not True:
+            raise BridgeRefused(f"bridge_menu_press_failed:{reason or 'not_pressed'}")
+        handle = report.get("handle", report.get("hwnd"))
+        if handle is None:
+            raise BridgeUnavailable("bridge_menu_press_handle_missing")
+        return MenuPressEvidence(
+            offset=(int(offset[0]), int(offset[1])), handle=int(handle), raw=dict(report)
+        )
+
+    def _call(self, action: str, address: int, index: int | None) -> MenuEvidence:
+        call = MenuCall(
+            action=action,
+            address=address,
+            index=index,
+            routines_digest=_routines_digest(self.routines),
+        )
+        report = self._dispatch(call)
+        if not isinstance(report, Mapping):
+            raise BridgeUnavailable("bridge_menu_report_invalid")
+        reason = report.get("reason") if report.get("reason") is not None else report.get("error")
+        painted = report.get("overlay_painted")
+        evidence = MenuEvidence(
+            action=action,
+            index=index,
+            painted=None if painted is None else bool(painted),
+            reason=None if reason is None else str(reason),
+            raw=dict(report),
+        )
+        if report.get("ok") is False or (report.get("ok") is None and evidence.reason):
+            raise BridgeRefused(f"bridge_menu_call_failed:{action}:{evidence.reason}")
         return evidence
