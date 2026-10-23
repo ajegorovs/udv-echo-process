@@ -692,3 +692,8 @@ the GUI-coupled part is quarantined and the rules are pinned by tests:
   read it back again after a settle — one write in the 2026-10-23 sitting reported the new value immediately and
   a different one minutes later. Stepping indices paints drop-list windows beside a dialog that survive until it
   closes; a census of painted surfaces sees them, so guard on it rather than pressing through.
+- **A TGC mode change resets the receiver settings beside it in the column.** Measured: `Emitting power` set to
+  `High` held for 20 s, then `Tools > Define TGC → Auto → Accept → Uniform → Accept` left the column reading
+  `Medium`. The two live in the same column and the TGC transition re-initialises the group, so a run that wants
+  both sets the TGC mode first and the receiver settings after, and reads each back — an earlier write to that
+  column is not evidence about its value once a TGC change has happened.
