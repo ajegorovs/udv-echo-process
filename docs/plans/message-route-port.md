@@ -78,6 +78,15 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A campaign reports its own points as valid (2026-10-23/24).** Rungs 5 and 6 through `live.sweep`, driving the composed
+cycle with the application covered: both points `PointStatus.OK`, `camp-k5` 514 × 96 at 0.6167 mm and `camp-k6` 513 × 80 at
+0.74 mm, both spanning ~20.7 s, two log lines, four dialog clips released, cursor restored. Wall clock 62 s per point.
+
+The fix was to state the window instead of assuming it: the cycle's limit became an overhead allowance (`duration + 20 s`,
+the measured cost of two attachments) and `SweepRunner` gained `window_overhead_s`, set to 20 s by `live.sweep` exactly when
+a cycle is supplied. Same file, both ways: against the requested window the ratio was 2.111 (refused), against
+`requested + 20 s` it is 0.909, against the achieved span 1.005.
+
 **The false verdicts were a recording window nobody had measured (2026-10-23).** The size guard's rate model is correct —
 `profile_period_s(50, 600)` is 0.0406 s and the stored blocks' mean profile interval is 40.34 ms — and its arithmetic for the
 *requested* window is correct too: 4 s predicts 99 profiles. What was wrong was the premise that the recording lasted the
@@ -252,12 +261,15 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Record and stop inside one attachment.** This is the real fix for the window, and it is a caller-level change: two
-attachments cost ~8 s each, which is where the 5× overshoot comes from. One attachment that issues the record, waits the
-requested window, and issues the stop would make the block's span equal the duration asked for — and would take the point
-from ~65 s to a few seconds. The open question is whether the application keeps recording while its UI thread is inside our
-stub, which is exactly what the first experiment must show; if it does not, the fallback is to declare the overhead and
-request `duration − overhead` per point, which is honest but crude.
+**Cutting the window overhead — two attempts, one closed and one open.** The blocking variant is closed: issuing record,
+holding the application's GUI thread for 3 s inside the stub, then stop and store produced **no dialog and no file**, because
+the application consumes its shared command slot on its own loop and a held loop collapses three commands into the last one
+(store, with nothing to store). So the window cannot be defined by blocking.
+
+What remains open is the variant that *spans two boundaries without blocking*: re-post the wake-up message from inside the
+stub and issue the stop at the first boundary after the deadline. Calls stay on the GUI thread at a boundary, which is the
+rule the blocking attempt was trying to respect by force. Until that exists, the overhead is a documented constant — the
+cycle allows `duration + 20 s` and the runner is told the same number — and every point costs about 62 s wall clock.
 
 **Then:** resume and permutation across a longer plan, and the `absent` capabilities (channel selection, file pick,
 unexpected prompts), of which channel selection carries a recorded hazard — it restarts the measurement loop.
