@@ -545,6 +545,116 @@ in `/tmp/tv1/tv1_evidence.json`.
 
 ---
 
+### 2026-10-16 — MCP co-work verified against the four-sensor notebook (O39–O41)
+
+The notebook under review *is* the four-sensor recording (`data/4-sensor-velocity/200RPM.BDD`, channels 6–9,
+400 × 55). Server: `marimo edit --headless --no-token` bound to this box's overlay address rather than loopback,
+because the reader's browser is on another tailnet node; marimo 0.24.0 from the consumer venv, provider
+`marimo-inspect` 0.3.3 registered over stdio — `hermes mcp test` connects and lists 15 tools, and those tools were
+live in the same session without a restart.
+
+- **O39** ✅ **The read path is sound against a browser-held session.** `list_active_notebooks` (explicit
+  `server_url`) reported exactly one session and the right notebook path; `get_cell_map` 22 cells, all `idle` with
+  output; `get_errors` 0; `lint_notebook` 0 issues; `get_dependency_graph` the full graph with no cycles or
+  multiply-defined names; `get_variables`/`get_cell_outputs` returned kernel-side values and rendered sidebar text
+  (the picker's recording, `ch7 · axial_velocity (mm/s) · 400 profiles × 55 gates`, the cursor readout).
+  `set_active_session` bound the id only after validating it against that server's census, and a later argument-less
+  call resolved to it.
+- **O40** ✅ **Writes land on a browser-held session, and the sandbox is still the right place to verify them.**
+  `set_ui_value` moved the channel dropdown (7 → 8, `verified: true`) with the dependent header cell re-running to
+  `ch8`; the reader's value was then restored and read back. The rest of the write side — `create_cell` (serialized to
+  the `.py` immediately), `edit_cell` (refused `needs_read` on an unread cell, applied after `get_cell_data`),
+  `delete_cell` (then reported in `missing_cell_ids`), `run_cell` (one call ran four stale cells) and `restart_kernel`
+  (same id re-materialized, `session_id_stable: false`) — was exercised on a disposable sandbox notebook on loopback
+  with an `/sse`-materialized session, and the notebook under review was confirmed byte-identical afterwards.
+- **O41** ⚠️ **Two pitfalls to load before the next live session.**
+  *A refused `set_ui_value` is not free.* Sending `[8]` to a dropdown whose option keys are strings returned
+  `value_not_applied` with the kernel's own `ValueError` — and that exception stayed in the owning cell's **console**
+  error channel (`get_errors`: `has_console_exception` true for that cell) while the structured error count stayed
+  `0`. A refused probe therefore leaves a console marker in a human's live page; recovery is re-running the owning
+  cell, which recreates the widget at its **declared default** (the reader's value was re-applied afterwards), after
+  which `get_errors` is clean again.
+  *An integer-valued dropdown's option keys are strings.* The channel picker is built from integer device ids, yet
+  `set_ui_value` takes `["8"]`, never `[8]`; the refusal names the string keys.
+- **Re-confirms an older finding:** the rendered control reported `data-initial-value='["6"]'` while the kernel held
+  `7` — painted value and backend value disagree, so read `get_variables`, never the control.
+
+Sandbox recipe: launch a throwaway copy on loopback (`--headless --no-token`), materialize a session with
+`GET /sse?session_id=<uuid>&file=<abs path>` and wait for `kernel-ready`, then drive the provider. Machine bindings
+(overlay address, port, process id, sandbox path) are in the machine-local kit, not here.
+
+---
+
+### 2026-10-16 — workflow correction after four-sensor authoring audit (O42)
+
+- **O42 — MCP verification was not continuous MCP authoring.** The subsequent
+  `four_sensor_velocity.py` development wrote the initial notebook and later overlays
+  on disk, then used MCP to run/inspect them. After external edits, the live document
+  still showed 11 cells while disk held 14; a server relaunch recovered the disk version.
+  This is evidence of the observed divergence and recovery, not a general diagnosis of
+  marimo file watching and not an approved editing procedure. The earlier executed
+  exports/live read-backs remain implementation evidence, not kernel-continuity evidence.
+- **Correction to O40's scope:** disposable notebooks are for testing the tooling and
+  destructive/refusal behavior. Authorized notebook development uses the live MCP write
+  surface on the intended notebook; sandbox-only mutation is not an authoring rule.
+- **Owner decision:** the connected provider's co-work loop, live-safety and limits
+  resources own the procedure. `AGENTS.md` requires examining them before authoring,
+  MCP-first development after attachment, and preservation of the kernel for ordinary
+  edits. Provider-specific lessons are proposed at their source rather than accumulated
+  in a competing personal skill. The conflicting personal skill was archived locally;
+  this does not claim deployment to other machines or a hard runtime enforcement gate.
+- **Bounded verification of the correction:** on the existing four-sensor kernel,
+  `get_cell_data` established the baseline for `pair_captions`; `edit_cell` added a
+  temporary comment, saved-file read-back confirmed it, and `run_cell(mode="cell")`
+  ended idle with current rendered output. A fresh source read preceded restoring the
+  exact original cell source through `edit_cell`; rerun/read-back again ended idle,
+  with no structured errors or console exceptions. Server and kernel process identities
+  (including kernel creation time) stayed unchanged. No restart, external notebook
+  patch or widget reset was used. This proves one guarded live edit/restore cycle,
+  not a fresh agent's complete authoring behavior.
+- **Serialization limit measured:** the notebook was not byte-identical after that
+  cycle. Marimo regenerated function dependency arguments, final return declarations
+  and formatting in other cells. An AST comparison against the pre-probe Git version
+  confirmed every cell body unchanged except generated final return statements;
+  `marimo check notebooks` and an executed HTML export passed (zero `marimo-error`
+  markers). `git diff --check` and an added-line machine-identity scan passed.
+  The generated diff is retained for review rather than overwritten externally
+  beneath the running session. A fresh-process `hermes skills list` no longer
+  lists the retired personal skill; its complete directory has a verified local
+  archive manifest. Changes are uncommitted and unpublished.
+- **Independent read-only onboarding audit:** another agent followed `AGENTS.md`
+  and resolved all three MCP resources. It recovered the resource-first entry gate,
+  live editing, restart exceptions and source-owned lesson policy. The audit also
+  found a stale provider tag, POSIX-only launcher examples and retained third-party
+  `marimo-pair` / `retro-marimo-pair` instructions. The tag now matches the manifest
+  (`v0.3.3`), Windows launcher paths are documented, and `AGENTS.md` explicitly
+  subordinates the retained upstream skills to the provider's MCP workflow without
+  editing their hash-pinned content. These small follow-ups were checked locally;
+  the independent audit was not rerun. Session paths can be verified from discovery;
+  creator/owner identity remains unavailable. This was an instruction-clarity audit,
+  not a fresh-agent authoring trial or proof of hard enforcement.
+
+### 2026-10-16 — obsolete upstream pairing skills retired (O43)
+
+- **Owner-authorized:** removed `marimo-pair` and `retro-marimo-pair` from
+  `.agents/skills/` and their entries from `skills-lock.json`. These upstream
+  direct-script and upstream-retrospective procedures are superseded for this
+  consumer by the MCP provider's maintained resources, not runtime dependencies
+  of the installed provider. This supersedes O42's temporary decision to retain
+  and subordinate them. No provider implementation or dependency was removed.
+- **Preservation and scope:** the ten removed files were verified unchanged
+  against Git before deletion and are recoverable from baseline `fa61743`.
+  Historical installation evidence remains; the old installation instruction in
+  the integration plan is explicitly superseded to prevent reintroduction.
+  The instrument's `udop-acquisition` skill is preserved. This retirement applies
+  to this implementation worktree, not other checkouts or machines.
+- **Verification:** fresh-process Hermes skill listing contains neither retired
+  name; the lock file parses with no remaining entries; the installed provider
+  imports without those directories. Whitespace validation passed. The notebook
+  server/kernel was not modified by this retirement. Changes remain uncommitted.
+
+---
+
 ## Entry 2026-10-16 — MCP-first workflow correction and skill retirement (O42–O43)
 
 **Owner-selected intent:** keep marimo notebook development in the attached live
@@ -587,3 +697,119 @@ the four-sensor notebook implementation; it changes no notebook or processing co
   The publication diff was checked for scope, JSON validity, recovery availability,
   whitespace and added-line privacy; no notebook, source, dependency pin or data
   change is included.
+
+### 2026-10-16 — cleanup publication and notebook-branch integration
+
+PR #77 merged the reusable cleanup into `master` as `d276d6e`. The notebook
+worktree was preserved in a verified raw-byte recovery archive and checkpoint
+commit `b8c41ee` before merging that base without rewriting its existing commits.
+The integration retains both historical evidence entries above: their references
+to uncommitted/unpublished state describe the earlier observation, not current
+publication status. The provider-resource contract remains the procedural authority.
+Agenda conflicts retain the notebook branch's newer recovery/parking facts and
+master's cleanup row. No notebook body, source behavior or live kernel was changed
+by the Git integration; notebook feature work remains separate and unpublished.
+Verification for integration: notebook raw-byte digest and kernel process identity
+are compared with the pre-cleanup baseline; static checks/export and whitespace
+validation are rerun before closing the merge.
+
+---
+
+### 2026-10-16 — adding a library module during a live session (two measured pitfalls)
+
+Consumer-side observations from a bounded session that added a **new** library module
+(`analysis/time_modes.py` + `models/time_modes.py`) and two cells to the notebook a live
+session was attached to.
+
+- **A *new submodule* needs no kernel restart; a new *name in a cached package* does.** ✅
+  `from udv_echo_process.analysis import decompose_time_modes` failed inside the live kernel
+  with `ImportError: cannot import name 'decompose_time_modes'` even though the package
+  `__init__` re-exported it: `udv_echo_process.analysis` was already in `sys.modules` from
+  the notebook's earlier `from udv_echo_process.io import load`, and a cached module object
+  never gains new attributes. `from udv_echo_process.analysis.time_modes import
+  decompose_time_modes` — the submodule form the notebook already used for `io.load` —
+  imported the new file from disk with **no restart**, so the kernel, the attached page and
+  the session identity were all preserved. The provider resource lists "an imported
+  package's source changed (module cache)" as a legitimate restart trigger; this case is
+  narrower: an *added* submodule is reachable without one when the notebook imports
+  submodules rather than package attributes.
+- **A static `marimo export html` did not render this notebook's plotly figures here.** ✅
+  The export completed (~4.7 s, no error markers, correct markdown) and the page carried six
+  `marimo-plotly` elements with `window.Plotly` defined, but no `.js-plotly-plot` and no
+  `<svg>` appeared — before or after attempted scrolling. `window.scrollBy` had no visible
+  effect on that page, so lazy hydration was most likely never triggered; not diagnosed
+  further, and recorded as a limit of this route rather than a provider defect. The figure
+  was checked instead by importing the notebook file (cells are plain functions until
+  `app.run()`), calling the cell function with a stub `mo` that captured the argument to
+  `mo.ui.plotly`, and writing that figure to a standalone page with plotly.js inlined — the
+  figure inspected was the cell's own code, not a reimplementation of it. (Calling the saved cell
+  *function* stopped working once marimo had rewritten the file in-session: its generated
+  signature is `*args, **kwargs`, so the cell **body** is what to execute.)
+- **A batched edit + run leaves descendants with unregistered edges.** ✅ Editing two cells and
+  then running them produced `NameError: name 'decompose_time_modes' is not defined` inside a
+  cell whose ancestor (`imports`) had just been edited — the dependency edge was not re-registered
+  when the descendant ran. Running the edited ancestor first and the descendants afterwards, in
+  dependency order, cleared it with no other change. Batching is fine for *reads*; a
+  just-edited ancestor must be run before its dependents are queued.
+- **A module the kernel already imported keeps its old behaviour, and the divergence shows up in
+  the *output*, not in the run status.** ✅ After the same session edited two library modules the
+  notebook had already imported, the cells still ran to `idle` with zero errors on both error
+  channels — but one table column read `0.0 mm/s` for a field whose mean is 21-30 mm/s (the
+  pre-revision module stored zeros in `TimeModes.mean_profile` for the uncentred form), and the
+  helper's newly added `offset` argument would have raised `TypeError` had the cell called it.
+  Only `restart_kernel` — the provider's listed trigger for "an imported package's source
+  changed" — makes a changed module take effect; an *added* submodule does not need one (first
+  bullet). The cell was deliberately made independent of both changes instead, and that choice
+  and its cost are recorded in the plan rather than papered over.
+- **Cell ids are neither stable nor unique across saves — a deleted cell's id can come back on a
+  *different* cell.** ✅ Two cells were deleted by id and two cells created; the edits that
+  followed landed on the intended cells (each response echoed the expected `name`), but the saved
+  file then mapped `SFPL` to `tv_filter_apply` and `RGSE` to `overview_heatmaps` — ids that
+  earlier denoted the mode-readout and heatmap cells. So an id is a handle into the *session*, not
+  an identity: **confirm the `name` in every edit/run response, and re-read `get_cell_map` before
+  a series of edits**, rather than trusting ids carried over from earlier in the session. Two new
+  cells anchored to the same `after` cell also land in reverse order, so the second one is the one
+  nearest the anchor.
+- **An offline "run the notebook's own cell bodies" harness must re-inject its stub after the
+  imports cell.** ✅ Executing the saved cell bodies with a stub `mo` (to read every figure's title
+  and the note in every filter state without a browser) silently reported *nothing* — no figures,
+  no markdown, no error — because the notebook's own `import marimo as mo` rebound the real module
+  over the stub: `mo.md(...)` then returned real marimo objects and every capture was missed.
+  Re-setting `namespace["mo"] = stub` before each cell fixed it. A harness that reports emptiness
+  instead of failure is worse than none; assert the captures are non-empty.
+- **A verification harness that reads figures should not fetch them back over MCP.** ✅
+  `get_cell_outputs` on a plotly cell returns the whole encoded figure (binary-typed
+  `bdata` arrays per trace) — hundreds of kilobytes for a four-panel heatmap — and it says
+  nothing the offline harness does not: the harness reported the same figures as *8 traces,
+  z range ±246, `<title>`* in a few lines. Read the live session's outputs for markdown and
+  error state; read figures through the cell-body harness.
+- **A replaced session resets the edit baseline and re-issues cell ids.** ✅ The live session
+  was replaced between two sits (a new `session_id`, fresh kernel, same notebook). The first
+  `edit_cell` after that was refused with `needs_read` even though the id had been read earlier
+  — correct guard, since the id now denotes a cell this agent has not read *in this session* —
+  and the id→name map had shifted again. Sequence: `get_cell_map`, read the target, then edit;
+  never carry ids across a session change.
+- **A transform-level selection belongs on the transform, not smuggled into the spec for
+  provenance's sake.** ✅ Scoping a filter pass to some gates had two candidate homes: a `gates`
+  field on the (contract-pinned) spec, or a keyword-only argument on `filter`. `params_json` is
+  built from `spec.model_dump` alone (plan §8.3), so only the first would appear in the recorded
+  recipe — tempting, until `resample`'s target grid showed the established shape for "what the
+  transform acts on": a transform argument, deliberately outside the spec, with the derived
+  artifact still distinguishable because its id is computed from its data. Follow the precedent,
+  document the omission where a reader will look (the docstring and the on-screen note), and pin
+  the behaviour with tests rather than leaving it implicit.
+- **A kernel restart is the right tool when an imported module changed — budget its real costs.** ✅
+  Editing `process/filter.py` while the live kernel held the old `filter()` would have made the
+  notebook's first call raise `TypeError`, so the restart was the sanctioned action rather than a
+  convenience. Observed costs, not the documented ones: widget values back to their defaults, the
+  change tracker cleared so *every* cell needed a re-read before an edit, and **cell ids re-keyed —
+  a cell created after the restart came back under the id of a cell that had been deleted earlier
+  in the same session.** Re-map first (`get_cell_map`), confirm the `name` every response echoes,
+  and re-drive the widgets to the values the user had. The session id itself survived the restart —
+  but a **browser reconnect re-keyed it** (`s_j0c3sk` → `s_wrmt0w`) with the kernel untouched, exactly
+  as the restart tool warns; every later call has to carry the new id, and a stale id answers
+  `Invalid session id` rather than silently targeting another notebook. A **programmatically set
+  widget value is also not necessarily what a page renders**: the kernel's checkbox read `True`
+  while a separately connected page showed it unchecked, so verify the *rendered* state (or a
+  screenshot) before claiming the UI matches, and leave a live control at its default when the
+  session is being handed back.

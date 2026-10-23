@@ -14,7 +14,7 @@ trial of the shared work-organization guide, not a generally validated method.
 
 | Effort | Lifecycle state |
 |---|---|
-| [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+| [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | in progress |
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
@@ -32,24 +32,31 @@ Capture is not selection. Existing detailed backlog sections below remain their 
 
 - **Reporting consolidation — parked by owner, 2026-10-16:** [plan](plans/reporting-consolidation.md) is blocked
   on the owner-priority hold behind four-sensor notebook work. E1–E8 residue and content-preservation blockers
-  remain there; no closure or deletion is implied. Publication of the current documentation to draft PR #71 is authorized.
+  remain there; no closure or deletion is implied. PR #71 merged as `443cd1c`; follow-up [#72](https://github.com/ajegorovs/udv-echo-process/issues/72) keeps the parked effort visible.
 
 - **Four-sensor alignment:** `data/4-sensor-velocity/200RPM.BDD` has staggered channels; the reader emits no
   `(round_id, visit_id)` identity for `synchronize()`. Decide decoded identity versus an explicit non-invented
   alignment rule versus exclusion. The notebook review must not resample merely to make a view possible.
+- **Shared live-notebook exposure:** the review notebook is served with marimo's token disabled on this box's overlay
+  address, so any authorized tailnet peer can execute code in that kernel, and the tailnet carries a second user's
+  devices under the default any-to-any ACL. Decide whether to keep the established local pattern, enable a token, or
+  narrow the ACL; the notebook's content is not exposed beyond the tailnet.
 - **SA5 synthesis / SA3 / SA6:** see the [signal-analysis roadmap](dop3000/sparse-signal-analysis-plan.md)
   and the SA5 section below; cross-sitting synthesis is not selected by the notebook or documentation trials.
 - **Acquisition re-opening:** B7/B8 require evidence under [the existing constraints](#active-work--dop3010-acquisition-stabilize-before-extending).
 - **Retirement residue:** the [standing register](udv-analysis-reference.md) owns the attribution, pack-seal
-  and unported-item decisions; no deletion is selected.
-- **Explorer cursor/sidebar WIP:** preserve the local change; its fate remains undecided. PR #70 is the
-  explorer review, separate from reporting PR #71. Neither reference authorizes a merge.
+  and unported-item decisions; [#74](https://github.com/ajegorovs/udv-echo-process/issues/74) tracks their disposition. No deletion is selected.
+- **Explorer WIP:** current save preserved on published branch `wip/explorer-preserved-20261016` at `ae128b0`;
+  [#73](https://github.com/ajegorovs/udv-echo-process/issues/73) owns the disposition decision. It includes exploratory
+  ACF residual/FFT code as well as cursors. PR #70 remains a separate, unreviewed baseline; neither is selected for merge.
 - **Work-method follow-ups:** the authoritative shared guide `docs/knowledge-base/dev-and-deploy/WORK-ORGANIZATION.md`
   owns P2 findings routing, P3 reader availability, P4 evidence classes, P5 safe retirement and P6 source fallback.
   Each has a proposed solution, validation condition and next decision there; none is selected for rollout here.
   Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
-- **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
-  decide a separately scoped wording repair rather than changing the scientific contract during P1.
+- **Retained branch audit:** [#75](https://github.com/ajegorovs/udv-echo-process/issues/75) captures non-ancestor
+  backup/feature refs. Some may be rebased equivalents; no branch deletion is selected without content and recovery checks.
+- **Existing model defect:** [#49](https://github.com/ajegorovs/udv-echo-process/issues/49) retains the array-model
+  JSON serialization finding. This closeout does not implement or accept a serialization contract.
 
 ## Current progress — 2026-10-16
 
@@ -60,12 +67,12 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 
 | Area | Current position | Next concrete action | Evidence / limits |
 |---|---|---|---|
-| Marimo co-work procedure | **Implemented, pending review** (owner-selected 2026-10-16): provider-resource entry gate, MCP-first editing and obsolete upstream skill retirement; published separately from notebook development. | Review the bounded workflow cleanup; no merge or fleet rollout implied. | [Integration record O42–O43](marimo-integration-log.md#entry-2026-10-16--mcp-first-workflow-correction-and-skill-retirement-o42o43); clarity and bounded live-edit checks are not full fresh-agent authoring compliance. |
-| Reporting consolidation | Published to draft PR #71; parked behind four-sensor work. Local P1 checks passed, broader cleanup unfinished. | None selected; resume cleanup only on reselection. | [Plan](plans/reporting-consolidation.md) owns preserved blockers and verification limits; cross-machine continuation unverified. |
-| Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer cursor/sidebar rework is uncommitted and preserved only in a local branch. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the cursor/sidebar rework. | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
+| Marimo co-work procedure | **Merged in PR #77** (owner-selected 2026-10-16): provider-resource entry gate, MCP-first editing and obsolete upstream skill retirement; published separately from notebook development. | No further implementation selected; full authoring validation and fleet rollout remain unverified. | [Integration record O42–O43](marimo-integration-log.md#entry-2026-10-16--mcp-first-workflow-correction-and-skill-retirement-o42o43); clarity and bounded live-edit checks are not full fresh-agent authoring compliance. |
+| Reporting consolidation | PR #71 merged; parked cleanup tracked by #72 behind four-sensor work. Local P1 checks passed, broader cleanup unfinished. | None selected; resume cleanup only on reselection. | [Plan](plans/reporting-consolidation.md) owns preserved blockers and verification limits; cross-machine continuation unverified. |
+| Signal explorer (`notebooks/signal_explorer.py`) | **Accepted** on the committed baseline: the notebook runs, and the live widget read-back §SA4 asked for is established — recorded on the draft branch in `dop3000/signal-explorer-live-notes.md`, which is not on `master` yet. A newer unreviewed cursor/ACF rework is preserved on published recovery branch `wip/explorer-preserved-20261016`. | Review the correction on PR [#70](https://github.com/ajegorovs/udv-echo-process/pull/70), then decide the WIP under [#73](https://github.com/ajegorovs/udv-echo-process/issues/73). | §2 of that live record — control transitions driven in one running session and read back both ways, with the one live-only defect they exposed found and fixed; an executed export still cannot prove a widget transition. |
 | Cross-sitting agreement (SA5) | **Accepted within sittings, proposed across them**: the per-sitting effects are published and frozen; the cross-sitting contrast is specified but not computed. | None selected; bounded synthesis requires separate selection. | Publication + merged PR; no recurrence acceptance rule yet. |
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
-| Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
+| Four-sensor velocity recordings | Four-channel view, pair overlays and an owner-directed **time-mode (SVD) view** implemented (2026-10-16, added through the corrected MCP-first contract with the kernel preserved), plus an optional sidebar **time-wise TV filter** (library `filter.tv` with `filter(..., gates=)`; one parameter set on all four channels, scoped to the cursor's gate by default — 0.13 s measured — with the whole field one click away at 7.1 s, per-visit segments and cross-visit smoothing refused by the layer and left unselected); workflow correction **merged separately in PR #77** (owner-selected 2026-10-16). | Attach to the existing notebook under the corrected contract; decide placement visual and level-factor presentation, and whether the mode view is taken further (pair mode shapes, quadrature test). Inventory/leading-notebook work remains deferred. | [Plan](plans/four-sensor-velocity-notebook-review.md) owns the checkpoint and the mode view's limits (broadband spectrum stated, no noise/flow separation claimed); [integration log O42](marimo-integration-log.md#2026-10-16--workflow-correction-after-four-sensor-authoring-audit-o42) records one live edit/restore cycle with unchanged kernel and the generated-save diff. Full fresh-agent authoring behavior and cross-machine rollout remain unverified. |
 | `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
@@ -552,6 +559,10 @@ Binding rules that outlive that work:
   this project; use the documented `marimo` extra and execute both notebooks.
 - Decide whether a repeatable consumer-side provider verification harness is
   warranted before adding one to this repository.
+- The [2026-10-16 log entry](marimo-integration-log.md) records the consumer-side MCP verification (read plus
+  interaction, against a browser-held session) that step 7 of the
+  [four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) needs, together with the two provider
+  pitfalls that come with it.
 - Keep unreleased `marimo-inspect` development in its sibling repository; do
   not turn a temporary editable override into normal consumer setup.
 

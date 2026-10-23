@@ -9,6 +9,10 @@
 - ``profiles.py`` — terminal robust median/unscaled-MAD velocity profiles for
   one axial-velocity channel, with the private 2-D TV-L1 preprocessing kept
   beside it in ``_tv_l1.py`` (absorbed from the same package; plan §4, D1).
+- ``time_modes.py`` — terminal time-direction SVD (POD) of one channel's
+  ``(profile, gate)`` field: the gate mode shapes, their temporal coefficients
+  and the two scalings a figure needs. One channel at a time, no resampling and
+  no cross-channel alignment (see the model module docstring for the limits).
 
 The optical/camera ports (mixer, feature tracking, image/temporal
 projections) were removed: their canonical, further-developed copies live in
@@ -39,6 +43,12 @@ from udv_echo_process.analysis.states import (
     StateDetectionSettings,
     detect_operating_states,
 )
+from udv_echo_process.analysis.time_modes import (
+    TimeModesInputError,
+    decompose_time_modes,
+    gate_amplitudes,
+    modes_for_variance_share,
+)
 from udv_echo_process.models.profiles import (
     RobustGateStatus,
     RobustProfileSettings,
@@ -46,6 +56,7 @@ from udv_echo_process.models.profiles import (
     TvL1Settings,
 )
 from udv_echo_process.models.rpm import EchoRpmEstimate, EchoRpmSettings
+from udv_echo_process.models.time_modes import TimeModes, TimeModesSettings
 
 __all__ = [
     "EchoRpmEstimate",
@@ -63,10 +74,16 @@ __all__ = [
     "StateDetectionInputError",
     "StateDetectionMode",
     "StateDetectionSettings",
+    "TimeModes",
+    "TimeModesInputError",
+    "TimeModesSettings",
     "TvL1Settings",
+    "decompose_time_modes",
     "detect_operating_states",
     "extract_robust_profiles",
+    "gate_amplitudes",
     "mean_sample_interval_s",
+    "modes_for_variance_share",
     "rpm_from_channel",
     "rpm_from_echo",
     "setpoint_rpm_from_stem",
