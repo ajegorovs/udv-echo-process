@@ -136,6 +136,20 @@ class BridgeSetter(BaseModel):
     maximum: float | None = None
 
 
+class BridgeMenuRow(BaseModel):
+    """One pressable row: which overlay it lives in, and where it sits inside that overlay.
+
+    A row is addressed by **position**, not by ordinal: several overlays are two-column, so "the first row"
+    names nothing in particular, while the offset from the overlay's own top-left is stable for one build.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    menu: str = Field(min_length=1, description="the overlay's name in the table's order")
+    offset: tuple[int, int] = Field(description="pixels from the overlay's top-left to the row")
+    component: str | None = Field(default=None, description="the form component, for the record")
+
+
 class BridgeMenuRoutines(BaseModel):
     """The two routines that show and hide a menu overlay, and this build's menu order.
 
@@ -196,6 +210,9 @@ class BridgeTable(BaseModel):
     #: carries the record/store cycle stays valid, and a caller that asks for a menu gets
     #: ``bridge_menu_missing`` rather than an invented address.
     menu: BridgeMenuRoutines | None = None
+    #: Rows a caller may ask for by name, e.g. ``filters.moving_average``.  Positions are a property of the
+    #: build, so they are machine-local like the addresses; a name that is absent is a refusal, never a guess.
+    rows: dict[str, BridgeMenuRow] = Field(default_factory=dict)
 
     def operation(self, name: str) -> BridgeOperation:
         try:
@@ -813,6 +830,26 @@ class BridgeMenu:
         evidence = self._call("leave", routines.leave, None)
         self._open = None
         return evidence
+
+    def row(self, entry: str) -> BridgeMenuRow:
+        """The named row, or a refusal naming it."""
+        if entry not in self._table.rows:
+            raise BridgeUnavailable(f"bridge_menu_row:{entry}")
+        return self._table.rows[entry]
+
+    def press(self, entry: str, *, hold_ms: int = 180) -> MenuPressEvidence:
+        """Press the row called ``entry``, which must belong to the overlay that is open.
+
+        The menu check is not pedantry: pressing a position in the *wrong* overlay would press whatever
+        happens to sit there, and the whole point of a name is that it cannot drift into another menu.
+        """
+        row = self.row(entry)
+        index = self.routines.index_of(row.menu)
+        if self._open is None:
+            raise BridgeRefused("bridge_menu_not_open")
+        if self._open != index:
+            raise BridgeRefused(f"bridge_menu_row_other_menu:{row.menu}")
+        return self.press_row(row.offset, hold_ms=hold_ms)
 
     def press_row(self, offset: tuple[int, int], *, hold_ms: int = 180) -> MenuPressEvidence:
         """Press the row at ``offset`` inside the open overlay.

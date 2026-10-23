@@ -26,7 +26,13 @@ ORDER = ("File", "Preferences", "Parameters", "Compute", "Display", "Filters", "
          "Tools", "Help", "Mpx", "UDV_MD")
 
 
-def table_dict(*, menu: dict | None = None) -> dict:
+ROWS = {
+    "filters.moving_average": {"menu": "Filters", "offset": [14, 40], "component": "Btn_MoveAver"},
+    "display.vertical_grids": {"menu": "Display", "offset": [10, 5], "component": "Btn_Vert_grids"},
+}
+
+
+def table_dict(*, menu: dict | None = None, rows: dict | None = None) -> dict:
     table = {
         "schema": BRIDGE_TABLE_SCHEMA,
         "image_sha256": BUILD,
@@ -41,6 +47,8 @@ def table_dict(*, menu: dict | None = None) -> dict:
     }
     if menu is not None:
         table["menu"] = menu
+    if rows is not None:
+        table["rows"] = rows
     return table
 
 
@@ -74,8 +82,10 @@ class Press:
         return self.report
 
 
-def menu(table_dict_overrides: dict | None = None, **kwargs) -> BridgeMenu:
-    table = BridgeTable.model_validate(table_dict(menu=menu_block(**(table_dict_overrides or {}))))
+def menu(table_dict_overrides: dict | None = None, *, rows: dict | None = ROWS, **kwargs) -> BridgeMenu:
+    table = BridgeTable.model_validate(
+        table_dict(menu=menu_block(**(table_dict_overrides or {})), rows=ROWS if rows is None else rows)
+    )
     return BridgeMenu(table, kwargs.get("dispatch") or Dispatch(), kwargs.get("press", Press()))
 
 
@@ -247,6 +257,58 @@ class TestTheTableLoadsWithAMenuBlock:
         path.write_text(
             json.dumps(table_dict(menu=menu_block(frobnicate=1))), encoding="utf-8"
         )
+        monkeypatch.setenv("UDV_BRIDGE_TABLE", str(path))
+        with pytest.raises(BridgeUnavailable) as caught:
+            load_table()
+        assert "bridge_table_invalid" in caught.value.reason
+
+
+class TestPressingByName:
+    def test_a_named_row_presses_its_offset(self):
+        press = Press()
+        bridge = menu(press=press)
+        bridge.open_menu("Filters")
+        evidence = bridge.press("filters.moving_average")
+
+        assert press.offsets == [(14, 40)]
+        assert evidence.offset == (14, 40)
+
+    def test_a_name_that_is_not_in_the_table_is_refused_by_name(self):
+        bridge = menu()
+        bridge.open_menu("Filters")
+        with pytest.raises(BridgeUnavailable) as caught:
+            bridge.press("filters.median")
+        assert caught.value.reason == "bridge_menu_row:filters.median"
+
+    def test_a_row_from_another_overlay_is_refused(self):
+        press = Press()
+        bridge = menu(press=press)
+        bridge.open_menu("Filters")
+        with pytest.raises(BridgeRefused) as caught:
+            bridge.press("display.vertical_grids")
+        assert "bridge_menu_row_other_menu:Display" in str(caught.value)
+        assert press.offsets == []
+
+    def test_a_named_press_still_needs_an_open_overlay(self):
+        bridge = menu()
+        with pytest.raises(BridgeRefused):
+            bridge.press("filters.moving_average")
+
+    def test_the_row_model_keeps_the_component_for_the_record(self):
+        assert menu().row("filters.moving_average").component == "Btn_MoveAver"
+
+    def test_rows_are_optional_and_a_table_without_them_refuses(self):
+        bridge = menu(rows={})
+        bridge.open_menu("Filters")
+        with pytest.raises(BridgeUnavailable):
+            bridge.press("filters.moving_average")
+
+    def test_an_unknown_key_in_a_row_is_refused(self, tmp_path, monkeypatch):
+        path = tmp_path / "operations.json"
+        payload = table_dict(
+            menu=menu_block(), rows={"filters.moving_average": {"menu": "Filters", "offset": [14, 40], "x": 1}}
+        )
+        path.write_text(json.dumps(payload), encoding="utf-8")
         monkeypatch.setenv("UDV_BRIDGE_TABLE", str(path))
         with pytest.raises(BridgeUnavailable) as caught:
             load_table()
