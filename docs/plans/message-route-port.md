@@ -78,6 +78,16 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**The owning object: two routes tried and closed (2026-10-23).** The binding captured for an earlier instance cannot be
+reused: reading the process's memory shows its form pointer is not even mapped in the running instance, so a recorded
+object pointer is stale by construction and must refuse rather than be trusted. Nor can the object be found by its class
+signature alone: scanning the process's committed readable memory (371 MB, 477 regions) for the recorded VMT pointer
+found exactly one occurrence, inside the module's own class metadata and not an object — so that signature does not
+identify a live form in this instance. What is *not* in doubt is the module: routine addresses from the table still
+resolve and execute in this instance, so code is stable while objects are not. That leaves observation — capturing the
+object the application itself uses when it calls one of these routines — as the only route with a mechanism behind it,
+and it needs the instrumentation step that currently fails (see *Relevant revision*).
+
 **Relevant revision / artifacts / live target.** This branch (`feat/application-backed-bridge`), and the machine-local
 binding table that carries routine addresses and the menu row map; those stay machine-local and are never committed.
 
@@ -124,6 +134,12 @@ instance is stale and must refuse rather than be reused.
 two are shown to be unreachable without the application calling them first — in which case the register's rows 10–12 are
 recorded as blocked-by-design, with that measurement as evidence, and the message route's force is what it reads and what
 it can select.
+
+**Before starting, read the two closed routes** in *Current checkpoint*: a recorded object pointer is stale by
+construction, and the class signature does not find a live instance. Do not re-run either scan. The instrumentation step
+is the one that has to work, and its failure mode is recorded there too: the runner reaches its own preflight (pid and
+seven fast-access roles read) and then dies in the instrumentation step with a file-not-found from its process spawn and
+an empty output file.
 
 ## Decisions and evidence
 
