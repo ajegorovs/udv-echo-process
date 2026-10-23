@@ -78,6 +78,14 @@ call without the owning object faults. Whether a row's `…Change_State` handler
 and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
 channel selection can leave input emulation at all — the old route itself is unsafe there.
 
+**A row's object is captured by observation, and it is not enough on its own (2026-10-23).** Window→object is refused by
+the application outright: the attachment's own resolver reports `no TSp_Button object on hwnd …` after trying a property
+atom, `GWLP_USERDATA`, and the small negative offsets. So the row's object was captured the other way — a read-only hook
+on the row's handler while the operator pressed it once: `self` = the form, `sender` = the row's object, and the form
+value matched the one the setter hook produced independently, which is a second, independent confirmation of the same
+object. Supplying both to the handler executes it without error and changes nothing, while the operator's own click does
+change the state — so a row acts through its control's toggle (state byte and notify), not through its handler alone.
+
 **The owning object is now resolved, and priming needs no input (2026-10-23).** Two routes are closed and one works.
 The discovery observes the application's own call, so it needs the application to act: instead of a human pressing
 something, the message route changes a parameter itself (select a combo entry by text, then put it back), the application
@@ -128,7 +136,7 @@ capability. `absent` = no message-route implementation exists.
 | 7 | Accept / cancel a dialog | click | **blocked** | dialog buttons are pressed; whether their handlers can be called with a `Sender` is the same unknown as row 10 |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **partial** | setter commits once; not repeatable in a fresh attach; today's mismatch repair is a UI write, which this plan treats as input |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
-| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | the handler executes and changes nothing: it needs its `Sender` object. The attachment can resolve a *row* object for an `entry` argument, and that route is untested |
+| 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **blocked** | with the row's own object captured from a real press and supplied as `Sender` (plus the form as `Self`), the handler executes — `ok`, `executed`, no errors — and the state does not change. The application's own click *does* change it, so the row acts through its control's toggle path (state byte + notify), not through the handler alone; the attachment has a `toggle` kind for that and needs the control's state offset |
 | 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
 | 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | the routine call reaches the strip's `store` state, so only the naming step remains — and that is a dialog (row 7) |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
@@ -138,11 +146,12 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Give a menu row its `Sender`.** With record/stop resolved, the largest remaining block is row 10: a row handler needs
-the object it was pressed from, not its owner. The attachment already resolves a row object when a call's argument is
-`entry` (it enumerates the open overlay's entry buttons and validates the class before use), so the next measurement is
-one call with that argument and the state read back either side. If it acts, rows and dialog buttons (row 7) become
-message-route work; if it does not, the register records row 10 as blocked by design.
+**A row's control toggle, not its handler.** The row's objects are known; what is missing is the *path* the application
+takes when a row is clicked: a control toggle that sets a state byte and calls the notify routine, for which the
+attachment already has a `toggle` kind. The next measurement is that offset — find where the control keeps its state byte
+for one row, toggle it through the notify routine, and read the application's own flag either side. If that acts, rows and
+dialog buttons (row 7) follow the same shape; if it does not, row 10 is blocked by design with three measurements behind
+it.
 
 **Closed: the owning object (`Self`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
 that belongs to some object the dispatcher does not know. Form methods work because the form is identified; the strip's
@@ -150,9 +159,9 @@ and the rows' owners are not. The measurement that settles it is capturing the o
 uses when it calls one of these routines, for the *current* application instance — a binding captured for an earlier
 instance is stale and must refuse rather than be reused.
 
-**Stopping condition.** Either a row toggle executes with `allow_real_input=False`, or it is shown to need an object the
-message route cannot obtain — in which case row 10 is recorded as blocked by design and the store's naming dialog (row 12)
-is what remains between the message route and an unattended recording.
+**Stopping condition.** Either a row toggle acts with `allow_real_input=False`, or the control-toggle path is shown not
+to act either — in which case row 10 is recorded as blocked by design (three routes measured) and the store's naming
+dialog (row 12) is what remains between the message route and an unattended recording.
 
 **Before starting, read the two closed routes** in *Current checkpoint*: a recorded object pointer is stale by
 construction, and the class signature does not find a live instance. Do not re-run either scan. The instrumentation step
@@ -172,6 +181,9 @@ an empty output file.
 - **2026-10-23 — coverage is not the question.** Focus, occlusion and minimisation were measured and withdrawn as
   explanations: an inactive window ignores input regardless of coverage, a minimised one paints nothing, and real input
   cannot be injected here at all. The message route's limits are about objects and routines, not about focus.
+- **2026-10-23 — which bit is which.** `display_flags` bit 1 is the **vertical** grids, established by the operator
+  clicking that row and watching the value go 2 → 0. Earlier work in this effort called it horizontal; that reading was
+  wrong, and any note that relies on it should be corrected rather than inherited.
 - **2026-10-23 — a withdrawn claim.** Presses were reported as working with the application in front (`display_flags`
   2→0 and 0→2). Four mechanisms on the same row, cursor teleported onto it, application in front, reproduced nothing.
   The earlier observation is not used as evidence anywhere in this plan.
