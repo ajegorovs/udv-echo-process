@@ -393,6 +393,7 @@ class SweepRunner:
         channel: int | None = None,
         expected_mode: ProcessMode,
         strict_covariates: tuple[str, ...] = (),
+        window_overhead_s: float = 0.0,
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
@@ -423,6 +424,10 @@ class SweepRunner:
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
         self._strict_covariates = tuple(strict_covariates)
+        #: Seconds a recording runs *beyond* the requested window because the route costs them.  Measured for the message
+        #: route: each routine call is its own attachment (~8 s), so a 4 s point produced a 20.657 s block and the size
+        #: signature called the sound file contaminated.  Zero for the UI route, where the cycle runs in one attachment.
+        self._window_overhead_s = float(window_overhead_s)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
@@ -658,7 +663,8 @@ class SweepRunner:
                 parameters.emissions_per_profile, parameters.prf_us
             )
         attempt.period_s = period
-        profiles = profiles_for_duration(duration_s, period) if period else None
+        window = float(duration_s) + self._window_overhead_s
+        profiles = profiles_for_duration(window, period) if period else None
         if profiles:
             attempt.expected_bytes = self._signature.expected_bytes(
                 parameters.gates, profiles

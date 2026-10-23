@@ -54,8 +54,14 @@ class SpanMeter(Protocol):
     """How long the stored block actually recorded, from the block's own timestamps.
 
     A cycle cannot know this from its own clock: the stop is a separate attachment, and the recording keeps writing until
-    the application processes it. Measured: a 4 s request produced a 20.7 s block, because each call costs an attachment.
-    So the duration is read from the artifact, which is the only honest source.
+    the application processes it. Measured: a 4 s request produced a 20.657 s block, because each routine call costs an
+    attachment. So the duration is read from the artifact, which is the only honest source — and the limit below is an
+    allowance for that overhead rather than a tolerance on the request.
+
+    Measured attempt at removing the overhead (2026-10-23): issuing record, holding the application's GUI thread for 3 s
+    inside the stub, then stop and store, produced no dialog and no file. The application consumes its command slot on its
+    own loop, so holding that loop collapses three commands into the last one. The window therefore cannot be shortened
+    this way, and the overhead is a property of the route until a caller can span two boundaries without blocking.
     """
 
     def __call__(self, path: Path) -> float: ...
@@ -107,7 +113,7 @@ class RoutineCycle:
         dialog: StoreDialog,
         decode: Decoder | None = None,
         measure_span: SpanMeter | None = None,
-        max_overshoot: float = 2.0,
+        max_overhead_s: float = 20.0,
         stop_settle_s: float = 1.5,
         store_settle_s: float = 1.5,
         store_timeout_s: float = 30.0,
@@ -119,9 +125,11 @@ class RoutineCycle:
         self._dialog = dialog
         self._decode = decode or _default_decoder
         self._measure_span = measure_span or _default_span
-        #: How far past the requested window a recording may run before it is refused.  Two is generous on purpose:
-        #: the value is meant to catch a cycle that recorded during the wrong window, not to police a second.
-        self._max_overshoot = float(max_overshoot)
+        #: How much longer than the requested window a recording may run.  This is an *overhead allowance*, not a
+        #: tolerance on the request: each routine call costs an attachment (measured ~8 s each), so a point's block is
+        #: duration + overhead by construction.  Twenty seconds covers the two calls with room, and a block from a
+        #: different point - which would be hundreds of seconds out - is still refused.
+        self._max_overhead_s = float(max_overhead_s)
         self._stop_settle_s = stop_settle_s
         self._store_settle_s = store_settle_s
         self._store_timeout_s = store_timeout_s
@@ -196,7 +204,7 @@ class RoutineCycle:
             report.reason = f"store_span_unmeasurable:{type(exc).__name__}"
             return False, report.reason
         report.recorded_span_s = span
-        limit = float(duration_s) * self._max_overshoot
+        limit = float(duration_s) + self._max_overhead_s
         if span > limit:
             # A block that recorded far longer than asked is not this point's data by the caller's own definition;
             # measured cause: each routine call costs an attachment, so the stop lands seconds after the window ends.

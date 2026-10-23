@@ -434,6 +434,9 @@ def sweep(
         log_path=log_path,
         channel=channel,
         expected_mode=expected_mode,
+        # A cycle that issues its calls in separate attachments records for the window plus that overhead; the runner's
+        # size guard has to be told, or it reports a sound block as contaminated (measured: 20.657 s for a 4 s request).
+        window_overhead_s=20.0 if cycle is not None else 0.0,
     )
     definition = SweepDefinition(
         duration_s=seconds,

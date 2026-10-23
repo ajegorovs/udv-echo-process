@@ -53,7 +53,7 @@ class Factory:
         dialog: Dialog | None = None,
         decode=None,
         span=None,
-        max_overshoot: float = 2.0,
+        max_overhead_s: float = 20.0,
     ):
         self.directory = directory
         self.caller = Caller(fail_on=fail_on)
@@ -61,7 +61,7 @@ class Factory:
         self.dialog.directory = directory
         self.decode = decode or (lambda path: 1)
         self.span = span or (lambda path: 0.0)
-        self.max_overshoot = max_overshoot
+        self.max_overhead_s = max_overhead_s
         self.sleeps: list[float] = []
 
     def __call__(self) -> RoutineCycle:
@@ -71,7 +71,7 @@ class Factory:
             dialog=self.dialog,
             decode=self.decode,
             measure_span=self.span,
-            max_overshoot=self.max_overshoot,
+            max_overhead_s=self.max_overhead_s,
             sleep=self.sleeps.append,
             poll_s=0.0,
             store_timeout_s=0.0,
@@ -200,17 +200,18 @@ class TestTheRecordingWindow:
         ok, _ = factory().try_record_and_store("point-10", 4.0, tmp_path)
         assert ok is True
 
-    def test_a_recording_that_ran_five_times_too_long_is_refused(self, tmp_path):
-        factory = Factory(tmp_path, span=lambda path: 20.7)
-        ok, reason = factory().try_record_and_store("point-11", 4.0, tmp_path)
-        assert ok is False
-        assert reason.startswith("recorded_span_over_limit")
+    def test_attachment_overhead_is_allowed(self, tmp_path):
+        # the measured live case: 4 s requested, 20.657 s recorded, because each routine call costs an attachment
+        factory = Factory(tmp_path, span=lambda path: 20.657)
+        ok, _ = factory().try_record_and_store("point-11", 4.0, tmp_path)
+        assert ok is True
 
-    def test_the_limit_is_the_requested_window_times_the_tolerance(self, tmp_path):
-        factory = Factory(tmp_path, span=lambda path: 8.5, max_overshoot=2.0)
+    def test_a_block_from_another_window_is_still_refused(self, tmp_path):
+        factory = Factory(tmp_path, span=lambda path: 240.0)
         ok, reason = factory().try_record_and_store("point-12", 4.0, tmp_path)
         assert ok is False
-        assert "8.50s>8.00s" in reason
+        assert reason.startswith("recorded_span_over_limit")
+        assert "240.00s>24.00s" in reason
 
     def test_an_unmeasurable_span_is_a_refusal_not_a_pass(self, tmp_path):
         def explode(path):
