@@ -261,15 +261,26 @@ capability. `absent` = no message-route implementation exists.
 
 ### Selected next
 
-**Cutting the window overhead — two attempts, one closed and one open.** The blocking variant is closed: issuing record,
+**The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
+two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
+(`pending_command` 28 → 29), the dialog raised and committed, the block written — and its file spans **397.17 s** for a 4 s
+window. Profiles run from 0.0 to 397.17 at a 40.3 ms interval, i.e. the whole buffer the application had been filling. So the
+~20 s campaign blocks were 20 s of *buffer*, not of window, and the size expectation that looked five times too small was
+reading buffer age. The cycle's span limit is therefore withdrawn (span is reported, with an optional ceiling for a caller
+that wants one); the runner's size ratio has the same defect and is now the open decision, because a verdict that depends on
+when the application's buffer was last cleared is not a verdict. The plan's own principle applies: the decode is the
+acceptance.
+
+**Cutting the window overhead — one attempt closed.** The blocking variant is closed: issuing record,
 holding the application's GUI thread for 3 s inside the stub, then stop and store produced **no dialog and no file**, because
 the application consumes its shared command slot on its own loop and a held loop collapses three commands into the last one
 (store, with nothing to store). So the window cannot be defined by blocking.
 
-What remains open is the variant that *spans two boundaries without blocking*: re-post the wake-up message from inside the
-stub and issue the stop at the first boundary after the deadline. Calls stay on the GUI thread at a boundary, which is the
-rule the blocking attempt was trying to respect by force. Until that exists, the overhead is a documented constant — the
-cycle allows `duration + 20 s` and the runner is told the same number — and every point costs about 62 s wall clock.
+The variant that spans two boundaries without blocking is now built and measured: `menu_call` takes a per-call deadline
+(`due=ms`), re-posts its own wake-up message, and issues each call at the first boundary past its deadline, so three
+commands ran in one attachment with the application never blocked. It did not shorten the stored data, because the stored
+data is the buffer — see the buffer finding above — and that is the more useful result: the wall-clock cost of a point is
+real (~62 s) but the *data* cost is not something the cycle controls.
 
 **Then:** resume and permutation across a longer plan, and the `absent` capabilities (channel selection, file pick,
 unexpected prompts), of which channel selection carries a recorded hazard — it restarts the measurement loop.
