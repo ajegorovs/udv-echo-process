@@ -482,9 +482,13 @@ class BridgeActuator:
         channel: int | None = None,
         numeric_writes: bool = False,
         value_dispatch: BridgeValueDispatch | None = None,
+        cycle: StoreCycle | None = None,
     ) -> None:
         self._inner = inner
         self._dispatch = dispatch
+        #: The message route's own cycle.  When present it replaces the host dispatch for record/stop/store, so a
+        #: bridge run stops delegating its cycle to a runner that presses buttons.
+        self._cycle = cycle
         self._value_dispatch = value_dispatch
         #: Set once a write could not be verified *and* could not be restored.  From then on this
         #: actuator writes nothing: a second write on top of an unknown value is worse than a stop.
@@ -663,9 +667,10 @@ class BridgeActuator:
         verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
         """Record, stop, store — the bridge route — and credit only artifact-backed evidence."""
-        blocker = self.unavailable()
-        if blocker is not None:
-            return False, blocker
+        if self._cycle is None:
+            blocker = self.unavailable()
+            if blocker is not None:
+                return False, blocker
         table = self.table
         directory = Path(directory)
         note = self._inner.process_mode_note(expected_mode)
@@ -687,6 +692,16 @@ class BridgeActuator:
             verify_channel=verify_channel,
             table_digest=table.image_sha256,
         )
+        if self._cycle is not None:
+            ok, outcome = self._cycle.try_record_and_store(
+                name, duration_s, directory, expected_mode=expected_mode
+            )
+            if not ok:
+                return False, str(outcome)
+            path = Path(outcome)
+            if not path.is_file():
+                return False, f"bridge_artifact_mismatch:{path.as_posix()}"
+            return True, path
         assert self._dispatch is not None  # narrowed by `unavailable()`
         try:
             evidence = evidence_from_report(self._dispatch(request))
@@ -748,6 +763,19 @@ class MenuCall:
             "index": self.index,
             "routines_digest": self.routines_digest,
         }
+
+
+@runtime_checkable
+class StoreCycle(Protocol):
+    """The message route's own record/stop/store cycle, injected rather than dispatched to a host runner.
+
+    Structural on purpose: :class:`~udv_echo_process.acquire.cycle.RoutineCycle` satisfies it, and so does any object with
+    the same call, which keeps this wrapper testable without an instrument.
+    """
+
+    def try_record_and_store(
+        self, name: str, duration_s: float, directory: Path, *, expected_mode: object = None
+    ) -> tuple[bool, Path | str]: ...
 
 
 @runtime_checkable
