@@ -899,6 +899,50 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         """
         _activate_window(hwnd, user32=_user32)
 
+    def application_error(self) -> str | None:
+        """The text of a top-level error box the application is showing, or ``None``.
+
+        A message box is a **top-level** window of class ``#32770``, not a child of the main form, so every census in
+        this module misses it — the overlay guard, the child enumeration and the layout fingerprint all walk children.
+        Measured 2026-10-26: a Delphi access violation sat in front of the application for an hour while every menu call
+        reported ``executed: 0`` after its full timeout and every run refused with a reason about the foreground.
+
+        While such a box is up nothing on this route can succeed: the box's modal loop filters messages aimed at the
+        main form, so a posted wake-up never reaches the WndProc it is aimed at. That is why the answer is a refusal
+        naming the box rather than a retry — and why it is asked *before* any overlay handling, because a box outranks
+        every panel this driver knows.
+        """
+        win32gui, _ = _gui()
+        import win32process
+
+        window = self._resolve()["window"]
+        _thread, app_pid = win32process.GetWindowThreadProcessId(window)
+        found: list[str] = []
+
+        def collect(hwnd: int, _param: object) -> bool:
+            try:
+                if not win32gui.IsWindowVisible(hwnd) or win32gui.GetClassName(hwnd) != "#32770":
+                    return True
+                _t, owner = win32process.GetWindowThreadProcessId(hwnd)
+                if owner != app_pid:
+                    return True
+                parts = [win32gui.GetWindowText(hwnd)]
+
+                def child(handle: int, _p: object) -> bool:
+                    label = (win32gui.GetWindowText(handle) or "").strip()
+                    if label:
+                        parts.append(label)
+                    return True
+
+                win32gui.EnumChildWindows(hwnd, child, None)
+                found.append(" / ".join(part for part in parts if part))
+            except Exception:  # noqa: BLE001 - an unreadable window is not an error box
+                return True
+            return True
+
+        win32gui.EnumWindows(collect, None)
+        return found[0] if found else None
+
     def _require_foreground(self, hwnd: int) -> None:
         """Assert the application is the **foreground** window before hovering it.
 

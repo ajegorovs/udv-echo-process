@@ -868,6 +868,23 @@ class SweepRunner:
         A refusal here is an abort, not a point failure: an unrecognised panel is not
         this point's fault and it is still up for the next one.
         """
+        # An application error outranks every panel: while its message box is up, the box's modal loop filters the
+        # posted wake-ups this route acts through, so nothing else can succeed and a retry would only spend a slot.
+        # Asked through ``getattr`` because the check is a capability of the Windows actuator, not of every fake.
+        check_error = getattr(self._actuator, "application_error", None)
+        if check_error is not None:
+            try:
+                error = check_error()
+            except Exception as exc:  # noqa: BLE001 - an unread error state is not a clean one
+                return (
+                    f"the application's error state could not be read "
+                    f"({type(exc).__name__}: {exc}), so its state is not known"
+                )
+            if error:
+                return (
+                    f"the application is showing an error and cannot be driven: {error} - it faulted, and while that "
+                    "box is up the message route's wake-ups are filtered by its modal loop; restart the application"
+                )
         try:
             kind = self._actuator.answer_overlay()
         except Exception as exc:  # noqa: BLE001 - an unchecked overlay is not clean

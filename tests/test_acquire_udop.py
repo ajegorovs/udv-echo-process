@@ -181,6 +181,7 @@ FACADE_METHODS = (
     "select_combo",
     "select_combo_by_text",
     "_as_role",
+    "application_error",
 )
 SURFACES = {
     parameters: PARAMETERS_METHODS,
@@ -245,6 +246,11 @@ CLASS_ADDITIONS = (
     # the dropdown entry selected by its text: the walk that discovers a combo's vocabulary and the
     # read-back that proves it, over the same ``_combo_select`` its sibling ``select_combo`` uses
     "select_combo_by_text",
+    # the top-level error box: a message box is not a child of the main form, so no census in this module
+    # can see it, and while it is up its modal loop filters the wake-ups the message route acts through
+    # (measured 2026-10-26: an access violation sat in front for an hour while every menu call reported
+    # "executed 0" and every run blamed the foreground)
+    "application_error",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow
