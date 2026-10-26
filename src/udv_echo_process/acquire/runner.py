@@ -928,16 +928,35 @@ class SweepRunner:
             self._actuator.press(StripControl.CLEAR_AND_RESTART)
         except Exception as exc:  # noqa: BLE001 - reported as a reason
             return f"the pre-point block reset failed ({type(exc).__name__}: {exc})"
-        state, failure = self._poll_startable()
+        # The confirmation is the **empty** view (``READY``), not merely a startable one.
+        #
+        # ``STORE`` is startable and means the block still holds data, so accepting it after the press
+        # accepted a block that had not been cleared - and, worse, returned before the application had
+        # processed the press at all, which dropped the record that followed it (measured 2026-10-26:
+        # point 2 of a campaign refused with ``record_not_dispatched`` because the record was written
+        # while the clear was still being handled). ``READY`` is the strip's own statement that no
+        # block is held; waiting for it is the transition, and it is also the settle the record needs.
+        state, failure = self._poll_view(StripView.READY)
         if state is None:
             return failure
-        if state.view not in STARTABLE_VIEWS:
+        if state.view is not StripView.READY:
             return (
-                f"after CLEAR_AND_RESTART the strip is in the {state.view.value!r} "
-                f"view after {RESET_TIMEOUT_S:.0f} s: the block was not reset, so the "
-                "point is refused rather than stored into a possibly stale block"
+                f"after CLEAR_AND_RESTART the strip is in the {state.view.value!r} view after "
+                f"{RESET_TIMEOUT_S:.0f} s, not the empty {StripView.READY.value!r} one: the block "
+                "was not cleared, so the point is refused rather than stored into a possibly stale block"
             )
         return None
+
+    def _poll_view(self, wanted: StripView) -> tuple[StripState | None, str | None]:
+        """Poll (bounded inside the actuator) for one view, or say why it could not be read."""
+        try:
+            state = self._actuator.wait_for_view((wanted,), timeout_s=RESET_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - a wedged view is refused, not retried
+            return None, (
+                f"waiting {RESET_TIMEOUT_S:.0f} s for the {wanted.value!r} strip view failed "
+                f"({type(exc).__name__}: {exc})"
+            )
+        return state, None
 
     def _poll_startable(self) -> tuple[StripState | None, str | None]:
         """Poll (bounded inside the actuator) for a startable view, or say why not."""
