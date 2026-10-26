@@ -49,12 +49,32 @@ from udv_echo_process.acquire.actuator import (
 from udv_echo_process.acquire.udop import AcquisitionError
 from udv_echo_process.acquire.ui.dialog import bottom_row as _bottom_row
 from udv_echo_process.acquire.ui.identity import PanelIdentity
+from udv_echo_process.acquire.ui.readiness import application_error_refusal
 from udv_echo_process.acquire.ui.strip import (
     press_refusal as strip_press_refusal,
 )
 from udv_echo_process.acquire.ui.strip import (
     strip_state_of,
 )
+
+
+class _ReadinessRefusal(AcquisitionError):
+    """This step was refused because the application's own error state says so — *for this call*.
+
+    A cause marker, not a new public failure: it is an :class:`AcquisitionError` in every respect,
+    so every caller's ``except``, the ``(False, reason)`` tuple and the models are unchanged. What
+    it adds is the one fact recovery cannot re-derive: **the box was up when the step was refused**.
+
+    Why that has to travel with the exception: recovery's own readiness guard only ever sees a
+    *fresh* sample, and a box can be gone by the time recovery looks — dismissed by the operator,
+    or taken down by the application itself. A clear sample then licenses the legacy recovery to
+    answer overlays and stop a strip on the strength of a state that has already cost this point
+    its recording, which is the mutation the refusal existed to prevent. The type is the per-call
+    record of that, and it is deliberately narrow: nothing is latched on the instance and no
+    lifetime question is settled here — this invocation skipped recovery, the next one is free to
+    sample for itself.
+    """
+
 
 # ------------------------------------------------------------------------ the strip's cadence
 
@@ -408,13 +428,28 @@ class RecordingSurface:
         return state
 
     def _hold_recording(self, duration_s: float) -> None:
-        """Wait out the point's duration, watching the view and the overlays."""
+        """Wait out the point's duration, watching the view, the overlays and the error state.
+
+        The view poll is what makes a hold a *transition* rather than a sleep; the error check is
+        the same cadence's second half, and it is here rather than only at the top of the cycle
+        because a fault can land **inside** the hold: the strip then stops moving, and the honest
+        finding is that the application is showing an error, not that "the recording stopped on its
+        own". Nothing is dismissed and nothing is restarted — a faulted application is left for the
+        operator, and the caller's own recovery decides what to do about a recording left running.
+
+        The refusal is raised as :class:`_ReadinessRefusal`, not as a bare ``AcquisitionError``, so
+        the fact that a box *was* up survives the unwinding: the cycle can then skip recovery for
+        this point even if the box is gone before recovery samples the screen.
+        """
         deadline = time.monotonic() + max(0.0, duration_s)
         while True:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return
             time.sleep(min(0.5, remaining))
+            refusal = application_error_refusal(self)
+            if refusal is not None:
+                raise _ReadinessRefusal(refusal)
             if self._peek_overlay() is OverlayKind.WARNING:
                 # Seen, not slept through: a modal warning stalls the app's own timers.
                 self._note("answered a warning raised during recording")
@@ -450,10 +485,19 @@ class RecordingSurface:
         before anything is pressed: a run measured in simulation refuses to record against the
         instrument, and vice versa, naming the caption it saw rather than calling the screen
         unclean.
+
+        It asks for the application's top-level error state **before the ``try``**, which is the
+        one place the position matters: the recovery below answers overlays and stops a recording,
+        so a refusal raised inside the body would make a faulted application the reason for pressing
+        its strip. Nothing is read, answered, changed or pressed on that path — not the layout, not
+        the channel, not the strip.
         """
         # DEVIATION: §24.4 names this method `record(*, expected_mode)`; the port's name is
         # `record_and_store` and is kept, because the runner, the live verbs and every fake call it
         # by that name and this slice changes no caller's vocabulary for a rename's sake.
+        refusal = application_error_refusal(self)
+        if refusal is not None:
+            raise AcquisitionError(f"{name}: {refusal}")
         try:
             note = self.layout_note(expected_mode=expected_mode)
             if note is not None:
@@ -509,6 +553,15 @@ class RecordingSurface:
             # it and a note that raises would turn a stored point into a failed one.
             self._note(f"stored {stored.name}")
             return stored
+        except _ReadinessRefusal as exc:
+            # No recovery at all — not even a guarded one. This point's refusal *is* the finding, and
+            # a later clear sample must not license the mutations recovery would take: the box that
+            # cost this recording is a fact about this invocation, whatever the screen shows now.
+            # Nothing is answered, nothing is pressed, and the skip is recorded so a later reader
+            # does not believe recovery ran. The failure reaches the caller unchanged, prefixed
+            # exactly as the legacy branch prefixes it, and the cause stays attached.
+            self._note(f"recovery was skipped: {exc}")
+            raise AcquisitionError(f"{name}: {exc}") from exc
         except AcquisitionError as exc:
             self._recover()
             raise AcquisitionError(f"{name}: {exc}") from exc
@@ -550,7 +603,20 @@ class RecordingSurface:
 
         Overlays are answered (never closed), and a recording left running is stopped: a
         leftover recording would otherwise be stored under the next point's name.
+
+        **Not on a faulted application.** That this method promises recovery cannot license an
+        action which the readiness guard now knows to be unsafe: an error box's modal loop filters
+        the messages every step below acts with, so answering an overlay or stopping a strip there
+        is exactly the speculative mutation the refusal exists to prevent. The same check the cycle
+        makes on entry is therefore asked first, and a known error — or a check that could not be
+        read — leaves the application's state *unverified*: nothing is answered, nothing is
+        pressed, and the skip is recorded so a later reader does not believe recovery ran. The
+        caller's own failure is untouched; it is re-raised after this returns.
         """
+        refusal = application_error_refusal(self)
+        if refusal is not None:
+            self._note(f"recovery was skipped: {refusal}")
+            return
         try:
             for _ in range(4):
                 kind = self._peek_overlay()

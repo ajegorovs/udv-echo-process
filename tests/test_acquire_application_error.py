@@ -50,3 +50,105 @@ def test_an_actuator_without_the_check_is_not_refused_for_that(tmp_path: Path, m
     outcome = engine.run_point(point_for(1), DURATION_S)
 
     assert outcome.ok is True, outcome.reason
+
+
+class RaisingCheckActuator(FakeActuator):
+    """A capability that was offered and could not answer."""
+
+    def application_error(self) -> str | None:
+        raise RuntimeError("the window station refused the enumeration")
+
+
+def test_a_check_that_raises_is_a_refusal_and_nothing_is_pressed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unread error state is not a clean one — and the point never reaches the strip."""
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch, fake_class=RaisingCheckActuator)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is True, outcome.reason
+    assert "could not be read" in (outcome.reason or ""), outcome.reason
+    assert "refused the enumeration" in (outcome.reason or ""), "the cause is carried, not replaced"
+    assert [call for call in fake.calls if call[0] in ("press", "write_parameter")] == [], fake.calls
+
+
+class NotCallableActuator(FakeActuator):
+    """A malformed capability: the name exists and is not a check."""
+
+    application_error = "not a check"  # type: ignore[assignment]
+
+
+def test_a_check_that_is_not_callable_is_a_named_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An offered capability of the wrong shape must not silently mean "no error"."""
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch, fake_class=NotCallableActuator)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is True, outcome.reason
+    assert "not callable" in (outcome.reason or ""), outcome.reason
+    assert [call for call in fake.calls if call[0] in ("press", "write_parameter")] == [], fake.calls
+
+
+class MalformedAnswerActuator(FakeActuator):
+    """A capability that answered something that is not a caption and not a clear screen."""
+
+    def application_error(self) -> object:
+        return 42
+
+
+def test_an_answer_that_is_not_a_caption_is_not_a_clear_screen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch, fake_class=MalformedAnswerActuator)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is True, outcome.reason
+    assert "not a clear screen" in (outcome.reason or ""), outcome.reason
+    assert [call for call in fake.calls if call[0] in ("press", "write_parameter")] == [], fake.calls
+
+
+class BlankAnswerActuator(FakeActuator):
+    """A capability that answered nothing at all — the shape that used to read as clear."""
+
+    def application_error(self) -> str | None:
+        return "  "
+
+
+def test_a_blank_answer_is_not_a_clear_screen(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The reader never answers a blank string (it falls back to a truthful sentence), so a blank
+    answer is a broken check rather than a screen with nothing on it."""
+    fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch, fake_class=BlankAnswerActuator)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is False
+    assert outcome.aborted is True, outcome.reason
+    assert "empty" in (outcome.reason or ""), outcome.reason
+    assert [call for call in fake.calls if call[0] in ("press", "write_parameter")] == [], fake.calls
+
+
+class ClearAnswerActuator(FakeActuator):
+    """A capability that answered the only clear screen there is."""
+
+    def application_error(self) -> str | None:
+        return None
+
+
+def test_a_capability_that_answers_clear_lets_the_point_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Present-and-clear is not the same as absent, and neither is a refusal."""
+    _fake, engine, _log_path, _ = make_runner(tmp_path, monkeypatch, fake_class=ClearAnswerActuator)
+
+    outcome = engine.run_point(point_for(1), DURATION_S)
+
+    assert outcome.ok is True, outcome.reason

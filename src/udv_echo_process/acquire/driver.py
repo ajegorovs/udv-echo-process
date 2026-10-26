@@ -336,6 +336,16 @@ from udv_echo_process.acquire.ui.menu import (
 from udv_echo_process.acquire.ui.menu import entry_buttons as _entry_buttons
 from udv_echo_process.acquire.ui.menu import observation_text as _observation_text
 from udv_echo_process.acquire.ui.model import Rect
+
+# The readiness half: the top-level error box's interpreter and the one optional-capability guard
+# every path that would act asks before it acts. The interpreter lives here with the other pure
+# readers — it decides *what to ask and in what order*, and ``driver`` hands it the transport — so
+# the runner, the recording surface, the bridge and the facade cannot answer "is the application
+# faulted?" differently. See ``ui/readiness.py``.
+from udv_echo_process.acquire.ui.readiness import (
+    application_error_refusal,
+    application_error_text,
+)
 from udv_echo_process.acquire.ui.strip import (
     has_slider,
     strip_state_of,
@@ -911,37 +921,26 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         main form, so a posted wake-up never reaches the WndProc it is aimed at. That is why the answer is a refusal
         naming the box rather than a retry — and why it is asked *before* any overlay handling, because a box outranks
         every panel this driver knows.
+
+        The scan is :func:`~udv_echo_process.acquire.ui.readiness.application_error_text`, and the three things it fixes
+        are worth stating where a reader of *this* method will look for them: the target process is taken from the
+        application's **own** window and only that process's windows are classified (the earlier reader asked every
+        top-level window for its class and took the first message box it found, whoever owned it); the caption is read
+        through this driver's own query boundary (:meth:`_get_text`, ``WM_GETTEXT``) when the enumeration snapshot has
+        none, because ``GetWindowText`` answers ``""`` for nearly every widget here; and a window that cannot be
+        identified is **raised**, not skipped, because ``None`` claims a clear screen and that claim has to be
+        established. The main window is resolved by class rather than by a whole layout census: this check runs before
+        every press, and it needs no panel map to find a box that is not part of one.
         """
         win32gui, _ = _gui()
         import win32process
 
-        window = self._resolve()["window"]
-        _thread, app_pid = win32process.GetWindowThreadProcessId(window)
-        found: list[str] = []
-
-        def collect(hwnd: int, _param: object) -> bool:
-            try:
-                if not win32gui.IsWindowVisible(hwnd) or win32gui.GetClassName(hwnd) != "#32770":
-                    return True
-                _t, owner = win32process.GetWindowThreadProcessId(hwnd)
-                if owner != app_pid:
-                    return True
-                parts = [win32gui.GetWindowText(hwnd)]
-
-                def child(handle: int, _p: object) -> bool:
-                    label = (win32gui.GetWindowText(handle) or "").strip()
-                    if label:
-                        parts.append(label)
-                    return True
-
-                win32gui.EnumChildWindows(hwnd, child, None)
-                found.append(" / ".join(part for part in parts if part))
-            except Exception:  # noqa: BLE001 - an unreadable window is not an error box
-                return True
-            return True
-
-        win32gui.EnumWindows(collect, None)
-        return found[0] if found else None
+        return application_error_text(
+            gui=win32gui,
+            process=win32process,
+            window=self._main_hwnd(),
+            read_text=self._get_text,
+        )
 
     def _require_foreground(self, hwnd: int) -> None:
         """Assert the application is the **foreground** window before hovering it.
@@ -1659,6 +1658,14 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         itself asserts and *writes* that field, which is exactly what a preflight must not do).
         Notes raised during the sequence are captured into the report as well as passed to the
         caller's sink, so a failure on a remote instrument can be read back afterwards.
+
+        It asks for the application's top-level error state **first**, before it reads the strip,
+        answers an overlay or presses anything: a faulted application is the one state in which
+        every step below is a call into a modal loop that filters this route's messages, and a
+        preflight that spent a recording learning that would be the same failure the guard exists
+        for. The refusal is the guard's own sentence (``acquire/ui/readiness.py``), raised as this
+        module's :class:`AcquisitionError` like every other preflight failure — no report is
+        returned for a cycle that was never run.
         """
         captured: list[str] = []
         sink = self._note_sink
@@ -1670,6 +1677,9 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
 
         self._note_sink = capture
         try:
+            refusal = application_error_refusal(self)
+            if refusal is not None:
+                raise AcquisitionError(refusal)
             state = self.strip_state()
             started_from = state.view.value
             if state.view is StripView.STORE:

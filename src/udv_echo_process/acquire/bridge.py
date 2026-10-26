@@ -54,6 +54,12 @@ from udv_echo_process.acquire.config import (
     bridge_table_default_path,
 )
 from udv_echo_process.acquire.cycle import CycleReport, RoutineCycle
+from udv_echo_process.acquire.ui.readiness import (
+    DETAIL_NOT_CALLABLE,
+    ErrorStateUnreadable,
+    application_error_refusal,
+    resolve_application_error,
+)
 
 __all__ = [
     "BRIDGE_OPERATIONS_REQUIRED",
@@ -628,6 +634,36 @@ class BridgeActuator:
             raise AttributeError(name)
         return getattr(self._inner, name)
 
+    def application_error(self) -> str | None:
+        """The GUI half's top-level error state, forwarded **explicitly** rather than by ``__getattr__``.
+
+        Transparency is right for every name except this one, and that was the defect: the guard asks
+        an *optional* capability by first asking whether the name is declared at all
+        (``acquire.ui.readiness.application_error_offered``). A wrapper that only forwards through
+        ``__getattr__`` declares nothing, so an inner half whose declared check raised while being read
+        answered the guard with the same ``AttributeError`` a legacy double gives — the failure
+        disappeared into "this actuator has no such capability", the wrapper looked clean, and a runner
+        could reach a point's configuration before anything refused. Declaring the name here makes the
+        wrapper answerable in its own right, with three outcomes and no fourth:
+
+        - the inner half offers no such capability — ``None``: a legacy double is **unchanged**, and
+          its absence is still not an error state;
+        - the inner half offers one that cannot be read — :class:`ErrorStateUnreadable`, carrying the
+          very detail sentence the guard embeds, so a reader of the refusal sees one cause and not two
+          (``resolve_application_error`` is the shared lookup that decides this);
+        - the inner half answers — its text, or ``None`` for a clear screen.
+
+        A readable-but-unusable capability is refused in the same words the guard would use against
+        the inner half itself, because this boundary must not turn a broken check into a caption.
+        Nothing else about the delegation changes: every other name still resolves above.
+        """
+        check = resolve_application_error(self._inner)
+        if check is None:
+            return None
+        if not callable(check):
+            raise ErrorStateUnreadable(DETAIL_NOT_CALLABLE.format(kind=type(check).__name__))
+        return check()
+
     # -- the table -------------------------------------------------------
     @property
     def table(self) -> BridgeTable:
@@ -863,6 +899,14 @@ class BridgeActuator:
         # with it, for the same reason: a previous point's unusable report is not this point's finding.
         self._last_cycle_report = None
         self._last_cycle_report_problem = None
+        # The application's own error state outranks everything below — the table, the mode read, the name and the
+        # cycle. While a message box is up its modal loop filters the messages the route acts with, so a point
+        # attempted here is a live slot spent learning what this check already says. Asked *first* for that reason,
+        # and asked of ``self``: the wrapper declares the capability and forwards it (see
+        # :meth:`BridgeActuator.application_error`), so a broken inner check refuses here instead of looking absent.
+        refusal = application_error_refusal(self)
+        if refusal is not None:
+            return False, refusal
         blocker = self._build_blocker()
         if blocker is not None:
             return False, blocker

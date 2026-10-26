@@ -1572,6 +1572,18 @@ class FakeDriver(driver.Win32Actuator):
     def _await_store_dialog(self, timeout_s: float) -> tuple[dict, list[dict]]:
         return self._require_store_dialog()
 
+    def application_error(self) -> str | None:
+        """This fake application is never showing an error box.
+
+        An explicit boundary, not a disabled check: the guard before a press is real code and this
+        is the fake's answer to the one question that would otherwise reach Windows — the real
+        reader enumerates top-level windows, and a fake that left it unmodelled would be reading
+        *this machine's* desktop in a unit test. A fake without the capability at all is the
+        legacy shape, and the guard reads its absence as "not an error state"; this fake has the
+        capability because it subclasses the live driver, so it states the clear answer instead.
+        """
+        return None
+
     def _store_until_file(
         self, name: str, directory: Path, known: frozenset[str], timeout_s: float
     ) -> Path:

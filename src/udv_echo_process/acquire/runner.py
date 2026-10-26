@@ -131,6 +131,7 @@ from udv_echo_process.acquire.plan import (
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
+from udv_echo_process.acquire.ui.readiness import application_error_refusal
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -627,6 +628,16 @@ class SweepRunner:
         )
         if duration_s <= 0:
             return self._fail(attempt, f"duration_s must be > 0, got {duration_s}")
+        # The application's own error state outranks the **target** reads below: while a message box
+        # is up its modal loop filters this route's messages, so the layout and the process mode are
+        # read through a wedged application and a refusal naming either would send an operator to the
+        # wrong place. Asked here — after the pure argument check and before those reads — and asked
+        # as a *refusal only*: nothing is answered and nothing is pressed, because a screen whose
+        # mode has not been checked must never be authorised to act. The later overlay-guard
+        # rechecks are unchanged, and they still do the panel answering.
+        refusal = application_error_refusal(self._actuator)
+        if refusal is not None:
+            return self._fail(attempt, refusal, abort=True)
         try:
             note = self._actuator.layout_note()
         except Exception as exc:  # noqa: BLE001 - an unchecked layout is not clean
@@ -914,21 +925,12 @@ class SweepRunner:
         """
         # An application error outranks every panel: while its message box is up, the box's modal loop filters the
         # posted wake-ups this route acts through, so nothing else can succeed and a retry would only spend a slot.
-        # Asked through ``getattr`` because the check is a capability of the Windows actuator, not of every fake.
-        check_error = getattr(self._actuator, "application_error", None)
-        if check_error is not None:
-            try:
-                error = check_error()
-            except Exception as exc:  # noqa: BLE001 - an unread error state is not a clean one
-                return (
-                    f"the application's error state could not be read "
-                    f"({type(exc).__name__}: {exc}), so its state is not known"
-                )
-            if error:
-                return (
-                    f"the application is showing an error and cannot be driven: {error} - it faulted, and while that "
-                    "box is up the message route's wake-ups are filtered by its modal loop; restart the application"
-                )
+        # The check is the same optional capability every other boundary asks (``acquire/ui/readiness.py``): a fake
+        # without it is not refused for that, and an offered check that cannot answer is a refusal rather than a
+        # clear screen.
+        refusal = application_error_refusal(self._actuator)
+        if refusal is not None:
+            return refusal
         try:
             kind = self._actuator.answer_overlay()
         except Exception as exc:  # noqa: BLE001 - an unchecked overlay is not clean
