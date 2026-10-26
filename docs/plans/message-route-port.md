@@ -273,6 +273,30 @@ certificate already in the record is a better staleness signal than size; and wh
 disagreement is the buffer's age — today it is `INVALID` with a ratio in the reason, which reads as a data fault and is
 not one. Nothing in this plan changes that rule until that is answered.
 
+**The application crashed, and the crash box is invisible to every guard we have (2026-10-26).** A Delphi access
+violation appeared during this session's live work: *"Violation d'accès à l'adresse 007262A6 dans le module 'Udop607_4.exe'.
+Lecture de l'adresse 1004FFF8."* — a read through a garbage pointer. The nearest exported symbol below the fault address is
+`Uti::Get_No_Block_In_Profile`, i.e. a utility reading a block count through a pointer it was handed.
+
+The consequence was the whole afternoon's failure mode, and it was not obvious: **a message box is a top-level `#32770`
+window, not a child of the main form**, so every census in this project — the overlay guard, `EnumChildWindows`, the
+layout fingerprint — cannot see it. While it was up, the modal loop's own message filter discarded the posted wake-up, so
+every menu call reported `executed: 0` after its full timeout, and every run refused at channel verification with a reason
+about focus. Three separate diagnoses were chased before a screen capture showed the box: the guard has no way to say "the
+application is showing an error".
+
+What follows from it:
+
+- **The message route must check for top-level dialogs of the target process before anything else**, and report "the
+  application is showing a modal error" as its own refusal. This is a named gap, not a theory: the box was visible only to
+  a person looking at the screen.
+- **An access violation is a possible outcome of calling routines**, not an exogenous event. The self-injection hazard
+  documented for a restarted process applies to any stale or wrong object pointer, and the harness had been passing a
+  captured `Self` without validating it.
+- The box can be cleared by pressing its own `OK` (measured: `dismiss_crash.py`, one round, application still alive), but a
+  process that has faulted inside a UI routine is not a state to record in: after the box was dismissed the strip was no
+  longer where the census expects it, and the driver refused on a non-measurement panel at the bottom of the screen.
+
 **The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
 two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
 (`pending_command` 28 → 29), the dialog raised and committed, the block written — and its file spans **397.17 s** for a 4 s
