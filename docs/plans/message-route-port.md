@@ -4,15 +4,42 @@
 
 ## Destination
 
-**Purpose.** The acquisition package now has two ways to drive the instrument application: the **UI route**, which
-emulates an operator (hover, press, dialog typing), and the **message route**, which reads window state and calls the
-application's own routines in-process. The message route is the one we are building on: it needs no cursor, works while
-the application is unfocused or covered, and leaves a record of what it asked for. This plan keeps that construction
-honest by naming, action by action, what the message route can already do and what it still borrows from input. The
-guarded cycle's host-facing contract — what a provider must supply, what the package refuses regardless — is written once
-in [`dop3000/guarded-cycle-contract.md`](../dop3000/guarded-cycle-contract.md); this plan owns the register and the evidence.
+**Purpose (owner clarification, 2026-10-26).** The basic goal is automated control of the UDV instrument. The current
+product goal is **regular and multiplexed recordings while the application runs in the background**, so the operator can
+use the machine normally during acquisition. A foreground setup step and **one binding to the running application at the
+beginning of a session are acceptable**; automatic rediscovery after every restart is not a prerequisite for this milestone.
+The binding must still identify the current instance and be invalidated when that instance changes.
+
+The UI route emulates an operator; the message/bridge route reads window state and calls application routines. The latter
+is the chosen enabling mechanism, not a deliverable merely because its interfaces or register are complete. Whether it
+reduces the cost of mapping new controls is unproved. Targeted reverse engineering should remove a named workflow blocker.
+Mapping the remaining controls is a later goal; full application reconstruction is a possible future direction, not selected
+implementation. The [host contract](../dop3000/guarded-cycle-contract.md) owns the binding/execution interface.
 
 **Observable outcome / acceptance criteria.**
+
+1. After a documented setup/binding step, execute a regular recording end to end: verify the selected configuration,
+   start, stop and store a uniquely named recording, then check its decoded settings, channel and acquired time span.
+2. Execute multiplexed recordings for the channel/sensor configurations required by the experiment, verifying participating
+   channels, per-channel settings and recorded data. A simpler sensor combination is not evidence for a required unsupported one.
+3. Repeat the required recording cycles while another application remains in use: no recurring foreground requirement,
+   stolen keyboard/mouse input, cursor movement or persistent cursor confinement. A covered window alone is insufficient proof.
+4. Reuse the valid session binding without per-recording setup. After restart or identity change, refuse until a new binding
+   is established; automatic rebinding is not required for this delivery.
+5. Preserve honest refusals and recording evidence. Offline tests, a complete control register and a historical probe do not
+   substitute for an exercised live workflow.
+
+**Delivery order.** Prove regular background recording first, then multiplexed background recording. Map additional controls
+as later coverage work, driven by actual use. Full reconstruction remains conditional on need and feasibility; it does not
+block either recording milestone. These priorities do not authorize live actions or private-provider changes by themselves.
+
+**Multiplexing question (owner report, 2026-10-26).** Mixed-base-frequency sensors are refused with a requirement concerning
+matching sampling volume, even after parameters are adjusted to give similar sampling volumes. Exact application text,
+settings and the validation condition have not been captured in this slice. This is an observed restriction, **not a proved
+bug**. Establish the requirement for the intended sensor set and investigate the actual comparison if it blocks that setup;
+do not silently substitute a simpler setup or bypass the check before its meaning is understood.
+
+**Register evidence rules (not a feature queue).**
 
 1. Every row of the port register in *Remaining work* carries a status that is backed by a measurement, and a status is
    never raised without the acceptance evidence named in its row.
@@ -29,7 +56,11 @@ in [`dop3000/guarded-cycle-contract.md`](../dop3000/guarded-cycle-contract.md); 
   here removes an old-route capability.
 - Changing the acquisition semantics (`models/`, `process/`, `storage/`). This plan touches only how the application is
   driven.
-- Anything to do with the instrument's measurement physics, campaigns or experiment definitions.
+- Redesigning measurement physics, experiment definitions or campaign semantics. Investigating an application validation
+  condition that blocks the required multiplexed recording is relevant, but bypassing it is not authorized by that relevance.
+- Requiring automatic binding discovery after every restart before the first useful background-recording workflow.
+- Completing every control mapping, eliminating every posted press, or reconstructing the application before either
+  recording milestone. Mechanisms remain accurately classified in the register; background usability is the delivery test.
 
 **Authorization boundaries.** The owner authorised continued construction on the message route and asked for this
 register so it is discoverable at session start (2026-10-23). That covers: building, measuring and documenting the
@@ -384,7 +415,8 @@ private host/configuration changes, pushes or guard weakening are selected. Othe
 rather than selected. The bounded entry-point readiness guard is now implemented and offline-verified; standalone
 channel/column coverage and the other dispositions below are not silently included. Next, propose a supervised session that
 **observes the owning object on the current
-instance** and captures it with the process id, the creation time and the build digest in one reading, through the host
+instance**, allowing one operator-assisted foreground setup per session, and captures it with the process id, creation
+time and build digest in one reading, through the host
 `guarded_cycle` export, so that the package's own checks accept a cycle the factory actually bound. Only after that a live
 mutating validation of the guarded cycle — record, stop, store — under the plan's existing authorization for building and
 measuring the message route, with the Store dialog's `Accept` still a press. No part of this is authorized by the
@@ -584,15 +616,17 @@ an empty output file.
 
 ## Next session
 
-**Objective (revised 2026-10-26).** Preserve the local guarded-cycle and readiness checkpoints. No further implementation
-is selected by these completed slices. The proposed next decision is a concrete production-host/current-instance binding
-slice, with its live observation and private-provider scope made explicit before execution.
+**Objective (owner clarification, 2026-10-26).** Scope the regular-background-recording milestone with an acceptable
+one-time foreground setup/binding step. Establish one trustworthy current-instance binding and the production adapter,
+then demonstrate repeated recordings while the operator uses another application. Automatic rebinding is not the first
+delivery gate. Multiplexed background recording is the next functional milestone; full mapping/reconstruction is later.
+Live observation, Store mutation and private-provider changes still require their applicable execution grant.
 
 **First action.** Read *Current checkpoint*, *Selected next* and the
 [guarded-cycle contract](../dop3000/guarded-cycle-contract.md), then register rows 7, 11, 12, 16 and 18 in that order.
 Preserve source checkpoints `29cbd0a` and `429597f` and the unrelated untracked worktree directory.
-Do not re-run the two closed routes in *Selected next*: a recorded pointer is
-stale by construction, and the class signature does not find a live form.
+Do not re-run the two closed routes in *Selected next*: a pointer captured on the previous application instance is
+stale, and the class signature does not find a live form. A valid current-instance binding may be reused for its session.
 
 **Stopping condition.** Do not repeat the closed offline slices. Stop before live observation, instrumentation, restart,
 Store mutation or private-provider changes without an applicable grant and a concrete execution component. A proposed

@@ -38,6 +38,11 @@ not a check — and the identity `pid` + `created_ns` + `image_sha256`. A pid al
 different process and every pointer observed on the old one is stale. The build digest is read, never computed here. A null or unmapped pointer is a fact worth naming, so it is
 constructible and refused rather than a construction error.
 
+**One-time setup is acceptable (owner clarification, 2026-10-26).** Binding may be established with the application in the
+foreground at session start, including operator assistance. Subsequent recording cycles must run in the background without
+repeating that setup. Reuse does not disable the identity/owner checks; restart invalidates the binding and requires a new
+setup. Automatic owner rediscovery is not required for the first functional delivery.
+
 Three host-supplied guards are required: `identity` reads the live instance, `owner_valid` answers yes-or-no about one pointer (a truthy non-boolean is malformed evidence, not a pass),
 and `read_strip` returns the strip's current view. There is deliberately **no unguarded mode** — a flag there would be the stale-pointer hazard with an opt-out.
 
