@@ -301,6 +301,19 @@ What follows from it:
   (screen capture 2026-10-26 12:47, bottom-left region). That is why the bottom-most panel the census resolves is the plot's
   footer rather than the strip. A run must refuse in that state, and it did; the state itself is repaired only by a restart.
 
+**The boundary move is proved (2026-10-26).** Two points through `live.sweep` at 4 s: `uib-k5` **114 profiles, 4.56 s**,
+96 gates at 0.6167 mm and `uib-k6` **113 profiles, 4.52 s**, 80 gates at 0.74 mm — both `PointStatus.OK`, both stored, the
+whole run 22 s wall clock. Against the same request before the change: 513 profiles spanning 20.657 s, refused at 2.11x, and
+62 s per point.
+
+So the window is now the window, and the size signature agrees with it instead of being overridden — no acceptance rule had to
+move. Two limits belong beside that result: it was measured on the **UI route** (the application in the foreground), because
+after the application's restart no valid owner object could be found (the setter hook captured nothing, `GWLP_USERDATA` is
+empty, and a VMT scan found only a module-data false positive) — the boundary is `SweepRunner` code shared by both routes, so
+the change is established, but the message route's own record/stop still depends on an owner pointer no reliable discovery
+currently produces. And the 0.56 s above the request is the stop-to-store residual, which is what `window_overhead_s = 2.0`
+allows for.
+
 **The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
 two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
 (`pending_command` 28 → 29), the dialog raised and committed, the block written — and its file spans **397.17 s** for a 4 s
