@@ -80,6 +80,16 @@ secret or machine-local configuration change. The wider grant above is unchanged
 or an operator at it, is listed in *Selected next* as needing its own session's authorization rather than being implied by
 this one.
 
+**Current execution grant and setup (owner, 2026-10-26).** The owner requested delegated continuation without further
+routine involvement and explicitly granted bounded unattended live integration: machine-local adapter/binding updates,
+reversible setup changes with read-back and verified restoration, and uniquely named test recordings. No application
+restart, existing-file overwrite, validation bypass, secrets changes or push is authorized. All transducers are
+disconnected; retained channel configurations may include 10 MHz. Sensors of interest are 4 MHz and 10 MHz, but mixed-frequency
+multiplexing is lower priority unless it can be understood quickly/cheaply. Prioritize usable regular recording, then
+straightforward multiplexing. Sensorless files can establish control/configuration/timing/storage, not physical flow or
+signal validity. A fresh scheduled read found instrument mode, a clean READY screen and no visible application error box;
+that is a starting-state observation, not acquisition acceptance. The coordinator alone owns live desktop access.
+
 **Baseline.** Round-based measurement at 2026-10-23, application instances discovered per probe (never cached), session
 unlocked. The message route's building blocks as measured that day: reads by window message; dropdown selection by
 `CB_SETCURSEL` with read-back; overlay open/close by routine call; one numeric setter transition proven. The UI route's
@@ -108,11 +118,12 @@ Two measured facts that a fresh reader would otherwise re-derive, and that shape
 
 **How to read this section (revised 2026-10-26).** Three kinds of claim sit below and are not interchangeable.
 *Measured live before the application's restart (2026-10-23)* — historical successes against the instance then running, and
-the only evidence rows 11 and 12 have. *Measured live after it (2026-10-25/26)* — the boundary acceptance, plus a crash box
+the evidence rows 11 and 12 rested on until 2026-10-26. *Measured live after it (2026-10-25/26)* — the boundary acceptance, plus a crash box
 seen during live work that is not attributed to a route here. *Offline state (2026-10-26)* — what the code now does and
 refuses, the guarded cycle and its factory/CLI selection included, verified without an instrument. **Established by none of
-them:** a restart-safe way to find the owning object, which is why record and stop are not a current capability however the
-earlier measurement is worded. A register status describes the capability today, not what once ran.
+them:** a restart-safe way to find the owning object — settled on 2026-10-26, where the owner is re-observed per command
+rather than remembered, so record, stop and store work through the guarded route and the rows say what each still costs.
+A register status describes the capability today, not what once ran.
 
 **Established** (measured 2026-10-23, this branch):
 
@@ -375,24 +386,50 @@ does not settle it, and calling the row `works` would not settle it either.
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **works** | `write_parameter` is the measured message recipe — `WM_SETTEXT`, a synthetic `EN_CHANGE`, then the Return key event — with no press and no cursor. Measured with the application covered: four commits in one attachment and four more from a second, independent one, every value read back from the sidebar. The earlier doubt belonged to the bridge's *setter dispatch*, a different mechanism, and is withdrawn for this path |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
 | 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **works** | calling the row's handler directly moves the application's own flag: the horizontal-grids row took `display_flags` 0 → 2 and the vertical-grids row 2 → 0, in one attach, with no objects, no input and no cursor. The handler's body does not read `Self` or `Sender` at all — it stores them and ignores them, then acts on the flags slot, closes the menu and requests a redraw. Rows whose handler *does* read those registers are untested |
-| 11 | Start / stop a recording | press the strip | **blocked** | measured 2026-10-23: with the primed owning object supplied the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state moves `recording` → `store`. That is a historical success on the pre-restart instance. After the 2026-10-25/26 restart no valid owner could be produced — the setter hook captured nothing, `GWLP_USERDATA` was empty, and a VMT scan found only a module-data false positive — so the blocker is **reliable owner discovery for the current instance**, not the routine call. Downgraded from `works` (2026-10-26) |
-| 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | two blockers, neither of them the routine call. The store routine needs the same primed owning object as row 11, so it is blocked on that discovery too; and the commit is one posted press on `Accept`, which is input even where the naming is not — the file name goes in by window message (`vel-vhigh-03` → `cycle-by-routine-01`). Measured 2026-10-23: the stored block decodes to 4677 profiles × 96 gates, every gate supported, resolution 0.6167 mm. Downgraded from `works` (2026-10-26) |
+| 11 | Start / stop a recording | press the strip | **works** | measured 2026-10-26 through the assembled command: `point --route bridge --bridge-guarded-cycle` dispatched the record/stop handler twice and the strip moved `ready` → `recording` → `store` on two consecutive points, both stored and decoded. The owner is re-observed **per command** rather than remembered: the producer attaches, has the application apply one value through the message route (which makes it call its own setter), reads `TSp_Value_Button.callback_self` for the `TMain_Scr` pointer, and states it with its source, so the 2026-10-25/26 discovery blocker is closed without a saved pointer. The earlier 2026-10-23 measurement stands as history |
+| 12 | Store a recorded block | press the strip, name it in a dialog | **works, with one press** | the store handler is dispatched like record/stop, the dialog is waited for, its `Working directory` is **read and compared** (`store_directory_mismatch:...` refuses before naming), the name goes in by window message and the accept is one posted press — still input, and the row says so. Measured 2026-10-26: two blocks stored and decoded (`host-01.BDD` 58 profiles, `host-02.BDD` 57, both 80 gates, name and directory the requested ones). The 2026-10-23 block (4677 × 96, resolution 0.6167 mm) stands as history |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
 | 17 | Keep the operator's pointer usable while a popup is open | nothing — the operator lived with it | **works** | the application confines the cursor to its dialog's rect (`ClipCursor`), which is desktop-wide. A guard releases it and restores the cursor: measured on the store dialog, one clip seen at exactly the dialog's rect, one release that took effect, the application did not re-apply it, and the cursor returned to where the operator left it |
-| 16 | Compose and run a campaign from stored points | package code; the guarded cycle is selectable on `point`/`sweep` only | **partial** | the composition exists and is measured: `RoutineCycle` composes record/stop/store/name/commit with the refusals a run needs, `BridgeActuator` prefers it to a host dispatch, and two live points at differing resolutions each returned their artifact from the package and decoded to the geometry they asked for. A command can now ask for the hardened cycle — `--route bridge --bridge-guarded-cycle` on `point` and `sweep` builds it through the host export and refuses by name rather than pressing (`cli.py`'s route arguments, `live.bridge_actuator`, `bridge.guarded_cycle_from`) — but no production host module implements that export (the ones exercised were fakes in tests), so no real configured export or current-instance binding exists and no live run has produced a cycle through the new route; `campaign` in `cli.py` still builds `live.live_actuator(...)` with no route; and record/stop/store inherit rows 11 and 12. Partial rather than blocked because the composition exists and a campaign does run today — with input. |
+| 16 | Compose and run a campaign from stored points | package code; the guarded cycle is selectable on `point`/`sweep` only | **partial** | the composition exists and is measured: `RoutineCycle` composes record/stop/store/name/commit with the refusals a run needs, `BridgeActuator` prefers it to a host dispatch, and two live points at differing resolutions each returned their artifact from the package and decoded to the geometry they asked for. A command asks for the hardened cycle with `--route bridge --bridge-guarded-cycle` on `point` and `sweep`, and as of 2026-10-26 a real host implements the export: [`tools/live/bridge_host`](../../tools/live/bridge_host/README.md) plus a machine-local producer, exercised live twice through `point` (rows 11 and 12). What is still missing for this row: `sweep` and `campaign` have not been run through the guarded route, and `campaign` in `cli.py` still builds `live.live_actuator(...)` with no route flag at all. Partial, and the remaining gap is now the multi-point composition rather than the single cycle. |
 | 18 | Clear the block before a recording (the fresh-block boundary) | press the strip's clear-and-restart | **partial** | the boundary is composed and verified in package code: `SweepRunner._reset_block` requires the empty `READY` view and refuses with a reason on every failure path. The application-side act is a `CLEAR_AND_RESTART` press inside it, and no clear-and-restart command code is measured — only 28 (record/stop) and 29 (store). It exists only in the runner; `live.point` has no boundary on either route (`recording.py`'s cycle presses `NEW_ACQUISITION` only to dismiss a leftover store view). Added 2026-10-26; the press is input debt, so this row also blocks any claim that a bridge cycle is free of input |
 
 ### Selected next
 
+**Measured live through the assembled route (2026-10-26, owner-granted sitting).** Two consecutive 2 s points were
+recorded and stored through `point --route bridge --bridge-guarded-cycle` against the running instrument-mode
+application, with the producer adapter as the only machine-local part: `host-01.BDD` (37,189 bytes, 58 profiles) and
+`host-02.BDD` (37,090 bytes, 57 profiles). Each decodes to one axial-velocity stream of 80 gates whose words match the
+column before the run (4000 kHz, PRF 600 us, 0.740 mm, emissions 50, burst 4, sensitivity `high`), and each stored span
+is its own window (2.299 s, 2.259 s) at the measured 40.3 ms period rather than a stale buffer. A passive
+`activate.py` preflight passed every check beforehand (config, store directory, producer, table operations, composed
+menu dispatch, binding, strip). **What this establishes:** record, stop, store and the Store-dialog commit run through
+the application's own routines from a command, without the operator, and the binding is re-observed per command rather
+than reused from a file. **What it does not:** the transducers were disconnected, so the files carry configuration,
+timing and storage evidence and no signal claim; `sweep`/`campaign` were not exercised; the Store dialog's accept and
+any fresh-block reset remain presses; and one producer-attach lifetime is capped at 60 s, so the whole cycle has to fit
+inside it. Two integration facts cost a run each and are now written into the host protocol: the demonstrated chain
+proves its dispatch boundary on one posted operation before it will honour any command (without it the record is
+refused as `Dispatch boundary changed`), and the host config is read as the table's sibling, so a per-point producer
+command means a per-point table directory.
+
+**Selected bounded implementation (owner-authorized 2026-10-26).** Reuse the demonstrated producer to supply the real
+guarded host adapter and Store-dialog seam behind the existing point/sweep interface; do not redesign the bridge or add
+flags already present. One editor owns that integration and focused offline tests; a separate worker inventories
+multiplexed control gaps, with mixed-frequency analysis time-boxed. The coordinator owns live observation, binding,
+restoration and integration acceptance. Before any mutation, resolve the actual current-instance identity and owner and
+verify that restoration has an executable route. Stop at either a decoded, uniquely named sensorless recording through
+the assembled public path with verified restoration, or a concrete named runtime blocker. Do not expand to full control
+mapping, generic hardening or a mixed-frequency bypass.
+
 **Current position (2026-10-26).** The identity/state contract, the host factory and the `point`/`sweep` selection are
 **implemented, offline-verified, independently reviewed and closure-reviewed** (see *Current checkpoint*) — locally committed
 at `29cbd0a`, but
-not owner-accepted, published, deployed or verified live. The capability the register is really about, recording and storing
-through the message route in a fresh instance, has **live readiness not established**: reliable current owner observation
-and a real production guarded host provider have not been established or validated by these slices. No live record/store
-path through the new guarded route has been proved. The dated entries below are the
+not published or deployed. **Verified live on 2026-10-26**: the capability the register is really about, recording and storing
+through the message route in a fresh instance, now works from a command — two points stored and decoded, with reliable
+current-owner observation (re-taken per command) and a real host provider in `tools/live/bridge_host`. What was not
+exercised live: `sweep`, `campaign`, multiplexing and the transducers themselves. The dated entries below are the
 evidence and decisions behind that position, not a queue: each one that states a next action since done or overtaken carries
 a dated note saying so.
 

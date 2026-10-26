@@ -100,3 +100,26 @@ to UI/bridge point entry, preflight and the sweep runner. An offered unusable re
 would be clear. [Composed tests](../../tests/test_acquire_readiness.py) exercise these paths without a live application.
 The reader blocks target-process `#32770` dialogs conservatively; it does not diagnose crashes or certify a dismissed
 fault as repaired. Standalone channel/column commands and production-host integration are not established by this slice.
+
+## The host half, and what a working one had to satisfy
+
+The tracked, address-free half now exists in [`tools/live/bridge_host/`](../../tools/live/bridge_host/README.md): the
+`guarded_cycle` export with the signature above, the producer conversation, the live identity/owner readers, the menu
+composition and the Store-dialog adapter. **Measured 2026-10-26:** two consecutive 2 s points stored through
+`point --route bridge --bridge-guarded-cycle` against the instrument-mode application, each decoding to one 80-gate
+axial-velocity stream whose words match the column before the run at the measured 40.3 ms period, with stored spans of
+2.299 s and 2.259 s for the 2 s requests. The transducers were disconnected: that is configuration, timing and storage
+evidence, not a signal.
+
+Three requirements are the interface and not an implementation detail, because a host that misses one fails on its first
+command rather than at configuration time:
+
+1. **The dispatch boundary is proved before the session reports ready.** The demonstrated chain records one
+   `DispatchMessage` return and refuses any command whose boundary differs; a producer that answers `record` without that
+   proof is refused as `Dispatch boundary changed`.
+2. **One attach, one budget.** The instrumentation host caps an attach at 60 s, and the cycle asks for a live identity and
+   owner read immediately before the Store-dialog commit, so record → stop → store → commit has to fit inside it.
+3. **The Store dialog is compared, never written.** The adapter binds each invocation's directory, reads the dialog's
+   `Working directory` and refuses a disagreement (`store_directory_mismatch`) before naming or pressing, which is why
+   this route owes no restoration of that setting. The one-time setup is the operator leaving the application pointed at
+   the directory the run will watch.
