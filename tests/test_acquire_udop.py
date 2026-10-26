@@ -120,6 +120,7 @@ RECORDING_METHODS = (
 )
 STORE_METHODS = (
     "_require_store_dialog",
+    "read_working_directory",
     "set_store_name",
     "assert_working_directory",
     "commit_store",
@@ -251,6 +252,10 @@ CLASS_ADDITIONS = (
     # (measured 2026-10-26: an access violation sat in front for an hour while every menu call reported
     # "executed 0" and every run blamed the foreground)
     "application_error",
+    # the Store dialog's Working directory as it stands, without writing it: the guarded cycle's adapter
+    # compares it with the directory the invocation watches and refuses a disagreement, because writing
+    # that field is a persisted setting the dialog's own lifetime does not let anyone restore
+    "read_working_directory",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

@@ -51,6 +51,19 @@ class StoreSurface:
             raise AcquisitionError("the Store dialog is not up")
         return found[1], self._children_of(found[1]["hwnd"], self._resolve())
 
+    def read_working_directory(self) -> str | None:
+        """The Store dialog's ``Working directory`` **as it currently stands** — read, never written.
+
+        This is the read-only half of :meth:`assert_working_directory`, and it exists so a caller can
+        refuse a dialog pointing elsewhere *before* it changes a setting or names a file. ``None``
+        means the dialog shows no path-looking field, which is a fact to report rather than to repair.
+        """
+        panel, kids = self._require_store_dialog()
+        path_edit = self._store_edits(panel, kids)[1]
+        if path_edit is None:
+            return None
+        return self._get_text(path_edit["hwnd"])
+
     def set_store_name(self, name: str) -> None:
         """Write the Store dialog's file-name field with the commit recipe.
 
@@ -64,7 +77,6 @@ class StoreSurface:
 
     def assert_working_directory(self, directory: Path) -> str:
         """Assert the Store dialog's ``Working directory``, and set it when it differs.
-
         The field decides where the point lands, so it is never assumed: it is read,
         compared with ``directory`` (the path the caller will watch), written with the
         numeric/text commit recipe when it differs, and read **back** — because a write
@@ -246,3 +258,136 @@ class StoreSurface:
         raise AcquisitionError(
             f"no file appeared in {directory} within {timeout_s:.0f} s of Do store"
         )
+
+
+class StoreDialogCommit:
+    """The ``StoreDialog`` a :class:`~udv_echo_process.acquire.cycle.RoutineCycle` commits through.
+
+    The guarded cycle declares one protocol — ``commit(name) -> bool`` — and nothing implemented it,
+    so a host had to re-derive the store recipe or leave the cycle unusable. This is that adapter.
+
+    **The directory is bound per invocation, never held from the factory.** ``RoutineCycle`` asks for
+    a point by name only, but the cycle is built once per *command* and a sweep runs several points,
+    each with its own directory. A factory-time path would therefore be right for the first point and
+    silently wrong for the next one, so :meth:`bind_directory` is called by the cycle wrapper on
+    **every** ``try_record_and_store`` and an unbound commit refuses rather than trusting whatever the
+    dialog remembers.
+
+    **It reads the dialog's ``Working directory`` and refuses a disagreement; it does not write it.**
+    The press route *sets* that field, which is a persisted setting of the application: writing it
+    would owe a verified restoration, and the dialog is gone by the time a restoration could be made.
+    So this adapter compares and refuses — ``store_directory_mismatch:<shown>!=<expected>`` — before a
+    name is written or a press is sent, and :attr:`original_directory` records what it read. Setting
+    the application's store directory once, by hand, is the one-time setup that keeps this route
+    mutation-free.
+
+    What ``True`` means is bounded on purpose: **dispatched**, not stored. The dialog's accept is one
+    posted press, and no press can prove a file; the cycle's own artifact check (non-empty, decodes to
+    a stream, is *this* point's name in *this* directory) is the acceptance. A surface that cannot be
+    reached raises the package's :class:`~udv_echo_process.acquire.udop.AcquisitionError` with the
+    reason — the cycle names its type — rather than returning a bare ``False`` that erases where the
+    refusal happened. And it never answers a dialog it did not expect: a warning or a modal is a
+    refusal to report, not a prompt to guess at (register row 14).
+    """
+
+    def __init__(
+        self,
+        actuator: object,
+        *,
+        directory: Path | None = None,
+        dialog_timeout_s: float = 10.0,
+        poll_s: float = _POLL_S,
+        sleep: object = time.sleep,
+    ) -> None:
+        #: The actuator (or any surface with this mixin's members) that owns the dialog.
+        self._actuator = actuator
+        #: The directory the *current* invocation watches; ``None`` until an invocation binds one.
+        self._directory = None if directory is None else Path(directory)
+        self._dialog_timeout_s = float(dialog_timeout_s)
+        self._poll_s = float(poll_s)
+        self._sleep = sleep
+        #: Why the last commit could not be dispatched, for a caller that logs beside the cycle.
+        self.last_refusal: str | None = None
+        #: The dialog's own directory as it read before this commit — the fact a mismatch is judged on.
+        self.original_directory: str | None = None
+        #: What this adapter did and what it deliberately did not assert.
+        self.notes: list[str] = []
+
+    def bind_directory(self, directory: Path | None) -> None:
+        """Point the adapter at the directory **this** invocation watches.
+
+        ``None`` unbinds it, which the next commit refuses: a point with no directory has no
+        authoritative answer to compare the dialog against.
+        """
+        self._directory = None if directory is None else Path(directory)
+        self.notes.append(f"bound to {self._directory}" if self._directory else "unbound")
+
+    @property
+    def directory(self) -> Path | None:
+        """The directory the next commit will compare the dialog against."""
+        return self._directory
+
+    def _surface(self) -> object:
+        actuator = self._actuator
+        for member in (
+            "_require_store_dialog",
+            "read_working_directory",
+            "set_store_name",
+            "commit_store",
+        ):
+            if not callable(getattr(actuator, member, None)):
+                raise AcquisitionError(
+                    f"the store surface cannot commit: it has no {member}()"
+                )
+        return actuator
+
+
+    def _await_dialog(self) -> None:
+        """Wait for the Store dialog, bounded by a polled window, then fail with its own reason."""
+        surface = self._surface()
+        problem: str | None = None
+        waited = 0.0
+        while True:
+            try:
+                surface._require_store_dialog()  # type: ignore[attr-defined]
+                return
+            except AcquisitionError as exc:
+                problem = str(exc)
+            except Exception as exc:  # noqa: BLE001 - an unreadable dialog is a refusal
+                problem = f"{type(exc).__name__}: {exc}"
+            if waited >= self._dialog_timeout_s:
+                raise AcquisitionError(
+                    f"the Store dialog did not appear within {self._dialog_timeout_s:.1f} s "
+                    f"({problem})"
+                )
+            self._sleep(self._poll_s)  # type: ignore[operator]
+            waited += self._poll_s
+
+    def commit(self, name: str) -> bool:
+        """Compare the dialog's directory with this invocation's, name the block, press the accept.
+
+        Returns ``True`` once the accept was dispatched. Every refusal raises: a store that never
+        reached the dialog, a dialog pointing at another directory, and a press the application
+        ignored are different findings, and only the cycle's artifact check can tell the last from a
+        stored point.
+        """
+        self.last_refusal = None
+        if self._directory is None:
+            # Never trust the remembered directory: an unbound commit has nothing to compare against.
+            raise AcquisitionError(
+                "store_directory_unbound: the commit was asked for without an invocation directory"
+            )
+        self._await_dialog()
+        surface = self._surface()
+        shown = surface.read_working_directory()  # type: ignore[attr-defined]
+        self.original_directory = shown
+        if shown is None or not same_directory(shown, self._directory):
+            self.last_refusal = "store_directory_mismatch"
+            raise AcquisitionError(
+                f"store_directory_mismatch:{shown}!={self._directory}: the dialog would store "
+                "elsewhere, so the point is refused before it is named"
+            )
+        surface.set_store_name(name)  # type: ignore[attr-defined]
+        surface.commit_store()  # type: ignore[attr-defined]
+        self.notes.append(f"the Store dialog accepted the name {name!r} in {shown!r}")
+        return True
