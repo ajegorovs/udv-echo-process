@@ -8,6 +8,8 @@ choice with the same vocabulary the library uses.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from udv_echo_process.acquire.live import actuator_for
@@ -40,3 +42,77 @@ def test_the_record_commands_take_the_route_arguments() -> None:
         assert {"route", "table_path", "runner_path"} <= set(parameters), (
             function.__name__
         )
+
+
+def point_command(tmp_path, *extra: str) -> list[str]:
+    return [
+        "point",
+        "guarded-01",
+        "--seconds",
+        "1",
+        "--expect-mode",
+        "instrument",
+        "--store-dir",
+        str(tmp_path),
+        *extra,
+    ]
+
+
+def test_a_guarded_cycle_on_the_ui_route_exits_two_without_a_traceback(
+    capsys, tmp_path
+) -> None:
+    """The refusal happens before any application access, so it is a configuration exit."""
+
+    with pytest.raises(SystemExit) as caught:
+        acquire_main(point_command(tmp_path, "--bridge-guarded-cycle"))
+
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "bridge_guarded_cycle_route:ui" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_a_host_without_the_factory_is_a_named_refusal_in_json(capsys, tmp_path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        acquire_main(
+            point_command(
+                tmp_path,
+                "--route",
+                "bridge",
+                "--bridge-guarded-cycle",
+                "--bridge-runner",
+                str(tmp_path / "absent.py"),
+                "--json",
+            )
+        )
+
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert json.loads(captured.out) == {
+        "refused": "bridge_guarded_cycle_factory_missing:module"
+    }
+    assert "bridge_guarded_cycle_factory_missing:module" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_the_sweep_takes_the_guarded_flag_and_refuses_it_on_ui(capsys, tmp_path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        acquire_main(
+            [
+                "sweep",
+                "--seconds",
+                "1",
+                "--rungs",
+                "1",
+                "--expect-mode",
+                "instrument",
+                "--store-dir",
+                str(tmp_path),
+                "--bridge-guarded-cycle",
+            ]
+        )
+
+    assert caught.value.code == 2
+    captured = capsys.readouterr()
+    assert "bridge_guarded_cycle_route:ui" in captured.err
+    assert "Traceback" not in captured.err

@@ -63,6 +63,7 @@ from udv_echo_process.acquire.actuator import (
     strip_controls,
 )
 from udv_echo_process.acquire.bridge import (
+    GUARDED_CYCLE_EXPORT,
     BridgeActuator,
     BridgeDispatch,
     BridgeDispatchSlot,
@@ -73,10 +74,12 @@ from udv_echo_process.acquire.bridge import (
     BridgeRequest,
     BridgeTable,
     BridgeUnavailable,
+    GuardedCycleFactory,
     MenuCall,
     MenuEvidence,
     MenuPressEvidence,
     MenuRowEffect,
+    guarded_cycle_from,
     load_table,
 )
 from udv_echo_process.acquire.config import (
@@ -151,6 +154,7 @@ __all__ = [
     "DIALOG_ONLY_PARAMETERS",
     "FIXED_FACT_FIELDS",
     "GATE_DRIFT_NOTE",
+    "GUARDED_CYCLE_EXPORT",
     "LEGACY_BURST_HISTORY_KEY",
     "MAX_CHANNEL",
     "MIN_CHANNEL",
@@ -189,6 +193,7 @@ __all__ = [
     "DialogField",
     "DialogParameters",
     "FactSource",
+    "GuardedCycleFactory",
     "InstrumentFact",
     "InstrumentSnapshot",
     "MenuCall",
@@ -226,6 +231,7 @@ __all__ = [
     "fits_depth_budget",
     "gate_drift",
     "gates_for_depth",
+    "guarded_cycle_from",
     "identity_digest",
     "load_table",
     "max_usable_depth_mm",

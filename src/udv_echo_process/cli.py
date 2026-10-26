@@ -34,6 +34,7 @@ from pathlib import Path
 from udv_echo_process import run_all
 from udv_echo_process.acquire import campaign, driver, live, run_plan
 from udv_echo_process.acquire.actuator import ProcessMode
+from udv_echo_process.acquire.bridge import BridgeRefused, BridgeUnavailable
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.analysis import (
@@ -1300,6 +1301,22 @@ def acquire_main(argv: list[str] | None = None) -> None:
     is not there) — reported as one ``udv-acquire:`` line and never as a traceback, because the
     run did not happen and nothing was written.
 
+    ``--route bridge`` plus ``--bridge-guarded-cycle`` is the one bridge selection that is not a
+    press dispatch: the host module named by ``--bridge-runner``/``UDV_BRIDGE_RUNNER`` may export a
+    ``guarded_cycle`` factory (the contract is
+    :class:`~udv_echo_process.acquire.bridge.GuardedCycleFactory`) that builds the hardened
+    :class:`~udv_echo_process.acquire.cycle.RoutineCycle`. That selection is closed: on the ``ui``
+    route, without the module or the export, with a factory that raises or returns something that is
+    not a bound guarded cycle, or with a build digest that disagrees with the table or the cycle's
+    binding, the command exits **2** naming the reason — it never falls back to the press route. The
+    checks split where they must: a ``target_digest`` that contradicts the table is refused **before**
+    the factory is called, and the rest need what it returns, so the factory may already have observed
+    the running application by then (that is how a binding is taken). No refusal lets the cycle start,
+    stop or store — every check completes before one — and none of them leaves the application
+    mutated. With ``--json`` the refusal is printed as ``{"refused": "<reason>"}``
+    and nothing else on stdout. The flag selects a cycle, not an input-free run: the Store dialog's
+    ``Accept`` and the sweep's reset are still presses.
+
     ``plan`` and ``report`` are the campaign layer's two halves that touch no instrument at all:
     ``plan`` validates a definition and prints the points it would run, ``report`` reads a job
     log (and the manifest beside it) and prints how the job went. Both work on a machine whose
@@ -1371,6 +1388,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
             "--bridge-runner",
             default=None,
             help="machine-local bridge dispatch module (default: UDV_BRIDGE_RUNNER)",
+        )
+        target.add_argument(
+            "--bridge-guarded-cycle",
+            action="store_true",
+            help=(
+                "record through the guarded routine cycle the host module exports (bridge route only; "
+                "refuses by name instead of pressing when the route, the module's 'guarded_cycle' "
+                "factory, its binding or its build does not match — the Store dialog's Accept and the "
+                "sweep's reset still need a press, so this is not an input-free operation)"
+            ),
         )
 
     def expect_mode_argument(target: argparse.ArgumentParser) -> None:
@@ -1685,6 +1712,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 table_path=args.bridge_table,
                 runner_path=args.bridge_runner,
                 numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
+                guarded_cycle=bool(getattr(args, "bridge_guarded_cycle", False)),
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
@@ -1703,6 +1731,7 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 table_path=args.bridge_table,
                 runner_path=args.bridge_runner,
                 numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
+                guarded_cycle=bool(getattr(args, "bridge_guarded_cycle", False)),
                 sound_speed_ms=args.sound_speed,
                 first_gate_mm=args.first_gate,
                 target_depth_mm=args.depth,
@@ -1730,6 +1759,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
         # the campaign handlers give above — the driver's own words on one line, exit 2 —
         # because a refused step is a refusal (nothing ran, nothing was written), not a crash.
         print(f"udv-acquire: {exc}", file=sys.stderr)
+        code = 2
+    except (BridgeUnavailable, BridgeRefused) as exc:
+        # A bridge **configuration** refusal — the route, the guarded-cycle factory, its binding or its build —
+        # happens while the actuator is being built, so nothing touched the application and nothing was written.
+        # One line and exit 2, the same answer the driver's own refusals get; with `--json` the machine gets the
+        # reason as the only thing on stdout. Never a traceback: a run that did not happen must not read as a crash.
+        reason = exc.reason
+        print(f"udv-acquire: {reason}", file=sys.stderr)
+        if as_json:
+            _acquire_report({"refused": reason}, True)
         code = 2
     finally:
         for note in notes:

@@ -9,19 +9,59 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from udv_echo_process.acquire.actuator import StripState, StripView
 from udv_echo_process.acquire.bridge import BridgeActuator
-from udv_echo_process.acquire.cycle import CycleRoutines, RoutineCycle
+from udv_echo_process.acquire.cycle import (
+    CycleBinding,
+    CycleRoutines,
+    ObservedAddress,
+    ProcessIdentity,
+    RoutineCycle,
+)
 
 ROUTINES = CycleRoutines(record=0x1000, store=0x2000, form=0x3000)
 
+#: The instance these routines were "observed on".  A fake, but the cycle treats it exactly as a measured identity, so the
+#: scenarios below run through the same guards a live call would.
+IDENTITY = ProcessIdentity(
+    pid=4120, created_ns=133_700_000_000_000_000, image_sha256="a" * 64
+)
+BINDING = CycleBinding(
+    identity=IDENTITY,
+    owner=ObservedAddress(address=ROUTINES.form, source="observed:primed-strip-owner"),
+    record=ObservedAddress(address=ROUTINES.record, source="table:routines.record"),
+    store=ObservedAddress(address=ROUTINES.store, source="table:routines.store"),
+)
+
+
+class Strip:
+    """The strip's own state machine: READY, then RECORDING, then STORE, as the dispatches land."""
+
+    def __init__(self) -> None:
+        self.view = StripView.READY
+
+    def __call__(self) -> StripState:
+        if self.view is StripView.RECORDING:
+            return StripState(button_count=1)
+        if self.view is StripView.STORE:
+            return StripState(button_count=3, has_slider=True)
+        return StripState(button_count=3)
+
 
 class Caller:
-    def __init__(self, fail_on: int | None = None) -> None:
+    def __init__(self, fail_on: int | None = None, strip: Strip | None = None) -> None:
         self.calls: list[tuple[int, int]] = []
         self.fail_on = fail_on
+        self.strip = strip
 
     def __call__(self, address: int, form: int) -> dict:
         self.calls.append((address, form))
+        if self.strip is not None and address == ROUTINES.record:
+            self.strip.view = (
+                StripView.RECORDING
+                if self.strip.view is not StripView.RECORDING
+                else StripView.STORE
+            )
         if self.fail_on is not None and len(self.calls) == self.fail_on:
             return {"ok": False, "errors": ["access violation"]}
         return {"ok": True, "errors": []}
@@ -56,7 +96,8 @@ class Factory:
         max_span_s: float | None = None,
     ):
         self.directory = directory
-        self.caller = Caller(fail_on=fail_on)
+        self.strip = Strip()
+        self.caller = Caller(fail_on=fail_on, strip=self.strip)
         self.dialog = dialog or Dialog()
         self.dialog.directory = directory
         self.decode = decode or (lambda path: 1)
@@ -69,12 +110,17 @@ class Factory:
             caller=self.caller,
             routines=ROUTINES,
             dialog=self.dialog,
+            binding=BINDING,
+            identity=lambda: IDENTITY,
+            owner_valid=lambda owner: owner == ROUTINES.form,
+            read_strip=self.strip,
             decode=self.decode,
             measure_span=self.span,
             max_span_s=self.max_span_s,
             sleep=self.sleeps.append,
             poll_s=0.0,
             store_timeout_s=0.0,
+            state_timeout_s=0.0,
         )
 
 
@@ -90,6 +136,32 @@ class TestTheHappyPath:
 
 
 class TestWhatItRefuses:
+    def test_a_cycle_with_no_binding_refuses_before_any_call(self, tmp_path):
+        """Fail-closed by default: the guard is not an option, so an unbound cycle cannot dispatch at all."""
+        caller = Caller()
+        cycle = RoutineCycle(caller=caller, routines=ROUTINES, dialog=Dialog())
+        ok, reason = cycle.try_record_and_store("point-00", 1.0, tmp_path)
+        assert ok is False
+        assert str(reason).startswith("cycle_binding_missing")
+        assert caller.calls == []
+        assert cycle.last_report is not None
+        assert cycle.last_report.stage.value == "preflight"
+
+    def test_a_cycle_missing_one_guard_names_it(self, tmp_path):
+        caller = Caller()
+        cycle = RoutineCycle(
+            caller=caller,
+            routines=ROUTINES,
+            dialog=Dialog(),
+            binding=BINDING,
+            identity=lambda: IDENTITY,
+            owner_valid=lambda owner: True,
+        )
+        ok, reason = cycle.try_record_and_store("point-00b", 1.0, tmp_path)
+        assert ok is False
+        assert reason == "cycle_guard_missing:read_strip"
+        assert caller.calls == []
+
     def test_a_taken_name_is_refused_before_anything_is_recorded(self, tmp_path):
         (tmp_path / "point-01.BDD").write_bytes(b"existing")
         factory = Factory(tmp_path)

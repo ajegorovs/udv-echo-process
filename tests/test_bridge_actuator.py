@@ -149,7 +149,14 @@ def stored_report(
 
 
 def actuator(
-    tmp_path: Path, *, report=None, inner=None, dispatch=None, digest=BUILD, table=None
+    tmp_path: Path,
+    *,
+    report=None,
+    inner=None,
+    dispatch=None,
+    digest=BUILD,
+    table=None,
+    cycle=None,
 ) -> tuple[BridgeActuator, Dispatch, Inner]:
     path = tmp_path / "operations.json"
     path.write_text(
@@ -159,11 +166,63 @@ def actuator(
     inner = inner or Inner()
     return (
         BridgeActuator(
-            inner, dispatch=fake_dispatch, table_path=path, target_digest=digest
+            inner,
+            dispatch=fake_dispatch,
+            table_path=path,
+            target_digest=digest,
+            cycle=cycle,
         ),
         fake_dispatch,
         inner,
     )
+
+
+class Cycle:
+    """A supplied message-route cycle, faked: it writes a block and says where it landed.
+
+    ``name_as``/``directory_as`` exist so a test can make the cycle store somewhere other than
+    what the point asked for — the case a caller cannot see if it only checks that *a* file exists.
+    ``result`` replaces the whole return value, so a test can hand back a result that is not one, and
+    ``outcome_as`` wraps only the path, so a test can return it as ``str`` or anything with
+    ``__fspath__``.
+    """
+
+    def __init__(
+        self,
+        *,
+        name_as: str | None = None,
+        directory_as: Path | None = None,
+        result: object = None,
+        outcome_as: object = Path,
+    ) -> None:
+        self.calls: list[tuple] = []
+        self.name_as = name_as
+        self.directory_as = directory_as
+        self.result = result
+        self.outcome_as = outcome_as
+
+    def try_record_and_store(self, name, duration_s, directory, *, expected_mode=None):
+        self.calls.append((name, duration_s, Path(directory)))
+        if self.result is not None:
+            return self.result
+        target = (
+            Path(self.directory_as)
+            if self.directory_as is not None
+            else Path(directory)
+        ) / f"{self.name_as or name}.BDD"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(b"block")
+        return True, self.outcome_as(target)
+
+
+class PathLike:
+    """A path returned through ``__fspath__`` instead of as ``Path`` or ``str``."""
+
+    def __init__(self, path: Path) -> None:
+        self._path = path
+
+    def __fspath__(self) -> str:
+        return str(self._path)
 
 
 class TestTheTable:
@@ -425,6 +484,388 @@ class TestThePoint:
             )
 
         assert caught.value.reason == "bridge_decode_mismatch"
+
+
+class TestTheRequestedBuildIsCheckedOnBothPaths:
+    """A supplied cycle replaces *execution*, not the build the table's addresses belong to.
+
+    The cycle runs inside the same application as a dispatch would, so a table measured on another
+    build is exactly as unusable there — and it has to refuse before anything is recorded, because
+    the recording is the part that cannot be undone.
+    """
+
+    def test_a_supplied_cycle_is_refused_for_another_build(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle()
+        bridge, _, _ = actuator(tmp_path, digest="b" * 64, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason == "bridge_digest_unknown:" + "b" * 64
+        # Nothing was recorded on a build the table was not measured against.
+        assert cycle.calls == []
+
+    def test_a_supplied_cycle_without_a_table_refuses_by_name(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle()
+        bridge = BridgeActuator(
+            Inner(),
+            dispatch=None,
+            table_path=tmp_path / "absent.json",
+            target_digest=BUILD,
+            cycle=cycle,
+        )
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_table_missing:")
+        assert cycle.calls == []
+
+    def test_a_supplied_cycle_needs_the_build_but_not_a_host_dispatch(self, tmp_path):
+        """The two halves of ``unavailable()`` come apart for a cycle: the build is required, the
+        dispatch is not, because the cycle is package code."""
+        directory = tmp_path / "store"
+        directory.mkdir()
+        path = tmp_path / "operations.json"
+        path.write_text(json.dumps(table_dict()), encoding="utf-8")
+        cycle = Cycle()
+        bridge = BridgeActuator(
+            Inner(), dispatch=None, table_path=path, target_digest=BUILD, cycle=cycle
+        )
+
+        ok, outcome = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is True
+        assert outcome == directory / "point-01.BDD"
+        assert cycle.calls == [("point-01", 12.0, directory)]
+
+    def test_the_readiness_helper_answers_for_the_path_that_would_run(self, tmp_path):
+        """``unavailable()`` is asked before a run; it must not refuse a route that has a cycle, and
+        it must still put the build before the dispatch gap."""
+        path = tmp_path / "operations.json"
+        path.write_text(json.dumps(table_dict()), encoding="utf-8")
+
+        with_cycle = BridgeActuator(
+            Inner(), dispatch=None, table_path=path, target_digest=BUILD, cycle=Cycle()
+        )
+        without_cycle = BridgeActuator(
+            Inner(), dispatch=None, table_path=path, target_digest=BUILD
+        )
+        foreign = BridgeActuator(
+            Inner(), dispatch=None, table_path=path, target_digest="c" * 64, cycle=Cycle()
+        )
+
+        assert with_cycle.unavailable() is None
+        assert without_cycle.unavailable() == "bridge_runner_not_configured"
+        assert foreign.unavailable() == "bridge_digest_unknown:" + "c" * 64
+
+
+class TestTheArtifactMustBeTheRequestedPoint:
+    """A dispatch or a cycle that stored *something* has not stored *this point*.
+
+    The name and the directory are the caller's, and they are the only things that let a later
+    decode be attributed to the configuration the point requested.  Checking that a file exists is
+    not the same check.
+    """
+
+    def test_a_report_for_another_name_is_refused(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        bridge, dispatch, _ = actuator(tmp_path)
+        dispatch.factory = lambda: stored_report(directory, "another-point")
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+        assert "another-point.BDD" in reason
+
+    def test_a_report_from_another_directory_is_refused(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        bridge, dispatch, _ = actuator(tmp_path)
+        dispatch.factory = lambda: stored_report(elsewhere, "point-01")
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+
+    def test_a_supplied_cycle_that_stores_another_name_is_refused(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(name_as="unrelated")
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+        assert "unrelated.BDD" in reason
+        assert cycle.calls  # the cycle did run — the refusal is about what it returned
+
+    def test_a_supplied_cycle_that_stores_outside_the_directory_is_refused(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        elsewhere = tmp_path / "elsewhere"
+        elsewhere.mkdir()
+        cycle = Cycle(directory_as=elsewhere)
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+
+    @pytest.mark.parametrize(
+        "stored", ["point-01.tmp.BDD", "point-01.2.BDD", "point-01.failed.BDD"]
+    )
+    def test_a_report_named_with_a_second_suffix_is_refused(self, tmp_path, stored):
+        """One extension the application added — not any name that starts with the point's."""
+        directory = tmp_path / "store"
+        directory.mkdir()
+        bridge, dispatch, _ = actuator(tmp_path)
+        dispatch.factory = lambda: stored_report(directory, stored.removesuffix(".BDD"))
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+        assert stored in reason
+
+    @pytest.mark.parametrize(
+        "stored", ["point-01.tmp.BDD", "point-01.2.BDD", "point-01.failed.BDD"]
+    )
+    def test_a_supplied_cycle_named_with_a_second_suffix_is_refused(
+        self, tmp_path, stored
+    ):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(name_as=stored.removesuffix(".BDD"))
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_not_requested:")
+        assert stored in reason
+
+
+class TestARequestedNameIsComparedAsAWhole:
+    """A caller's name may itself contain dots, so neither side of the comparison is stripped.
+
+    The rule is the requested name, or that whole name plus the one extension the application adds:
+    ``point-01.tar.BDD`` is ``point-01.tar`` stored, and an extensionless request is credited too.
+    """
+
+    @pytest.mark.parametrize("name", ["point-01.tar", "run.2.5", "stationary"])
+    def test_a_report_for_the_dotted_name_is_credited(self, tmp_path, name):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        bridge, dispatch, _ = actuator(tmp_path)
+        dispatch.factory = lambda: stored_report(directory, name)
+
+        ok, outcome = bridge.try_record_and_store(
+            name, 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is True
+        assert outcome == directory / f"{name}.BDD"
+
+    @pytest.mark.parametrize("name", ["point-01.tar", "run.2.5", "stationary"])
+    def test_a_supplied_cycle_for_the_dotted_name_is_credited(self, tmp_path, name):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle()
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, outcome = bridge.try_record_and_store(
+            name, 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is True
+        assert outcome == directory / f"{name}.BDD"
+
+
+class TestASuppliedCycleResultIsChecked:
+    """A supplied cycle's result is the whole of its evidence, so it is read as strictly as a report.
+
+    ``ok`` has to be the boolean ``True``: ``"false"``, ``"no"``, ``1`` and ``0`` are all truthy or
+    falsy in Python and none of them is the cycle saying it stored.  A successful outcome has to be a
+    path — ``None``, an int or bytes must be refused by name, not raised out of ``Path``.
+    """
+
+    @pytest.mark.parametrize(
+        "flag", ["true", "false", "yes", "no", 1, 0, b"true", None, [], {}]
+    )
+    def test_a_flag_that_is_not_a_boolean_is_refused(self, tmp_path, flag):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(result=(flag, directory / "point-01.BDD"))
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason == "bridge_cycle_result_invalid:ok"
+        assert cycle.calls  # the cycle ran; the refusal is about what it said
+
+    def test_a_boolean_false_still_returns_the_cycle_own_reason(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(result=(False, "store_refused:no_block"))
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason == "store_refused:no_block"
+
+    @pytest.mark.parametrize(
+        "outcome", [None, 12, 3.5, b"point-01.BDD", object(), ["point-01.BDD"]]
+    )
+    def test_a_successful_outcome_that_is_not_a_path_is_refused(
+        self, tmp_path, outcome
+    ):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(result=(True, outcome))
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason == "bridge_cycle_result_invalid:stored_path"
+
+    def test_a_result_that_is_not_a_pair_is_refused(self, tmp_path):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(result=(True, directory / "point-01.BDD", "extra"))
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, reason = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is False
+        assert reason == "bridge_cycle_result_invalid:result"
+
+    @pytest.mark.parametrize("outcome_as", [str, Path, PathLike])
+    def test_a_path_as_str_path_or_pathlike_is_credited(self, tmp_path, outcome_as):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        cycle = Cycle(outcome_as=outcome_as)
+        bridge, _, _ = actuator(tmp_path, cycle=cycle)
+
+        ok, outcome = bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+        assert ok is True
+        assert outcome == directory / "point-01.BDD"
+
+
+class TestStoredEvidenceIsStrict:
+    """A stored result is credited only when the report states every fact it has to state.
+
+    Each case below is a report that *reads* as success and is not evidence: a missing flag is not
+    a pass, a string is not a boolean, and a digest that was never checked is not a digest.
+    """
+
+    def _run(self, tmp_path, edit):
+        directory = tmp_path / "store"
+        directory.mkdir()
+        bridge, dispatch, _ = actuator(tmp_path)
+
+        def factory():
+            report = stored_report(directory, "point-01")
+            edit(report)
+            return report
+
+        dispatch.factory = factory
+        return bridge.try_record_and_store(
+            "point-01", 12.0, directory, expected_mode=ProcessMode.INSTRUMENT
+        )
+
+    def test_a_report_without_config_evidence_is_incomplete(self, tmp_path):
+        ok, reason = self._run(tmp_path, lambda report: report["decoded"].pop("config_matches"))
+
+        assert ok is False
+        assert reason == "bridge_evidence_incomplete:config_matches"
+
+    def test_a_config_flag_that_merely_reads_as_true_is_refused(self, tmp_path):
+        def edit(report):
+            report["decoded"]["config_matches"] = "yes"
+
+        ok, reason = self._run(tmp_path, edit)
+
+        assert ok is False
+        assert reason == "bridge_evidence_invalid:config_matches"
+
+    def test_a_report_without_a_digest_is_incomplete(self, tmp_path):
+        ok, reason = self._run(
+            tmp_path, lambda report: report["stored"].pop("stored_sha256")
+        )
+
+        assert ok is False
+        assert reason == "bridge_evidence_incomplete:stored_sha256"
+
+    def test_a_malformed_digest_is_refused(self, tmp_path):
+        def edit(report):
+            report["stored"]["stored_sha256"] = "abc123"
+
+        ok, reason = self._run(tmp_path, edit)
+
+        assert ok is False
+        assert reason == "bridge_evidence_invalid:stored_sha256"
+
+    def test_a_stored_flag_that_is_not_a_boolean_is_refused(self, tmp_path):
+        def edit(report):
+            report["stored"]["stored"] = "true"
+
+        ok, reason = self._run(tmp_path, edit)
+
+        assert ok is False
+        assert reason == "bridge_evidence_invalid:stored"
+
+    def test_a_report_whose_digest_describes_another_file_is_refused(self, tmp_path):
+        def edit(report):
+            report["stored"]["stored_sha256"] = hashlib.sha256(b"not this file").hexdigest()
+
+        ok, reason = self._run(tmp_path, edit)
+
+        assert ok is False
+        assert reason.startswith("bridge_artifact_mismatch:")
 
 
 class TestDelegation:

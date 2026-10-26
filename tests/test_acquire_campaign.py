@@ -2006,6 +2006,15 @@ def test_the_log_record_gained_no_field_for_this_layer() -> None:
     fields below that a campaign never reads are the acquisition layer's own evidence:
     what the word-level check enforced, what it reported without enforcing, the window
     that was requested, and the block cap it ran under.
+
+    ``cycle_report`` is the one deliberate addition since this set was pinned, and it is
+    not campaign business state: it is the **application's own account of the cycle** that
+    was spent on a point (where record/stop/store ran to, the span the stored block
+    covers), snapshotted by the runner immediately after the cycle call. It is optional
+    and defaults to ``None``, so a campaign neither supplies nor reads it, an actuator
+    without the capability (the UI route, the test doubles) leaves it empty, and a log
+    written before it existed still reads. It is listed here so the pin stays exact: a
+    record shape that grows must grow by an explicit decision, never by omission.
     """
     assert set(SweepPointRecord.model_fields) == {
         "record_type",
@@ -2023,6 +2032,7 @@ def test_the_log_record_gained_no_field_for_this_layer() -> None:
         "file_size_bytes",
         "expected_size_bytes",
         "decoded",
+        "cycle_report",
         "failure",
         "covariates_enforced",
         "covariate_advisories",

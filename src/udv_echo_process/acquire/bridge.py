@@ -14,11 +14,19 @@ Three deliberate separations, each of which the tests pin:
 - **Execution is supplied, not embedded.** Patching another process and dispatching on its GUI thread
   is a *callable* the operator provides (:class:`BridgeDispatch`); the package owns the request, the
   evidence contract and the refusals.  A host with no such callable gets ``bridge_runner_not_configured``
-  instead of a half-executed cycle.
+  instead of a half-executed cycle.  The same host module may also export a **guarded cycle factory**
+  (:data:`GUARDED_CYCLE_EXPORT`, contract :class:`GuardedCycleFactory`): that is the closed, opt-in
+  route in which the package's own hardened :class:`~udv_echo_process.acquire.cycle.RoutineCycle`
+  replaces the press cycle.  It is resolved once, validated before it can run
+  (:func:`guarded_cycle_from`), and never substitutes for a missing dispatch unless it was asked for.
 - **The evidence is the artifact.** A dispatch's report is only credited when it says a file was
   stored, that the decoded configuration matched the request, that the target's identity did not
-  change, and that the file on disk still hashes to what the dispatch reported.  Anything less is a
-  failure with a reason, which is what makes this usable for a sweep rather than for one sitting.
+  change, and which file with which digest was written — a missing field is a refusal, not a pass,
+  and a flag that is not a boolean is refused rather than coerced.  The digest is then recomputed
+  from the file, and the file must be the requested point: its directory and its name.  A supplied
+  :class:`StoreCycle` is credited on its artifact alone — it decodes its own block and the runner
+  verifies the requested configuration — but it is checked against the same build table, because
+  replacing execution does not change which application the addresses belong to.
 
 Import safety: this module imports nothing Windows-specific and nothing from ``driver``, so
 ``udv_echo_process.acquire`` stays importable on any host.
@@ -29,6 +37,8 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+import re
 from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field, replace
 from enum import Enum
@@ -43,11 +53,13 @@ from udv_echo_process.acquire.config import (
     bridge_path_from_environment,
     bridge_table_default_path,
 )
+from udv_echo_process.acquire.cycle import CycleReport, RoutineCycle
 
 __all__ = [
     "BRIDGE_OPERATIONS_REQUIRED",
     "BRIDGE_TABLE_ENV",
     "BRIDGE_TABLE_SCHEMA",
+    "GUARDED_CYCLE_EXPORT",
     "BridgeActuator",
     "BridgeDispatch",
     "BridgeDispatchSlot",
@@ -60,8 +72,10 @@ __all__ = [
     "BridgeUnavailable",
     "BridgeValueCommit",
     "BridgeValueDispatch",
+    "GuardedCycleFactory",
     "default_table_path",
     "evidence_from_report",
+    "guarded_cycle_from",
     "load_table",
 ]
 
@@ -382,7 +396,12 @@ class BridgeDispatch(Protocol):
 
 @dataclass(frozen=True)
 class BridgeEvidence:
-    """What a dispatch's report is allowed to mean — parsed, then checked."""
+    """What a dispatch's report is allowed to mean — parsed, then checked.
+
+    On a stored result the configuration verdict, the identity verdict and the digest are all
+    present: :func:`evidence_from_report` refuses a report that leaves any of them out, so a caller
+    never has to decide what a missing one means.
+    """
 
     stored: bool
     stored_path: Path | None
@@ -412,18 +431,103 @@ def _missing(key: str) -> BridgeUnavailable:
     return BridgeUnavailable(f"bridge_evidence_incomplete:{key}")
 
 
+def _invalid(key: str) -> BridgeUnavailable:
+    """A report that carries a value which cannot be evidence: present is not the same as usable."""
+    return BridgeUnavailable(f"bridge_evidence_invalid:{key}")
+
+
+#: A SHA-256 as a report must state it: 64 hex digits, nothing else.
+_SHA256_HEX = re.compile(r"[0-9a-f]{64}", re.IGNORECASE)
+
+
+def _flag(value: object, key: str) -> bool:
+    """A report's flag has to *be* a boolean, not merely read as one.
+
+    ``"yes"``, ``1`` and ``[]`` are all truthy or falsy in Python and none of them is a report
+    saying a thing happened, so a string that a human would call "true" is refused rather than
+    coerced — a coerced value is how a missing check becomes a passing one.
+    """
+    if not isinstance(value, bool):
+        raise _invalid(key)
+    return value
+
+
+def _optional_flag(value: object) -> bool | None:
+    """The flag when the report gave one, ``None`` when it gave nothing usable.
+
+    For a report that does **not** claim a store these are not evidence of anything, so they are
+    read leniently; :func:`evidence_from_report` requires the real ones from a stored result.
+    """
+    return value if isinstance(value, bool) else None
+
+
+def _named_for(path: Path, name: str) -> bool:
+    """Whether the file's name is the requested one, exactly or with the extension the app added.
+
+    The application chooses the extension (it stores ``.BDD``); the name is the caller's, so the
+    stored name must be the requested one or that name plus **one** suffix — ``point-01.tmp.BDD`` is
+    not ``point-01``, and neither is ``point-01.BDD.bak``.  A requested name that itself contains
+    dots is compared whole, because ``point-01.tar.BDD`` *is* ``point-01.tar`` stored.
+    """
+    return path.name == name or path.stem == name
+
+
+def _cycle_result(result: object) -> tuple[bool, Path | str]:
+    """Whether a supplied cycle's result is evidence, and the artifact it names.
+
+    A cycle's own result is the whole of what that path has, so it is read as strictly as a report:
+    ``ok`` has to be the boolean ``True`` — ``1``, ``"yes"`` and ``"false"`` are truthy or falsy in
+    Python and none of them is the cycle saying it stored — and a successful outcome has to be a
+    path, as ``str``, ``Path`` or ``os.PathLike``.  Anything else is refused by name rather than
+    raised out of ``Path``, and a boolean ``False`` keeps the cycle's own reason unchanged.
+    """
+    if not isinstance(result, tuple) or len(result) != 2:
+        return False, "bridge_cycle_result_invalid:result"
+    ok, outcome = result
+    if not isinstance(ok, bool):
+        return False, "bridge_cycle_result_invalid:ok"
+    if not ok:
+        return False, str(outcome)
+    if not isinstance(outcome, (str, os.PathLike)):
+        return False, "bridge_cycle_result_invalid:stored_path"
+    try:
+        return True, Path(os.fspath(outcome))
+    except TypeError:  # an __fspath__ that answers something Path will not take
+        return False, "bridge_cycle_result_invalid:stored_path"
+
+
+def _same_directory(observed: Path, requested: Path) -> bool:
+    """Whether two paths name one directory, case-insensitively where the platform is.
+
+    The application echoes the store directory back with its own spelling — a drive letter or a
+    folder's case — and on Windows that is the same directory.  Comparing the resolved paths with
+    ``normcase`` refuses an artifact from *another* directory without refusing a correct one over
+    a capital letter.
+    """
+    return os.path.normcase(str(observed.resolve())) == os.path.normcase(
+        str(requested.resolve())
+    )
+
+
 def evidence_from_report(report: Mapping[str, Any]) -> BridgeEvidence:
     """Parse a dispatch report, refusing by key rather than assuming a shape.
 
     Two accepted shapes, because both exist in the evidence: ``stored`` as an object (the route's
     report) and ``stored`` as a flag with the path at the top level.  A stored point must name its
     file; a report that does not is incomplete, not stored.
+
+    What a stored result has to state, and why each one is required rather than optional: the
+    decoded configuration **matched** the request (a missing verdict is not a pass), the target's
+    identity did not change, and the digest of the file that was written — so the caller can check
+    the file it finds against the file the dispatch meant.  A report that omits any of them, or
+    carries a value that cannot be evidence, is refused by key.
     """
     if not isinstance(report, Mapping):
         raise _missing("report")
     stored_field = report.get("stored")
     if isinstance(stored_field, Mapping):
-        stored = bool(stored_field.get("stored"))
+        raw_stored = stored_field.get("stored")
+        stored = False if raw_stored is None else _flag(raw_stored, "stored")
         stored_path = stored_field.get("stored_path")
         stored_sha = stored_field.get("stored_sha256")
         reason = stored_field.get("reason") or report.get("reason")
@@ -435,28 +539,36 @@ def evidence_from_report(report: Mapping[str, Any]) -> BridgeEvidence:
     else:
         raise _missing("stored")
     decoded = report.get("decoded") or {}
-    config_matches = (
-        decoded.get("config_matches") if isinstance(decoded, Mapping) else None
-    )
-    if config_matches is None:
-        config_matches = report.get("config_matches")
-    identity_unchanged = report.get("identity_unchanged")
+    raw_config = decoded.get("config_matches") if isinstance(decoded, Mapping) else None
+    if raw_config is None:
+        raw_config = report.get("config_matches")
+    raw_identity = report.get("identity_unchanged")
+    config_matches = _optional_flag(raw_config)
+    identity_unchanged = _optional_flag(raw_identity)
     if stored:
         if not stored_path:
             raise _missing("stored_path")
-        if identity_unchanged is None:
+        if not isinstance(stored_path, (str, Path)):
+            raise _invalid("stored_path")
+        if raw_config is None:
+            raise _missing("config_matches")
+        config_matches = _flag(raw_config, "config_matches")
+        if raw_identity is None:
             raise _missing("identity_unchanged")
+        identity_unchanged = _flag(raw_identity, "identity_unchanged")
+        if stored_sha is None:
+            raise _missing("stored_sha256")
+        if not isinstance(stored_sha, str) or not _SHA256_HEX.fullmatch(stored_sha.strip()):
+            raise _invalid("stored_sha256")
     blockers = report.get("blockers") or ()
     if reason is None and blockers:
         reason = "; ".join(str(item) for item in blockers)
     return BridgeEvidence(
         stored=stored,
         stored_path=Path(str(stored_path)) if stored_path else None,
-        stored_sha256=str(stored_sha) if stored_sha else None,
-        config_matches=None if config_matches is None else bool(config_matches),
-        identity_unchanged=None
-        if identity_unchanged is None
-        else bool(identity_unchanged),
+        stored_sha256=None if stored_sha is None else str(stored_sha).strip(),
+        config_matches=config_matches,
+        identity_unchanged=identity_unchanged,
         reason=None if reason is None else str(reason),
         raw=report,
     )
@@ -489,6 +601,14 @@ class BridgeActuator:
         #: The message route's own cycle.  When present it replaces the host dispatch for record/stop/store, so a
         #: bridge run stops delegating its cycle to a runner that presses buttons.
         self._cycle = cycle
+        #: The report of the most recent cycle invocation, reset before each one.  ``None`` means no report was
+        #: supplied — a legacy/UI actuator has no such capability, and a generic supplied ``StoreCycle`` has no
+        #: ``last_report``; both are absence, not a claim about the cycle.
+        self._last_cycle_report: CycleReport | None = None
+        #: Why a report the cycle *did* offer could not be used, or ``None``.  Beside the report, never instead of it:
+        #: an unreadable value, a value that is not a report, another cycle's report or a report that contradicts the
+        #: store it came with is evidence that failed, and it must not be erased into the absence above.
+        self._last_cycle_report_problem: str | None = None
         self._value_dispatch = value_dispatch
         #: Set once a write could not be verified *and* could not be restored.  From then on this
         #: actuator writes nothing: a second write on top of an unknown value is worse than a stop.
@@ -515,8 +635,49 @@ class BridgeActuator:
             self._table = load_table(self._table_path)
         return self._table
 
-    def unavailable(self) -> str | None:
-        """Why this actuator could not run a cycle right now, or ``None`` when nothing blocks it."""
+    @property
+    def last_cycle_report(self) -> CycleReport | None:
+        """The report of the cycle the **last** :meth:`try_record_and_store` invocation ran.
+
+        The runner reads this once, immediately after its single cycle call, so the property has to answer for that
+        invocation and no other: it is reset to ``None`` at the start of every invocation — including the points that
+        are refused before their cycle — and filled from the cycle's own :attr:`RoutineCycle.last_report` on every
+        exit (the stored path, the ``(False, reason)`` return and a raised exception).
+
+        ``None`` is *no report supplied*, which is the honest answer for a generic injected ``StoreCycle``: a cycle that
+        never produced a typed report must not have one invented for it.  It is **not** the answer when a report was
+        offered and could not be used — such a report is never stored here, and the reason it could not be used is
+        :attr:`cycle_report_problem`.  The report is stored as the cycle produced it — including its ``name`` — because
+        the runner is what decides whether a report belongs to the point it was taken for; rewriting the name here
+        would hide exactly that mismatch.
+        """
+        return self._last_cycle_report
+
+    @property
+    def cycle_report_problem(self) -> str | None:
+        """Why the report offered by the **last** cycle could not be used, or ``None``.
+
+        The pair of properties is the whole interface: :attr:`last_cycle_report` answers with a report or with
+        ``None``, and this one answers whether that ``None`` is absence (a generic cycle that never had a report) or a
+        report that was offered and refused.  The distinction is the difference between a point whose evidence does not
+        exist and one whose evidence contradicts it, and a caller that could only see ``None`` would have to read them
+        as the same thing.
+
+        It is reset with the report, at the start of every invocation, and it carries the same token the invocation's
+        own refusal carries — one finding, stated once, whether the caller is a runner reading the diagnostic or a
+        single-point caller reading the returned reason.
+        """
+        return self._last_cycle_report_problem
+
+    def _build_blocker(self) -> str | None:
+        """Why the table cannot be used for the requested build, or ``None``.
+
+        One check for both cycle paths.  A supplied :class:`StoreCycle` replaces *execution* — it is
+        package code, so it needs no host dispatch — but it does not replace the build: the cycle
+        runs in the same application a dispatch would, so a table measured on another build is
+        exactly as unusable there.  Keeping the two requirements in separate helpers is what lets a
+        cycle path demand the first without the second.
+        """
         try:
             table = self.table
         except BridgeUnavailable as exc:
@@ -526,7 +687,14 @@ class BridgeActuator:
             and table.image_sha256 != self._target_digest
         ):
             return f"bridge_digest_unknown:{self._target_digest}"
-        if self._dispatch is None:
+        return None
+
+    def unavailable(self) -> str | None:
+        """Why this actuator could not run a cycle right now, or ``None`` when nothing blocks it."""
+        blocker = self._build_blocker()
+        if blocker is not None:
+            return blocker
+        if self._dispatch is None and self._cycle is None:
             return "bridge_runner_not_configured"
         return None
 
@@ -666,11 +834,40 @@ class BridgeActuator:
         expected_mode: ProcessMode,
         verify_channel: bool = True,
     ) -> tuple[bool, Path | str]:
-        """Record, stop, store — the bridge route — and credit only artifact-backed evidence."""
-        if self._cycle is None:
-            blocker = self.unavailable()
-            if blocker is not None:
-                return False, blocker
+        """Record, stop, store — the bridge route — and credit only artifact-backed evidence.
+
+        The order is the contract, and it is the same on both paths:
+
+        1. the table, and the build the caller said the application is — refused **before** anything
+           records, because a recording cannot be taken back.  A cycle path is checked here too: it
+           replaces execution, not the build the addresses belong to.
+        2. the mode expectation, read in-process through the GUI half.
+        3. the name, which must be free: a taken name raises the application's own overwrite prompt.
+        4. the cycle, then its artifact.
+
+        The two paths differ only in step 4.  A supplied :class:`StoreCycle` needs **no host
+        dispatch** — it decodes its own block, and the runner verifies the requested configuration —
+        so this method credits its result on the artifact alone.  A host dispatch has to state its
+        evidence: that a file was stored, that the decoded configuration matched, that the target's
+        identity did not change, and the digest of what it wrote, which is then recomputed from the
+        file.  Anything less is a failure with a reason.  A supplied cycle's own result is read just
+        as strictly: its flag must be a boolean and its outcome a path, or the point is refused by
+        name.
+
+        Both paths then require the same thing of the returned path: it must be **the point that
+        was requested** — the requested directory, and the requested name — because "a file exists"
+        is satisfied by the previous point's block, and no later decode can tell the difference.
+        """
+        # Reset before *anything*, so a point refused before its cycle leaves no report behind: the property answers
+        # for this invocation only, and ``None`` is the only honest answer when no cycle ran.  The diagnostic is reset
+        # with it, for the same reason: a previous point's unusable report is not this point's finding.
+        self._last_cycle_report = None
+        self._last_cycle_report_problem = None
+        blocker = self._build_blocker()
+        if blocker is not None:
+            return False, blocker
+        if self._cycle is None and self._dispatch is None:
+            return False, "bridge_runner_not_configured"
         table = self.table
         directory = Path(directory)
         note = self._inner.process_mode_note(expected_mode)
@@ -683,6 +880,24 @@ class BridgeActuator:
         )
         if taken:
             return False, f"store_name_taken:{taken[0]}"
+        if self._cycle is not None:
+            ok, outcome = self._run_cycle(name, duration_s, directory, expected_mode)
+            if not ok:
+                # The cycle's own failure is the reason and stays first: an unusable report is an additional finding,
+                # never a replacement for what actually went wrong.
+                reason = str(outcome)
+                if self._last_cycle_report_problem is not None:
+                    reason = f"{reason}; {self._last_cycle_report_problem}"
+                return False, reason
+            # _cycle_result narrows a success to a path.
+            assert isinstance(outcome, Path)
+            # A cycle that claims a store has to be able to say so in the words it offered.  Checked here, before the
+            # artifact, because the single-point route reaches no runner at all — and the runner's own attribution is
+            # about a report it can see, which an unusable one never is.
+            blocked = self._unusable_report(name)
+            if blocked is not None:
+                return False, blocked
+            return self._credit_artifact(outcome, name, directory)
         request = BridgeRequest(
             name=name,
             duration_s=float(duration_s),
@@ -692,17 +907,7 @@ class BridgeActuator:
             verify_channel=verify_channel,
             table_digest=table.image_sha256,
         )
-        if self._cycle is not None:
-            ok, outcome = self._cycle.try_record_and_store(
-                name, duration_s, directory, expected_mode=expected_mode
-            )
-            if not ok:
-                return False, str(outcome)
-            path = Path(outcome)
-            if not path.is_file():
-                return False, f"bridge_artifact_mismatch:{path.as_posix()}"
-            return True, path
-        assert self._dispatch is not None  # narrowed by `unavailable()`
+        assert self._dispatch is not None  # narrowed above
         try:
             evidence = evidence_from_report(self._dispatch(request))
         except BridgeUnavailable as exc:
@@ -715,12 +920,112 @@ class BridgeActuator:
             return False, "bridge_identity_changed"
         path = evidence.stored_path
         assert path is not None  # required by evidence_from_report when stored
+        ok, credited = self._credit_artifact(path, name, directory)
+        if not ok:
+            return False, str(credited)
+        assert evidence.stored_sha256 is not None  # required by evidence_from_report when stored
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        if actual != evidence.stored_sha256.lower():
+            return False, f"bridge_artifact_mismatch:{path.as_posix()}"
+        return True, path
+
+    def _run_cycle(
+        self, name: str, duration_s: float, directory: Path, expected_mode: ProcessMode
+    ) -> tuple[bool, Path | str]:
+        """Run the selected cycle exactly once and snapshot the report of **that** invocation.
+
+        The snapshot is taken in ``finally`` because the cycle's exit is evidence even when it raises: the application
+        may have got as far as a store before the exception, and the caller's log worker wants to record where the cycle
+        stopped.  A cycle that has no typed report leaves the property at ``None``; nothing is synthesised for it.
+        """
+        assert self._cycle is not None  # narrowed by the caller
+        try:
+            return _cycle_result(
+                self._cycle.try_record_and_store(
+                    name, duration_s, directory, expected_mode=expected_mode
+                )
+            )
+        finally:
+            self._capture_cycle_report()
+
+    def _capture_cycle_report(self) -> None:
+        """Take the cycle's own report if it offers a usable one — and never raise out of the cycle path.
+
+        Three states, and only one of them is absence:
+
+        - a generic injected ``StoreCycle`` has no ``last_report``: absence, not a defect, and nothing is recorded.
+        - a property that raises cannot be read: evidence that *failed*, recorded as a named diagnostic rather than
+          treated as absent.  The point's own verdict must not become a crash, but it must not become a shrug either.
+        - a value that is not a :class:`CycleReport` is not a report: recorded as a named diagnostic for the same
+          reason.  Only a ``CycleReport`` is stored in :attr:`last_cycle_report`, unchanged, so its own ``name``
+          survives for the runner's per-point attribution check.
+
+        Discarding the last two is what made an unusable report indistinguishable from no capability at all: the
+        runner reads ``None`` as "this actuator has no such property", so a cycle whose own account of itself did not
+        hold was credited as a clean point.
+        """
+        cycle = self._cycle
+        if cycle is None:
+            return
+        try:
+            report = getattr(cycle, "last_report", None)
+        except Exception as exc:  # noqa: BLE001 - unreadable evidence is reported, not raised
+            self._last_cycle_report_problem = (
+                f"{_CYCLE_REPORT_UNREADABLE}:{type(exc).__name__}"
+            )
+            return
+        if report is None:
+            return
+        if not isinstance(report, CycleReport):
+            self._last_cycle_report_problem = (
+                f"{_CYCLE_REPORT_INVALID}:{type(report).__name__}"
+            )
+            return
+        self._last_cycle_report = report
+
+    def _unusable_report(self, name: str) -> str | None:
+        """Why this cycle's claimed store cannot be credited on its own report, or ``None``.
+
+        The name and the ``stored`` flag are both the cycle's own claims about *this* invocation, and a success the
+        report does not corroborate is exactly the contradiction the runner refuses — so it is refused here too, at
+        the one place a single-point caller also passes.  A cycle with no report at all is not a contradiction: that
+        is the legacy shape, and it keeps its own verdict.
+
+        A refused report is moved into :attr:`cycle_report_problem` rather than left in
+        :attr:`last_cycle_report`, so that what a caller sees afterwards is one finding — the reason it was returned
+        already names it, and a runner reading the pair cannot credit or re-state it.
+        """
+        problem = self._last_cycle_report_problem
+        report = self._last_cycle_report
+        if problem is None and report is not None:
+            if report.name != name:
+                problem = f"{_CYCLE_REPORT_UNATTRIBUTABLE}:{report.name}"
+            elif not report.stored:
+                problem = _CYCLE_REPORT_CONTRADICTS_STORE
+        if problem is None:
+            return None
+        self._last_cycle_report = None
+        self._last_cycle_report_problem = problem
+        return problem
+
+    @staticmethod
+    def _credit_artifact(
+        path: Path, name: str, directory: Path
+    ) -> tuple[bool, Path | str]:
+        """Whether ``path`` is the artifact this point asked for, and it is a file.
+
+        The name and the directory are the caller's; the extension belongs to the application.  A
+        cycle that stored the *previous* point's block, or a dispatch that reported a file from
+        another run, therefore fails here rather than being credited to this point's configuration.
+        """
+        try:
+            same_directory = _same_directory(path.parent, directory)
+        except OSError:  # an unresolvable path cannot be shown to be the requested one
+            same_directory = False
+        if not same_directory or not _named_for(path, name):
+            return False, f"bridge_artifact_not_requested:{path.as_posix()}"
         if not path.is_file():
             return False, f"bridge_artifact_mismatch:{path.as_posix()}"
-        if evidence.stored_sha256 is not None:
-            actual = hashlib.sha256(path.read_bytes()).hexdigest()
-            if actual != evidence.stored_sha256:
-                return False, f"bridge_artifact_mismatch:{path.as_posix()}"
         return True, path
 
     def record_and_store(
@@ -765,17 +1070,152 @@ class MenuCall:
         }
 
 
+#: The four ways an offered cycle report can be unusable, as refusal tokens.  They are namespaced with the rest of
+#: the bridge's vocabulary (``bridge_*``) so a log line says which layer refused, and they are *the* text a caller
+#: reads: the same token is the invocation's returned reason and the diagnostic beside :attr:`last_cycle_report`.
+_CYCLE_REPORT_UNREADABLE = "bridge_cycle_report_unreadable"
+_CYCLE_REPORT_INVALID = "bridge_cycle_report_invalid"
+_CYCLE_REPORT_UNATTRIBUTABLE = "bridge_cycle_report_unattributable"
+_CYCLE_REPORT_CONTRADICTS_STORE = "bridge_cycle_report_contradicts_store"
+
+
 @runtime_checkable
 class StoreCycle(Protocol):
     """The message route's own record/stop/store cycle, injected rather than dispatched to a host runner.
 
     Structural on purpose: :class:`~udv_echo_process.acquire.cycle.RoutineCycle` satisfies it, and so does any object with
-    the same call, which keeps this wrapper testable without an instrument.
+    the same call, which keeps this wrapper testable without an instrument.  **Direct injection stays as permissive as
+    that** — a caller that hands over its own cycle takes responsibility for what it is.  The opt-in guarded path below
+    is stricter on purpose: it only accepts the hardened class.
     """
 
     def try_record_and_store(
         self, name: str, duration_s: float, directory: Path, *, expected_mode: object = None
     ) -> tuple[bool, Path | str]: ...
+
+
+#: The optional export a machine-local host module may carry: a factory that builds the hardened cycle.
+#:
+#: ``UDV_BRIDGE_RUNNER`` (or ``--bridge-runner``) names a module that already supplies ``dispatch`` for the legacy
+#: route.  The same module may additionally export this one callable, which is the **only** way a command selects the
+#: guarded cycle — nothing here guesses an address, fabricates a binding or discovers a build digest.
+GUARDED_CYCLE_EXPORT = "guarded_cycle"
+
+
+@runtime_checkable
+class GuardedCycleFactory(Protocol):
+    """The documented contract for :data:`GUARDED_CYCLE_EXPORT`.
+
+    Called **at most once per construction**, with keyword arguments only — and not at all when the request already
+    contradicts the table, because that comparison needs nothing this factory would produce:
+
+    ``table``
+        the validated :class:`BridgeTable` the run is using — the same object the bridge route refuses on, so the
+        factory can read the routine addresses from the one place vendor facts live.
+    ``table_path``
+        where that table came from, as the caller named it (``str``, ``Path`` or ``None`` when the environment or the
+        default location supplied it).  Metadata for the factory's own audit; this package validates nothing from it.
+    ``target_digest``
+        the build digest the caller declared, or ``None``.  The **table** half of that comparison is made here, before
+        this factory is called, because it needs nothing from the host.  The half that compares the returned cycle's
+        binding cannot be: a binding does not exist until the factory has observed one, so that check runs on what the
+        factory returned.
+    ``channel``
+        the measurement channel the run was asked for, or ``None``.
+
+    It returns a :class:`~udv_echo_process.acquire.cycle.RoutineCycle` that is **already bound** — a
+    :class:`~udv_echo_process.acquire.cycle.CycleBinding` plus the identity reader, owner check and strip reader — because
+    only the host can observe the process instance the addresses belong to.  This package must never supply any of
+    those, and a cycle that comes back without them is refused by name rather than used unguarded.  The factory may
+    observe the live application (that is how a binding is taken); it must not start, stop or store a recording.
+    """
+
+    def __call__(
+        self,
+        *,
+        table: BridgeTable,
+        table_path: str | Path | None = None,
+        target_digest: str | None = None,
+        channel: int | None = None,
+    ) -> RoutineCycle: ...
+
+
+def guarded_cycle_from(
+    factory: object,
+    *,
+    table: BridgeTable,
+    table_path: str | Path | None = None,
+    target_digest: str | None = None,
+    channel: int | None = None,
+) -> RoutineCycle:
+    """Call the host factory at most once and return its cycle, or refuse by name.
+
+    Every refusal below happens **before** a cycle can run and before the caller's own actuator is built, so a command
+    that asked for the guarded path either gets a hardened cycle or gets a reason — never a quiet fall back to the
+    press-based route.  What that does *not* claim is that the host was never called: a binding can only be observed by
+    looking at the running application, so the factory may already have done so by the time a post-return check refuses.
+    What no refusal here does is let it start, stop or store a recording — every one of them is settled before the cycle
+    is used for anything.
+
+    - ``bridge_guarded_cycle_factory_missing`` / ``..._invalid`` — the module exports nothing callable.  Static.
+    - ``bridge_guarded_cycle_digest_conflict:table:...`` — the requested digest contradicts the table.  Static too: both
+      values are already held, so this refusal is made **before** the factory is invoked at all.
+    - ``bridge_guarded_cycle_factory_raised`` — the host's own construction failed; its exception type is named and the
+      exception itself is not propagated.
+    - ``bridge_guarded_cycle_invalid`` — the return value is not a :class:`RoutineCycle`.  This is what keeps a generic
+      ``StoreCycle`` (a test double, an older hand-rolled cycle) from being accepted as *the* hardened one.
+    - ``bridge_guarded_cycle_unusable`` — the cycle's own pure check found no binding, a missing or non-callable guard,
+      a null pointer or a binding that contradicts its routines.  Made on the returned cycle.
+    - ``bridge_guarded_cycle_digest_conflict:binding:...`` — the cycle's binding was observed on another build.  The
+      digest is *read*, never computed: this slice has no engine.
+    """
+    if factory is None:
+        raise BridgeUnavailable(f"bridge_guarded_cycle_factory_missing:{GUARDED_CYCLE_EXPORT}")
+    if not callable(factory):
+        raise BridgeUnavailable(f"bridge_guarded_cycle_factory_invalid:{GUARDED_CYCLE_EXPORT}")
+    if target_digest is not None and table.image_sha256 != target_digest:
+        # The one comparison on the caller's own values, made before the host is touched: a factory may observe the
+        # application, so a request already known to contradict the table is refused without asking it to.
+        raise BridgeUnavailable(
+            "bridge_guarded_cycle_digest_conflict:table:"
+            f"{table.image_sha256[:12]}!={target_digest[:12]}"
+        )
+    try:
+        cycle = factory(
+            table=table,
+            table_path=table_path,
+            target_digest=target_digest,
+            channel=channel,
+        )
+    except BridgeUnavailable:
+        # A host that already speaks this vocabulary is passed through unchanged.
+        raise
+    except Exception as exc:  # noqa: BLE001 - a host's failure is a refusal here, not a crash
+        raise BridgeUnavailable(
+            f"bridge_guarded_cycle_factory_raised:{type(exc).__name__}"
+        ) from None
+    if not isinstance(cycle, RoutineCycle):
+        raise BridgeUnavailable(f"bridge_guarded_cycle_invalid:{type(cycle).__name__}")
+    try:
+        problem = cycle.configuration_problem()
+    except Exception as exc:  # noqa: BLE001 - a check that could not answer has not passed
+        raise BridgeUnavailable(
+            "bridge_guarded_cycle_unusable:configuration_problem_raised:"
+            f"{type(exc).__name__}"
+        ) from None
+    if problem is not None:
+        raise BridgeUnavailable(f"bridge_guarded_cycle_unusable:{problem}")
+    binding = cycle.binding
+    if binding is None:  # narrowed by configuration_problem(); kept so this reads on its own
+        raise BridgeUnavailable("bridge_guarded_cycle_unusable:cycle_binding_missing")
+    # The table half of the digest rule already ran, above; this is the half that needed the returned cycle.
+    expected = table.image_sha256 if target_digest is None else target_digest
+    bound = binding.identity.image_sha256
+    if bound != expected:
+        raise BridgeUnavailable(
+            f"bridge_guarded_cycle_digest_conflict:binding:{bound[:12]}!={expected[:12]}"
+        )
+    return cycle
 
 
 @runtime_checkable

@@ -112,6 +112,7 @@ from udv_echo_process.acquire.config import (
     ProfileTiming,
     RecordSettings,
 )
+from udv_echo_process.acquire.cycle import CycleReport
 from udv_echo_process.acquire.log import (
     DecodedBlock,
     PointStatus,
@@ -170,6 +171,20 @@ ABORT_NOTE = (
     "the run stops here: the application's state is not verified, so the remaining "
     "points are not attempted"
 )
+
+#: The optional actuator capability that carries the application's own cycle report.
+#: Read with ``getattr`` rather than declared on the protocol, because the UI route and every legacy
+#: double in the suite have no such property and must keep working unchanged.
+_CYCLE_REPORT_ATTR = "last_cycle_report"
+
+#: The optional companion: the producer's own reason for having no report to hand over.  Read the same way,
+#: because it is the same optional capability — an actuator that answered ``None`` above and names a problem
+#: here offered evidence it could not use, which is not the same state as having no evidence at all.
+_CYCLE_REPORT_PROBLEM_ATTR = "cycle_report_problem"
+
+#: The token every "a report was offered but it is not this point's" note carries, so the refusal is
+#: greppable in a log and testable without matching prose.
+_CYCLE_REPORT_UNATTRIBUTABLE = "cycle_report_unattributable"
 
 
 class SweepActuator(Actuator, Protocol):
@@ -359,6 +374,15 @@ class _Attempt:
     file: Path | None = None
     reason: str | None = None
     decoded: DecodedBlock | None = None
+    #: The application's own report for the one cycle this attempt spent, snapshotted from the
+    #: actuator **immediately after** that call (:meth:`SweepRunner._capture_cycle_report`) and
+    #: never re-read afterwards. ``None`` means no report was supplied: a legacy/UI actuator with no
+    #: such capability, or a point whose cycle was never attempted.
+    cycle_report: CycleReport | None = None
+    #: Why a report that *was* offered could not be credited to this point — a name that belongs to
+    #: another cycle, or a value that is not a report at all. ``None`` means the question did not
+    #: arise; it reaches the log beside the point's own failure, never instead of it.
+    cycle_report_note: str | None = None
     readback_gates: int | None = None
     readback_resolution: str | None = None
     size_bytes: int | None = None
@@ -701,11 +725,16 @@ class SweepRunner:
                 verify_channel=False,  # verified once per run, below and before the first
             )
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards
+            # The cycle's exit is evidence even when it raised: the application may have got as far
+            # as a store before the exception, and the snapshot has to be taken here because the
+            # actuator's property answers for whatever ran last.
+            self._capture_cycle_report(attempt)
             # The step is unaccounted for: a dialog may be up and a recording may
             # still be running, so the next point cannot be trusted with the app.
             return self._fail(
                 attempt, f"the record/store cycle raised {exc!r}", abort=True
             )
+        self._capture_cycle_report(attempt)
         if not stored:
             return self._fail(
                 attempt, f"the record/store cycle failed: {result}", abort=True
@@ -713,6 +742,21 @@ class SweepRunner:
         path = Path(str(result))
         attempt.file = path
         self._used_names.add(path.name)
+        if attempt.cycle_report_note is not None:
+            # The cycle claims a store while its report belongs to another cycle, is unreadable, or
+            # is not a report at all. The file may well be sound, but which invocation produced it
+            # is exactly what the contradictory evidence cannot establish — so this is not "the
+            # application is past the cycle" but "the cycle's own account of itself does not hold",
+            # the same finding as a claimed store that is not there (below), and it trips the same
+            # breaker: the state is unverified, so no later point may be attempted. The path is kept
+            # so the log names the artifact it refused to credit, and the diagnostic stays the
+            # reason.
+            return self._fail(
+                attempt,
+                attempt.cycle_report_note,
+                status=PointStatus.INVALID,
+                abort=True,
+            )
         if not path.is_file():
             return self._fail(
                 attempt,
@@ -1023,6 +1067,92 @@ class SweepRunner:
             attempt.readback_resolution = str(resolution_text)
         return None
 
+    def _capture_cycle_report(self, attempt: _Attempt) -> None:
+        """Snapshot the report of the cycle invocation this point just spent.
+
+        Called once, **immediately after — and only after** — the single
+        :meth:`try_record_and_store` call, on every exit from it: the stored path, the ``(False,
+        reason)`` return and the raise. The actuator's property holds the last cycle's report until
+        its producer resets it before the next invocation, so a read anywhere else would answer for
+        whatever ran last instead of for this point. That is why no other path in :meth:`_execute`
+        touches it: a point refused before its cycle (layout, mode, clamped read-back, the reset)
+        carries no report at all, rather than an earlier point's.
+
+        The states, and they are different claims:
+
+        - **no capability** (the attribute is absent — a legacy or UI actuator): nothing is recorded
+          and nothing fails. Absence of the property is not a defect of the point.
+        - **absent, and the producer says why**: ``None`` plus an actuator diagnostic (a cycle that
+          offered a report it could not use — unreadable, not a report, or one its own wrapper
+          refused). Still not this point's evidence, but not silence either: the producer's token is
+          the note, so the reason a caller was given and the note the log keeps are one finding.
+        - **offered and this point's**: a :class:`CycleReport` whose ``name`` is this point's cycle
+          name. It is stored as the frozen report object itself, so nothing later can move the
+          evidence; the log serializes it and a reader gets the same values back.
+        - **offered and not creditable** — another cycle's name, or a value that is not a report at
+          all. Not stored as this point's (evidence that belongs to something else is worse than
+          none), and said out loud in :attr:`_Attempt.cycle_report_note`: if the cycle otherwise
+          claimed a store, the point is refused *and* the run stops, because a cycle whose own
+          account of itself does not hold cannot establish where the application is. The foreign
+          report's own facts travel in the note, so an attribution failure is never silent.
+        """
+        try:
+            report = getattr(self._actuator, _CYCLE_REPORT_ATTR)
+        except AttributeError:
+            return  # no such capability: the legacy doubles this module must keep working
+        except Exception as exc:  # noqa: BLE001 - an unreadable property is a note, not a crash
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: reading the actuator's "
+                f"{_CYCLE_REPORT_ATTR} raised {type(exc).__name__}: {exc}"
+            )
+            return
+        if report is None:
+            # Either the producer had nothing to hand over — absence, not contradiction — or it offered
+            # something it could not use and said so beside the property. The second is a finding: the
+            # point is refused on it, and the note is the producer's own token rather than prose invented
+            # here, so the reason a caller sees and the note a log keeps are the same sentence.
+            note = self._actuator_report_problem()
+            if note is not None:
+                attempt.cycle_report_note = note
+            return
+        if not isinstance(report, CycleReport):
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: the actuator's last cycle report is a "
+                f"{type(report).__name__}, not a CycleReport: {report!r}"
+            )
+            return
+        if report.name != attempt.name:
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: the report names the cycle "
+                f"{report.name!r} but this point's cycle is {attempt.name!r} "
+                f"(stage {report.stage.value!r}, stored={report.stored!r}, "
+                f"reason {report.reason!r}): another cycle's evidence is not this point's, "
+                "so no cycle report is credited to this point"
+            )
+            return
+        attempt.cycle_report = report
+
+    def _actuator_report_problem(self) -> str | None:
+        """Why the actuator could not hand over the report it offered, or ``None``.
+
+        Read exactly like the report itself — ``getattr`` on an optional capability, so a double that has
+        no such property is absence rather than an error — and never allowed to fail a point: an
+        unreadable diagnostic is reported as prose about *that*, because a broken diagnostic must not
+        turn into a silent absence.
+        """
+        try:
+            problem = getattr(self._actuator, _CYCLE_REPORT_PROBLEM_ATTR)
+        except AttributeError:
+            return None
+        except Exception as exc:  # noqa: BLE001 - a native diagnostic that raises is still a finding
+            return (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: reading the actuator's "
+                f"{_CYCLE_REPORT_PROBLEM_ATTR} raised {type(exc).__name__}: {exc}"
+            )
+        if problem is None:
+            return None
+        return str(problem)
+
     def _record(self, attempt: _Attempt, status: PointStatus) -> SweepPointRecord:
         """The log record for an attempt, at the status it ended with.
 
@@ -1033,8 +1163,28 @@ class SweepRunner:
         and the decoded block's own ``n_profiles``/``span_s``. Together those are the
         difference between "the plan says 12 s" and "the file covers 8.4 s of it" —
         which the app's ring behaviour makes two different facts.
+
+        ``cycle_report`` is forwarded exactly as it was snapshotted at the cycle call: the
+        report the application gave for *this* invocation, or ``None`` when it gave none.
         """
         duration = attempt.duration_s
+        # The point's own verdict, and beside it (never inside it) the note that says why a report
+        # could not be credited to this point. Appended rather than substituted: a point that failed
+        # *and* was handed another cycle's report keeps both findings.
+        failure = attempt.reason
+        # Membership, not equality: an abort's reason ends with :data:`ABORT_NOTE` appended, and an
+        # actuator's own diagnostic can already be inside the reason it returned — both make the note
+        # present without being the whole string, and appending it again would serialise one finding
+        # twice in the field a reader has to trust.
+        if (
+            attempt.cycle_report_note is not None
+            and attempt.cycle_report_note not in (failure or "")
+        ):
+            failure = (
+                attempt.cycle_report_note
+                if failure is None
+                else f"{failure}; {attempt.cycle_report_note}"
+            )
         return SweepPointRecord(
             sweep_id=self._sweep_id,
             key=attempt.point.key,
@@ -1056,7 +1206,8 @@ class SweepRunner:
             file_size_bytes=attempt.size_bytes,
             expected_size_bytes=attempt.expected_bytes,
             decoded=attempt.decoded,
-            failure=attempt.reason,
+            cycle_report=attempt.cycle_report,
+            failure=failure,
             covariate_advisories=attempt.advisories,
             covariates_advisory=attempt.advisory_covariates,
             covariates_enforced=attempt.enforced_covariates,

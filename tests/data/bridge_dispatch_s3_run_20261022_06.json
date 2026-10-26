@@ -1,0 +1,12 @@
+{
+  "stored": {
+    "stored": true,
+    "stored_path": "outputs/live/store/bridged-20261022-06.BDD",
+    "stored_sha256": "722e3ea2aad75eb3ac6638a86069c8c5589845df8be052a7ad34b4388a7a9504",
+    "stored_bytes": 49793
+  },
+  "decoded": {
+    "config_matches": true
+  },
+  "identity_unchanged": true
+}
