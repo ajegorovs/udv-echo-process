@@ -8,7 +8,9 @@
 emulates an operator (hover, press, dialog typing), and the **message route**, which reads window state and calls the
 application's own routines in-process. The message route is the one we are building on: it needs no cursor, works while
 the application is unfocused or covered, and leaves a record of what it asked for. This plan keeps that construction
-honest by naming, action by action, what the message route can already do and what it still borrows from input.
+honest by naming, action by action, what the message route can already do and what it still borrows from input. The
+guarded cycle's host-facing contract — what a provider must supply, what the package refuses regardless — is written once
+in [`dop3000/guarded-cycle-contract.md`](../dop3000/guarded-cycle-contract.md); this plan owns the register and the evidence.
 
 **Observable outcome / acceptance criteria.**
 
@@ -33,6 +35,12 @@ honest by naming, action by action, what the message route can already do and wh
 register so it is discoverable at session start (2026-10-23). That covers: building, measuring and documenting the
 message route; committing to this branch, never pushing. It does not cover unattended mutation of the instrument's Store,
 relaxing a safety guard, or editing the machine-local binding material, each of which needs a fresh, explicit grant.
+
+The bounded slice of 2026-10-26 was granted on narrower terms and is recorded as such: offline evidence and build fixes
+with an independent review — no live action against the instrument, no application restart, no commit or push, no binding,
+secret or machine-local configuration change. The wider grant above is unchanged; work that needs the application running,
+or an operator at it, is listed in *Selected next* as needing its own session's authorization rather than being implied by
+this one.
 
 **Baseline.** Round-based measurement at 2026-10-23, application instances discovered per probe (never cached), session
 unlocked. The message route's building blocks as measured that day: reads by window message; dropdown selection by
@@ -60,6 +68,14 @@ Two measured facts that a fresh reader would otherwise re-derive, and that shape
 
 ## Current checkpoint
 
+**How to read this section (revised 2026-10-26).** Three kinds of claim sit below and are not interchangeable.
+*Measured live before the application's restart (2026-10-23)* — historical successes against the instance then running, and
+the only evidence rows 11 and 12 have. *Measured live after it (2026-10-25/26)* — the boundary acceptance, plus a crash box
+seen during live work that is not attributed to a route here. *Offline state (2026-10-26)* — what the code now does and
+refuses, the guarded cycle and its factory/CLI selection included, verified without an instrument. **Established by none of
+them:** a restart-safe way to find the owning object, which is why record and stop are not a current capability however the
+earlier measurement is worded. A register status describes the capability today, not what once ran.
+
 **Established** (measured 2026-10-23, this branch):
 
 - Reads are message-level and focus-independent: sidebar column, fast-access roles, a dialog's fields, strip state,
@@ -73,10 +89,55 @@ Two measured facts that a fresh reader would otherwise re-derive, and that shape
 - A numeric setter committed a value once (one transition, artifact-verified) and did **not** commit again in a fresh
   attachment, which is why the current wrapper repairs a mismatch through the UI instead.
 
-**Not established.** Whether the application's own strip routines (`record`, `stop`, `store`) can be called at all: a
-call without the owning object faults. Whether a row's `…Change_State` handler can be made to act: it runs without error
-and changes nothing, because its `Sender` is not supplied. Whether a numeric write can be made repeatable. Whether
-channel selection can leave input emulation at all — the old route itself is unsafe there.
+**Not established.** Whether the application's own strip routines (`record`, `stop`, `store`) can be called in a **fresh
+instance**: they execute when given the owning object for that instance, and fault without one, so the call is not the
+open question — finding the object is (2026-10-23 settled the call for the instance then running). Whether a row's
+`…Change_State` handler can be made to act: it runs without error and changes nothing, because its `Sender` is not
+supplied. Whether a numeric write can be made repeatable. Whether channel selection can leave input emulation at all — the
+old route itself is unsafe there.
+
+**The bridge's evidence rules were tightened, and reviewed offline (2026-10-26).** An uncommitted slice in
+`acquire/bridge.py` and two test files changed three rules: an explicit `target_digest` now gates a supplied store cycle as
+well as a host dispatch — a cycle replaces execution, not the build its routine addresses belong to; a stored host report
+must state true booleans for its configuration and identity verdicts, a well-formed SHA-256 and a path, where a missing
+field or a truthy string used to read as success; and the returned file must be the requested point — its directory, and its
+name exactly or with one application-added suffix — because "a file exists" is satisfied by the previous point's block. A
+supplied cycle's own return is validated the same way: `_cycle_result` refuses a malformed one as
+`bridge_cycle_result_invalid:{ok,stored_path,result}` rather than crediting a truthy string or a non-path, and `_named_for`
+refuses `point.tmp.BDD` for `point`.
+
+Offline verification at the time (2026-10-26, before the slice below): `uv run --no-sync --extra dev python -m pytest -q
+tests/test_acquire*.py tests/test_bridge*.py` — 1207 passed, 37.43 s, with five failures that are the established baseline
+and not this slice's (two in `tests/test_acquire_dialog.py`, three in `tests/test_acquire_live.py`, every one a fake-driver
+escape into real session-0 window discovery). A scoped `ruff check` over the acquisition source and the bridge/wiring tests
+passed, as did `git diff --check`; no repo-wide lint claim is made here. The independent review passed the evidence/build
+patch; its follow-up — the malformed cycle return, the non-path outcome and the `point.tmp.BDD` suffix case — was
+implemented by a separate worker and checked by the coordinator's rerun. That is verification of a fix, not a second
+independent review of it.
+
+**The guarded cycle is implemented, offline-verified and independently reviewed (2026-10-26).** The identity/state
+contract, the host factory and the `point`/`sweep` selection now exist; the host-facing contract is written once in
+[`dop3000/guarded-cycle-contract.md`](../dop3000/guarded-cycle-contract.md). The independent review's verdict was
+*changes required — records only*: the safety proof held — refusals make zero calls and leave a `preflight` report, a
+mid-cycle restart blocks the next call and the commit, unconfirmed transitions drive the report flags — and four seams were
+weaker than their prose (a static digest comparison made after the factory, an unusable offered report erased into absence,
+one note serialised twice, a zero-byte store credited when a decoder answered anyway). All four were fixed, and a
+**closure review** of the fixed tree approved each with the test that pins it. The independent review's one blocking
+finding was this file and the agenda row still claiming no factory, no command and no fixture — corrected in this pass.
+
+Verification of record: `uv run --no-sync --extra dev python -m pytest -q tests/test_acquire*.py tests/test_bridge*.py` —
+1370 collected, **1365 passed, 5 failed in 39.25 s**, the same five session-0/fake-driver failures as above and not this
+slice's; a scoped `ruff check` over the changed sources and tests passed, as did `git diff --check`. No repo-wide lint
+claim is made. Source, tests and the fixture are locally committed at `29cbd0a`; nothing is pushed, published, deployed
+or live-verified.
+
+**Not established by any of that:** no live compatibility or deployment. The saved-report fixture now shows the
+stored-result parser reading a real cycle's own report as typed evidence — a gate before deployment rather than a reason to
+relax the checks — and by its own provenance grounds schema only. This slice implements no production host export: a fake
+host on disk did construct and run real guarded cycles in tests, but no real configured export or current-instance binding
+was implemented or validated, no live run exercised the new route, and no NEW binding or guard contract has been observed
+against a running application (the owner observations recorded above are the earlier, raw-routine measurements). The
+review's input-name and link/symlink policy findings are deferred, not selected.
 
 **A campaign reports its own points as valid (2026-10-23/24).** Rungs 5 and 6 through `live.sweep`, driving the composed
 cycle with the application covered: both points `PointStatus.OK`, `camp-k5` 514 × 96 at 0.6167 mm and `camp-k6` 513 × 80 at
@@ -227,9 +288,11 @@ both sides and is what the priming step uses.
 **Relevant revision / artifacts / live target.** This branch (`feat/application-backed-bridge`), and the machine-local
 binding table that carries routine addresses and the menu row map; those stay machine-local and are never committed.
 
-**Working state / recovery needs.** The UI route's record runner is machine-local scratch and is not part of the package;
-a run through `--route bridge` today delegates its record/stop/store cycle to it, so a "bridge" run is not yet free of
-input. Nothing in the package is mid-write; the tree is clean apart from this plan.
+**Working state / recovery needs.** The UI route's record runner is machine-local scratch and is not part of the package.
+A bridge run reaches the message route's own cycle only when it asks: `--route bridge --bridge-guarded-cycle` selects it
+and refuses by name instead of falling back to a press dispatch, so with the flag no press-driven cycle is used, while the
+default route and the legacy bridge path are unchanged. The guarded-cycle source, tests and fixture are checkpointed
+locally at `29cbd0a`. The readiness/error-guard continuation below is selected; no push or live action is implied.
 
 ## Remaining work
 
@@ -239,6 +302,15 @@ Statuses are claims about the **message route only**. `works` = no input of any 
 part of it and input does the rest. `blocked` = the message route cannot do it yet, with the blocker named as a
 capability. `absent` = no message-route implementation exists.
 
+Two consequences of criterion 4 that the rows below apply (2026-10-26). **A posted press is input emulation** — whether it
+lands on a modal dialog's `Accept` or on a form control — so a row only a press can perform is `absent`, and a row whose
+last step is a press is at most `partial`, never `works`. **A row whose mechanism is a routine call that needs an object
+nobody can currently discover is `blocked`** on that discovery, however cleanly it ran against an earlier instance; a row
+that composes such calls with message-level steps is `partial` and names the row that blocks it. One classification is left
+open rather than decided here: the numeric-write recipe posts a synthetic Return key event (`WM_SETTEXT`, a synthetic
+`EN_CHANGE`, then the key message), and row 8's status rests on that being a control write rather than a press. This pass
+does not settle it, and calling the row `works` would not settle it either.
+
 | # | Action | How it is done today | Message route | Blocker / evidence |
 |---|---|---|---|---|
 | 1 | Read a fast-access parameter | input on the value button, then read the dialog | **works** | `read_parameter` by window message; 7 roles read with `allow_real_input=False` |
@@ -247,19 +319,87 @@ capability. `absent` = no message-route implementation exists.
 | 4 | Read a dialog's fields | reading the dialog by eye | **works** | dialog opened by dispatch, fields read by message |
 | 5 | Select `Sensitivity` / `Emitting power` by text | click, then keyboard arrows | **works** | `select_by_text` + read-back after a settle; drift regression covered by a test |
 | 6 | Select the TGC mode | Tools → Define TGC → mode list → Accept, by hand | **partial** | mode **selection** is message-level; the dialog's `Accept` is still a press |
-| 7 | Accept / cancel a dialog | click | **works** | a posted held press on the dialog's own button acts. Measured on the store dialog: `Accept` closed it and the file was written. A modal dialog is the active window, which is why the press lands there when it does not on the form's controls |
+| 7 | Accept / cancel a dialog | click | **absent** | no message-level acceptance exists. The measured mechanism is one posted held press on the dialog's own button: it closed the store dialog and the file was written, which is the one place a press has been seen to land because a modal is the active window. A posted press is input emulation by the definition above, so that measurement is input debt rather than message-route capability, and the row is downgraded from `works` (2026-10-26) |
 | 8 | Write a numeric parameter (`us_frequency_khz`, `prf_us`, `gates`, `resolution_mm`, `emissions_per_profile`, `doppler_angle_deg`) | click the value, type, Accept | **works** | `write_parameter` is the measured message recipe — `WM_SETTEXT`, a synthetic `EN_CHANGE`, then the Return key event — with no press and no cursor. Measured with the application covered: four commits in one attachment and four more from a second, independent one, every value read back from the sidebar. The earlier doubt belonged to the bridge's *setter dispatch*, a different mechanism, and is withdrawn for this path |
 | 9 | Choose / enable a measurement channel | press the channel cell | **absent** | not attempted in the message route; the old route restarts the measurement loop and is the path that failed at the device layer |
 | 10 | Activate a menu row (grids, persistence, filters, assisted mode, record options) | hover the menu bar, press the row | **works** | calling the row's handler directly moves the application's own flag: the horizontal-grids row took `display_flags` 0 → 2 and the vertical-grids row 2 → 0, in one attach, with no objects, no input and no cursor. The handler's body does not read `Self` or `Sender` at all — it stores them and ignores them, then acts on the flags slot, closes the menu and requests a redraw. Rows whose handler *does* read those registers are untested |
-| 11 | Start / stop a recording | press the strip | **works** | with the primed owning object supplied, the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state changes: `recording` → `store` |
-| 12 | Store a recorded block | press the strip, name it in a dialog | **works** | the store routine raises the dialog; the file name is set by a window message (`vel-vhigh-03` → `cycle-by-routine-01`) and the commit is one posted press on `Accept`. The stored block decodes: 4677 profiles × 96 gates, every gate supported, resolution 0.6167 mm |
+| 11 | Start / stop a recording | press the strip | **blocked** | measured 2026-10-23: with the primed owning object supplied the routine executes (`ok`, `executed: 1`, no errors) and the strip's own state moves `recording` → `store`. That is a historical success on the pre-restart instance. After the 2026-10-25/26 restart no valid owner could be produced — the setter hook captured nothing, `GWLP_USERDATA` was empty, and a VMT scan found only a module-data false positive — so the blocker is **reliable owner discovery for the current instance**, not the routine call. Downgraded from `works` (2026-10-26) |
+| 12 | Store a recorded block | press the strip, name it in a dialog | **blocked** | two blockers, neither of them the routine call. The store routine needs the same primed owning object as row 11, so it is blocked on that discovery too; and the commit is one posted press on `Accept`, which is input even where the naming is not — the file name goes in by window message (`vel-vhigh-03` → `cycle-by-routine-01`). Measured 2026-10-23: the stored block decodes to 4677 profiles × 96 gates, every gate supported, resolution 0.6167 mm. Downgraded from `works` (2026-10-26) |
 | 13 | Pick a stored file / refresh the file list | menu entry, then dialog | **absent** | no message-route implementation; likely the same `Sender` unknown |
 | 14 | Answer an unexpected prompt (warning, overwrite, directory) | a coordinate guess — unsafe, withdrawn | **absent** | policy decision needed before any implementation: the message route should refuse and report rather than guess |
 | 15 | Close the application | window close | **absent** | untested; `WM_CLOSE` is the obvious candidate |
 | 17 | Keep the operator's pointer usable while a popup is open | nothing — the operator lived with it | **works** | the application confines the cursor to its dialog's rect (`ClipCursor`), which is desktop-wide. A guard releases it and restores the cursor: measured on the store dialog, one clip seen at exactly the dialog's rect, one release that took effect, the application did not re-apply it, and the cursor returned to where the operator left it |
-| 16 | Compose and run a campaign from stored points | package code, UI route for the per-point cycle | **works** | `RoutineCycle` composes record/stop/store/name/commit in the package, with the refusals a run needs (taken name, undispatched routine, no file, undecodable block), and `BridgeActuator` prefers it to any host dispatch. Measured live, covered: two points at differing resolutions, both returning their artifact from the package and decoding to the geometry each asked for |
+| 16 | Compose and run a campaign from stored points | package code; the guarded cycle is selectable on `point`/`sweep` only | **partial** | the composition exists and is measured: `RoutineCycle` composes record/stop/store/name/commit with the refusals a run needs, `BridgeActuator` prefers it to a host dispatch, and two live points at differing resolutions each returned their artifact from the package and decoded to the geometry they asked for. A command can now ask for the hardened cycle — `--route bridge --bridge-guarded-cycle` on `point` and `sweep` builds it through the host export and refuses by name rather than pressing (`cli.py`'s route arguments, `live.bridge_actuator`, `bridge.guarded_cycle_from`) — but no production host module implements that export (the ones exercised were fakes in tests), so no real configured export or current-instance binding exists and no live run has produced a cycle through the new route; `campaign` in `cli.py` still builds `live.live_actuator(...)` with no route; and record/stop/store inherit rows 11 and 12. Partial rather than blocked because the composition exists and a campaign does run today — with input. |
+| 18 | Clear the block before a recording (the fresh-block boundary) | press the strip's clear-and-restart | **partial** | the boundary is composed and verified in package code: `SweepRunner._reset_block` requires the empty `READY` view and refuses with a reason on every failure path. The application-side act is a `CLEAR_AND_RESTART` press inside it, and no clear-and-restart command code is measured — only 28 (record/stop) and 29 (store). It exists only in the runner; `live.point` has no boundary on either route (`recording.py`'s cycle presses `NEW_ACQUISITION` only to dismiss a leftover store view). Added 2026-10-26; the press is input debt, so this row also blocks any claim that a bridge cycle is free of input |
 
 ### Selected next
+
+**Current position (2026-10-26).** The identity/state contract, the host factory and the `point`/`sweep` selection are
+**implemented, offline-verified, independently reviewed and closure-reviewed** (see *Current checkpoint*) — locally committed
+at `29cbd0a`, but
+not owner-accepted, published, deployed or verified live. The capability the register is really about, recording and storing
+through the message route in a fresh instance, has **live readiness not established**: reliable current owner observation
+and a real production guarded host provider are both missing — and no live record/store path through the new route has been proved. The dated entries below are the
+evidence and decisions behind that position, not a queue: each one that states a next action since done or overtaken carries
+a dated note saying so.
+
+**The offline slice selected on 2026-10-26 is complete — history.** It asked for three things and each is in place: a
+binding carrying `pid` + `created_ns` + the table's build digest and the source of every observation, refused by name before
+the first call on an unknown instance, a changed pid or creation time, a changed build, or a null/unmapped pointer
+(`cycle.ProcessIdentity` / `CycleBinding`, and `RoutineCycle.configuration_problem` with its identity and owner checks); a
+factory in the pattern of `live.bridge_dispatch` plus a `point`/`sweep` flag that refuses rather than silently taking the
+press dispatch (`bridge.guarded_cycle_from`, the `bridge_actuator` selection in `live.py`, the `cli.py` route arguments);
+and a cycle that confirms its own transitions and returns a typed `CycleReport` on every exit (`RoutineCycle.try_record_and_store`).
+Its stopping condition was met: every pre-call identity refusal has a test that also asserts `caller.calls == []`, a failure
+after record or stop began is asserted at its stage and never as an empty call list, the happy path runs on its own identity,
+the existing cycle tests are unchanged in meaning, and a scoped `ruff check` passed. What a real identity reader still needs
+is an observation taken on the running instance — the one thing this slice could not do.
+
+**Selected continuation (owner-authorized 2026-10-26).** After the offline slice, the owner asked to commit and proceed.
+The guarded-cycle implementation is locally committed at `29cbd0a`; publication is not authorized. Next is the bounded
+**offline readiness/error-guard slice**: prevent UI and bridge single-point cycles and preflight from proceeding past an
+application error, share the runner's refusal semantics, and test the real top-level-reader boundary with injected Windows
+APIs. An unreadable check must not become a clear screen. Acceptance: a known error or unreadable check yields a named
+refusal before channel/configuration changes, overlay handling, routine calls or presses; clear/legacy paths remain
+compatible; scoped tests and the acquisition/bridge gate are run, with baseline failures attributed. No live calls,
+private host/configuration changes, pushes or guard weakening are selected. Other offline findings remain unselected.
+
+**Subsequent live direction, proposed and not a grant.** With the contract closed, the next live work needs an instrument, so it is proposed
+rather than selected. First a **readiness/error guard review** — the five offline follow-ups listed below are the input,
+and the single-point application-error case is the one that can still be driven into a crash box — because closing those
+offline is cheaper than meeting them mid-run. Then a supervised session that **observes the owning object on the current
+instance** and captures it with the process id, the creation time and the build digest in one reading, through the host
+`guarded_cycle` export, so that the package's own checks accept a cycle the factory actually bound. Only after that a live
+mutating validation of the guarded cycle — record, stop, store — under the plan's existing authorization for building and
+measuring the message route, with the Store dialog's `Accept` still a press. No part of this is authorized by the
+2026-10-26 offline slice.
+
+**Needing a supervised live session, not a person.** Owner observation is not inherently manual: the measurement recorded
+above primed the object by changing a combo entry and restoring it, so the application called its own setter and the widget's
+owner could be read — a probe can do that, and nothing about it requires someone touching the application. What this trial
+excluded is live work of any kind, so the observation needs a session with an applicable supervised live grant, and that run
+must capture the pointer, the process id, its creation time and the build digest together or the binding cannot be checked
+later. The plan's authorization withholds unattended Store mutation, relaxing a guard, and editing machine-local binding
+material; a restart or a re-prime belongs to that live session's own grant, and a process that faulted inside a UI routine is
+not a state to record in.
+
+**Durable findings the register's rows do not carry.** `--bridge-numeric-writes` is inert on the commands that carry it:
+`apply_point` is delegated to the inner actuator through `BridgeActuator.__getattr__`, whose `apply_point` in `driver.py`
+calls its own `write_parameter`, so `BridgeActuator.write_parameter` is never reached. A campaign that carried a cycle would
+compute its size expectation without the allowance `live.sweep` sets on the runner — a wiring and validation gap whose
+effect depends on window, profile count and container, not a proven refusal. And the application-error check is a runner
+capability only (`Win32Actuator.application_error`, read by the runner's own guard), so a single point can still be
+attempted while the box is up.
+
+**Offline findings and their disposition.** Only the error-guard continuation is selected. The remaining findings are:
+the five fake-driver/session-0 suite failures (**DEFERRED** — the established baseline, unrelated to this
+slice); the numeric-write composition above (**UNSELECTED** — `--bridge-numeric-writes` stays inert until a caller needs
+it); the single-point application-error guard (**SELECTED** by the 2026-10-26 continuation above); the campaign
+route/window wiring (**UNSELECTED** — `campaign` has no route flag and would compute its size expectation without the
+sweep's allowance); and the review's input-name and link/symlink policy (**DEFERRED** — no implementation decision taken).
+Cosmetic, and also **DEFERRED with no code change**: `RoutineCycle`, `CycleBinding`, `ProcessIdentity`, `ObservedAddress`
+and `CycleReport` are not re-exported from `acquire/__init__.py` although the factory types are, so a host factory imports
+`acquire.cycle` directly.
 
 **The size verdict is a decision for the owner, not a patch (2026-10-24).** Making the decode the verdict and the size an
 advisory was tried and reverted: it failed five pinned tests, and two of them matter — a `leftover` and a `truncated`
@@ -272,6 +412,9 @@ of the request should be accepted (the words include gates, resolution, prf, emi
 certificate already in the record is a better staleness signal than size; and what a caller should see when the only
 disagreement is the buffer's age — today it is `INVALID` with a ratio in the reason, which reads as a data fault and is
 not one. Nothing in this plan changes that rule until that is answered.
+
+*(2026-10-26: unchanged. The boundary fix recorded below moved **when** the stored block starts; it did not license
+weakening this check, so this stays an owner question and is deliberately not part of the proposed slice.)*
 
 **The application crashed, and the crash box is invisible to every guard we have (2026-10-26).** A Delphi access
 violation appeared during this session's live work: *"Violation d'accès à l'adresse 007262A6 dans le module 'Udop607_4.exe'.
@@ -289,7 +432,10 @@ What follows from it:
 
 - **The message route must check for top-level dialogs of the target process before anything else**, and report "the
   application is showing a modal error" as its own refusal. This is a named gap, not a theory: the box was visible only to
-  a person looking at the screen.
+  a person looking at the screen. *(2026-10-26, later the same day: implemented for the runner's guard in commit
+  `9b481d0`, which asks `Win32Actuator.application_error()` before any overlay and refuses with the box's own text. It is
+  still absent from the single-point, preflight, channel and column paths — see the durable finding in this section — so
+  the gap is narrowed, not closed.)*
 - **An access violation is a possible outcome of calling routines**, not an exogenous event. The self-injection hazard
   documented for a restarted process applies to any stale or wrong object pointer, and the harness had been passing a
   captured `Self` without validating it.
@@ -311,8 +457,9 @@ move. Two limits belong beside that result: it was measured on the **UI route** 
 after the application's restart no valid owner object could be found (the setter hook captured nothing, `GWLP_USERDATA` is
 empty, and a VMT scan found only a module-data false positive) — the boundary is `SweepRunner` code shared by both routes, so
 the change is established, but the message route's own record/stop still depends on an owner pointer no reliable discovery
-currently produces. And the 0.56 s above the request is the stop-to-store residual, which is what `window_overhead_s = 2.0`
-allows for.
+currently produces. And the 0.56 s above the request is the stop-to-store residual. *(Corrected 2026-10-26: that residual
+passed the size check through the signature's default factor, not through an overhead allowance — on the UI route no cycle
+is supplied, so `live.sweep` sets `window_overhead_s = 0.0` on the runner.)*
 
 **The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
 two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
@@ -338,24 +485,39 @@ real (~62 s) but the *data* cost is not something the cycle controls.
 **Then:** resume and permutation across a longer plan, and the `absent` capabilities (channel selection, file pick,
 unexpected prompts), of which channel selection carries a recorded hazard — it restarts the measurement loop.
 
+*(2026-10-26: history. The series part has since run; resume and permutation across a longer plan have not, and channel
+selection, file pick and unexpected prompts remain `absent` in the register.)*
+
 **A cycle at scale, and the store directory contract.** Covered operation is established for one point. The next useful
 step is the same cycle repeated across a series of points with a parameter change between them — which is where the
 numeric-write path (row 8) and the sweep's store-naming have to hold up, and where a failure costs a stored file rather
 than a display toggle. Before that, one small contract worth pinning: the store dialog always opens with the *last* name in
 its field, so a caller that writes the name must do so before every commit and must never rely on the field being empty.
 
+*(2026-10-26: done. A three-point series ran with the name written before every commit, and `cycle.py` implements that
+naming contract. What is open now is owner discovery, not coverage.)*
+
 **Also open, and cheap:** which rows read their registers. The rule is now mechanical — read the handler's body — so the
 register's remaining `blocked` rows can be classified without another probe.
 
-**Closed: the owning object (`Self`).** Rows 10, 11, 12 and 7 all reduce to one capability: calling a routine
-that belongs to some object the dispatcher does not know. Form methods work because the form is identified; the strip's
-and the rows' owners are not. The measurement that settles it is capturing the object pointer the application itself
-uses when it calls one of these routines, for the *current* application instance — a binding captured for an earlier
-instance is stale and must refuse rather than be reused.
+*(2026-10-26: partly answered by the disassembly above; classifying the remaining rows that way is unselected work.)*
+
+**The owning object (`Self`) — closed for one instance, open as a capability (reconciled 2026-10-26).** Rows 10, 11, 12
+and 7 all reduce to one capability: calling a routine that belongs to some object the dispatcher does not know. Form
+methods work because the form is identified; the strip's and the rows' owners are not. The measurement that settles it is
+capturing the object pointer the application itself uses when it calls one of these routines, for the *current*
+application instance — a binding captured for an earlier instance is stale and must refuse rather than be reused.
+
+*(This paragraph was headed "Closed: the owning object", which reads as a capability that exists. It does not: the object
+was captured and used against the pre-restart instance, and after the restart no discovery produced another — row 11 now
+says so. "Closed" is true of that instance's binding only.)*
 
 **Stopping condition.** Either a row toggle acts with `allow_real_input=False`, or the control-toggle path is shown not
 to act either — in which case row 10 is recorded as blocked by design (three routes measured) and the store's naming
 dialog (row 12) is what remains between the message route and an unattended recording.
+
+*(2026-10-26: superseded as the selected objective; the slice's stopping condition at the top of this section governs rows
+11 and 12 now. The text is kept because it records what was being asked before the restart.)*
 
 **Before starting, read the two closed routes** in *Current checkpoint*: a recorded object pointer is stale by
 construction, and the class signature does not find a live instance. Do not re-run either scan. The instrumentation step
@@ -384,14 +546,43 @@ an empty output file.
 - **2026-10-23 — a withdrawn claim.** Presses were reported as working with the application in front (`display_flags`
   2→0 and 0→2). Four mechanisms on the same row, cursor teleported onto it, application in front, reproduced nothing.
   The earlier observation is not used as evidence anywhere in this plan.
+- **2026-10-23 — the environment's own constants.** A sweep's constants must be the instrument's own: points planned from
+  another experiment's values (1460 m/s, PRF 212) were stored and then reported `INVALID` naming depth, sound speed and
+  PRF, so a stored-then-refused point is the decoder working. The column command selects combos by exact text and treats
+  the TGC mode as a separate step, because accepting a TGC mode resets the receiver settings beside it.
+- **2026-10-26 — a classification correction, not a new rule.** A posted press on a modal's `Accept` was already input
+  under criterion 4, which no row may read around; applying that rule as written downgrades rows 7 and 12 from `works` and
+  adds row 18 for the fresh-block press. No row was promoted, and no owner decision was taken: the alternative — letting a
+  modal make a press message-level — would have been a change of definition to fit the code.
+- **2026-10-26 — the slice was offline by this trial's terms.** Evidence and build fixes with independent review: no live
+  action, no application restart, no commit or push, no binding, secret or machine-local configuration change. The plan's
+  own authorization (building and measuring the message route) is wider and unchanged; a later live step is taken under
+  that grant, in its own session, not under this one. Neither a restart nor a re-prime was attempted offline — the driver
+  refuses to record from a state whose strip the census no longer resolves — and whether a later session automates
+  discovery is its own question, not something this trial settled.
+
+- **2026-10-26 — verified offline is not accepted.** The guarded cycle's contract, factory and `point`/`sweep` selection
+  are implemented, pass the scoped suite and two reviews, and are still uncommitted, unpublished, undeployed and unobserved
+  live. The effort therefore stays *in progress* at that checkpoint, and what it is missing is a capability — reliable owner
+  observation on the current instance, and a production host provider that implements the factory — rather than permission. A
+  supervised grant is a precondition of the next live step, not the reason the step is blocked.
 
 ## Next session
 
-**Objective.** Capture, for the running instance, the owning object the application uses when it invokes a strip routine,
-then call `record` and `stop` through the message route with `allow_real_input=False`.
+**Objective (revised 2026-10-26).** Continue the selected offline readiness/error-guard slice after the local
+`29cbd0a` source checkpoint. The proposed host integration and live validation remain outside this grant.
 
-**First action.** Read this plan, then the register's rows 10–12; re-measure the baseline (application instance, strip
-state, that the message route still reads state with no input) before touching anything.
+**First action.** Read *Current checkpoint*, *Selected next* and the
+[guarded-cycle contract](../dop3000/guarded-cycle-contract.md), then register rows 7, 11, 12, 16 and 18 in that order.
+Preserve the guarded-cycle source checkpoint `29cbd0a` and the unrelated untracked worktree directory.
+Do not re-run the two closed routes in *Selected next*: a recorded pointer is
+stale by construction, and the class signature does not find a live form.
 
-**Stopping condition.** As in *Selected next* above. Record the outcome in the register even when it is a refusal: a row
-that is blocked by design is a result.
+**Stopping condition.** As in *Selected next*: stop at the first thing that needs an instrument. The guard review is
+finished when each of the five follow-ups above has a test or a dated disposition; the observation session when it produces
+a binding the package's own checks accept, or a named refusal — never a partly-bound cycle. Stop before any live call unless
+a supervised live grant is in hand, and record a refusal in the register: a row blocked by design is a result.
+
+**Previous objective, kept as history (2026-10-23).** Capture the owning object the running instance uses for a strip
+routine, then call `record` and `stop` with `allow_real_input=False`, first re-measuring the baseline. Attempted and not
+achieved after the restart: the measurement is in *Selected next*, the capability is row 11.
