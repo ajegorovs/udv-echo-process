@@ -60,7 +60,7 @@ Capture is not selection. Existing detailed backlog sections below remain their 
   decide a separately scoped wording repair rather than changing the scientific contract during P1.
 - **Application-backed guarded cycle — offline follow-ups, not selected (2026-10-26):** the five
   fake-driver/session-0 suite failures (deferred, the established baseline), numeric-write composition
-  (unselected), the single-point application-error guard (selected for the 2026-10-26 continuation), the campaign route/window wiring
+  (unselected), the single-point application-error guard (completed offline at `429597f`), the campaign route/window wiring
   (unselected) and the review's input-name and link/symlink policy (deferred); the cosmetic `acquire`
   re-exports are deferred with no code change. Dispositions and evidence live in the
   [message-route port plan](plans/message-route-port.md) § Selected next.
@@ -81,7 +81,7 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
 | Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
 | `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
-| Application-backed acquisition (`acquire/bridge.py`) | **In progress.** Guarded-cycle source and tests locally committed at `29cbd0a`: offline-verified and independently reviewed; not published, deployed or verified live. | Implement the selected offline readiness/error guard; host integration and live mutation remain outside this continuation. | [Plan and register](plans/message-route-port.md); [host contract](dop3000/guarded-cycle-contract.md). Current-instance owner binding and real provider compatibility are unverified; rows 11/12 remain blocked. |
+| Application-backed acquisition (`acquire/bridge.py`) | **In progress.** Guarded cycle (`29cbd0a`) and readiness entry guard (`429597f`) are locally committed, offline-verified and independently reviewed; not published or verified live. | Propose a concrete production-host/current-instance binding slice; no live or private-provider grant implied. | [Plan and register](plans/message-route-port.md); [host contract](dop3000/guarded-cycle-contract.md). Real provider/owner integration remains unverified; rows 11/12 stay blocked. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
 **Reading the states.** *Accepted* — landed and verified, with the evidence named.

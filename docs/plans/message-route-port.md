@@ -131,6 +131,20 @@ slice's; a scoped `ruff check` over the changed sources and tests passed, as did
 claim is made. Source, tests and the fixture are locally committed at `29cbd0a`; nothing is pushed, published, deployed
 or live-verified.
 
+**Readiness/error guard checkpoint (2026-10-26).** Locally committed at `429597f`, implemented and verified offline.
+The shared `ui.readiness` guard covers UI and bridge single-point entry, preflight and the sweep runner; an offered
+unreadable, non-callable or malformed capability is not a clear screen, including through the bridge's forwarding boundary.
+The reader uses the main window rather than a healthy layout to identify the target process, and the existing bounded
+`WM_GETTEXT` query when the caption snapshot lacks text. A visible target dialog with unreadable text still blocks.
+A readiness refusal during a UI recording skips recovery for that invocation, even if the box subsequently disappears;
+ordinary clear-screen recovery is unchanged. Prior cycle evidence is cleared before a new entry refusal.
+Independent review and closure checks covered the forwarding, ordering, stale-report and recovery findings, then the final
+explicit-`None` capability correction. The combined acquisition/bridge gate is **1416 passed, 5 failed in 38.31 s**;
+all five failure IDs match the earlier session-0 baseline. Scoped Ruff, formatting of the new files and staged whitespace
+checks passed. The tests inject native APIs; no live application, production host integration or fault recovery was proved.
+The detector conservatively blocks target-process `#32770` dialogs; it does not prove a dialog is a crash. Standalone
+channel/column commands remain outside this bounded guard slice.
+
 **Not established by any of that:** no live compatibility or deployment. The saved-report fixture now shows the
 stored-result parser reading a real cycle's own report as typed evidence — a gate before deployment rather than a reason to
 relax the checks — and by its own provenance grounds schema only. This slice implements no production host export: a fake
@@ -292,7 +306,7 @@ binding table that carries routine addresses and the menu row map; those stay ma
 A bridge run reaches the message route's own cycle only when it asks: `--route bridge --bridge-guarded-cycle` selects it
 and refuses by name instead of falling back to a press dispatch, so with the flag no press-driven cycle is used, while the
 default route and the legacy bridge path are unchanged. The guarded-cycle source, tests and fixture are checkpointed
-locally at `29cbd0a`. The readiness/error-guard continuation below is selected; no push or live action is implied.
+locally at `29cbd0a`; the completed readiness guard is at `429597f`. No push or live action is implied.
 
 ## Remaining work
 
@@ -339,7 +353,8 @@ does not settle it, and calling the row `works` would not settle it either.
 at `29cbd0a`, but
 not owner-accepted, published, deployed or verified live. The capability the register is really about, recording and storing
 through the message route in a fresh instance, has **live readiness not established**: reliable current owner observation
-and a real production guarded host provider are both missing — and no live record/store path through the new route has been proved. The dated entries below are the
+and a real production guarded host provider have not been established or validated by these slices. No live record/store
+path through the new guarded route has been proved. The dated entries below are the
 evidence and decisions behind that position, not a queue: each one that states a next action since done or overtaken carries
 a dated note saying so.
 
@@ -355,8 +370,9 @@ after record or stop began is asserted at its stage and never as an empty call l
 the existing cycle tests are unchanged in meaning, and a scoped `ruff check` passed. What a real identity reader still needs
 is an observation taken on the running instance — the one thing this slice could not do.
 
-**Selected continuation (owner-authorized 2026-10-26).** After the offline slice, the owner asked to commit and proceed.
-The guarded-cycle implementation is locally committed at `29cbd0a`; publication is not authorized. Next is the bounded
+**Continuation completed locally (owner-authorized 2026-10-26).** The requested readiness slice is committed at
+`429597f`, with the offline evidence above. The following records its grant, not a new implementation queue.
+The guarded-cycle implementation is locally committed at `29cbd0a`; publication is not authorized. Its continuation was the bounded
 **offline readiness/error-guard slice**: prevent UI and bridge single-point cycles and preflight from proceeding past an
 application error, share the runner's refusal semantics, and test the real top-level-reader boundary with injected Windows
 APIs. An unreadable check must not become a clear screen. Acceptance: a known error or unreadable check yields a named
@@ -365,9 +381,9 @@ compatible; scoped tests and the acquisition/bridge gate are run, with baseline 
 private host/configuration changes, pushes or guard weakening are selected. Other offline findings remain unselected.
 
 **Subsequent live direction, proposed and not a grant.** With the contract closed, the next live work needs an instrument, so it is proposed
-rather than selected. First a **readiness/error guard review** — the five offline follow-ups listed below are the input,
-and the single-point application-error case is the one that can still be driven into a crash box — because closing those
-offline is cheaper than meeting them mid-run. Then a supervised session that **observes the owning object on the current
+rather than selected. The bounded entry-point readiness guard is now implemented and offline-verified; standalone
+channel/column coverage and the other dispositions below are not silently included. Next, propose a supervised session that
+**observes the owning object on the current
 instance** and captures it with the process id, the creation time and the build digest in one reading, through the host
 `guarded_cycle` export, so that the package's own checks accept a cycle the factory actually bound. Only after that a live
 mutating validation of the guarded cycle — record, stop, store — under the plan's existing authorization for building and
@@ -387,14 +403,13 @@ not a state to record in.
 `apply_point` is delegated to the inner actuator through `BridgeActuator.__getattr__`, whose `apply_point` in `driver.py`
 calls its own `write_parameter`, so `BridgeActuator.write_parameter` is never reached. A campaign that carried a cycle would
 compute its size expectation without the allowance `live.sweep` sets on the runner — a wiring and validation gap whose
-effect depends on window, profile count and container, not a proven refusal. And the application-error check is a runner
-capability only (`Win32Actuator.application_error`, read by the runner's own guard), so a single point can still be
-attempted while the box is up.
+effect depends on window, profile count and container, not a proven refusal. The former runner-only application-error
+gap is closed for UI/bridge points and preflight at `429597f`; standalone channel/column commands were not included.
 
-**Offline findings and their disposition.** Only the error-guard continuation is selected. The remaining findings are:
+**Offline findings and their disposition.** The bounded error guard is completed; other findings remain unselected:
 the five fake-driver/session-0 suite failures (**DEFERRED** — the established baseline, unrelated to this
 slice); the numeric-write composition above (**UNSELECTED** — `--bridge-numeric-writes` stays inert until a caller needs
-it); the single-point application-error guard (**SELECTED** by the 2026-10-26 continuation above); the campaign
+it); the single-point application-error guard (**IMPLEMENTED AND OFFLINE-VERIFIED** at `429597f`); the campaign
 route/window wiring (**UNSELECTED** — `campaign` has no route flag and would compute its size expectation without the
 sweep's allowance); and the review's input-name and link/symlink policy (**DEFERRED** — no implementation decision taken).
 Cosmetic, and also **DEFERRED with no code change**: `RoutineCycle`, `CycleBinding`, `ProcessIdentity`, `ObservedAddress`
@@ -434,8 +449,8 @@ What follows from it:
   application is showing a modal error" as its own refusal. This is a named gap, not a theory: the box was visible only to
   a person looking at the screen. *(2026-10-26, later the same day: implemented for the runner's guard in commit
   `9b481d0`, which asks `Win32Actuator.application_error()` before any overlay and refuses with the box's own text. It is
-  still absent from the single-point, preflight, channel and column paths — see the durable finding in this section — so
-  the gap is narrowed, not closed.)*
+  was then absent from the single-point, preflight, channel and column paths. The later `429597f` continuation gates
+  point/preflight entry and recovery, verified offline; standalone channel/column paths remain outside that slice.)*
 - **An access violation is a possible outcome of calling routines**, not an exogenous event. The self-injection hazard
   documented for a restarted process applies to any stale or wrong object pointer, and the harness had been passing a
   captured `Self` without validating it.
@@ -569,19 +584,20 @@ an empty output file.
 
 ## Next session
 
-**Objective (revised 2026-10-26).** Continue the selected offline readiness/error-guard slice after the local
-`29cbd0a` source checkpoint. The proposed host integration and live validation remain outside this grant.
+**Objective (revised 2026-10-26).** Preserve the local guarded-cycle and readiness checkpoints. No further implementation
+is selected by these completed slices. The proposed next decision is a concrete production-host/current-instance binding
+slice, with its live observation and private-provider scope made explicit before execution.
 
 **First action.** Read *Current checkpoint*, *Selected next* and the
 [guarded-cycle contract](../dop3000/guarded-cycle-contract.md), then register rows 7, 11, 12, 16 and 18 in that order.
-Preserve the guarded-cycle source checkpoint `29cbd0a` and the unrelated untracked worktree directory.
+Preserve source checkpoints `29cbd0a` and `429597f` and the unrelated untracked worktree directory.
 Do not re-run the two closed routes in *Selected next*: a recorded pointer is
 stale by construction, and the class signature does not find a live form.
 
-**Stopping condition.** As in *Selected next*: stop at the first thing that needs an instrument. The guard review is
-finished when each of the five follow-ups above has a test or a dated disposition; the observation session when it produces
-a binding the package's own checks accept, or a named refusal — never a partly-bound cycle. Stop before any live call unless
-a supervised live grant is in hand, and record a refusal in the register: a row blocked by design is a result.
+**Stopping condition.** Do not repeat the closed offline slices. Stop before live observation, instrumentation, restart,
+Store mutation or private-provider changes without an applicable grant and a concrete execution component. A proposed
+binding session must produce a current-instance binding the package accepts or a named refusal, never guessed pointers.
+Its provider and the GUI half must target the same instance; offline fakes do not establish that live join.
 
 **Previous objective, kept as history (2026-10-23).** Capture the owning object the running instance uses for a strip
 routine, then call `record` and `stop` with `allow_real_input=False`, first re-measuring the baseline. Attempted and not

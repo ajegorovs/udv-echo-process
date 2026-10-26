@@ -86,3 +86,12 @@ projection of one real recorded cycle. They ground **schema compatibility only**
 that a current request produces those keys, nor that the live operation still works. The original capture report and stored `.BDD` are private and untracked; the coordinator checked the raw
 report's digest and size on the machine that recorded it and preserved both flags locally, so a clone alone cannot recheck the original.
 See [`test_bridge_report_fixture.py`](../../tests/test_bridge_report_fixture.py).
+
+## Application readiness entry gate
+
+The local `429597f` checkpoint adds the shared [readiness guard](../../src/udv_echo_process/acquire/ui/readiness.py)
+to UI/bridge point entry, preflight and the sweep runner. An offered unusable reader is not absence; a callable returning
+`None` is clear, but a declared non-callable `None` is refused. UI hold-time refusal skips recovery even if a later sample
+would be clear. [Composed tests](../../tests/test_acquire_readiness.py) exercise these paths without a live application.
+The reader blocks target-process `#32770` dialogs conservatively; it does not diagnose crashes or certify a dismissed
+fault as repaired. Standalone channel/column commands and production-host integration are not established by this slice.
