@@ -296,6 +296,10 @@ What follows from it:
 - The box can be cleared by pressing its own `OK` (measured: `dismiss_crash.py`, one round, application still alive), but a
   process that has faulted inside a UI routine is not a state to record in: after the box was dismissed the strip was no
   longer where the census expects it, and the driver refused on a non-measurement panel at the bottom of the screen.
+- **The layout defect is visible, and the operator reported it before any probe found it**: the plot window is drawn *over*
+  the status row, so `Block: … / Memory: Filling … / Time between profile … ms` is clipped by the plot's bottom edge
+  (screen capture 2026-10-26 12:47, bottom-left region). That is why the bottom-most panel the census resolves is the plot's
+  footer rather than the strip. A run must refuse in that state, and it did; the state itself is repaired only by a restart.
 
 **The window framing was wrong: a store writes the application's buffer, not our recording interval (2026-10-24).** The
 two-boundary sequence works mechanically — record, stop and store each issued at its own deadline across boundaries
