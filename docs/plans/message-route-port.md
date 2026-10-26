@@ -16,6 +16,12 @@ reduces the cost of mapping new controls is unproved. Targeted reverse engineeri
 Mapping the remaining controls is a later goal; full application reconstruction is a possible future direction, not selected
 implementation. The [host contract](../dop3000/guarded-cycle-contract.md) owns the binding/execution interface.
 
+**Established background baseline (owner correction, 2026-10-26).** Background execution is already demonstrated for the
+then-mapped action set, not a new feasibility milestone. The owner confirms the full-screen Explorer covering test; the
+2026-10-23 evidence below includes complete acquisition, parameter-changing series, and releasing the save dialog's
+cursor confinement while restoring the pointer. Later restart/binding and packaged-interface gaps do not erase that result.
+The subsequent guarded-cycle, report and readiness slices are principally hardening/integration, not first proof of background control.
+
 **Observable outcome / acceptance criteria.**
 
 1. After a documented setup/binding step, execute a regular recording end to end: verify the selected configuration,
@@ -23,7 +29,8 @@ implementation. The [host contract](../dop3000/guarded-cycle-contract.md) owns t
 2. Execute multiplexed recordings for the channel/sensor configurations required by the experiment, verifying participating
    channels, per-channel settings and recorded data. A simpler sensor combination is not evidence for a required unsupported one.
 3. Repeat the required recording cycles while another application remains in use: no recurring foreground requirement,
-   stolen keyboard/mouse input, cursor movement or persistent cursor confinement. A covered window alone is insufficient proof.
+   stolen keyboard/mouse input, cursor movement or persistent cursor confinement. The existing Explorer/pointer-guard test
+   establishes this baseline for the previously mapped actions; apply the criterion to new workflows, not as a reason to repeat it.
 4. Reuse the valid session binding without per-recording setup. After restart or identity change, refuse until a new binding
    is established; automatic rebinding is not required for this delivery.
 5. Preserve honest refusals and recording evidence. Offline tests, a complete control register and a historical probe do not
@@ -616,11 +623,11 @@ an empty output file.
 
 ## Next session
 
-**Objective (owner clarification, 2026-10-26).** Scope the regular-background-recording milestone with an acceptable
-one-time foreground setup/binding step. Establish one trustworthy current-instance binding and the production adapter,
-then demonstrate repeated recordings while the operator uses another application. Automatic rebinding is not the first
-delivery gate. Multiplexed background recording is the next functional milestone; full mapping/reconstruction is later.
-Live observation, Store mutation and private-provider changes still require their applicable execution grant.
+**Objective (owner correction, 2026-10-26).** Start from the demonstrated background action set and pointer guard.
+Identify the exact gap between that working path and usable regular/multiplexed recording commands; distinguish packaging
+and current-session binding from genuinely missing controls or application restrictions. Do not select another background
+feasibility demonstration or open-ended hardening round. One-time binding is acceptable; automatic rebinding is not a first
+delivery gate. New implementation, live observation, Store mutation and private-provider changes need applicable scope/grants.
 
 **First action.** Read *Current checkpoint*, *Selected next* and the
 [guarded-cycle contract](../dop3000/guarded-cycle-contract.md), then register rows 7, 11, 12, 16 and 18 in that order.
