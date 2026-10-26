@@ -498,7 +498,7 @@ class SweepRunner:
     ) -> PointOutcome:
         """Run one point end to end and return its outcome; never raise.
 
-        In order: reset the block (unless ``reset=False``) and confirm a startable
+        In order: configure (parameters, read-back, channel), then reset the block (unless ``reset=False``) and confirm a startable
         view; apply the parameters and compare the read-back with the request; record
         and store under a free name; decode the stored file; check its size against
         the signature; verify the file's own words against the request; append one log
@@ -631,11 +631,6 @@ class SweepRunner:
         overlay = self._overlay_guard()
         if overlay is not None:
             return self._fail(attempt, overlay, abort=True)
-        if reset:
-            failure = self._reset_block()
-            if failure is not None:
-                return self._fail(attempt, failure, abort=True)
-
         # (2) apply the window, then compare the app's read-back with the request.
         parameters = point.parameters
         # The parameter column is only the column while no panel is over it.
@@ -679,7 +674,20 @@ class SweepRunner:
                 attempt, f"the measurement channel could not be verified: {exc}", abort=True
             )
 
-        # (4) name the file and run the cycle.
+        # (4) the fresh-block boundary, then the cycle.
+        #
+        # The reset runs **here**, after the point's configuration and not before it.  The position is the boundary that
+        # decides what the stored block contains, measured on 2026-10-26: a block accrues continuously while the
+        # application runs, a store bounds it, and a clear bounds it earlier - so a clear at the top of the point makes
+        # every parameter write and the channel verification part of the recording.  Same request, two positions: a 4 s
+        # point stored 20.657 s of data with the clear first, and a 2 s point stored 2.70 s (68 profiles) with the clear
+        # 0.95 s before the record.  Moving it here is safe because the clear does not disturb the parameters: a written
+        # Doppler angle survived it (0 -> 5, cleared, still 5, prf and gates unchanged).
+        if reset:
+            failure = self._reset_block()
+            if failure is not None:
+                return self._fail(attempt, failure, abort=True)
+
         self._used_names.add(attempt.name)
         overlay = self._overlay_guard()  # the guard the cycle's own presses cannot undo
         if overlay is not None:

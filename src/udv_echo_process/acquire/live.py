@@ -434,9 +434,11 @@ def sweep(
         log_path=log_path,
         channel=channel,
         expected_mode=expected_mode,
-        # A cycle that issues its calls in separate attachments records for the window plus that overhead; the runner's
-        # size guard has to be told, or it reports a sound block as contaminated (measured: 20.657 s for a 4 s request).
-        window_overhead_s=20.0 if cycle is not None else 0.0,
+        # What the block may hold beyond the requested window.  This was 20 s on the belief that the route's attachments
+        # were recorded into the block; measured 2026-10-26, that was the *position* of the fresh-block boundary, not the
+        # route's cost.  With the boundary next to the record, a 2 s point stored 2.70 s (68 profiles) - 0.7 s of
+        # overshoot, the stop-to-store residual.  Two seconds covers it with room; another window's block is far out.
+        window_overhead_s=2.0 if cycle is not None else 0.0,
     )
     definition = SweepDefinition(
         duration_s=seconds,

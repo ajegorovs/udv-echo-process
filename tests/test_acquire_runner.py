@@ -1176,10 +1176,19 @@ def test_the_runner_surface_is_the_specified_one() -> None:
 # ------------------------------------------------------------ 1. reset comes first
 
 
-def test_reset_clears_the_application_before_the_parameters_and_the_recording(
+def test_reset_clears_the_application_after_the_point_is_configured(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """``reset=True`` restarts the application *before* the point is applied."""
+    """``reset=True`` restarts the application *after* the point is configured, not before.
+
+    The clear is the boundary of the stored block, so its position decides what the block
+    contains.  Measured live on 2026-10-26: a block accrues continuously while the
+    application runs, a store bounds it and a clear bounds it earlier - so a clear at the
+    top of the point makes the parameter writes and the channel verification part of the
+    recording.  A 4 s point stored 20.657 s with the clear first; a 2 s point stored
+    2.70 s (68 profiles) with the clear 0.95 s before the record.  Hence applied < clear,
+    and the ordering is the contract: a clear moved earlier is a bigger block, silently.
+    """
     fake, engine, _, _ = make_runner(tmp_path / "reset", monkeypatch)
 
     outcome = engine.run_point(point_for(1), DURATION_S)
@@ -1191,7 +1200,7 @@ def test_reset_clears_the_application_before_the_parameters_and_the_recording(
     assert clear is not None and applied is not None and recorded is not None, (
         fake.calls
     )
-    assert clear < applied < recorded, fake.calls
+    assert applied < clear < recorded, fake.calls
     # The clear was observed, not assumed: the strip is polled after the press.
     assert index_of(fake.calls, lambda call: call[0] == "wait_for_view", after=clear)
 
@@ -1581,8 +1590,10 @@ def test_a_point_that_will_not_come_back_startable_stops_the_run(
     """Point 2 of 4 wedges the strip: points 3 and 4 are never attempted."""
     definition = definition_for(1, 2, 3, 4)
     assert len(plan_sweep(definition)) == 4
+    # ``healthy`` counts applied points: with the reset now after configuration, the strip
+    # is first seen wedged while resetting the point whose parameters wedged it.
     fake, engine, log_path, _ = make_runner(
-        tmp_path, monkeypatch, fake_class=WedgingActuator, healthy=1
+        tmp_path, monkeypatch, fake_class=WedgingActuator, healthy=2
     )
 
     outcomes = engine.run(definition, DURATION_S)
@@ -1609,9 +1620,12 @@ def test_a_point_that_will_not_come_back_startable_stops_the_run(
     assert "left at" in reason, reason
     assert "resolution_mm=" in reason and "gates=" in reason, reason
 
-    # Points 3 and 4 were never attempted: no window applied, no store cycle, no
-    # third name, no second file.
-    assert fake.applied_count == 1, fake.calls
+    # Points 3 and 4 were never attempted: no store cycle, no third name, no second file.
+    # Two windows *were* applied, and that is the contract now: the reset sits after
+    # configuration, so the point whose configuration wedged the strip has had its
+    # parameters written by the time the reset refuses — which is why the refusal carries
+    # "left at resolution_mm=… gates=…" above, so an operator can see what the app holds.
+    assert fake.applied_count == 2, fake.calls
     assert len([call for call in fake.calls if call[0] in STORE_CALLS]) == 1
     assert len(stored_names(fake.directory)) == 1
 
