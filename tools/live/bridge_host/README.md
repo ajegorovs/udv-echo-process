@@ -50,6 +50,7 @@ it in. All fields are listed there; the ones that matter:
 
 | field | meaning |
 |---|---|
+| `sequence` | `record_stop_store` (default), or `store` for the separate store-completed factory; a factory/config mismatch refuses before producer startup. |
 | `store_directory` | the directory the one-time setup establishes. Required, and checked to exist. Each point still names its own `--store-dir`: the commit compares the dialog's answer against **that** one (see below). |
 | `producer.argv` | the producer command, as an argument vector. The session directory is appended as its last argument. |
 | `producer.cwd` | the producer's working directory, or omitted. |
@@ -92,13 +93,37 @@ points. It reads the dialog's `Working directory` and refuses a disagreement
 never writes that field, so this route owes no restoration and changes no persisted setting. Its
 `True` means the accept was dispatched — the artifact check remains the acceptance.
 
+## Store a block already completed by the application
+
+`bridge_host.api.store_completed_cycle(...)` is a separate factory for
+`RoutineCycle.store_completed_block(name, directory)`. It requires an observed Store view and a
+host config declaring `"sequence": "store"`; the recording factory keeps the default
+`"record_stop_store"`. A mismatch or any failed static activation check refuses **before** a
+producer starts. The store-only caller/session cannot dispatch Record or Stop, and this entry point
+never clears a block, selects a channel or changes acquisition settings. Its producer must likewise
+perform no parameter priming. Treat a held block's ownership as a caller prerequisite, not something
+this storage mechanism establishes.
+
+Both cycle entry points require one filename stem, not a path or a `.BDD` filename; invalid tokens
+are refused before filesystem lookup or dispatch, without repairing the supplied value. The store-only
+report credits storage but leaves `recorded` and `stopped` false. Full expected channel/quantity and
+profile-count acceptance belongs to the finite-acquisition caller; decoding at least one stream does
+not prove that whole request.
+
+This store-only path is **offline-tested, not live accepted**. A native control-setup fault stopped the
+effort’s first native multiplexed trial before enable; see the [selected execution plan](../../../docs/plans/background-multiplex-recording.md).
+
 ## Activation first
 
-`activation_report(table=…, table_path=…, target_digest=…, strip_reader=…)` is the passive preflight:
-it reads the config, checks the store directory, the table and the producer, then starts one session
-to read the identity, the owner and the routines, and closes it. It **dispatches nothing** — a
-report whose `ready` is true means the host is configured and bound, not that anything was recorded.
-Run it before a recording grant is spent.
+`activation_report(..., sequence="record_stop_store")` checks configuration and, unless
+`probe=False`, starts and closes the configured producer to read its binding. The CLI's
+`--no-probe` performs the static checks without starting it; `--sequence store` selects the closed
+store-only contract. Any failed static check blocks producer creation.
+
+The host dispatches no cycle commands during activation, but **that does not make an arbitrary
+producer read-only**: a recording producer may attach or prime a binding while starting. Obtain the
+corresponding live permission before a probing activation. A `ready` report establishes only the
+checks it names, never that recording or store-only operation worked.
 
 ## Measured live (2026-10-26)
 

@@ -3,7 +3,10 @@
 The cycle dispatches `record`, then `stop`, then `store` — and the first two are the **same**
 handler address seen in two states, so an address alone cannot say which one is meant. The session
 is where that becomes unambiguous: it counts the operations, refuses one out of order, and gives
-every request a sequence number so a receipt can only answer the request that produced it.
+every request a sequence number so a receipt can only answer the request that produced it. The one
+other sequence it can be opened for is `store` alone (:data:`STORE_ONLY`), which is the
+store-completed path: a session that cannot name `record` cannot start an acquisition, whatever its
+caller asks for.
 
 Three rules it enforces, each of which is a way a live run goes wrong:
 
@@ -29,10 +32,24 @@ from bridge_host.contract import (
     SessionDescriptor,
 )
 
-__all__ = ["OPERATIONS", "BoundedSession"]
+__all__ = ["OPERATIONS", "OPERATION_SEQUENCES", "STORE_ONLY", "BoundedSession"]
 
 #: The cycle's whole repertoire, in the only order it may happen in.
 OPERATIONS = ("record", "stop", "store")
+
+#: The closed set of sequences a session may be opened for — two entries, not a parameter.
+#:
+#: A session that could run an arbitrary subsequence could store a block nothing had completed, or
+#: record after a store.  ``store`` alone is the store-completed path: the application finished that
+#: block itself, so the session that carries it must be unable to start, end or reset an acquisition,
+#: and that inability is a property of the session rather than a promise made by its caller.
+OPERATION_SEQUENCES: dict[str, tuple[str, ...]] = {
+    "record_stop_store": OPERATIONS,
+    "store": ("store",),
+}
+
+#: The store-completed sequence, named once so a caller cannot spell it differently.
+STORE_ONLY = OPERATION_SEQUENCES["store"]
 
 
 class BoundedSession:
@@ -47,6 +64,7 @@ class BoundedSession:
         probe_timeout_s: float = 20.0,
         close_timeout_s: float = 5.0,
         total_budget_s: float = 600.0,
+        sequence: str = "record_stop_store",
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self._channel = channel
@@ -55,6 +73,11 @@ class BoundedSession:
         self._probe_timeout_s = float(probe_timeout_s)
         self._close_timeout_s = float(close_timeout_s)
         self._total_budget_s = float(total_budget_s)
+        #: The closed sequence this session may run, resolved here so a typo cannot become a mode.
+        operations = OPERATION_SEQUENCES.get(str(sequence))
+        if operations is None:
+            raise HostRefusal(f"host_sequence_unknown:{sequence}")
+        self._operations = operations
         self._clock = clock
         self._descriptor: SessionDescriptor | None = None
         self._deadline: float | None = None
@@ -80,6 +103,11 @@ class BoundedSession:
     def dispatched(self) -> tuple[str, ...]:
         """The operations this session dispatched, in order, refused or not."""
         return tuple(self._dispatched)
+
+    @property
+    def operations(self) -> tuple[str, ...]:
+        """The sequence this session was opened for — a dispatch outside it is refused, not coerced."""
+        return self._operations
 
     # -- lifecycle --------------------------------------------------------
     def start(self) -> SessionDescriptor:
@@ -134,9 +162,13 @@ class BoundedSession:
         self._usable()
         if operation not in OPERATIONS:
             raise HostRefusal(f"host_operation_not_allowlisted:{operation}")
-        if len(self._dispatched) >= len(OPERATIONS):
+        if operation not in self._operations:
+            # Named apart from "out of order": this operation is never part of this session's sequence,
+            # so it is refused before it could be counted as a step.
+            raise HostRefusal(f"host_operation_not_in_sequence:{operation}")
+        if len(self._dispatched) >= len(self._operations):
             raise HostRefusal(f"host_operation_out_of_order:{operation}")
-        expected = OPERATIONS[len(self._dispatched)]
+        expected = self._operations[len(self._dispatched)]
         if operation != expected:
             raise HostRefusal(f"host_operation_out_of_order:{operation}")
         sequence = self._next_sequence()

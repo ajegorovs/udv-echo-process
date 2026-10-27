@@ -1,5 +1,6 @@
 {
   "schema": "bridge-host/1",
+  "sequence": "record_stop_store",
   "store_directory": "C:/path/to/clone/outputs/live/store",
   "producer": {
     "argv": [

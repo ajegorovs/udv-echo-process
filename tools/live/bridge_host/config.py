@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from pathlib import Path
+from typing import Literal
 
 from pydantic import ConfigDict, Field, ValidationError
 
@@ -57,6 +58,11 @@ class HostConfig(ValueModel):
     #: Where a point lands. Required: the dialog's remembered directory is not evidence.
     store_directory: str = Field(min_length=1)
     producer: ProducerCommand | None = None
+    #: Which closed operation sequence this config describes. ``record_stop_store`` is the cycle the
+    #: package has always driven. ``store`` is the store-completed path, whose block the application
+    #: finished itself — and a config and an entry point that disagree are refused by the factory, so a
+    #: store-only run can never be pointed at the config (or the producer) of a recording one.
+    sequence: Literal["record_stop_store", "store"] = "record_stop_store"
     #: Bounds around the producer. A session never outlives its budget.
     start_timeout_s: float = Field(default=90.0, ge=0.0)
     dispatch_timeout_s: float = Field(default=60.0, ge=0.0)

@@ -250,6 +250,54 @@ def _default_decoder(path: Path) -> int:
     return len(getattr(bundle.recording, "streams", []) or [])
 
 
+#: Characters that make a token a **path** rather than a stem: a separator or a drive colon chooses a file
+#: outside the directory the run was told to watch, which is the one thing the store name must not do.
+_NAME_PATH_CHARS = frozenset("/\\:")
+#: Characters Windows does not carry in a name at all. Refused rather than replaced.
+_NAME_FORBIDDEN_CHARS = frozenset('<>"|?*')
+#: Device names Windows reserves whatever the extension — ``CON.BDD`` is still the console.
+_NAME_RESERVED = frozenset(
+    {"con", "prn", "aux", "nul"}
+    | {f"com{number}" for number in range(1, 10)}
+    | {f"lpt{number}" for number in range(1, 10)}
+)
+#: What the store appends, so a token that already ends in it would name ``x.BDD.BDD``.
+_STORE_SUFFIX = ".bdd"
+
+
+def _name_problem(name: str) -> str | None:
+    """Why ``name`` is not one file stem this cycle may store under, or ``None`` when it is.
+
+    The cycle appends ``.BDD`` to whatever it is handed and then watches that path, so the token is a
+    *target*, not a label: one carrying a separator or a drive colon chooses a file outside the directory
+    the run was told to watch; an embedded NUL makes the path probe raise instead of answer; and a token
+    that already carries the suffix names ``x.BDD.BDD``. Each is refused **as given** — nothing is
+    trimmed, normalised or repaired, because a repaired token stores a file under a name the caller never
+    supplied and every later comparison would then agree with itself.
+
+    Dots inside the stem and non-ASCII names are ordinary and stay allowed: this is a shape check, not a
+    naming registry. The reason quotes the token character for character, so a refusal is checkable
+    against what was actually asked for.
+    """
+    if not name:
+        return f"store_name_invalid:{name}:empty"
+    if any(ord(character) < 32 or ord(character) == 127 for character in name):
+        return f"store_name_invalid:{name}:control"
+    if name.strip() != name:
+        return f"store_name_invalid:{name}:padded"
+    if any(character in _NAME_PATH_CHARS for character in name):
+        return f"store_name_invalid:{name}:path"
+    if any(character in _NAME_FORBIDDEN_CHARS for character in name):
+        return f"store_name_invalid:{name}:forbidden"
+    if name in (".", ".."):
+        return f"store_name_invalid:{name}:relative"
+    if name.lower().endswith(_STORE_SUFFIX):
+        return f"store_name_invalid:{name}:suffix"
+    if name.split(".", 1)[0].lower() in _NAME_RESERVED:
+        return f"store_name_invalid:{name}:reserved"
+    return None
+
+
 class RoutineCycle:
     """Record, stop and store through the application's own routines, then commit its dialog.
 
@@ -496,7 +544,6 @@ class RoutineCycle:
         self._last_report = None
         name = str(name)  # the report is built from it, so it must never be what raises
         directory = Path(directory)
-        target = directory / f"{name}.BDD"
         #: The facts accumulated so far; every exit builds a fresh immutable report from them.
         facts: dict[str, Any] = {}
 
@@ -509,6 +556,13 @@ class RoutineCycle:
         def refuse(stage: CycleStage, reason: str, **extra: Any) -> tuple[bool, str]:
             remember(stage, reason, **extra)
             return False, reason
+
+        # Before the token becomes a path at all: `_name_problem` is the only check that can answer for a
+        # name carrying NUL — past this line, ``Path.exists`` would raise instead of refuse.
+        problem = _name_problem(name)
+        if problem is not None:
+            return refuse(CycleStage.PREFLIGHT, problem)
+        target = directory / f"{name}.BDD"
 
         if target.exists():
             # A taken name raises the application's overwrite warning, and an unanswered warning wedges the run.
@@ -577,6 +631,103 @@ class RoutineCycle:
         if problem is not None:
             return refuse(CycleStage.STOP, problem)
 
+        return self._store_held_block(
+            name=name, target=target, facts=facts, remember=remember, refuse=refuse
+        )
+
+    def store_completed_block(self, name: str, directory: Path) -> tuple[bool, Path | str]:
+        """Store the block the application is already holding — Record, Stop and Clear are out of reach.
+
+        This entry point does not end a recording itself: a finite multiplexed sequence closes
+        itself (manual §11), so the application owns the completion and the cycle only owns the store.
+        The only routine it can dispatch is :attr:`CycleRoutines.store`, which is what makes that promise
+        structural rather than a rule somebody remembers.
+
+        Admission is an **observed** store view — the slider-bearing row :func:`classify_strip_view` names
+        :attr:`StripView.STORE`, at any button count, because this entry point presses no button and so
+        needs no column binding — plus a name the directory does not already hold and a fresh reading of
+        the instance and its owning object. A row is not a completion claim: with ``repeats > 1`` several
+        blocks exist and a press route would have to choose one, which is exactly what nothing here does.
+        What the block *contains* is settled afterwards by the artifact, not by this method.
+        """
+        self._last_report = None
+        name = str(name)  # the report is built from it, so it must never be what raises
+        directory = Path(directory)
+        facts: dict[str, Any] = {}
+
+        def remember(stage: CycleStage, reason: str | None = None, **extra: Any) -> str | None:
+            self._last_report = CycleReport(
+                name=name, stage=stage, reason=reason, **{**facts, **extra}
+            )
+            return reason
+
+        def refuse(stage: CycleStage, reason: str, **extra: Any) -> tuple[bool, str]:
+            remember(stage, reason, **extra)
+            return False, reason
+
+        # The same invariant as the recording entry point, in the same place: the token is checked before
+        # it is ever joined to the directory, so no path probe, none of the native store and no dialog name
+        # can be reached by a token that is not one stem.
+        problem = _name_problem(name)
+        if problem is not None:
+            return refuse(CycleStage.PREFLIGHT, problem)
+        target = directory / f"{name}.BDD"
+
+        if target.exists():
+            # A taken name raises the application's overwrite warning, and an unanswered warning wedges the run.
+            return refuse(CycleStage.PREFLIGHT, f"store_name_taken:{target.name}")
+
+        problem = self.configuration_problem()
+        if problem is not None:
+            return refuse(CycleStage.PREFLIGHT, problem)
+
+        # Only the waits this entry point actually uses: it has no window and no stop settle.
+        for field, value in (
+            ("store_settle_s", self._store_settle_s),
+            ("store_timeout_s", self._store_timeout_s),
+            ("poll_s", self._poll_s),
+        ):
+            if not _bounded(value):
+                return refuse(CycleStage.PREFLIGHT, f"cycle_parameter_invalid:{field}")
+        if self._poll_s <= 0 and self._store_timeout_s > 0:
+            return refuse(CycleStage.PREFLIGHT, "cycle_parameter_invalid:poll_s")
+
+        problem = self._live_problem()
+        if problem is not None:
+            return refuse(CycleStage.PREFLIGHT, problem)
+
+        view, problem = self._read_view()
+        if problem is not None:
+            return refuse(CycleStage.PREFLIGHT, problem)
+        facts["last_view"] = view
+        if view is not StripView.STORE:
+            # Nothing is pressed from this state: a ready row has no block to store, a recording one is
+            # somebody else's unfinished acquisition, and unknown/ambiguous are rows no evidence binds.
+            return refuse(
+                CycleStage.PREFLIGHT,
+                f"store_completed_strip_not_store:{view.value if view else 'unknown'}",
+            )
+
+        return self._store_held_block(
+            name=name, target=target, facts=facts, remember=remember, refuse=refuse
+        )
+
+    def _store_held_block(
+        self,
+        *,
+        name: str,
+        target: Path,
+        facts: dict[str, Any],
+        remember: Callable[..., str | None],
+        refuse: Callable[..., tuple[bool, str]],
+    ) -> tuple[bool, Path | str]:
+        """From a held block's store dispatch to the verified file — the tail both entry points share.
+
+        One implementation on purpose: the dispatch, the settle, the revalidation before a name is
+        committed, the commit itself, the wait for the application's own file, its decode and its span
+        are the same facts whether this process ended the acquisition or found it ended. Two copies
+        would be two chances for the store half to drift apart.
+        """
         _result, problem = self._dispatch(CycleStage.STORE, self._routines.store)
         if problem is not None:
             return refuse(CycleStage.STORE, problem)

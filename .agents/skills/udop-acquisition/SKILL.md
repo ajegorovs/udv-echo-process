@@ -79,6 +79,12 @@ and measured-period laws, and the planner that now computes the whole period law
 belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
 a second copy in a skill is how the two forks drifted apart before.
 
+For native multiplexer controls, also read `docs/dop3000/multiplexer-control-notes.md` and the
+selected execution plan. They own the distinct channel-row roles, per-control polarity, model-toggle
+versus absolute-setter semantics, complete-image preservation and the current live-invocation gate.
+A static setter body and a correct object binding are not proof that the assembled calling adapter
+completes; an unknown native outcome is not a successful refusal or restoration.
+
 Reconnaissance, control-id mapping, message-based driving and artifact verification for
 Windows desktop applications that expose no SDK, CLI or protocol.
 

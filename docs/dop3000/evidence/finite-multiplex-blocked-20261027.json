@@ -1,0 +1,149 @@
+{
+  "kind": "derived-live-failure-summary",
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "scope": "Disabled-mode finite-stop flag round trip; no enable, Record, Stop, Store or channel-selection request",
+  "provenance": {
+    "raw_reports_committed": false,
+    "parameter_image_digest_format": "SHA-256 of 256 unsigned 32-bit words packed little-endian",
+    "limits": "Raw captures contain private runtime bindings and remain local. These are measured derived facts, not raw captures; a repository-only reader cannot independently remeasure the live state or recompute the private parameter-image digests.",
+    "native_report_sha256": "10c6dcc568d78808ec0a466c81352ec46e60cca103a87c2a27816fab1938bac9",
+    "before_snapshot_sha256": "643b3b25f39bd6d82d924829591cde9e8ea4e7b37881681bcb6d0205205349b0",
+    "after_snapshot_sha256": "643b3b25f39bd6d82d924829591cde9e8ea4e7b37881681bcb6d0205205349b0"
+  },
+  "outcome": {
+    "success": false,
+    "completion": "unknown",
+    "error": "native invocation: access violation accessing null",
+    "requested_logical_operations": 2,
+    "attempted_logical_operations": 1,
+    "confirmed_logical_operations": 0,
+    "restore_request_dispatched": false,
+    "note": "The raw probe's logical_native_operations=2 was the planned count, not a completed count. Baseline equality is not evidence that a restoration call ran.",
+    "attachment_exit": 0,
+    "hooks_removed": true,
+    "detach_phase": "unknown",
+    "live_retries_performed": 0,
+    "live_mutations_locked": true
+  },
+  "readback": {
+    "identity_unchanged": true,
+    "instrument_ready_before": true,
+    "instrument_ready_after": true,
+    "application_error_after": null,
+    "clean_after": true,
+    "raw_companion_words_unchanged": true,
+    "parameter_column_unchanged": true,
+    "all_parameter_images_equal": true,
+    "mode_sample_count": 343,
+    "unreadable_mode_samples": 0,
+    "multiplexer_enabled_samples": 0,
+    "candidate_pair": [
+      4,
+      5
+    ],
+    "candidate_pair_images_equal": true,
+    "channel_images": [
+      {
+        "channel": 1,
+        "before_sha256": "a034b6cea7a8351928c7f664c9a04d9cc2878dfa3a40c46f1d307edac6b4633f",
+        "after_sha256": "a034b6cea7a8351928c7f664c9a04d9cc2878dfa3a40c46f1d307edac6b4633f",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 5
+      },
+      {
+        "channel": 2,
+        "before_sha256": "b9e1ccce80fd479b25cdb55bc852e3c24e0a591101145ff179e6ddad1d6b59b9",
+        "after_sha256": "b9e1ccce80fd479b25cdb55bc852e3c24e0a591101145ff179e6ddad1d6b59b9",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 5
+      },
+      {
+        "channel": 3,
+        "before_sha256": "4b0e67d51d821184658f6b0568127e8cd412e57c512b43e5d0d4db24ef6d6ab5",
+        "after_sha256": "4b0e67d51d821184658f6b0568127e8cd412e57c512b43e5d0d4db24ef6d6ab5",
+        "words_equal": true,
+        "source_frequency_khz": 8000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 4,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 5,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 6,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 7,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 8,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 9,
+        "before_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "after_sha256": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 100
+      },
+      {
+        "channel": 10,
+        "before_sha256": "ea6db87d9f241d2bc3e6201e0a5e2b0945af1962fd20982665857cd8a4c241bf",
+        "after_sha256": "ea6db87d9f241d2bc3e6201e0a5e2b0945af1962fd20982665857cd8a4c241bf",
+        "words_equal": true,
+        "source_frequency_khz": 4000,
+        "profiles_per_visit_word51": 1
+      }
+    ]
+  },
+  "software_gate": {
+    "tests": 1541,
+    "passed": 1536,
+    "failed": 5,
+    "skipped": 0,
+    "failure_ids": [
+      "tests.test_acquire_dialog::test_a_dialog_on_the_routed_channel_is_accepted_and_the_facts_carry_that_channel",
+      "tests.test_acquire_dialog::test_a_refused_reading_keeps_the_readers_own_reason_not_an_attribution_error",
+      "tests.test_acquire_live::test_a_fingerprint_carries_the_layout_note_when_the_screen_is_not_the_measurement_one",
+      "tests.test_acquire_live::test_a_fingerprint_reads_the_screen_without_pressing_anything",
+      "tests.test_acquire_live::test_a_fingerprint_survives_a_cursor_this_session_cannot_read"
+    ],
+    "same_failure_ids_as_baseline": true
+  },
+  "not_established": [
+    "successful native flag setting/restoration",
+    "safe automatic enable/disable",
+    "multiplexed recording or live store-only acceptance",
+    "physical signal quality"
+  ]
+}

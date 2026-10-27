@@ -34,6 +34,7 @@ from udv_echo_process.acquire.bridge import (
 )
 from udv_echo_process.acquire.cycle import (
     CycleBinding,
+    CycleStage,
     ObservedAddress,
     ProcessIdentity,
     RoutineCycle,
@@ -190,6 +191,44 @@ class TestSessionBounds:
             session.dispatch("store", address=STORE, form=OWNER)
         assert channel.dispatched == []
 
+    def test_a_store_only_session_dispatches_store_first(self, host):
+        """The store-completed sequence: one operation, and it is the only one this session may name."""
+        _, api = host
+        channel = Channel(
+            receipts=[{"ok": True, "operation": "store", "consumed_target": True}]
+        )
+        session = api.new_session(
+            channel,
+            sequence="store",
+            **api.bounds_from(api.HostConfig.defaults_for(Path("/tmp"))),
+        )
+        session.start()
+        assert session.operations == ("store",)
+        session.dispatch("store", address=STORE, form=OWNER)
+        assert channel.dispatched == ["store"]
+
+    def test_a_store_only_session_cannot_name_record_at_all(self, host):
+        """Not out of order — never part of the sequence, so it is refused before it can be a step."""
+        _, api = host
+        channel = Channel()
+        session = api.new_session(
+            channel,
+            sequence="store",
+            **api.bounds_from(api.HostConfig.defaults_for(Path("/tmp"))),
+        )
+        session.start()
+        with pytest.raises(
+            api.HostRefusal, match="host_operation_not_in_sequence:record"
+        ):
+            session.dispatch("record", address=RECORD, form=OWNER)
+        assert channel.dispatched == []
+        assert session.dispatched == ()
+
+    def test_an_unknown_sequence_is_refused_rather_than_defaulted(self, host):
+        _, api = host
+        with pytest.raises(api.HostRefusal, match="host_sequence_unknown:record"):
+            api.new_session(Channel(), sequence="record")
+
     def test_a_dispatch_the_loop_never_consumed_is_not_a_dispatch(self, host):
         """`ok` from the producer is not enough: the application's own loop must have taken it."""
         _, api = host
@@ -303,6 +342,35 @@ class TestTheCaller:
         answer = caller(RECORD, OWNER)
         assert answer["ok"] is False
         assert answer["errors"] == ["wrong GUI thread"]
+
+    def test_a_store_only_caller_refuses_the_record_address_without_a_dispatch(
+        self, host
+    ):
+        """The second lock: even an address this table carries is unreachable on this route."""
+        _, api = host
+        channel = Channel(
+            receipts=[{"ok": True, "operation": "store", "consumed_target": True}]
+        )
+        session = api.new_session(
+            channel,
+            sequence="store",
+            **api.bounds_from(api.HostConfig.defaults_for(Path("/tmp"))),
+        )
+        session.start()
+        caller = api.SessionCaller(session, table(), store_only=True)
+        answer = caller(RECORD, OWNER)
+        assert answer["ok"] is False
+        assert "host_record_forbidden:store_only" in answer["errors"][0]
+        assert channel.dispatched == []
+        assert caller(STORE, OWNER) == {"ok": True}
+        assert channel.dispatched == ["store"]
+
+    def test_a_store_only_caller_over_a_recording_session_is_refused(self, host):
+        _, api = host
+        channel = Channel()
+        with pytest.raises(api.HostRefusal, match="host_caller_sequence_mismatch"):
+            api.SessionCaller(self._session(api, channel), table(), store_only=True)
+        assert channel.dispatched == []
 
 
 class TestTheReaders:
@@ -545,6 +613,281 @@ class TestTheCycleThroughTheHost:
         assert "store" not in channel.dispatched
 
 
+class TestTheStoreCompletedFactory:
+    """``store_completed_cycle``: the same construction, over a sequence that cannot record.
+
+    The producer is a double, so what is proven here is the wiring — one observed binding, the table
+    compared with what the producer stated, one bounded session — and what is *not*: no application is
+    behind any of it.
+    """
+
+    def _cycle(self, host, tmp_path, monkeypatch, *, config=None):
+        _, api = host
+        channel = Channel(
+            receipts=[{"ok": True, "operation": "store", "consumed_target": True}]
+        )
+        surface = _Surface(views=[StripView.STORE], shows=str(tmp_path / "store"))
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        monkeypatch.setattr(api, "_new_actuator", lambda _channel: surface)
+        cycle = api.store_completed_cycle(
+            table=table(),
+            table_path=host_dir(
+                tmp_path, sequence="store", store_settle_s=0.0, store_timeout_s=0.0
+            ),
+            target_digest=None,
+            channel=1,
+        )
+        return api, cycle, channel, surface
+
+    def test_it_dispatches_only_the_store_routine(self, host, tmp_path, monkeypatch):
+        _api, cycle, channel, surface = self._cycle(host, tmp_path, monkeypatch)
+        # The artifact is absent, so the tail refuses at `verify` — which is the honest end of an
+        # offline test: the dispatch chain, the guards and the commit are what it proves.
+        ok, reason = cycle.store_completed_block("held-01", tmp_path / "store")
+        assert ok is False
+        assert str(reason).startswith("store_file_missing"), reason
+        assert channel.dispatched == ["store"]
+        assert ("set_store_name", "held-01") in surface.calls
+        assert ("commit_store",) in surface.calls
+        report = cycle.last_report
+        assert report is not None
+        assert report.recorded is False and report.stopped is False
+        assert report.store_requested is True and report.dialog_committed is True
+        assert report.stored is False
+
+    def test_the_recording_entry_point_is_closed_and_says_so(
+        self, host, tmp_path, monkeypatch
+    ):
+        _api, cycle, channel, _surface = self._cycle(host, tmp_path, monkeypatch)
+        ok, reason = cycle.try_record_and_store("held-02", 0.0, tmp_path / "store")
+        assert (ok, reason) == (
+            False,
+            "cycle_store_only:record_and_store_not_permitted",
+        )
+        assert channel.dispatched == []
+
+    def test_a_recording_config_is_refused_before_anything_attaches(
+        self, host, tmp_path, monkeypatch
+    ):
+        _, api = host
+        channel = Channel()
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        with pytest.raises(api.HostRefusal, match="host_sequence_mismatch"):
+            api.store_completed_cycle(
+                table=table(),
+                table_path=host_dir(
+                    tmp_path
+                ),  # the default: a record/stop/store config
+                target_digest=None,
+                channel=1,
+            )
+        assert channel.calls == []
+
+    def test_the_recording_factory_refuses_a_store_only_config(
+        self, host, tmp_path, monkeypatch
+    ):
+        from udv_echo_process.acquire.bridge import BridgeUnavailable
+
+        module, api = host
+        channel = Channel()
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        with pytest.raises(BridgeUnavailable, match="host_sequence_mismatch"):
+            module.guarded_cycle(
+                table=table(),
+                table_path=host_dir(tmp_path, sequence="store"),
+                target_digest=None,
+                channel=1,
+            )
+        assert channel.calls == []
+
+    def test_the_package_still_sees_a_routine_cycle(self, host, tmp_path, monkeypatch):
+        _api, cycle, _channel, _surface = self._cycle(host, tmp_path, monkeypatch)
+        assert isinstance(cycle, RoutineCycle)
+
+    def test_a_refused_recording_leaves_no_stale_success_behind(
+        self, host, tmp_path, monkeypatch
+    ):
+        """`last_report` is read *after* the call: a success left standing beside a refusal is the bug."""
+        import shutil
+
+        _, api = host
+        channel = Channel(
+            receipts=[{"ok": True, "operation": "store", "consumed_target": True}]
+        )
+
+        class Writing(_Surface):
+            """The Store dialog that really writes the block, so the first invocation succeeds."""
+
+            def __init__(self, **kwargs):
+                super().__init__(**kwargs)
+                self.named: str | None = None
+
+            def set_store_name(self, name):
+                super().set_store_name(name)
+                self.named = name
+
+            def commit_store(self):
+                super().commit_store()
+                shutil.copyfile(
+                    REPO / "data" / "4-sensor-velocity" / "200RPM.BDD",
+                    tmp_path / "store" / f"{self.named}.BDD",
+                )
+
+        surface = Writing(views=[StripView.STORE], shows=str(tmp_path / "store"))
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        monkeypatch.setattr(api, "_new_actuator", lambda _channel: surface)
+        cycle = api.store_completed_cycle(
+            table=table(),
+            table_path=host_dir(
+                tmp_path, sequence="store", store_settle_s=0.0, store_timeout_s=0.0
+            ),
+            target_digest=None,
+            channel=1,
+        )
+        stored, outcome = cycle.store_completed_block("held-03", tmp_path / "store")
+        assert stored is True, outcome
+        assert cycle.last_report.stored is True
+        assert cycle.last_report.recorded_span_s is not None
+
+        refused, reason = cycle.try_record_and_store("held-04", 0.0, tmp_path / "store")
+        assert refused is False
+        assert reason == "cycle_store_only:record_and_store_not_permitted"
+        report = cycle.last_report
+        assert report is not None
+        assert report.reason == "cycle_store_only:record_and_store_not_permitted"
+        assert report.name == "held-04"
+        assert report.stage is CycleStage.PREFLIGHT
+        # No fact of the earlier store survives into this refusal.
+        assert report.stored is False
+        assert report.store_requested is False
+        assert report.dialog_committed is False
+        assert report.recorded is False and report.stopped is False
+        assert report.streams == 0
+        assert report.recorded_span_s is None
+        assert channel.dispatched == ["store"]  # the refusal dispatched nothing
+
+
+class TestTheActivationGate:
+    """Static admission is a gate: a failed check must not be followed by an attach.
+
+    The store-completed sequence exists because the recording sequence's producer primes a parameter
+    before it observes anything. An activation that reports the mismatch and then starts that producer
+    anyway has done the thing the refusal was supposed to prevent, so these tests intercept the three
+    steps that would touch the application and require none of them to run.
+    """
+
+    def test_a_store_activation_of_a_recording_config_never_starts_the_producer(
+        self, host, tmp_path, monkeypatch
+    ):
+        _, api = host
+        touched: list[str] = []
+
+        def forbidden_channel(_config, _session_dir):
+            touched.append("channel")
+            raise AssertionError("the parameter-priming producer was started")
+
+        def forbidden_dir():
+            touched.append("session_dir")
+            raise AssertionError("a session directory was created")
+
+        def forbidden_strip():
+            touched.append("strip")
+            raise AssertionError("the strip was read")
+
+        monkeypatch.setattr(api, "_channel_for", forbidden_channel)
+        monkeypatch.setattr(api, "_new_session_dir", forbidden_dir)
+        report = api.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path),  # the default: record_stop_store
+            sequence="store",
+            probe=True,
+            strip_reader=forbidden_strip,
+        )
+        assert report.ready is False
+        assert "sequence" in report.failed()
+        assert touched == []
+        assert (
+            report.identity is None
+            and report.owner is None
+            and report.strip_view is None
+        )
+        assert report.session_closed is True
+
+    def test_a_recording_activation_of_a_store_config_never_starts_the_producer(
+        self, host, tmp_path, monkeypatch
+    ):
+        _, api = host
+        touched: list[str] = []
+
+        def forbidden_channel(_config, _session_dir):
+            touched.append("channel")
+            raise AssertionError("a producer was started for a refused activation")
+
+        monkeypatch.setattr(
+            api,
+            "_channel_for",
+            forbidden_channel,
+        )
+        monkeypatch.setattr(
+            api, "_new_session_dir", lambda: touched.append("session_dir") or tmp_path
+        )
+        report = api.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path, sequence="store"),
+            sequence="record_stop_store",
+            probe=True,
+        )
+        assert report.ready is False
+        assert "sequence" in report.failed()
+        assert touched == []
+
+    def test_an_unknown_sequence_cannot_be_activated_at_all(
+        self, host, tmp_path, monkeypatch
+    ):
+        _, api = host
+        touched: list[str] = []
+
+        def forbidden_channel(_config, _session_dir):
+            touched.append("channel")
+            raise AssertionError("a producer was started for an unnameable sequence")
+
+        monkeypatch.setattr(api, "_channel_for", forbidden_channel)
+        monkeypatch.setattr(
+            api, "_new_session_dir", lambda: touched.append("session_dir") or tmp_path
+        )
+        report = api.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path),
+            sequence="record",  # not one of the closed sequences
+            probe=True,
+        )
+        assert report.ready is False
+        assert "sequence" in report.failed()
+        assert touched == []
+
+    def test_the_valid_recording_activation_still_probes(
+        self, host, tmp_path, monkeypatch
+    ):
+        """The gate must not close the path that works: every static check passing still attaches."""
+        _, api = host
+        channel = Channel()
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        menu = tmp_path / "menu_dispatch.py"
+        menu.write_text(
+            'def dispatch(call):\n    return {"ok": True}\n', encoding="utf-8"
+        )
+        from bridge_host.menu import legacy_dispatch
+
+        report = api.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path),
+            probe=True,
+            menu_dispatch=legacy_dispatch(str(menu)),
+        )
+        assert report.ready is True, report.failed()
+        assert [call[0] for call in channel.calls] == ["start", "close"]
+
+
 class TestTheFileProtocol:
     """The channel against a real child process: requests out, receipts in, bounded, cleaned up."""
 
@@ -663,6 +1006,46 @@ class TestThePreflightScript:
         assert activate.main(["--table", str(self._real_table(tmp_path))]) == 2
         output = capsys.readouterr().out
         assert "menu_dispatch" in output and '"ready": false' in output
+
+    def test_the_sequence_flag_is_forwarded_and_a_mismatch_never_probes(
+        self, host, tmp_path, monkeypatch, capsys
+    ):
+        """``--sequence store`` against a recording config: refused, and nothing is started."""
+        _, api = host
+        from bridge_host import activate
+
+        monkeypatch.setattr(
+            api,
+            "_channel_for",
+            lambda *_args: pytest.fail(
+                "a producer was started for a mismatched sequence"
+            ),
+        )
+        assert (
+            activate.main(
+                ["--table", str(self._real_table(tmp_path)), "--sequence", "store"]
+            )
+            == 2
+        )
+        output = capsys.readouterr().out
+        assert "sequence" in output and '"ready": false' in output
+
+    def test_a_store_only_config_activates_as_the_store_sequence(
+        self, host, tmp_path, capsys
+    ):
+        from bridge_host import activate
+
+        table_path = host_dir(tmp_path, sequence="store")
+        table_path.write_text(
+            json.dumps(table().model_dump(by_alias=True)), encoding="utf-8"
+        )
+        assert (
+            activate.main(
+                ["--table", str(table_path), "--sequence", "store", "--no-probe"]
+            )
+            == 0
+        )
+        assert '"ready": true' in capsys.readouterr().out
 
     def test_an_unconfigured_host_exits_two_and_names_the_reason(
         self, host, tmp_path, capsys
@@ -789,7 +1172,13 @@ class TestActivation:
         other = ProcessIdentity(pid=PID, created_ns=CREATED_NS, image_sha256="c" * 64)
         channel = Channel(state=descriptor(identity=other))
         monkeypatch.setattr(api, "_channel_for", lambda config, session_dir: channel)
-        report = module.activation_report(table=table(), table_path=host_dir(tmp_path))
+        # Static admission is a gate, so the binding check — the subject here — is only reachable with
+        # every static check passing. The menu dispatch is the one a recording activation must compose.
+        report = module.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path),
+            menu_dispatch=lambda call: {"ok": True},
+        )
         assert report.ready is False
         assert "binding" in report.failed()
         assert report.session_closed is True

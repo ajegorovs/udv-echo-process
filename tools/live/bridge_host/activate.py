@@ -7,10 +7,16 @@ observe the identity, the owner and the routines, and closes it.
 
     python tools/live/bridge_host/activate.py --table <machine-local table.json>
     python tools/live/bridge_host/activate.py --table <table.json> --target-digest <sha256> --strip
+    python tools/live/bridge_host/activate.py --table <table.json> --sequence store --strip
 
 ``--strip`` reads the strip through the GUI surface, which is a window read; it needs the
 interactive session like every other screen read. Without it the preflight still answers for the
 binding, which is the part a decision to record depends on.
+
+``--sequence`` picks which *closed* operation sequence is being activated — the record/stop/store
+cycle by default, or ``store`` for the store-completed path — and it must agree with the host config
+beside the table. A disagreement is a failed check, and a failed check is a gate: nothing is attached
+to, because starting the producer runs its own start-up (on the recording sequence, a parameter prime).
 """
 
 from __future__ import annotations
@@ -42,6 +48,15 @@ def main(argv: list[str] | None = None) -> int:
         help="the build digest the caller believes is running (checked against the table)",
     )
     parser.add_argument("--channel", type=int, default=None, help="measurement channel")
+    parser.add_argument(
+        "--sequence",
+        choices=("record_stop_store", "store"),
+        default="record_stop_store",
+        help=(
+            "which closed operation sequence to activate: the record/stop/store cycle (default) or "
+            "the store-completed path, which must match the host config beside the table"
+        ),
+    )
     parser.add_argument(
         "--no-probe",
         action="store_true",
@@ -125,6 +140,7 @@ def main(argv: list[str] | None = None) -> int:
         table_path=table_path,
         target_digest=args.target_digest,
         channel=args.channel,
+        sequence=args.sequence,
         probe=not args.no_probe,
         strip_reader=strip_reader,
         menu_dispatch=menu_dispatch,

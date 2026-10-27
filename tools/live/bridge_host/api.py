@@ -49,7 +49,9 @@ from bridge_host.session import BoundedSession
 from udv_echo_process.acquire.bridge import BridgeTable, BridgeUnavailable
 from udv_echo_process.acquire.cycle import (
     CycleBinding,
+    CycleReport,
     CycleRoutines,
+    CycleStage,
     ObservedAddress,
     RoutineCycle,
 )
@@ -60,6 +62,7 @@ __all__ = [
     "ActivationCheck",
     "ActivationReport",
     "BoundRoutineCycle",
+    "BoundStoreCompletedCycle",
     "FileProtocolChannel",
     "HostConfig",
     "HostRefusal",
@@ -69,6 +72,7 @@ __all__ = [
     "close_host_sessions",
     "guarded_cycle",
     "new_session",
+    "store_completed_cycle",
 ]
 
 #: Every session this process opened. Closed at exit; a command opens at most one.
@@ -110,9 +114,15 @@ def bounds_from(config: HostConfig) -> dict:
     }
 
 
-def new_session(channel: ProducerChannel, **bounds: object) -> BoundedSession:
-    """A bounded session over ``channel`` — the one constructor the factory and the preflight share."""
-    return BoundedSession(channel, **bounds)  # type: ignore[arg-type]
+def new_session(
+    channel: ProducerChannel, *, sequence: str = "record_stop_store", **bounds: object
+) -> BoundedSession:
+    """A bounded session over ``channel`` — the one constructor the factory and the preflight share.
+
+    ``sequence`` is the closed operation sequence the session may run; it defaults to the cycle the
+    package has always driven, so every existing caller is unchanged.
+    """
+    return BoundedSession(channel, sequence=sequence, **bounds)  # type: ignore[arg-type]
 
 
 def _channel_for(config: HostConfig, session_dir: Path) -> ProducerChannel:
@@ -238,6 +248,47 @@ class BoundRoutineCycle(RoutineCycle):
         )
 
 
+class BoundStoreCompletedCycle(BoundRoutineCycle):
+    """The hardened cycle with one addition: the store-completed entry point, and no recording one.
+
+    ``store_completed_block`` binds this invocation's directory for the same reason
+    ``try_record_and_store`` does — ``commit(name)`` receives only a name, so a factory-time directory
+    would be right for the first block and silently wrong for the next.
+
+    ``try_record_and_store`` is **closed** here, and closed by returning a refusal rather than by
+    raising: the cycle's own vocabulary is its output, and this object was built over a session whose
+    sequence cannot name ``record`` at all. The refusal exists so a caller that reached for the wrong
+    entry point is told which one this is, instead of reading an out-of-order error from the session.
+    """
+
+    def store_completed_block(
+        self, name: str, directory: Path
+    ) -> tuple[bool, Path | str]:
+        """Bind this block's directory, then run the package's own store-completed tail unchanged."""
+        self._store_dialog.bind_directory(Path(directory))
+        return super().store_completed_block(name, Path(directory))
+
+    def try_record_and_store(
+        self,
+        name: str,
+        duration_s: float,
+        directory: Path,
+        *,
+        expected_mode: object = None,
+    ) -> tuple[bool, Path | str]:
+        """Refuse: this cycle was built to store a block nothing here recorded.
+
+        The refusal becomes **this invocation's** report. ``last_report`` is read after the call, so a
+        success left standing from the previous store would be read as this call's evidence — a stored
+        path and a decoded stream count beside a refusal, which is the worst shape a report can take.
+        """
+        reason = "cycle_store_only:record_and_store_not_permitted"
+        self._last_report = CycleReport(
+            name=str(name), stage=CycleStage.PREFLIGHT, reason=reason
+        )
+        return False, reason
+
+
 def guarded_cycle(
     *,
     table: BridgeTable,
@@ -259,17 +310,56 @@ def guarded_cycle(
         raise BridgeUnavailable(str(refusal)) from None
 
 
-def _build_cycle(
+def store_completed_cycle(
     *,
     table: BridgeTable,
     table_path: str | Path | None,
     target_digest: str | None,
     channel: int | None,
 ) -> RoutineCycle:
+    """The host's store-only entry point: a guarded cycle that can store a held block, and nothing else.
+
+    The same construction as :func:`guarded_cycle` — one observed binding, the table compared against
+    what the producer resolved, one bounded session — with the session's closed sequence set to
+    ``store`` (:data:`bridge_host.session.STORE_ONLY`). What differs is only what the cycle may do: it
+    dispatches the store routine and commits the Store dialog, and every path that could start, stop,
+    reset or reconfigure an acquisition is unreachable from it, in the session and in the caller.
+
+    It is deliberately **not** exported under the package's factory name: that name builds a record
+    cycle, and a store-only cycle answering it would be a cycle a recording command could run. Refusals
+    are raised as :class:`HostRefusal`, unwrapped, because a caller invokes this directly and wants the
+    host's own words.
+    """
+    return _build_cycle(
+        table=table,
+        table_path=table_path,
+        target_digest=target_digest,
+        channel=channel,
+        sequence="store",
+    )
+
+
+def _build_cycle(
+    *,
+    table: BridgeTable,
+    table_path: str | Path | None,
+    target_digest: str | None,
+    channel: int | None,
+    sequence: str = "record_stop_store",
+) -> RoutineCycle:
+    """One bound cycle over one session, for the closed ``sequence`` the caller asked for.
+
+    The config beside the table declares the sequence it describes, and the two must agree: a
+    store-only entry point pointed at a recording config would open a session against a producer that
+    primes a parameter and demands a ready row, which is precisely the work this entry point exists to
+    not do. The disagreement is refused before anything attaches.
+    """
     if table_path is None:
         # The config is the table's sibling, so a run that did not name its table cannot find one.
         raise HostRefusal("host_config_missing:table-path-not-given")
     config = load_host_config(table_path)
+    if config.sequence != sequence:
+        raise HostRefusal(f"host_sequence_mismatch:{config.sequence}!={sequence}")
     if target_digest is not None and table.image_sha256 != target_digest:
         raise HostRefusal(
             f"host_build_mismatch:table:{table.image_sha256[:12]}!={target_digest[:12]}"
@@ -282,7 +372,9 @@ def _build_cycle(
         raise HostRefusal(f"host_store_directory_missing:{store_directory}")
     actuator = _new_actuator(channel)
     session = new_session(
-        _channel_for(config, _new_session_dir()), **bounds_from(config)
+        _channel_for(config, _new_session_dir()),
+        sequence=sequence,
+        **bounds_from(config),
     )
     try:
         descriptor = session.start()
@@ -298,8 +390,11 @@ def _build_cycle(
             dialog_timeout_s=config.dialog_timeout_s,
             poll_s=config.poll_s or 0.2,
         )
-        cycle = BoundRoutineCycle(
-            caller=SessionCaller(session, table),
+        cycle_class = (
+            BoundStoreCompletedCycle if sequence == "store" else BoundRoutineCycle
+        )
+        cycle = cycle_class(
+            caller=SessionCaller(session, table, store_only=(sequence == "store")),
             routines=routines,
             store_dialog=dialog,
             binding=binding,
@@ -327,6 +422,7 @@ def activation_report(
     table_path: str | Path | None,
     target_digest: str | None = None,
     channel: int | None = None,
+    sequence: str = "record_stop_store",
     probe: bool = True,
     strip_reader: Callable[[], object] | None = None,
     menu_dispatch: Callable[[object], object] | None = None,
@@ -335,8 +431,13 @@ def activation_report(
 
     This is the mode a parent exercises first: it reads the config, checks the store directory and the
     table, and — when ``probe`` is true — starts one bounded session to read the identity, the owner
-    and the routines, then closes it. It dispatches nothing: ``session.dispatched`` is empty on every
-    path, which is what makes running it safe before a grant to record.
+    and the routines, then closes it. It dispatches no cycle commands, but starting a producer may
+    attach or prime a binding; callers need permission for that producer's actual behavior. Set
+    ``probe=False`` for static checks with no producer start.
+
+    ``sequence`` names which closed sequence is being activated. It is checked against the config
+    before anything attaches, and it changes one requirement: a store-completed run routes no channel,
+    so the composed menu dispatch that the recording path needs to avoid hovering is not asked for.
     """
     checks: list[ActivationCheck] = []
 
@@ -368,6 +469,11 @@ def activation_report(
         return report()
     check("host_config", True, str(host_config_path(table_path)))
     check(
+        "sequence",
+        config.sequence == sequence,
+        f"config says {config.sequence}, this activation asked for {sequence}",
+    )
+    check(
         "store_directory", Path(config.store_directory).is_dir(), config.store_directory
     )
     command = config.producer
@@ -396,21 +502,37 @@ def activation_report(
         )
     # A guarded cycle without a composed menu dispatch is not background-usable: `ensure_channel`
     # would hover, which is a foreground gesture. Refused explicitly rather than blessed silently.
-    if not callable(menu_dispatch):
+    # The store-completed sequence routes no channel at all, so it asks for none.
+    if sequence == "record_stop_store" and not callable(menu_dispatch):
         check(
             "menu_dispatch",
             False,
             "no menu dispatch is composed: the channel verification would hover, so background "
             "readiness is refused",
         )
-    else:
+    elif callable(menu_dispatch):
         check("menu_dispatch", True, "composed from an existing dispatch module")
+    else:
+        check(
+            "menu_dispatch",
+            True,
+            f"not required: the {sequence!r} sequence starts no acquisition and routes no channel",
+        )
+    # Static admission is a gate, not a note. A check that failed says this host must not be attached
+    # to at all, and the probe is not a read-only curiosity: starting the producer runs *its* own
+    # start-up, which on the recording sequence includes a parameter prime. So a refused activation
+    # never creates a directory, a producer channel or a session — it reports and returns, and the
+    # caller learns why from the same checks it would have read before.
+    if any(not item.ok for item in checks):
+        return report()
     if not probe:
         return report()
     if command is None:
         return report()
     session = new_session(
-        _channel_for(config, _new_session_dir()), **bounds_from(config)
+        _channel_for(config, _new_session_dir()),
+        sequence=sequence,
+        **bounds_from(config),
     )
     identity = None
     owner = None
