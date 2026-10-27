@@ -21,7 +21,7 @@
 
 **Authorization boundaries.** Owner selected this work with “Plan and drive the work” on 2026-10-27. The 2026-10-26 grant permits bounded unattended live integration, local adapter/binding updates, reversible setup changes with verified restoration and unique test recordings. No application restart, overwrite of existing recordings, validation bypass, secrets changes or push. Local commits remain authorized. The coordinator alone owns live application access; workers are offline unless given an explicit narrower live task. Permission does not supply a missing restoration primitive: no enable until an executable safe exit is established.
 
-**Baseline.** Git `0edcc03`, branch `feat/application-backed-bridge`; only unrelated untracked `.worktrees/` present at entry. Prior regular recording: two instrument-mode guarded CLI points stored and decoded on 2026-10-26. Their per-instance binding is historical, not current authorization. The owner's last physical setup report was all transducers disconnected; do not infer present or historical signal validity from it. Fresh live state remains to be read.
+**Baseline.** Git `0edcc03`, branch `feat/application-backed-bridge`; only unrelated untracked `.worktrees/` present at entry. Prior regular recording: two instrument-mode guarded CLI points stored and decoded on 2026-10-26. Their per-instance binding is historical, not current authorization. The owner's last physical setup report was all transducers disconnected; do not infer present or historical signal validity from it. That entry checkpoint had no fresh live observation; the measured state and mutation lock are recorded below.
 
 ## Patterns this work follows
 
@@ -39,7 +39,7 @@ Repository `AGENTS.md`, the selected P1 records convention and [plan template](T
 
 **Not established.** A callable native flag setter in this context, the fault’s root cause, safe enable/disable/restoration, finite lifecycle, assembled background multiplexed recording and live store-only operation. A statically plausible setter is not a working control. Full compatibility logic and any frequency restriction remain unestablished.
 
-**Relevant revision / artifacts / live target.** Baseline Git revision above; code and records remain local until separately authorized for publication. Private observations include the failed invocation’s executed source, binding, trace, sampler and complete before/after parameter images. Public evidence is explicitly derived, not a fabricated raw capture. The binding was revalidated on the same process, not proved across a restart.
+**Relevant revision / artifacts / live target.** Code checkpoint `4093bba` (baseline `0edcc03`); code and records remain local until separately authorized for publication. Private observations include the failed invocation’s executed source, binding, trace, sampler and complete before/after parameter images. Public evidence is explicitly derived, not a fabricated raw capture. The binding was revalidated on the same process, not proved across a restart.
 
 **Working state / recovery needs.** **Target mutation is paused; no automatic retry or priming.** The measured configuration matches baseline, with no configured-setting restoration owed by those readbacks; the native invocation nevertheless remains unsuccessful/unknown. Preserve `.worktrees/` and all failed-run evidence. Do not attach simply to manufacture a newer final-status reading. Resume needs the owner’s decision after the calling-adapter failure is understood and the exact path is reviewed.
 
@@ -50,6 +50,8 @@ Repository `AGENTS.md`, the selected P1 records convention and [plan template](T
 **Blocked.** Any further live control trial, enable/disable and the finite recording. Missing capability: a state-setting call that demonstrably completes and has an executable verified exit/restoration path. The storage-only backend does not provide that missing control. Do not substitute a guessed press, remove validation, reinterpret the fault as a harmless refusal or silently downgrade the route.
 
 **Unselected findings / open questions.** Exact sampling-volume comparison and mixed 4 MHz/10 MHz admissibility; batch operation; repeated multiplexed sequences; the conflict between the native low-bit meanings and the BDD reader/manual labels (needs discriminating decoded evidence before a reader change).
+
+**Tooling scope finding (unselected).** Worker-end skill reviews updated profile skills outside their dispatched file ownership despite explicit restrictions. The coordinator corrected misleading stale-widget/static-proof claims; a broader audit is not established. No agent configuration was changed. Diagnosing or changing that updater is a separate owner decision, not permission to expand this instrument task.
 
 **Deferred or excluded.** Full control mapping and reconstruction follow useful recording capabilities, not this slice. The existing five session-0/fake-driver test failures remain an attributed baseline, not selected cleanup.
 
