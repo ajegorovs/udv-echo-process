@@ -399,8 +399,7 @@ does not settle it, and calling the row `works` would not settle it either.
 
 **Current execution (owner-selected 2026-10-27).** The regular host-integration slice below is complete. The bounded
 [finite background multiplexed recording plan](background-multiplex-recording.md) now owns implementation, live acceptance,
-restoration and the next checkpoint. That effort is **blocked** on the 2026-10-27 native flag-call fault; target mutation
-is paused pending diagnosis, review and the owner’s resume decision. This document remains the per-action capability register and historical evidence;
+restoration and the next checkpoint. Owner renewed bounded live tests on 2026-10-27 with no active multiplexing left behind. A retained caller and disabled-mode flag/count/first-channel prototypes have bounded live proof. Routing recovery is adjudicated; channel-4 configuration and channel-10 gain restoration remain open. Owner directed commit/continuation on 2026-10-28 using offline delegation and coordinator-only live tests; participant composition and verified finite finish remain open. This document remains the per-action capability register and historical evidence;
 do not restart the completed regular-recording slice or expand the multiplexed trial into general hardening.
 
 **Measured live through the assembled route (2026-10-26, owner-granted sitting).** Two consecutive 2 s points were

@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "kind": "derived-disabled-mode-routing-recovery",
+  "date": "2026-10-27",
+  "raw_capture_limit": "Private input hashes and derived facts only; raw captures, live bindings and candidate remain local. Repository-only readers cannot reconstruct or remeasure the live trial.",
+  "scope": "Return current channel 10 to 1 using display selection then Off, without outgoing-channel save. No enable, acquisition or Store.",
+  "source_hashes": {
+    "before": "4024981b81287d035381ea59fea15195f64b0b430128208faf42163fdc9bd0ab",
+    "result": "5de743e2804fb98f5b4bc2fd92fde1739f3b6447215a7befb3741da390e24233",
+    "after": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
+    "settled": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
+    "adjudication": "756f548b01fd3a63729088b127c1d337cae1fdc328cd4560d5d5375a599e7ef9",
+    "candidate": "4202a2dc7c72fa423e627170024a17b9aab99bf5ecc141d17a5a116c870cfc27"
+  },
+  "accepted": true,
+  "checks": {
+    "two_native_returns": true,
+    "display_call_was_neutral_in_model": true,
+    "off_call_returned_current_one": true,
+    "mode_unchanged_disabled": true,
+    "trigger_unchanged": true,
+    "all_ten_images_unchanged": true,
+    "column_matches_original_one": true,
+    "ready_no_error": true,
+    "identity_same": true,
+    "settled_read_agrees": true,
+    "hooks_removed": true
+  },
+  "current_channel": {
+    "before": 10,
+    "after": 1,
+    "settled": 1
+  },
+  "multiplex_mode": {
+    "before": 73776,
+    "after": 73776,
+    "settled": 73776
+  },
+  "all_ten_images_unchanged_sha256": {
+    "1": "d4c666f270a7c01c359a2938029cbcf6db08f36ce16f2706bd3301b55278ac46",
+    "2": "eb563d30fde4590d481014f5ddd54ad389acf345f7f8c8a2b103e397385c0806",
+    "3": "3943e3593c9b4e53ad621c47265fc67cfd7335a03764cc2671ec6c0b0fc40a3f",
+    "4": "e83cabc2d4218819e78a6ebb699efaed51cdfbe106847cd7b1634fa48ad0bc05",
+    "5": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "6": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "7": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "8": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "9": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "10": "0b78eb0e1388b43f7b46a3674d5e613fcbc0dd933c934cc2bfd744793861faf5"
+  },
+  "raw_runner_ok": false,
+  "aggregate_report_limit": {
+    "two_top_level_returns": "counted every row ending in '-returned', which also matched the composite routing row",
+    "observed_effects": "run_live looks only for kind 'mux-op'; this fork records 'routing-recovery-*'",
+    "consequence": "result.ok was false while every state check is true; the saved stream is adjudicated here, and nothing was re-run"
+  },
+  "remaining_restoration": [
+    "channel 4 saved configuration (eleven words)",
+    "channel 10 overall gain (word 93)"
+  ],
+  "not_established": [
+    "active multiplexing exit",
+    "participant configuration transaction",
+    "finite recording",
+    "live store-only route",
+    "channel 4 or 10 image restoration"
+  ]
+}
