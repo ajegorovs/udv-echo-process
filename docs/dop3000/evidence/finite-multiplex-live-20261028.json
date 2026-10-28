@@ -164,6 +164,15 @@
         "has_slider": true,
         "slider_max": null
       },
+      "completed_state": {
+        "mode": 2162739,
+        "sequences": 1,
+        "current_channel": 2,
+        "pending": 0,
+        "trigger_word": 4,
+        "assisted_mode": 0,
+        "application_error": null
+      },
       "completed_current_channel": 2,
       "record_commands_dispatched": 0,
       "stop_commands_dispatched": 0,
@@ -267,6 +276,21 @@
     }
   },
   "acceptance": {
+    "settings_restoration_accepted": true,
+    "restoration_policy": {
+      "kind": "settings-and-tgc-with-enumerated-runtime-differences",
+      "owner_decision_date": "2026-10-28",
+      "raw_byte_identity_required": false,
+      "allowed_cached_word_indices": [52, 53, 83],
+      "allowed_native_mode_difference_bits": [21],
+      "requirements": [
+        "Original user controls and all non-cache parameter words restored against the fresh trial baseline.",
+        "All ten separate TGC tables unchanged; same target identity, no error or popup, Ready with zero pending work and independently read disabled multiplexing.",
+        "Every excluded change enumerated and justified by its native writer and the observed execution; unknown fields or unexplained values still refuse.",
+        "The pre-existing channel-4/channel-10 repair debt is preserved, not adopted as intentional configuration or claimed repaired."
+      ],
+      "scope": "Owner-selected restoration acceptance for this bounded effort. The historical bytes and negative raw-identity/cleanup verdicts remain unchanged. This is not blanket permission to ignore any new change at these indices."
+    },
     "finite_artifact_demonstrated": true,
     "store_only_data_path_demonstrated": true,
     "disabled_mode_independently_read": true,

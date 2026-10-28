@@ -140,6 +140,7 @@ class BoundedSession:
         self._closed = True
         try:
             self._channel.close(timeout_s=self._close_timeout_s)
+            self.close_problem = getattr(self._channel, "close_problem", None)
         except Exception as exc:  # noqa: BLE001 - reported beside the exit, never raised from it
             self.close_problem = type(exc).__name__
 

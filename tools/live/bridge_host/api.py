@@ -97,6 +97,7 @@ class ActivationReport(ValueModel):
     owner: int | None = Field(default=None, ge=0)
     strip_view: str | None = None
     session_closed: bool = True
+    session_close_problem: str | None = None
 
     def failed(self) -> tuple[str, ...]:
         """The names of the checks that were not satisfied."""
@@ -555,9 +556,11 @@ def activation_report(
         check("session", False, f"{type(exc).__name__}: {exc}")
     finally:
         session.close()
+    check("session_close", session.close_problem is None, session.close_problem)
     return report(
         identity=identity,
         owner=owner if owner else None,
         strip_view=None if strip_view is None else str(strip_view),
         session_closed=session.closed,
+        session_close_problem=session.close_problem,
     )

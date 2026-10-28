@@ -963,6 +963,105 @@ class TestTheFileProtocol:
             channel.start(session_dir=session_dir, timeout_s=20.0)
 
 
+class TestProducerCloseReporting:
+    """An exited producer and a clean attachment shutdown are not synonyms."""
+
+    @pytest.mark.parametrize("exit_code", [0, 7])
+    def test_actual_child_exit_status_is_preserved(self, host, tmp_path, exit_code):
+        _, api = host
+        producer = tmp_path / "closing_child.py"
+        ready = {
+            "identity": {"pid": PID, "created_ns": CREATED_NS, "image_sha256": BUILD},
+            "owner": OWNER,
+            "owner_source": "owned offline lifecycle fixture",
+            "record_handler": RECORD,
+            "store_handler": STORE,
+            "message_name": "HOST-Close-Fixture",
+        }
+        producer.write_text(
+            textwrap.dedent(
+                f"""
+                import json, sys, time
+                from pathlib import Path
+                session = Path(sys.argv[1])
+                (session / "session-ready.json").write_text(
+                    json.dumps({ready!r}), encoding="utf-8"
+                )
+                deadline = time.monotonic() + 10
+                while not (session / "close.json").exists():
+                    if time.monotonic() >= deadline:
+                        raise SystemExit(99)
+                    time.sleep(0.01)
+                raise SystemExit({exit_code})
+                """
+            ),
+            encoding="utf-8",
+        )
+        channel = api.FileProtocolChannel(
+            api.ProducerCommand(argv=(sys.executable, str(producer))),
+            session_dir=tmp_path / "session",
+        )
+        session = api.new_session(channel, sequence="store", close_timeout_s=10)
+        try:
+            session.start()
+        finally:
+            session.close()
+        assert channel.process.poll() == exit_code
+        expected = None if exit_code == 0 else f"host_producer_close_exit:{exit_code}"
+        assert channel.close_problem == expected
+        assert session.close_problem == expected
+        assert session.closed is True  # this flag means called, not clean
+        assert session.dispatched == ()
+
+    @pytest.mark.parametrize(
+        "problem", ["host_producer_did_not_exit", "host_producer_unreaped:OSError"]
+    )
+    def test_nonraising_channel_problem_reaches_session_once(self, host, problem):
+        _, api = host
+
+        class FailedClose(Channel):
+            def close(self, *, timeout_s):
+                super().close(timeout_s=timeout_s)
+                self.close_problem = problem
+
+        channel = FailedClose()
+        session = api.new_session(channel, sequence="store")
+        session.start()
+        session.close()
+        session.close()
+        assert session.close_problem == problem
+        assert [call for call in channel.calls if call[0] == "close"] == [("close",)]
+        assert session.dispatched == ()
+
+
+class TestActivationCleanupReporting:
+    @pytest.mark.parametrize("problem", [None, "host_producer_close_exit:7"])
+    def test_probe_exposes_close_problem_and_refuses_dirty_close(
+        self, host, tmp_path, monkeypatch, problem
+    ):
+        _, api = host
+
+        class ClosingChannel(Channel):
+            def close(self, *, timeout_s):
+                super().close(timeout_s=timeout_s)
+                self.close_problem = problem
+
+        channel = ClosingChannel()
+        monkeypatch.setattr(api, "_channel_for", lambda _config, _dir: channel)
+        report = api.activation_report(
+            table=table(),
+            table_path=host_dir(tmp_path, sequence="store"),
+            sequence="store",
+            probe=True,
+        )
+        assert report.ready is (problem is None)
+        assert getattr(report, "session_close_problem", None) == problem
+        assert report.session_closed is True
+        if problem:
+            assert "session_close" in report.failed()
+        assert [call for call in channel.calls if call[0] == "close"] == [("close",)]
+
+
 class TestThePreflightScript:
     """The same preflight from a shell: one command, one exit code, nothing recorded."""
 

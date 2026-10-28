@@ -96,6 +96,8 @@ including non-participants. All other words and all ten separate TGC tables matc
 capture. After restoration the global activity flag was clear and the user controls matched their
 original values, but the application retained bit 21 and cached-image byte equality was false.
 
+**Owner-selected restoration rule (2026-10-28).** Restore original user/acquisition settings and all ten TGC tables; allow only enumerated runtime cache differences grounded in the native writer and the observed operation. Raw byte equality is not an acceptance requirement. The delivered finite trial satisfies this rule; unknown changes and the older channel-4/channel-10 repair debt remain failures/obligations, not permitted exceptions.
+
 Keep the before/after images, enumerate every changed index, and justify any excluded field through
 its actual writer. Do not call an unknown change bookkeeping, do not manufacture raw equality, and do
 not silently retire a strict byte-restoration criterion. Configuration-only round trips can still
@@ -108,6 +110,8 @@ Capture TGC before any proposed copy. Validate every planned operation's own cla
 shape before the first mutation: the observer exposes a disabled byte for `TSp_Button`, not for
 `TSp_Value_Button`. A green test of participant-only bindings does not preflight a later numeric phase.
 
+Cached image word 53 is a saved copy, **not the live global** `Mpx_Nb_Sequences`. The completed held-block capture states global count **1**, command identifier **0**, current channel **2** and mode **2162739**. Comparing that global count to the one-sequence request is required; a cached copy changing during later restoration does not justify dropping the global guard. `Execution_Code` is one identifier (Run **5**, Record **28**, Off/refresh **2**, idle **0**), never a queue depth or decrementing counter.
+
 ## Exit and helper-lifecycle claims have distinct boundaries
 
 The command-2 dispatcher return is not the end of its effect: `GoMesure` uses that return to re-enter
@@ -115,6 +119,8 @@ The command-2 dispatcher return is not the end of its effect: `GoMesure` uses th
 has no reachable device exit was false; an interior address was also mistaken for the
 `End_And_Close` entry. This source correction is not a measured active-hardware abort. The completed
 trial's disabled state was read independently after Store.
+
+The private producer source waits only **3 s** before forcibly terminating its helper, while the helper service owns a **55 s** instrumentation lifetime and the old host grants only **5 s** for producer close. This is a concrete budget mismatch consistent with the observed exit 1 / empty provider envelope, not a retained historical termination receipt. Do not shorten instrumentation to an unmeasured duration merely to make cleanup pass. A candidate preserves 55 s, requests/acknowledges hook cleanup and budgets **6 s** for that receipt plus **59 s** for natural helper exit, inside a **70 s** host close bound. Owned process and mocked-script tests establish that contract, not live instrument cleanup. Public host code now preserves nonzero process exit and channel close failures; activation exposes `session_close_problem` and refuses readiness on failure. The older `session_closed` flag still means called, not clean.
 
 The store host reported its session closed, but its helper exited **1** and no explicit injected-script
 detach receipt survived. Keep successful file storage separate from graceful instrumentation shutdown;

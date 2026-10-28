@@ -9,6 +9,14 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from udv_echo_process.acquire.actuator import StripState
+from udv_echo_process.acquire.finite import (
+    FiniteAction,
+    FiniteObservation,
+    FiniteRunReceipt,
+    FiniteRunRequest,
+    classify_finite_run,
+)
 from udv_echo_process.io.dop.bdd import read
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -115,6 +123,78 @@ def test_time_geometry_and_support_are_rederived_from_the_file(evidence, bundle)
         bundle.recording.streams, key=lambda s: s.acquisition.channel.device_channel
     )
     assert first.data.time_s[-1] < second.data.time_s[0]
+
+
+def test_classifier_accepts_the_published_completed_state(evidence):
+    """Replay derived scalar facts, not a native call or a proof of live freshness."""
+    live = evidence["live_derived"]["enable"]
+    configured = evidence["request"]
+    completed = live["completed_state"]
+    # Synthetic correlation labels exercise the helper's caller-supplied trust boundary.
+    token = "fixture:finite-trial-20261028"
+    identity = "fixture:same-instance"
+    request = FiniteRunRequest(
+        channels=tuple(configured["channels"]),
+        sequences=configured["sequences"],
+        trigger_word=configured["trigger_word_preserved"],
+        mode_before=live["mode_before"],
+        run_token=token,
+    )
+    receipt = FiniteRunReceipt(
+        run_token=token,
+        identity=identity,
+        invocations=live["native_returns"],
+        pending_after_run=live["pending_returned"],
+        record_dispatches=live["record_commands_dispatched"],
+        stop_dispatches=live["stop_commands_dispatched"],
+    )
+    observed = FiniteObservation(
+        strip=StripState(**live["completed_strip"]),
+        identity=identity,
+        error=completed["application_error"] or "",
+        mode_after=completed["mode"],
+        pending=completed["pending"],
+        sequences=completed["sequences"],
+        participants=tuple(
+            channel for channel in range(1, 11) if completed["mode"] & (8 << channel)
+        ),
+        current_channel=completed["current_channel"],
+        assisted_mode=bool(completed["assisted_mode"]),
+        trigger_word=completed["trigger_word"],
+        held_block_token=token,
+    )
+    decision = classify_finite_run(request, receipt, observed)
+    assert decision.action is FiniteAction.STORE_COMPLETED
+    assert decision.store_token == token
+    assert completed["sequences"] == 1  # global count, not arbitrary image word 53
+
+
+def test_owner_selected_settings_restoration_policy(evidence):
+    """The policy decision accepts settings, not fabricated byte identity or cleanup."""
+    acceptance = evidence["acceptance"]
+    policy = acceptance["restoration_policy"]
+    assert acceptance["settings_restoration_accepted"] is True
+    assert policy["kind"] == "settings-and-tgc-with-enumerated-runtime-differences"
+    assert policy["owner_decision_date"] == "2026-10-28"
+    assert policy["raw_byte_identity_required"] is False
+    assert policy["allowed_cached_word_indices"] == [52, 53, 83]
+    assert policy["allowed_native_mode_difference_bits"] == [21]
+    restoration = evidence["live_derived"]["restoration"]
+    assert set(restoration["checks"]) == {
+        "control_configuration_restored",
+        "multiplexing_disabled",
+        "all_ten_non_bookkeeping_words_unchanged",
+        "all_ten_tgc_tables_unchanged",
+        "same_identity",
+        "ready_no_error_pending_zero",
+        "trigger_unchanged",
+    }
+    assert all(restoration["checks"].values())
+    assert restoration["multiplex_enabled"] is False
+    assert restoration["pending"] == 0
+    assert restoration["pre_existing_channel4_and_gain10_debt_unchanged"] is True
+    assert acceptance["strict_full_image_restoration_accepted"] is False
+    assert acceptance["graceful_store_helper_shutdown_accepted"] is False
 
 
 def test_derived_live_claims_retain_their_limits(evidence):

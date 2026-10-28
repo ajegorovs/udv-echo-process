@@ -127,7 +127,9 @@ class FileProtocolChannel:
         except OSError as exc:
             self.close_problem = f"host_close_request_unwritable:{type(exc).__name__}"
         try:
-            process.wait(timeout=max(0.0, float(timeout_s)))  # type: ignore[attr-defined]
+            code = process.wait(timeout=max(0.0, float(timeout_s)))  # type: ignore[attr-defined]
+            if code != 0 and self.close_problem is None:
+                self.close_problem = f"host_producer_close_exit:{code}"
             return
         except Exception:  # noqa: BLE001 - a child that ignored the request is terminated
             self.close_problem = "host_producer_did_not_exit"
