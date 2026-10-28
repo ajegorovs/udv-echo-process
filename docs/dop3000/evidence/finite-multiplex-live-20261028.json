@@ -1,0 +1,284 @@
+{
+  "schema_version": 1,
+  "kind": "finite-multiplex-live-demonstration",
+  "date": "2026-10-28",
+  "artifact": {
+    "path": "data/automation-acceptance/finite-multiplex-20261028/mux-finite-01.BDD",
+    "file_sha256": "18ca39e35e44173cd5d235eb1f197f69518b7b8ec91d6d2283d6116a71bbe75f",
+    "bytes": 32616,
+    "recording_id": "sha256:2f0f167b613c6df1bbc0a2b37d1d770dc5088a95b32128be8308b2df16e73bc9",
+    "acquisition_mode": "sequential",
+    "streams": [
+      {
+        "channel": 1,
+        "quantity": "axial_velocity",
+        "unit": "mm/s",
+        "profiles": 5,
+        "gates": 80,
+        "time": {
+          "first_s": 0.0,
+          "last_s": 0.1613,
+          "span_s": 0.1613,
+          "median_dt_ms": 40.300000000000004,
+          "min_dt_ms": 40.29999999999999,
+          "max_dt_ms": 40.400000000000006
+        },
+        "gate_depths_mm": {
+          "first": 13.245999999999999,
+          "last": 71.706,
+          "median_step_mm": 0.740000000000002
+        },
+        "observed_cells": 400,
+        "cells": 400,
+        "value_range": {
+          "min": -148.1165841550279,
+          "max": 149.32078402620698
+        },
+        "config": {
+          "source_freq_khz": 4000.0,
+          "pulse_repetition_freq_hz": 1666.6666666666667,
+          "burst_length": 4,
+          "emissions_per_profile": 50,
+          "emit_power": "low",
+          "sensitivity": "high",
+          "gate1_mm": 13.245999999999999,
+          "n_gates": 80,
+          "resolution_mm": 0.74,
+          "sampling_volume_index": 4,
+          "sampling_volume_mm": null,
+          "max_depth_mm": 71.706,
+          "sound_speed_ms": 1480.0,
+          "doppler_angle_deg": 0.0,
+          "velo_max_ms": 154.13758351092335,
+          "tgc_mode": "uniform",
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "wall_filter": null,
+          "trigger_state": null,
+          "trigger_delay_ms": 0.0,
+          "skipped_profiles": 0,
+          "module_scale": 2048
+        }
+      },
+      {
+        "channel": 2,
+        "quantity": "axial_velocity",
+        "unit": "mm/s",
+        "profiles": 5,
+        "gates": 80,
+        "time": {
+          "first_s": 0.2122,
+          "last_s": 0.37360000000000004,
+          "span_s": 0.16140000000000004,
+          "median_dt_ms": 40.349999999999994,
+          "min_dt_ms": 40.300000000000004,
+          "max_dt_ms": 40.40000000000005
+        },
+        "gate_depths_mm": {
+          "first": 13.245999999999999,
+          "last": 71.706,
+          "median_step_mm": 0.740000000000002
+        },
+        "observed_cells": 400,
+        "cells": 400,
+        "value_range": {
+          "min": 0.0,
+          "max": 0.0
+        },
+        "config": {
+          "source_freq_khz": 4000.0,
+          "pulse_repetition_freq_hz": 1666.6666666666667,
+          "burst_length": 4,
+          "emissions_per_profile": 50,
+          "emit_power": "low",
+          "sensitivity": "medium",
+          "gate1_mm": 13.245999999999999,
+          "n_gates": 80,
+          "resolution_mm": 0.74,
+          "sampling_volume_index": 4,
+          "sampling_volume_mm": null,
+          "max_depth_mm": 71.706,
+          "sound_speed_ms": 1480.0,
+          "doppler_angle_deg": 0.0,
+          "velo_max_ms": 154.13758351092335,
+          "tgc_mode": "uniform",
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "wall_filter": null,
+          "trigger_state": null,
+          "trigger_delay_ms": 0.0,
+          "skipped_profiles": 0,
+          "module_scale": 2048
+        }
+      }
+    ]
+  },
+  "request": {
+    "channels": [
+      1,
+      2
+    ],
+    "sequences": 1,
+    "profiles_per_channel": 5,
+    "gates_per_channel": 80,
+    "finite_bit": 1,
+    "first_channel": 1,
+    "external_trigger_enabled": false,
+    "trigger_word_preserved": 4,
+    "source_frequency_khz": 4000,
+    "prf_us": 600,
+    "emissions_per_profile": 50,
+    "burst_length": 4,
+    "sound_speed_ms": 1480,
+    "doppler_angle_deg": 0,
+    "power": "low",
+    "sensitivity_by_channel": {
+      "1": "high",
+      "2": "medium"
+    },
+    "quantity_selection": "unchanged native channel configuration; not forced by the adapter"
+  },
+  "live_derived": {
+    "limits": "The BDD is committed and fully decodable offline. Native action, UI, restoration and lifecycle facts below are derived from private captures; their hashes are retained, but a repository-only reader cannot remeasure these live states. No source address, machine binding or raw private capture is published.",
+    "input_sha256": {
+      "pretrial_full_snapshot": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
+      "pretrial_tgc_snapshot": "9e0f7d8f057c3ee36122ba1ff7a8d68e0ba09187e64c9064cb0dd349345cd364",
+      "entry_script_raw_bytes": "e6d9cb0f17d11fef57b2f5fc83bfd09d869fe173130dea36849edc3c8db90ec4",
+      "entry_result": "74d52424c59e3a4fd2e6a4036f66a42a43fc45d3f67b0e5d4aef1bafc1eec16a",
+      "held_block_snapshot": "6c757969c9577b7ea82f9ce6203c6bc43ecc27b21624c81a25b25aa04aa2fc4a",
+      "store_host_report": "9b1cc36f6ecd37d3eddac6cd8e814ada3dafbbdf6509ebc41f15e5c3703f2aee",
+      "store_producer_log": "4d664286fb3a320097c317ee418c814b50341fb29123011a92bcae808369935f",
+      "restoration": "89ae74f00323fd69a22225a25457930460cccb8bba219b60afdcc880483ecf46",
+      "final_snapshot": "d79fe646344e59fe378f51a34a6a96fc963cba704872f7c6287dfea395b1958e"
+    },
+    "enable": {
+      "native_returns": 1,
+      "mode_before": 65585,
+      "mode_returned": 2162739,
+      "pending_returned": 5,
+      "application_set_additional_bit": 21,
+      "raw_actor_ok": false,
+      "raw_actor_refusal": "post-Run exact-mode assertion rejected the application-set bit21 before the separate Record path; the app nevertheless completed the requested block",
+      "completed_strip": {
+        "button_count": 2,
+        "has_slider": true,
+        "slider_max": null
+      },
+      "completed_current_channel": 2,
+      "record_commands_dispatched": 0,
+      "stop_commands_dispatched": 0,
+      "replayed_acquisitions": 0
+    },
+    "store": {
+      "entry": "bridge_host.api.store_completed_cycle -> RoutineCycle.store_completed_block",
+      "invocations": 1,
+      "recorded_by_tail": false,
+      "stopped_by_tail": false,
+      "dialog_committed": true,
+      "stored": true,
+      "decoded_stream_count": 2,
+      "host_sessions_opened": 1,
+      "host_sessions_closed": true,
+      "priming_performed": false,
+      "parameters_touched": false,
+      "helper_exit": 1,
+      "cleanup_limit": "Host session closed and the producer reported its helper exited with code 1; no explicit script-detach receipt survived. Graceful helper shutdown is not accepted by this data-path demonstration."
+    },
+    "restoration": {
+      "checks": {
+        "control_configuration_restored": true,
+        "multiplexing_disabled": true,
+        "all_ten_non_bookkeeping_words_unchanged": true,
+        "all_ten_tgc_tables_unchanged": true,
+        "same_identity": true,
+        "ready_no_error_pending_zero": true,
+        "trigger_unchanged": true
+      },
+      "selected_channel": 1,
+      "sequences": 10,
+      "participants": [
+        1,
+        2,
+        10
+      ],
+      "first_channel": 1,
+      "finite_bit": 0,
+      "mode_before": 73776,
+      "mode_after": 2170928,
+      "multiplex_enabled": false,
+      "pending": 0,
+      "trigger_word": 4,
+      "all_ten_non_bookkeeping_words_unchanged": true,
+      "all_ten_tgc_tables_unchanged": true,
+      "raw_byte_identity_restored": false,
+      "remaining_cache_word_differences": {
+        "1": [
+          52
+        ],
+        "2": [
+          52
+        ],
+        "3": [
+          52,
+          53,
+          83
+        ],
+        "4": [
+          52,
+          53,
+          83
+        ],
+        "5": [
+          52,
+          53,
+          83
+        ],
+        "6": [
+          52,
+          53,
+          83
+        ],
+        "7": [
+          52,
+          53,
+          83
+        ],
+        "8": [
+          52,
+          53,
+          83
+        ],
+        "9": [
+          52,
+          53,
+          83
+        ],
+        "10": [
+          52
+        ]
+      },
+      "cache_word_names": {
+        "52": "cached Mpx_Mode",
+        "53": "cached Mpx_Nb_Sequences",
+        "83": "cached Current_Channel"
+      },
+      "application_set_bit21_retained_after_positive_validator_return": true,
+      "pre_existing_channel4_and_gain10_debt_unchanged": true
+    }
+  },
+  "acceptance": {
+    "finite_artifact_demonstrated": true,
+    "store_only_data_path_demonstrated": true,
+    "disabled_mode_independently_read": true,
+    "one_command_workflow_accepted": false,
+    "graceful_store_helper_shutdown_accepted": false,
+    "strict_full_image_restoration_accepted": false,
+    "scientific_signal_validity_established": false,
+    "remaining": [
+      "Promote the measured automatic-completion path without issuing a Record replay after Enable.",
+      "Correct the over-strict post-enable mode predicate and make producer shutdown retain explicit detach/exit evidence.",
+      "Reconcile the pre-existing channel-4 acoustic configuration and channel-10 gain debt; this recording did not change them.",
+      "Do not manufacture raw image equality: native recording legitimately updates cached words 52/53/83 even for unused channels."
+    ]
+  }
+}

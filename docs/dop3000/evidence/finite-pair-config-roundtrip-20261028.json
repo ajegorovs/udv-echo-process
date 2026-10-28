@@ -4,6 +4,7 @@
   "date": "2026-10-28",
   "scope": "Disabled-mode configuration roundtrip for the manual channel pair 1+2 and its restoration. No multiplex enable, no Record, no acquisition, no Store.",
   "raw_capture_limit": "Input hashes, per-phase native-return counts and derived digests only. Raw snapshots, live bindings and the injected candidate remain private; a repository-only reader cannot remeasure the trial.",
+  "candidate_hash_normalization": "Candidate digest identifies UTF-8 program text with LF newline normalization, not raw on-disk CRLF bytes.",
   "source_hashes": {
     "before.json": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
     "before-with-tgc.json": "c5cf2838d9a7a0df5a68c29001b9962f3a26947b47964ceec47e77e3390f3a42",

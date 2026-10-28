@@ -62,11 +62,63 @@ limitation without altering the raw result or repeating the operation. The
 [derived caller evidence](evidence/finite-flag-caller-20261027.json) states the private-capture limits.
 Retention is a tested correction; no allocator/GC event was observed to prove the failure mechanism.
 
-The unchanged original helper is not the accepted candidate. Participant/numeric/first-channel
-composition, finite acquisition and live storage acceptance remain open. In particular an offline actor
+The unchanged original helper is not the accepted candidate. The 2026-10-28 measured configuration
+transaction and finite-artifact/store-only demonstration below supersede the earlier open-data-path
+checkpoint; a promoted one-command workflow and graceful producer shutdown remain open. In particular an offline actor
 with a wrong stack contract or widget/Win32-handle confusion is rejected before live use, not excused
 by passing tests of its own assumptions. Do not substitute a different control, disable a guard or
 relabel a press as native-call acceptance. An executable verified finish/exit remains the enable gate.
+
+## Finite completion can precede an explicit Record command
+
+In the owner-authorized 2026-10-28 manual 1+2 trial, native Run queued command 5 and the
+application set an additional **bit 21**. An exact-mode guard rejected that state before its planned
+Record branch, but the application had already completed the requested finite block: STORE with two
+buttons and a slider. The non-destructive public store-completed tail stored it once. The
+[committed BDD and evidence](evidence/finite-multiplex-live-20261028.json) establish two sequential
+velocity streams, five profiles × 80 gates each, without a separate Record or Stop from the adapter.
+This is a bounded measured configuration, not a universal rule that Run always records.
+
+Observe the actual completed/held state before dispatching Record. A negative post-Run wrapper result
+is not proof that acquisition never happened; preserve the original result and adjudicate its complete
+stream plus the live state. Never replay acquisition to improve report collation. Default one-command
+composition is not credited while its normal entry still refuses that valid application-set state.
+
+The external-trigger control's own handler sets/clears **bit 1 of Trigger_Mode**. The measured word
+was **4**, with that enable bit clear; do not require the whole word to be zero or infer external-trigger
+absence from the unrelated bit-6 guard. Preserve the complete trigger word.
+
+## Capture all images, but separate settings from proven recording-cache writes
+
+The native parameter writer stores global `Mpx_Mode` in word **52**, sequence count in **53**, and
+`Current_Channel` in **83**. The finite recording updated these fields across **all ten** cached images,
+including non-participants. All other words and all ten separate TGC tables matched the pre-acquisition
+capture. After restoration the global activity flag was clear and the user controls matched their
+original values, but the application retained bit 21 and cached-image byte equality was false.
+
+Keep the before/after images, enumerate every changed index, and justify any excluded field through
+its actual writer. Do not call an unknown change bookkeeping, do not manufacture raw equality, and do
+not silently retire a strict byte-restoration criterion. Configuration-only round trips can still
+require full image equality. The application uses a **separate TGC array** with **2048 bytes per
+channel**; operation parameters occupy **256 32-bit words per channel**. The copy-from-channel handler
+copies the TGC block and calls the parameter reader/writer; equality of two parameter images does not
+prove that their TGC blocks are equal or that copy/refresh restores assisted settings unchanged.
+
+Capture TGC before any proposed copy. Validate every planned operation's own class-specific reader
+shape before the first mutation: the observer exposes a disabled byte for `TSp_Button`, not for
+`TSp_Value_Button`. A green test of participant-only bindings does not preflight a later numeric phase.
+
+## Exit and helper-lifecycle claims have distinct boundaries
+
+The command-2 dispatcher return is not the end of its effect: `GoMesure` uses that return to re-enter
+`Update_And_Restart`, whose body initializes/programs the device. The earlier universal claim that Off
+has no reachable device exit was false; an interior address was also mistaken for the
+`End_And_Close` entry. This source correction is not a measured active-hardware abort. The completed
+trial's disabled state was read independently after Store.
+
+The store host reported its session closed, but its helper exited **1** and no explicit injected-script
+detach receipt survived. Keep successful file storage separate from graceful instrumentation shutdown;
+the latter is not accepted by this demonstration. Do not infer cleanup from a file or a closed flag.
 
 ## Assisted state loads per channel; refresh write-back must be accounted for
 
