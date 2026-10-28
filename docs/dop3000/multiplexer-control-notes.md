@@ -110,6 +110,10 @@ Capture TGC before any proposed copy. Validate every planned operation's own cla
 shape before the first mutation: the observer exposes a disabled byte for `TSp_Button`, not for
 `TSp_Value_Button`. A green test of participant-only bindings does not preflight a later numeric phase.
 
+**Test the actual observer boundary, not only a port double.** The legacy observer reports a strip view, not measured button/slider structure, and its parameter-column read may be unavailable while a block is held. Fresh native pending/assisted pointers, actual strip/error/overlay reads, ten parameter images and ten TGC tables must be explicit; neither missing data nor a failed fresh read may become a cached clean state. Preserve the complete capture used for admission. A fake carrying invented fields or widget visibility proves neither the real schema nor reachability.
+
+**First channel is not current channel or combo visibility.** The native `Mpx_Mode` encodes the selected first channel in bits 16–19; its handler replaces that nibble with `ItemIndex + 1`. This is the native control word, not the BDD reader's acquisition-mode enum. The measured first-channel combo is hidden even when its text is `1`; requiring it to be visible rejects the real application. Decode the native field and compare it with the declaration rather than adopting `Current_Channel` or fabricating a visible widget.
+
 Cached image word 53 is a saved copy, **not the live global** `Mpx_Nb_Sequences`. The completed held-block capture states global count **1**, command identifier **0**, current channel **2** and mode **2162739**. Comparing that global count to the one-sequence request is required; a cached copy changing during later restoration does not justify dropping the global guard. `Execution_Code` is one identifier (Run **5**, Record **28**, Off/refresh **2**, idle **0**), never a queue depth or decrementing counter.
 
 ## Exit and helper-lifecycle claims have distinct boundaries

@@ -1,0 +1,180 @@
+{
+  "schema": "udv.finite-readonly-admission/1",
+  "date": "2026-10-28",
+  "kind": "derived-live-readonly-admission",
+  "raw_captures_published": false,
+  "offline_limit": "Tests check this derived summary; they cannot reproduce unpublished live process, UI or memory observations.",
+  "outcome": "read-only-admitted",
+  "native_workflow_accepted": false,
+  "instrumentation_started": false,
+  "device_commands_requested": [],
+  "mutation_attempted": false,
+  "captured_before": "2026-10-28T17:37:34.479909+02:00",
+  "captured_after": "2026-10-28T17:37:35.809440+02:00",
+  "before_words": {
+    "Mpx_Mode": 2170928,
+    "Current_Channel": 1,
+    "Mpx_Nb_Sequences": 10,
+    "Trigger_Mode": 4,
+    "pending": 0,
+    "Assisted_Mode": 0
+  },
+  "after_words": {
+    "Mpx_Mode": 2170928,
+    "Current_Channel": 1,
+    "Mpx_Nb_Sequences": 10,
+    "Trigger_Mode": 4,
+    "pending": 0,
+    "Assisted_Mode": 0
+  },
+  "admission": {
+    "controls": [
+      73776,
+      10,
+      1
+    ],
+    "raw_mode": 2170928,
+    "derived_bit_set": true,
+    "participants": [
+      1,
+      2,
+      10
+    ],
+    "run_control": "Btn_Mpx_Run",
+    "resolved_operations": [
+      "participants:0",
+      "count:1",
+      "flag:1",
+      "count:10",
+      "flag:0",
+      "participants:1",
+      "route:1",
+      "refresh:10",
+      "refresh:2",
+      "refresh:1"
+    ],
+    "declared": {
+      "channels": [
+        1,
+        2
+      ],
+      "sequences": 1,
+      "current": 1,
+      "configured_mode": 65585,
+      "manual_word": 1,
+      "profiles_word": 51,
+      "profile_count": 5,
+      "reference": "original.json"
+    }
+  },
+  "resolved_setup_restore_count": 10,
+  "template": {
+    "template_bytes": 28513,
+    "template_file_sha256": "f7f59de827175c1cdb27bf2a9274277f1575eb03d29f658ac342b5a81b0bb547",
+    "template_text_sha256": "e638429adc75c448d4176788bc86c26b57ee41afbc798de210b606823c7567f4",
+    "template_newline": "crlf",
+    "attached_bytes": null,
+    "attached_sha256": null
+  },
+  "prototype_source_sha256": "670d5bbf4d3f12bbf1e65277415d8ba8293a05dd87a23985b4e27c783a5da75b",
+  "checks": {
+    "same_identity": true,
+    "all_ten_images_unchanged": true,
+    "all_ten_tgc_unchanged": true,
+    "native_controls_unchanged": true,
+    "disabled_ready_after": true,
+    "stored_files_unchanged": true,
+    "no_attached_payload": true,
+    "no_native_attempt": true
+  },
+  "all_ten_parameter_images": {
+    "1": {
+      "before_sha256": "128c1ca0095bd7e69a04290175588c39079027fc899133f69dfa8d375e38fdf5",
+      "after_sha256": "128c1ca0095bd7e69a04290175588c39079027fc899133f69dfa8d375e38fdf5"
+    },
+    "2": {
+      "before_sha256": "93d8ca330ba3b1094f9cd5363b62e1192578f1866aed037b4da1f9952bb4f09f",
+      "after_sha256": "93d8ca330ba3b1094f9cd5363b62e1192578f1866aed037b4da1f9952bb4f09f"
+    },
+    "3": {
+      "before_sha256": "e636090f83ad3a982945c6a629355a73db5b234154aff9ab173537b6db82eb8a",
+      "after_sha256": "e636090f83ad3a982945c6a629355a73db5b234154aff9ab173537b6db82eb8a"
+    },
+    "4": {
+      "before_sha256": "6e3fd51e5a0c7f00f378caddc730b039cfca5ebd2fdbdb377d3ae4e9d5383738",
+      "after_sha256": "6e3fd51e5a0c7f00f378caddc730b039cfca5ebd2fdbdb377d3ae4e9d5383738"
+    },
+    "5": {
+      "before_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "after_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a"
+    },
+    "6": {
+      "before_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "after_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a"
+    },
+    "7": {
+      "before_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "after_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a"
+    },
+    "8": {
+      "before_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "after_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a"
+    },
+    "9": {
+      "before_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "after_sha256": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a"
+    },
+    "10": {
+      "before_sha256": "0f845589031e46a95f6c970818a9dec9ad62852fa7ae9c9be07ea12be4adbeb6",
+      "after_sha256": "0f845589031e46a95f6c970818a9dec9ad62852fa7ae9c9be07ea12be4adbeb6"
+    }
+  },
+  "all_ten_tgc": {
+    "1": {
+      "before_sha256": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+      "after_sha256": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797"
+    },
+    "2": {
+      "before_sha256": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+      "after_sha256": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797"
+    },
+    "3": {
+      "before_sha256": "c3572b678c80c4e054ff93e0dafe14c3f22fedff07e3d853b0612ec93d485853",
+      "after_sha256": "c3572b678c80c4e054ff93e0dafe14c3f22fedff07e3d853b0612ec93d485853"
+    },
+    "4": {
+      "before_sha256": "6f20874e12b9a9d6669ec0bbca87ddc141ddca0c4e9b099e5a34a1f0c07d1078",
+      "after_sha256": "6f20874e12b9a9d6669ec0bbca87ddc141ddca0c4e9b099e5a34a1f0c07d1078"
+    },
+    "5": {
+      "before_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "after_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8"
+    },
+    "6": {
+      "before_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "after_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8"
+    },
+    "7": {
+      "before_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "after_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8"
+    },
+    "8": {
+      "before_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "after_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8"
+    },
+    "9": {
+      "before_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "after_sha256": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8"
+    },
+    "10": {
+      "before_sha256": "5e7f87b26ca5259aff7864360b8ebab9c031f92bc27a20ed7f8dad7f8ca024b5",
+      "after_sha256": "5e7f87b26ca5259aff7864360b8ebab9c031f92bc27a20ed7f8dad7f8ca024b5"
+    }
+  },
+  "limits": [
+    "No configuration, Run, Record, Store, Stop or refresh was invoked.",
+    "Native dispatch, held-block observation, live helper cleanup and restoration still require bounded acceptance.",
+    "The initial binding-catalog read uses the legacy observer before mutation; subsequent scientific snapshots use the minimal reader.",
+    "Pre-existing channel-4 and channel-10 repair debt is not repaired by this check."
+  ]
+}
