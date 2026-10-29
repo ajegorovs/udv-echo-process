@@ -106,6 +106,12 @@ from udv_echo_process.acquire.finite import (
     FiniteRunRequest,
     classify_finite_run,
 )
+from udv_echo_process.acquire.finite_workflow import (
+    FiniteBackend,
+    FiniteChannel,
+    FiniteInvocation,
+    run_finite,
+)
 from udv_echo_process.acquire.log import (
     DecodedBlock,
     PointStatus,
@@ -206,6 +212,9 @@ __all__ = [
     "DialogParameters",
     "FactSource",
     "FiniteAction",
+    "FiniteBackend",
+    "FiniteChannel",
+    "FiniteInvocation",
     "FiniteObservation",
     "FiniteRunDecision",
     "FiniteRunReceipt",
@@ -268,6 +277,7 @@ __all__ = [
     "read_entries",
     "resolution_for_rung",
     "routed",
+    "run_finite",
     "rung_mm",
     "strip_controls",
     "sweep_id_for",

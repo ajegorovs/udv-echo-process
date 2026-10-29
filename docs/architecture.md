@@ -58,6 +58,8 @@ establish off-instrument.
 
 `acquire/finite.py` is the address-free post-Run interpreter: frozen request/receipt/observation models produce only `WAIT`, `STORE_COMPLETED` or `REFUSE`. It accepts the measured application-derived mode flag, requires an owned completed two-button STORE row and cannot issue Record or Stop. Its public exports are available from both `udv_echo_process` and `udv_echo_process.acquire`; the live enabler/bindings remain private and the assembled finite workflow is not accepted by classifier tests.
 
+The opt-in `udv-acquire finite` command and address-free `acquire/finite_workflow.py` coordinator are the package promotion: explicit trusted private provider/configuration, no implicit native backend, per-channel declarations, terminal refusal/debt, independent BDD checks and close-before-restore. Its parser/loader/coordinator have offline coverage and real-provider static admission, **not packaged live acceptance**. See [the finite-command/provider contract](dop3000/finite-command.md).
+
 The bridge host preserves nonzero producer exits and channel close failures through `session.close_problem`; activation reports expose `session_close_problem` and refuse readiness on a failed close. `session_closed` means closure was called, not that injected instrumentation was detached.
 
 ### Dependency boundaries

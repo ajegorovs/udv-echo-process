@@ -17,6 +17,12 @@ from udv_echo_process.acquire.finite import (
     FiniteRunRequest,
     classify_finite_run,
 )
+from udv_echo_process.acquire.finite_workflow import (
+    FiniteBackend,
+    FiniteChannel,
+    FiniteInvocation,
+    run_finite,
+)
 from udv_echo_process.analysis import (
     EchoRpmInputError,
     RobustGateStatus,
@@ -111,6 +117,9 @@ __all__ = [
     "ExtractedData",
     "FilterSpec",
     "FiniteAction",
+    "FiniteBackend",
+    "FiniteChannel",
+    "FiniteInvocation",
     "FiniteObservation",
     "FiniteRunDecision",
     "FiniteRunReceipt",
@@ -166,6 +175,7 @@ __all__ = [
     "resample",
     "rpm_from_channel",
     "rpm_from_echo",
+    "run_finite",
     "setpoint_rpm_from_stem",
     "synchronize",
 ]
