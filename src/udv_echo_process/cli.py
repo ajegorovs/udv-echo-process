@@ -34,6 +34,7 @@ from pathlib import Path
 from udv_echo_process import run_all
 from udv_echo_process.acquire import campaign, driver, live, run_plan
 from udv_echo_process.acquire.actuator import ProcessMode
+from udv_echo_process.acquire.bridge import BridgeRefused, BridgeUnavailable
 from udv_echo_process.acquire.config import ChannelSetting
 from udv_echo_process.acquire.log import PointStatus, point_records, read_entries
 from udv_echo_process.analysis import (
@@ -1300,6 +1301,22 @@ def acquire_main(argv: list[str] | None = None) -> None:
     is not there) — reported as one ``udv-acquire:`` line and never as a traceback, because the
     run did not happen and nothing was written.
 
+    ``--route bridge`` plus ``--bridge-guarded-cycle`` is the one bridge selection that is not a
+    press dispatch: the host module named by ``--bridge-runner``/``UDV_BRIDGE_RUNNER`` may export a
+    ``guarded_cycle`` factory (the contract is
+    :class:`~udv_echo_process.acquire.bridge.GuardedCycleFactory`) that builds the hardened
+    :class:`~udv_echo_process.acquire.cycle.RoutineCycle`. That selection is closed: on the ``ui``
+    route, without the module or the export, with a factory that raises or returns something that is
+    not a bound guarded cycle, or with a build digest that disagrees with the table or the cycle's
+    binding, the command exits **2** naming the reason — it never falls back to the press route. The
+    checks split where they must: a ``target_digest`` that contradicts the table is refused **before**
+    the factory is called, and the rest need what it returns, so the factory may already have observed
+    the running application by then (that is how a binding is taken). No refusal lets the cycle start,
+    stop or store — every check completes before one — and none of them leaves the application
+    mutated. With ``--json`` the refusal is printed as ``{"refused": "<reason>"}``
+    and nothing else on stdout. The flag selects a cycle, not an input-free run: the Store dialog's
+    ``Accept`` and the sweep's reset are still presses.
+
     ``plan`` and ``report`` are the campaign layer's two halves that touch no instrument at all:
     ``plan`` validates a definition and prints the points it would run, ``report`` reads a job
     log (and the manifest beside it) and prints how the job went. Both work on a machine whose
@@ -1328,12 +1345,59 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
 
+    def numeric_writes_argument(target: argparse.ArgumentParser) -> None:
+        target.add_argument(
+            "--bridge-numeric-writes",
+            action="store_true",
+            help=(
+                "write a point's parameters through the bridge's own setter instead of the GUI dialogs "
+                "(bridge route only; the value is read back, a mismatch is restored, and an unverifiable "
+                "restore poisons the actuator for the rest of the run)"
+            ),
+        )
+
     def channel_argument(target: argparse.ArgumentParser) -> None:
         target.add_argument(
             "--channel",
             type=int,
             default=None,
             help="measurement channel (default: the UDV_CHANNEL setting)",
+        )
+
+    def route_arguments(target: argparse.ArgumentParser) -> None:
+        """``--route`` and where a bridge route finds its two machine-local halves.
+
+        The route defaults to ``ui`` so nothing changes for an existing caller, and it is a choice
+        rather than an inference: a run that asked for the bridge and silently got the GUI route would
+        record data the caller did not ask for.  The two paths are optional here and required by the
+        route itself — the actuator refuses by name when they are missing, which is the same refusal a
+        programmatic caller gets.
+        """
+        target.add_argument(
+            "--route",
+            choices=("ui", "bridge"),
+            default="ui",
+            help="which actuator performs the record/store cycle (default: ui)",
+        )
+        target.add_argument(
+            "--bridge-table",
+            default=None,
+            help="machine-local bridge operation table (default: UDV_BRIDGE_TABLE, else the table under LOCALAPPDATA)",
+        )
+        target.add_argument(
+            "--bridge-runner",
+            default=None,
+            help="machine-local bridge dispatch module (default: UDV_BRIDGE_RUNNER)",
+        )
+        target.add_argument(
+            "--bridge-guarded-cycle",
+            action="store_true",
+            help=(
+                "record through the guarded routine cycle the host module exports (bridge route only; "
+                "refuses by name instead of pressing when the route, the module's 'guarded_cycle' "
+                "factory, its binding or its build does not match — the Store dialog's Accept and the "
+                "sweep's reset still need a press, so this is not an input-free operation)"
+            ),
         )
 
     def expect_mode_argument(target: argparse.ArgumentParser) -> None:
@@ -1371,6 +1435,23 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_parser.add_argument("number", type=int)
 
+    column_parser = subcommands.add_parser(
+        "column",
+        help="set the parameter column's dropdowns by value text, and read each one back",
+    )
+    column_parser.add_argument(
+        "--sensitivity",
+        default=None,
+        help="Sensitivity entry by its exact text, e.g. 'high'",
+    )
+    column_parser.add_argument(
+        "--emitting-power",
+        default=None,
+        help="Emitting power entry by its exact text, e.g. 'High'",
+    )
+    channel_argument(column_parser)
+    column_parser.add_argument("--json", action="store_true")
+
     burst_parser = subcommands.add_parser(
         "burst-length",
         help="make the application record at a burst length, and verify it from its dialog",
@@ -1392,8 +1473,10 @@ def acquire_main(argv: list[str] | None = None) -> None:
     point_parser.add_argument("--seconds", type=float, required=True)
     channel_argument(point_parser)
     expect_mode_argument(point_parser)
+    numeric_writes_argument(point_parser)
     point_parser.add_argument("--store-dir", default=None)
     point_parser.add_argument("--json", action="store_true")
+    route_arguments(point_parser)
 
     sweep_parser = subcommands.add_parser(
         "sweep", help="a multi-point sweep, one JSONL entry per point"
@@ -1404,8 +1487,10 @@ def acquire_main(argv: list[str] | None = None) -> None:
     )
     channel_argument(sweep_parser)
     expect_mode_argument(sweep_parser)
+    numeric_writes_argument(sweep_parser)
     sweep_parser.add_argument("--store-dir", default=None)
     sweep_parser.add_argument("--name-prefix", default="sweep")
+    route_arguments(sweep_parser)
     sweep_parser.add_argument(
         "--log", default=None, help="JSONL log (default: <store-dir>/sweep.jsonl)"
     )
@@ -1571,6 +1656,25 @@ def acquire_main(argv: list[str] | None = None) -> None:
             verified, fingerprint = live.select_channel(args.number, notes)
             print(f"verified channel: {verified}")
             _acquire_report(fingerprint, as_json)
+        elif args.command == "column":
+            result = live.set_column(
+                sensitivity=args.sensitivity,
+                emitting_power=args.emitting_power,
+                channel=args.channel,
+                notes=notes,
+            )
+            if not as_json:
+                # With --json the report is the only thing on stdout; the per-change lines are for a
+                # reader at the terminal and the model carries the same facts.
+                for change in result.changes:
+                    print(
+                        f"{change.combo}: {change.before!r} -> {change.readback!r} "
+                        f"(entry {change.index + 1} of {len(change.entries)})"
+                    )
+            if not result.verified:
+                print("refused: a dropdown did not read back as requested", file=sys.stderr)
+                code = 1
+            _acquire_report(result, as_json)
         elif args.command == "burst-length":
             result = live.set_burst_length(args.value, args.channel, notes)
             if result.verified:
@@ -1604,6 +1708,11 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 args.channel,
                 notes,
                 expected_mode=ProcessMode(args.expect_mode),
+                route=args.route,
+                table_path=args.bridge_table,
+                runner_path=args.bridge_runner,
+                numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
+                guarded_cycle=bool(getattr(args, "bridge_guarded_cycle", False)),
             )
             print(f"stored: {result}" if ok else f"refused: {result}")
             code = 0 if ok else 1
@@ -1618,6 +1727,11 @@ def acquire_main(argv: list[str] | None = None) -> None:
                 name_prefix=args.name_prefix,
                 log_path=Path(args.log) if args.log else directory / "sweep.jsonl",
                 notes=notes,
+                route=args.route,
+                table_path=args.bridge_table,
+                runner_path=args.bridge_runner,
+                numeric_writes=bool(getattr(args, "bridge_numeric_writes", False)),
+                guarded_cycle=bool(getattr(args, "bridge_guarded_cycle", False)),
                 sound_speed_ms=args.sound_speed,
                 first_gate_mm=args.first_gate,
                 target_depth_mm=args.depth,
@@ -1645,6 +1759,16 @@ def acquire_main(argv: list[str] | None = None) -> None:
         # the campaign handlers give above — the driver's own words on one line, exit 2 —
         # because a refused step is a refusal (nothing ran, nothing was written), not a crash.
         print(f"udv-acquire: {exc}", file=sys.stderr)
+        code = 2
+    except (BridgeUnavailable, BridgeRefused) as exc:
+        # A bridge **configuration** refusal — the route, the guarded-cycle factory, its binding or its build —
+        # happens while the actuator is being built, so nothing touched the application and nothing was written.
+        # One line and exit 2, the same answer the driver's own refusals get; with `--json` the machine gets the
+        # reason as the only thing on stdout. Never a traceback: a run that did not happen must not read as a crash.
+        reason = exc.reason
+        print(f"udv-acquire: {reason}", file=sys.stderr)
+        if as_json:
+            _acquire_report({"refused": reason}, True)
         code = 2
     finally:
         for note in notes:

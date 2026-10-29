@@ -525,6 +525,20 @@ class StubScreen(driver.Win32Actuator):
     def window_caption(self) -> str:
         return self._caption
 
+    def application_error(self) -> str | None:
+        """This synthetic screen is never showing a top-level error box.
+
+        A modelled *clear* answer, not a disabled check. ``record_and_store`` asks for the
+        application's top-level error state before it reads anything, and the live reader would
+        enumerate this machine's real top-level windows and their owning processes — which this
+        file must never do, since it has to be safe to run with a live application in front of it.
+        ``None`` is the one answer that claims a clear screen, so stating it here is the same
+        explicit boundary ``tests/test_acquire_driver.py``'s ``FakeDriver`` states; every refusal
+        below still comes from the gate under test, and the guard itself is exercised in
+        ``tests/test_acquire_readiness.py``.
+        """
+        return None
+
     def _find_overlay(self, roles: dict | None = None):
         return None
 

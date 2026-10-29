@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "kind": "derived-disabled-pair-configuration-roundtrip",
+  "date": "2026-10-28",
+  "scope": "Disabled-mode configuration roundtrip for the manual channel pair 1+2 and its restoration. No multiplex enable, no Record, no acquisition, no Store.",
+  "raw_capture_limit": "Input hashes, per-phase native-return counts and derived digests only. Raw snapshots, live bindings and the injected candidate remain private; a repository-only reader cannot remeasure the trial.",
+  "candidate_hash_normalization": "Candidate digest identifies UTF-8 program text with LF newline normalization, not raw on-disk CRLF bytes.",
+  "source_hashes": {
+    "before.json": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
+    "before-with-tgc.json": "c5cf2838d9a7a0df5a68c29001b9962f3a26947b47964ceec47e77e3390f3a42",
+    "final.json": "51606487ab3b8e0c1150383431520ce4e0aab981a264c492fcf171bc05de7f5c",
+    "after-with-tgc.json": "76e869bd5667ced8e8538e8a64a418efadcbc5822289068d5869bd0f6bf0e430",
+    "history.json": "775eca33cfe5bd19f6da8caef04c748dff5b6e25538999b260d5af78e16d2519",
+    "candidate": "3166061063cf94863a5a09dae6501c733ea58fda2cd4f99efddae90b66109ca7"
+  },
+  "phases": [
+    {
+      "phase": "remove10",
+      "accepted": true,
+      "native_returns": 1,
+      "mode_count_current": [
+        65584,
+        10,
+        1
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "count1",
+      "accepted": true,
+      "native_returns": 2,
+      "mode_count_current": [
+        65584,
+        1,
+        1
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "finite1",
+      "accepted": true,
+      "native_returns": 2,
+      "mode_count_current": [
+        65585,
+        1,
+        1
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "restore-count10",
+      "accepted": true,
+      "native_returns": 2,
+      "mode_count_current": [
+        65585,
+        10,
+        1
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "restore-flag0",
+      "accepted": true,
+      "native_returns": 2,
+      "mode_count_current": [
+        65584,
+        10,
+        1
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "restore-add10",
+      "accepted": true,
+      "native_returns": 1,
+      "mode_count_current": [
+        73776,
+        10,
+        10
+      ],
+      "parameter_images_changed": {
+        "1": [
+          52
+        ]
+      }
+    },
+    {
+      "phase": "restore-current1",
+      "accepted": true,
+      "native_returns": 2,
+      "mode_count_current": [
+        73776,
+        10,
+        1
+      ],
+      "parameter_images_changed": {}
+    }
+  ],
+  "restored": {
+    "all_ten_parameter_images": "equal to the pre-trial images",
+    "all_ten_tgc_tables": "equal to the pre-trial tables",
+    "mode_count_current": [
+      73776,
+      10,
+      1
+    ],
+    "strip": "ready",
+    "application_error": null
+  },
+  "parameter_image_sha256": {
+    "1": "d4c666f270a7c01c359a2938029cbcf6db08f36ce16f2706bd3301b55278ac46",
+    "2": "eb563d30fde4590d481014f5ddd54ad389acf345f7f8c8a2b103e397385c0806",
+    "3": "3943e3593c9b4e53ad621c47265fc67cfd7335a03764cc2671ec6c0b0fc40a3f",
+    "4": "e83cabc2d4218819e78a6ebb699efaed51cdfbe106847cd7b1634fa48ad0bc05",
+    "5": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "6": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "7": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "8": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "9": "ed84ceb2c5dcceb27b526a530abc701a90630e2ab94bbcd3fdd708c155f9562b",
+    "10": "0b78eb0e1388b43f7b46a3674d5e613fcbc0dd933c934cc2bfd744793861faf5"
+  },
+  "tgc_table_sha256": {
+    "1": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+    "2": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+    "3": "c3572b678c80c4e054ff93e0dafe14c3f22fedff07e3d853b0612ec93d485853",
+    "4": "6f20874e12b9a9d6669ec0bbca87ddc141ddca0c4e9b099e5a34a1f0c07d1078",
+    "5": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+    "6": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+    "7": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+    "8": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+    "9": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+    "10": "5e7f87b26ca5259aff7864360b8ebab9c031f92bc27a20ed7f8dad7f8ca024b5"
+  },
+  "native_acquisition_requests": 0,
+  "enable_issued": false,
+  "store_performed": false,
+  "reporting_note": "The private runner's own aggregate predicate reads false for the final routing phase because its effect check expects this fork's absent mux-op rows; each phase was adjudicated from the complete saved stream instead, and nothing was re-run to improve a report.",
+  "not_established": [
+    "multiplex enable and its device effect",
+    "recording start/completion",
+    "active-mode exit or abort",
+    "live store-only route",
+    "channel 4 configuration and channel 10 gain restoration",
+    "signal validity (sensorless)"
+  ]
+}

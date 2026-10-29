@@ -21,6 +21,12 @@ What the record must carry, and why:
   stored under the *next* point's name as a 1,039,825 B file — 10× a normal
   point — so a size far off the signature invalidates the point; that is the
   cheapest guard against silent contamination (docs/16 §15b).
+- the **cycle's own report**, when the actuator can supply one
+  (``SweepPointRecord.cycle_report``): where the record/stop/store ran to, which
+  strip view it last confirmed and how long the stored block's own timestamps
+  span. It sits *beside* ``status``/``failure`` rather than inside them, because
+  "the stop was never dispatched" and "this file is not this point's data" are
+  different findings that send a reader to different places.
 
 Records are stored as JSONL so a run can append as it goes and a crash leaves
 every completed point behind. A ``record_type`` literal discriminates the header
@@ -54,6 +60,7 @@ from udv_echo_process.acquire.config import (
     ProfileTiming,
     RecordSettings,
 )
+from udv_echo_process.acquire.cycle import CycleReport
 from udv_echo_process.acquire.plan import SweepDefinition
 from udv_echo_process.models.base import ValueModel
 
@@ -302,6 +309,19 @@ class SweepPointRecord(ValueModel):
     file_size_bytes: int | None = Field(default=None, ge=0)
     expected_size_bytes: int | None = Field(default=None, ge=0)
     decoded: DecodedBlock | None = None
+    #: The application's own report for the cycle this point spent, when the actuator could supply
+    #: one (:class:`~udv_echo_process.acquire.cycle.CycleReport`, read once immediately after the
+    #: cycle call). ``None`` is *no cycle evidence supplied* — a legacy/UI actuator that has no such
+    #: capability, or a point refused before its cycle was ever attempted — and never "the cycle
+    #: said nothing": a cycle produces a report on every exit, so its absence says where the report
+    #: came from, not what happened.
+    #:
+    #: Deliberately a second field beside ``status``/``failure`` rather than part of them. Those are
+    #: the **point's** verdict (was this file this point's data); the report is the **cycle's** —
+    #: where the record/stop/store ran to, what it confirmed, the stored block's own span. Merging
+    #: them would make a failed stop indistinguishable from a contaminated file, and the two send a
+    #: reader to different places. Defaulted so a log written before the field existed still reads.
+    cycle_report: CycleReport | None = None
     failure: str | None = None
     #: Covariate fields the word-level check *compared* for this point. Empty means
     #: nobody looked — the difference between "it agreed" and "it was never compared".

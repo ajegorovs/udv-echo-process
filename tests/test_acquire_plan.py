@@ -585,3 +585,36 @@ def test_profile_timing_rejects_a_negative_tolerance() -> None:
 def test_profile_timing_rejects_a_nonpositive_period(field: str) -> None:
     with pytest.raises(ValueError):
         ProfileTiming(**{field: 0.0})
+
+
+def test_the_ladder_index_and_the_point_key_differ_by_one() -> None:
+    """The two coordinate systems a caller has to keep apart, pinned on a real screen's numbers.
+
+    ``nearest_rung_index`` answers the ladder's **0-based** index (what word 10 of a stored block
+    carries), while ``SweepDefinition.rungs`` and ``plan_point`` are **1-based** keys ``k``.  A
+    caller that feeds an index to ``plan_point`` plans one rung finer than the screen states — on
+    the instrument measured 2026-10-22 (c = 1480, 2.22 mm, 42 gates) that is 2.0967 mm instead of
+    2.22 mm, a pitch the app would have accepted and the sweep would have mislabelled.
+    """
+    from udv_echo_process.acquire.plan import (
+        SweepDefinition,
+        nearest_rung_index,
+        plan_point,
+        resolution_for_rung,
+    )
+
+    sound_speed, resolution, first_gate, gates = 1480.0, 2.22, 10.0, 42
+    index = nearest_rung_index(resolution, sound_speed)
+    assert index == 17
+    assert resolution_for_rung(index, sound_speed) == pytest.approx(resolution)
+
+    definition = SweepDefinition(
+        sound_speed_ms=sound_speed,
+        first_gate_mm=first_gate,
+        target_depth_mm=first_gate + (gates - 1) * resolution + resolution,
+        duration_s=8.0,
+        rungs=(index + 1,),
+    )
+    point = plan_point(index + 1, definition)
+    assert point.parameters.resolution_mm == pytest.approx(resolution)
+    assert point.parameters.gates == gates

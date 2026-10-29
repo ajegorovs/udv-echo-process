@@ -1,0 +1,81 @@
+{
+  "schema": "udv.finite-live-build-readonly/1",
+  "date": "2026-10-28",
+  "kind": "derived-live-readonly-build-verification",
+  "raw_captures_published": false,
+  "offline_limit": "This summary is checkable offline; the live control reads it derives from are private and cannot be reproduced from the repository.",
+  "intent": "Verify that every operation builder consumes freshly read control fields against the real application objects, not a stored baseline catalog.",
+  "outcome": "all-builders-built-from-live-fields",
+  "native_calls": 0,
+  "instrumentation_attached": false,
+  "device_commands_requested": [],
+  "mutation_attempted": false,
+  "wheel_not_used": "A Run build belongs to run_contract, not the pair builder; it was read by run_contract only.",
+  "run_contract": {
+    "name": "Btn_Mpx_Run",
+    "class": "TSp_Button",
+    "control_offset": 2868,
+    "event_code": 7454132,
+    "run_body_bytes": 516
+  },
+  "built_operations": {
+    "participants": {
+      "built": true,
+      "op": "set-participants"
+    },
+    "count": {
+      "built": true,
+      "op": "set-repeat-count"
+    },
+    "flag": {
+      "built": true,
+      "op": "set-flag"
+    },
+    "route": {
+      "built": true,
+      "op": "restore-current"
+    },
+    "refresh": {
+      "built": true,
+      "op": "refresh-manual"
+    }
+  },
+  "control_agreement": {
+    "button_int_cache_and_model_count_equal_while_idle": true,
+    "button_int_cache": 10,
+    "model_count": 10
+  },
+  "before_words": {
+    "Mpx_Mode": 2170928,
+    "Current_Channel": 1,
+    "Mpx_Nb_Sequences": 10,
+    "Trigger_Mode": 4,
+    "pending": 0,
+    "Assisted_Mode": 0
+  },
+  "after_words": {
+    "Mpx_Mode": 2170928,
+    "Current_Channel": 1,
+    "Mpx_Nb_Sequences": 10,
+    "Trigger_Mode": 4,
+    "pending": 0,
+    "Assisted_Mode": 0
+  },
+  "checks": {
+    "same_identity": true,
+    "all_ten_images_unchanged": true,
+    "all_ten_tgc_unchanged": true,
+    "native_controls_unchanged": true,
+    "disabled_ready_after": true,
+    "no_attached_payload": true
+  },
+  "prototype_source_sha256": "599d428ebff7470169692f982f0683ffb5b556e826ec4bf2b8618da61027863a",
+  "producer_source_sha256": "aad3b7da3dd6147c4c804c89747092b94da830e6c70977b93b8d5ee2831ccec7",
+  "generated_source_text_sha256": "e638429adc75c448d4176788bc86c26b57ee41afbc798de210b606823c7567f4",
+  "limits": [
+    "Builders were exercised; no native operation was dispatched.",
+    "The stored-block tail while the strip shows 'store' remains unmeasured live.",
+    "The producer dependency resolver is proven by refusal and by assembly tests, not by a successful new attachment after the fix.",
+    "One-command workflow acceptance remains false; the recorded name is taken so a future trial needs a new stem."
+  ]
+}

@@ -79,6 +79,12 @@ and measured-period laws, and the planner that now computes the whole period law
 belongs in one of those files (the mechanism, or the surface model) and is *linked* from this skill;
 a second copy in a skill is how the two forks drifted apart before.
 
+For native multiplexer controls, also read `docs/dop3000/multiplexer-control-notes.md` and the
+selected execution plan. They own the distinct channel-row roles, per-control polarity, model-toggle
+versus absolute-setter semantics, complete-image preservation and the current live-invocation gate.
+A static setter body and a correct object binding are not proof that the assembled calling adapter
+completes; an unknown native outcome is not a successful refusal or restoration.
+
 Reconnaissance, control-id mapping, message-based driving and artifact verification for
 Windows desktop applications that expose no SDK, CLI or protocol.
 
@@ -557,7 +563,9 @@ values, report what was accepted, and restore every field it touched.
   job log), add a thin public wrapper for every private a command needs
   (`hold_recording`, `wait_for_view_guarded`, `peek_overlay`), and give a whole sequence one
   composed method whose destructive step is replaced by the safe one (`preflight`: record, stop,
-  read the store dialog, **cancel** it). Three rules make the seam testable, and each was forced by
+  read the store dialog, **cancel** it) — which is why `preflight` is **not** a status read: it
+  spends a two-second recording and discards the block. For the screen use `acquire status`; for
+  the parameter column, read it and write nothing. Three rules make the seam testable, and each was forced by
   a fake that could not be driven otherwise: it reads through the **public primitive** the double
   already answers rather than the internal helper beside it (`strip_state()`, not
   `_state_of(roles)` — the same read, and only one of the two a double can produce); it uses the

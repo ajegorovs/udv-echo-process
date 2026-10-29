@@ -265,6 +265,7 @@ from udv_echo_process.acquire.udop.store import StoreSurface
 # tests that were written against the flat module — ``docs/dop3000/acquisition-architecture.md``
 # §5's *compatibility first* rule. The move changed no caller, and the gesture bodies further
 # down this file are byte-identical to the ones the live sessions proved.
+from udv_echo_process.acquire.ui.combo import ComboSelection, select_by_text
 from udv_echo_process.acquire.ui.dialog import (
     _DIALOG_INPUT_CLASSES,
     _DIALOG_MIN_CHILDREN,
@@ -321,6 +322,7 @@ from udv_echo_process.acquire.ui.menu import (
     MENU_ORDER,
     PARAMETERS_ENTRY,
     PARAMETERS_MENU,
+    OverlayOpener,
     _inside,
     anchor_button,
     anchor_clause,
@@ -334,6 +336,16 @@ from udv_echo_process.acquire.ui.menu import (
 from udv_echo_process.acquire.ui.menu import entry_buttons as _entry_buttons
 from udv_echo_process.acquire.ui.menu import observation_text as _observation_text
 from udv_echo_process.acquire.ui.model import Rect
+
+# The readiness half: the top-level error box's interpreter and the one optional-capability guard
+# every path that would act asks before it acts. The interpreter lives here with the other pure
+# readers — it decides *what to ask and in what order*, and ``driver`` hands it the transport — so
+# the runner, the recording surface, the bridge and the facade cannot answer "is the application
+# faulted?" differently. See ``ui/readiness.py``.
+from udv_echo_process.acquire.ui.readiness import (
+    application_error_refusal,
+    application_error_text,
+)
 from udv_echo_process.acquire.ui.strip import (
     has_slider,
     strip_state_of,
@@ -682,6 +694,7 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         channel: int | None = None,
         note_sink: Callable[[str], None] | None = None,
         allow_real_input: bool = True,
+        menu: OverlayOpener | None = None,
     ) -> None:
         """``channel`` is the measurement channel — the one knob.
 
@@ -704,7 +717,13 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         self._channel_setting = (
             ChannelSetting() if channel is None else ChannelSetting(channel=channel)
         )
+        #: A dispatcher that can show a menubar overlay without a pointer (``bridge.BridgeMenu``). When it is
+        #: bound, the menubar step stops needing the operator's cursor — the one capability the driver never
+        #: had unattended — and ``allow_real_input=False`` stops refusing that step.
+        self._menu = menu
         self._note_sink = note_sink
+        #: Each column combo's discovered entries, by handle — see select_combo_by_text.
+        self._combo_vocabulary: dict[int, tuple[str, ...]] = {}
         self._allow_real_input = bool(allow_real_input)
         #: Diagnostics only — never used as a binding.
         self.last_roles: dict | None = None
@@ -889,6 +908,39 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         :func:`~udv_echo_process.acquire.win32.cursor._activate_window`.
         """
         _activate_window(hwnd, user32=_user32)
+
+    def application_error(self) -> str | None:
+        """The text of a top-level error box the application is showing, or ``None``.
+
+        A message box is a **top-level** window of class ``#32770``, not a child of the main form, so every census in
+        this module misses it — the overlay guard, the child enumeration and the layout fingerprint all walk children.
+        Measured 2026-10-26: a Delphi access violation sat in front of the application for an hour while every menu call
+        reported ``executed: 0`` after its full timeout and every run refused with a reason about the foreground.
+
+        While such a box is up nothing on this route can succeed: the box's modal loop filters messages aimed at the
+        main form, so a posted wake-up never reaches the WndProc it is aimed at. That is why the answer is a refusal
+        naming the box rather than a retry — and why it is asked *before* any overlay handling, because a box outranks
+        every panel this driver knows.
+
+        The scan is :func:`~udv_echo_process.acquire.ui.readiness.application_error_text`, and the three things it fixes
+        are worth stating where a reader of *this* method will look for them: the target process is taken from the
+        application's **own** window and only that process's windows are classified (the earlier reader asked every
+        top-level window for its class and took the first message box it found, whoever owned it); the caption is read
+        through this driver's own query boundary (:meth:`_get_text`, ``WM_GETTEXT``) when the enumeration snapshot has
+        none, because ``GetWindowText`` answers ``""`` for nearly every widget here; and a window that cannot be
+        identified is **raised**, not skipped, because ``None`` claims a clear screen and that claim has to be
+        established. The main window is resolved by class rather than by a whole layout census: this check runs before
+        every press, and it needs no panel map to find a box that is not part of one.
+        """
+        win32gui, _ = _gui()
+        import win32process
+
+        return application_error_text(
+            gui=win32gui,
+            process=win32process,
+            window=self._main_hwnd(),
+            read_text=self._get_text,
+        )
 
     def _require_foreground(self, hwnd: int) -> None:
         """Assert the application is the **foreground** window before hovering it.
@@ -1606,6 +1658,14 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
         itself asserts and *writes* that field, which is exactly what a preflight must not do).
         Notes raised during the sequence are captured into the report as well as passed to the
         caller's sink, so a failure on a remote instrument can be read back afterwards.
+
+        It asks for the application's top-level error state **first**, before it reads the strip,
+        answers an overlay or presses anything: a faulted application is the one state in which
+        every step below is a call into a modal loop that filters this route's messages, and a
+        preflight that spent a recording learning that would be the same failure the guard exists
+        for. The refusal is the guard's own sentence (``acquire/ui/readiness.py``), raised as this
+        module's :class:`AcquisitionError` like every other preflight failure — no report is
+        returned for a cycle that was never run.
         """
         captured: list[str] = []
         sink = self._note_sink
@@ -1617,6 +1677,9 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
 
         self._note_sink = capture
         try:
+            refusal = application_error_refusal(self)
+            if refusal is not None:
+                raise AcquisitionError(refusal)
             state = self.strip_state()
             started_from = state.view.value
             if state.view is StripView.STORE:
@@ -1790,6 +1853,41 @@ class Win32Actuator(ParametersSurface, RecordingSurface, StoreSurface):
             raise AcquisitionError(f"no {name!r} combo in the parameter column")
         win32gui, _ = _gui()
         self._combo_select(combo["hwnd"], index, win32gui.GetParent(combo["hwnd"]))
+
+    def select_combo_by_text(self, name: str, text: str, *, settle_s: float = 0.35) -> ComboSelection:
+        """Select a column combo's entry by its **text**, and prove it by reading the widget back.
+
+        The entry is never chosen by counting steps: the vocabulary is discovered by stepping the control
+        until it clamps, and the wanted name is matched against what each step reported.  That is the rule the
+        burst writing already follows, applied to a list nobody can read up front — these Delphi combos answer
+        ``CB_SETCURSEL`` but no ``CB_GETCOUNT``, and every route that tried to open the list failed while the
+        widget itself stayed selectable.
+
+        ``settle_s`` is not decoration: one measured write reported its new value immediately and a different
+        one minutes later, so the read-back happens after a settle and a mismatch raises rather than passing.
+        """
+        combo = self._resolve()["combos"].get(name)
+        if combo is None:
+            raise AcquisitionError(f"no {name!r} combo in the parameter column")
+        hwnd = combo["hwnd"]
+        win32gui, _ = _gui()
+        parent = win32gui.GetParent(hwnd)
+
+        def settle() -> None:
+            time.sleep(settle_s)
+
+        selection = select_by_text(
+            text,
+            read=lambda: self._get_text(hwnd),
+            select=lambda index: self._combo_select(hwnd, index, parent),
+            settle=settle,
+            known_entries=self._combo_vocabulary.get(hwnd),
+        )
+        # Remembered for this widget: the walk queues one change notification per entry, and a queued
+        # notification can land after the selection that follows it (measured 2026-10-23). A second call
+        # therefore sends a single notification instead of rediscovering the list.
+        self._combo_vocabulary[hwnd] = selection.entries
+        return selection
 
     # ------------------------------------------------------------------ cycle internals
 

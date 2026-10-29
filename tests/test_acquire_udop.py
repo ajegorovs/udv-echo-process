@@ -120,6 +120,7 @@ RECORDING_METHODS = (
 )
 STORE_METHODS = (
     "_require_store_dialog",
+    "read_working_directory",
     "set_store_name",
     "assert_working_directory",
     "commit_store",
@@ -179,7 +180,9 @@ FACADE_METHODS = (
     "write_parameter",
     "apply_point",
     "select_combo",
+    "select_combo_by_text",
     "_as_role",
+    "application_error",
 )
 SURFACES = {
     parameters: PARAMETERS_METHODS,
@@ -232,7 +235,7 @@ FLAT_CLASS_SURFACE = frozenset(
 #: ``write_dialog_burst_length`` (the transaction), ``_row_reading`` / ``_row_reading_or_none`` (the
 #: two reads it needs and a read path does not: a row's entry list, and the same row by binding) and
 #: ``_burst_refusal`` (the refusal that closes the dialog without its ``Accept``) — plus
-#: ``_answer_burst_rejection``. The class's own name set at this tip is 102, not 96
+#: ``_answer_burst_rejection``. The class's own name set at this tip is 103, not 96
 #: (``docs/dop3000/acquisition-architecture.md`` §5, ``docs/dop3000/burst-length-control-plan.md``).
 CLASS_ADDITIONS = (
     "_screen_anchor_text",
@@ -241,6 +244,18 @@ CLASS_ADDITIONS = (
     "_row_reading_or_none",
     "_answer_burst_rejection",
     "_burst_refusal",
+    # the dropdown entry selected by its text: the walk that discovers a combo's vocabulary and the
+    # read-back that proves it, over the same ``_combo_select`` its sibling ``select_combo`` uses
+    "select_combo_by_text",
+    # the top-level error box: a message box is not a child of the main form, so no census in this module
+    # can see it, and while it is up its modal loop filters the wake-ups the message route acts through
+    # (measured 2026-10-26: an access violation sat in front for an hour while every menu call reported
+    # "executed 0" and every run blamed the foreground)
+    "application_error",
+    # the Store dialog's Working directory as it stands, without writing it: the guarded cycle's adapter
+    # compares it with the directory the invocation watches and refuses a disagreement, because writing
+    # that field is a persisted setting the dialog's own lifetime does not let anyone restore
+    "read_working_directory",
 )
 
 #: The names the flat module published that no method of the facade reads any more — the workflow

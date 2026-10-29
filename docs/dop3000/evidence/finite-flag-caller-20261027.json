@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "kind": "derived-disabled-mode-control-evidence",
+  "date": "2026-10-27",
+  "scope": "Disabled-mode flag setter and event round trip only, not enable, acquisition, Store or a production command",
+  "provenance": {
+    "raw_captures_committed": false,
+    "limits": "Runtime bindings and raw captures remain private. These are derived measured facts and input hashes, not raw captures; repository-only readers cannot remeasure or independently reconstruct the live trial.",
+    "stream_sha256": "6a3d71b9e8df65433e22ebfa08ab9153a0473b65aa01f8170beb307550fc7328",
+    "before_snapshot_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+    "after_snapshot_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+    "candidate_script_sha256": "5f0fb1eab388b424535349fc52d468ae0844bdc404b4a7d49c98792342deadf7"
+  },
+  "caller_change": "Retain allocated native stub across NativeFunction construction and invocation; no upper-EDX normalization. Allocator/GC mechanism not observed.",
+  "owned_fixture": {
+    "real_frida": true,
+    "architecture": "ia32",
+    "runtime": "QJS",
+    "frida_version": "17.23.2",
+    "cases": [
+      "equal-state setter",
+      "set state 0 to 1",
+      "restore state 1 to 0",
+      "Self/Sender handler"
+    ],
+    "original_cases_faulted_before_entry": 4,
+    "retained_cases_completed": 4,
+    "process_exit_verified_by_wait": true,
+    "limit": "Source-owned callee, not the vendor body; four-case contrast, not allocator mechanism proof."
+  },
+  "live": {
+    "accepted_scope": "Disabled-mode flag setter and event round trip only, not enable, acquisition, Store or a production command",
+    "checks": {
+      "caller_exit_zero": true,
+      "attachment_exit_zero": true,
+      "hooks_removed_done": true,
+      "no_native_errors": true,
+      "forward_observed": true,
+      "mode_never_enabled": true,
+      "words_restored": true,
+      "parameter_images_restored": true,
+      "parameter_column_restored": true,
+      "widget_restored": true,
+      "identity_unchanged": true,
+      "clean_after": true,
+      "two_named_calls_in_complete_stream": true,
+      "four_native_subcalls_returned": true,
+      "immediate_states_verified": true,
+      "no_fault_events": true,
+      "all_ten_images_compared": true
+    },
+    "complete_stream_ok": true,
+    "instrumentation_cleanup_error": null,
+    "logical_calls": [
+      "FiniteBit1",
+      "RestoreBit0"
+    ],
+    "native_subcalls_returned": 4,
+    "same_gui_boundary": true,
+    "requested_gap_ms": 80,
+    "input_events": 0,
+    "acquisition_requests": 0,
+    "all_ten_current_channel_images_unchanged": true,
+    "operator_changes_preserved": true,
+    "device_mode_enabled_by_trial": false
+  },
+  "original_report": {
+    "ok": false,
+    "limitation": "Two same-kind menu-call.json writes overwrite the first named row. The complete normalized send stream retains both; raw report/result remain unchanged.",
+    "raw_report_preserved": true
+  },
+  "not_established": [
+    "participant/first-channel/repeat control composition",
+    "finite acquisition and live store-only route",
+    "production-command integration",
+    "physical relay transition count or signal validity"
+  ]
+}

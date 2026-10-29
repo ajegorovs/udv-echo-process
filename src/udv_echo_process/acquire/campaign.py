@@ -511,6 +511,12 @@ class JobManifest(ValueModel):
     #: ``expected_process_mode`` means the manifest predates this field.
     expected_process_mode: ProcessMode | None = None
     observed_process_mode: ProcessMode | None = None
+    #: What this run did about the job's baseline after an abort - the parameters it put back, read
+    #: back, or the refusal that stopped it. ``None`` means no restore was owed: the run never aborted,
+    #: or it aborted before anything was applied. Carried because an abort *is* a stop and not a
+    #: rollback, so the instrument's state after a cut-short run is exactly the thing a later reader
+    #: cannot reconstruct from the points alone.
+    baseline_restore: str | None = None
     #: Every instrument-parameter transition this **job's** boundary has performed, in the order it
     #: performed them — the evidence, not a boolean. Each entry names the parameter it moved (in the
     #: fixed-fact vocabulary), the value it started from, the request, what the transition's own
@@ -1737,6 +1743,53 @@ def reconciled_parameter_mutations(
     return (*manifest_history, *recovered)
 
 
+#: The two parameters a *point* writes, in the order a restore must write them: the resolution
+#: first, because the application recomputes the gate count from it (``actuator.PARAMETER_WRITE_ORDER``).
+BASELINE_ROLES: tuple[ParamRole, ...] = (ParamRole.RESOLUTION, ParamRole.GATES)
+
+
+def _read_baseline(actuator: SweepActuator) -> dict[ParamRole, str]:
+    """What the per-point parameters state before the run, or ``{}`` when they cannot be read.
+
+    A run without a baseline is still a run: losing the ability to read the screen must not turn a
+    campaign into a refusal before it starts. What it loses is the ability to *restore*, and that is
+    recorded where a reader will look instead of being silent.
+    """
+    try:
+        return {role: str(actuator.read_parameter(role)) for role in BASELINE_ROLES}
+    except Exception:  # noqa: BLE001 - the run proceeds; the restore says it could not
+        return {}
+
+
+def _restore_baseline(actuator: SweepActuator, baseline: Mapping[ParamRole, str]) -> str:
+    """Put the per-point parameters back and say what happened - the abort's own record.
+
+    An abort is a stop, not a rollback: the point that failed had already written its resolution and
+    gate count, and the runner says *where* it left the instrument rather than writing on its own failure
+    path. The restore is a campaign act, because the campaign owns the job's baseline; it is attempted
+    once, and its outcome - including a failed or half-done restore - is what the manifest carries.
+    """
+    if not baseline:
+        return "not restorable: the per-point parameters were not read before the run"
+    written: list[str] = []
+    for role in BASELINE_ROLES:
+        try:
+            actuator.write_parameter(role, baseline[role])
+        except Exception as exc:  # noqa: BLE001 - a failed restore is reported, not raised
+            return (
+                f"restore failed at {role.value}: {type(exc).__name__}: {exc}; "
+                f"restored before that: {', '.join(written) or 'nothing'}"
+            )
+        written.append(f"{role.value}={baseline[role]}")
+    try:
+        observed = ", ".join(
+            f"{role.value}={actuator.read_parameter(role)}" for role in BASELINE_ROLES
+        )
+    except Exception:  # noqa: BLE001 - the readings are evidence, not a precondition
+        observed = "read-back unavailable"
+    return f"restored {', '.join(written)} (read back {observed})"
+
+
 def run_campaign(
     definition: CampaignDefinition,
     actuator: SweepActuator,
@@ -2091,6 +2144,9 @@ def run_campaign(
         # that raised a fact does not fall back to an advisory once the recording is spent.
         strict_covariates=strict_facts,
     )
+    # The baseline the run is about to disturb: read before the first point writes anything, so a
+    # restore asks for a value that was observed rather than for one from the definition.
+    baseline = _read_baseline(actuator)
     outcomes = runner.run_points(
         tuple(
             SweepPoint(
@@ -2101,6 +2157,13 @@ def run_campaign(
             for point in todo
         )
     )
+    baseline_restore: str | None = None
+    if any(outcome.aborted for outcome in outcomes):
+        baseline_restore = _restore_baseline(actuator, baseline)
+        if notes is not None:
+            notes.append(
+                "the run was cut short at a state the runner could not verify; " + baseline_restore
+            )
     by_key = {point.key: point for point in planned}
     manifest = JobManifest(
         job=definition.job,
@@ -2131,6 +2194,7 @@ def run_campaign(
         # tuple means the job has spent no write at all (the instrument stated every value the job
         # commands on every invocation, or the definition commands none of them).
         parameter_mutations=mutations,
+        baseline_restore=baseline_restore,
     )
     write_manifest(manifest_path_for(log), manifest)
     return manifest

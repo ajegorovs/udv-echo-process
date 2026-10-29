@@ -1,0 +1,105 @@
+{
+  "schema": "bridge-dispatch-report-provenance/v1",
+  "purpose": "Declares where tests/data/bridge_dispatch_s3_run_20261022_06.json came from, what was kept verbatim, what was rewritten, what was dropped, and what this evidence cannot establish. Read with the fixture; neither is meaningful alone.",
+  "capture": {
+    "capture_id": "s3-run-20261022-06",
+    "recorded": "2026-10-22",
+    "what_it_was": "one application-backed record cycle: record for 12 s, stop, store through the application's own Store dialog, then decode the stored file",
+    "producer": {
+      "script": ".hermes/scratch/rea-live-controls-20261019/record_route.py",
+      "entry_point": "run_sitting",
+      "status": "scratch orchestrator; not tracked in this repository",
+      "what_it_did": "spawned an instrumentation child and a UI child, waited on both, re-read the target's identity, decoded the stored artifact, and wrote the report after the transaction"
+    },
+    "evidence_leaves": {
+      "stored": "re-published from the UI child's own ui-result.json, whose digest is computed from the file that child wrote (recorder child, same scratch directory)",
+      "decoded.config_matches": "produced by decoding the stored artifact with the repository's own binary reader, not asserted by the orchestrator",
+      "identity_unchanged": "produced by re-reading the target process after the transaction and comparing its creation time and image digest"
+    },
+    "report": {
+      "path": ".hermes/scratch/rea-live-controls-20261019/s3-run-20261022-06/report.json",
+      "bytes": 20930,
+      "sha256": "1e26659fde2ae37046bc992cd75e65825e01545c172f39b1ada30dc7f01edd4e",
+      "top_level_key_count": 25
+    },
+    "artifact": {
+      "path": "outputs/live/store/bridged-20261022-06.BDD",
+      "bytes": 49793,
+      "sha256": "722e3ea2aad75eb3ac6638a86069c8c5589845df8be052a7ad34b4388a7a9504",
+      "committed": false,
+      "why_not_committed": "the store directory is ignored and the recording is not redistributed with the code"
+    }
+  },
+  "fixture": {
+    "kind": "faithful projection of the captured report, restricted to the keys the strict parser requires",
+    "kept_keys": [
+      "decoded",
+      "identity_unchanged",
+      "stored"
+    ],
+    "kept_verbatim": [
+      "stored.stored",
+      "stored.stored_sha256",
+      "stored.stored_bytes",
+      "decoded.config_matches",
+      "identity_unchanged"
+    ],
+    "rewritten": [
+      {
+        "field": "stored.stored_path",
+        "fixture_value": "outputs/live/store/bridged-20261022-06.BDD",
+        "original": "the same file named by an absolute path inside the checkout that recorded it",
+        "what_changed": "the machine-specific absolute prefix was replaced by this repository's own relative location; the directory name, file stem and .BDD extension are unchanged",
+        "why": "the tracked fixture must not carry a machine path, and the parser reads the name and extension rather than the prefix"
+      }
+    ],
+    "omitted_top_level_keys": [
+      "blockers",
+      "children",
+      "config",
+      "decode_error",
+      "expected_profiles",
+      "gate",
+      "identity_after",
+      "identity_before",
+      "kills_issued",
+      "mode",
+      "ok",
+      "outcome",
+      "plan",
+      "record_dispatched",
+      "record_stopped",
+      "run_id",
+      "script_outcomes",
+      "script_sha256",
+      "stage_ready",
+      "supervision",
+      "ui",
+      "waits"
+    ],
+    "omitted_decoded_keys": [
+      "channel",
+      "channels",
+      "emissions_per_profile",
+      "gates",
+      "n_gates",
+      "profiles",
+      "pulse_repetition_freq_hz",
+      "resolution_mm",
+      "source_freq_khz"
+    ],
+    "why_those_were_omitted": "they describe the run rather than the parse: window and process handles, the target image digest, callback and routine addresses, the parameter set, per-child command lines, and the decoded measurement summary. All of them are machine or vendor bindings, and none of them is read by the strict parser.",
+    "nothing_invented": "no key, verdict, digest or byte count in the fixture was authored for this repository; each is copied from the captured report. No field was added to make the parser accept it."
+  },
+  "verification": {
+    "date": "2026-10-26",
+    "checks": [
+      "sha256 of the artifact still present at the capture's store path equals stored.stored_sha256, and its size equals stored.stored_bytes",
+      "sha256 of the report's sibling recorder script equals the report's own script_sha256 field, so the report is bound to the artifacts written beside it",
+      "the target identity recorded in the report matched the values an independently written preflight of the same sitting recorded",
+      "the captured report, unmodified apart from the path prefix above, is accepted by evidence_from_report"
+    ],
+    "not_checked": "the artifact is not committed, so no test in this repository re-hashes it; the checks above were performed once against the machine that recorded it"
+  },
+  "limitation": "This fixture proves saved-report schema compatibility only: that the strict stored-result parser reads a real cycle's own report as typed evidence, and refuses it when it is altered. It does not prove a BridgeDispatch request adapter exists, that today's request shape produces these keys, or that the live operation still works. It also does not exercise the actuator's checks on the artifact's bytes, directory or name, because the .BDD is not committed. The data itself is synthetic perturbations otherwise: every negative test mutates this fixture and is labelled SYNTHETIC in the suite."
+}

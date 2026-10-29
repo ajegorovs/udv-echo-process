@@ -14,7 +14,16 @@ trial of the shared work-organization guide, not a generally validated method.
 
 | Effort | Lifecycle state |
 |---|---|
+| [Message-route port](plans/message-route-port.md) | in progress — capability register; current execution in the finite multiplexed plan |
+| [Finite background multiplexed recording](plans/background-multiplex-recording.md) | in progress — one-command finite 1+2 trial completed without recovery; decode, cleanup and independent final read verified; retained-evidence adjudication accepted; broader occlusion/public-command boundaries remain |
 | [Four-sensor notebook review](plans/four-sensor-velocity-notebook-review.md) | authorized |
+
+**Message-route port (owner-selected 2026-10-23).** Which actions still borrow input emulation from the message route, and
+what each one is blocked on. The register in that plan is the single place to look before driving the instrument: it says
+per action whether the message route can do it, whether it is half-done, or whether it is blocked — and the old UI route
+stays in place as the fallback (owner decision: it is not being retired). Register corrected 2026-10-26: a posted press is
+input wherever it lands, so dialog commits and the fresh-block reset are recorded as input debt, and record/stop are
+blocked on owner discovery rather than counted as capability.
 
 Tracked task plans live in `docs/plans/`, using its [template](plans/TEMPLATE.md); tracking supports remote review.
 A selected effort is not permission for every operation inside it. At closeout remove its selected entry,
@@ -50,6 +59,12 @@ Capture is not selection. Existing detailed backlog sections below remain their 
   Full lifecycle-skill packaging and issue-capture automation remain deferred, not installed by this trial.
 - **Documentation gate residue:** the screening-term check flags `sa5-cross-sitting-agreement-prespec.md:31`;
   decide a separately scoped wording repair rather than changing the scientific contract during P1.
+- **Application-backed guarded cycle — offline follow-ups, not selected (2026-10-26):** the five
+  fake-driver/session-0 suite failures (deferred, the established baseline), numeric-write composition
+  (unselected), the single-point application-error guard (completed offline at `429597f`), the campaign route/window wiring
+  (unselected) and the review's input-name and link/symlink policy (deferred); the cosmetic `acquire`
+  re-exports are deferred with no code change. Dispositions and evidence live in the
+  [message-route port plan](plans/message-route-port.md) § Selected next.
 
 ## Current progress — 2026-10-16
 
@@ -67,6 +82,7 @@ or in the authority document the row names. Do not copy plan checkpoints or next
 | Sparse acquisition (DOP3010) | **Accepted and closed to growth**: the nine-job design, the mixer-enabled rerun, the frozen WP0–WP5 slices and the counterbalanced Stage-2 campaign have all run. | None selected — re-opens only on evidence (a campaign that failed, ambiguous evidence, or a condition the campaign cannot establish). | `data/*/README.md` and [`dop3000/device-verification.md`](dop3000/device-verification.md); emissions `8`/`128` remain unexercised live. |
 | Four-sensor velocity recordings | Owner priority after publication/parking (2026-10-16); notebook review authorized but not started. Alignment and estimation remain unselected. | Follow the [notebook review plan](plans/four-sensor-velocity-notebook-review.md); do not align or resample to make a view possible. | The plan owns the inventory and verification criteria; alignment remains an unselected finding above. |
 | `.BDD` artifact model | **Accepted**; the two post-landing blockers are closed. | None selected. | [`signal-model-rework-plan.md`](signal-model-rework-plan.md) §15, acceptance record. |
+| Application-backed acquisition (`acquire/bridge.py`) | **One-command trial verified, effort in progress:** finite 1+2 Run/Store/cleanup/restoration completed without recovery on 2026-10-29; independent final read disabled Ready and unchanged settings/TGC. Machine-bound prototype; signal validity and new occlusion/abort proof remain unclaimed. | Draft [PR #83](https://github.com/ajegorovs/udv-echo-process/pull/83) published and remote contents verified. Continue owner-authorized package/CLI promotion offline with native bindings private; verify mixed-frequency fixture without a blanket prohibition or new live grant. | [Execution plan](plans/background-multiplex-recording.md); [sitting evidence](dop3000/evidence/finite-operator-sitting-20261028.json); [capability register](plans/message-route-port.md). Earlier glue failures are preserved; [one-command evidence](dop3000/evidence/finite-one-command-20261029.json) records the later successful trial. |
 | `udv-analysis` retirement | Implementation **complete**; the private pack is preserved and is the only surviving copy. | Decide the three open register items before anything is deleted. | [`udv-analysis-reference.md`](udv-analysis-reference.md). |
 
 **Reading the states.** *Accepted* — landed and verified, with the evidence named.

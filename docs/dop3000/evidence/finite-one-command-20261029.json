@@ -1,0 +1,820 @@
+{
+  "schema": "udv.finite-one-command/1",
+  "date": "2026-10-29",
+  "kind": "derived-live-evidence-with-original-bdd",
+  "limits": "BDD facts are rederived offline. Execution, UI, restoration and cleanup facts derive from private retained captures; their digests do not make them independently remeasurable from this repository.",
+  "authorization": {
+    "physical_fallback_confirmed": true,
+    "operator_message": "confirmed",
+    "one_bounded_trial": true
+  },
+  "request": {
+    "channels": [
+      1,
+      2
+    ],
+    "sequences": 1,
+    "profiles_per_channel": 5,
+    "gates_per_channel": 80,
+    "quantity": "axial_velocity",
+    "frequency_khz": 4000,
+    "prf_us": 600,
+    "emissions_per_profile": 50,
+    "finite_nonrolling": true,
+    "mode_before_run": 2162737,
+    "trigger_word": 4
+  },
+  "execution": {
+    "outcome": "stored_and_restored",
+    "command_exit": 0,
+    "native_run_calls": 1,
+    "explicit_record_calls": 0,
+    "explicit_stop_calls": 0,
+    "store_invocations": 1,
+    "store_native_calls": 1,
+    "configure": [
+      {
+        "step": 1,
+        "operation": "set-participants",
+        "value": 0,
+        "controls_after": [
+          65584,
+          10,
+          1
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162736
+            }
+          ]
+        }
+      },
+      {
+        "step": 2,
+        "operation": "set-repeat-count",
+        "value": 1,
+        "controls_after": [
+          65584,
+          1,
+          1
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162736
+            }
+          ]
+        }
+      },
+      {
+        "step": 3,
+        "operation": "set-flag",
+        "value": 1,
+        "controls_after": [
+          65585,
+          1,
+          1
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162736
+            }
+          ]
+        }
+      }
+    ],
+    "restore": [
+      {
+        "step": 1,
+        "operation": "set-repeat-count",
+        "value": 10,
+        "controls_after": [
+          65585,
+          10,
+          1
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162737
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ],
+          "2": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ],
+          "10": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            },
+            {
+              "index": 83,
+              "before": 10,
+              "after": 2
+            }
+          ]
+        }
+      },
+      {
+        "step": 2,
+        "operation": "set-flag",
+        "value": 0,
+        "controls_after": [
+          65584,
+          10,
+          1
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162737
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ],
+          "2": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ],
+          "10": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            },
+            {
+              "index": 83,
+              "before": 10,
+              "after": 2
+            }
+          ]
+        }
+      },
+      {
+        "step": 3,
+        "operation": "set-participants",
+        "value": 1,
+        "controls_after": [
+          73776,
+          10,
+          10
+        ],
+        "cached_word_changes": {
+          "1": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162737
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ],
+          "2": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ]
+        }
+      },
+      {
+        "step": 4,
+        "operation": "restore-current",
+        "value": 1,
+        "controls_after": [
+          73776,
+          10,
+          1
+        ],
+        "cached_word_changes": {
+          "2": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ]
+        }
+      },
+      {
+        "step": 5,
+        "operation": "refresh-manual",
+        "value": 10,
+        "controls_after": [
+          73776,
+          10,
+          10
+        ],
+        "cached_word_changes": {
+          "2": [
+            {
+              "index": 52,
+              "before": 2170928,
+              "after": 2162739
+            },
+            {
+              "index": 53,
+              "before": 10,
+              "after": 1
+            }
+          ]
+        }
+      },
+      {
+        "step": 6,
+        "operation": "refresh-manual",
+        "value": 2,
+        "controls_after": [
+          73776,
+          10,
+          2
+        ],
+        "cached_word_changes": {}
+      },
+      {
+        "step": 7,
+        "operation": "refresh-manual",
+        "value": 1,
+        "controls_after": [
+          73776,
+          10,
+          1
+        ],
+        "cached_word_changes": {}
+      }
+    ],
+    "completion": {
+      "controls": [
+        65587,
+        1,
+        2
+      ],
+      "pending": 0,
+      "strip": "store"
+    },
+    "recovery_required": false,
+    "operator_recovery_requested": false,
+    "native_phases": [
+      {
+        "phase": "01-configure-1-participants",
+        "operation": "set-participants",
+        "native_calls": 1,
+        "native_returns": 1,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "2da75a9449ab03a55cc5a62b4cb3c9b7b5d3463523d6513b75a2f743e7fb9790",
+        "attached_script_sha256": "4088f2f2baf671e6795d3f1786ed3cb0abc8415702ce0f30277443c8710043de"
+      },
+      {
+        "phase": "01-configure-2-count",
+        "operation": "set-repeat-count",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "7fc535d7941a33bdbe1910016311f5e4f65d8405a6fb13b81b38568ed517738d",
+        "attached_script_sha256": "7ff7174cd1d7c0732d57e8ad4ad0439a5aef037ee9dc09f4f944a84f433b60a5"
+      },
+      {
+        "phase": "01-configure-3-flag",
+        "operation": "set-flag",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "8b902ebcf847d149312bfad49ca60e7427b8d7d0d5c9a5245c62400961e81612",
+        "attached_script_sha256": "fccb267bf23b9e283c0d560b5e95e3ea6cca3a76607bf6228ff46046361245df"
+      },
+      {
+        "phase": "02-finite-run",
+        "operation": "start-finite",
+        "native_calls": 1,
+        "native_returns": 1,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": false,
+        "result_sha256": "0359152319f357ace7a077267de3b95cff093c04eab6abaff2c7606fccf34ffc",
+        "attached_script_sha256": "101699942960bd81be7ace63ec76c9c9555eae0ab84511da671da53ae4eea9d3"
+      },
+      {
+        "phase": "04-restore-1-count",
+        "operation": "set-repeat-count",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "66a253f8b3acac44a351971b134144bfa82c60d2a0a73e1b865c0ad1ae2f1ac4",
+        "attached_script_sha256": "4ad464999f218898c62c6c6a029f33ec6c69aa0cc25028fdee890b914487392d"
+      },
+      {
+        "phase": "04-restore-2-flag",
+        "operation": "set-flag",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "bd4910618ee0dd8d2ef5d1994354c80a2db2cabd1d10a450e764ef5c0bacf463",
+        "attached_script_sha256": "bc3161ecae10bec229931ecb3eaa7274938b688e3a5698f947ace6881a090bd5"
+      },
+      {
+        "phase": "04-restore-3-participants",
+        "operation": "set-participants",
+        "native_calls": 1,
+        "native_returns": 1,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "bdd4cf0b6e34d8f498d350788bf1f96ec30754448bbe8379f05afc80e038ca77",
+        "attached_script_sha256": "55c88c2a3d116628ae9158ec52bce2a8acc02024bf2a5d63c719df8ce3a7646a"
+      },
+      {
+        "phase": "04-restore-4-route",
+        "operation": "restore-current",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": false,
+        "result_sha256": "408a7064eba83adb90f9440cb64d8e9054ccf87ca5b68a338b23703894d0c6c6",
+        "attached_script_sha256": "c69ed6811531d948a5a5229e86555444fbcb211c0355cda3d38619b500630b68"
+      },
+      {
+        "phase": "04-restore-5-refresh",
+        "operation": "refresh-manual",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "55c6075651a23bd41e525198a7b9da4a946f311f25138c95575a38d63f6963d5",
+        "attached_script_sha256": "83e87e5ab717d6a9f299021ff93bb16282e2a5520f07a8d65b89f529439d8d23"
+      },
+      {
+        "phase": "04-restore-6-refresh",
+        "operation": "refresh-manual",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "ff801e893249812546e096bb3b78fde162bb1c61e133f86baa7ed940dc1ce3f7",
+        "attached_script_sha256": "52951b23770de2e84aaeffd7191967469871edba9f83fe8fa29a2e10d0125899"
+      },
+      {
+        "phase": "04-restore-7-refresh",
+        "operation": "refresh-manual",
+        "native_calls": 2,
+        "native_returns": 2,
+        "attachment_exit": 0,
+        "detached": true,
+        "legacy_aggregate_ok": true,
+        "result_sha256": "4f8873ed4431822048f1fdc37be7502cae3502d7ea8df47d503ed8f5c69dcf29",
+        "attached_script_sha256": "6793df484fd7433a2bfb396006e930a66fcfb7d7015228bc87fcb4a261a44198"
+      }
+    ],
+    "legacy_aggregate_limit": "Run and restore-current retain false legacy carrier aggregate predicates. The composition checks the native call/return, owned completion, fresh postconditions and actual decode; raw aggregate verdicts are preserved, not rewritten."
+  },
+  "artifact": {
+    "path": "data/automation-acceptance/finite-multiplex-20261029/mux-finite-01.BDD",
+    "bytes": 32616,
+    "file_sha256": "73e462f145ea6d4561b387da947347a6c62a61bc9a02f954401e27f7e20ed5aa",
+    "recording_id": "sha256:a7701c86383216083b5bafc119e9e09626b1d66dcb7e7607af9708ca4b4bc4a5",
+    "acquisition_mode": "sequential",
+    "streams": [
+      {
+        "channel": 1,
+        "quantity": "axial_velocity",
+        "unit": "mm/s",
+        "shape": [
+          5,
+          80
+        ],
+        "config": {
+          "source_freq_khz": 4000.0,
+          "pulse_repetition_freq_hz": 1666.6666666666667,
+          "burst_length": 4,
+          "emissions_per_profile": 50,
+          "emit_power": "low",
+          "sensitivity": "high",
+          "gate1_mm": 13.245999999999999,
+          "n_gates": 80,
+          "resolution_mm": 0.74,
+          "sampling_volume_index": 4,
+          "sampling_volume_mm": null,
+          "max_depth_mm": 71.706,
+          "sound_speed_ms": 1480.0,
+          "doppler_angle_deg": 0.0,
+          "velo_max_ms": 154.13758351092335,
+          "tgc_mode": "uniform",
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "wall_filter": null,
+          "trigger_state": null,
+          "trigger_delay_ms": 0.0,
+          "skipped_profiles": 0,
+          "module_scale": 2048
+        },
+        "time_s": [
+          0.0,
+          0.0403,
+          0.08070000000000001,
+          0.12100000000000001,
+          0.1613
+        ],
+        "gate_depths_mm": [
+          13.245999999999999,
+          13.986,
+          14.725999999999997,
+          15.466,
+          16.206,
+          16.946,
+          17.686,
+          18.426,
+          19.166,
+          19.906,
+          20.645999999999997,
+          21.386,
+          22.126,
+          22.866,
+          23.606000000000005,
+          24.346000000000004,
+          25.086,
+          25.826,
+          26.566000000000003,
+          27.306,
+          28.046000000000003,
+          28.786,
+          29.526000000000003,
+          30.266,
+          31.006,
+          31.746000000000002,
+          32.486000000000004,
+          33.226,
+          33.966,
+          34.706,
+          35.446000000000005,
+          36.186,
+          36.926,
+          37.666000000000004,
+          38.406,
+          39.146,
+          39.886,
+          40.626000000000005,
+          41.36600000000001,
+          42.106,
+          42.846,
+          43.586,
+          44.326,
+          45.066,
+          45.806000000000004,
+          46.546,
+          47.286,
+          48.025999999999996,
+          48.766,
+          49.506,
+          50.246,
+          50.98599999999999,
+          51.72599999999999,
+          52.465999999999994,
+          53.205999999999996,
+          53.946,
+          54.68599999999999,
+          55.425999999999995,
+          56.166,
+          56.906,
+          57.646,
+          58.385999999999996,
+          59.126,
+          59.866,
+          60.606,
+          61.346000000000004,
+          62.08599999999999,
+          62.82599999999999,
+          63.565999999999995,
+          64.306,
+          65.04599999999999,
+          65.786,
+          66.526,
+          67.26599999999999,
+          68.006,
+          68.746,
+          69.486,
+          70.226,
+          70.966,
+          71.706
+        ],
+        "nonzero_cells": 33,
+        "all_observed": true
+      },
+      {
+        "channel": 2,
+        "quantity": "axial_velocity",
+        "unit": "mm/s",
+        "shape": [
+          5,
+          80
+        ],
+        "config": {
+          "source_freq_khz": 4000.0,
+          "pulse_repetition_freq_hz": 1666.6666666666667,
+          "burst_length": 4,
+          "emissions_per_profile": 50,
+          "emit_power": "low",
+          "sensitivity": "medium",
+          "gate1_mm": 13.245999999999999,
+          "n_gates": 80,
+          "resolution_mm": 0.74,
+          "sampling_volume_index": 4,
+          "sampling_volume_mm": null,
+          "max_depth_mm": 71.706,
+          "sound_speed_ms": 1480.0,
+          "doppler_angle_deg": 0.0,
+          "velo_max_ms": 154.13758351092335,
+          "tgc_mode": "uniform",
+          "tgc_start_db": 40.0,
+          "tgc_end_db": 40.0,
+          "wall_filter": null,
+          "trigger_state": null,
+          "trigger_delay_ms": 0.0,
+          "skipped_profiles": 0,
+          "module_scale": 2048
+        },
+        "time_s": [
+          0.2101,
+          0.2504,
+          0.2908,
+          0.3311,
+          0.3714
+        ],
+        "gate_depths_mm": [
+          13.245999999999999,
+          13.986,
+          14.725999999999997,
+          15.466,
+          16.206,
+          16.946,
+          17.686,
+          18.426,
+          19.166,
+          19.906,
+          20.645999999999997,
+          21.386,
+          22.126,
+          22.866,
+          23.606000000000005,
+          24.346000000000004,
+          25.086,
+          25.826,
+          26.566000000000003,
+          27.306,
+          28.046000000000003,
+          28.786,
+          29.526000000000003,
+          30.266,
+          31.006,
+          31.746000000000002,
+          32.486000000000004,
+          33.226,
+          33.966,
+          34.706,
+          35.446000000000005,
+          36.186,
+          36.926,
+          37.666000000000004,
+          38.406,
+          39.146,
+          39.886,
+          40.626000000000005,
+          41.36600000000001,
+          42.106,
+          42.846,
+          43.586,
+          44.326,
+          45.066,
+          45.806000000000004,
+          46.546,
+          47.286,
+          48.025999999999996,
+          48.766,
+          49.506,
+          50.246,
+          50.98599999999999,
+          51.72599999999999,
+          52.465999999999994,
+          53.205999999999996,
+          53.946,
+          54.68599999999999,
+          55.425999999999995,
+          56.166,
+          56.906,
+          57.646,
+          58.385999999999996,
+          59.126,
+          59.866,
+          60.606,
+          61.346000000000004,
+          62.08599999999999,
+          62.82599999999999,
+          63.565999999999995,
+          64.306,
+          65.04599999999999,
+          65.786,
+          66.526,
+          67.26599999999999,
+          68.006,
+          68.746,
+          69.486,
+          70.226,
+          70.966,
+          71.706
+        ],
+        "nonzero_cells": 0,
+        "all_observed": true
+      }
+    ]
+  },
+  "cleanup": {
+    "steps": [
+      "detach_requested",
+      "detach_acknowledged",
+      "helper_exited",
+      "evidence_clean"
+    ],
+    "reasons": [],
+    "detach_receipt": {
+      "kind": "stage-detached",
+      "phase": "store-dispatched",
+      "calls": 1,
+      "state": {
+        "gates": 80,
+        "pending": 0,
+        "assisted": 0
+      },
+      "hooks_removed": true,
+      "hooks_detached": 2,
+      "hook_count": 2,
+      "restoration_owed": false,
+      "cleanup_ok": true,
+      "cleanup_errors": [],
+      "cause": "request:host-close-requested",
+      "pending_command": 0
+    },
+    "helper": {
+      "exited": true,
+      "code": 0,
+      "killed": false
+    },
+    "cli_cleanup_error": null,
+    "host_close_problem": null,
+    "sessions_opened": 1
+  },
+  "restoration": {
+    "all_ten_parameter_images_equal_to_fresh_trial_baseline": true,
+    "all_ten_tgc_equal": true,
+    "raw_byte_equality_required": false,
+    "checks": {
+      "controls_restored": true,
+      "multiplexing_disabled": true,
+      "participants_restored": true,
+      "trigger_unchanged": true,
+      "same_identity": true,
+      "ready_pending_zero_no_error": true,
+      "all_ten_tgc_unchanged": true,
+      "only_cached_words_differ": true
+    },
+    "before_words": {
+      "Mpx_Mode": 2170928,
+      "Current_Channel": 1,
+      "Mpx_Nb_Sequences": 10,
+      "Trigger_Mode": 4,
+      "pending": 0,
+      "Assisted_Mode": 0
+    },
+    "final_words": {
+      "Mpx_Mode": 2170928,
+      "Current_Channel": 1,
+      "Mpx_Nb_Sequences": 10,
+      "Trigger_Mode": 4,
+      "pending": 0,
+      "Assisted_Mode": 0
+    },
+    "final_strip": {
+      "button_count": 3,
+      "has_slider": false,
+      "slider_max": null
+    },
+    "final_error": null,
+    "final_overlay": null,
+    "changed_cached_words": {},
+    "same_identity": true
+  },
+  "acceptance": {
+    "one_command_execution_demonstrated": true,
+    "full_decode": true,
+    "settings_and_tgc_restored": true,
+    "independently_disabled_ready": true,
+    "clean_store_helper_shutdown": true,
+    "independent_adjudication": "accepted-offline-from-raw-captures",
+    "flow_signal_validity": false,
+    "occluded_window_trial_this_sitting": false,
+    "software_abort_demonstrated": false,
+    "public_cli_promoted": false
+  },
+  "verification": {
+    "selection": "tests/*acquire*.py plus finite multiplex, cleanup-precondition, operator-sitting, live-build and one-command evidence tests",
+    "total": 1486,
+    "passed": 1481,
+    "failed": 5,
+    "exact_established_baseline_failures": [
+      "tests.test_acquire_dialog::test_a_dialog_on_the_routed_channel_is_accepted_and_the_facts_carry_that_channel",
+      "tests.test_acquire_dialog::test_a_refused_reading_keeps_the_readers_own_reason_not_an_attribution_error",
+      "tests.test_acquire_live::test_a_fingerprint_reads_the_screen_without_pressing_anything",
+      "tests.test_acquire_live::test_a_fingerprint_carries_the_layout_note_when_the_screen_is_not_the_measurement_one",
+      "tests.test_acquire_live::test_a_fingerprint_survives_a_cursor_this_session_cannot_read"
+    ],
+    "new_failures": []
+  },
+  "source": {
+    "composition_sha256": "d28447cdb7d316a93dd20aed28f38a8dfc85c55126684bd4a948a12f97f0b6bf",
+    "template_file_sha256": "f7f59de827175c1cdb27bf2a9274277f1575eb03d29f658ac342b5a81b0bb547",
+    "template_text_sha256": "e638429adc75c448d4176788bc86c26b57ee41afbc798de210b606823c7567f4",
+    "store_payload_sha256": "16c26f3960a9811eeb2767c9612ec0adf0087811fd8e2e4d59fb870e5db6e77d"
+  },
+  "private_capture_sha256": {
+    "baseline": "21a5b11266af31b606074b4bc30ae3e4a276c9f3a81d8edb516b050cfdfcef0a",
+    "command_report": "c36c8126ef8cf2e8002dfbdb163e536e7f72823032229af0dfd48ca2a2b11118",
+    "command_final": "46a3df24b28b1e464e7492a80a6f86547f585abe673b5576577589293f2c2c05",
+    "independent_final": "f0ecdfc2fe7ad66e312fa8a60f584c114267c07684e7ead9724858ba2b04f7e0",
+    "independent_summary": "2f3f9800e2b651605e472713c5e72685103fb2cf942f6d1dd3c36466f5d2398d",
+    "closeout": "3e03ef5703762f4b66dffe7fc309ca135192e880a077657912bc2f6c11a59d15",
+    "detach_receipt": "bded21e654a967d8c7b8bef4aab652bf45f56c244e5e7385c05ac1977e503adb",
+    "helper_envelope": "f0fb7d270371566d4603c2b83d440b49fba9142261f6f90b39a7a30f337ddf05"
+  }
+}

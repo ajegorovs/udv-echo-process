@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-27",
+  "kind": "derived-disabled-mode-configuration-trials",
+  "scope": "Private control prototypes; no multiplex enable, recording, Store or assembled public command.",
+  "raw_capture_limit": "Input hashes and derived facts only: raw captures and bindings remain private; repository-only readers cannot remeasure the trials.",
+  "trials": [
+    {
+      "kind": "sequence-count",
+      "verdict": {
+        "ok": true,
+        "checks": {
+          "actor_completed": true,
+          "four_returns_with_model_transitions": true,
+          "all_ten_images_restored": true,
+          "full_snapshot_restored": true,
+          "identity_restored": true,
+          "ready_disabled_after": true
+        },
+        "model_counts": [
+          10,
+          1,
+          1,
+          10
+        ],
+        "acquisition_requests": 0,
+        "input_events": 0
+      },
+      "source": {
+        "upstream_sha256": "f6d5ab9f543c2d4c12d96eec13fee8938f687cae310a4c39289ad42c5688c345",
+        "candidate_sha256": "f0c8c4ae895f40c605ea8640d13347c71b48c029a72a4d05d8c1de4e86241b5a",
+        "scope": "count to 1 and restore, model readbacks, requested 80 ms hold, detach before unload"
+      },
+      "before_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+      "after_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+      "send_stream_sha256": "bb4ac426a2ab31e34fd6cdb1d42b6f1c83ab1efd4fdb6e544803c174b4a6e4b4"
+    },
+    {
+      "kind": "first-channel",
+      "verdict": {
+        "ok": true,
+        "checks": {
+          "actor_completed": true,
+          "first_channel_model_roundtrip": true,
+          "two_native_returns": true,
+          "full_snapshot_restored": true,
+          "all_ten_images_restored": true,
+          "ready_disabled_after": true
+        },
+        "acquisition_requests": 0,
+        "input_events": 0
+      },
+      "source": {
+        "upstream_sha256": "f6d5ab9f543c2d4c12d96eec13fee8938f687cae310a4c39289ad42c5688c345",
+        "candidate_sha256": "8b9b7911f332c45472289afb8a1618485380b930a5b7c70c6d6ea5d5d6d34757",
+        "scope": "exact combo text 4 then original; actual HWND check; complete EDX Sender; earlier detach"
+      },
+      "before_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+      "after_sha256": "38712afacb91a5988a766d1f3d7ba6b131a6232080604aa61d69587b09f7bf88",
+      "send_stream_sha256": "9b82eaf101085b586ed738b1a0504ea17688bc9153b0f751c08381f6da3f2035"
+    }
+  ],
+  "operator_configuration": "Each trial used a fresh current baseline, not an older restoration target. All ten parameter images and complete captured snapshots were equal after restoration.",
+  "not_established": [
+    "participant mask and routing restoration",
+    "finite enable/start/completion/disable",
+    "live store-only producer/dialog",
+    "assembled public workflow and scientific signal validity"
+  ]
+}

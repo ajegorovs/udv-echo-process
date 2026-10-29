@@ -7,6 +7,16 @@ Public API is re-exported here for convenient imports::
 
 from __future__ import annotations
 
+from udv_echo_process.acquire.finite import (
+    RUN_ARM_BIT,
+    RUN_DERIVED_BIT,
+    FiniteAction,
+    FiniteObservation,
+    FiniteRunDecision,
+    FiniteRunReceipt,
+    FiniteRunRequest,
+    classify_finite_run,
+)
 from udv_echo_process.analysis import (
     EchoRpmInputError,
     RobustGateStatus,
@@ -87,6 +97,8 @@ from udv_echo_process.viz import (
 )
 
 __all__ = [
+    "RUN_ARM_BIT",
+    "RUN_DERIVED_BIT",
     "AcquisitionMode",
     "ArtifactBundle",
     "BsplineInterpSpec",
@@ -98,6 +110,11 @@ __all__ = [
     "EchoRpmSettings",
     "ExtractedData",
     "FilterSpec",
+    "FiniteAction",
+    "FiniteObservation",
+    "FiniteRunDecision",
+    "FiniteRunReceipt",
+    "FiniteRunRequest",
     "InterpSpec",
     "LinearInterpSpec",
     "MeanFilterSpec",
@@ -126,6 +143,7 @@ __all__ = [
     "TerminalResultExportError",
     "TvFilterSpec",
     "TvL1Settings",
+    "classify_finite_run",
     "derive_many",
     "detect_operating_states",
     "discover_data_files",

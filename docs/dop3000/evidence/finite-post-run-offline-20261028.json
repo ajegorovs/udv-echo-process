@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "kind": "finite-post-run-public-offline-verification",
+  "date": "2026-10-28",
+  "base_revision": "0dbb85e3135b4c7fd4fa39c730151ce85e75e429",
+  "restoration_rule": "Owner selected original settings and all ten TGC tables, with enumerated source-grounded runtime cache differences; raw byte identity remains false and is not required.",
+  "public_surface": {
+    "module": "udv_echo_process.acquire.finite",
+    "entry": "classify_finite_run",
+    "actions": [
+      "wait",
+      "store_completed",
+      "refuse"
+    ],
+    "record_or_stop_capability": false,
+    "native_enabler_shipped": false,
+    "caller_obligations": [
+      "Fresh target-bound snapshots after one confirmed native Run and no pre-existing held block.",
+      "Actual strip structure; no fabricated button counts from a classified view.",
+      "Bounded completion wait and separately authorized operator/exit fallback.",
+      "Only a drained owned two-button STORE row permits the store-completed tail."
+    ]
+  },
+  "host_close_reporting": {
+    "nonzero_producer_exit_preserved": true,
+    "nonraising_channel_failure_reaches_session": true,
+    "activation_field": "session_close_problem",
+    "failed_close_refuses_activation_readiness": true,
+    "session_closed_means_called_not_detached": true,
+    "owned_process_fixture_exit_codes": [
+      0,
+      7
+    ],
+    "graceful_instrumentation_shutdown_live_accepted": false
+  },
+  "verification": {
+    "focused_command": "uv run --no-sync --extra dev python -m pytest tests/test_acquire_finite.py tests/test_acquire_finite_surface.py tests/test_finite_multiplex_evidence.py tests/test_acquire_bridge_host.py -q",
+    "focused_passed": 129,
+    "broad_command": "uv run --no-sync --extra dev python -m pytest tests/*acquire*.py tests/test_finite_multiplex_evidence.py -q",
+    "broad_total": 1467,
+    "broad_passed": 1462,
+    "broad_baseline_failures": [
+      "tests.test_acquire_dialog::test_a_dialog_on_the_routed_channel_is_accepted_and_the_facts_carry_that_channel",
+      "tests.test_acquire_dialog::test_a_refused_reading_keeps_the_readers_own_reason_not_an_attribution_error",
+      "tests.test_acquire_live::test_a_fingerprint_reads_the_screen_without_pressing_anything",
+      "tests.test_acquire_live::test_a_fingerprint_carries_the_layout_note_when_the_screen_is_not_the_measurement_one",
+      "tests.test_acquire_live::test_a_fingerprint_survives_a_cursor_this_session_cannot_read"
+    ],
+    "broad_limit": "This named acquisition selection is not the historical 1541-test acquisition/bridge selection or the entire repository. Its five failure IDs are the established fake-driver/session-0 baseline; no new failure is attributed to this change.",
+    "lint_and_format": "Scoped ruff check and ruff format --check passed for all ten listed Python files.",
+    "independent_review": "Revised public diff approved after the count/global-cache distinction, transitional ownership guard, measured store shape, close reporting and required check set were reconciled. Review exercised the focused gate, not hardware or the broad selection."
+  },
+  "source_hash_normalization": "SHA-256 of each listed UTF-8 source file with CRLF normalized to LF, suitable for comparison with Git blobs on another platform; these are not raw Windows-file hashes.",
+  "source_sha256_lf": {
+    "src/udv_echo_process/__init__.py": "677cbe54afa0a7c59be223e6e8135d189e57e342613751471972851774c86a88",
+    "src/udv_echo_process/acquire/__init__.py": "1d395390f33def7e9f19e5fbb162791a3a80490ca3b1c1bee808118b020ca345",
+    "src/udv_echo_process/acquire/finite.py": "19939f2da7cd75f654971048f5cefca0f9cf3fe1f449178ead27c078c54f9d61",
+    "tools/live/bridge_host/api.py": "1ba76d95de28bc271e51cbbcf2a19b09d35a9c799a34e80f845a29f1d60db770",
+    "tools/live/bridge_host/producer.py": "533a6cd0ef59f051ab589d2d6ebddb1b63178ab46cb5f7a849ad072735c94657",
+    "tools/live/bridge_host/session.py": "30f3467ac471f1197d9d32a3697b222c0a9b740c53353fa72d96fa3ab681e4c1",
+    "tests/test_acquire_finite.py": "796fe43f8b237840d89c7a81a6ac7cdd1e83a9f0e0ae156c6faf95696de0857a",
+    "tests/test_acquire_finite_surface.py": "fcd08c89c6367fc2b16e52fd3050c5c61026a99c69ba8e0d79f0ebce9aa58265",
+    "tests/test_acquire_bridge_host.py": "23f7b29eab79b6cbe53237ce849cd2233b6546085a67d837aa54c708482f1a5d",
+    "tests/test_finite_multiplex_evidence.py": "7826e154774f5b4a4a05458e6a38d6c27ba700473ffa930a974605f13f087537"
+  },
+  "not_established": [
+    "The native enabler/configurator/restorer is still a private prototype, not a supported one-command CLI.",
+    "Private composition and script-fragment fixtures do not prove the real PrivatePort path or actual Frida cleanup.",
+    "No new recording, native instrument call or configuration repair was performed in this offline pass.",
+    "Pre-existing channel-4 acoustic and channel-10 gain repair remain open."
+  ]
+}

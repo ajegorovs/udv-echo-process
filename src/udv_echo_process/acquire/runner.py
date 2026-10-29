@@ -112,6 +112,7 @@ from udv_echo_process.acquire.config import (
     ProfileTiming,
     RecordSettings,
 )
+from udv_echo_process.acquire.cycle import CycleReport
 from udv_echo_process.acquire.log import (
     DecodedBlock,
     PointStatus,
@@ -130,6 +131,7 @@ from udv_echo_process.acquire.plan import (
     profiles_for_duration,
 )
 from udv_echo_process.acquire.snapshot import DialogParameters, InstrumentSnapshot
+from udv_echo_process.acquire.ui.readiness import application_error_refusal
 from udv_echo_process.io.dop.bdd import read as _read_bdd
 
 #: The word-level check. ``acquire/verify.py`` ships in this package, so *not
@@ -170,6 +172,20 @@ ABORT_NOTE = (
     "the run stops here: the application's state is not verified, so the remaining "
     "points are not attempted"
 )
+
+#: The optional actuator capability that carries the application's own cycle report.
+#: Read with ``getattr`` rather than declared on the protocol, because the UI route and every legacy
+#: double in the suite have no such property and must keep working unchanged.
+_CYCLE_REPORT_ATTR = "last_cycle_report"
+
+#: The optional companion: the producer's own reason for having no report to hand over.  Read the same way,
+#: because it is the same optional capability — an actuator that answered ``None`` above and names a problem
+#: here offered evidence it could not use, which is not the same state as having no evidence at all.
+_CYCLE_REPORT_PROBLEM_ATTR = "cycle_report_problem"
+
+#: The token every "a report was offered but it is not this point's" note carries, so the refusal is
+#: greppable in a log and testable without matching prose.
+_CYCLE_REPORT_UNATTRIBUTABLE = "cycle_report_unattributable"
 
 
 class SweepActuator(Actuator, Protocol):
@@ -359,6 +375,15 @@ class _Attempt:
     file: Path | None = None
     reason: str | None = None
     decoded: DecodedBlock | None = None
+    #: The application's own report for the one cycle this attempt spent, snapshotted from the
+    #: actuator **immediately after** that call (:meth:`SweepRunner._capture_cycle_report`) and
+    #: never re-read afterwards. ``None`` means no report was supplied: a legacy/UI actuator with no
+    #: such capability, or a point whose cycle was never attempted.
+    cycle_report: CycleReport | None = None
+    #: Why a report that *was* offered could not be credited to this point — a name that belongs to
+    #: another cycle, or a value that is not a report at all. ``None`` means the question did not
+    #: arise; it reaches the log beside the point's own failure, never instead of it.
+    cycle_report_note: str | None = None
     readback_gates: int | None = None
     readback_resolution: str | None = None
     size_bytes: int | None = None
@@ -393,6 +418,7 @@ class SweepRunner:
         channel: int | None = None,
         expected_mode: ProcessMode,
         strict_covariates: tuple[str, ...] = (),
+        window_overhead_s: float = 0.0,
     ) -> None:
         """Bind a runner to its actuator, its naming and where points land.
 
@@ -423,6 +449,10 @@ class SweepRunner:
         """
         self._actuator: SweepActuator = cast(SweepActuator, actuator)
         self._strict_covariates = tuple(strict_covariates)
+        #: Seconds a recording runs *beyond* the requested window because the route costs them.  Measured for the message
+        #: route: each routine call is its own attachment (~8 s), so a 4 s point produced a 20.657 s block and the size
+        #: signature called the sound file contaminated.  Zero for the UI route, where the cycle runs in one attachment.
+        self._window_overhead_s = float(window_overhead_s)
         self._settings = settings
         self._directory = Path(directory)
         self._signature = SizeSignature() if signature is None else signature
@@ -493,7 +523,7 @@ class SweepRunner:
     ) -> PointOutcome:
         """Run one point end to end and return its outcome; never raise.
 
-        In order: reset the block (unless ``reset=False``) and confirm a startable
+        In order: configure (parameters, read-back, channel), then reset the block (unless ``reset=False``) and confirm a startable
         view; apply the parameters and compare the read-back with the request; record
         and store under a free name; decode the stored file; check its size against
         the signature; verify the file's own words against the request; append one log
@@ -598,6 +628,16 @@ class SweepRunner:
         )
         if duration_s <= 0:
             return self._fail(attempt, f"duration_s must be > 0, got {duration_s}")
+        # The application's own error state outranks the **target** reads below: while a message box
+        # is up its modal loop filters this route's messages, so the layout and the process mode are
+        # read through a wedged application and a refusal naming either would send an operator to the
+        # wrong place. Asked here — after the pure argument check and before those reads — and asked
+        # as a *refusal only*: nothing is answered and nothing is pressed, because a screen whose
+        # mode has not been checked must never be authorised to act. The later overlay-guard
+        # rechecks are unchanged, and they still do the panel answering.
+        refusal = application_error_refusal(self._actuator)
+        if refusal is not None:
+            return self._fail(attempt, refusal, abort=True)
         try:
             note = self._actuator.layout_note()
         except Exception as exc:  # noqa: BLE001 - an unchecked layout is not clean
@@ -626,11 +666,6 @@ class SweepRunner:
         overlay = self._overlay_guard()
         if overlay is not None:
             return self._fail(attempt, overlay, abort=True)
-        if reset:
-            failure = self._reset_block()
-            if failure is not None:
-                return self._fail(attempt, failure, abort=True)
-
         # (2) apply the window, then compare the app's read-back with the request.
         parameters = point.parameters
         # The parameter column is only the column while no panel is over it.
@@ -658,7 +693,8 @@ class SweepRunner:
                 parameters.emissions_per_profile, parameters.prf_us
             )
         attempt.period_s = period
-        profiles = profiles_for_duration(duration_s, period) if period else None
+        window = float(duration_s) + self._window_overhead_s
+        profiles = profiles_for_duration(window, period) if period else None
         if profiles:
             attempt.expected_bytes = self._signature.expected_bytes(
                 parameters.gates, profiles
@@ -673,7 +709,20 @@ class SweepRunner:
                 attempt, f"the measurement channel could not be verified: {exc}", abort=True
             )
 
-        # (4) name the file and run the cycle.
+        # (4) the fresh-block boundary, then the cycle.
+        #
+        # The reset runs **here**, after the point's configuration and not before it.  The position is the boundary that
+        # decides what the stored block contains, measured on 2026-10-26: a block accrues continuously while the
+        # application runs, a store bounds it, and a clear bounds it earlier - so a clear at the top of the point makes
+        # every parameter write and the channel verification part of the recording.  Same request, two positions: a 4 s
+        # point stored 20.657 s of data with the clear first, and a 2 s point stored 2.70 s (68 profiles) with the clear
+        # 0.95 s before the record.  Moving it here is safe because the clear does not disturb the parameters: a written
+        # Doppler angle survived it (0 -> 5, cleared, still 5, prf and gates unchanged).
+        if reset:
+            failure = self._reset_block()
+            if failure is not None:
+                return self._fail(attempt, failure, abort=True)
+
         self._used_names.add(attempt.name)
         overlay = self._overlay_guard()  # the guard the cycle's own presses cannot undo
         if overlay is not None:
@@ -687,11 +736,16 @@ class SweepRunner:
                 verify_channel=False,  # verified once per run, below and before the first
             )
         except Exception as exc:  # noqa: BLE001 - reported, never raised onwards
+            # The cycle's exit is evidence even when it raised: the application may have got as far
+            # as a store before the exception, and the snapshot has to be taken here because the
+            # actuator's property answers for whatever ran last.
+            self._capture_cycle_report(attempt)
             # The step is unaccounted for: a dialog may be up and a recording may
             # still be running, so the next point cannot be trusted with the app.
             return self._fail(
                 attempt, f"the record/store cycle raised {exc!r}", abort=True
             )
+        self._capture_cycle_report(attempt)
         if not stored:
             return self._fail(
                 attempt, f"the record/store cycle failed: {result}", abort=True
@@ -699,6 +753,21 @@ class SweepRunner:
         path = Path(str(result))
         attempt.file = path
         self._used_names.add(path.name)
+        if attempt.cycle_report_note is not None:
+            # The cycle claims a store while its report belongs to another cycle, is unreadable, or
+            # is not a report at all. The file may well be sound, but which invocation produced it
+            # is exactly what the contradictory evidence cannot establish — so this is not "the
+            # application is past the cycle" but "the cycle's own account of itself does not hold",
+            # the same finding as a claimed store that is not there (below), and it trips the same
+            # breaker: the state is unverified, so no later point may be attempted. The path is kept
+            # so the log names the artifact it refused to credit, and the diagnostic stays the
+            # reason.
+            return self._fail(
+                attempt,
+                attempt.cycle_report_note,
+                status=PointStatus.INVALID,
+                abort=True,
+            )
         if not path.is_file():
             return self._fail(
                 attempt,
@@ -854,6 +923,14 @@ class SweepRunner:
         A refusal here is an abort, not a point failure: an unrecognised panel is not
         this point's fault and it is still up for the next one.
         """
+        # An application error outranks every panel: while its message box is up, the box's modal loop filters the
+        # posted wake-ups this route acts through, so nothing else can succeed and a retry would only spend a slot.
+        # The check is the same optional capability every other boundary asks (``acquire/ui/readiness.py``): a fake
+        # without it is not refused for that, and an offered check that cannot answer is a refusal rather than a
+        # clear screen.
+        refusal = application_error_refusal(self._actuator)
+        if refusal is not None:
+            return refusal
         try:
             kind = self._actuator.answer_overlay()
         except Exception as exc:  # noqa: BLE001 - an unchecked overlay is not clean
@@ -914,16 +991,35 @@ class SweepRunner:
             self._actuator.press(StripControl.CLEAR_AND_RESTART)
         except Exception as exc:  # noqa: BLE001 - reported as a reason
             return f"the pre-point block reset failed ({type(exc).__name__}: {exc})"
-        state, failure = self._poll_startable()
+        # The confirmation is the **empty** view (``READY``), not merely a startable one.
+        #
+        # ``STORE`` is startable and means the block still holds data, so accepting it after the press
+        # accepted a block that had not been cleared - and, worse, returned before the application had
+        # processed the press at all, which dropped the record that followed it (measured 2026-10-26:
+        # point 2 of a campaign refused with ``record_not_dispatched`` because the record was written
+        # while the clear was still being handled). ``READY`` is the strip's own statement that no
+        # block is held; waiting for it is the transition, and it is also the settle the record needs.
+        state, failure = self._poll_view(StripView.READY)
         if state is None:
             return failure
-        if state.view not in STARTABLE_VIEWS:
+        if state.view is not StripView.READY:
             return (
-                f"after CLEAR_AND_RESTART the strip is in the {state.view.value!r} "
-                f"view after {RESET_TIMEOUT_S:.0f} s: the block was not reset, so the "
-                "point is refused rather than stored into a possibly stale block"
+                f"after CLEAR_AND_RESTART the strip is in the {state.view.value!r} view after "
+                f"{RESET_TIMEOUT_S:.0f} s, not the empty {StripView.READY.value!r} one: the block "
+                "was not cleared, so the point is refused rather than stored into a possibly stale block"
             )
         return None
+
+    def _poll_view(self, wanted: StripView) -> tuple[StripState | None, str | None]:
+        """Poll (bounded inside the actuator) for one view, or say why it could not be read."""
+        try:
+            state = self._actuator.wait_for_view((wanted,), timeout_s=RESET_TIMEOUT_S)
+        except Exception as exc:  # noqa: BLE001 - a wedged view is refused, not retried
+            return None, (
+                f"waiting {RESET_TIMEOUT_S:.0f} s for the {wanted.value!r} strip view failed "
+                f"({type(exc).__name__}: {exc})"
+            )
+        return state, None
 
     def _poll_startable(self) -> tuple[StripState | None, str | None]:
         """Poll (bounded inside the actuator) for a startable view, or say why not."""
@@ -973,6 +1069,92 @@ class SweepRunner:
             attempt.readback_resolution = str(resolution_text)
         return None
 
+    def _capture_cycle_report(self, attempt: _Attempt) -> None:
+        """Snapshot the report of the cycle invocation this point just spent.
+
+        Called once, **immediately after — and only after** — the single
+        :meth:`try_record_and_store` call, on every exit from it: the stored path, the ``(False,
+        reason)`` return and the raise. The actuator's property holds the last cycle's report until
+        its producer resets it before the next invocation, so a read anywhere else would answer for
+        whatever ran last instead of for this point. That is why no other path in :meth:`_execute`
+        touches it: a point refused before its cycle (layout, mode, clamped read-back, the reset)
+        carries no report at all, rather than an earlier point's.
+
+        The states, and they are different claims:
+
+        - **no capability** (the attribute is absent — a legacy or UI actuator): nothing is recorded
+          and nothing fails. Absence of the property is not a defect of the point.
+        - **absent, and the producer says why**: ``None`` plus an actuator diagnostic (a cycle that
+          offered a report it could not use — unreadable, not a report, or one its own wrapper
+          refused). Still not this point's evidence, but not silence either: the producer's token is
+          the note, so the reason a caller was given and the note the log keeps are one finding.
+        - **offered and this point's**: a :class:`CycleReport` whose ``name`` is this point's cycle
+          name. It is stored as the frozen report object itself, so nothing later can move the
+          evidence; the log serializes it and a reader gets the same values back.
+        - **offered and not creditable** — another cycle's name, or a value that is not a report at
+          all. Not stored as this point's (evidence that belongs to something else is worse than
+          none), and said out loud in :attr:`_Attempt.cycle_report_note`: if the cycle otherwise
+          claimed a store, the point is refused *and* the run stops, because a cycle whose own
+          account of itself does not hold cannot establish where the application is. The foreign
+          report's own facts travel in the note, so an attribution failure is never silent.
+        """
+        try:
+            report = getattr(self._actuator, _CYCLE_REPORT_ATTR)
+        except AttributeError:
+            return  # no such capability: the legacy doubles this module must keep working
+        except Exception as exc:  # noqa: BLE001 - an unreadable property is a note, not a crash
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: reading the actuator's "
+                f"{_CYCLE_REPORT_ATTR} raised {type(exc).__name__}: {exc}"
+            )
+            return
+        if report is None:
+            # Either the producer had nothing to hand over — absence, not contradiction — or it offered
+            # something it could not use and said so beside the property. The second is a finding: the
+            # point is refused on it, and the note is the producer's own token rather than prose invented
+            # here, so the reason a caller sees and the note a log keeps are the same sentence.
+            note = self._actuator_report_problem()
+            if note is not None:
+                attempt.cycle_report_note = note
+            return
+        if not isinstance(report, CycleReport):
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: the actuator's last cycle report is a "
+                f"{type(report).__name__}, not a CycleReport: {report!r}"
+            )
+            return
+        if report.name != attempt.name:
+            attempt.cycle_report_note = (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: the report names the cycle "
+                f"{report.name!r} but this point's cycle is {attempt.name!r} "
+                f"(stage {report.stage.value!r}, stored={report.stored!r}, "
+                f"reason {report.reason!r}): another cycle's evidence is not this point's, "
+                "so no cycle report is credited to this point"
+            )
+            return
+        attempt.cycle_report = report
+
+    def _actuator_report_problem(self) -> str | None:
+        """Why the actuator could not hand over the report it offered, or ``None``.
+
+        Read exactly like the report itself — ``getattr`` on an optional capability, so a double that has
+        no such property is absence rather than an error — and never allowed to fail a point: an
+        unreadable diagnostic is reported as prose about *that*, because a broken diagnostic must not
+        turn into a silent absence.
+        """
+        try:
+            problem = getattr(self._actuator, _CYCLE_REPORT_PROBLEM_ATTR)
+        except AttributeError:
+            return None
+        except Exception as exc:  # noqa: BLE001 - a native diagnostic that raises is still a finding
+            return (
+                f"{_CYCLE_REPORT_UNATTRIBUTABLE}: reading the actuator's "
+                f"{_CYCLE_REPORT_PROBLEM_ATTR} raised {type(exc).__name__}: {exc}"
+            )
+        if problem is None:
+            return None
+        return str(problem)
+
     def _record(self, attempt: _Attempt, status: PointStatus) -> SweepPointRecord:
         """The log record for an attempt, at the status it ended with.
 
@@ -983,8 +1165,28 @@ class SweepRunner:
         and the decoded block's own ``n_profiles``/``span_s``. Together those are the
         difference between "the plan says 12 s" and "the file covers 8.4 s of it" —
         which the app's ring behaviour makes two different facts.
+
+        ``cycle_report`` is forwarded exactly as it was snapshotted at the cycle call: the
+        report the application gave for *this* invocation, or ``None`` when it gave none.
         """
         duration = attempt.duration_s
+        # The point's own verdict, and beside it (never inside it) the note that says why a report
+        # could not be credited to this point. Appended rather than substituted: a point that failed
+        # *and* was handed another cycle's report keeps both findings.
+        failure = attempt.reason
+        # Membership, not equality: an abort's reason ends with :data:`ABORT_NOTE` appended, and an
+        # actuator's own diagnostic can already be inside the reason it returned — both make the note
+        # present without being the whole string, and appending it again would serialise one finding
+        # twice in the field a reader has to trust.
+        if (
+            attempt.cycle_report_note is not None
+            and attempt.cycle_report_note not in (failure or "")
+        ):
+            failure = (
+                attempt.cycle_report_note
+                if failure is None
+                else f"{failure}; {attempt.cycle_report_note}"
+            )
         return SweepPointRecord(
             sweep_id=self._sweep_id,
             key=attempt.point.key,
@@ -1006,7 +1208,8 @@ class SweepRunner:
             file_size_bytes=attempt.size_bytes,
             expected_size_bytes=attempt.expected_bytes,
             decoded=attempt.decoded,
-            failure=attempt.reason,
+            cycle_report=attempt.cycle_report,
+            failure=failure,
             covariate_advisories=attempt.advisories,
             covariates_advisory=attempt.advisory_covariates,
             covariates_enforced=attempt.enforced_covariates,
@@ -1029,6 +1232,22 @@ class SweepRunner:
                 f"({type(exc).__name__}: {exc})"
             )
 
+    def _left_at(self) -> str | None:
+        """What the two parameters this runner writes now state, for an abort's reason.
+
+        A point writes the resolution and the gate count, and an abort does **not** put them back: the
+        circuit breaker is a stop, not a rollback.  So the reason says where the instrument was left —
+        read, never written, because writing on the failure path is the one moment state cannot be
+        verified.  A reading that fails is reported as such and never replaces the failure it describes.
+        """
+        try:
+            return ", ".join(
+                f"{role.value}={self._actuator.read_parameter(role)}"
+                for role in (ParamRole.RESOLUTION, ParamRole.GATES)
+            )
+        except Exception as exc:  # noqa: BLE001 — the reason must survive a broken reading
+            return f"unreadable ({type(exc).__name__}: {exc})"
+
     def _fail(
         self,
         attempt: _Attempt,
@@ -1045,7 +1264,12 @@ class SweepRunner:
         flag, because the reason is the only part of an abort that the log keeps.
         """
         attempt.status = status or PointStatus.FAILED
-        attempt.reason = f"{reason}; {ABORT_NOTE}" if abort else reason
+        if abort:
+            left = self._left_at()
+            note = ABORT_NOTE if not left else f"{ABORT_NOTE}; left at {left}"
+            attempt.reason = f"{reason}; {note}"
+        else:
+            attempt.reason = reason
         attempt.aborted = abort
         return attempt
 

@@ -1,0 +1,24 @@
+{
+  "schema": "bridge-host/1",
+  "sequence": "record_stop_store",
+  "store_directory": "C:/path/to/clone/outputs/live/store",
+  "producer": {
+    "argv": [
+      "C:/path/to/node/node.exe",
+      "C:/path/to/producer/producer.mjs",
+      "attach"
+    ],
+    "cwd": "C:/path/to/producer"
+  },
+  "start_timeout_s": 90.0,
+  "dispatch_timeout_s": 60.0,
+  "probe_timeout_s": 20.0,
+  "close_timeout_s": 5.0,
+  "total_budget_s": 600.0,
+  "dialog_timeout_s": 10.0,
+  "stop_settle_s": 1.5,
+  "store_settle_s": 1.5,
+  "store_timeout_s": 30.0,
+  "state_timeout_s": 5.0,
+  "poll_s": 0.5
+}
