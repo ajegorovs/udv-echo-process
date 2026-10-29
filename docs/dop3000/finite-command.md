@@ -8,13 +8,18 @@ cross-channel frequency-equality rule.
 ## Verification state
 
 The predecessor private command completed a real 1+2 trial on October 29, 2026
-([evidence](evidence/finite-one-command-20261029.json)). That proof does not
-transfer automatically to this packaged command. The public parser, file-based
-provider loader, coordinator and BDD verification execute in offline tests with
-an explicitly fake backend and an original committed BDD. Static admission
-through the real private reference provider also passed without constructing a
-backend, reading the target or attaching instrumentation. Packaged live
-execution and its occluded-window case remain **unverified**.
+([evidence](evidence/finite-one-command-20261029.json)); its proof was not inherited.
+A separately supervised **packaged command** trial then completed configuration,
+one Run, one Store, clean closure and restoration with maximized Explorer covering
+UDOP. [Independent retained-evidence review](evidence/finite-packaged-covered-20261029.json)
+accepted that bounded result: original BDD, 11 native phases/19 returned calls,
+real hook removal/helper exit without kill, and a separate full baseline/final
+comparison. No restoration is owed. Of 2,387 passive foreground samples, three
+caught console windows and none caught UDOP: **not uninterrupted Explorer focus
+or proof of unsampled instants**. This establishes only the measured 1+2 request
+with its private provider; not arbitrary configurations, software abort, campaigns,
+mixed-frequency operation or flow validity. The public parser/loader/coordinator
+also retain offline tests using an explicitly fake backend and original BDD.
 
 ## Invocation
 

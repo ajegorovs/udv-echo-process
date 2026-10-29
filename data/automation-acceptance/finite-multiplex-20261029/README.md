@@ -24,3 +24,26 @@ be remeasured from this repository. The two false legacy carrier aggregate verdi
 receipts and fresh postconditions. This sitting did not test window occlusion or a
 software abort, and the machine-bound command is not a promoted public CLI. The
 [execution plan](../../../docs/plans/background-multiplex-recording.md) owns the verdict.
+
+## Packaged command with Explorer covering the application
+
+`mux-finite-packaged-02.BDD` is the unchanged 32,616-byte output of the separately
+operator-supervised packaged `udv-acquire finite` trial on the same date. SHA-256:
+`13b2ae900bd7062b3e35f4e068f737f5a8c2f98717458342cbfc8cd39e64635f`.
+It decodes as channels 1 and 2, axial velocity, five profiles × 80 gates each at
+4 MHz. It remains a control/storage fixture, not validated flow data.
+
+[Packaged-trial evidence](../../../docs/dop3000/evidence/finite-packaged-covered-20261029.json)
+records exit 0, one Run/one Store/no explicit Record or Stop, and independently
+observed final equality of native settings and all ten parameter/TGC images.
+The application ended disabled and Ready, channel 1/count 10/pending 0.
+Independent offline raw-capture review accepted 11 native phases/19 returned
+calls, hook removal and clean helper exit without kill. Those private captures
+cannot be independently remeasured by the portable fixture tests.
+
+The operator reported full coverage by maximized Explorer. Of 2,387 passive
+foreground samples at nominal 50 ms spacing, 2,384 saw Explorer and three saw
+brief console windows; none saw UDOP. This is **not** uninterrupted Explorer
+foreground, proof of unsampled instants, or a software-abort test. Run the
+portable checks with `uv run --no-sync --extra dev python -m pytest
+tests/test_finite_packaged_covered_evidence.py -q`.
