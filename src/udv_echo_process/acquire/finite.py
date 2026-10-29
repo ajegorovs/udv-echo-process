@@ -11,8 +11,10 @@ a pair at mode ``65585`` took one ``Run`` to ``2162739`` leaving
 ``Execution_Code`` 5 — one **command identifier**, not a queue depth — so
 ``Run`` sets bit 1 (:data:`RUN_ARM_BIT`) and the application derives bit 21
 (:data:`RUN_DERIVED_BIT`); no other bit moved, no ``Record`` was dispatched, and
-the app then drained to 0, cleared the arm bit and left a held store at channel
-2. Bit 1 means *armed*, never *recording*: a recording strip with code 0 is a
+the app then drained to 0 and left a held store at channel 2. The arm bit
+can remain set on that completed STORE row until Store finishes (also observed
+on 2026-10-29); completion must not be inferred from that bit alone.
+Bit 1 means *armed*, never *recording*: a recording strip with code 0 is a
 live run, not a finished one.
 
 The trust boundary is why this is separate from the driver: nothing here reads a

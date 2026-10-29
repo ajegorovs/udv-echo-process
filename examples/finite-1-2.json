@@ -1,0 +1,7 @@
+{
+  "sequences": 1,
+  "channels": [
+    {"channel": 1, "quantity": "axial_velocity", "frequency_khz": 4000, "profiles": 5, "gates": 80, "prf_us": 600, "emissions": 50},
+    {"channel": 2, "quantity": "axial_velocity", "frequency_khz": 4000, "profiles": 5, "gates": 80, "prf_us": 600, "emissions": 50}
+  ]
+}

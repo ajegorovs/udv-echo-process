@@ -12,6 +12,16 @@ and silently drop its echo profile.
 set. The `10MHz.BDD` of the same set has the same structure on channels 9–10 and
 is deliberately not committed — it would duplicate the coverage at 300 KB.
 
+**Frequency-evidence boundary (checked 2026-10-29).** The committed file's
+actual acquired streams are channels 1–4, all at 4000 kHz. Its separate saved
+parameter block for channel 10 states 10000 kHz, but channel 10 has no acquired
+stream in this file. Mixed configured frequencies therefore do not by themselves
+prove different frequencies among this file's acquired streams. The reported
+sibling `10MHz.BDD` is not distributed in this checkout; its historical campaign
+provenance above is not a fresh decode here. This distinction neither refutes the
+owner's report of a mixed-frequency acquisition nor diagnoses a device fault.
+The exact originating model is not authenticated by the reader's device label.
+
 **Measured structure** (raw block walk; every row is asserted in
 `tests/test_io_bdd_artifacts.py`):
 

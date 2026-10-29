@@ -1,0 +1,237 @@
+{
+  "date": "2026-10-29",
+  "kind": "packaged-finite-covered-window-trial",
+  "independent_adjudication": "accepted-offline-from-raw-captures",
+  "code_revision": "4f49f2c1ca6718b0ccd10421d10e25b8b497b6aa",
+  "operator_presence_confirmed": true,
+  "operator_reported_app_covered": true,
+  "cli_exit": 0,
+  "outcome": "stored_and_restored",
+  "restoration_owed": false,
+  "artifact": {
+    "path": "data/automation-acceptance/finite-multiplex-20261029/mux-finite-packaged-02.BDD",
+    "sha256": "13b2ae900bd7062b3e35f4e068f737f5a8c2f98717458342cbfc8cd39e64635f",
+    "bytes": 32616,
+    "recording_id": "sha256:2a846ba306e6f2c3156bcea43e2eddefb142be5514426983cf794031535ec68f",
+    "streams": [
+      {
+        "channel": 1,
+        "quantity": "axial_velocity",
+        "shape": [
+          5,
+          80
+        ]
+      },
+      {
+        "channel": 2,
+        "quantity": "axial_velocity",
+        "shape": [
+          5,
+          80
+        ]
+      }
+    ]
+  },
+  "command_receipts": {
+    "invocations": 1,
+    "pending_after_run": 5,
+    "record_dispatches": 0,
+    "stop_dispatches": 0
+  },
+  "configure_phases": 3,
+  "restore_phases": 7,
+  "store_invocations": 1,
+  "cleanup": {
+    "closed": true,
+    "sessions_opened": 1,
+    "close_problems": [],
+    "helper_exits": [
+      0
+    ],
+    "attach_exits": [
+      0
+    ],
+    "hook_count": 2,
+    "hooks_detached": 2,
+    "cleanup_errors": [],
+    "helper_killed": false,
+    "elapsed_ms": 51909.9,
+    "exit_timeout_ms": 59000,
+    "steps": [
+      "detach_requested",
+      "detach_acknowledged",
+      "helper_exited",
+      "evidence_clean"
+    ]
+  },
+  "independent_final": {
+    "ready": true,
+    "multiplexing_disabled": true,
+    "pending": 0,
+    "current_channel": 1,
+    "repeat_count": 10,
+    "same_identity": true,
+    "native_words_equal": true,
+    "ten_parameter_images_equal": true,
+    "parameter_image_digest_encoding": "SHA-256 of 256 little-endian uint32 words (1024 bytes), not JSON serialization",
+    "ten_tgc_tables_equal": true,
+    "parameter_image_sha256": {
+      "1": "128c1ca0095bd7e69a04290175588c39079027fc899133f69dfa8d375e38fdf5",
+      "2": "93d8ca330ba3b1094f9cd5363b62e1192578f1866aed037b4da1f9952bb4f09f",
+      "3": "e636090f83ad3a982945c6a629355a73db5b234154aff9ab173537b6db82eb8a",
+      "4": "6e3fd51e5a0c7f00f378caddc730b039cfca5ebd2fdbdb377d3ae4e9d5383738",
+      "5": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "6": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "7": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "8": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "9": "d21087dcd4dff957ebcb4cbfee58e7a76b31e1beb43c7b11244a4ed851f39c3a",
+      "10": "0f845589031e46a95f6c970818a9dec9ad62852fa7ae9c9be07ea12be4adbeb6"
+    },
+    "tgc_sha256": {
+      "1": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+      "2": "3ce5203db8d6e03bff39ede3c5d031fec0d3f24d7905ac0e6e235249a11ea797",
+      "3": "c3572b678c80c4e054ff93e0dafe14c3f22fedff07e3d853b0612ec93d485853",
+      "4": "6f20874e12b9a9d6669ec0bbca87ddc141ddca0c4e9b099e5a34a1f0c07d1078",
+      "5": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "6": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "7": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "8": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "9": "d0ff1b294b5288d1ae1421eadf5b2d38a8752b76d472ff30bed9028e25b1c5b8",
+      "10": "5e7f87b26ca5259aff7864360b8ebab9c031f92bc27a20ed7f8dad7f8ca024b5"
+    }
+  },
+  "foreground": {
+    "samples": 2387,
+    "interval_s": 0.05,
+    "classes": {
+      "CabinetWClass": 2384,
+      "ConsoleWindowClass": 3
+    },
+    "initial_explorer_maximized": true,
+    "same_foreground_every_sample": false,
+    "monitor_joined": true,
+    "udop_foreground_observed": false,
+    "limitation": "Operator-reported coverage plus passive samples. Three console appearances; not uninterrupted Explorer foreground or proof of unsampled instants.",
+    "window_alignment": "Wrapper starts passive monitoring before the public command and stops in finally; no independent timestamp alignment with each native phase and no guarantee of unsampled instants."
+  },
+  "provider_input_digests": {
+    "provider": "0354bb4e36128058ff340ee52b49f7b032515c35c298fcc78e8e403df2f937ce",
+    "config": "4d8e2fdbc40bb1a4fe22917ede83890f79848d1e5d340e893cba621226c60a22",
+    "definition": "5ba7588fddfeca6e5e560b77c31177281a4292315a4366956bb590de69dcec44"
+  },
+  "limits": [
+    "Native guards/transport, bindings and full raw captures remain private; portable tests cannot repeat the live experiment.",
+    "No uninterrupted Explorer foreground or unsampled-instant guarantee.",
+    "No software-abort, repeated campaign, mixed-frequency or flow-validity acceptance."
+  ],
+  "native_phases": [
+    {
+      "phase": "01-configure-1-participants",
+      "legacy_aggregate_ok": true,
+      "native_calls": 1,
+      "native_returns": 1,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "f61bf25b34530f9aaca6861ab5a8c3b63bb21aa7607b61f0d64cafa85f2ecf6c"
+    },
+    {
+      "phase": "01-configure-2-count",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "0e0d1cda83a515c79ed496f0d4922561c3608a9a892af56285ce59a30a924db4"
+    },
+    {
+      "phase": "01-configure-3-flag",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "6fda97a316bce7f5acf97867b6401b93af09441452f44cce8db75b4b8d7e792e"
+    },
+    {
+      "phase": "02-finite-run",
+      "legacy_aggregate_ok": false,
+      "native_calls": 1,
+      "native_returns": 1,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "1768182486c8c37ec103d3e8a2d8ceb4c00d69102fd14bbb3c0c2814114e163d"
+    },
+    {
+      "phase": "04-restore-1-count",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "59fa6876a3824ff7f7a484f8ffee619405031382281a5383a838ea1a0719d2a8"
+    },
+    {
+      "phase": "04-restore-2-flag",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "2f73267c1dfa8c90f033d95c9e4a93118f590debabfade41b01a6d1a7022b9d3"
+    },
+    {
+      "phase": "04-restore-3-participants",
+      "legacy_aggregate_ok": true,
+      "native_calls": 1,
+      "native_returns": 1,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "e65af0a677b8a8894789b71f41a9795c5de8cd9f5b35be654134f52b1360e18d"
+    },
+    {
+      "phase": "04-restore-4-route",
+      "legacy_aggregate_ok": false,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "7bf2dc2ec93b2e1ac70868de48f99a9ce266535112da5fd2fb322a3f3d2c94e4"
+    },
+    {
+      "phase": "04-restore-5-refresh",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "90c100562cbd4fb8663925f17cd81db20bedab31b86f72d2fcad71a9404639a5"
+    },
+    {
+      "phase": "04-restore-6-refresh",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "0e1bc564bd8ea225f9cbad57918f2310476a6482bf5fe53c5558ad3920116161"
+    },
+    {
+      "phase": "04-restore-7-refresh",
+      "legacy_aggregate_ok": true,
+      "native_calls": 2,
+      "native_returns": 2,
+      "hooks_removed": true,
+      "attachment_exit": 0,
+      "executed_script_sha256": "e0bf9fe961542aac9b653c07e828623ed9b86f9ada24150ef16985b85dc7e803"
+    }
+  ],
+  "nonblocking_observations": [
+    "Channel 2 has zero signal (0/400 nonzero); channel 1 has 32/400 nonzero: control/storage acceptance, not validated flow.",
+    "Store cycle recorded_span_s=0.1613 labels channel-1 span, not the full two-channel span ending at 0.3714 s.",
+    "only_cached_words_differ passes with an empty difference set; actual independent baseline/final equality is stronger.",
+    "Store discovery pass was incomplete/empty; the route used its separately validated binding receipt.",
+    "Parameter column was unavailable; settings comparisons came from raw parameter array images.",
+    "Template and rendered per-phase scripts differ by design; the retained executed script hashes above, not template identity, attribute the executed bytes.",
+    "Two false legacy carrier aggregates are retained: Run loses parameter-column after-read on Store view; route has no mode delta after multiplexing was already disabled. Native returns and final postconditions independently establish their effects."
+  ]
+}

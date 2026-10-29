@@ -1344,6 +1344,9 @@ def acquire_main(argv: list[str] | None = None) -> None:
         description="Drive the running UDOP application (live path)",
     )
     subcommands = parser.add_subparsers(dest="command", required=True)
+    from udv_echo_process.acquire import finite_command
+
+    finite_command.add_parser(subcommands)
 
     def numeric_writes_argument(target: argparse.ArgumentParser) -> None:
         target.add_argument(
@@ -1634,6 +1637,8 @@ def acquire_main(argv: list[str] | None = None) -> None:
     run_plan_parser.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)
+    if args.command == "finite":
+        raise SystemExit(finite_command.execute(args))
     notes: list[str] = []
     as_json = bool(getattr(args, "json", False))
     # With --json the report is the only thing on stdout; the notes go to stderr.
